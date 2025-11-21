@@ -1,0 +1,339 @@
+# Sandboxed Environment - Technical Constraints
+
+## Your Environment
+
+You are running in a **sandboxed Docker container** with isolated access to code and documentation. This ensures you cannot accidentally access credentials or deploy to production.
+
+**Security Model:**
+- **Network Mode**: Bridge networking (isolated from host network)
+- **Internet Access**: Outbound HTTP/HTTPS only (for Claude API and package downloads)
+- **Credential Isolation**: No SSH keys, cloud credentials, or production access
+- **No Inbound Ports**: Container cannot accept connections from outside
+- **Result**: You can develop and test freely, but cannot push/deploy to production or access host services
+
+**Important**: You run with "Bypass Permissions" mode because multiple security boundaries protect the host and production:
+- **Credential isolation** - No SSH keys, no cloud credentials, no production database access
+- **Network isolation** - Cannot access services running on host machine
+- **Inbound isolation** - Cannot accept connections, no ports exposed
+
+Even with internet access, you cannot:
+- Push code to GitHub (no SSH keys)
+- Deploy to GCP/AWS (no cloud credentials)
+- Access production databases (no credentials)
+- Access host services (network isolated)
+- Accept inbound connections (no ports exposed)
+- Damage the host system (containerized)
+
+## Capabilities
+
+### What You CAN Do
+✅ Read and edit code in `~/khan/`
+✅ Create, modify, and delete files
+✅ Run tests and development servers
+✅ Make local git commits (`git commit`)
+✅ Use all development tools (Python, Node.js, Go, Java, PostgreSQL, Redis)
+✅ Access the internet for package downloads and AI features
+✅ Read documentation and search codebases
+✅ Install packages (`apt-get`, `pip`, `npm install -g`)
+✅ Build reusable tools in `~/tools/`
+✅ Use `~/tmp/` for temporary work and prototyping
+✅ Share code for review in `~/sharing/`
+
+### What You CANNOT Do (Deliberately)
+❌ **Push to git** (no SSH keys available) - user will push from host
+❌ **Deploy to GCP** (no gcloud credentials) - user will deploy from host
+❌ **Access Google Secret Manager** (no auth)
+❌ **Access any cloud credentials** (AWS, GCP, Kubernetes, etc.)
+❌ **Modify host directories** (only sandboxed mounts are available)
+
+## Custom Commands (Installed Slash Commands)
+
+These commands are installed in `~/.claude/commands/` and available as slash commands:
+
+- **`@load-context <project-name>`** - Load accumulated knowledge from previous sessions
+  - Reads from `~/sharing/context/<project-name>.md`
+  - Helps avoid repeating mistakes and builds on previous work
+  
+- **`@save-context <project-name>`** - Save current session's learnings
+  - Writes to `~/sharing/context/<project-name>.md`
+  - Uses ACE methodology: Generation → Reflection → Curation
+  - Appends new session (never replaces existing content)
+  
+- **`@create-pr [audit] [draft]`** - Generate PR description and commit messages
+  - Analyzes branch changes vs base branch
+  - Generates formatted PR description
+  - Saves to `.git/PR_EDITMSG+<branch-name>.save`
+  - Optional: `audit` flag for review request, `draft` flag for WIP
+
+## File System Layout
+
+### `~/khan/` - Main Workspace
+**Purpose**: Your primary codebase
+**Access**: Read-write
+**Persistence**: Mounted from host (live sync)
+**Usage**:
+- Edit code, create commits, run tests
+- Changes immediately visible on host
+- Human reviews and pushes from host
+
+### `~/context-sync/` - Context Sources
+**Purpose**: Multi-source context and knowledge base
+**Access**: Read-only
+**Persistence**: Mounted from host
+**Contents**:
+- `confluence/` - Confluence documentation
+  - ADRs (Architecture Decision Records)
+  - Runbooks and operational docs
+  - Best practices and standards
+  - Team processes and guidelines
+- `jira/` - JIRA tickets and issues
+  - Issue descriptions and comments
+  - Sprint and epic context
+  - Bug reports and feature requests
+- `logs/` - Sync logs
+- (Future: `github/`, `slack/`, `email/`)
+
+**Usage**:
+```bash
+# Check ADRs before architectural decisions
+ls ~/context-sync/confluence/ENG/ADRs/
+
+# Review JIRA ticket for requirements
+grep -r "JIRA-1234" ~/context-sync/jira/
+
+# Review runbooks for operational context
+cat ~/context-sync/confluence/INFRA/runbooks/
+```
+
+### `~/tools/` - Reusable Utilities
+**Purpose**: Build scripts that persist across sessions
+**Access**: Read-write
+**Persistence**: Mounted from host (`~/.claude-sandbox-tools/`)
+**Usage**:
+- Create helper scripts and automation
+- Build test runners, code generators
+- Store development utilities
+**See**: `tools-guide.md` for comprehensive guide
+
+### `~/sharing/` - Persistent Data & Handoff
+**Purpose**: ALL data that must persist across container rebuilds
+**Access**: Read-write
+**Persistence**: Mounted from host (`~/.claude-sandbox-sharing/`)
+**What goes here**:
+- Context documents (`@save-context` / `@load-context`)
+- Code ready for human review
+- Pull request artifacts
+- Analysis reports
+- Any work product that should survive rebuilds
+
+**Usage**:
+```bash
+# Save context documents (persists across rebuilds)
+mkdir -p ~/sharing/context/
+# @save-context and @load-context use ~/sharing/context/
+
+# Copy code ready for human review
+cp -r ~/khan/feature-branch ~/sharing/feature-branch-ready
+
+# Human can access at ~/.claude-sandbox-sharing/ on host
+```
+
+**Important**: Files in `~/khan/`, `~/tmp/`, and container filesystem are LOST on rebuild. Use `~/sharing/` for anything that must persist!
+
+### `~/tmp/` - Scratch Space
+**Purpose**: Temporary work, not persisted
+**Access**: Read-write
+**Persistence**: Container-only (ephemeral)
+**Usage**:
+- Download and inspect files
+- Build temporary test environments
+- Prototype before moving to main workspace
+- Store intermediate build artifacts
+
+### Container Filesystem - System Level
+**Purpose**: System-wide changes
+**Access**: Can modify with sudo
+**Persistence**: NOT persisted on rebuild
+**Usage**:
+```bash
+# Install packages (lost on --rebuild)
+apt-get update && apt-get install -y ripgrep
+pip install pytest-watch
+npm install -g typescript-language-server
+```
+
+**For persistent tools**: Create wrapper scripts in `~/tools/setup-dev-env.sh`
+
+## Git Workflow
+
+### What You Can Do
+```bash
+# Local operations work fine
+git status
+git add .
+git commit -m "descriptive message"
+git log
+git branch
+git checkout -b feature/new-work
+```
+
+### What Happens at Push
+```bash
+git push
+# ❌ Permission denied (publickey)
+# This is intentional - no SSH keys in sandbox
+```
+
+**Solution**: Commit locally, human pushes and opens PR from host
+
+### Workflow
+1. You: Create branch, make changes, commit locally
+2. You: Prepare PR description with `@create-pr` (generates description file)
+3. Human: Reviews commits in sandbox
+4. Human: Pushes from host machine (has SSH keys)
+5. Human: Opens PR on GitHub with generated description
+6. Human: Reviews and merges PR
+
+## Testing and Validation
+
+### Running Tests
+```bash
+# Python tests
+pytest tests/
+python -m pytest path/to/test.py
+
+# JavaScript/Node tests  
+npm test
+npm run test:watch
+
+# Project-specific (Khan Academy)
+make test
+```
+
+### Running Services
+```bash
+# PostgreSQL and Redis start automatically
+
+# Check if running
+service postgresql status
+service redis-server status
+
+# Restart if needed
+sudo service postgresql restart
+sudo service redis-server restart
+```
+
+### Linting and Formatting
+```bash
+# Python
+pylint file.py
+black file.py
+mypy file.py
+
+# JavaScript/TypeScript
+eslint file.js
+prettier --write file.js
+
+# Project-specific
+make lint
+make fix
+```
+
+## Error Handling
+
+### Permission Denied Errors
+If you encounter credential-related errors:
+1. **Don't try to authenticate** - You don't have access
+2. **Document the limitation** - Note what needs user action
+3. **Work around it** - Focus on what you can accomplish
+4. **Be clear** - Tell user what they need to do on host
+
+Examples:
+```bash
+# ❌ This will fail (expected)
+git push
+gcloud app deploy
+gsm read secret-name
+
+# ✅ Do this instead
+git commit -m "changes ready"
+# Tell human: "Changes committed locally, ready for you to push"
+```
+
+### Service Conflicts
+If PostgreSQL or Redis fail to start:
+```bash
+# Usually means host is already running on same port
+# This is fine - use host services or change container port
+```
+
+### File Not Found
+If expected files are missing:
+- Check you're in right directory (`pwd`)
+- Check file system layout above
+- Mounted directories may not exist if not configured
+- Context sources (confluence, jira) require separate sync setup
+
+## Best Practices
+
+### Before Starting Work
+```bash
+# Check you're in right location
+pwd
+# Should be ~/khan/ or subdirectory
+
+# Ensure services are running
+service postgresql status
+service redis-server status
+
+# Load relevant context
+@load-context <project>
+```
+
+### During Development
+- Commit frequently with clear messages
+- Test changes before committing
+- Check linters pass
+- Document non-obvious decisions
+
+### After Completing Work
+- Run full test suite
+- Prepare PR artifacts with `@create-pr audit` (generates description)
+- Save context with `@save-context <project>`
+- Summarize what was done for human
+- Human will open PR on GitHub
+
+## Installation and Packages
+
+### System Packages (Not Persisted)
+```bash
+# These are lost on container rebuild
+apt-get update && apt-get install -y package-name
+pip install package-name
+npm install -g package-name
+```
+
+### Project Dependencies (Persisted in Code)
+```bash
+# These ARE persisted (in package.json, requirements.txt)
+cd ~/khan/
+npm install --save package-name
+pip install package-name >> requirements.txt
+```
+
+### For Persistent System Tools
+Create setup script in `~/tools/`:
+```bash
+#!/bin/bash
+# ~/tools/setup-dev-env.sh
+apt-get update && apt-get install -y ripgrep fd-find
+pip install pytest-watch black mypy
+npm install -g prettier eslint
+```
+
+Then run on each container start if needed.
+
+---
+
+**See also**: `mission.md` for your role and workflow, `tools-guide.md` for building reusable utilities.
+

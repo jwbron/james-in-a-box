@@ -1,0 +1,635 @@
+#!/usr/bin/env python3
+"""
+Claude Code Sandboxed - Run Claude Code CLI in an isolated Docker container
+
+Prevents AI agents from accessing credentials while allowing full code editing.
+
+Platform Support:
+  - Linux (x86_64, ARM64): Fully supported
+  - macOS (Intel, Apple Silicon): Fully supported
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import List, Optional
+
+
+class Colors:
+    """ANSI color codes for terminal output"""
+    BLUE = '\033[0;34m'
+    GREEN = '\033[0;32m'
+    YELLOW = '\033[1;33m'
+    RED = '\033[0;31m'
+    BOLD = '\033[1m'
+    NC = '\033[0m'
+
+
+def info(msg: str) -> None:
+    print(f"{Colors.BLUE}[INFO]{Colors.NC} {msg}")
+
+
+def success(msg: str) -> None:
+    print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {msg}")
+
+
+def warn(msg: str) -> None:
+    print(f"{Colors.YELLOW}[WARNING]{Colors.NC} {msg}")
+
+
+def error(msg: str) -> None:
+    print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
+
+
+class Config:
+    """Configuration paths and constants"""
+    CONFIG_DIR = Path.home() / ".claude-sandbox"
+    CONFIG_FILE = CONFIG_DIR / "mounts.conf"
+    DOCKERFILE = CONFIG_DIR / "Dockerfile"
+    IMAGE_NAME = "claude-sandbox"
+    CONTAINER_NAME = "claude-sandbox"
+    KHAN_SOURCE = Path.home() / "khan"
+    CLAUDE_SOURCE = Path.home() / ".claude"
+    # Persistent directories for agent use
+    TOOLS_DIR = Path.home() / ".claude-sandbox-tools"
+    SHARING_DIR = Path.home() / ".claude-sandbox-sharing"
+
+    # Directories that are dangerous to mount (contain credentials)
+    DANGEROUS_DIRS = [
+        Path.home() / ".ssh",
+        Path.home() / ".config" / "gcloud",
+        Path.home() / ".gitconfig",
+        Path.home() / ".netrc",
+        Path.home() / ".aws",
+        Path.home() / ".kube",
+        Path.home() / ".gnupg",
+        Path.home() / ".docker",
+    ]
+
+
+def get_platform() -> str:
+    """Detect platform: linux or macos"""
+    import platform
+    system = platform.system().lower()
+    if system == "linux":
+        return "linux"
+    elif system == "darwin":
+        return "macos"
+    return "unknown"
+
+
+def check_docker_permissions() -> bool:
+    """Check if user has permission to run Docker commands"""
+    result = subprocess.run(
+        ["docker", "ps"],
+        capture_output=True,
+        text=True
+    )
+    
+    if result.returncode == 0:
+        return True
+    
+    if "permission denied" in result.stderr.lower():
+        error("Docker permission denied - you are not in the docker group")
+        print()
+        print("This usually means one of two things:")
+        print("  1. You just installed Docker and need to log out/in for group membership")
+        print("  2. You need to be added to the docker group")
+        print()
+        print("Solutions:")
+        print()
+        print("Option 1: Add yourself to docker group and re-login")
+        print("  sudo usermod -aG docker $USER")
+        print("  then LOG OUT and LOG BACK IN")
+        print()
+        print("Option 2: Run with sudo (temporary workaround)")
+        print("  sudo $(which claude-sandboxed)")
+        print()
+        return False
+    
+    return False
+
+
+def check_docker() -> bool:
+    """Check if Docker is installed and offer to install if not"""
+    platform_name = get_platform()
+
+    if subprocess.run(["which", "docker"], capture_output=True).returncode != 0:
+        error("Docker is not installed.")
+        
+        if platform_name == "macos":
+            # TODO: Add macOS Docker Desktop installation
+            info("On macOS, please install Docker Desktop from:")
+            info("  https://www.docker.com/products/docker-desktop")
+            return False
+
+        # Linux installation
+        response = input("Install Docker now? (yes/no): ").strip().lower()
+        if response == "yes":
+            info("Installing Docker...")
+            try:
+                # Download installer
+                subprocess.run(
+                    ["curl", "-fsSL", "https://get.docker.com", "-o", "/tmp/get-docker.sh"],
+                    check=True
+                )
+                # Run installer
+                subprocess.run(["sudo", "sh", "/tmp/get-docker.sh"], check=True)
+                # Add user to docker group
+                subprocess.run(["sudo", "usermod", "-aG", "docker", os.environ["USER"]], check=True)
+                # Cleanup
+                os.remove("/tmp/get-docker.sh")
+
+                success("Docker installed successfully!")
+                print()
+                warn("IMPORTANT: You need to log out and back in for group membership to take effect.")
+                print("After logging back in, run this script again.")
+                sys.exit(0)
+            except Exception as e:
+                error(f"Docker installation failed: {e}")
+                return False
+        else:
+            error("Docker is required")
+            return False
+    
+    # Check Docker daemon is running and we have permissions
+    return check_docker_permissions()
+
+
+
+def is_dangerous_dir(path: Path) -> bool:
+    """Check if a directory is dangerous to mount (contains credentials)"""
+    for dangerous in Config.DANGEROUS_DIRS:
+        try:
+            # Check if path is dangerous or contains dangerous
+            if path.resolve() == dangerous.resolve():
+                return True
+            if path.resolve() in dangerous.resolve().parents:
+                return True
+            if dangerous.resolve() in path.resolve().parents:
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def create_dockerfile() -> None:
+    """Create the Dockerfile for the container"""
+    import shutil
+    
+    script_dir = Path(__file__).parent
+    
+    # Copy docker-setup.py to config directory
+    setup_script = script_dir / "docker-setup.py"
+    setup_dest = Config.CONFIG_DIR / "docker-setup.py"
+
+    if setup_script.exists():
+        shutil.copy(setup_script, setup_dest)
+        setup_dest.chmod(0o755)
+    else:
+        warn("docker-setup.py not found, skipping dev tools installation")
+    
+    # Copy claude-commands directory to config directory
+    commands_src = script_dir / "claude-commands"
+    commands_dest = Config.CONFIG_DIR / "claude-commands"
+    if commands_src.exists():
+        if commands_dest.exists():
+            shutil.rmtree(commands_dest)
+        shutil.copytree(commands_src, commands_dest)
+        info("Claude commands copied to build context")
+    else:
+        warn("claude-commands directory not found")
+    
+    # Copy claude-rules directory to build context
+    rules_src = script_dir / "claude-rules"
+    rules_dest = Config.CONFIG_DIR / "claude-rules"
+    if rules_src.exists():
+        if rules_dest.exists():
+            shutil.rmtree(rules_dest)
+        shutil.copytree(rules_src, rules_dest)
+        info("Claude rules directory copied to build context")
+    else:
+        warn("claude-rules directory not found, skipping agent rules")
+    
+    
+    # Copy Dockerfile from script directory
+    dockerfile_src = script_dir / "Dockerfile"
+    if dockerfile_src.exists():
+        shutil.copy(dockerfile_src, Config.DOCKERFILE)
+        success("Build context prepared")
+    else:
+        error(f"Dockerfile not found at {dockerfile_src}")
+        error("Cannot build without Dockerfile")
+
+
+def build_image() -> bool:
+    """Build the Docker image (Docker's cache makes this fast when nothing changed)"""
+    # Always sync files to build context - Docker detects changes and rebuilds only what's needed
+    create_dockerfile()
+
+    try:
+        cmd = [
+            "docker", "build",
+            "--build-arg", f"USER_NAME={os.environ['USER']}",
+            "--build-arg", f"USER_UID={os.getuid()}",
+            "--build-arg", f"USER_GID={os.getgid()}",
+            "-t", Config.IMAGE_NAME,
+            "-f", str(Config.DOCKERFILE),
+            str(Config.CONFIG_DIR)
+        ]
+        
+        # Docker automatically uses cache for unchanged layers
+        subprocess.run(cmd, check=True)
+        return True
+    except subprocess.CalledProcessError:
+        error("Docker build failed")
+        return False
+
+
+def image_exists() -> bool:
+    """Check if Docker image exists"""
+    return subprocess.run(
+        ["docker", "image", "inspect", Config.IMAGE_NAME],
+        capture_output=True
+    ).returncode == 0
+
+
+def setup() -> bool:
+    """Interactive setup process"""
+    print()
+    info("=== Autonomous Software Engineering Agent - Setup ===")
+    print()
+    print("🤖 AUTONOMOUS ENGINEERING AGENT")
+    print()
+    print("This sets up a sandboxed environment for Claude to work as an autonomous")
+    print("software engineer with minimal supervision.")
+    print()
+    print("OPERATING MODEL:")
+    print("  • Agent: Plans, implements, tests, documents, creates PRs")
+    print("  • Human: Reviews, approves, deploys")
+    print()
+    print("AGENT CAPABILITIES:")
+    print("  ✓ Edit code and create commits in ~/khan/")
+    print("  ✓ Run tests, linters, development servers")
+    print("  ✓ Access Confluence docs (ADRs, runbooks, best practices)")
+    print("  ✓ Create pull requests with @create-pr command")
+    print("  ✓ Build accumulated knowledge with @save-context")
+    print("  ✓ Network access for Claude API and package installs")
+    print()
+    print("SECURITY ISOLATION:")
+    print("  ✗ NO access to SSH keys (cannot git push)")
+    print("  ✗ NO access to gcloud credentials (cannot deploy)")
+    print("  ✗ NO access to GSM secrets")
+    print()
+    print("HOW IT WORKS:")
+    print("  1. Your ~/khan is MOUNTED into the container (read-write)")
+    print("  2. Changes in container = changes on host (same files)")
+    print("  3. Agent works on code, creates commits")
+    print("  4. YOU review commits and push from host (with credentials)")
+    print()
+    print("FUTURE CAPABILITIES (Roadmap):")
+    print("  🔄 GitHub PR context")
+    print("  🔄 Slack message context")
+    print("  🔄 JIRA ticket context")
+    print("  🔄 Email thread context")
+    print()
+
+    response = input("Continue? (yes/no): ").strip().lower()
+    if response != "yes":
+        info("Setup cancelled")
+        return False
+
+    print()
+    info("Setting up mounts...")
+    print()
+
+    Config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    mounts = []
+
+    # Khan directory - mount from host (read-write with SELinux relabeling)
+    if Config.KHAN_SOURCE.exists():
+        khan_container_path = f"/home/{os.environ['USER']}/khan"
+        # Add :z flag for SELinux systems (Fedora, RHEL, etc.)
+        mounts.append(f"{Config.KHAN_SOURCE}:{khan_container_path}:rw,z")
+        info(f"Khan directory will be mounted from: {Config.KHAN_SOURCE}")
+        print(f"    Mounted as: ~/khan/ (read-write, SELinux relabeled)")
+        print(f"    Purpose: Main workspace - all changes persist to host immediately")
+    else:
+        warn(f"{Config.KHAN_SOURCE} not found - workspace will not be available")
+
+    # Claude OAuth authentication
+    print()
+    info("Claude authentication: Browser OAuth on first run (credentials persist in container)")
+
+    # Add context-sync directory (read-only) - includes Confluence, JIRA, and more
+    print()
+    context_sync_dir = Path.home() / "context-sync"
+    if context_sync_dir.exists():
+        context_container_path = f"/home/{os.environ['USER']}/context-sync"
+        mounts.append(f"{context_sync_dir}:{context_container_path}:ro")
+        print(f"  ✓ Context sources: {context_sync_dir}")
+        print(f"    Mounted as: ~/context-sync/ (read-only)")
+
+        # Show available context sources
+        subdirs = []
+        if (context_sync_dir / "confluence").exists():
+            subdirs.append("confluence (ADRs, runbooks, docs)")
+        if (context_sync_dir / "jira").exists():
+            subdirs.append("jira (tickets, issues)")
+        if (context_sync_dir / "github").exists():
+            subdirs.append("github (PRs, issues)")
+        if (context_sync_dir / "slack").exists():
+            subdirs.append("slack (messages)")
+
+        if subdirs:
+            print(f"    Contains: {', '.join(subdirs)}")
+        else:
+            print(f"    Note: No context subdirectories found yet")
+    else:
+        warn(f"Context sync directory not found: {context_sync_dir}")
+        warn(f"Expected directory with confluence/, jira/, etc. subdirectories")
+
+    # Create and mount persistent directories for agent
+    print()
+    info("Setting up persistent directories...")
+    
+    # Tools directory - for reusable scripts built by agent
+    Config.TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    tools_container_path = f"/home/{os.environ['USER']}/tools"
+    mounts.append(f"{Config.TOOLS_DIR}:{tools_container_path}:rw")
+    print(f"  ✓ Tools: {Config.TOOLS_DIR}")
+    print(f"    Mounted as: ~/tools/ (read-write)")
+    print(f"    Purpose: Reusable scripts and utilities built by agent")
+    
+    # Sharing directory - for ALL persistent data
+    Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
+    sharing_container_path = f"/home/{os.environ['USER']}/sharing"
+    mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw")
+    print(f"  ✓ Sharing: {Config.SHARING_DIR}")
+    print(f"    Mounted as: ~/sharing/ (read-write)")
+    print(f"    Purpose: ALL data that persists across rebuilds")
+    print(f"    - Context documents (@save-context)")
+    print(f"    - Code ready for review")
+    print(f"    - Any work that must survive container rebuilds")
+    
+    print()
+    print("Add additional directories? (optional)")
+    print("Format: /path/to/dir        (read-write)")
+    print("    or: /path/to/dir:ro     (read-only)")
+    print("Press Enter on empty line when done")
+    print()
+
+    # Collect additional directories
+    while True:
+        dir_input = input("Additional directory (or Enter to finish): ").strip()
+        if not dir_input:
+            break
+
+        # Parse mode
+        if ":ro" in dir_input or ":rw" in dir_input:
+            mount_path_str, mode = dir_input.rsplit(":", 1)
+            if mode not in ["ro", "rw"]:
+                warn(f"Invalid mode '{mode}', use 'ro' or 'rw'")
+                continue
+        else:
+            mount_path_str = dir_input
+            mode = "rw"
+
+        # Expand and validate path
+        mount_path = Path(mount_path_str).expanduser().resolve()
+
+        # Check if dangerous
+        if is_dangerous_dir(mount_path):
+            print(f"⛔ BLOCKED: {mount_path}")
+            print("   This directory contains credentials and will not be mounted.")
+            print("   This is intentional to prevent AI from accessing sensitive files.")
+            continue
+
+        if not mount_path.exists():
+            warn(f"Directory does not exist: {mount_path}")
+            create = input("Create it? (yes/no): ").strip().lower()
+            if create == "yes":
+                try:
+                    mount_path.mkdir(parents=True, exist_ok=True)
+                    success(f"Created: {mount_path}")
+                except Exception as e:
+                    error(f"Failed to create directory: {e}")
+                    continue
+            else:
+                continue
+
+        mounts.append(f"{mount_path}:{mode}")
+        print(f"Added: {mount_path} ({mode})")
+
+    # Save configuration
+    Config.CONFIG_FILE.write_text("\n".join(mounts))
+
+    print()
+    info("Summary of mounted directories:")
+    for mount in mounts:
+        print(f"  • {mount}")
+    print()
+
+    proceed = input("Proceed with this configuration? (yes/no): ").strip().lower()
+    if proceed != "yes":
+        info("Setup cancelled")
+        return False
+
+    # Create Dockerfile and build image
+    create_dockerfile()
+    print()
+    
+    # Let Docker's cache handle what needs rebuilding
+    info("Building Docker image (Docker will cache unchanged layers)...")
+    if not build_image():
+        return False
+
+    print()
+    success("Setup complete!")
+    print()
+    return True
+
+
+def run_claude() -> bool:
+    """Run Claude Code CLI in the sandboxed container"""
+    # Check if image exists
+    if not image_exists():
+        info("Docker image not found. Running initial setup...")
+        if not setup():
+            return False
+
+    # Load mount configuration
+    if not Config.CONFIG_FILE.exists():
+        info("Configuration not found. Running initial setup...")
+        if not setup():
+            return False
+    
+    # Build/update image (Docker uses cache for unchanged layers - usually instant)
+    if not build_image():
+        error("Docker build failed")
+        return False
+
+    info("Launching sandboxed Claude Code environment...")
+    print()
+
+    # Parse mount configuration
+    mount_args = []
+    mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
+    for mount in mounts:
+        if not mount:
+            continue
+        parts = mount.rsplit(":", 2)  # Split from right, max 2 splits
+        
+        if len(parts) == 2:
+            # Old format: path:mode
+            mount_path, mode = parts
+            container_path = mount_path
+        elif len(parts) == 3:
+            # New format: host_path:container_path:mode
+            mount_path, container_path, mode = parts
+        else:
+            warn(f"Invalid mount format: {mount}")
+            continue
+        
+        mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
+        mode_str = "READ-ONLY" if mode == "ro" else "READ-WRITE"
+        display_path = container_path if container_path != mount_path else mount_path
+        print(f"  • {display_path} ({mode_str})")
+    print()
+
+    # Remove old container if exists
+    subprocess.run(["docker", "rm", "-f", Config.CONTAINER_NAME],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL)
+
+    # Build docker run command with bridge networking (more secure than --net host)
+    # Bridge mode allows outbound HTTP/HTTPS (for Claude API and packages) but no inbound access
+    cmd = [
+        "docker", "run",
+        "--rm",  # Auto-remove container after exit
+        "-it",   # Interactive with TTY
+        "--name", Config.CONTAINER_NAME,
+        "-e", f"RUNTIME_USER={os.environ['USER']}",
+        "-e", f"RUNTIME_UID={os.getuid()}",
+        "-e", f"RUNTIME_GID={os.getgid()}",
+        # Bridge networking: outbound HTTP allowed, no inbound ports exposed
+    ]
+
+    info("Network mode: Bridge (isolated from host, outbound HTTP only)")
+    print("  Container can: Access Claude API, download packages")
+    print("  Container cannot: Access host services, accept inbound connections")
+    print()
+    
+    # Note: Claude OAuth authentication will happen via browser on first run
+    # Credentials persist in container's ~/.claude/ directory
+    info("Claude authentication: Will authenticate with browser on first run")
+
+    # Add mount arguments
+    cmd.extend(mount_args)
+
+    # Add image name
+    cmd.append(Config.IMAGE_NAME)
+
+    # Run container
+    try:
+        subprocess.run(cmd)
+        return True
+    except KeyboardInterrupt:
+        print()
+        warn("Interrupted by user")
+        return False
+    except Exception as e:
+        error(f"Failed to run container: {e}")
+        return False
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Claude Code CLI in an isolated Docker container",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  claude-sandboxed              # Run Claude Code (setup on first use)
+  claude-sandboxed --setup      # Reconfigure mounts
+  claude-sandboxed --reset      # Reset configuration and remove Docker image
+        """
+    )
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="Force setup/reconfiguration"
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Clear configuration and start over"
+    )
+
+    args = parser.parse_args()
+
+
+    # Handle reset
+    if args.reset:
+        warn("Resetting configuration...")
+        import shutil
+        if Config.CONFIG_DIR.exists():
+            shutil.rmtree(Config.CONFIG_DIR)
+        
+        # Ask about persistent directories
+        if Config.TOOLS_DIR.exists() or Config.SHARING_DIR.exists():
+            print()
+            warn("Persistent directories found:")
+            if Config.TOOLS_DIR.exists():
+                print(f"  • {Config.TOOLS_DIR} (reusable scripts/tools)")
+            if Config.SHARING_DIR.exists():
+                print(f"  • {Config.SHARING_DIR} (shared artifacts, context documents)")
+            print()
+            response = input("Remove these as well? (yes/no): ").strip().lower()
+            if response == "yes":
+                if Config.TOOLS_DIR.exists():
+                    shutil.rmtree(Config.TOOLS_DIR)
+                    warn(f"Removed: {Config.TOOLS_DIR}")
+                if Config.SHARING_DIR.exists():
+                    shutil.rmtree(Config.SHARING_DIR)
+                    warn(f"Removed: {Config.SHARING_DIR}")
+            else:
+                info("Preserved persistent directories")
+        
+        success("Configuration reset. Run again to set up fresh.")
+        return 0
+
+    # Check prerequisites
+    if not check_docker():
+        return 1
+
+    if not check_docker_permissions():
+        return 1
+
+    # Handle setup
+    if args.setup:
+        if not setup():
+            return 1
+        return 0
+
+    # Normal run
+    if not run_claude():
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print()
+        warn("Interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        error(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
