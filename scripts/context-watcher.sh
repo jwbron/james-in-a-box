@@ -6,9 +6,9 @@ set -euo pipefail
 
 # Configuration
 CONTEXT_DIR="${HOME}/context-sync"
-CONFIG_FILE="${HOME}/khan/cursor-sandboxed/.context-watcher/config/context-watcher.yaml"
-STATE_FILE="${HOME}/khan/cursor-sandboxed/.context-watcher/tracking/watcher-state.json"
-LOG_FILE="${HOME}/khan/cursor-sandboxed/.context-watcher/tracking/watcher.log"
+CONFIG_FILE="${HOME}/sharing/config/context-watcher.yaml"
+STATE_FILE="${HOME}/sharing/tracking/watcher-state.json"
+LOG_FILE="${HOME}/sharing/tracking/watcher.log"
 LOCK_FILE="/tmp/context-watcher.lock"
 
 # Ensure directories exist

@@ -329,9 +329,10 @@ def setup() -> bool:
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
         context_container_path = f"/home/{os.environ['USER']}/context-sync"
-        mounts.append(f"{context_sync_dir}:{context_container_path}:ro")
+        # Add :z flag for SELinux systems
+        mounts.append(f"{context_sync_dir}:{context_container_path}:ro,z")
         print(f"  ✓ Context sources: {context_sync_dir}")
-        print(f"    Mounted as: ~/context-sync/ (read-only)")
+        print(f"    Mounted as: ~/context-sync/ (read-only, SELinux relabeled)")
 
         # Show available context sources
         subdirs = []
@@ -359,17 +360,19 @@ def setup() -> bool:
     # Tools directory - for reusable scripts built by agent
     Config.TOOLS_DIR.mkdir(parents=True, exist_ok=True)
     tools_container_path = f"/home/{os.environ['USER']}/tools"
-    mounts.append(f"{Config.TOOLS_DIR}:{tools_container_path}:rw")
+    # Add :z flag for SELinux systems
+    mounts.append(f"{Config.TOOLS_DIR}:{tools_container_path}:rw,z")
     print(f"  ✓ Tools: {Config.TOOLS_DIR}")
-    print(f"    Mounted as: ~/tools/ (read-write)")
+    print(f"    Mounted as: ~/tools/ (read-write, SELinux relabeled)")
     print(f"    Purpose: Reusable scripts and utilities built by agent")
-    
+
     # Sharing directory - for ALL persistent data
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
     sharing_container_path = f"/home/{os.environ['USER']}/sharing"
-    mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw")
+    # Add :z flag for SELinux systems
+    mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
-    print(f"    Mounted as: ~/sharing/ (read-write)")
+    print(f"    Mounted as: ~/sharing/ (read-write, SELinux relabeled)")
     print(f"    Purpose: ALL data that persists across rebuilds")
     print(f"    - Context documents (@save-context)")
     print(f"    - Code ready for review")

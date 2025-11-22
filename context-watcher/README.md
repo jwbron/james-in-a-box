@@ -45,7 +45,7 @@ mkdir -p ~/context-sync
 
 ```bash
 # Move config to the proper location
-cp ~/khan/cursor-sandboxed/.context-watcher/config/context-watcher.yaml ~/sharing/config/
+cp ~/khan/cursor-sandboxed/context-watcher/config/context-watcher.yaml ~/sharing/config/
 
 # Update the config with your details
 vi ~/sharing/config/context-watcher.yaml
@@ -146,7 +146,7 @@ Changes are considered relevant if they:
 ## File Structure
 
 ```
-~/khan/cursor-sandboxed/.context-watcher/
+~/khan/cursor-sandboxed/context-watcher/
 ├── config/
 │   └── context-watcher.yaml    # Configuration
 ├── tracking/
