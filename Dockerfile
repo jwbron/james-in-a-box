@@ -156,17 +156,6 @@ if [ -d "/usr/local/share/claude-commands" ]; then
     ls -1 "${USER_HOME}/.claude/commands/" | sed 's/.md$//' | sed 's/^/    @/'
 fi
 
-# Copy OAuth credentials if mounted from host
-if [ -f "/opt/host-claude-credentials.json" ]; then
-    cp /opt/host-claude-credentials.json "${USER_HOME}/.claude/.credentials.json"
-    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude/.credentials.json"
-    chmod 600 "${USER_HOME}/.claude/.credentials.json"
-    echo "✓ Claude OAuth credentials loaded from host"
-else
-    echo "⚠ No OAuth credentials found - you'll need to authenticate with browser"
-    echo "  After authenticating on host, credentials will auto-sync on next run"
-fi
-
 chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude"
 chmod 700 "${USER_HOME}/.claude"
 

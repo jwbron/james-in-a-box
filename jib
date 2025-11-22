@@ -536,14 +536,7 @@ def run_claude() -> bool:
     print("  Container cannot: Access host services, accept inbound connections")
     print()
 
-    # Mount Claude OAuth credentials if they exist on host
-    claude_creds = Path.home() / ".claude" / ".credentials.json"
-    if claude_creds.exists():
-        cmd.extend(["-v", f"{claude_creds}:/opt/host-claude-credentials.json:ro,z"])
-        info("Claude authentication: Using credentials from host ~/.claude/.credentials.json")
-    else:
-        info("Claude authentication: Will authenticate with browser on first run")
-        print("  Tip: After authenticating, credentials will auto-sync on next run")
+    info("Claude authentication: Will authenticate with browser on first run")
     print()
 
     # Add mount arguments
