@@ -1,0 +1,26 @@
+[Unit]
+Description=Slack Notifier - Monitor Claude sandbox and send Slack notifications
+Documentation=file:///home/jwies/khan/cursor-sandboxed/HOST-SLACK-NOTIFIER.md
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jwies/khan/cursor-sandboxed
+# Configuration loaded from ~/.config/slack-notifier/config.json
+ExecStart=/usr/bin/python3 /home/jwies/khan/cursor-sandboxed/scripts/host-notify-slack.py
+
+# Restart on failure
+Restart=on-failure
+RestartSec=30s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=slack-notifier
+
+# Resource limits
+Nice=10
+IOSchedulingClass=2
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=default.target

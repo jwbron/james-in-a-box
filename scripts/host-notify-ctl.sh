@@ -1,184 +1,227 @@
 #!/bin/bash
-# Host Slack Notifier Control Script
-# Manage the host-side Slack notification service
+# Control script for Slack notifier service
 
-set -euo pipefail
+set -e
 
-NOTIFIER_SCRIPT="${HOME}/khan/cursor-sandboxed/scripts/host-notify-slack.sh"
-LOCK_FILE="/tmp/claude-notify.lock"
-LOG_FILE="${HOME}/.claude-sandbox-notify/notify.log"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NOTIFIER_SCRIPT="${SCRIPT_DIR}/host-notify-slack.py"
+LOCK_FILE="/tmp/slack-notifier.lock"
+CONFIG_DIR="${HOME}/.config/slack-notifier"
+LOG_FILE="${CONFIG_DIR}/notifier.log"
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-usage() {
-    cat << EOF
-Usage: $0 {start|stop|restart|status|logs|tail}
+show_usage() {
+    cat <<EOF
+Usage: $0 <command>
 
 Commands:
-  start    - Start the Slack notifier in the background
-  stop     - Stop the Slack notifier
-  restart  - Restart the Slack notifier
-  status   - Check if the notifier is running
-  logs     - View the notifier log file
-  tail     - Tail the notifier log file
+    start       Start the Slack notifier
+    stop        Stop the Slack notifier
+    restart     Restart the Slack notifier
+    status      Show notifier status
+    logs        Show recent logs
+    tail        Follow logs in real-time
+    setup       Interactive setup
 
-Environment Variables:
-  SLACK_TOKEN  - Your Slack bot token (required)
-
-Example:
-  export SLACK_TOKEN=xoxb-your-token-here
-  $0 start
+Examples:
+    $0 start         # Start the notifier
+    $0 status        # Check if running
+    $0 logs          # View recent logs
 
 EOF
-    exit 1
 }
 
-start() {
-    if [ -z "${SLACK_TOKEN:-}" ]; then
-        echo -e "${RED}Error:${NC} SLACK_TOKEN environment variable not set"
-        echo "Please set your Slack bot token:"
-        echo "  export SLACK_TOKEN=xoxb-your-token-here"
-        echo ""
-        echo "To get a Slack bot token:"
-        echo "  1. Go to https://api.slack.com/apps"
-        echo "  2. Create a new app or select existing"
-        echo "  3. Go to 'OAuth & Permissions'"
-        echo "  4. Add bot token scopes: chat:write, channels:history"
-        echo "  5. Install app to workspace"
-        echo "  6. Copy the 'Bot User OAuth Token'"
-        exit 1
-    fi
-
+get_pid() {
     if [ -f "$LOCK_FILE" ]; then
-        PID=$(cat "$LOCK_FILE")
-        if kill -0 "$PID" 2>/dev/null; then
-            echo -e "${YELLOW}Notifier is already running${NC} (PID: $PID)"
-            return 1
-        else
-            echo "Removing stale lock file"
-            rm -f "$LOCK_FILE"
-        fi
+        cat "$LOCK_FILE"
     fi
+}
 
-    echo -e "${GREEN}Starting${NC} Slack notifier..."
-
-    # Export SLACK_TOKEN for the child process
-    export SLACK_TOKEN
-
-    nohup "$NOTIFIER_SCRIPT" > /dev/null 2>&1 &
-    sleep 2
-
-    if [ -f "$LOCK_FILE" ]; then
-        PID=$(cat "$LOCK_FILE")
-        echo -e "${GREEN}✓${NC} Notifier started (PID: $PID)"
-        echo "Logs: $LOG_FILE"
+is_running() {
+    local pid=$(get_pid)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
         return 0
-    else
-        echo -e "${RED}✗${NC} Failed to start notifier"
-        echo "Check logs: $LOG_FILE"
-        return 1
     fi
+    return 1
 }
 
-stop() {
-    if [ ! -f "$LOCK_FILE" ]; then
-        echo -e "${YELLOW}Notifier is not running${NC}"
-        return 1
-    fi
-
-    PID=$(cat "$LOCK_FILE")
-    if kill -0 "$PID" 2>/dev/null; then
-        echo -e "${YELLOW}Stopping${NC} notifier (PID: $PID)..."
-        kill "$PID"
-        sleep 1
-
-        # Force kill if still running
-        if kill -0 "$PID" 2>/dev/null; then
-            echo "Force killing..."
-            kill -9 "$PID"
-        fi
-
-        rm -f "$LOCK_FILE"
-        echo -e "${GREEN}✓${NC} Notifier stopped"
-    else
-        echo -e "${YELLOW}Notifier is not running${NC} (stale lock file)"
-        rm -f "$LOCK_FILE"
-    fi
-}
-
-status() {
-    if [ ! -f "$LOCK_FILE" ]; then
-        echo -e "${RED}✗${NC} Notifier is NOT running"
-        return 1
-    fi
-
-    PID=$(cat "$LOCK_FILE")
-    if kill -0 "$PID" 2>/dev/null; then
-        echo -e "${GREEN}✓${NC} Notifier is running (PID: $PID)"
-        echo "Log file: $LOG_FILE"
-
-        # Show recent activity
-        if [ -f "$LOG_FILE" ]; then
-            echo ""
-            echo "Recent activity:"
-            tail -5 "$LOG_FILE"
-        fi
-        return 0
-    else
-        echo -e "${RED}✗${NC} Notifier is NOT running (stale lock file)"
-        rm -f "$LOCK_FILE"
-        return 1
-    fi
-}
-
-logs() {
-    if [ -f "$LOG_FILE" ]; then
-        less "$LOG_FILE"
-    else
-        echo "No log file found at $LOG_FILE"
-        return 1
-    fi
-}
-
-tail_logs() {
-    if [ -f "$LOG_FILE" ]; then
-        tail -f "$LOG_FILE"
-    else
-        echo "No log file found at $LOG_FILE"
-        echo "Waiting for log file to be created..."
-        mkdir -p "$(dirname "$LOG_FILE")"
-        touch "$LOG_FILE"
-        tail -f "$LOG_FILE"
-    fi
-}
-
-# Main command handling
 case "${1:-}" in
     start)
-        start
+        if is_running; then
+            echo "⚠ Notifier is already running (PID: $(get_pid))"
+            exit 0
+        fi
+
+        # Check if config exists
+        if [ ! -f "${CONFIG_DIR}/config.json" ]; then
+            echo "⚠ No configuration found. Running setup..."
+            "$0" setup
+        fi
+
+        echo "Starting Slack notifier..."
+
+        # Start the notifier in the background
+        nohup python3 "$NOTIFIER_SCRIPT" >> "$LOG_FILE" 2>&1 &
+        local pid=$!
+
+        # Save PID
+        echo $pid > "$LOCK_FILE"
+
+        # Wait a moment to check if it started successfully
+        sleep 2
+        if is_running; then
+            echo "✓ Notifier started (PID: $pid)"
+            echo "  View logs: $0 tail"
+        else
+            echo "✗ Failed to start notifier"
+            echo "  Check logs: $0 logs"
+            exit 1
+        fi
         ;;
+
     stop)
-        stop
+        if ! is_running; then
+            echo "⚠ Notifier is not running"
+            rm -f "$LOCK_FILE"
+            exit 0
+        fi
+
+        local pid=$(get_pid)
+        echo "Stopping Slack notifier (PID: $pid)..."
+
+        kill "$pid" 2>/dev/null || true
+
+        # Wait for process to stop
+        local count=0
+        while kill -0 "$pid" 2>/dev/null && [ $count -lt 10 ]; do
+            sleep 1
+            count=$((count + 1))
+        done
+
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "⚠ Process did not stop gracefully, forcing..."
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+
+        rm -f "$LOCK_FILE"
+        echo "✓ Notifier stopped"
         ;;
+
     restart)
-        stop || true
-        sleep 1
-        start
+        "$0" stop
+        sleep 2
+        "$0" start
         ;;
+
     status)
-        status
+        echo "=== Slack Notifier Status ==="
+        if is_running; then
+            local pid=$(get_pid)
+            echo "✓ Notifier is running (PID: $pid)"
+            echo ""
+            echo "Process info:"
+            ps -p "$pid" -o pid,vsz,rss,etime,cmd --no-headers 2>/dev/null || echo "  (process info unavailable)"
+        else
+            echo "✗ Notifier is not running"
+            if [ -f "$LOCK_FILE" ]; then
+                echo "  (stale lock file found: $LOCK_FILE)"
+            fi
+        fi
+
+        echo ""
+        echo "=== Configuration ==="
+        if [ -f "${CONFIG_DIR}/config.json" ]; then
+            echo "Config file: ${CONFIG_DIR}/config.json"
+            echo "Permissions: $(stat -c '%a' "${CONFIG_DIR}/config.json" 2>/dev/null || stat -f '%A' "${CONFIG_DIR}/config.json" 2>/dev/null)"
+            echo ""
+            echo "Watched directories:"
+            python3 -c "import json; config=json.load(open('${CONFIG_DIR}/config.json')); print('\\n'.join('  - ' + d for d in config.get('watch_directories', [])))" 2>/dev/null || echo "  (unable to read config)"
+        else
+            echo "⚠ No config file found"
+            echo "  Run: $0 setup"
+        fi
+
+        echo ""
+        echo "=== Recent Activity ==="
+        if [ -f "$LOG_FILE" ]; then
+            tail -5 "$LOG_FILE" | sed 's/^/  /'
+        else
+            echo "  No log file yet"
+        fi
         ;;
+
     logs)
-        logs
+        if [ -f "$LOG_FILE" ]; then
+            tail -50 "$LOG_FILE"
+        else
+            echo "No log file found at: $LOG_FILE"
+        fi
         ;;
+
     tail)
-        tail_logs
+        if [ -f "$LOG_FILE" ]; then
+            echo "Following logs (Ctrl+C to stop)..."
+            tail -f "$LOG_FILE"
+        else
+            echo "No log file found at: $LOG_FILE"
+            exit 1
+        fi
         ;;
+
+    setup)
+        echo "=== Slack Notifier Setup ==="
+        echo ""
+
+        # Create config directory
+        mkdir -p "$CONFIG_DIR"
+        chmod 700 "$CONFIG_DIR"
+
+        # Get Slack token
+        if [ -n "$SLACK_TOKEN" ]; then
+            echo "Using SLACK_TOKEN from environment"
+            token="$SLACK_TOKEN"
+        else
+            echo "Enter your Slack Bot token (starts with xoxb-):"
+            echo "(Get from: https://api.slack.com/apps)"
+            read -r token
+        fi
+
+        if [ -z "$token" ]; then
+            echo "Error: No token provided"
+            exit 1
+        fi
+
+        # Get Slack channel
+        echo ""
+        echo "Enter Slack channel/DM ID [D04CMDR7LBT]:"
+        read -r channel
+        channel=${channel:-"D04CMDR7LBT"}
+
+        # Create config
+        cat > "${CONFIG_DIR}/config.json" <<EOF
+{
+  "slack_token": "$token",
+  "slack_channel": "$channel",
+  "batch_window_seconds": 30,
+  "watch_directories": [
+    "$HOME/.claude-sandbox-sharing",
+    "$HOME/.claude-sandbox-tools"
+  ]
+}
+EOF
+        chmod 600 "${CONFIG_DIR}/config.json"
+
+        echo ""
+        echo "✓ Configuration saved to: ${CONFIG_DIR}/config.json"
+        echo "  Permissions: 600 (secure)"
+        echo ""
+        echo "Next steps:"
+        echo "  1. Review config: cat ${CONFIG_DIR}/config.json"
+        echo "  2. Start notifier: $0 start"
+        echo "  3. Test: echo 'test' > ~/.claude-sandbox-sharing/test.txt"
+        ;;
+
     *)
-        usage
+        show_usage
+        exit 1
         ;;
 esac
