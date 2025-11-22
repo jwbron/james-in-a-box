@@ -211,8 +211,8 @@ fi
 # Start incoming-watcher in background (if configured)
 if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh" ]; then
     echo "Starting incoming message watcher in background..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "nohup ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh >> ${USER_HOME}/sharing/tracking/incoming-watcher.log 2>&1 &"
-    echo "✓ Incoming watcher started (monitoring ~/sharing/incoming/ and ~/sharing/responses/)"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "CHECK_INTERVAL=5 nohup ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh >> ${USER_HOME}/sharing/tracking/incoming-watcher.log 2>&1 &"
+    echo "✓ Incoming watcher started (checking every 5 seconds for new messages)"
 else
     echo "⚠ Incoming watcher script not found at ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh"
 fi

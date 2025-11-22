@@ -22,6 +22,12 @@ STATE_FILE="${STATE_DIR}/incoming-watcher.state"
 LOG_FILE="${STATE_DIR}/incoming-watcher.log"
 CLAUDE_LOG_FILE="${STATE_DIR}/claude-tasks.log"
 
+# Configurable polling interval (seconds)
+# How often to check for new messages from Slack
+# Lower = faster response to messages, Higher = less CPU usage
+# Default: 10 seconds, can be overridden via environment variable
+CHECK_INTERVAL="${CHECK_INTERVAL:-10}"
+
 # Ensure directories exist
 mkdir -p "$INCOMING_DIR" "$RESPONSES_DIR" "$STATE_DIR" "$TASK_OUTPUT_DIR"
 
@@ -315,13 +321,15 @@ watch_directories() {
         fi
 
         # Sleep before next check
-        sleep 10
+        sleep "$CHECK_INTERVAL"
     done
 }
 
 # Main execution
 log "=== Incoming Message Watcher Started ==="
 log "PID: $$"
+log "Monitoring: ${INCOMING_DIR} and ${RESPONSES_DIR}"
+log "Check interval: ${CHECK_INTERVAL} seconds"
 
 # Trap signals for graceful shutdown
 trap 'log "Received shutdown signal, exiting..."; exit 0' SIGTERM SIGINT
