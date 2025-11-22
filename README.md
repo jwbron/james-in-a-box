@@ -53,14 +53,14 @@ exit
 ## Key Features
 
 ### ✅ What Claude CAN Do
-- Edit code in `~/khan/` workspace
-- Run tests, linters, development servers
-- Make local git commits
+- Read code from `~/khan/` for analysis and context
+- Propose code changes in `~/sharing/staged-changes/` for your review
+- Run tests and analysis tools (read-only access to code)
 - Read context sources: Confluence docs, JIRA tickets, and more
 - Install packages and tools
 - Build reusable scripts in `~/tools/`
-- Save work to `~/sharing/` (persists across rebuilds)
-- Prepare PR artifacts (code, commits, descriptions)
+- Create detailed change proposals with documentation
+- Generate analysis and recommendations
 
 ### ❌ What Claude CANNOT Do
 - Push to git remotes (no SSH keys)
@@ -74,16 +74,19 @@ exit
 ### Security Model
 
 **Mounted from Host:**
-- `~/khan/` - Main workspace (read-write, live sync with host)
-  - Specific subdirectories mounted: `actions/`, `buildmaster2/`, `cursor-sandboxed/`, `frontend/`, `internal-services/`, `jenkins-jobs/`, `terraform-modules/`, `webapp/`
-  - Only these directories are accessible for security and performance
+- `~/khan/` - Main workspace (READ-ONLY)
+  - Contains entire codebase for reference
+  - Read-only to prevent interference with systemd jobs on host
+  - Agent stages modifications in `~/sharing/staged-changes/` for review
 - `~/.claude/.credentials.json` - OAuth only (read-only)
 - `~/context-sync/` - Context sources (read-only)
   - `confluence/` - Documentation (ADRs, runbooks, best practices)
   - `jira/` - JIRA tickets and issue context
   - (future: GitHub PRs, Slack, email)
 - `~/tools/` - Reusable scripts (read-write, persists)
-- `~/sharing/` - Work products and context docs (read-write, persists)
+- `~/sharing/` - Staged changes and persistent data (read-write, persists)
+  - `staged-changes/` - Code modifications for human review
+  - `context/` - Context documents
 
 **Blocked (Never Accessible):**
 - `~/.ssh` - No git push capability
@@ -100,7 +103,7 @@ exit
 
 ```
 Inside Container:
-  ~/khan/                      Code workspace (specific subdirs MOUNTED rw)
+  ~/khan/                      Code reference (MOUNTED ro)
     ├── actions/
     ├── buildmaster2/
     ├── cursor-sandboxed/
@@ -108,13 +111,15 @@ Inside Container:
     ├── internal-services/
     ├── jenkins-jobs/
     ├── terraform-modules/
-    └── webapp/
+    ├── webapp/
+    └── ... (entire codebase, read-only)
   ~/context-sync/              Context sources (MOUNTED ro)
     ├── confluence/            Confluence docs (ADRs, runbooks)
     ├── jira/                  JIRA tickets and issues
     └── logs/                  Sync logs
   ~/tools/                     Reusable scripts (MOUNTED rw)
   ~/sharing/                   Persistent data (MOUNTED rw)
+    ├── staged-changes/        Code modifications for review
     └── context/               Context documents
   ~/tmp/                       Scratch space (ephemeral)
   ~/CLAUDE.md                  Mission + environment rules
@@ -243,25 +248,32 @@ You: "Implement OAuth2 flow following ADR-012 for JIRA-1234"
 # Claude works autonomously:
 # - Reads ADR-012 from context-sync/confluence/
 # - Reviews JIRA-1234 from context-sync/jira/
-# - Implements feature
-# - Writes tests
-# - Updates documentation
-# - Commits locally
+# - Reads existing code from ~/khan/ (read-only)
+# - Creates modified files in ~/sharing/staged-changes/webapp/
+# - Writes tests and documentation
+# - Creates clear summary of changes for your review
 
-# 4. Generate PR description
-You: "Prepare the PR"
-@create-pr audit
+# 4. Review staged changes
+You: "Show me what you created"
+Claude: "Changes staged in ~/sharing/staged-changes/webapp/"
 
 # 5. Save learnings
 @save-context auth-service
 
-# 6. Exit, open PR, and review (on host)
+# 6. Exit and apply changes (on host)
 exit
-cd ~/khan/
-git log  # Review Claude's commits
+
+# On host: Review and apply changes
+cd ~/.claude-sandbox-sharing/staged-changes/webapp/
+cat README.md  # Read Claude's documentation
+# Review code changes
+# Apply to actual repo:
+cp *.py ~/khan/webapp/
+cd ~/khan/webapp/
+git add .
+git commit -m "Add OAuth2 support (JIRA-1234)"
 git push origin feature-branch
-# Open PR on GitHub with generated description
-# Review, approve, and merge
+# Open PR on GitHub
 ```
 
 ## Philosophy

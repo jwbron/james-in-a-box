@@ -100,18 +100,10 @@ fi
 export HOME="${USER_HOME}"
 export USER="${RUNTIME_USER}"
 
-# Create khan directory structure (subdirectories mounted from host at runtime)
-mkdir -p "${USER_HOME}/khan"
-chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/khan"
-
-# Check if khan subdirectories are mounted
+# Khan directory is mounted READ-ONLY from host at runtime
 if [ -d "${USER_HOME}/khan" ]; then
-    khan_count=$(find "${USER_HOME}/khan" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
-    if [ "$khan_count" -gt 0 ]; then
-        echo "✓ Khan workspace mounted: $khan_count subdirectories from host"
-    else
-        echo "⚠ Khan directory exists but no subdirectories mounted"
-    fi
+    echo "✓ Khan workspace mounted (READ-ONLY for reference)"
+    echo "  Agent stages changes in ~/sharing/ for your review"
 else
     echo "⚠ Khan workspace not found - check mount configuration"
 fi
@@ -225,12 +217,13 @@ if [ $# -eq 0 ]; then
     echo "  5. @save-context <project>         # Save learnings"
     echo ""
     echo "📚 Available Resources:"
-    echo "  • Workspace: ~/khan/                      (main code, MOUNTED rw)"
+    echo "  • Workspace: ~/khan/                      (code reference, MOUNTED ro)"
     echo "  • Context: ~/context-sync/                (context sources, MOUNTED ro)"
     echo "    - ~/context-sync/confluence/            (ADRs, runbooks, docs)"
     echo "    - ~/context-sync/jira/                  (JIRA tickets, issues)"
     echo "  • Tools: ~/tools/                         (reusable scripts, MOUNTED rw)"
     echo "  • Sharing: ~/sharing/                     (persistent data, MOUNTED rw)"
+    echo "    - ~/sharing/staged-changes/             (code changes for review)"
     echo "    - ~/sharing/context/                    (context docs)"
     echo "    - ~/sharing/<any-dir>/                  (your persistent files)"
     echo "  • Tmp: ~/tmp/                             (scratch space, ephemeral)"
@@ -242,12 +235,12 @@ if [ $# -eq 0 ]; then
     echo "  (Installed in ~/.claude/commands/)"
     echo ""
     echo "💡 Tips:"
-    echo "  • No permission prompts - fully autonomous in sandbox"
+    echo "  • ~/khan/ is READ-ONLY - stage changes in ~/sharing/staged-changes/"
+    echo "  • Human reviews and applies changes from ~/sharing/ to host repos"
     echo "  • Check context-sync/ for Confluence docs, JIRA tickets, etc."
     echo "  • Save context after significant work to build knowledge"
     echo "  • Use ~/sharing/ for ANYTHING that must persist across rebuilds"
     echo "  • Ask clarifying questions when requirements are unclear"
-    echo "  • Test thoroughly before creating PRs"
     echo ""
     echo "🔒 Security:"
     echo "  • Bridge network (isolated from host services)"

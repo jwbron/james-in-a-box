@@ -70,22 +70,27 @@ You: Let's add OAuth2 authentication to the user service for JIRA-1234
 
 Claude: I'll help you with that. Let me first check our ADRs and the JIRA ticket...
 [Claude explores context-sync/confluence/ and context-sync/jira/, reviews ADR-012 and JIRA-1234]
+[Claude reads current code from ~/khan/webapp/ (read-only)]
 
-Claude: According to ADR-012 and JIRA-1234 requirements, we use... I'll implement the flow.
-[Claude works autonomously - edits code, writes tests]
+Claude: According to ADR-012 and JIRA-1234 requirements, I'll create the implementation.
+[Claude copies files to ~/sharing/staged-changes/webapp/]
+[Claude modifies the staged copies, writes tests, creates documentation]
 
-You: Run the tests
+You: Show me what you created
 
-Claude: [Executes test suite, shows results]
-
-You: Looks good. Create a PR
-
-Claude: [Analyzes commits, generates description]
-✅ PR created: feature/oauth2-auth
+Claude: Changes are in ~/sharing/staged-changes/webapp/:
+- server.py - Added OAuth2 middleware
+- models.py - Added User.oauth_token field
+- tests/test_oauth.py - Full test coverage
+- README.md - Implementation summary and how to apply
 
 You: Save what we learned
 
 Claude: ✅ Saved Session 2 to ~/sharing/context/auth-work.md
+
+# On host, you review and apply:
+cd ~/.claude-sandbox-sharing/staged-changes/webapp/
+# Review changes, then apply to actual repo
 ```
 
 ## Custom Commands
@@ -153,21 +158,23 @@ Flags:
 ### Inside Container
 
 ```
-~/khan/                      Your workspace (specific subdirs MOUNTED rw)
-  ├── actions/               (MOUNTED from host)
-  ├── buildmaster2/          (MOUNTED from host)
-  ├── cursor-sandboxed/      (MOUNTED from host)
-  ├── frontend/              (MOUNTED from host)
-  ├── internal-services/     (MOUNTED from host)
-  ├── jenkins-jobs/          (MOUNTED from host)
-  ├── terraform-modules/     (MOUNTED from host)
-  └── webapp/                (MOUNTED from host)
+~/khan/                      Code reference (MOUNTED ro - READ ONLY!)
+  ├── actions/
+  ├── buildmaster2/
+  ├── cursor-sandboxed/
+  ├── frontend/
+  ├── internal-services/
+  ├── jenkins-jobs/
+  ├── terraform-modules/
+  ├── webapp/
+  └── ... (entire codebase for reference)
 ~/context-sync/              Context sources (MOUNTED ro)
   ├── confluence/            Confluence docs (ADRs, runbooks)
   ├── jira/                  JIRA tickets and issues
   └── logs/                  Sync logs
 ~/tools/                     Reusable scripts (MOUNTED rw)
 ~/sharing/                   Persistent data (MOUNTED rw)
+  ├── staged-changes/        CODE CHANGES GO HERE (for review)
   └── context/               Context documents
 ~/tmp/                       Scratch space (ephemeral)
 ```
@@ -184,9 +191,10 @@ Flags:
 ### What Persists
 
 ✅ **Always persists** (mounted from host):
-- `~/khan/` - Specific subdirectories only (actions, buildmaster2, cursor-sandboxed, frontend, internal-services, jenkins-jobs, terraform-modules, webapp)
+- `~/khan/` - Entire codebase (READ-ONLY, for reference)
 - `~/tools/` - Your reusable scripts
-- `~/sharing/` - Context docs, work products
+- `~/sharing/` - Staged changes, context docs, work products
+  - `~/sharing/staged-changes/` - Where Claude puts modified code for your review
 
 ❌ **Lost on container exit** (ephemeral):
 - `~/tmp/` - Scratch files (container-only)
@@ -197,14 +205,13 @@ Flags:
 ## What Claude Can/Cannot Do
 
 ### ✅ Claude CAN:
-- Read and edit code in `~/khan/`
-- Run tests, linters, servers
-- Make local git commits
+- Read code from `~/khan/` (read-only reference)
+- Propose changes in `~/sharing/staged-changes/` for your review
+- Run tests and analysis (read-only code access)
 - Read context sources (Confluence docs, JIRA tickets, etc.)
 - Install packages (`apt`, `pip`, `npm`)
 - Build tools in `~/tools/`
-- Save to `~/sharing/`
-- Create PRs
+- Document and explain proposed changes
 
 ### ❌ Claude CANNOT:
 - `git push` (no SSH keys)
@@ -216,14 +223,20 @@ Flags:
 ### 👤 YOU Handle (on host):
 
 ```bash
-# Push commits
+# Review Claude's staged changes
+cd ~/.claude-sandbox-sharing/staged-changes/
+
+# Apply approved changes
+cp webapp/*.py ~/khan/webapp/
+
+# Commit and push
+cd ~/khan/webapp/
+git add .
+git commit -m "Add OAuth2 support"
 git push origin my-branch
 
 # Deploy
 gcloud app deploy
-
-# Access secrets
-gcloud secrets access ...
 ```
 
 ## Typical Workflows

@@ -67,14 +67,43 @@ These commands are installed in `~/.claude/commands/` and available as slash com
 
 ## File System Layout
 
-### `~/khan/` - Main Workspace
-**Purpose**: Your primary codebase
-**Access**: Read-write
-**Persistence**: Mounted from host (live sync)
-**Usage**:
-- Edit code, create commits, run tests
-- Changes immediately visible on host
-- Human reviews and pushes from host
+### `~/khan/` - Main Workspace (READ-ONLY)
+**Purpose**: Code reference for understanding the codebase
+**Access**: Read-only
+**Persistence**: Mounted from host
+**Why read-only**: Prevents interference with systemd jobs running on host
+
+**IMPORTANT WORKFLOW**:
+You CANNOT modify files in `~/khan/` directly. Instead:
+
+1. **Read** - Explore `~/khan/` to understand code structure and context
+2. **Copy** - Copy files you want to modify to `~/sharing/staged-changes/<repo-name>/`
+3. **Modify** - Make your changes in `~/sharing/staged-changes/`
+4. **Document** - Create a clear summary of changes for human review
+5. **Human applies** - Human reviews and manually applies approved changes to host
+
+**Example workflow**:
+```bash
+# 1. Read code for context
+cat ~/khan/webapp/server.py
+
+# 2. Copy to staging area
+mkdir -p ~/sharing/staged-changes/webapp
+cp ~/khan/webapp/server.py ~/sharing/staged-changes/webapp/
+
+# 3. Modify the staged copy
+vim ~/sharing/staged-changes/webapp/server.py
+
+# 4. Document changes
+cat > ~/sharing/staged-changes/webapp/CHANGES.md <<EOF
+## Changes to server.py
+- Added OAuth2 authentication
+- Fixed timeout handling
+- See: JIRA-1234
+EOF
+
+# 5. Tell human changes are ready for review
+```
 
 ### `~/context-sync/` - Context Sources
 **Purpose**: Multi-source context and knowledge base
@@ -115,30 +144,54 @@ cat ~/context-sync/confluence/INFRA/runbooks/
 - Store development utilities
 **See**: `tools-guide.md` for comprehensive guide
 
-### `~/sharing/` - Persistent Data & Handoff
-**Purpose**: ALL data that must persist across container rebuilds
+### `~/sharing/` - Persistent Data & Staging Area
+**Purpose**: ALL data that must persist across container rebuilds, including staged code changes
 **Access**: Read-write
 **Persistence**: Mounted from host (`~/.claude-sandbox-sharing/`)
 **What goes here**:
-- Context documents (`@save-context` / `@load-context`)
-- Code ready for human review
+- **`~/sharing/staged-changes/`** - Modified code for human review (PRIMARY USE)
+- **`~/sharing/context/`** - Context documents (`@save-context` / `@load-context`)
 - Pull request artifacts
 - Analysis reports
 - Any work product that should survive rebuilds
 
-**Usage**:
+**Critical Usage for Code Changes**:
 ```bash
-# Save context documents (persists across rebuilds)
-mkdir -p ~/sharing/context/
-# @save-context and @load-context use ~/sharing/context/
+# THIS IS HOW YOU MODIFY CODE (~/khan/ is read-only!)
 
-# Copy code ready for human review
-cp -r ~/khan/feature-branch ~/sharing/feature-branch-ready
+# 1. Create staging area for a repo
+mkdir -p ~/sharing/staged-changes/webapp
 
-# Human can access at ~/.claude-sandbox-sharing/ on host
+# 2. Copy files you want to modify
+cp ~/khan/webapp/server.py ~/sharing/staged-changes/webapp/
+cp ~/khan/webapp/models.py ~/sharing/staged-changes/webapp/
+
+# 3. Make your changes
+vim ~/sharing/staged-changes/webapp/server.py
+
+# 4. Document what changed and why
+cat > ~/sharing/staged-changes/webapp/README.md <<EOF
+## Changes for JIRA-1234: Add OAuth2 Support
+
+### Files Modified
+- server.py: Added OAuth2 middleware
+- models.py: Added User.oauth_token field
+
+### Testing
+- Unit tests passing (see test_oauth.py)
+- Tested with Google OAuth provider
+
+### How to Apply
+cp ~/sharing/staged-changes/webapp/* ~/khan/webapp/
+EOF
+
+# 5. Tell human
+echo "Changes staged in ~/sharing/staged-changes/webapp/ - ready for review"
 ```
 
-**Important**: Files in `~/khan/`, `~/tmp/`, and container filesystem are LOST on rebuild. Use `~/sharing/` for anything that must persist!
+**Human access**: `~/.claude-sandbox-sharing/staged-changes/` on host
+
+**Important**: `~/khan/` is READ-ONLY. ALL code modifications must go through `~/sharing/staged-changes/`!
 
 ### `~/tmp/` - Scratch Space
 **Purpose**: Temporary work, not persisted

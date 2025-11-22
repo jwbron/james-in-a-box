@@ -57,17 +57,8 @@ class Config:
     TOOLS_DIR = Path.home() / ".claude-sandbox-tools"
     SHARING_DIR = Path.home() / ".claude-sandbox-sharing"
 
-    # Specific Khan subdirectories to mount (instead of entire ~/khan/)
-    KHAN_SUBDIRS = [
-        "actions",
-        "buildmaster2",
-        "cursor-sandboxed",
-        "frontend",
-        "internal-services",
-        "jenkins-jobs",
-        "terraform-modules",
-        "webapp",
-    ]
+    # Note: ~/khan/ is mounted READ-ONLY to prevent interference with systemd jobs
+    # Agent stages changes in ~/sharing/ for human review and manual application
 
     # Directories that are dangerous to mount (contain credentials)
     DANGEROUS_DIRS = [
@@ -321,34 +312,15 @@ def setup() -> bool:
     Config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     mounts = []
 
-    # Khan subdirectories - mount specific directories instead of entire ~/khan/
+    # Khan directory - mount READ-ONLY to prevent interference with systemd jobs
     if Config.KHAN_SOURCE.exists():
-        info(f"Khan workspace: Mounting specific subdirectories from {Config.KHAN_SOURCE}")
-
-        # Create ~/khan directory mount point
-        khan_container_base = f"/home/{os.environ['USER']}/khan"
-
-        mounted_count = 0
-        missing_dirs = []
-
-        for subdir in Config.KHAN_SUBDIRS:
-            subdir_host = Config.KHAN_SOURCE / subdir
-            subdir_container = f"{khan_container_base}/{subdir}"
-
-            if subdir_host.exists():
-                # Add :z flag for SELinux systems (Fedora, RHEL, etc.)
-                mounts.append(f"{subdir_host}:{subdir_container}:rw,z")
-                mounted_count += 1
-                print(f"  ✓ {subdir}")
-            else:
-                missing_dirs.append(subdir)
-
-        if mounted_count > 0:
-            print(f"\n    Mounted {mounted_count} subdirectories to ~/khan/ (read-write, SELinux relabeled)")
-            print(f"    Purpose: Main workspace - all changes persist to host immediately")
-
-        if missing_dirs:
-            print(f"\n  ⚠ Skipped (not found): {', '.join(missing_dirs)}")
+        khan_container_path = f"/home/{os.environ['USER']}/khan"
+        # Mount as read-only with SELinux relabeling
+        mounts.append(f"{Config.KHAN_SOURCE}:{khan_container_path}:ro,z")
+        info(f"Khan workspace: {Config.KHAN_SOURCE}")
+        print(f"    Mounted as: ~/khan/ (READ-ONLY, SELinux relabeled)")
+        print(f"    Purpose: Code reference - agent reads for context")
+        print(f"    Changes: Agent stages modifications in ~/sharing/ for your review")
     else:
         warn(f"{Config.KHAN_SOURCE} not found - workspace will not be available")
 
