@@ -217,6 +217,16 @@ else
     echo "⚠ Incoming watcher script not found at ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh"
 fi
 
+# Run codebase analyzer on startup (if configured)
+# Checks if analysis was run in last 7 days before running
+if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/codebase-analyzer.py" ]; then
+    echo "Running codebase analyzer (checks if run in last week)..."
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME} && python3 ${USER_HOME}/khan/cursor-sandboxed/scripts/codebase-analyzer.py >> ${USER_HOME}/sharing/tracking/analyzer.log 2>&1 &"
+    echo "✓ Codebase analyzer started (weekly analysis + web research)"
+else
+    echo "⚠ Codebase analyzer script not found at ${USER_HOME}/khan/cursor-sandboxed/scripts/codebase-analyzer.py"
+fi
+
 # Drop privileges and start shell or run claude
 if [ $# -eq 0 ]; then
     echo ""

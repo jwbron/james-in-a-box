@@ -1,0 +1,23 @@
+[Unit]
+Description=Weekly Codebase Improvement Analysis Timer
+Documentation=https://github.com/jwiesebron/cursor-sandboxed
+Requires=codebase-analyzer.service
+
+[Timer]
+# Run weekly on Monday at 11:00 AM (assumes system timezone is set to America/Los_Angeles)
+OnCalendar=Mon *-*-* 11:00:00
+
+# Run 5 minutes after system boot (script checks if already run this week)
+OnBootSec=5min
+
+# If system was off when timer should have run, run it on next boot
+Persistent=true
+
+# Randomize start time by up to 5 minutes to avoid resource spikes
+RandomizedDelaySec=5min
+
+# Timer unit to activate
+Unit=codebase-analyzer.service
+
+[Install]
+WantedBy=timers.target

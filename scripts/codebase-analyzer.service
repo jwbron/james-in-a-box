@@ -1,0 +1,37 @@
+[Unit]
+Description=Codebase Improvement Analyzer
+Documentation=https://github.com/jwiesebron/cursor-sandboxed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=jwies
+Group=jwies
+
+# Environment
+Environment="ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
+
+# Working directory
+WorkingDirectory=/home/jwies/khan/cursor-sandboxed/scripts
+
+# Execute the analyzer
+ExecStart=/usr/bin/python3 /home/jwies/khan/cursor-sandboxed/scripts/codebase-analyzer.py
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=codebase-analyzer
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/jwies/.claude-sandbox-sharing/notifications
+
+# Restart behavior
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
