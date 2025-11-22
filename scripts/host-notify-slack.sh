@@ -13,7 +13,7 @@ WATCH_DIRS=(
 )
 
 # State and logging
-STATE_DIR="${HOME}/.claude-sandbox-notify"
+STATE_DIR="${HOME}/.jib-notify"
 STATE_FILE="${STATE_DIR}/notify-state.json"
 LOG_FILE="${STATE_DIR}/notify.log"
 LOCK_FILE="/tmp/claude-notify.lock"

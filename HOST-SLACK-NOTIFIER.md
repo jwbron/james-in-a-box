@@ -306,7 +306,7 @@ Your Slack app needs the `chat:write` scope. Go to your app settings and add it 
 
 Check the logs:
 ```bash
-cat ~/.claude-sandbox-notify/notify.log
+cat ~/.jib-notify/notify.log
 ```
 
 Common issues:
@@ -320,8 +320,8 @@ Common issues:
 
 - **Main Script**: `~/khan/james-in-a-box/scripts/host-notify-slack.sh`
 - **Control Script**: `~/khan/james-in-a-box/scripts/host-notify-ctl.sh`
-- **State Directory**: `~/.claude-sandbox-notify/`
-- **Log File**: `~/.claude-sandbox-notify/notify.log`
+- **State Directory**: `~/.jib-notify/`
+- **Log File**: `~/.jib-notify/notify.log`
 - **Lock File**: `/tmp/claude-notify.lock`
 
 ### Watched Directories
