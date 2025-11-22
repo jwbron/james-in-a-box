@@ -6,13 +6,16 @@ set -euo pipefail
 
 # Configuration
 CONTEXT_DIR="${HOME}/context-sync"
-CONFIG_FILE="${HOME}/sharing/config/context-watcher.yaml"
-STATE_FILE="${HOME}/sharing/tracking/watcher-state.json"
-LOG_FILE="${HOME}/sharing/tracking/watcher.log"
+CONFIG_DIR="${HOME}/.config/context-watcher"
+CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+STATE_FILE="${CONFIG_DIR}/watcher-state.json"
+LOG_FILE="${CONFIG_DIR}/watcher.log"
 LOCK_FILE="/tmp/context-watcher.lock"
+NOTIFICATIONS_DIR="${HOME}/.claude-sandbox-sharing/notifications"
 
 # Ensure directories exist
-mkdir -p "$(dirname "$STATE_FILE")" "$(dirname "$LOG_FILE")" "$CONTEXT_DIR"
+mkdir -p "$CONFIG_DIR" "$CONTEXT_DIR" "$NOTIFICATIONS_DIR"
+chmod 700 "$CONFIG_DIR"  # Secure permissions for config directory
 
 # Logging function
 log() {
@@ -125,7 +128,7 @@ EOF
     # Run Claude analysis
     cd "${HOME}/khan/cursor-sandboxed" || cd "$HOME"
 
-    if claude --prompt-file "$prompt_file" --output-dir ~/sharing/notifications >> "$LOG_FILE" 2>&1; then
+    if claude --prompt-file "$prompt_file" --output-dir "$NOTIFICATIONS_DIR" >> "$LOG_FILE" 2>&1; then
         log "Analysis completed successfully"
     else
         local exit_code=$?
@@ -147,7 +150,7 @@ while true; do
     CHANGED_FILES=$(get_changed_files "$LAST_CHECK")
 
     if [ -n "$CHANGED_FILES" ]; then
-        local num=$(echo "$CHANGED_FILES" | grep -c '^' || echo "0")
+        num=$(echo "$CHANGED_FILES" | grep -c '^' || echo "0")
         log "Detected $num changed file(s)"
 
         # Wait for batch window

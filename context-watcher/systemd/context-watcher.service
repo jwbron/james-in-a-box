@@ -1,0 +1,32 @@
+[Unit]
+Description=Context Watcher - Monitor context changes and trigger Claude analysis
+Documentation=file:///home/jwies/khan/cursor-sandboxed/context-watcher/README.md
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jwies/khan/cursor-sandboxed
+Environment="PATH=/home/jwies/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/jwies"
+# Configuration loaded from ~/khan/cursor-sandboxed/context-watcher/config/context-watcher.yaml
+ExecStart=/home/jwies/khan/cursor-sandboxed/scripts/context-watcher.sh
+
+# Restart on failure
+Restart=on-failure
+RestartSec=30s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=context-watcher
+
+# Resource limits
+Nice=10
+IOSchedulingClass=2
+IOSchedulingPriority=7
+
+# Security hardening (optional)
+# PrivateTmp=true
+# NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
