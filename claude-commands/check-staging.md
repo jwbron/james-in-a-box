@@ -1,22 +1,58 @@
-# Check Staging - Pull Changes from Staging Directory
+# Check Staging - Review and Pull Staged Changes
 
-You are reviewing and integrating code changes from the container's staging directory.
+You are reviewing staged changes and optionally pulling them into the repository.
 
 **IMPORTANT**: This command runs on the HOST machine, not in the container.
 
 ## Your Task
-
-Follow these steps to safely pull in staged changes:
 
 ### 1. Check for Staged Changes
 
 First, list what's in the staging directory:
 
 ```bash
+echo "=== Staged Changes ==="
 ls -la ~/.claude-sandbox-sharing/staged-changes/
 ```
 
 If empty, report: "No staged changes found" and exit.
+
+### 2. Show Summary of Each Staged Project
+
+For each project, show what's staged:
+
+```bash
+for project in ~/.claude-sandbox-sharing/staged-changes/*/; do
+    if [ -d "$project" ]; then
+        echo ""
+        echo "=== $(basename "$project") ==="
+
+        # Show STAGED-FILES-SUMMARY.md if it exists
+        if [ -f "$project/STAGED-FILES-SUMMARY.md" ]; then
+            cat "$project/STAGED-FILES-SUMMARY.md"
+        elif [ -f "$project/CHANGES.md" ]; then
+            cat "$project/CHANGES.md"
+        else
+            echo "Files:"
+            find "$project" -type f -printf "  %P\n" | sort
+        fi
+    fi
+done
+```
+
+### 3. Ask User to Proceed
+
+After showing the summaries, ask:
+
+**"Do you want to pull these changes into the repository? (yes/no)"**
+
+If user says **no**, stop here and report: "Staged changes left in place. Run `@check-staging` again when ready to apply them."
+
+If user says **yes**, continue with the steps below:
+
+---
+
+## Applying Changes (Only if User Approved)
 
 ### 2. Archive Current Staging
 
@@ -41,11 +77,13 @@ cd "$ARCHIVE_DIR"
 for project in */; do
     echo "=== Reviewing: $project ==="
 
-    # Check for CHANGES.md (required)
-    if [ -f "$project/CHANGES.md" ]; then
+    # Check for CHANGES.md or STAGED-FILES-SUMMARY.md (required)
+    if [ -f "$project/STAGED-FILES-SUMMARY.md" ]; then
+        cat "$project/STAGED-FILES-SUMMARY.md"
+    elif [ -f "$project/CHANGES.md" ]; then
         cat "$project/CHANGES.md"
     else
-        echo "⚠️ WARNING: No CHANGES.md found in $project"
+        echo "⚠️ WARNING: No CHANGES.md or STAGED-FILES-SUMMARY.md found in $project"
         echo "This is required documentation - please ask user how to proceed"
     fi
 
@@ -73,10 +111,10 @@ PROJECT_NAME="cursor-sandboxed"  # or whatever the project is
 SOURCE_DIR="$ARCHIVE_DIR/$PROJECT_NAME"
 TARGET_DIR="$HOME/khan/$PROJECT_NAME"
 
-# Copy files (excluding CHANGES.md - that's for reference only)
+# Copy files (excluding documentation files - those are for reference only)
 echo "Copying from $SOURCE_DIR to $TARGET_DIR"
 
-for file in $(find "$SOURCE_DIR" -type f ! -name "CHANGES.md"); do
+for file in $(find "$SOURCE_DIR" -type f ! -name "CHANGES.md" ! -name "STAGED-FILES-SUMMARY.md"); do
     REL_PATH=${file#$SOURCE_DIR/}
     TARGET_FILE="$TARGET_DIR/$REL_PATH"
 
