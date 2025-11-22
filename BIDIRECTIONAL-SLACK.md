@@ -151,7 +151,7 @@ Claude picks up task when you start conversation
 ```
 
 **Important**:
-- Bot **monitors** your self-DM channel (`D04CMDR7LBT`) for `claude:` prefix
+- Bot **monitors** your self-DM channel (`<YOUR-CHANNEL-ID>`) for `claude:` prefix
 - Bot **writes acknowledgments** back to your self-DM (same channel)
 - All task communication happens in your self-DM
 - Bot's own DM channel stays clean for notifications only
@@ -627,7 +627,7 @@ CLAUDE: refactor auth service
 ```
 
 **How it works**:
-- Bot monitors your self-DM channel (D04CMDR7LBT)
+- Bot monitors your self-DM channel (<YOUR-CHANNEL-ID>)
 - Detects messages starting with `claude:` (case insensitive)
 - Writes acknowledgment back to your self-DM
 - All task communication stays in self-DM
@@ -641,7 +641,7 @@ CLAUDE: refactor auth service
 ### Bot Access and Privacy
 
 **What the bot can access**:
-- ✅ Your self-DM channel (`D04CMDR7LBT`) - only monitors for `claude:` prefix
+- ✅ Your self-DM channel (`<YOUR-CHANNEL-ID>`) - only monitors for `claude:` prefix
 - ✅ Direct messages TO the bot - for thread replies to notifications
 - ✅ Thread parent messages - to extract notification timestamps
 
@@ -651,7 +651,7 @@ CLAUDE: refactor auth service
 - ❌ Your self-DM messages without `claude:` prefix (ignored)
 
 **Where bot writes**:
-- Your self-DM (`D04CMDR7LBT`) - task acknowledgments
+- Your self-DM (`<YOUR-CHANNEL-ID>`) - task acknowledgments
 - Bot's DM with you - notification messages (from Claude)
 
 ## Next Steps

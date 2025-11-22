@@ -14,7 +14,24 @@ Automated workflow to create a pull request by analyzing git history and generat
 ## Workflow Steps
 
 ### 1. Check Current Branch
+
+**ERROR HANDLING**: Verify we're in a git repository first:
+```bash
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "❌ Error: Not in a git repository"
+    exit 1
+fi
+```
+
 Run: `git branch -vv`
+
+**ERROR HANDLING**: Check command succeeds:
+```bash
+if ! BRANCH_INFO=$(git branch -vv 2>&1); then
+    echo "❌ Error: Failed to get branch information"
+    exit 1
+fi
+```
 
 Parse output to identify:
 - Current branch name
@@ -42,11 +59,36 @@ Find commits on current branch NOT on base branch.
 
 Where `<base-branch>` is extracted from upstream config.
 
+**ERROR HANDLING**: Validate git log succeeds:
+```bash
+if ! COMMITS=$(git log "$base_branch..$current_branch" --oneline 2>&1); then
+    echo "❌ Error: Failed to get commit history"
+    echo "   This may indicate the base branch doesn't exist or git is misconfigured"
+    exit 1
+fi
+
+if [ -z "$COMMITS" ]; then
+    echo "ℹ️  No commits on this branch compared to $base_branch"
+    exit 0
+fi
+```
+
 ### 5. Analyze Changes
 For each commit from step 4:
 - Run: `git show <commit-hash>`
 - Understand file changes and purpose
 - Build context for PR description
+
+**ERROR HANDLING**: Check git show succeeds for each commit:
+```bash
+for commit in $COMMITS; do
+    if ! git show "$commit" > /dev/null 2>&1; then
+        echo "⚠️  Warning: Could not analyze commit $commit"
+        continue
+    fi
+    # Analyze the commit...
+done
+```
 
 **Goal**: Comprehensive understanding of what changed and why.
 
@@ -55,11 +97,16 @@ For each commit from step 4:
 **File path**: `./.git/PR_EDITMSG+<branch-name>.save`
 
 **Filename rules**:
+- **SECURITY FIX**: Sanitize branch name to prevent path traversal
 - Replace `/` with `-slash-`
+- Remove any `..`, `~`, or other dangerous patterns
+- Validation pattern: `[a-zA-Z0-9._-]+`
+- Maximum length: 200 characters
 - Examples:
   - `foo/bar` → `PR_EDITMSG+foo-slash-bar.save`
   - `feature/xyz/test` → `PR_EDITMSG+feature-slash-xyz-slash-test.save`
   - `bugfix` → `PR_EDITMSG+bugfix.save`
+  - `../etc/passwd` → **REJECTED** (invalid pattern)
 
 **Extract Jira issue from branch name**:
 - Pattern: `[A-Z]+-[0-9]+` (e.g., JIRA-123, ABC-456)

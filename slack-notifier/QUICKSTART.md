@@ -32,9 +32,10 @@ During setup you'll need:
    - Get from: https://api.slack.com/apps
    - Required scopes: `chat:write`
 
-2. **Slack Channel ID** (optional, defaults to your DM)
-   - For DMs: `D04CMDR7LBT` (or your DM ID)
+2. **Slack Channel ID** (required)
+   - For DMs: Find your DM channel ID (see instructions below)
    - For channels: `#channel-name` or channel ID
+   - **How to find**: Open Slack in browser, navigate to DM/channel, copy ID from URL: `https://workspace.slack.com/archives/<CHANNEL_ID>`
 
 Configuration is saved to `~/.config/jib-notifier/config.json` with secure permissions (600).
 
@@ -101,7 +102,7 @@ Edit `~/.config/jib-notifier/config.json`:
 ```json
 {
   "slack_token": "xoxb-your-token",
-  "slack_channel": "D04CMDR7LBT",
+  "slack_channel": "<YOUR-CHANNEL-ID>",  // Replace with your actual Slack channel/DM ID
   "batch_window_seconds": 30,
   "watch_directories": [
     "/home/jwies/.jib-sharing",

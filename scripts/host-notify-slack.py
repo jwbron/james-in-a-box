@@ -60,7 +60,11 @@ class SlackNotifier:
             raise ValueError("SLACK_TOKEN not found in config")
 
         # Configuration
-        self.slack_channel = self.config.get('slack_channel', 'D04CMDR7LBT')
+        # SECURITY FIX: Do not hardcode channel ID - require it to be configured
+        self.slack_channel = self.config.get('slack_channel')
+        if not self.slack_channel:
+            self.logger.error("SLACK_CHANNEL not configured")
+            raise ValueError("SLACK_CHANNEL not found in config. Set it in config.json or environment.")
         # How long to wait before sending batched notifications (seconds)
         # Lower = faster notifications, Higher = fewer Slack messages
         self.batch_window = self.config.get('batch_window_seconds', 15)
@@ -104,9 +108,10 @@ class SlackNotifier:
                 config = json.load(f)
         else:
             # Create default config
+            # SECURITY FIX: Do not hardcode channel ID - use environment variable
             config = {
                 'slack_token': os.environ.get('SLACK_TOKEN', ''),
-                'slack_channel': 'D04CMDR7LBT',
+                'slack_channel': os.environ.get('SLACK_CHANNEL', ''),
                 # How many seconds to wait before sending notifications
                 # 15 = send every 15 seconds, 30 = send every 30 seconds
                 'batch_window_seconds': 15,
@@ -117,9 +122,11 @@ class SlackNotifier:
             }
             self._save_config(config)
 
-        # Override with environment variable if present
+        # Override with environment variables if present
         if os.environ.get('SLACK_TOKEN'):
             config['slack_token'] = os.environ['SLACK_TOKEN']
+        if os.environ.get('SLACK_CHANNEL'):
+            config['slack_channel'] = os.environ['SLACK_CHANNEL']
 
         return config
 

@@ -130,7 +130,7 @@ Bot will respond in your self-DM with:
 ```
 
 **Important**:
-- Bot monitors your self-DM channel (D04CMDR7LBT) for `claude:` prefix
+- Bot monitors your self-DM channel (<YOUR-CHANNEL-ID>) for `claude:` prefix
 - Bot writes acknowledgments back to your self-DM
 - All task communication stays in your self-DM
 - Bot's DM channel is used only for notifications from Claude

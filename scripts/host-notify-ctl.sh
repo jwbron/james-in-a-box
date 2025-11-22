@@ -191,10 +191,18 @@ case "${1:-}" in
         fi
 
         # Get Slack channel
+        # SECURITY FIX: Do not suggest hardcoded channel ID as default
         echo ""
-        echo "Enter Slack channel/DM ID [D04CMDR7LBT]:"
+        echo "Enter your Slack channel/DM ID (required):"
+        echo "  Tip: Open your Slack DM in browser, copy ID from URL:"
+        echo "       https://workspace.slack.com/archives/<CHANNEL_ID>"
         read -r channel
-        channel=${channel:-"D04CMDR7LBT"}
+
+        # Validate channel ID is not empty
+        if [ -z "$channel" ]; then
+            echo "Error: Slack channel ID is required"
+            exit 1
+        fi
 
         # Create config
         cat > "${CONFIG_DIR}/config.json" <<EOF

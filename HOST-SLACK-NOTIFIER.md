@@ -167,7 +167,7 @@ Increase for less frequent notifications, decrease for more real-time updates.
 To send to a different channel/user, update `SLACK_CHANNEL`:
 
 ```bash
-SLACK_CHANNEL="D04CMDR7LBT"  # DM channel ID
+SLACK_CHANNEL="<YOUR-CHANNEL-ID>"  # Your DM channel ID (find in Slack URL)
 # Or use a channel name:
 SLACK_CHANNEL="#notifications"
 ```

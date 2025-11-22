@@ -207,7 +207,7 @@ Before proceeding, verify:
 - [ ] App installed to workspace
 - [ ] Bot token (`xoxb-...`) copied and saved
 - [ ] Your user ID obtained
-- [ ] Self-DM channel ID verified (`D04CMDR7LBT`)
+- [ ] Self-DM channel ID verified (`<YOUR-CHANNEL-ID>`)
 - [ ] Config file created with both tokens
 
 ## Testing
@@ -326,7 +326,7 @@ And in Slack, you should get a reply in your self-DM:
 **Checklist**:
 1. [ ] Receiver is running: `host-receive-ctl.sh status`
 2. [ ] Event subscription enabled with `message.im`
-3. [ ] Self-DM channel ID is correct (`D04CMDR7LBT`)
+3. [ ] Self-DM channel ID is correct (`<YOUR-CHANNEL-ID>`)
 4. [ ] Message starts with `claude:` prefix
 5. [ ] Your user ID is in `allowed_users` (or list is empty)
 
@@ -353,7 +353,7 @@ And in Slack, you should get a reply in your self-DM:
 2. Update the hardcoded channel ID in `host-receive-slack.py`:
    ```python
    # Line ~200
-   if channel == 'D04CMDR7LBT' and text.lower().startswith('claude:'):
+   if channel == '<YOUR-CHANNEL-ID>' and text.lower().startswith('claude:'):
    # Change to your actual channel ID
    if channel == 'DYOURCHANNELID' and text.lower().startswith('claude:'):
    ```

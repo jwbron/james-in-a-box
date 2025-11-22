@@ -73,6 +73,16 @@ check_requirements() {
 install_service() {
     log_info "Installing codebase analyzer service..."
 
+    # SECURITY FIX: Validate service files exist before attempting to copy
+    if [ ! -f "$SERVICE_FILE" ]; then
+        log_error "Service file not found: $SERVICE_FILE"
+        exit 1
+    fi
+    if [ ! -f "$TIMER_FILE" ]; then
+        log_error "Timer file not found: $TIMER_FILE"
+        exit 1
+    fi
+
     # Create systemd user directory
     mkdir -p "$SYSTEMD_USER_DIR"
 
@@ -108,6 +118,21 @@ uninstall_service() {
 
 enable_service() {
     log_info "Enabling codebase analyzer timer..."
+
+    # SECURITY FIX: Verify ANTHROPIC_API_KEY is configured before enabling
+    if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+        log_error "ANTHROPIC_API_KEY environment variable is not set"
+        log_error "The analyzer requires Claude API access to function."
+        log_error ""
+        log_error "Set it with:"
+        log_error "  mkdir -p ~/.config/environment.d"
+        log_error "  echo 'ANTHROPIC_API_KEY=your-key-here' > ~/.config/environment.d/anthropic.conf"
+        log_error "  chmod 600 ~/.config/environment.d/anthropic.conf"
+        log_error ""
+        log_error "Or export it in your current session:"
+        log_error "  export ANTHROPIC_API_KEY=your-key-here"
+        exit 1
+    fi
 
     systemctl --user enable "${SERVICE_NAME}.timer"
     systemctl --user start "${SERVICE_NAME}.timer"

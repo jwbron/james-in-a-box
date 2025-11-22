@@ -77,7 +77,7 @@ Implement OAuth2 for JIRA-1234
 | Problem | Solution |
 |---------|----------|
 | Bot not responding | Check `host-receive-ctl.sh status` |
-| No self-DM messages detected | Verify channel ID in code is `D04CMDR7LBT` |
+| No self-DM messages detected | Verify channel ID in config matches your Slack DM channel |
 | "invalid_auth" | Regenerate bot token, update config |
 | Thread replies not working | Add `channels:history` scope |
 

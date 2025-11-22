@@ -59,12 +59,25 @@ If user says **yes**, continue with the steps below:
 Move everything to an archive directory with timestamp:
 
 ```bash
+# SECURITY FIX: Use find with -exec to safely handle filenames
+# This prevents globbing attacks from malicious filenames
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ARCHIVE_DIR=~/.jib-sharing/staged-archive/$TIMESTAMP
-mkdir -p "$ARCHIVE_DIR"
-mv ~/.jib-sharing/staged-changes/* "$ARCHIVE_DIR/"
 
-echo "Archived to: $ARCHIVE_DIR"
+# ERROR HANDLING: Create directory and verify success
+if ! mkdir -p "$ARCHIVE_DIR"; then
+    echo "❌ Error: Failed to create archive directory"
+    exit 1
+fi
+
+# SECURITY FIX: Move files safely without glob expansion
+# Use find with -mindepth/-maxdepth to avoid recursion issues
+if ! find ~/.jib-sharing/staged-changes/ -mindepth 1 -maxdepth 1 -exec mv -t "$ARCHIVE_DIR/" {} + 2>/dev/null; then
+    # Fallback if -t flag not supported (BSD/macOS)
+    find ~/.jib-sharing/staged-changes/ -mindepth 1 -maxdepth 1 -exec mv {} "$ARCHIVE_DIR/" \;
+fi
+
+echo "✅ Archived to: $ARCHIVE_DIR"
 ls -la "$ARCHIVE_DIR"
 ```
 
@@ -111,18 +124,38 @@ PROJECT_NAME="james-in-a-box"  # or whatever the project is
 SOURCE_DIR="$ARCHIVE_DIR/$PROJECT_NAME"
 TARGET_DIR="$HOME/khan/$PROJECT_NAME"
 
+# ERROR HANDLING: Validate directories exist
+if [ ! -d "$SOURCE_DIR" ]; then
+    echo "❌ Error: Source directory not found: $SOURCE_DIR"
+    exit 1
+fi
+
+if [ ! -d "$TARGET_DIR" ]; then
+    echo "❌ Error: Target directory not found: $TARGET_DIR"
+    exit 1
+fi
+
 # Copy files (excluding documentation files - those are for reference only)
 echo "Copying from $SOURCE_DIR to $TARGET_DIR"
 
-for file in $(find "$SOURCE_DIR" -type f ! -name "CHANGES.md" ! -name "STAGED-FILES-SUMMARY.md"); do
-    REL_PATH=${file#$SOURCE_DIR/}
+# SECURITY FIX: Use safer iteration method
+find "$SOURCE_DIR" -type f ! -name "CHANGES.md" ! -name "STAGED-FILES-SUMMARY.md" -print0 | \
+while IFS= read -r -d '' file; do
+    REL_PATH="${file#$SOURCE_DIR/}"
     TARGET_FILE="$TARGET_DIR/$REL_PATH"
 
-    # Create parent directory if needed
-    mkdir -p "$(dirname "$TARGET_FILE")"
+    # ERROR HANDLING: Create parent directory and check success
+    if ! mkdir -p "$(dirname "$TARGET_FILE")"; then
+        echo "❌ Error: Failed to create directory for $TARGET_FILE"
+        continue
+    fi
 
-    # Copy file
-    cp -v "$file" "$TARGET_FILE"
+    # ERROR HANDLING: Copy file and verify
+    if cp -v "$file" "$TARGET_FILE"; then
+        echo "  ✅ Copied: $REL_PATH"
+    else
+        echo "  ❌ Failed to copy: $REL_PATH"
+    fi
 done
 ```
 
@@ -148,26 +181,47 @@ Present the CHANGES.md content to the user and ask:
 If user approves:
 
 ```bash
-cd "$HOME/khan/$PROJECT_NAME"
+cd "$HOME/khan/$PROJECT_NAME" || exit 1
 
-# Stage all changes
-git add -A
+# ERROR HANDLING: Check if there are changes to commit
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    # Stage all changes
+    if ! git add -A; then
+        echo "❌ Error: Failed to stage changes"
+        exit 1
+    fi
 
-# Create commit using CHANGES.md content
-# Extract summary from CHANGES.md and create detailed commit message
-git commit -m "$(cat <<'EOF'
-[Title from CHANGES.md]
+    # SECURITY FIX: Use git commit -F instead of embedding content in heredoc
+    # This safely reads the CHANGES.md file without command injection risks
+    CHANGES_FILE="$ARCHIVE_DIR/$PROJECT_NAME/CHANGES.md"
 
-[Content from CHANGES.md formatted as commit message]
+    if [ -f "$CHANGES_FILE" ]; then
+        # Create temporary commit message file
+        COMMIT_MSG=$(mktemp)
+        trap 'rm -f "$COMMIT_MSG"' EXIT
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+        # Add CHANGES.md content plus footer
+        cat "$CHANGES_FILE" > "$COMMIT_MSG"
+        echo "" >> "$COMMIT_MSG"
+        echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)" >> "$COMMIT_MSG"
+        echo "" >> "$COMMIT_MSG"
+        echo "Co-Authored-By: Claude <noreply@anthropic.com>" >> "$COMMIT_MSG"
 
-Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
-
-# Show commit
-git log -1 --stat
+        # Commit using file
+        if git commit -F "$COMMIT_MSG"; then
+            echo "✅ Changes committed"
+            git log -1 --stat
+        else
+            echo "❌ Error: Failed to create commit"
+            exit 1
+        fi
+    else
+        echo "❌ Error: CHANGES.md not found, cannot create commit message"
+        exit 1
+    fi
+else
+    echo "ℹ️  No changes to commit"
+fi
 ```
 
 ### 9. Summary
