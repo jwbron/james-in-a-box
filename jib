@@ -183,7 +183,8 @@ def create_dockerfile() -> None:
     """Create the Dockerfile for the container"""
     import shutil
 
-    script_dir = Path(__file__).parent
+    # Resolve symlinks to find the actual project directory
+    script_dir = Path(__file__).resolve().parent
 
     # Copy docker-setup.py to config directory
     setup_script = script_dir / "docker-setup.py"
