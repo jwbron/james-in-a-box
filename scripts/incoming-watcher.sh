@@ -174,11 +174,13 @@ $task_content
     # Claude will use the rules from ~/CLAUDE.md automatically
     # Run from home directory so paths work correctly
     # Use --dangerously-skip-permissions to bypass all permission prompts (safe in sandbox)
-    if cd "${HOME}" && /usr/local/bin/claude --print --dangerously-skip-permissions "$full_prompt" > "$output_dir/output.log" 2>&1; then
+    if cd "${HOME}" && claude --print --dangerously-skip-permissions "$full_prompt" > "$output_dir/output.log" 2>&1; then
         log "✅ Claude completed task successfully"
 
         # Create completion notification
         local completion_file="${HOME}/sharing/notifications/$(date +%Y%m%d-%H%M%S)-task-completed.md"
+        # Convert container path to host path for the notification
+        local host_output_path="${output_dir/${HOME}\/sharing/${HOME}\/.claude-sandbox-sharing}"
         cat > "$completion_file" <<EOF
 # ✅ Task Completed
 
@@ -189,7 +191,7 @@ $task_content
 $task_content
 
 ## Output
-See: \`$output_dir/output.log\`
+See: \`$host_output_path/output.log\`
 
 ---
 📨 *Processed by Claude automatically*
@@ -204,6 +206,8 @@ EOF
 
         # Create error notification
         local error_file="${HOME}/sharing/notifications/$(date +%Y%m%d-%H%M%S)-task-failed.md"
+        # Convert container path to host path for the notification
+        local host_output_path="${output_dir/${HOME}\/sharing/${HOME}\/.claude-sandbox-sharing}"
         cat > "$error_file" <<EOF
 # ❌ Task Failed
 
@@ -214,7 +218,7 @@ EOF
 $task_content
 
 ## Error
-Claude encountered an error. Check logs: \`$output_dir/output.log\`
+Claude encountered an error. Check logs: \`$host_output_path/output.log\`
 
 ---
 📨 *Processed by Claude automatically*
