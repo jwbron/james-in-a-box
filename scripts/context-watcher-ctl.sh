@@ -6,7 +6,7 @@ set -euo pipefail
 
 WATCHER_SCRIPT="${HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh"
 LOCK_FILE="/tmp/context-watcher.lock"
-LOG_FILE="${HOME}/sharing/tracking/watcher.log"
+LOG_FILE="${HOME}/sharing/context-tracking/watcher.log"
 
 usage() {
     cat << EOF

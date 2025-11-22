@@ -217,6 +217,7 @@ If you still can't access `~/sharing/` or `~/tools/` after restarting:
 3. Adjust check interval in config if 5 minutes is too long/short
 4. Review and iterate on the Claude analysis prompts in `~/.claude/commands/analyze-context-changes.md`
 5. Set up auto-start in your `.bashrc` or container init script
+6. **[Optional]** Set up host-side Slack notifier to get DMs when Claude creates outputs
 
 ## Auto-Start on Container Launch
 
@@ -230,3 +231,40 @@ fi
 ```
 
 Then the watcher will automatically start whenever you launch the container.
+
+## Host-Side Slack Integration (Optional)
+
+The context watcher writes outputs to `~/sharing/notifications/`. To get instant Slack notifications when Claude creates these files, you can set up the **host-side Slack notifier**.
+
+This is a separate service that runs on your **host machine** (outside the container) and watches the shared directories for changes.
+
+**Complete Flow:**
+1. Context watcher (in container) detects changes in `~/context-sync/`
+2. Claude analyzes and writes summaries to `~/sharing/notifications/`
+3. Host notifier (on host) detects new files in `~/.claude-sandbox-sharing/`
+4. Slack DM sent to you with summary
+
+**Setup:**
+
+See [HOST-SLACK-NOTIFIER.md](../HOST-SLACK-NOTIFIER.md) for complete instructions.
+
+Quick start:
+```bash
+# On host machine (not in container)
+
+# 1. Install dependencies
+sudo dnf install inotify-tools jq  # Fedora
+# or
+sudo apt install inotify-tools jq  # Ubuntu
+
+# 2. Get Slack bot token from https://api.slack.com/apps
+export SLACK_TOKEN="xoxb-your-token-here"
+
+# 3. Run setup
+~/khan/cursor-sandboxed/scripts/setup-host-notifier.sh
+
+# 4. Start the notifier
+~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh start
+```
+
+This gives you immediate awareness whenever Claude creates notifications, draft responses, or action items.

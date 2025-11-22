@@ -153,7 +153,15 @@ Flags:
 ### Inside Container
 
 ```
-~/khan/                      Your workspace (MOUNTED rw, live sync)
+~/khan/                      Your workspace (specific subdirs MOUNTED rw)
+  ├── actions/               (MOUNTED from host)
+  ├── buildmaster2/          (MOUNTED from host)
+  ├── cursor-sandboxed/      (MOUNTED from host)
+  ├── frontend/              (MOUNTED from host)
+  ├── internal-services/     (MOUNTED from host)
+  ├── jenkins-jobs/          (MOUNTED from host)
+  ├── terraform-modules/     (MOUNTED from host)
+  └── webapp/                (MOUNTED from host)
 ~/context-sync/              Context sources (MOUNTED ro)
   ├── confluence/            Confluence docs (ADRs, runbooks)
   ├── jira/                  JIRA tickets and issues
@@ -176,7 +184,7 @@ Flags:
 ### What Persists
 
 ✅ **Always persists** (mounted from host):
-- `~/khan/` - All code changes (live sync with host)
+- `~/khan/` - Specific subdirectories only (actions, buildmaster2, cursor-sandboxed, frontend, internal-services, jenkins-jobs, terraform-modules, webapp)
 - `~/tools/` - Your reusable scripts
 - `~/sharing/` - Context docs, work products
 

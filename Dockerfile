@@ -100,9 +100,18 @@ fi
 export HOME="${USER_HOME}"
 export USER="${RUNTIME_USER}"
 
-# Khan directory is mounted from host at runtime
+# Create khan directory structure (subdirectories mounted from host at runtime)
+mkdir -p "${USER_HOME}/khan"
+chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/khan"
+
+# Check if khan subdirectories are mounted
 if [ -d "${USER_HOME}/khan" ]; then
-    echo "✓ Khan workspace mounted from host"
+    khan_count=$(find "${USER_HOME}/khan" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+    if [ "$khan_count" -gt 0 ]; then
+        echo "✓ Khan workspace mounted: $khan_count subdirectories from host"
+    else
+        echo "⚠ Khan directory exists but no subdirectories mounted"
+    fi
 else
     echo "⚠ Khan workspace not found - check mount configuration"
 fi

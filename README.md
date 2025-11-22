@@ -75,6 +75,8 @@ exit
 
 **Mounted from Host:**
 - `~/khan/` - Main workspace (read-write, live sync with host)
+  - Specific subdirectories mounted: `actions/`, `buildmaster2/`, `cursor-sandboxed/`, `frontend/`, `internal-services/`, `jenkins-jobs/`, `terraform-modules/`, `webapp/`
+  - Only these directories are accessible for security and performance
 - `~/.claude/.credentials.json` - OAuth only (read-only)
 - `~/context-sync/` - Context sources (read-only)
   - `confluence/` - Documentation (ADRs, runbooks, best practices)
@@ -98,7 +100,15 @@ exit
 
 ```
 Inside Container:
-  ~/khan/                      Code workspace (MOUNTED rw)
+  ~/khan/                      Code workspace (specific subdirs MOUNTED rw)
+    ├── actions/
+    ├── buildmaster2/
+    ├── cursor-sandboxed/
+    ├── frontend/
+    ├── internal-services/
+    ├── jenkins-jobs/
+    ├── terraform-modules/
+    └── webapp/
   ~/context-sync/              Context sources (MOUNTED ro)
     ├── confluence/            Confluence docs (ADRs, runbooks)
     ├── jira/                  JIRA tickets and issues
@@ -108,7 +118,6 @@ Inside Container:
     └── context/               Context documents
   ~/tmp/                       Scratch space (ephemeral)
   ~/CLAUDE.md                  Mission + environment rules
-  ~/khan/CLAUDE.md             Khan Academy standards
 ```
 
 ### Development Environment

@@ -238,6 +238,35 @@ The watcher outputs structured markdown files that can be:
 3. Start the watcher and test with some sample changes
 4. Review outputs in `~/sharing/notifications/`
 5. Iterate on configuration and prompts as needed
+6. **[Optional]** Set up host-side Slack notifier for instant DMs when outputs are created
+
+## Host-Side Slack Notifications (Optional)
+
+The context watcher writes outputs to `~/sharing/notifications/`. To get **instant Slack DMs** when Claude creates these files, you can set up a companion host-side notifier.
+
+This runs on your **host machine** (outside the container) and watches the shared directories:
+
+```
+Context changes → Container watcher → Claude analysis → Output files → Host notifier → Slack DM
+```
+
+**Benefits:**
+- Immediate awareness of Claude's work
+- No need to check `~/sharing/notifications/` manually
+- Get notified about summaries, draft responses, and action items
+- Works alongside the container watcher automatically
+
+**Quick Setup:**
+
+See [../HOST-SLACK-NOTIFIER.md](../HOST-SLACK-NOTIFIER.md) for complete instructions.
+
+```bash
+# On host machine (not in container)
+sudo dnf install inotify-tools jq  # Install dependencies
+export SLACK_TOKEN="xoxb-your-token-here"  # Set Slack token
+~/khan/cursor-sandboxed/scripts/setup-host-notifier.sh  # Run setup
+~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh start  # Start service
+```
 
 ## Support
 
