@@ -141,83 +141,65 @@ class SlackNotifier:
         return any(pattern in path for pattern in ignore_patterns)
 
     def _send_slack_message(self, changes: List[str]) -> bool:
-        """Send a Slack message with the list of changes."""
+        """Send notification files to Slack.
+
+        Reads each notification file and sends its full content as a separate message.
+        """
         if not changes:
             return True
 
-        # Group changes by directory
-        grouped = {}
-        for change in changes:
-            path = Path(change)
-            # Find which watch directory this belongs to
-            watch_dir = None
-            for wd in self.watch_dirs:
-                try:
-                    path.relative_to(wd)
-                    watch_dir = wd
-                    break
-                except ValueError:
+        success_count = 0
+
+        for change_path in changes:
+            path = Path(change_path)
+
+            # Only process .md files
+            if not path.suffix == '.md':
+                continue
+
+            # Read file content
+            try:
+                with open(path, 'r') as f:
+                    content = f.read().strip()
+
+                if not content:
+                    self.logger.warning(f"Empty file: {path}")
                     continue
 
-            if watch_dir:
-                key = str(watch_dir)
-                if key not in grouped:
-                    grouped[key] = []
-                grouped[key].append(str(path.relative_to(watch_dir)))
+            except Exception as e:
+                self.logger.error(f"Failed to read {path}: {e}")
+                continue
 
-        # Build message
-        message_parts = ["🔔 *Claude Sandbox Changes Detected*\n"]
+            # Send full content to Slack
+            try:
+                response = requests.post(
+                    'https://slack.com/api/chat.postMessage',
+                    headers={
+                        'Authorization': f'Bearer {self.slack_token}',
+                        'Content-Type': 'application/json'
+                    },
+                    json={
+                        'channel': self.slack_channel,
+                        'text': content,
+                        'mrkdwn': True
+                    },
+                    timeout=10
+                )
 
-        for dir_path, files in grouped.items():
-            dir_name = Path(dir_path).name
-            message_parts.append(f"\n*{dir_name}/* (`{dir_path}`):")
-            for file in sorted(files)[:20]:  # Limit to 20 files per directory
-                # Extract notification timestamp if this is a notification file
-                import re
-                timestamp_match = re.search(r'\b\d{8}-\d{6}\b', file)
-                if timestamp_match and 'notification' in file.lower():
-                    # Include timestamp prominently for notifications
-                    timestamp = timestamp_match.group(0)
-                    message_parts.append(f"  • `{file}` → Timestamp: `{timestamp}`")
+                result = response.json()
+
+                if result.get('ok'):
+                    self.logger.info(f"Sent notification: {path.name}")
+                    success_count += 1
                 else:
-                    message_parts.append(f"  • `{file}`")
-            if len(files) > 20:
-                message_parts.append(f"  • _(and {len(files) - 20} more)_")
+                    error = result.get('error', 'unknown error')
+                    self.logger.error(f"Failed to send {path.name}: {error}")
 
-        message_parts.append(f"\n*Total changes:* {len(changes)}")
-        message_parts.append(f"\n_💡 Reply in thread to respond to Claude_")
+            except Exception as e:
+                self.logger.error(f"Exception sending {path.name}: {e}")
 
-        message = "\n".join(message_parts)
-
-        # Send to Slack
-        try:
-            response = requests.post(
-                'https://slack.com/api/chat.postMessage',
-                headers={
-                    'Authorization': f'Bearer {self.slack_token}',
-                    'Content-Type': 'application/json'
-                },
-                json={
-                    'channel': self.slack_channel,
-                    'text': message,
-                    'mrkdwn': True
-                },
-                timeout=10
-            )
-
-            result = response.json()
-
-            if result.get('ok'):
-                self.logger.info(f"Notification sent successfully ({len(changes)} changes)")
-                return True
-            else:
-                error = result.get('error', 'unknown error')
-                self.logger.error(f"Failed to send Slack message: {error}")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Exception sending Slack message: {e}")
-            return False
+        self.logger.info(f"Sent {success_count}/{len(changes)} notifications")
+        return success_count > 0
 
     def _process_batch(self):
         """Process accumulated changes and send notification."""
