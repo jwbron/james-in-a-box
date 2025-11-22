@@ -61,7 +61,9 @@ class SlackNotifier:
 
         # Configuration
         self.slack_channel = self.config.get('slack_channel', 'D04CMDR7LBT')
-        self.batch_window = self.config.get('batch_window_seconds', 30)
+        # How long to wait before sending batched notifications (seconds)
+        # Lower = faster notifications, Higher = fewer Slack messages
+        self.batch_window = self.config.get('batch_window_seconds', 15)
         self.watch_dirs = [Path(d).expanduser() for d in self.config.get('watch_directories', [])]
 
         # State
@@ -105,7 +107,9 @@ class SlackNotifier:
             config = {
                 'slack_token': os.environ.get('SLACK_TOKEN', ''),
                 'slack_channel': 'D04CMDR7LBT',
-                'batch_window_seconds': 30,
+                # How many seconds to wait before sending notifications
+                # 15 = send every 15 seconds, 30 = send every 30 seconds
+                'batch_window_seconds': 15,
                 'watch_directories': [
                     '~/.claude-sandbox-sharing',
                     '~/.claude-sandbox-tools'
