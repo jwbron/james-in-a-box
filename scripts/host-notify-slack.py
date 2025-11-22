@@ -77,7 +77,7 @@ class SlackNotifier:
 
     def _setup_logging(self):
         """Configure logging to file and console."""
-        self.logger = logging.getLogger('slack-notifier')
+        self.logger = logging.getLogger('jib-notifier')
         self.logger.setLevel(logging.INFO)
 
         # File handler
@@ -324,7 +324,7 @@ class SlackNotifier:
 
 def main():
     """Main entry point."""
-    config_dir = Path.home() / '.config' / 'slack-notifier'
+    config_dir = Path.home() / '.config' / 'jib-notifier'
 
     try:
         notifier = SlackNotifier(config_dir)

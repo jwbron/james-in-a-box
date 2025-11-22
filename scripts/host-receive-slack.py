@@ -429,7 +429,7 @@ class SlackReceiver:
 
 def main():
     """Main entry point."""
-    config_dir = Path.home() / '.config' / 'slack-notifier'
+    config_dir = Path.home() / '.config' / 'jib-notifier'
 
     try:
         receiver = SlackReceiver(config_dir)
