@@ -15,7 +15,7 @@ Claude works in a **staging area** (`~/sharing/staged-changes/`) while having re
 │  ~/khan/webapp/          ← systemd jobs may use this   │
 │  ~/khan/jenkins-jobs/    ← systemd jobs may use this   │
 │                                                         │
-│  ~/.claude-sandbox-sharing/staged-changes/             │
+│  ~/.jib-sharing/staged-changes/             │
 │    └── webapp/           ← Claude's proposed changes   │
 │        ├── server.py                                    │
 │        ├── models.py                                    │
@@ -65,7 +65,7 @@ cat > ~/sharing/staged-changes/webapp/README.md <<EOF
 - Tested with Google OAuth
 
 ### How to Apply
-cd ~/.claude-sandbox-sharing/staged-changes/webapp/
+cd ~/.jib-sharing/staged-changes/webapp/
 cp *.py ~/khan/webapp/
 EOF
 ```
@@ -77,7 +77,7 @@ EOF
 exit
 
 # Step 2: Review staged changes
-cd ~/.claude-sandbox-sharing/staged-changes/webapp/
+cd ~/.jib-sharing/staged-changes/webapp/
 cat README.md           # Read what changed
 diff server.py ~/khan/webapp/server.py  # Review diffs
 
@@ -92,7 +92,7 @@ git commit -m "Add OAuth2 support (JIRA-1234)"
 git push origin feature-branch
 
 # Step 5: Clean up staging area (optional)
-rm -rf ~/.claude-sandbox-sharing/staged-changes/webapp/
+rm -rf ~/.jib-sharing/staged-changes/webapp/
 ```
 
 ## Benefits
@@ -128,7 +128,7 @@ rm -rf ~/.claude-sandbox-sharing/staged-changes/webapp/
 
 # You apply with:
 cd ~/khan/webapp/
-patch -p1 < ~/.claude-sandbox-sharing/staged-changes/webapp/server.py.patch
+patch -p1 < ~/.jib-sharing/staged-changes/webapp/server.py.patch
 ```
 
 ### Pattern 3: New Feature Branch
@@ -149,14 +149,14 @@ patch -p1 < ~/.claude-sandbox-sharing/staged-changes/webapp/server.py.patch
 ## Directory Structure
 
 ```
-~/.claude-sandbox-sharing/
+~/.jib-sharing/
 ├── staged-changes/           # All code modifications
 │   ├── webapp/              # Changes to webapp repo
 │   ├── jenkins-jobs/        # Changes to jenkins-jobs
 │   └── frontend/            # Changes to frontend
 ├── context/                 # Context documents
 │   └── project.md
-└── tools/                   # (Actually at ~/.claude-sandbox-tools/)
+└── tools/                   # (Actually at ~/.jib-tools/)
 ```
 
 ## Tips for Claude
@@ -207,7 +207,7 @@ python -m pytest tests/test_oauth.py
 ## How to Apply
 ```bash
 # On host
-cd ~/.claude-sandbox-sharing/staged-changes/webapp/
+cd ~/.jib-sharing/staged-changes/webapp/
 cp server.py models.py ~/khan/webapp/
 cp tests/test_oauth.py ~/khan/webapp/tests/
 cd ~/khan/webapp/

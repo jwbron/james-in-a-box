@@ -12,7 +12,7 @@ First, list what's in the staging directory:
 
 ```bash
 echo "=== Staged Changes ==="
-ls -la ~/.claude-sandbox-sharing/staged-changes/
+ls -la ~/.jib-sharing/staged-changes/
 ```
 
 If empty, report: "No staged changes found" and exit.
@@ -22,7 +22,7 @@ If empty, report: "No staged changes found" and exit.
 For each project, show what's staged:
 
 ```bash
-for project in ~/.claude-sandbox-sharing/staged-changes/*/; do
+for project in ~/.jib-sharing/staged-changes/*/; do
     if [ -d "$project" ]; then
         echo ""
         echo "=== $(basename "$project") ==="
@@ -60,9 +60,9 @@ Move everything to an archive directory with timestamp:
 
 ```bash
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-ARCHIVE_DIR=~/.claude-sandbox-sharing/staged-archive/$TIMESTAMP
+ARCHIVE_DIR=~/.jib-sharing/staged-archive/$TIMESTAMP
 mkdir -p "$ARCHIVE_DIR"
-mv ~/.claude-sandbox-sharing/staged-changes/* "$ARCHIVE_DIR/"
+mv ~/.jib-sharing/staged-changes/* "$ARCHIVE_DIR/"
 
 echo "Archived to: $ARCHIVE_DIR"
 ls -la "$ARCHIVE_DIR"
@@ -99,7 +99,7 @@ done
 
 For each project, determine where files should be copied:
 
-- If project name is `cursor-sandboxed`, copy to `~/khan/cursor-sandboxed/`
+- If project name is `james-in-a-box`, copy to `~/khan/james-in-a-box/`
 - For other projects, ask the user for the target directory
 
 ### 5. Copy Files to Repository
@@ -107,7 +107,7 @@ For each project, determine where files should be copied:
 For each project:
 
 ```bash
-PROJECT_NAME="cursor-sandboxed"  # or whatever the project is
+PROJECT_NAME="james-in-a-box"  # or whatever the project is
 SOURCE_DIR="$ARCHIVE_DIR/$PROJECT_NAME"
 TARGET_DIR="$HOME/khan/$PROJECT_NAME"
 
@@ -176,7 +176,7 @@ Provide a summary:
 - What was staged
 - Where it was copied
 - Git commit hash (if committed)
-- Archive location for reference: `~/.claude-sandbox-sharing/staged-archive/$TIMESTAMP`
+- Archive location for reference: `~/.jib-sharing/staged-archive/$TIMESTAMP`
 
 ## Important Notes
 
@@ -190,12 +190,12 @@ Provide a summary:
 
 ```
 === Checking Staging Directory ===
-Found staged changes in: cursor-sandboxed
+Found staged changes in: james-in-a-box
 
 === Archiving ===
-Archived to: ~/.claude-sandbox-sharing/staged-archive/20251121-220000
+Archived to: ~/.jib-sharing/staged-archive/20251121-220000
 
-=== Reviewing: cursor-sandboxed ===
+=== Reviewing: james-in-a-box ===
 [Display CHANGES.md content]
 
 Files to copy:
@@ -203,7 +203,7 @@ Files to copy:
 - Dockerfile
 
 === Copying to Repository ===
-Copied 2 files to ~/khan/cursor-sandboxed/
+Copied 2 files to ~/khan/james-in-a-box/
 
 === Git Status ===
 2 files changed, 150 insertions(+), 20 deletions(-)
@@ -215,7 +215,7 @@ Review changes above. Should I commit these to git? [User responds]
 2 files changed, 150 insertions(+), 20 deletions(-)
 
 ✅ Staged changes integrated successfully!
-Archive available at: ~/.claude-sandbox-sharing/staged-archive/20251121-220000
+Archive available at: ~/.jib-sharing/staged-archive/20251121-220000
 ```
 
 ## Error Handling

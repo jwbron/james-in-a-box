@@ -2,7 +2,7 @@
 """
 Codebase Improvement Analyzer
 
-Analyzes the cursor-sandboxed codebase for potential improvements:
+Analyzes the james-in-a-box codebase for potential improvements:
 - File-by-file code review for best practices
 - High-level architectural analysis
 - Web search for new technologies and improvements
@@ -154,7 +154,7 @@ class CodebaseAnalyzer:
             relative_path = file_path.relative_to(self.codebase_path)
 
             # Build analysis prompt
-            prompt = f"""Analyze this file from the cursor-sandboxed codebase for potential improvements.
+            prompt = f"""Analyze this file from the james-in-a-box codebase for potential improvements.
 
 File: {relative_path}
 Language: {file_path.suffix}
@@ -284,7 +284,7 @@ If no significant issues found, return {{"has_issues": false, "issues": []}}"""
 
 {search_context}
 
-Identify potential improvements for the cursor-sandboxed project (a Docker sandbox for Claude Code CLI with Slack integration, systemd services, and file watching).
+Identify potential improvements for the james-in-a-box project (a Docker sandbox for Claude Code CLI with Slack integration, systemd services, and file watching).
 
 Focus on:
 1. New technologies or tools worth considering
@@ -344,7 +344,7 @@ Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"f
                 pass
 
         # Build context about the project
-        context = f"""Analyze the cursor-sandboxed project as a whole based on this overview:
+        context = f"""Analyze the james-in-a-box project as a whole based on this overview:
 
 **Project**: Docker sandbox for Claude Code CLI (autonomous software engineering agent)
 
@@ -432,7 +432,7 @@ Return as JSON:
         content = f"""# 🔍 Codebase Improvement Analysis
 
 **Generated**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-**Project**: cursor-sandboxed
+**Project**: james-in-a-box
 **Analysis Type**: Automated Weekly Review
 
 ---
@@ -570,7 +570,7 @@ Return as JSON:
 ---
 
 📅 Next analysis: Next week (Monday 11:00 AM PST)
-🤖 Automated by cursor-sandboxed codebase analyzer
+🤖 Automated by james-in-a-box codebase analyzer
 """
 
         # Write notification
@@ -668,7 +668,7 @@ def main():
     """Main entry point."""
     # Parse arguments
     parser = argparse.ArgumentParser(
-        description="Analyze cursor-sandboxed codebase for improvements",
+        description="Analyze james-in-a-box codebase for improvements",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -691,7 +691,7 @@ Examples:
     args = parser.parse_args()
 
     # Configuration
-    codebase_path = Path.home() / "khan" / "cursor-sandboxed"
+    codebase_path = Path.home() / "khan" / "james-in-a-box"
     notification_dir = Path.home() / "sharing" / "notifications"
 
     # Validate paths

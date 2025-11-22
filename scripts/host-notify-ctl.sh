@@ -5,8 +5,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NOTIFIER_SCRIPT="${SCRIPT_DIR}/host-notify-slack.py"
-LOCK_FILE="/tmp/slack-notifier.lock"
-CONFIG_DIR="${HOME}/.config/slack-notifier"
+LOCK_FILE="/tmp/jib-notifier.lock"
+CONFIG_DIR="${HOME}/.config/jib-notifier"
 LOG_FILE="${CONFIG_DIR}/notifier.log"
 
 show_usage() {
@@ -203,8 +203,8 @@ case "${1:-}" in
   "slack_channel": "$channel",
   "batch_window_seconds": 30,
   "watch_directories": [
-    "$HOME/.claude-sandbox-sharing",
-    "$HOME/.claude-sandbox-tools"
+    "$HOME/.jib-sharing",
+    "$HOME/.jib-tools"
   ]
 }
 EOF
@@ -217,7 +217,7 @@ EOF
         echo "Next steps:"
         echo "  1. Review config: cat ${CONFIG_DIR}/config.json"
         echo "  2. Start notifier: $0 start"
-        echo "  3. Test: echo 'test' > ~/.claude-sandbox-sharing/test.txt"
+        echo "  3. Test: echo 'test' > ~/.jib-sharing/test.txt"
         ;;
 
     *)

@@ -9,8 +9,8 @@
 
 1. **Create Slack app**: See `SLACK-APP-SETUP.md`
 2. **Get tokens**: Bot token (`xoxb-...`) and App token (`xapp-...`)
-3. **Configure**: `~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh setup`
-4. **Start receiver**: `~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh start`
+3. **Configure**: `~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup`
+4. **Start receiver**: `~/khan/james-in-a-box/scripts/host-receive-ctl.sh start`
 5. **Test**: Send `claude: test` to yourself in Slack
 
 ## Daily Usage
@@ -52,13 +52,13 @@ Implement OAuth2 for JIRA-1234
 
 ```bash
 # Check receiver status
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
 
 # View logs
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 
 # Restart receiver
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh restart
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh restart
 
 # Start container
 ./claude-sandboxed
@@ -66,11 +66,11 @@ Implement OAuth2 for JIRA-1234
 
 ## Token Locations
 
-- **Config**: `~/.config/slack-notifier/config.json`
-- **Logs**: `~/.config/slack-notifier/receiver.log`
-- **Tasks**: `~/.claude-sandbox-sharing/incoming/`
-- **Responses**: `~/.claude-sandbox-sharing/responses/`
-- **Notifications**: `~/.claude-sandbox-sharing/notifications/`
+- **Config**: `~/.config/jib-notifier/config.json`
+- **Logs**: `~/.config/jib-notifier/receiver.log`
+- **Tasks**: `~/.jib-sharing/incoming/`
+- **Responses**: `~/.jib-sharing/responses/`
+- **Notifications**: `~/.jib-sharing/notifications/`
 
 ## Troubleshooting
 
@@ -93,11 +93,11 @@ Implement OAuth2 for JIRA-1234
 
 ```
 Host:
-  ~/.config/slack-notifier/config.json          Bot config
-  ~/.config/slack-notifier/receiver.log         Receiver logs
-  ~/.claude-sandbox-sharing/incoming/           Tasks from you
-  ~/.claude-sandbox-sharing/responses/          Your responses
-  ~/.claude-sandbox-sharing/notifications/      From Claude
+  ~/.config/jib-notifier/config.json          Bot config
+  ~/.config/jib-notifier/receiver.log         Receiver logs
+  ~/.jib-sharing/incoming/           Tasks from you
+  ~/.jib-sharing/responses/          Your responses
+  ~/.jib-sharing/notifications/      From Claude
 
 Container:
   ~/sharing/incoming/                           Tasks from you

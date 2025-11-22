@@ -8,8 +8,8 @@ set -euo pipefail
 SLACK_TOKEN="${SLACK_TOKEN:-}"
 SLACK_CHANNEL="D04CMDR7LBT"  # James Wiesebron DM
 WATCH_DIRS=(
-    "${HOME}/.claude-sandbox-sharing"
-    "${HOME}/.claude-sandbox-tools"
+    "${HOME}/.jib-sharing"
+    "${HOME}/.jib-tools"
 )
 
 # State and logging
@@ -136,28 +136,28 @@ format_change_message() {
     local tools_changes=()
 
     for change in "${changes[@]}"; do
-        if [[ "$change" == *".claude-sandbox-sharing"* ]]; then
+        if [[ "$change" == *".jib-sharing"* ]]; then
             sharing_changes+=("$change")
-        elif [[ "$change" == *".claude-sandbox-tools"* ]]; then
+        elif [[ "$change" == *".jib-tools"* ]]; then
             tools_changes+=("$change")
         fi
     done
 
     if [ ${#sharing_changes[@]} -gt 0 ]; then
-        message+="*Sharing Directory* (\`~/.claude-sandbox-sharing/\`):\n"
+        message+="*Sharing Directory* (\`~/.jib-sharing/\`):\n"
         for change in "${sharing_changes[@]}"; do
             # Extract relative path
-            local rel_path="${change#*/.claude-sandbox-sharing/}"
+            local rel_path="${change#*/.jib-sharing/}"
             message+="  • \`$rel_path\`\n"
         done
         message+="\n"
     fi
 
     if [ ${#tools_changes[@]} -gt 0 ]; then
-        message+="*Tools Directory* (\`~/.claude-sandbox-tools/\`):\n"
+        message+="*Tools Directory* (\`~/.jib-tools/\`):\n"
         for change in "${tools_changes[@]}"; do
             # Extract relative path
-            local rel_path="${change#*/.claude-sandbox-tools/}"
+            local rel_path="${change#*/.jib-tools/}"
             message+="  • \`$rel_path\`\n"
         done
         message+="\n"

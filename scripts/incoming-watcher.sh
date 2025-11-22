@@ -180,7 +180,7 @@ $task_content
         # Create completion notification
         local completion_file="${HOME}/sharing/notifications/$(date +%Y%m%d-%H%M%S)-task-completed.md"
         # Convert container path to host path for the notification
-        local host_output_path="${output_dir/${HOME}\/sharing/${HOME}\/.claude-sandbox-sharing}"
+        local host_output_path="${output_dir/${HOME}\/sharing/${HOME}\/.jib-sharing}"
         cat > "$completion_file" <<EOF
 # ✅ Task Completed
 
@@ -207,7 +207,7 @@ EOF
         # Create error notification
         local error_file="${HOME}/sharing/notifications/$(date +%Y%m%d-%H%M%S)-task-failed.md"
         # Convert container path to host path for the notification
-        local host_output_path="${output_dir/${HOME}\/sharing/${HOME}\/.claude-sandbox-sharing}"
+        local host_output_path="${output_dir/${HOME}\/sharing/${HOME}\/.jib-sharing}"
         cat > "$error_file" <<EOF
 # ❌ Task Failed
 

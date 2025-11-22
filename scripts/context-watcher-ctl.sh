@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-WATCHER_SCRIPT="${HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh"
+WATCHER_SCRIPT="${HOME}/khan/james-in-a-box/scripts/context-watcher.sh"
 LOCK_FILE="/tmp/context-watcher.lock"
 LOG_FILE="${HOME}/sharing/context-tracking/watcher.log"
 

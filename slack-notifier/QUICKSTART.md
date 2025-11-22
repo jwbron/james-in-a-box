@@ -1,6 +1,6 @@
 # Slack Notifier - Quick Start
 
-Monitor `~/.claude-sandbox-sharing/` and `~/.claude-sandbox-tools/` for changes and send Slack notifications.
+Monitor `~/.jib-sharing/` and `~/.jib-tools/` for changes and send Slack notifications.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ pip install --user inotify requests
 ## One-Time Setup
 
 ```bash
-cd ~/khan/cursor-sandboxed/slack-notifier
+cd ~/khan/james-in-a-box/jib-notifier
 
 # 1. Configure Slack token
 ./manage_notifier.sh setup
@@ -36,7 +36,7 @@ During setup you'll need:
    - For DMs: `D04CMDR7LBT` (or your DM ID)
    - For channels: `#channel-name` or channel ID
 
-Configuration is saved to `~/.config/slack-notifier/config.json` with secure permissions (600).
+Configuration is saved to `~/.config/jib-notifier/config.json` with secure permissions (600).
 
 ## Usage
 
@@ -74,7 +74,7 @@ Configuration is saved to `~/.config/slack-notifier/config.json` with secure per
 
 ## How It Works
 
-1. **Monitors**: Watches `~/.claude-sandbox-sharing/` and `~/.claude-sandbox-tools/` for file changes
+1. **Monitors**: Watches `~/.jib-sharing/` and `~/.jib-tools/` for file changes
 2. **Batches**: Collects changes over 30-second window
 3. **Notifies**: Sends Slack DM with list of changed files
 4. **Runs continuously**: Systemd service ensures it's always running
@@ -84,11 +84,11 @@ Configuration is saved to `~/.config/slack-notifier/config.json` with secure per
 ```
 🔔 Claude Sandbox Changes Detected
 
-.claude-sandbox-sharing/ (`/home/jwies/.claude-sandbox-sharing`):
+.jib-sharing/ (`/home/jwies/.jib-sharing`):
   • `notifications/summary-2025-01-15.md`
   • `context-tracking/updates.md`
 
-.claude-sandbox-tools/ (`/home/jwies/.claude-sandbox-tools`):
+.jib-tools/ (`/home/jwies/.jib-tools`):
   • `scripts/new-helper.sh`
 
 Total changes: 3
@@ -96,7 +96,7 @@ Total changes: 3
 
 ## Configuration
 
-Edit `~/.config/slack-notifier/config.json`:
+Edit `~/.config/jib-notifier/config.json`:
 
 ```json
 {
@@ -104,8 +104,8 @@ Edit `~/.config/slack-notifier/config.json`:
   "slack_channel": "D04CMDR7LBT",
   "batch_window_seconds": 30,
   "watch_directories": [
-    "/home/jwies/.claude-sandbox-sharing",
-    "/home/jwies/.claude-sandbox-tools"
+    "/home/jwies/.jib-sharing",
+    "/home/jwies/.jib-tools"
   ]
 }
 ```
@@ -118,17 +118,17 @@ After editing, restart:
 ## File Locations
 
 ### Configuration and Logs
-- **Config**: `~/.config/slack-notifier/config.json` (permissions: 600)
-- **Logs**: `~/.config/slack-notifier/notifier.log`
+- **Config**: `~/.config/jib-notifier/config.json` (permissions: 600)
+- **Logs**: `~/.config/jib-notifier/notifier.log`
 - **Systemd logs**: `journalctl --user -u slack-notifier`
 
 ### Service Files
-- **Service**: `~/.config/systemd/user/slack-notifier.service` (symlink)
-- **Source**: `~/khan/cursor-sandboxed/slack-notifier/systemd/slack-notifier.service`
-- **Script**: `~/khan/cursor-sandboxed/scripts/host-notify-slack.py`
+- **Service**: `~/.config/systemd/user/jib-notifier.service` (symlink)
+- **Source**: `~/khan/james-in-a-box/jib-notifier/systemd/jib-notifier.service`
+- **Script**: `~/khan/james-in-a-box/scripts/host-notify-slack.py`
 
 ### Runtime
-- **Lock file**: `/tmp/slack-notifier.lock`
+- **Lock file**: `/tmp/jib-notifier.lock`
 
 ## Testing
 
@@ -136,7 +136,7 @@ Test the notifier by creating a file:
 
 ```bash
 # Create a test file
-echo "test" > ~/.claude-sandbox-sharing/test.txt
+echo "test" > ~/.jib-sharing/test.txt
 
 # Wait 30 seconds (batch window)
 
@@ -170,10 +170,10 @@ python3 -c "import inotify, requests; print('Dependencies OK')"
 ./manage_notifier.sh status
 
 # Verify config
-cat ~/.config/slack-notifier/config.json
+cat ~/.config/jib-notifier/config.json
 
 # Test Slack token
-python3 ~/khan/cursor-sandboxed/scripts/host-notify-slack.py
+python3 ~/khan/james-in-a-box/scripts/host-notify-slack.py
 # (will start in foreground, Ctrl+C to stop)
 ```
 
@@ -202,7 +202,7 @@ This notifier complements the claude-sandboxed workflow:
               │
               ▼ (mounted to host)
 ┌─────────────────────────────────────┐
-│  Host: ~/.claude-sandbox-sharing/   │
+│  Host: ~/.jib-sharing/   │
 └─────────────────────────────────────┘
               │
               ▼ (inotify watches)
@@ -228,16 +228,16 @@ This notifier complements the claude-sandboxed workflow:
 ./manage_notifier.sh disable
 
 # Remove symlink
-rm ~/.config/systemd/user/slack-notifier.service
+rm ~/.config/systemd/user/jib-notifier.service
 systemctl --user daemon-reload
 
 # Optionally remove config
-rm -rf ~/.config/slack-notifier/
+rm -rf ~/.config/jib-notifier/
 ```
 
 ## Security Notes
 
-- Configuration stored in `~/.config/slack-notifier/` (permissions: 700)
+- Configuration stored in `~/.config/jib-notifier/` (permissions: 700)
 - Config file has permissions 600 (only you can read)
 - Slack token never written to logs
 - Runs as your user (no elevated privileges)
@@ -247,5 +247,5 @@ rm -rf ~/.config/slack-notifier/
 1. Get Slack bot token from https://api.slack.com/apps
 2. Run setup: `./manage_notifier.sh setup`
 3. Enable service: `./manage_notifier.sh enable`
-4. Test by creating a file in `~/.claude-sandbox-sharing/`
+4. Test by creating a file in `~/.jib-sharing/`
 5. Check Slack for notification!

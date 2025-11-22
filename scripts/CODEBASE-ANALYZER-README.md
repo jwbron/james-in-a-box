@@ -1,11 +1,11 @@
 # Codebase Improvement Analyzer
 
-Automated daily analysis of the cursor-sandboxed codebase to identify potential improvements, security issues, and technology updates.
+Automated daily analysis of the james-in-a-box codebase to identify potential improvements, security issues, and technology updates.
 
 ## Overview
 
 The Codebase Analyzer:
-- **Analyzes files** in the cursor-sandboxed project for code quality, security, and best practices
+- **Analyzes files** in the james-in-a-box project for code quality, security, and best practices
 - **Searches the web** for new technologies and improvements relevant to the project
 - **Sends Slack notifications** with findings via the existing notification system
 - **Runs automatically** daily at 11am PST and 5 minutes after system startup
@@ -21,7 +21,7 @@ The Codebase Analyzer:
 ┌─────────────────────────────────────────────────────────┐
 │  codebase-analyzer.py                                    │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │  1. Scan ~/khan/cursor-sandboxed files           │   │
+│  │  1. Scan ~/khan/james-in-a-box files           │   │
 │  │  2. Analyze each file with Claude API            │   │
 │  │  3. Search web for improvements                  │   │
 │  │  4. Generate findings report                     │   │
@@ -31,7 +31,7 @@ The Codebase Analyzer:
                   ▼
 ┌─────────────────────────────────────────────────────────┐
 │  Notification File                                       │
-│  ~/.claude-sandbox-sharing/notifications/               │
+│  ~/.jib-sharing/notifications/               │
 │  └── YYYYMMDD-HHMMSS-codebase-improvements.md          │
 └─────────────────┬───────────────────────────────────────┘
                   │
@@ -87,12 +87,12 @@ Searches for:
    ```
 
 3. **Slack notification system**:
-   Ensure `host-notify-slack.py` is running (watches `~/.claude-sandbox-sharing/notifications/`)
+   Ensure `host-notify-slack.py` is running (watches `~/.jib-sharing/notifications/`)
 
 ### Setup
 
 ```bash
-cd ~/khan/cursor-sandboxed/scripts
+cd ~/khan/james-in-a-box/scripts
 
 # Check requirements
 ./analyzer-ctl.sh check
@@ -143,7 +143,7 @@ cd ~/khan/cursor-sandboxed/scripts
 ### Manual Execution
 
 ```bash
-cd ~/khan/cursor-sandboxed/scripts
+cd ~/khan/james-in-a-box/scripts
 python3 ./codebase-analyzer.py
 ```
 
@@ -164,13 +164,13 @@ The analyzer runs:
 
 ### Notification Format
 
-Notifications are created in `~/.claude-sandbox-sharing/notifications/` with format:
+Notifications are created in `~/.jib-sharing/notifications/` with format:
 
 ```markdown
 # 🔍 Codebase Improvement Analysis
 
 **Generated**: YYYY-MM-DD HH:MM:SS
-**Project**: cursor-sandboxed
+**Project**: james-in-a-box
 
 ## 📊 Summary
 - Files Analyzed: X
@@ -256,7 +256,7 @@ python3 ./codebase-analyzer.py
 
 2. Check notification file created:
    ```bash
-   ls -lt ~/.claude-sandbox-sharing/notifications/ | head
+   ls -lt ~/.jib-sharing/notifications/ | head
    ```
 
 3. Check Slack notifier running:
@@ -292,7 +292,7 @@ At Claude API pricing (~$3 per million tokens for Sonnet):
 ## Files
 
 ```
-cursor-sandboxed/scripts/
+james-in-a-box/scripts/
 ├── codebase-analyzer.py           # Main analyzer script
 ├── codebase-analyzer.service      # Systemd service file
 ├── codebase-analyzer.timer        # Systemd timer file
@@ -321,7 +321,7 @@ Potential improvements:
 
 ## License
 
-Part of the cursor-sandboxed project.
+Part of the james-in-a-box project.
 
 ## Support
 
@@ -329,4 +329,4 @@ For issues or questions:
 1. Check logs: `./analyzer-ctl.sh logs`
 2. Test manually: `./analyzer-ctl.sh test`
 3. Review this README
-4. Check cursor-sandboxed main documentation
+4. Check james-in-a-box main documentation

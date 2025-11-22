@@ -67,9 +67,9 @@ class SlackReceiver:
         self.owner_user_id = self.config.get('owner_user_id')  # User's Slack user ID
         self.bot_user_id = None
         self.incoming_dir = Path(self.config.get('incoming_directory',
-                                                  '~/.claude-sandbox-sharing/incoming')).expanduser()
+                                                  '~/.jib-sharing/incoming')).expanduser()
         self.responses_dir = Path(self.config.get('responses_directory',
-                                                   '~/.claude-sandbox-sharing/responses')).expanduser()
+                                                   '~/.jib-sharing/responses')).expanduser()
 
         # Ensure incoming directories exist
         self.incoming_dir.mkdir(parents=True, exist_ok=True)
@@ -119,8 +119,8 @@ class SlackReceiver:
                 'allowed_users': [],  # Empty = allow all
                 'self_dm_channel': '',  # User's self-DM channel ID (e.g., D07S8SAB5FE)
                 'owner_user_id': '',  # User's Slack user ID (e.g., U07SK26JPJ5)
-                'incoming_directory': '~/.claude-sandbox-sharing/incoming',
-                'responses_directory': '~/.claude-sandbox-sharing/responses'
+                'incoming_directory': '~/.jib-sharing/incoming',
+                'responses_directory': '~/.jib-sharing/responses'
             }
             self._save_config(config)
 

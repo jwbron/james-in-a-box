@@ -59,7 +59,7 @@ You'll need TWO tokens:
 
 ```bash
 # Run interactive setup
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh setup
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup
 ```
 
 Enter when prompted:
@@ -70,7 +70,7 @@ Enter when prompted:
 **Find your Slack user ID**:
 ```bash
 # Method 1: Send test DM to bot, check receiver logs
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 
 # Method 2: Slack UI
 # Click your profile → More → Copy member ID
@@ -80,19 +80,19 @@ Enter when prompted:
 
 ```bash
 # Start receiver
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh start
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh start
 
 # Verify it's running
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
 ```
 
 Expected output:
 ```
 ✓ Receiver is running (PID: 12345)
 Configuration:
-  Config file: ~/.config/slack-notifier/config.json
-  Incoming dir: ~/.claude-sandbox-sharing/incoming
-  Responses dir: ~/.claude-sandbox-sharing/responses
+  Config file: ~/.config/jib-notifier/config.json
+  Incoming dir: ~/.jib-sharing/incoming
+  Responses dir: ~/.jib-sharing/responses
   Allowed users: U01234567 (or "All")
 ```
 
@@ -138,7 +138,7 @@ Bot will respond in your self-DM with:
 Check it was received:
 ```bash
 # Host: Check receiver logs
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 
 # Should see: "Received message from <your name>"
 # Should see: "Message written: incoming/task-YYYYMMDD-HHMMSS.md"
@@ -205,7 +205,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 %h/khan/cursor-sandboxed/scripts/host-receive-slack.py
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/scripts/host-receive-slack.py
 Restart=on-failure
 RestartSec=30s
 Nice=10
@@ -242,10 +242,10 @@ systemctl --user status slack-receiver  # Incoming (You → Claude)
 **Fix**:
 ```bash
 # Verify token in config
-cat ~/.config/slack-notifier/config.json | grep app_token
+cat ~/.config/jib-notifier/config.json | grep app_token
 
 # Check logs for specific error
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 ```
 
 ### "Not receiving messages in Slack"
@@ -257,10 +257,10 @@ cat ~/.config/slack-notifier/config.json | grep app_token
 **Fix**:
 ```bash
 # Check notifier status
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh status
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
 
 # Test by creating file
-echo "test" > ~/.claude-sandbox-sharing/notifications/test-notif.md
+echo "test" > ~/.jib-sharing/notifications/test-notif.md
 
 # Wait 30 seconds, check Slack
 ```
@@ -275,7 +275,7 @@ echo "test" > ~/.claude-sandbox-sharing/notifications/test-notif.md
 **Fix**:
 ```bash
 # Host: Check receiver
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
 
 # Container: Check watcher
 docker exec -it claude-sandboxed bash
@@ -283,7 +283,7 @@ ps aux | grep incoming-watcher
 tail -f ~/sharing/tracking/incoming-watcher.log
 
 # Manually test
-echo "test task" > ~/.claude-sandbox-sharing/incoming/manual-test.md
+echo "test task" > ~/.jib-sharing/incoming/manual-test.md
 ```
 
 ### "Permission denied" or "Unauthorized"
@@ -296,26 +296,26 @@ echo "test task" > ~/.claude-sandbox-sharing/incoming/manual-test.md
 **Fix**:
 ```bash
 # Check config
-cat ~/.config/slack-notifier/config.json
+cat ~/.config/jib-notifier/config.json
 
 # Remove user whitelist to test
 # Edit config.json: "allowed_users": []
 
 # Restart receiver
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh restart
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh restart
 ```
 
 ## Configuration Files
 
 **Main config** (both notifier and receiver):
 ```
-~/.config/slack-notifier/config.json
+~/.config/jib-notifier/config.json
 ```
 
 **Logs**:
 ```
-~/.config/slack-notifier/notifier.log   # Outgoing
-~/.config/slack-notifier/receiver.log   # Incoming
+~/.config/jib-notifier/notifier.log   # Outgoing
+~/.config/jib-notifier/receiver.log   # Incoming
 ```
 
 **Container logs**:

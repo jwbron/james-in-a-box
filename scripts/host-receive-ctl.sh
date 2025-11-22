@@ -3,9 +3,9 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECEIVER_SCRIPT="${SCRIPT_DIR}/host-receive-slack.py"
-PID_FILE="${HOME}/.config/slack-notifier/receiver.pid"
-LOG_FILE="${HOME}/.config/slack-notifier/receiver.log"
-CONFIG_FILE="${HOME}/.config/slack-notifier/config.json"
+PID_FILE="${HOME}/.config/jib-notifier/receiver.pid"
+LOG_FILE="${HOME}/.config/jib-notifier/receiver.log"
+CONFIG_FILE="${HOME}/.config/jib-notifier/config.json"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -119,8 +119,8 @@ status() {
 
             # Parse config
             if command -v jq > /dev/null 2>&1; then
-                local incoming=$(jq -r '.incoming_directory // "~/.claude-sandbox-sharing/incoming"' "$CONFIG_FILE")
-                local responses=$(jq -r '.responses_directory // "~/.claude-sandbox-sharing/responses"' "$CONFIG_FILE")
+                local incoming=$(jq -r '.incoming_directory // "~/.jib-sharing/incoming"' "$CONFIG_FILE")
+                local responses=$(jq -r '.responses_directory // "~/.jib-sharing/responses"' "$CONFIG_FILE")
                 local self_dm=$(jq -r '.self_dm_channel // ""' "$CONFIG_FILE")
                 local owner_id=$(jq -r '.owner_user_id // ""' "$CONFIG_FILE")
                 local allowed=$(jq -r '.allowed_users // [] | join(", ")' "$CONFIG_FILE")
@@ -204,8 +204,8 @@ setup() {
   "allowed_users": $allowed_users,
   "self_dm_channel": "$self_dm_channel",
   "owner_user_id": "$owner_user_id",
-  "incoming_directory": "~/.claude-sandbox-sharing/incoming",
-  "responses_directory": "~/.claude-sandbox-sharing/responses"
+  "incoming_directory": "~/.jib-sharing/incoming",
+  "responses_directory": "~/.jib-sharing/responses"
 }
 EOF
 

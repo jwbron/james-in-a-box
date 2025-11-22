@@ -200,31 +200,31 @@ if [ -d "${USER_HOME}/sharing" ]; then
 fi
 
 # Start context-watcher in background (if configured)
-if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh" ]; then
+if [ -f "${USER_HOME}/khan/james-in-a-box/scripts/context-watcher.sh" ]; then
     echo "Starting context-watcher in background..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "nohup ${USER_HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh >> ${USER_HOME}/sharing/tracking/watcher.log 2>&1 &"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "nohup ${USER_HOME}/khan/james-in-a-box/scripts/context-watcher.sh >> ${USER_HOME}/sharing/tracking/watcher.log 2>&1 &"
     echo "✓ Context watcher started (monitoring ~/context-sync/)"
 else
-    echo "⚠ Context watcher script not found at ${USER_HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh"
+    echo "⚠ Context watcher script not found at ${USER_HOME}/khan/james-in-a-box/scripts/context-watcher.sh"
 fi
 
 # Start incoming-watcher in background (if configured)
-if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh" ]; then
+if [ -f "${USER_HOME}/khan/james-in-a-box/scripts/incoming-watcher.sh" ]; then
     echo "Starting incoming message watcher in background..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "CHECK_INTERVAL=5 nohup ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh >> ${USER_HOME}/sharing/tracking/incoming-watcher.log 2>&1 &"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "CHECK_INTERVAL=5 nohup ${USER_HOME}/khan/james-in-a-box/scripts/incoming-watcher.sh >> ${USER_HOME}/sharing/tracking/incoming-watcher.log 2>&1 &"
     echo "✓ Incoming watcher started (checking every 5 seconds for new messages)"
 else
-    echo "⚠ Incoming watcher script not found at ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh"
+    echo "⚠ Incoming watcher script not found at ${USER_HOME}/khan/james-in-a-box/scripts/incoming-watcher.sh"
 fi
 
 # Run codebase analyzer on startup (if configured)
 # Checks if analysis was run in last 7 days before running
-if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/codebase-analyzer.py" ]; then
+if [ -f "${USER_HOME}/khan/james-in-a-box/scripts/codebase-analyzer.py" ]; then
     echo "Running codebase analyzer (checks if run in last week)..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME} && python3 ${USER_HOME}/khan/cursor-sandboxed/scripts/codebase-analyzer.py >> ${USER_HOME}/sharing/tracking/analyzer.log 2>&1 &"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME} && python3 ${USER_HOME}/khan/james-in-a-box/scripts/codebase-analyzer.py >> ${USER_HOME}/sharing/tracking/analyzer.log 2>&1 &"
     echo "✓ Codebase analyzer started (weekly analysis + web research)"
 else
-    echo "⚠ Codebase analyzer script not found at ${USER_HOME}/khan/cursor-sandboxed/scripts/codebase-analyzer.py"
+    echo "⚠ Codebase analyzer script not found at ${USER_HOME}/khan/james-in-a-box/scripts/codebase-analyzer.py"
 fi
 
 # Drop privileges and start shell or run claude

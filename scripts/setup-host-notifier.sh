@@ -89,8 +89,8 @@ fi
 print_header "Directory Check"
 
 DIRS=(
-    "${HOME}/.claude-sandbox-sharing"
-    "${HOME}/.claude-sandbox-tools"
+    "${HOME}/.jib-sharing"
+    "${HOME}/.jib-tools"
 )
 
 for dir in "${DIRS[@]}"; do
@@ -131,7 +131,7 @@ fi
 # Check scripts
 print_header "Script Check"
 
-SCRIPT_DIR="${HOME}/khan/cursor-sandboxed/scripts"
+SCRIPT_DIR="${HOME}/khan/james-in-a-box/scripts"
 
 if [ -f "$SCRIPT_DIR/host-notify-slack.sh" ]; then
     check_mark "host-notify-slack.sh exists"
@@ -193,20 +193,20 @@ echo ""
 echo "Next steps:"
 echo ""
 echo "1. Start the notifier:"
-echo -e "   ${YELLOW}~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh start${NC}"
+echo -e "   ${YELLOW}~/khan/james-in-a-box/scripts/host-notify-ctl.sh start${NC}"
 echo ""
 echo "2. Check status:"
-echo -e "   ${YELLOW}~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh status${NC}"
+echo -e "   ${YELLOW}~/khan/james-in-a-box/scripts/host-notify-ctl.sh status${NC}"
 echo ""
 echo "3. Test by creating a file:"
-echo -e "   ${YELLOW}mkdir -p ~/.claude-sandbox-sharing${NC}"
-echo -e "   ${YELLOW}echo 'test' > ~/.claude-sandbox-sharing/test.txt${NC}"
+echo -e "   ${YELLOW}mkdir -p ~/.jib-sharing${NC}"
+echo -e "   ${YELLOW}echo 'test' > ~/.jib-sharing/test.txt${NC}"
 echo ""
 echo "4. Wait 30 seconds and check your Slack DM from the bot"
 echo ""
 echo "5. View logs:"
-echo -e "   ${YELLOW}~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh tail${NC}"
+echo -e "   ${YELLOW}~/khan/james-in-a-box/scripts/host-notify-ctl.sh tail${NC}"
 echo ""
 echo "For more information, see:"
-echo -e "   ${BLUE}~/khan/cursor-sandboxed/HOST-SLACK-NOTIFIER.md${NC}"
+echo -e "   ${BLUE}~/khan/james-in-a-box/HOST-SLACK-NOTIFIER.md${NC}"
 echo ""

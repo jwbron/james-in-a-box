@@ -21,7 +21,7 @@ exit                           # Done
 
 ```bash
 # 1. Clone or navigate to project
-cd ~/khan/cursor-sandboxed
+cd ~/khan/james-in-a-box
 
 # 2. Run (builds Docker image on first use)
 ./claude-sandboxed
@@ -89,7 +89,7 @@ You: Save what we learned
 Claude: ✅ Saved Session 2 to ~/sharing/context/auth-work.md
 
 # On host, you review and apply:
-cd ~/.claude-sandbox-sharing/staged-changes/webapp/
+cd ~/.jib-sharing/staged-changes/webapp/
 # Review changes, then apply to actual repo
 ```
 
@@ -161,7 +161,7 @@ Flags:
 ~/khan/                      Code reference (MOUNTED ro - READ ONLY!)
   ├── actions/
   ├── buildmaster2/
-  ├── cursor-sandboxed/
+  ├── james-in-a-box/
   ├── frontend/
   ├── internal-services/
   ├── jenkins-jobs/
@@ -183,8 +183,8 @@ Flags:
 
 ```
 ~/.claude-sandbox/           Build context and config
-~/.claude-sandbox-tools/     Mapped to ~/tools/ in container
-~/.claude-sandbox-sharing/   Mapped to ~/sharing/ in container
+~/.jib-tools/     Mapped to ~/tools/ in container
+~/.jib-sharing/   Mapped to ~/sharing/ in container
 ~/khan/                      Your real codebase (MOUNTED to container)
 ```
 
@@ -224,7 +224,7 @@ Flags:
 
 ```bash
 # Review Claude's staged changes
-cd ~/.claude-sandbox-sharing/staged-changes/
+cd ~/.jib-sharing/staged-changes/
 
 # Apply approved changes
 cp webapp/*.py ~/khan/webapp/
@@ -429,7 +429,7 @@ npm test -- --coverage --verbose
 
 ```bash
 # 1. Start (from host)
-cd ~/khan/cursor-sandboxed
+cd ~/khan/james-in-a-box
 ./claude-sandboxed
 
 # 2. Launch Claude (inside container)

@@ -11,7 +11,7 @@ CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 STATE_FILE="${CONFIG_DIR}/watcher-state.json"
 LOG_FILE="${CONFIG_DIR}/watcher.log"
 LOCK_FILE="/tmp/context-watcher.lock"
-NOTIFICATIONS_DIR="${HOME}/.claude-sandbox-sharing/notifications"
+NOTIFICATIONS_DIR="${HOME}/.jib-sharing/notifications"
 
 # Ensure directories exist
 mkdir -p "$CONFIG_DIR" "$CONTEXT_DIR" "$NOTIFICATIONS_DIR"
@@ -126,7 +126,7 @@ EOF
     cat "$temp_file" >> "$prompt_file"
 
     # Run Claude analysis
-    cd "${HOME}/khan/cursor-sandboxed" || cd "$HOME"
+    cd "${HOME}/khan/james-in-a-box" || cd "$HOME"
 
     if claude --prompt-file "$prompt_file" --output-dir "$NOTIFICATIONS_DIR" >> "$LOG_FILE" 2>&1; then
         log "Analysis completed successfully"

@@ -107,7 +107,7 @@ Inside Container:
   ~/khan/                      Code reference (MOUNTED ro)
     ├── actions/
     ├── buildmaster2/
-    ├── cursor-sandboxed/
+    ├── james-in-a-box/
     ├── frontend/
     ├── internal-services/
     ├── jenkins-jobs/
@@ -193,7 +193,7 @@ Inside Container:
 
 **You → Claude** (Responses & Tasks):
 1. You send Slack DM to bot (from anywhere - phone, desktop, remote)
-2. Host Slack receiver writes to `~/.claude-sandbox-sharing/incoming/` or `responses/`
+2. Host Slack receiver writes to `~/.jib-sharing/incoming/` or `responses/`
 3. Container incoming-watcher detects and processes your message
 4. Claude receives your response or new task
 
@@ -298,7 +298,7 @@ Claude: "Changes staged in ~/sharing/staged-changes/webapp/"
 exit
 
 # On host: Review and apply changes
-cd ~/.claude-sandbox-sharing/staged-changes/webapp/
+cd ~/.jib-sharing/staged-changes/webapp/
 cat README.md  # Read Claude's documentation
 # Review code changes
 # Apply to actual repo:
@@ -393,7 +393,7 @@ last time..."
 ## Files Structure
 
 ```
-cursor-sandboxed/
+james-in-a-box/
 ├── claude-sandboxed              # Main orchestration script
 ├── Dockerfile                    # Container definition
 ├── docker-setup.py               # Dev environment installer

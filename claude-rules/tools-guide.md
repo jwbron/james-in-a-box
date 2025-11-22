@@ -6,7 +6,7 @@ The `~/tools/` directory is for building reusable scripts and utilities that per
 
 ## Location
 
-- **Host**: `~/.claude-sandbox-tools/`
+- **Host**: `~/.jib-tools/`
 - **Container**: `~/tools/`
 - **Persistence**: Read-write, survives container rebuilds
 - **Sharing**: Accessible from both host and container

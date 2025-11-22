@@ -111,8 +111,8 @@ class SlackNotifier:
                 # 15 = send every 15 seconds, 30 = send every 30 seconds
                 'batch_window_seconds': 15,
                 'watch_directories': [
-                    '~/.claude-sandbox-sharing',
-                    '~/.claude-sandbox-tools'
+                    '~/.jib-sharing',
+                    '~/.jib-tools'
                 ]
             }
             self._save_config(config)

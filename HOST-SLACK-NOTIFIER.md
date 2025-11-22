@@ -5,8 +5,8 @@ Monitors shared directories on the **host machine** (outside the container) and 
 ## Overview
 
 This system watches:
-- `~/.claude-sandbox-sharing/` - Shared data between host and container
-- `~/.claude-sandbox-tools/` - Shared tools directory
+- `~/.jib-sharing/` - Shared data between host and container
+- `~/.jib-tools/` - Shared tools directory
 
 When changes are detected, it sends a Slack direct message to James Wiesebron with a summary of what changed.
 
@@ -71,35 +71,35 @@ export SLACK_TOKEN="xoxb-your-token-here"
 export SLACK_TOKEN="xoxb-your-token-here"
 
 # Start the service
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh start
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh start
 ```
 
 ### Check Status
 
 ```bash
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh status
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
 ```
 
 ### View Logs
 
 ```bash
 # View all logs
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh logs
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh logs
 
 # Tail logs (live view)
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh tail
 ```
 
 ### Stop the Notifier
 
 ```bash
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh stop
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh stop
 ```
 
 ### Restart
 
 ```bash
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh restart
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh restart
 ```
 
 ## How It Works
@@ -121,11 +121,11 @@ To avoid spam, changes are batched over a 30-second window. All changes within 3
 ```
 🔔 Claude Sandbox Changes Detected
 
-Sharing Directory (~/.claude-sandbox-sharing/):
+Sharing Directory (~/.jib-sharing/):
   • notifications/summary-2025-01-15.md
   • context-tracking/watcher-state.json
 
-Tools Directory (~/.claude-sandbox-tools/):
+Tools Directory (~/.jib-tools/):
   • scripts/new-helper.sh
 
 Total changes: 3
@@ -142,12 +142,12 @@ The script automatically filters out:
 
 ### Change Watched Directories
 
-Edit `~/khan/cursor-sandboxed/scripts/host-notify-slack.sh`:
+Edit `~/khan/james-in-a-box/scripts/host-notify-slack.sh`:
 
 ```bash
 WATCH_DIRS=(
-    "${HOME}/.claude-sandbox-sharing"
-    "${HOME}/.claude-sandbox-tools"
+    "${HOME}/.jib-sharing"
+    "${HOME}/.jib-tools"
     "${HOME}/context-sync"  # Add more directories
 )
 ```
@@ -187,7 +187,7 @@ After=network.target
 Type=simple
 User=jwies
 Environment="SLACK_TOKEN=xoxb-your-token-here"
-ExecStart=/home/jwies/khan/cursor-sandboxed/scripts/host-notify-slack.sh
+ExecStart=/home/jwies/khan/james-in-a-box/scripts/host-notify-slack.sh
 Restart=on-failure
 RestartSec=10
 
@@ -215,7 +215,7 @@ After=network.target
 [Service]
 Type=simple
 Environment="SLACK_TOKEN=xoxb-your-token-here"
-ExecStart=%h/khan/cursor-sandboxed/scripts/host-notify-slack.sh
+ExecStart=%h/khan/james-in-a-box/scripts/host-notify-slack.sh
 Restart=on-failure
 RestartSec=10
 
@@ -238,7 +238,7 @@ Add to `~/.bashrc`:
 ```bash
 # Auto-start Claude notifier
 if [ -n "$SLACK_TOKEN" ] && ! pgrep -f host-notify-slack.sh > /dev/null; then
-    ~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh start >/dev/null 2>&1
+    ~/khan/james-in-a-box/scripts/host-notify-ctl.sh start >/dev/null 2>&1
 fi
 ```
 
@@ -287,17 +287,17 @@ Your Slack app needs the `chat:write` scope. Go to your app settings and add it 
 
 1. Check if the notifier is running:
    ```bash
-   ~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh status
+   ~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
    ```
 
 2. Check logs:
    ```bash
-   ~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh tail
+   ~/khan/james-in-a-box/scripts/host-notify-ctl.sh tail
    ```
 
 3. Test by creating a file:
    ```bash
-   echo "test" > ~/.claude-sandbox-sharing/test.txt
+   echo "test" > ~/.jib-sharing/test.txt
    ```
 
 4. Wait 30 seconds (batch window) and check Slack
@@ -318,16 +318,16 @@ Common issues:
 
 ### Host Machine
 
-- **Main Script**: `~/khan/cursor-sandboxed/scripts/host-notify-slack.sh`
-- **Control Script**: `~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh`
+- **Main Script**: `~/khan/james-in-a-box/scripts/host-notify-slack.sh`
+- **Control Script**: `~/khan/james-in-a-box/scripts/host-notify-ctl.sh`
 - **State Directory**: `~/.claude-sandbox-notify/`
 - **Log File**: `~/.claude-sandbox-notify/notify.log`
 - **Lock File**: `/tmp/claude-notify.lock`
 
 ### Watched Directories
 
-- **Sharing**: `~/.claude-sandbox-sharing/` (container: `~/sharing/`)
-- **Tools**: `~/.claude-sandbox-tools/` (container: `~/tools/`)
+- **Sharing**: `~/.jib-sharing/` (container: `~/sharing/`)
+- **Tools**: `~/.jib-tools/` (container: `~/tools/`)
 
 ## Integration with Container Watcher
 
@@ -341,7 +341,7 @@ This host-side notifier works alongside the container-based context watcher:
 
 **Host Notifier** (`host-notify-slack.sh`):
 - Runs on the host machine
-- Watches `~/.claude-sandbox-sharing/` for outputs
+- Watches `~/.jib-sharing/` for outputs
 - Sends Slack DMs when Claude creates notifications
 - Provides immediate awareness of Claude's work
 
@@ -349,7 +349,7 @@ This host-side notifier works alongside the container-based context watcher:
 1. Confluence/JIRA/GitHub data syncs to `~/context-sync/`
 2. Container watcher detects changes
 3. Claude analyzes and creates summaries in `~/sharing/notifications/`
-4. Host notifier detects new files in `~/.claude-sandbox-sharing/`
+4. Host notifier detects new files in `~/.jib-sharing/`
 5. Slack DM sent to you with summary
 
 ## Next Steps
@@ -358,7 +358,7 @@ This host-side notifier works alongside the container-based context watcher:
 2. Get Slack bot token from https://api.slack.com/apps
 3. Set `SLACK_TOKEN` environment variable
 4. Start the notifier
-5. Test by creating a file in `~/.claude-sandbox-sharing/`
+5. Test by creating a file in `~/.jib-sharing/`
 6. Set up auto-start (systemd or `.bashrc`)
 
 ## Example Session
@@ -370,21 +370,21 @@ export SLACK_TOKEN="xoxb-1234567890-..."
 echo 'export SLACK_TOKEN="xoxb-1234567890-..."' >> ~/.bashrc
 
 # Start notifier
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh start
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh start
 # Output: ✓ Notifier started (PID: 12345)
 
 # Check status
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh status
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
 # Output: ✓ Notifier is running (PID: 12345)
 
 # Test it
-echo "test" > ~/.claude-sandbox-sharing/test.txt
+echo "test" > ~/.jib-sharing/test.txt
 
 # Wait 30 seconds, check Slack DM from Claude Notifier bot
 
 # View logs
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh tail
-# Output: [2025-01-15 10:30:15] Change detected: /home/jwies/.claude-sandbox-sharing/test.txt
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh tail
+# Output: [2025-01-15 10:30:15] Change detected: /home/jwies/.jib-sharing/test.txt
 #         [2025-01-15 10:30:45] Sending notification for 1 change(s)
 #         [2025-01-15 10:30:46] Notification sent successfully
 ```

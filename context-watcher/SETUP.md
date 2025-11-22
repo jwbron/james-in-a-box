@@ -17,7 +17,7 @@ If you're already in a running container, you'll need to restart it for the SELi
 exit
 
 # Rebuild and restart (on host)
-~/khan/cursor-sandboxed/claude-sandboxed
+~/khan/james-in-a-box/claude-sandboxed
 ```
 
 ### 2. Verify Directories
@@ -39,7 +39,7 @@ mkdir -p ~/sharing/notifications/{draft-responses,action-items,code-plans,code-d
 
 ```bash
 # Copy config to proper location
-cp ~/khan/cursor-sandboxed/context-watcher/config/context-watcher.yaml ~/sharing/config/
+cp ~/khan/james-in-a-box/context-watcher/config/context-watcher.yaml ~/sharing/config/
 
 # Edit with your details (name, email, teams, etc.)
 vi ~/sharing/config/context-watcher.yaml
@@ -51,22 +51,22 @@ The watcher script currently references the old location. Update it:
 
 ```bash
 # Edit the watcher script
-vi ~/khan/cursor-sandboxed/scripts/context-watcher.sh
+vi ~/khan/james-in-a-box/scripts/context-watcher.sh
 
 # Change line 8 from:
-CONFIG_FILE="${HOME}/khan/cursor-sandboxed/.context-watcher/config/context-watcher.yaml"
+CONFIG_FILE="${HOME}/khan/james-in-a-box/.context-watcher/config/context-watcher.yaml"
 
 # To:
 CONFIG_FILE="${HOME}/sharing/config/context-watcher.yaml"
 
 # Change line 9 from:
-STATE_FILE="${HOME}/khan/cursor-sandboxed/.context-watcher/tracking/watcher-state.json"
+STATE_FILE="${HOME}/khan/james-in-a-box/.context-watcher/tracking/watcher-state.json"
 
 # To:
 STATE_FILE="${HOME}/sharing/context-tracking/watcher-state.json"
 
 # Change line 10 from:
-LOG_FILE="${HOME}/khan/cursor-sandboxed/.context-watcher/tracking/watcher.log"
+LOG_FILE="${HOME}/khan/james-in-a-box/.context-watcher/tracking/watcher.log"
 
 # To:
 LOG_FILE="${HOME}/sharing/context-tracking/watcher.log"
@@ -75,9 +75,9 @@ LOG_FILE="${HOME}/sharing/context-tracking/watcher.log"
 Or run this sed command to do it automatically:
 
 ```bash
-sed -i 's|${HOME}/khan/cursor-sandboxed/.context-watcher/config/context-watcher.yaml|${HOME}/sharing/config/context-watcher.yaml|' ~/khan/cursor-sandboxed/scripts/context-watcher.sh
-sed -i 's|${HOME}/khan/cursor-sandboxed/.context-watcher/tracking/watcher-state.json|${HOME}/sharing/context-tracking/watcher-state.json|' ~/khan/cursor-sandboxed/scripts/context-watcher.sh
-sed -i 's|${HOME}/khan/cursor-sandboxed/.context-watcher/tracking/watcher.log|${HOME}/sharing/context-tracking/watcher.log|' ~/khan/cursor-sandboxed/scripts/context-watcher.sh
+sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/config/context-watcher.yaml|${HOME}/sharing/config/context-watcher.yaml|' ~/khan/james-in-a-box/scripts/context-watcher.sh
+sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/tracking/watcher-state.json|${HOME}/sharing/context-tracking/watcher-state.json|' ~/khan/james-in-a-box/scripts/context-watcher.sh
+sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/tracking/watcher.log|${HOME}/sharing/context-tracking/watcher.log|' ~/khan/james-in-a-box/scripts/context-watcher.sh
 ```
 
 ### 5. Populate Context Sync Directory
@@ -104,16 +104,16 @@ cp -r /path/to/confluence-exports ~/context-sync/confluence/
 
 ```bash
 # Make scripts executable (if not already)
-chmod +x ~/khan/cursor-sandboxed/scripts/context-watcher*.sh
+chmod +x ~/khan/james-in-a-box/scripts/context-watcher*.sh
 
 # Start the service
-~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh start
+~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start
 
 # Check status
-~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh status
+~/khan/james-in-a-box/scripts/context-watcher-ctl.sh status
 
 # Watch logs
-~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh tail
+~/khan/james-in-a-box/scripts/context-watcher-ctl.sh tail
 ```
 
 ### 7. Test the System
@@ -129,7 +129,7 @@ echo "This is a test ADR to verify the context watcher is working." >> ~/context
 
 # Wait for the next check cycle (default 5 minutes)
 # Or restart the watcher to trigger immediate check
-~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh restart
+~/khan/james-in-a-box/scripts/context-watcher-ctl.sh restart
 
 # Check for output in ~/sharing/notifications/
 ls -la ~/sharing/notifications/
@@ -169,8 +169,8 @@ If you still can't access `~/sharing/` or `~/tools/` after restarting:
 3. If not, you may need to manually relabel from the host:
    ```bash
    # On host (outside container):
-   sudo chcon -R -t container_file_t ~/.claude-sandbox-sharing/
-   sudo chcon -R -t container_file_t ~/.claude-sandbox-tools/
+   sudo chcon -R -t container_file_t ~/.jib-sharing/
+   sudo chcon -R -t container_file_t ~/.jib-tools/
    sudo chcon -R -t container_file_t ~/context-sync/
    ```
 
@@ -225,8 +225,8 @@ Add to `~/.bashrc`:
 
 ```bash
 # Auto-start context watcher
-if [ -f ~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh ]; then
-    ~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh start >/dev/null 2>&1
+if [ -f ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh ]; then
+    ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start >/dev/null 2>&1
 fi
 ```
 
@@ -241,7 +241,7 @@ This is a separate service that runs on your **host machine** (outside the conta
 **Complete Flow:**
 1. Context watcher (in container) detects changes in `~/context-sync/`
 2. Claude analyzes and writes summaries to `~/sharing/notifications/`
-3. Host notifier (on host) detects new files in `~/.claude-sandbox-sharing/`
+3. Host notifier (on host) detects new files in `~/.jib-sharing/`
 4. Slack DM sent to you with summary
 
 **Setup:**
@@ -261,10 +261,10 @@ sudo apt install inotify-tools jq  # Ubuntu
 export SLACK_TOKEN="xoxb-your-token-here"
 
 # 3. Run setup
-~/khan/cursor-sandboxed/scripts/setup-host-notifier.sh
+~/khan/james-in-a-box/scripts/setup-host-notifier.sh
 
 # 4. Start the notifier
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh start
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh start
 ```
 
 This gives you immediate awareness whenever Claude creates notifications, draft responses, or action items.

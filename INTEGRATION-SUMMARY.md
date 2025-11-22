@@ -62,9 +62,9 @@ Our staged files include:
 ### Deploy Command
 ```bash
 # On host
-cd ~/khan/cursor-sandboxed
-cp ~/.claude-sandbox-sharing/staged-changes/cursor-sandboxed/Dockerfile .
-cp ~/.claude-sandbox-sharing/staged-changes/cursor-sandboxed/scripts/codebase-analyzer.* scripts/
+cd ~/khan/james-in-a-box
+cp ~/.jib-sharing/staged-changes/james-in-a-box/Dockerfile .
+cp ~/.jib-sharing/staged-changes/james-in-a-box/scripts/codebase-analyzer.* scripts/
 chmod +x scripts/codebase-analyzer.py
 ```
 

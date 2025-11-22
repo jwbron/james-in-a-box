@@ -164,7 +164,7 @@ After completing the above steps, you should have:
 ### Option 1: Interactive Setup (Recommended)
 
 ```bash
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh setup
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup
 ```
 
 Enter when prompted:
@@ -176,7 +176,7 @@ Enter when prompted:
 
 ### Option 2: Manual Configuration
 
-Create `~/.config/slack-notifier/config.json`:
+Create `~/.config/jib-notifier/config.json`:
 
 ```json
 {
@@ -185,14 +185,14 @@ Create `~/.config/slack-notifier/config.json`:
   "self_dm_channel": "D07S8SAB5FE",
   "owner_user_id": "U07SK26JPJ5",
   "allowed_users": ["U07SK26JPJ5"],
-  "incoming_directory": "~/.claude-sandbox-sharing/incoming",
-  "responses_directory": "~/.claude-sandbox-sharing/responses"
+  "incoming_directory": "~/.jib-sharing/incoming",
+  "responses_directory": "~/.jib-sharing/responses"
 }
 ```
 
 Set secure permissions:
 ```bash
-chmod 600 ~/.config/slack-notifier/config.json
+chmod 600 ~/.config/jib-notifier/config.json
 ```
 
 ## Verification Checklist
@@ -215,20 +215,20 @@ Before proceeding, verify:
 ### Start the Receiver
 
 ```bash
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh start
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh start
 ```
 
 Expected output:
 ```
 Starting Slack receiver...
 ✓ Receiver started (PID: 12345)
-  Logs: ~/.config/slack-notifier/receiver.log
+  Logs: ~/.config/jib-notifier/receiver.log
 ```
 
 ### Check Status
 
 ```bash
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
 ```
 
 Expected output:
@@ -236,24 +236,24 @@ Expected output:
 ✓ Receiver is running (PID: 12345)
 
 Configuration:
-  Config file: ~/.config/slack-notifier/config.json
-  Incoming dir: ~/.claude-sandbox-sharing/incoming
-  Responses dir: ~/.claude-sandbox-sharing/responses
+  Config file: ~/.config/jib-notifier/config.json
+  Incoming dir: ~/.jib-sharing/incoming
+  Responses dir: ~/.jib-sharing/responses
   Allowed users: U01234567AB
 ```
 
 ### View Logs
 
 ```bash
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 ```
 
 You should see:
 ```
 [2025-11-21 15:30:00] INFO: Starting Slack receiver (PID: 12345)
 [2025-11-21 15:30:01] INFO: Bot user ID: U98765432XY
-[2025-11-21 15:30:01] INFO: Incoming messages → ~/.claude-sandbox-sharing/incoming
-[2025-11-21 15:30:01] INFO: Responses → ~/.claude-sandbox-sharing/responses
+[2025-11-21 15:30:01] INFO: Incoming messages → ~/.jib-sharing/incoming
+[2025-11-21 15:30:01] INFO: Responses → ~/.jib-sharing/responses
 [2025-11-21 15:30:01] INFO: Allowed users: U01234567AB
 [2025-11-21 15:30:02] INFO: Connected to Slack Socket Mode
 [2025-11-21 15:30:02] INFO: Listening for direct messages...
@@ -268,13 +268,13 @@ claude: test task
 
 Check logs:
 ```bash
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 ```
 
 Should show:
 ```
 [2025-11-21 15:31:00] INFO: Received message from James Wiesebron (U01234567AB): claude: test task
-[2025-11-21 15:31:00] INFO: Message written: ~/.claude-sandbox-sharing/incoming/task-20251121-153100.md
+[2025-11-21 15:31:00] INFO: Message written: ~/.jib-sharing/incoming/task-20251121-153100.md
 ```
 
 And in Slack, you should get a reply in your self-DM:
@@ -294,7 +294,7 @@ And in Slack, you should get a reply in your self-DM:
 2. Select your app
 3. Go to "OAuth & Permissions"
 4. Copy the Bot User OAuth Token again
-5. Update config: `~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh setup`
+5. Update config: `~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup`
 
 ### "missing_scope" Error
 
@@ -306,7 +306,7 @@ And in Slack, you should get a reply in your self-DM:
 3. Go to "OAuth & Permissions"
 4. Add missing scopes from step 3 above
 5. Click "Reinstall to Workspace" at the top
-6. Restart receiver: `~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh restart`
+6. Restart receiver: `~/khan/james-in-a-box/scripts/host-receive-ctl.sh restart`
 
 ### "Socket Mode connection failed"
 
@@ -333,7 +333,7 @@ And in Slack, you should get a reply in your self-DM:
 **Debug**:
 ```bash
 # Watch logs in real-time
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 
 # In another terminal, send test message
 # Then check if anything appears in logs
@@ -365,7 +365,7 @@ And in Slack, you should get a reply in your self-DM:
 ### Token Storage
 
 ✅ **DO**:
-- Store tokens in `~/.config/slack-notifier/config.json` with 600 permissions
+- Store tokens in `~/.config/jib-notifier/config.json` with 600 permissions
 - Use environment variables for temporary testing
 - Keep tokens out of git repositories
 

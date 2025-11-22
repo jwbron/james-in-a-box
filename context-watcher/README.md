@@ -19,7 +19,7 @@ First, fix the SELinux labels on your shared directories (run from host, not con
 
 ```bash
 # On the host machine:
-sudo chcon -R -t container_file_t ~/.claude-sandbox-sharing/
+sudo chcon -R -t container_file_t ~/.jib-sharing/
 sudo chcon -R -t container_file_t ~/context-sync/
 ```
 
@@ -27,7 +27,7 @@ Or add to your docker-compose.yml / container startup script:
 
 ```yaml
 volumes:
-  - ~/.claude-sandbox-sharing:/home/jwies/sharing:Z
+  - ~/.jib-sharing:/home/jwies/sharing:Z
   - ~/context-sync:/home/jwies/context-sync:Z
 ```
 
@@ -45,7 +45,7 @@ mkdir -p ~/context-sync
 
 ```bash
 # Move config to the proper location
-cp ~/khan/cursor-sandboxed/context-watcher/config/context-watcher.yaml ~/sharing/config/
+cp ~/khan/james-in-a-box/context-watcher/config/context-watcher.yaml ~/sharing/config/
 
 # Update the config with your details
 vi ~/sharing/config/context-watcher.yaml
@@ -55,13 +55,13 @@ vi ~/sharing/config/context-watcher.yaml
 
 ```bash
 # Start in background
-~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh start
+~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start
 
 # Check status
-~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh status
+~/khan/james-in-a-box/scripts/context-watcher-ctl.sh status
 
 # View logs
-~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh tail
+~/khan/james-in-a-box/scripts/context-watcher-ctl.sh tail
 ```
 
 ## Usage
@@ -146,7 +146,7 @@ Changes are considered relevant if they:
 ## File Structure
 
 ```
-~/khan/cursor-sandboxed/context-watcher/
+~/khan/james-in-a-box/context-watcher/
 ├── config/
 │   └── context-watcher.yaml    # Configuration
 ├── tracking/
@@ -169,7 +169,7 @@ Changes are considered relevant if they:
 ~/.claude/commands/
 └── analyze-context-changes.md  # Claude slash command
 
-~/khan/cursor-sandboxed/scripts/
+~/khan/james-in-a-box/scripts/
 ├── context-watcher.sh          # Main watcher service
 └── context-watcher-ctl.sh      # Control script
 ```
@@ -188,7 +188,7 @@ This is an SELinux issue. Fix with:
 
 ```bash
 # From host:
-sudo chcon -R -t container_file_t ~/.claude-sandbox-sharing/
+sudo chcon -R -t container_file_t ~/.jib-sharing/
 
 # Or update docker-compose to use :Z flag on volumes
 ```
@@ -214,8 +214,8 @@ Add to your container's startup script or `.bashrc`:
 
 ```bash
 # Auto-start context watcher
-if [ -f ~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh ]; then
-    ~/khan/cursor-sandboxed/scripts/context-watcher-ctl.sh start
+if [ -f ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh ]; then
+    ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start
 fi
 ```
 
@@ -264,13 +264,13 @@ See [../HOST-SLACK-NOTIFIER.md](../HOST-SLACK-NOTIFIER.md) for complete instruct
 # On host machine (not in container)
 sudo dnf install inotify-tools jq  # Install dependencies
 export SLACK_TOKEN="xoxb-your-token-here"  # Set Slack token
-~/khan/cursor-sandboxed/scripts/setup-host-notifier.sh  # Run setup
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh start  # Start service
+~/khan/james-in-a-box/scripts/setup-host-notifier.sh  # Run setup
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh start  # Start service
 ```
 
 ## Support
 
 - Configuration: Edit `~/sharing/config/context-watcher.yaml`
 - Slash command: Edit `~/.claude/commands/analyze-context-changes.md`
-- Watcher logic: Edit `~/khan/cursor-sandboxed/scripts/context-watcher.sh`
+- Watcher logic: Edit `~/khan/james-in-a-box/scripts/context-watcher.sh`
 - Report issues: Check logs and adjust configuration

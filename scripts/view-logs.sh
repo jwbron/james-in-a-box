@@ -1,7 +1,7 @@
 #!/bin/bash
 # View Claude container logs from the host
 
-SHARING_DIR="${HOME}/.claude-sandbox-sharing"
+SHARING_DIR="${HOME}/.jib-sharing"
 TRACKING_DIR="${SHARING_DIR}/tracking"
 
 # Colors

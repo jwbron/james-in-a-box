@@ -31,9 +31,9 @@ This system enables:
 │  • host-receive-slack.py - Receives your messages (NEW)     │
 │                                                              │
 │  Shared directories:                                        │
-│  • ~/.claude-sandbox-sharing/notifications/  ← Claude       │
-│  • ~/.claude-sandbox-sharing/incoming/       → Claude (NEW) │
-│  • ~/.claude-sandbox-sharing/responses/      → Claude (NEW) │
+│  • ~/.jib-sharing/notifications/  ← Claude       │
+│  • ~/.jib-sharing/incoming/       → Claude (NEW) │
+│  • ~/.jib-sharing/responses/      → Claude (NEW) │
 └─────────────────────────────────────────────────────────────┘
                            ▲                    │
                            │                    │
@@ -101,7 +101,7 @@ host-receive-slack.py receives thread reply
     ↓
 Extracts notification timestamp from parent message
     ↓
-Writes to ~/.claude-sandbox-sharing/responses/RESPONSE-20251121-143000.md
+Writes to ~/.jib-sharing/responses/RESPONSE-20251121-143000.md
     ↓
 incoming-watcher.sh (in container) detects file
     ↓
@@ -130,7 +130,7 @@ host-receive-slack.py receives message in your self-DM channel
     ↓
 Detects "claude:" prefix, extracts task content
     ↓
-Writes to ~/.claude-sandbox-sharing/incoming/task-YYYYMMDD-HHMMSS.md
+Writes to ~/.jib-sharing/incoming/task-YYYYMMDD-HHMMSS.md
     ↓
 incoming-watcher.sh (in container) detects file
     ↓
@@ -213,7 +213,7 @@ pip install --user slack-sdk
 
 ```bash
 # Run interactive setup
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh setup
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup
 
 # It will prompt for:
 # - SLACK_TOKEN (bot token, xoxb-...)
@@ -221,15 +221,15 @@ pip install --user slack-sdk
 # - Allowed users (optional - your Slack user ID)
 ```
 
-**Configuration file**: `~/.config/slack-notifier/config.json`
+**Configuration file**: `~/.config/jib-notifier/config.json`
 
 ```json
 {
   "slack_token": "xoxb-your-bot-token",
   "slack_app_token": "xapp-your-app-token",
   "allowed_users": ["U01234567"],  // Your Slack user ID (optional)
-  "incoming_directory": "~/.claude-sandbox-sharing/incoming",
-  "responses_directory": "~/.claude-sandbox-sharing/responses"
+  "incoming_directory": "~/.jib-sharing/incoming",
+  "responses_directory": "~/.jib-sharing/responses"
 }
 ```
 
@@ -239,13 +239,13 @@ pip install --user slack-sdk
 
 ```bash
 # Start receiver
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh start
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh start
 
 # Check status
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
 
 # View logs
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 ```
 
 ### Step 5: Start Container
@@ -273,7 +273,7 @@ Test task: analyze the codebase structure
 Check logs:
 ```bash
 # Host receiver logs
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 
 # Container watcher logs (inside container)
 tail -f ~/sharing/tracking/incoming-watcher.log
@@ -287,7 +287,7 @@ tail -f ~/sharing/tracking/incoming-watcher.log
 ```
 🔔 Claude Sandbox Changes Detected
 
-notifications/ (~/.claude-sandbox-sharing/):
+notifications/ (~/.jib-sharing/):
   • 20251121-143000-db-migration.md → Timestamp: 20251121-143000
 
 💡 Reply in thread to respond to Claude
@@ -340,7 +340,7 @@ You're away from your workstation but want to trigger work:
 ### Host Machine
 
 ```
-~/.claude-sandbox-sharing/
+~/.jib-sharing/
 ├── notifications/          # Claude → You (notifications)
 │   ├── 20251121-143000-need-guidance.md
 │   └── RESPONSE-20251121-143000.md  # Your response linked here
@@ -349,7 +349,7 @@ You're away from your workstation but want to trigger work:
 └── responses/              # You → Claude (responses to notifications)
     └── response-20251121-150500.md
 
-~/.config/slack-notifier/
+~/.config/jib-notifier/
 ├── config.json            # Slack tokens and configuration (600 perms)
 ├── notifier.log          # Outgoing notifications log
 └── receiver.log          # Incoming messages log
@@ -375,25 +375,25 @@ You're away from your workstation but want to trigger work:
 
 ```bash
 # Start/stop receiver
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh start
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh stop
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh restart
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh start
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh stop
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh restart
 
 # Monitor
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh status
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh logs
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh logs
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 
 # Configure
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh setup
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup
 ```
 
 ### Notifier Control (Outgoing)
 
 ```bash
 # Already configured from HOST-SLACK-NOTIFIER.md
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh status
-~/khan/cursor-sandboxed/scripts/host-notify-ctl.sh logs
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
+~/khan/james-in-a-box/scripts/host-notify-ctl.sh logs
 ```
 
 ### Container Watchers
@@ -414,7 +414,7 @@ Already implemented in `slack-notifier/manage_notifier.sh`:
 
 ```bash
 # Enable notifier (already done)
-cd ~/khan/cursor-sandboxed/slack-notifier
+cd ~/khan/james-in-a-box/jib-notifier
 ./manage_notifier.sh enable
 
 # Enable receiver (NEW)
@@ -428,7 +428,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 %h/khan/cursor-sandboxed/scripts/host-receive-slack.py
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/scripts/host-receive-slack.py
 Restart=on-failure
 RestartSec=30s
 Nice=10
@@ -464,13 +464,13 @@ python3 -c "import slack_sdk"
 
 **Check config**:
 ```bash
-cat ~/.config/slack-notifier/config.json
+cat ~/.config/jib-notifier/config.json
 # Ensure slack_token and slack_app_token are set
 ```
 
 **Check logs**:
 ```bash
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 ```
 
 ### Not Receiving Messages
@@ -479,12 +479,12 @@ cat ~/.config/slack-notifier/config.json
 2. **Check bot events** are configured (`message.im`)
 3. **Check receiver is running**:
    ```bash
-   ~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh status
+   ~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
    ```
 4. **Check allowed_users** in config (if set, must include your user ID)
 5. **Check logs** for errors:
    ```bash
-   ~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+   ~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
    ```
 
 ### Messages Not Being Processed in Container
@@ -511,7 +511,7 @@ cat ~/.config/slack-notifier/config.json
 4. **Manually trigger test**:
    ```bash
    # On host
-   echo "Test task" > ~/.claude-sandbox-sharing/incoming/test-task.md
+   echo "Test task" > ~/.jib-sharing/incoming/test-task.md
 
    # Check container logs
    ```
@@ -521,7 +521,7 @@ cat ~/.config/slack-notifier/config.json
 Send a DM to your bot, then check receiver logs:
 
 ```bash
-~/khan/cursor-sandboxed/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
 # Look for: "Received message from <name> (U01234567)"
 ```
 
@@ -535,7 +535,7 @@ curl -H "Authorization: Bearer xoxb-your-token" \
 
 ### Credential Storage
 
-- **Slack tokens** stored in `~/.config/slack-notifier/config.json` with 600 permissions
+- **Slack tokens** stored in `~/.config/jib-notifier/config.json` with 600 permissions
 - **Not in git repository** - excluded via .gitignore
 - **Not accessible from container** - outside mount points
 
@@ -578,7 +578,7 @@ Your Slack DM
     ↓
 host-receive-slack.py (host)
     ↓
-~/.claude-sandbox-sharing/incoming/ (host)
+~/.jib-sharing/incoming/ (host)
     ↓
 incoming-watcher.sh (container)
     ↓

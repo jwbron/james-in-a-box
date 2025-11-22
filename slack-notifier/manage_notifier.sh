@@ -38,8 +38,8 @@ case "${1:-}" in
         mkdir -p ~/.config/systemd/user
 
         # Create symlink (remove existing file/link first)
-        rm -f ~/.config/systemd/user/slack-notifier.service
-        ln -s "${SCRIPT_DIR}/systemd/slack-notifier.service" ~/.config/systemd/user/
+        rm -f ~/.config/systemd/user/jib-notifier.service
+        ln -s "${SCRIPT_DIR}/systemd/jib-notifier.service" ~/.config/systemd/user/
         echo "✓ Symlink created in ~/.config/systemd/user/"
 
         echo "Reloading systemd daemon..."
@@ -87,9 +87,9 @@ case "${1:-}" in
         systemctl --user status slack-notifier.service --no-pager || true
         echo ""
         echo "=== Configuration ==="
-        if [ -f ~/.config/slack-notifier/config.json ]; then
-            echo "Config file: ~/.config/slack-notifier/config.json"
-            echo "Permissions: $(stat -c '%a' ~/.config/slack-notifier/config.json 2>/dev/null || stat -f '%A' ~/.config/slack-notifier/config.json 2>/dev/null)"
+        if [ -f ~/.config/jib-notifier/config.json ]; then
+            echo "Config file: ~/.config/jib-notifier/config.json"
+            echo "Permissions: $(stat -c '%a' ~/.config/jib-notifier/config.json 2>/dev/null || stat -f '%A' ~/.config/jib-notifier/config.json 2>/dev/null)"
         else
             echo "⚠ No config file found - run: $0 setup"
         fi

@@ -137,7 +137,7 @@ cat ~/context-sync/confluence/INFRA/runbooks/
 ### `~/tools/` - Reusable Utilities
 **Purpose**: Build scripts that persist across sessions
 **Access**: Read-write
-**Persistence**: Mounted from host (`~/.claude-sandbox-tools/`)
+**Persistence**: Mounted from host (`~/.jib-tools/`)
 **Usage**:
 - Create helper scripts and automation
 - Build test runners, code generators
@@ -147,7 +147,7 @@ cat ~/context-sync/confluence/INFRA/runbooks/
 ### `~/sharing/` - Persistent Data & Staging Area
 **Purpose**: ALL data that must persist across container rebuilds, including staged code changes
 **Access**: Read-write
-**Persistence**: Mounted from host (`~/.claude-sandbox-sharing/`)
+**Persistence**: Mounted from host (`~/.jib-sharing/`)
 **What goes here**:
 - **`~/sharing/staged-changes/`** - Modified code for human review (PRIMARY USE)
 - **`~/sharing/notifications/`** - Notifications to human (triggers Slack DM)
@@ -241,7 +241,7 @@ EOF
 - Critical issue found
 - Important assumption needs validation
 
-**Human access**: `~/.claude-sandbox-sharing/staged-changes/` and `~/.claude-sandbox-sharing/notifications/` on host
+**Human access**: `~/.jib-sharing/staged-changes/` and `~/.jib-sharing/notifications/` on host
 
 **Important**: `~/khan/` is READ-ONLY. ALL code modifications must go through `~/sharing/staged-changes/`!
 
