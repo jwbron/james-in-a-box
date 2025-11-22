@@ -38,6 +38,9 @@ RUN chmod +x /tmp/docker-setup.py && \
     python3 /tmp/docker-setup.py && \
     rm /tmp/docker-setup.py
 
+# Install Python packages needed for scripts
+RUN pip3 install requests
+
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
