@@ -193,6 +193,20 @@ BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
 echo "✓ Claude alias created (bypasses permissions in sandbox)"
 
+# Start context-watcher in background (if configured)
+if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh" ]; then
+    echo "Starting context-watcher in background..."
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "nohup ${USER_HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh >> ${USER_HOME}/sharing/tracking/watcher.log 2>&1 &"
+    echo "✓ Context watcher started (monitoring ~/context-sync/)"
+fi
+
+# Start incoming-watcher in background (if configured)
+if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh" ]; then
+    echo "Starting incoming message watcher in background..."
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "nohup ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh >> ${USER_HOME}/sharing/tracking/incoming-watcher.log 2>&1 &"
+    echo "✓ Incoming watcher started (monitoring ~/sharing/incoming/ and ~/sharing/responses/)"
+fi
+
 # Drop privileges and start shell or run claude
 if [ $# -eq 0 ]; then
     echo ""
@@ -224,8 +238,10 @@ if [ $# -eq 0 ]; then
     echo "  • Tools: ~/tools/                         (reusable scripts, MOUNTED rw)"
     echo "  • Sharing: ~/sharing/                     (persistent data, MOUNTED rw)"
     echo "    - ~/sharing/staged-changes/             (code changes for review)"
+    echo "    - ~/sharing/notifications/              (Claude → You via Slack)"
+    echo "    - ~/sharing/incoming/                   (You → Claude via Slack)"
+    echo "    - ~/sharing/responses/                  (Your replies via Slack)"
     echo "    - ~/sharing/context/                    (context docs)"
-    echo "    - ~/sharing/<any-dir>/                  (your persistent files)"
     echo "  • Tmp: ~/tmp/                             (scratch space, ephemeral)"
     echo ""
     echo "📖 Custom Commands (type to use):"
@@ -238,9 +254,11 @@ if [ $# -eq 0 ]; then
     echo "  • ~/khan/ is READ-ONLY - stage changes in ~/sharing/staged-changes/"
     echo "  • Human reviews and applies changes from ~/sharing/ to host repos"
     echo "  • Check context-sync/ for Confluence docs, JIRA tickets, etc."
+    echo "  • Send notifications to ~/sharing/notifications/ to get Slack DM"
+    echo "  • Check ~/sharing/incoming/ for tasks sent via Slack"
+    echo "  • Check ~/sharing/responses/ for replies to your notifications"
     echo "  • Save context after significant work to build knowledge"
     echo "  • Use ~/sharing/ for ANYTHING that must persist across rebuilds"
-    echo "  • Ask clarifying questions when requirements are unclear"
     echo ""
     echo "🔒 Security:"
     echo "  • Bridge network (isolated from host services)"

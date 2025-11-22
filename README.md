@@ -61,6 +61,7 @@ exit
 - Build reusable scripts in `~/tools/`
 - Create detailed change proposals with documentation
 - Generate analysis and recommendations
+- **Send async notifications** to `~/sharing/notifications/` (triggers Slack DM)
 
 ### ❌ What Claude CANNOT Do
 - Push to git remotes (no SSH keys)
@@ -120,6 +121,9 @@ Inside Container:
   ~/tools/                     Reusable scripts (MOUNTED rw)
   ~/sharing/                   Persistent data (MOUNTED rw)
     ├── staged-changes/        Code modifications for review
+    ├── notifications/         Claude → You (triggers Slack DM)
+    ├── incoming/              You → Claude (new tasks via Slack)
+    ├── responses/             You → Claude (replies via Slack)
     └── context/               Context documents
   ~/tmp/                       Scratch space (ephemeral)
   ~/CLAUDE.md                  Mission + environment rules
@@ -177,6 +181,36 @@ Inside Container:
 - Access production databases (no credentials)
 
 **Result:** Multiple layers of isolation - credential-based, network-based, and port-based - make this safe for autonomous operation with "Bypass Permissions" mode.
+
+### Communication & Notifications
+
+**Bidirectional Slack Communication** - Full two-way messaging via private Slack DMs:
+
+**Claude → You** (Notifications):
+1. Claude writes file to `~/sharing/notifications/` (e.g., `20251121-143000-need-guidance.md`)
+2. Host Slack notifier detects change within ~30 seconds
+3. You get Slack DM with notification content
+
+**You → Claude** (Responses & Tasks):
+1. You send Slack DM to bot (from anywhere - phone, desktop, remote)
+2. Host Slack receiver writes to `~/.claude-sandbox-sharing/incoming/` or `responses/`
+3. Container incoming-watcher detects and processes your message
+4. Claude receives your response or new task
+
+**When Claude notifies**:
+- Found a better approach than requested
+- Skeptical about proposed solution
+- Needs architectural decision
+- Discovered unexpected complexity
+- Found critical issue
+
+**How to communicate**:
+- **Respond to Claude**: Reply in thread to notification in Slack
+- **Send new task**: Self-DM with `claude: [task description]`
+- **Status check**: `claude: What are you working on?`
+
+See `BIDIRECTIONAL-SLACK.md` for complete setup and usage guide.
+See `claude-rules/notification-template.md` for Claude notification templates.
 
 ## Context Sources
 
@@ -429,5 +463,7 @@ MIT
 
 **See also:**
 - **QUICKSTART.md** - Practical daily reference
+- **BIDIRECTIONAL-SLACK.md** - Two-way Slack communication setup
+- **HOST-SLACK-NOTIFIER.md** - Outgoing notifications setup
 - **claude-rules/README.md** - Agent instructions system
 - **claude-commands/README.md** - Custom commands guide

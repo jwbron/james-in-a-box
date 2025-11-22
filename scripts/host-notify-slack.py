@@ -172,11 +172,20 @@ class SlackNotifier:
             dir_name = Path(dir_path).name
             message_parts.append(f"\n*{dir_name}/* (`{dir_path}`):")
             for file in sorted(files)[:20]:  # Limit to 20 files per directory
-                message_parts.append(f"  • `{file}`")
+                # Extract notification timestamp if this is a notification file
+                import re
+                timestamp_match = re.search(r'\b\d{8}-\d{6}\b', file)
+                if timestamp_match and 'notification' in file.lower():
+                    # Include timestamp prominently for notifications
+                    timestamp = timestamp_match.group(0)
+                    message_parts.append(f"  • `{file}` → Timestamp: `{timestamp}`")
+                else:
+                    message_parts.append(f"  • `{file}`")
             if len(files) > 20:
                 message_parts.append(f"  • _(and {len(files) - 20} more)_")
 
         message_parts.append(f"\n*Total changes:* {len(changes)}")
+        message_parts.append(f"\n_💡 Reply in thread to respond to Claude_")
 
         message = "\n".join(message_parts)
 

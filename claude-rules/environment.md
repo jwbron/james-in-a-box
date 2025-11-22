@@ -150,6 +150,7 @@ cat ~/context-sync/confluence/INFRA/runbooks/
 **Persistence**: Mounted from host (`~/.claude-sandbox-sharing/`)
 **What goes here**:
 - **`~/sharing/staged-changes/`** - Modified code for human review (PRIMARY USE)
+- **`~/sharing/notifications/`** - Notifications to human (triggers Slack DM)
 - **`~/sharing/context/`** - Context documents (`@save-context` / `@load-context`)
 - Pull request artifacts
 - Analysis reports
@@ -189,7 +190,39 @@ EOF
 echo "Changes staged in ~/sharing/staged-changes/webapp/ - ready for review"
 ```
 
-**Human access**: `~/.claude-sandbox-sharing/staged-changes/` on host
+**Notifications - Async Communication**:
+```bash
+# When you need guidance but human isn't in active conversation
+# Create a notification file - it will trigger a Slack DM within ~30 seconds
+
+cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-topic.md <<'EOF'
+# 🔔 Need Guidance: [Topic]
+
+**Priority**: [Low/Medium/High/Urgent]
+
+## Context
+Working on: [what you're doing]
+
+## Issue
+[What you need guidance on]
+
+## Recommendation
+[What you think should be done]
+EOF
+
+# The host Slack notifier watches ~/sharing/notifications/
+# Human gets notified via Slack DM and can respond
+```
+
+**Use cases for notifications**:
+- Found a better approach than requested
+- Skeptical about proposed solution
+- Need architectural decision
+- Discovered unexpected complexity
+- Critical issue found
+- Important assumption needs validation
+
+**Human access**: `~/.claude-sandbox-sharing/staged-changes/` and `~/.claude-sandbox-sharing/notifications/` on host
 
 **Important**: `~/khan/` is READ-ONLY. ALL code modifications must go through `~/sharing/staged-changes/`!
 

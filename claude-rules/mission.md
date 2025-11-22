@@ -105,13 +105,21 @@ Human opens PR, reviews, and ships!
 ✅ Refactoring with no behavior change
 ✅ Bug fixes with known solutions
 
-### When to Ask Human
+### When to Ask Human (or Send Notification)
 ⚠️ Ambiguous requirements
 ⚠️ Architecture decisions not covered by ADRs
 ⚠️ Breaking changes or migrations
 ⚠️ Cross-team dependencies
 ⚠️ Security-sensitive changes
 ⚠️ When stuck after reasonable debugging
+⚠️ Found a better approach than requested
+⚠️ Skeptical about the current solution
+⚠️ Need architectural guidance
+⚠️ Discovered unexpected complexity
+
+**How to notify**:
+1. **During conversation**: Ask directly in chat
+2. **Asynchronously**: Write notification to `~/sharing/notifications/` (see below)
 
 ## Quality Standards
 
@@ -138,6 +146,100 @@ Human opens PR, reviews, and ships!
 - **Concise**: Summaries over walls of text
 - **Specific**: "Failed at step 3 with error X" not "something broke"
 - **Honest**: "I don't know" is better than guessing
+
+### Asynchronous Notifications
+
+When you need guidance but human isn't actively in the conversation, write a notification file:
+
+**Location**: `~/sharing/notifications/`
+
+**When to use**:
+- Found a better approach than what was requested
+- Skeptical about proposed solution
+- Need architectural decision
+- Discovered unexpected complexity
+- Found a critical issue
+- Made an important assumption that should be validated
+
+**Format**:
+```bash
+# Create notification with timestamp
+cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-need-guidance.md <<'EOF'
+# 🔔 Need Guidance: [Brief Topic]
+
+**Priority**: [Low/Medium/High/Urgent]
+**Topic**: [Architecture/Implementation/Security/Other]
+
+## Context
+[What you're working on]
+
+## Issue/Question
+[What you need guidance on]
+
+## Current Approach
+[What you're currently doing or planning]
+
+## Alternative/Concern
+[Better approach you found, or concern you have]
+
+## Impact if We Proceed
+[What happens if we continue without input]
+
+## Recommendation
+[What you think we should do]
+
+---
+📅 $(date)
+📂 Working on: [task/project]
+EOF
+```
+
+**The notification will**:
+- Be detected by the host Slack notifier
+- Trigger a Slack DM to human within ~30 seconds
+- Allow human to respond when available
+
+**Example scenarios**:
+
+1. **Better approach found**:
+   ```
+   # 🔔 Need Guidance: Found More Efficient Caching Strategy
+
+   Priority: Medium
+   Topic: Architecture
+
+   Context: Working on Redis caching for user service (JIRA-1234)
+
+   Issue: The spec says to cache user objects, but I found that
+   caching user sessions would be more efficient and cover more use cases.
+
+   Current: Following spec - cache user objects
+   Alternative: Cache user sessions instead (reduces DB load by 80% vs 40%)
+
+   Impact: If we proceed with spec, we'll need to refactor later
+
+   Recommendation: Switch to session caching, update spec
+   ```
+
+2. **Skeptical about solution**:
+   ```
+   # 🔔 Need Guidance: Concerned About Proposed Approach
+
+   Priority: High
+   Topic: Security
+
+   Context: Implementing auth token refresh (JIRA-5678)
+
+   Issue: Spec says to store refresh tokens in localStorage, but this
+   is vulnerable to XSS attacks.
+
+   Current: Following spec (localStorage)
+   Concern: ADR-042 says to use httpOnly cookies for sensitive data
+
+   Impact: Security vulnerability if we proceed
+
+   Recommendation: Use httpOnly cookies, update spec
+   ```
 
 ### In PR Descriptions (you generate, human opens)
 - Clear title (50 chars, imperative)

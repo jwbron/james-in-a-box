@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""
+Host-Side Slack Receiver
+
+Listens for incoming Slack messages (DMs) and writes them to a shared directory
+where the container can pick them up. This enables bidirectional communication:
+- Claude → Slack (via host-notify-slack.py)
+- Slack → Claude (via this script)
+
+Uses Slack Socket Mode to receive events without exposing a public endpoint.
+"""
+
+import os
+import sys
+import json
+import logging
+import signal
+from pathlib import Path
+from datetime import datetime
+from typing import Dict, Any
+
+# Check for required dependencies
+try:
+    from slack_sdk import WebClient
+    from slack_sdk.socket_mode import SocketModeClient
+    from slack_sdk.socket_mode.request import SocketModeRequest
+    from slack_sdk.socket_mode.response import SocketModeResponse
+except ImportError:
+    print("Error: slack_sdk module not found.", file=sys.stderr)
+    print("Install with: pip install slack-sdk", file=sys.stderr)
+    sys.exit(1)
+
+
+class SlackReceiver:
+    """Receives Slack messages and writes them to shared directory."""
+
+    def __init__(self, config_dir: Path):
+        self.config_dir = config_dir
+        self.config_file = config_dir / "config.json"
+        self.log_file = config_dir / "receiver.log"
+
+        # Ensure config directory exists with secure permissions
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.config_dir, 0o700)
+
+        # Set up logging
+        self._setup_logging()
+
+        # Load configuration
+        self.config = self._load_config()
+
+        # Validate tokens
+        self.bot_token = self.config.get('slack_token')
+        self.app_token = self.config.get('slack_app_token')
+
+        if not self.bot_token:
+            self.logger.error("SLACK_TOKEN not configured")
+            raise ValueError("SLACK_TOKEN not found in config")
+
+        if not self.app_token:
+            self.logger.error("SLACK_APP_TOKEN not configured")
+            raise ValueError("SLACK_APP_TOKEN not found in config (required for Socket Mode)")
+
+        # Configuration
+        self.allowed_users = self.config.get('allowed_users', [])
+        self.bot_user_id = None
+        self.incoming_dir = Path(self.config.get('incoming_directory',
+                                                  '~/.claude-sandbox-sharing/incoming')).expanduser()
+        self.responses_dir = Path(self.config.get('responses_directory',
+                                                   '~/.claude-sandbox-sharing/responses')).expanduser()
+
+        # Ensure incoming directories exist
+        self.incoming_dir.mkdir(parents=True, exist_ok=True)
+        self.responses_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize Slack clients
+        self.web_client = WebClient(token=self.bot_token)
+        self.socket_client = None
+        self.running = True
+
+        # Set up signal handlers
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+
+    def _setup_logging(self):
+        """Configure logging to file and console."""
+        self.logger = logging.getLogger('slack-receiver')
+        self.logger.setLevel(logging.INFO)
+
+        # File handler
+        fh = logging.FileHandler(self.log_file)
+        fh.setLevel(logging.INFO)
+
+        # Console handler
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.INFO)
+
+        # Formatter
+        formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s',
+                                     datefmt='%Y-%m-%d %H:%M:%S')
+        fh.setFormatter(formatter)
+        ch.setFormatter(formatter)
+
+        self.logger.addHandler(fh)
+        self.logger.addHandler(ch)
+
+    def _load_config(self) -> dict:
+        """Load configuration from file or environment."""
+        if self.config_file.exists():
+            with open(self.config_file, 'r') as f:
+                config = json.load(f)
+        else:
+            # Create default config
+            config = {
+                'slack_token': os.environ.get('SLACK_TOKEN', ''),
+                'slack_app_token': os.environ.get('SLACK_APP_TOKEN', ''),
+                'allowed_users': [],  # Empty = allow all
+                'incoming_directory': '~/.claude-sandbox-sharing/incoming',
+                'responses_directory': '~/.claude-sandbox-sharing/responses'
+            }
+            self._save_config(config)
+
+        # Override with environment variables if present
+        if os.environ.get('SLACK_TOKEN'):
+            config['slack_token'] = os.environ['SLACK_TOKEN']
+        if os.environ.get('SLACK_APP_TOKEN'):
+            config['slack_app_token'] = os.environ['SLACK_APP_TOKEN']
+
+        return config
+
+    def _save_config(self, config: dict):
+        """Save configuration to file with secure permissions."""
+        with open(self.config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+        os.chmod(self.config_file, 0o600)
+        self.logger.info(f"Configuration saved to {self.config_file}")
+
+    def _signal_handler(self, signum, frame):
+        """Handle shutdown signals gracefully."""
+        self.logger.info(f"Received signal {signum}, shutting down...")
+        self.running = False
+        if self.socket_client:
+            self.socket_client.close()
+
+    def _get_bot_user_id(self):
+        """Get the bot's user ID."""
+        try:
+            response = self.web_client.auth_test()
+            if response['ok']:
+                self.bot_user_id = response['user_id']
+                self.logger.info(f"Bot user ID: {self.bot_user_id}")
+            else:
+                self.logger.error("Failed to get bot user ID")
+        except Exception as e:
+            self.logger.error(f"Exception getting bot user ID: {e}")
+
+    def _is_allowed_user(self, user_id: str) -> bool:
+        """Check if user is allowed to send messages."""
+        # If no allowed_users configured, allow all
+        if not self.allowed_users:
+            return True
+        return user_id in self.allowed_users
+
+    def _parse_message(self, text: str, thread_ts: str = None, channel: str = None) -> Dict[str, Any]:
+        """
+        Parse incoming message to determine type and content.
+
+        Message types:
+        1. Thread reply to notification → Response to Claude
+        2. Self-DM starting with "claude:" → New task
+        3. Direct message to bot → New task (legacy, but still supported)
+
+        Args:
+            text: Message text
+            thread_ts: Thread timestamp (if this is a thread reply)
+            channel: Channel ID where message was sent
+        """
+        text = text.strip()
+        import re
+
+        # Pattern 1: Thread reply to notification
+        # If message is in a thread, extract the parent message timestamp
+        if thread_ts:
+            # Thread replies are responses to Claude's notifications
+            # Extract timestamp from thread if it contains notification format
+            timestamp_pattern = r'\b\d{8}-\d{6}\b'
+
+            # Try to find notification timestamp in this message
+            referenced_notif = re.search(timestamp_pattern, text)
+
+            return {
+                'type': 'response',
+                'content': text,
+                'referenced_notification': referenced_notif.group(0) if referenced_notif else None,
+                'thread_ts': thread_ts
+            }
+
+        # Pattern 2: Self-DM with "claude:" prefix
+        # Check if this is a self-DM (D04CMDR7LBT is James's self-DM channel)
+        if channel == 'D04CMDR7LBT' and text.lower().startswith('claude:'):
+            # Remove the "claude:" prefix
+            task_content = text[7:].strip()  # Remove "claude:" (case insensitive)
+            return {
+                'type': 'task',
+                'content': task_content
+            }
+
+        # Pattern 3: Direct message to bot (legacy support)
+        # Any DM sent directly to the bot
+        return {
+            'type': 'task',
+            'content': text
+        }
+
+    def _write_message(self, msg_type: str, content: str, metadata: Dict[str, Any]):
+        """Write incoming message to appropriate directory."""
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+
+        # Choose directory based on message type
+        if msg_type == 'response':
+            target_dir = self.responses_dir
+            # If responding to a specific notification, include that in filename
+            if metadata.get('referenced_notification'):
+                filename = f"RESPONSE-{metadata['referenced_notification']}.md"
+            else:
+                filename = f"response-{timestamp}.md"
+        else:
+            target_dir = self.incoming_dir
+            filename = f"task-{timestamp}.md"
+
+        filepath = target_dir / filename
+
+        # Build message document
+        doc_parts = []
+
+        if msg_type == 'response':
+            doc_parts.append(f"# Response from {metadata.get('user_name', 'User')}")
+            if metadata.get('referenced_notification'):
+                doc_parts.append(f"\n**Re:** Notification `{metadata['referenced_notification']}`")
+        else:
+            doc_parts.append(f"# New Task from {metadata.get('user_name', 'User')}")
+
+        doc_parts.append(f"\n**Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        doc_parts.append(f"**User ID:** {metadata.get('user_id', 'unknown')}")
+        doc_parts.append(f"**Channel:** {metadata.get('channel', 'unknown')}")
+
+        doc_parts.append("\n## Message\n")
+        doc_parts.append(content)
+
+        doc_parts.append("\n---")
+        doc_parts.append(f"\n*Delivered via Slack → {target_dir.name}/ → Claude*")
+
+        # Write file
+        try:
+            with open(filepath, 'w') as f:
+                f.write('\n'.join(doc_parts))
+
+            self.logger.info(f"Message written: {filepath}")
+            return filepath
+        except Exception as e:
+            self.logger.error(f"Failed to write message to {filepath}: {e}")
+            return None
+
+    def _send_ack(self, channel: str, text: str):
+        """Send acknowledgment back to Slack."""
+        try:
+            self.web_client.chat_postMessage(
+                channel=channel,
+                text=text
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to send ack: {e}")
+
+    def _get_thread_parent_text(self, channel: str, thread_ts: str) -> str:
+        """Fetch the parent message text from a thread."""
+        try:
+            # Get the parent message
+            response = self.web_client.conversations_history(
+                channel=channel,
+                latest=thread_ts,
+                inclusive=True,
+                limit=1
+            )
+
+            if response['ok'] and response['messages']:
+                return response['messages'][0].get('text', '')
+        except Exception as e:
+            self.logger.error(f"Failed to fetch thread parent: {e}")
+
+        return ''
+
+    def _process_message(self, event: Dict[str, Any]):
+        """Process incoming message event."""
+        # Extract event data
+        user_id = event.get('user')
+        channel = event.get('channel')
+        text = event.get('text', '')
+        thread_ts = event.get('thread_ts')  # Present if this is a thread reply
+
+        # Ignore messages from the bot itself
+        if user_id == self.bot_user_id:
+            return
+
+        # Check if user is allowed
+        if not self._is_allowed_user(user_id):
+            self.logger.warning(f"Blocked message from unauthorized user: {user_id}")
+            self._send_ack(channel, "⚠️ You are not authorized to send messages to Claude.")
+            return
+
+        # Get user info
+        try:
+            user_info = self.web_client.users_info(user=user_id)
+            user_name = user_info['user']['real_name'] if user_info['ok'] else 'Unknown'
+        except:
+            user_name = 'Unknown'
+
+        self.logger.info(f"Received message from {user_name} ({user_id}): {text[:100]}")
+        if thread_ts:
+            self.logger.info(f"  (thread reply, thread_ts: {thread_ts})")
+
+        # If this is a thread reply, get parent message to extract notification timestamp
+        referenced_notif = None
+        if thread_ts:
+            parent_text = self._get_thread_parent_text(channel, thread_ts)
+            if parent_text:
+                # Extract notification timestamp from parent message
+                import re
+                timestamp_pattern = r'\b\d{8}-\d{6}\b'
+                match = re.search(timestamp_pattern, parent_text)
+                if match:
+                    referenced_notif = match.group(0)
+                    self.logger.info(f"  Extracted notification timestamp from parent: {referenced_notif}")
+
+        # Parse message
+        parsed = self._parse_message(text, thread_ts=thread_ts, channel=channel)
+        msg_type = parsed['type']
+
+        # Override referenced_notification if we extracted it from parent
+        if referenced_notif:
+            parsed['referenced_notification'] = referenced_notif
+
+        # Write to shared directory
+        metadata = {
+            'user_id': user_id,
+            'user_name': user_name,
+            'channel': channel,
+            'referenced_notification': parsed.get('referenced_notification'),
+            'thread_ts': thread_ts
+        }
+
+        filepath = self._write_message(msg_type, parsed['content'], metadata)
+
+        if filepath:
+            # Send acknowledgment
+            if msg_type == 'response':
+                ack_msg = f"✅ Response received and forwarded to Claude\n📁 Saved to: `{filepath.name}`"
+            else:
+                ack_msg = f"✅ Task received and queued for Claude\n📁 Saved to: `{filepath.name}`"
+
+            self._send_ack(channel, ack_msg)
+        else:
+            self._send_ack(channel, "❌ Failed to process message. Please check logs.")
+
+    def _handle_event(self, client: SocketModeClient, req: SocketModeRequest):
+        """Handle incoming Socket Mode events."""
+        # Acknowledge the event
+        response = SocketModeResponse(envelope_id=req.envelope_id)
+        client.send_socket_mode_response(response)
+
+        # Process the event
+        if req.type == "events_api":
+            event = req.payload.get("event", {})
+            event_type = event.get("type")
+
+            if event_type == "message":
+                # Check if it's a DM or mentioned message
+                channel_type = event.get('channel_type')
+                if channel_type == 'im':  # Direct message
+                    self._process_message(event)
+                elif event.get('text', '').find(f'<@{self.bot_user_id}>') != -1:
+                    # Bot was mentioned
+                    self._process_message(event)
+
+    def start(self):
+        """Start listening for Slack messages."""
+        self.logger.info(f"Starting Slack receiver (PID: {os.getpid()})")
+
+        # Get bot user ID
+        self._get_bot_user_id()
+
+        self.logger.info(f"Incoming messages → {self.incoming_dir}")
+        self.logger.info(f"Responses → {self.responses_dir}")
+
+        if self.allowed_users:
+            self.logger.info(f"Allowed users: {', '.join(self.allowed_users)}")
+        else:
+            self.logger.warning("No user whitelist configured - accepting messages from all users")
+
+        # Start Socket Mode client
+        try:
+            self.socket_client = SocketModeClient(
+                app_token=self.app_token,
+                web_client=self.web_client
+            )
+
+            self.socket_client.socket_mode_request_listeners.append(self._handle_event)
+
+            self.logger.info("Connected to Slack Socket Mode")
+            self.logger.info("Listening for direct messages...")
+
+            # Keep running
+            self.socket_client.connect()
+
+            # Wait for shutdown
+            while self.running:
+                import time
+                time.sleep(1)
+
+        except KeyboardInterrupt:
+            self.logger.info("Interrupted by user")
+        except Exception as e:
+            self.logger.error(f"Fatal error: {e}", exc_info=True)
+        finally:
+            if self.socket_client:
+                self.socket_client.close()
+            self.logger.info("Slack receiver stopped")
+
+
+def main():
+    """Main entry point."""
+    config_dir = Path.home() / '.config' / 'slack-notifier'
+
+    try:
+        receiver = SlackReceiver(config_dir)
+        receiver.start()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Fatal error: {e}", file=sys.stderr)
+        logging.exception("Fatal error")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
