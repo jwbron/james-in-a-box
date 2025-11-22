@@ -99,6 +99,7 @@ process_task() {
     log "Task: ${task_content:0:100}..."
 
     # Notify user via shared notifications (creates feedback loop)
+    mkdir -p "${HOME}/sharing/notifications"
     local notify_file="${HOME}/sharing/notifications/$(date +%Y%m%d-%H%M%S)-task-received.md"
     cat > "$notify_file" <<EOF
 # 🎯 Task Received from Slack
