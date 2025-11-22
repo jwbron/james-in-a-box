@@ -170,25 +170,44 @@ cp ~/khan/webapp/models.py ~/sharing/staged-changes/webapp/
 # 3. Make your changes
 vim ~/sharing/staged-changes/webapp/server.py
 
-# 4. Document what changed and why
-cat > ~/sharing/staged-changes/webapp/README.md <<EOF
-## Changes for JIRA-1234: Add OAuth2 Support
+# 4. REQUIRED: Document what changed and why in CHANGES.md
+cat > ~/sharing/staged-changes/webapp/CHANGES.md <<'EOF'
+# Changes for JIRA-1234: Add OAuth2 Support
 
-### Files Modified
+## Overview
+Brief description of what this change accomplishes.
+
+## Files Modified
 - server.py: Added OAuth2 middleware
 - models.py: Added User.oauth_token field
 
-### Testing
+## Testing
 - Unit tests passing (see test_oauth.py)
 - Tested with Google OAuth provider
 
-### How to Apply
+## Deployment
+How human should apply these changes:
+```bash
 cp ~/sharing/staged-changes/webapp/* ~/khan/webapp/
+```
+
+## Dependencies
+Any new packages or system requirements.
+
+## Breaking Changes
+Any backwards incompatible changes.
 EOF
 
 # 5. Tell human
 echo "Changes staged in ~/sharing/staged-changes/webapp/ - ready for review"
+echo "See CHANGES.md for complete documentation"
 ```
+
+**IMPORTANT**: Always include a `CHANGES.md` file in the staging directory. This allows the human to:
+- Understand what changed and why
+- Review changes before applying
+- Have documentation for git commits
+- Track dependencies and breaking changes
 
 **Notifications - Async Communication**:
 ```bash
