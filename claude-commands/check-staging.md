@@ -1,6 +1,6 @@
-# Check Staging - Review and Pull Staged Changes
+# Check Staging - Review and Apply Staged Changes
 
-You are reviewing staged changes and optionally pulling them into the repository.
+You are reviewing staged changes and applying them using git patches.
 
 **IMPORTANT**: This command runs on the HOST machine, not in the container.
 
@@ -24,257 +24,311 @@ For each project, show what's staged:
 ```bash
 for project in ~/.jib-sharing/staged-changes/*/; do
     if [ -d "$project" ]; then
+        project_name=$(basename "$project")
         echo ""
-        echo "=== $(basename "$project") ==="
+        echo "=== $project_name ==="
 
-        # Show STAGED-FILES-SUMMARY.md if it exists
-        if [ -f "$project/STAGED-FILES-SUMMARY.md" ]; then
-            cat "$project/STAGED-FILES-SUMMARY.md"
-        elif [ -f "$project/CHANGES.md" ]; then
+        # Show CHANGES.md if it exists
+        if [ -f "$project/CHANGES.md" ]; then
             cat "$project/CHANGES.md"
+        elif [ -f "$project/STAGED-FILES-SUMMARY.md" ]; then
+            cat "$project/STAGED-FILES-SUMMARY.md"
         else
             echo "Files:"
             find "$project" -type f -printf "  %P\n" | sort
         fi
+
+        # Show patch stats if available
+        if [ -f "$project/changes.patch" ]; then
+            echo ""
+            echo "📊 Patch Statistics:"
+            cd ~/khan/james-in-a-box 2>/dev/null || cd ~/khan
+            git apply --stat "$project/changes.patch" 2>/dev/null || echo "  (Patch file exists but stats unavailable)"
+        fi
     fi
 done
 ```
 
-### 3. Ask User to Proceed
+### 3. Ask User Which Projects to Apply
 
-After showing the summaries, ask:
+After showing summaries:
 
-**"Do you want to pull these changes into the repository? (yes/no)"**
+**"Which project(s) do you want to apply? (Enter project name, 'all', or 'none')"**
 
-If user says **no**, stop here and report: "Staged changes left in place. Run `@check-staging` again when ready to apply them."
+- If **'none'**: Stop and report "Staged changes left in place."
+- If **'all'**: Apply all projects sequentially
+- If **project name**: Apply just that project
 
-If user says **yes**, continue with the steps below:
+### 4. Apply Changes Using Git Patch Workflow
 
----
-
-## Applying Changes (Only if User Approved)
-
-### 2. Archive Current Staging
-
-Move everything to an archive directory with timestamp:
+For each project to apply:
 
 ```bash
-# SECURITY FIX: Use find with -exec to safely handle filenames
-# This prevents globbing attacks from malicious filenames
+PROJECT_NAME="<user-selected-project>"
+STAGING_DIR=~/.jib-sharing/staged-changes/$PROJECT_NAME
+
+# Determine target repository
+# Default to james-in-a-box, but can be overridden
+TARGET_REPO=~/khan/james-in-a-box
+
+# Check for target hint in CHANGES.md
+if [ -f "$STAGING_DIR/CHANGES.md" ]; then
+    detected_repo=$(grep -oP "(?<=~/khan/)[a-zA-Z0-9_-]+" "$STAGING_DIR/CHANGES.md" 2>/dev/null | head -1)
+    if [ -n "$detected_repo" ] && [ -d ~/khan/$detected_repo ]; then
+        TARGET_REPO=~/khan/$detected_repo
+    fi
+fi
+
+echo ""
+echo "=== Applying: $PROJECT_NAME ==="
+echo "Target: $TARGET_REPO"
+echo ""
+
+# Use the merge-from-claude.sh tool for automatic application
+~/.jib-tools/merge-from-claude.sh "$PROJECT_NAME" "$TARGET_REPO"
+```
+
+The `merge-from-claude.sh` tool will automatically:
+1. Try git patch if available (best option)
+2. Check for MANIFEST.txt and use it if present
+3. Fall back to file sync if needed
+
+### 5. Review and Commit
+
+After applying each project:
+
+```bash
+cd "$TARGET_REPO"
+
+echo ""
+echo "=== Review Changes ==="
+git status
+echo ""
+git diff --stat
+echo ""
+
+# Ask user if they want to commit
+read -p "Commit these changes? (yes/no): " response
+
+if [ "$response" = "yes" ] || [ "$response" = "y" ]; then
+    # Read commit message from CHANGES.md if available
+    COMMIT_MSG="Changes from $PROJECT_NAME"
+    if [ -f "$STAGING_DIR/CHANGES.md" ]; then
+        # Extract title and summary
+        TITLE=$(head -1 "$STAGING_DIR/CHANGES.md" | sed 's/^# //')
+        SUMMARY=$(sed -n '/## Overview/,/##/p' "$STAGING_DIR/CHANGES.md" | grep -v "^##" | sed '/^$/d' | head -5)
+
+        if [ -n "$TITLE" ]; then
+            COMMIT_MSG="$TITLE"
+            if [ -n "$SUMMARY" ]; then
+                COMMIT_MSG="$COMMIT_MSG
+
+$SUMMARY"
+            fi
+        fi
+    fi
+
+    # Add Claude attribution
+    COMMIT_MSG="$COMMIT_MSG
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+    # Commit
+    git add -A
+    git commit -m "$COMMIT_MSG"
+
+    echo ""
+    echo "✅ Committed:"
+    git log -1 --stat
+else
+    echo "Changes not committed. To revert:"
+    echo "  cd $TARGET_REPO && git checkout -- ."
+fi
+```
+
+### 6. Archive Applied Changes
+
+After successfully applying (whether committed or not):
+
+```bash
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 ARCHIVE_DIR=~/.jib-sharing/staged-archive/$TIMESTAMP
 
-# ERROR HANDLING: Create directory and verify success
-if ! mkdir -p "$ARCHIVE_DIR"; then
-    echo "❌ Error: Failed to create archive directory"
-    exit 1
-fi
+mkdir -p "$ARCHIVE_DIR"
+mv "$STAGING_DIR" "$ARCHIVE_DIR/"
 
-# SECURITY FIX: Move files safely without glob expansion
-# Use find with -mindepth/-maxdepth to avoid recursion issues
-if ! find ~/.jib-sharing/staged-changes/ -mindepth 1 -maxdepth 1 -exec mv -t "$ARCHIVE_DIR/" {} + 2>/dev/null; then
-    # Fallback if -t flag not supported (BSD/macOS)
-    find ~/.jib-sharing/staged-changes/ -mindepth 1 -maxdepth 1 -exec mv {} "$ARCHIVE_DIR/" \;
-fi
-
-echo "✅ Archived to: $ARCHIVE_DIR"
-ls -la "$ARCHIVE_DIR"
+echo ""
+echo "✅ Archived to: $ARCHIVE_DIR/$(basename $STAGING_DIR)"
 ```
 
-### 3. Review Each Staged Project
+### 7. Summary
 
-For each subdirectory in the archive:
-
-```bash
-cd "$ARCHIVE_DIR"
-for project in */; do
-    echo "=== Reviewing: $project ==="
-
-    # Check for CHANGES.md or STAGED-FILES-SUMMARY.md (required)
-    if [ -f "$project/STAGED-FILES-SUMMARY.md" ]; then
-        cat "$project/STAGED-FILES-SUMMARY.md"
-    elif [ -f "$project/CHANGES.md" ]; then
-        cat "$project/CHANGES.md"
-    else
-        echo "⚠️ WARNING: No CHANGES.md or STAGED-FILES-SUMMARY.md found in $project"
-        echo "This is required documentation - please ask user how to proceed"
-    fi
-
-    # List all files
-    echo ""
-    echo "Files in $project:"
-    find "$project" -type f -ls
-    echo ""
-done
-```
-
-### 4. Determine Target Location
-
-For each project, determine where files should be copied:
-
-- If project name is `james-in-a-box`, copy to `~/khan/james-in-a-box/`
-- For other projects, ask the user for the target directory
-
-### 5. Copy Files to Repository
-
-For each project:
+After processing all selected projects:
 
 ```bash
-PROJECT_NAME="james-in-a-box"  # or whatever the project is
-SOURCE_DIR="$ARCHIVE_DIR/$PROJECT_NAME"
-TARGET_DIR="$HOME/khan/$PROJECT_NAME"
+echo ""
+echo "=== Summary ==="
+echo "Applied and archived staged changes"
+echo ""
+echo "Archive location: ~/.jib-sharing/staged-archive/"
+echo ""
 
-# ERROR HANDLING: Validate directories exist
-if [ ! -d "$SOURCE_DIR" ]; then
-    echo "❌ Error: Source directory not found: $SOURCE_DIR"
-    exit 1
-fi
-
-if [ ! -d "$TARGET_DIR" ]; then
-    echo "❌ Error: Target directory not found: $TARGET_DIR"
-    exit 1
-fi
-
-# Copy files (excluding documentation files - those are for reference only)
-echo "Copying from $SOURCE_DIR to $TARGET_DIR"
-
-# SECURITY FIX: Use safer iteration method
-find "$SOURCE_DIR" -type f ! -name "CHANGES.md" ! -name "STAGED-FILES-SUMMARY.md" -print0 | \
-while IFS= read -r -d '' file; do
-    REL_PATH="${file#$SOURCE_DIR/}"
-    TARGET_FILE="$TARGET_DIR/$REL_PATH"
-
-    # ERROR HANDLING: Create parent directory and check success
-    if ! mkdir -p "$(dirname "$TARGET_FILE")"; then
-        echo "❌ Error: Failed to create directory for $TARGET_FILE"
-        continue
-    fi
-
-    # ERROR HANDLING: Copy file and verify
-    if cp -v "$file" "$TARGET_FILE"; then
-        echo "  ✅ Copied: $REL_PATH"
-    else
-        echo "  ❌ Failed to copy: $REL_PATH"
-    fi
-done
-```
-
-### 6. Git Status Check
-
-Show what changed:
-
-```bash
-cd "$HOME/khan/$PROJECT_NAME"
-git status
-git diff --stat
-```
-
-### 7. Review and Commit
-
-Present the CHANGES.md content to the user and ask:
-- "Review the changes above. Should I commit these to git?"
-- If yes, use CHANGES.md to create a comprehensive commit message
-- If no, explain how to revert: `git checkout -- .`
-
-### 8. Commit Changes
-
-If user approves:
-
-```bash
-cd "$HOME/khan/$PROJECT_NAME" || exit 1
-
-# ERROR HANDLING: Check if there are changes to commit
-if ! git diff --quiet || ! git diff --cached --quiet; then
-    # Stage all changes
-    if ! git add -A; then
-        echo "❌ Error: Failed to stage changes"
-        exit 1
-    fi
-
-    # SECURITY FIX: Use git commit -F instead of embedding content in heredoc
-    # This safely reads the CHANGES.md file without command injection risks
-    CHANGES_FILE="$ARCHIVE_DIR/$PROJECT_NAME/CHANGES.md"
-
-    if [ -f "$CHANGES_FILE" ]; then
-        # Create temporary commit message file
-        COMMIT_MSG=$(mktemp)
-        trap 'rm -f "$COMMIT_MSG"' EXIT
-
-        # Add CHANGES.md content plus footer
-        cat "$CHANGES_FILE" > "$COMMIT_MSG"
-        echo "" >> "$COMMIT_MSG"
-        echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)" >> "$COMMIT_MSG"
-        echo "" >> "$COMMIT_MSG"
-        echo "Co-Authored-By: Claude <noreply@anthropic.com>" >> "$COMMIT_MSG"
-
-        # Commit using file
-        if git commit -F "$COMMIT_MSG"; then
-            echo "✅ Changes committed"
-            git log -1 --stat
-        else
-            echo "❌ Error: Failed to create commit"
-            exit 1
-        fi
-    else
-        echo "❌ Error: CHANGES.md not found, cannot create commit message"
-        exit 1
-    fi
+# Show remaining staged changes if any
+remaining=$(ls -1 ~/.jib-sharing/staged-changes/ 2>/dev/null | wc -l)
+if [ $remaining -gt 0 ]; then
+    echo "Remaining staged changes: $remaining"
+    ls -1 ~/.jib-sharing/staged-changes/
 else
-    echo "ℹ️  No changes to commit"
+    echo "No remaining staged changes"
 fi
-```
-
-### 9. Summary
-
-Provide a summary:
-- What was staged
-- Where it was copied
-- Git commit hash (if committed)
-- Archive location for reference: `~/.jib-sharing/staged-archive/$TIMESTAMP`
-
-## Important Notes
-
-- **CHANGES.md is required**: If missing, warn and ask user how to proceed
-- **Archive, don't delete**: Always move to archive, never delete staged changes
-- **Review before commit**: Always show the user what will be committed
-- **Preserve structure**: Maintain directory structure when copying
-- **Handle conflicts**: If files already exist, show diffs and ask user
-
-## Example Output
-
-```
-=== Checking Staging Directory ===
-Found staged changes in: james-in-a-box
-
-=== Archiving ===
-Archived to: ~/.jib-sharing/staged-archive/20251121-220000
-
-=== Reviewing: james-in-a-box ===
-[Display CHANGES.md content]
-
-Files to copy:
-- scripts/new-feature.py
-- Dockerfile
-
-=== Copying to Repository ===
-Copied 2 files to ~/khan/james-in-a-box/
-
-=== Git Status ===
-2 files changed, 150 insertions(+), 20 deletions(-)
-
-Review changes above. Should I commit these to git? [User responds]
-
-=== Committed ===
-[abc1234] Add new feature
-2 files changed, 150 insertions(+), 20 deletions(-)
-
-✅ Staged changes integrated successfully!
-Archive available at: ~/.jib-sharing/staged-archive/20251121-220000
 ```
 
 ## Error Handling
 
-- **No CHANGES.md**: Warn and ask user if they want to proceed anyway
-- **Multiple projects**: Process one at a time, asking for confirmation each
-- **Git conflicts**: Show conflicts and ask user how to resolve
-- **Missing target**: Ask user where files should go
+### If git patch fails
+
+```bash
+# merge-from-claude.sh automatically falls back to sync
+# But if you need to manually handle it:
+
+echo "Git patch failed. Trying sync approach..."
+~/.jib-tools/sync-staging.sh "$PROJECT_NAME" "$TARGET_REPO"
+```
+
+### If target repo is unclear
+
+```bash
+echo "Could not determine target repository."
+echo ""
+echo "Available repos:"
+ls -1 ~/khan/
+echo ""
+read -p "Enter target repo name: " repo_name
+TARGET_REPO=~/khan/$repo_name
+```
+
+### If merge conflicts
+
+```bash
+echo "Merge conflicts detected."
+echo ""
+echo "Options:"
+echo "1. Manually resolve conflicts in $TARGET_REPO"
+echo "2. Skip this project and continue"
+echo "3. Abort entire operation"
+echo ""
+read -p "Choose (1/2/3): " choice
+
+case $choice in
+    1)
+        echo "Opening in editor for manual resolution..."
+        # User handles manually
+        ;;
+    2)
+        echo "Skipping $PROJECT_NAME"
+        git checkout -- .  # Revert changes
+        ;;
+    3)
+        echo "Aborting"
+        git checkout -- .  # Revert changes
+        exit 1
+        ;;
+esac
+```
+
+## Important Notes
+
+- **Git patch preferred**: Uses git patches for clean, reviewable merges
+- **CHANGES.md required**: Should document what changed and why
+- **Archive, don't delete**: Staged changes moved to archive for reference
+- **Review before commit**: Always show diffs before committing
+- **Automatic fallback**: Falls back to file sync if git patch unavailable
+
+## Example Session
+
+```
+=== Staged Changes ===
+slack-notifier-fix
+api-improvements
+
+=== slack-notifier-fix ===
+# Fix: Slack Notifier Polling Interval
+
+## Overview
+Reduced polling interval from 60s to 30s for faster notifications.
+
+## Files Modified
+- scripts/slack-notifier.py
+
+📊 Patch Statistics:
+scripts/slack-notifier.py | 2 +-
+1 file changed, 1 insertion(+), 1 deletion(-)
+
+=== api-improvements ===
+# Feature: Add rate limiting to API endpoints
+
+[etc...]
+
+Which project(s) do you want to apply? slack-notifier-fix
+
+=== Applying: slack-notifier-fix ===
+Target: ~/khan/james-in-a-box
+
+✓ Found git patch - using git approach
+
+Checking patch...
+
+Applying patch...
+
+✅ Patch applied successfully!
+
+On branch main
+Changes not staged for commit:
+  modified:   scripts/slack-notifier.py
+
+=== Review Changes ===
+On branch main
+Changes not staged for commit:
+  modified:   scripts/slack-notifier.py
+
+ scripts/slack-notifier.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+Commit these changes? yes
+
+✅ Committed:
+[abc1234] Fix: Slack Notifier Polling Interval
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+✅ Archived to: ~/.jib-sharing/staged-archive/20251122-143000/slack-notifier-fix
+
+=== Summary ===
+Applied and archived staged changes
+
+Archive location: ~/.jib-sharing/staged-archive/
+
+Remaining staged changes: 1
+api-improvements
+```
+
+## Quick Reference
+
+**One-liner to apply specific project:**
+```bash
+~/.jib-tools/merge-from-claude.sh <project-name> ~/khan/<repo>
+```
+
+**Check what would be applied:**
+```bash
+cd ~/khan/<repo>
+git apply --stat ~/.jib-sharing/staged-changes/<project>/changes.patch
+git apply --check ~/.jib-sharing/staged-changes/<project>/changes.patch
+```
+
+**Manual revert if needed:**
+```bash
+cd ~/khan/<repo>
+git checkout -- .
+```
