@@ -3,7 +3,7 @@
 ## Active Issues
 
 ### OAuth Credentials Not Copying to Container
-**Status:** RESOLVED - Root Cause Identified
+**Status:** Open - Need to Force Host Re-authentication
 **Priority:** Medium
 **Description:**
 The OAuth credentials copy mechanism works correctly, but host credentials are missing required scopes for Claude Code CLI.
@@ -25,14 +25,16 @@ Claude Code CLI requires:
 - Claude Code CLI rejects them due to missing scope
 - User must re-authenticate inside container
 
-**Solution:**
-User needs to re-authenticate on the HOST machine to get credentials with the correct scopes:
-```bash
-# On host (outside container)
-claude
-# This will trigger OAuth flow with correct scopes
-# After authentication, restart container - credentials will work
-```
+**Blocker:**
+Deleting `~/.claude/.credentials.json` on host does NOT force re-authentication. Claude Code still logs in without prompting. Credentials appear to be cached elsewhere (possibly in `~/.claude/session-env/` directories or in-memory).
+
+**Next Steps:**
+1. Find how to force Claude Code to re-authenticate with new scopes on host
+2. Options to investigate:
+   - Clear `~/.claude/session-env/` directories
+   - Find if there's a `claude logout` or `claude clear-auth` command
+   - Check if newer Claude Code version has scope refresh capability
+   - Contact Anthropic support for how to request additional scopes
 
 **Location:**
 - Dockerfile: lines 159-168 (working correctly)
@@ -44,6 +46,7 @@ claude
 3. ✓ File permissions are correct (600)
 4. ✓ File is copied to container user's .claude directory
 5. ✗ Host credentials missing `user:sessions:claude_code` scope
+6. ✗ Cannot force host re-authentication (credentials cached elsewhere)
 
 **References:**
 - Investigated: 2025-11-22
