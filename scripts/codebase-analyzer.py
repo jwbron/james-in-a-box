@@ -4,6 +4,7 @@ Codebase Improvement Analyzer
 
 Analyzes the cursor-sandboxed codebase for potential improvements:
 - File-by-file code review for best practices
+- High-level architectural analysis
 - Web search for new technologies and improvements
 - Generates notification with findings
 
@@ -327,7 +328,99 @@ Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"f
 
         return all_findings
 
-    def generate_notification(self, file_issues: List[Dict], web_findings: List[Dict]):
+    def analyze_codebase_overall(self, files: List[Path], file_issues: List[Dict]) -> Optional[Dict]:
+        """Perform high-level analysis of the entire codebase."""
+        self.logger.info("Performing high-level codebase analysis...")
+
+        # Gather codebase overview
+        file_types = {}
+        total_size = 0
+        for f in files:
+            ext = f.suffix or 'no-extension'
+            file_types[ext] = file_types.get(ext, 0) + 1
+            try:
+                total_size += f.stat().st_size
+            except:
+                pass
+
+        # Build context about the project
+        context = f"""Analyze the cursor-sandboxed project as a whole based on this overview:
+
+**Project**: Docker sandbox for Claude Code CLI (autonomous software engineering agent)
+
+**Codebase Statistics**:
+- Total files: {len(files)}
+- File types: {', '.join(f'{k}({v})' for k, v in sorted(file_types.items(), key=lambda x: -x[1])[:5])}
+- Total size: {total_size / 1024:.1f} KB
+- Issues found: {len(file_issues)} files with {sum(len(f['analysis']['issues']) for f in file_issues)} total issues
+
+**Key Components** (based on file analysis):
+- Docker containerization (Dockerfile, docker-setup.py)
+- Slack integration (bidirectional messaging, notifications)
+- File watching (inotify-based context and incoming watchers)
+- Systemd services (background processes on host)
+- Claude Code CLI integration (custom commands, agent rules)
+- Security isolation (read-only mounts, no credentials)
+
+**Issue Categories Found**:
+- Security: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('category') == 'security')} issues
+- Error handling: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('category') == 'error_handling')} issues
+- Documentation: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('category') == 'documentation')} issues
+- Modern practices: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('category') == 'modern_practices')} issues
+
+Provide a high-level architectural analysis covering:
+
+1. **Overall Architecture Assessment**: System design, component organization, separation of concerns
+2. **Security Posture**: Overall security model, potential system-wide vulnerabilities, defense-in-depth
+3. **Technology Stack**: Appropriateness of tech choices, modern alternatives, compatibility
+4. **Code Quality**: Overall maintainability, consistency, technical debt
+5. **Operational Concerns**: Deployment, monitoring, resilience, observability
+6. **Strategic Recommendations**: Top 3-5 improvements that would have the biggest impact
+
+Return as JSON:
+{{
+  "architecture": {{
+    "assessment": "overall architectural quality",
+    "strengths": ["strength 1", "strength 2"],
+    "concerns": ["concern 1", "concern 2"]
+  }},
+  "security": {{
+    "overall_rating": "STRONG|ADEQUATE|NEEDS_IMPROVEMENT|CRITICAL",
+    "key_strengths": ["strength 1"],
+    "key_risks": ["risk 1"]
+  }},
+  "technology": {{
+    "stack_assessment": "modern|dated|mixed",
+    "recommendations": ["rec 1"]
+  }},
+  "strategic_recommendations": [
+    {{
+      "priority": "HIGH|MEDIUM",
+      "title": "brief title",
+      "description": "what and why",
+      "impact": "expected benefit"
+    }}
+  ]
+}}"""
+
+        response_text = self.call_claude(context)
+
+        if not response_text:
+            return None
+
+        # Extract JSON
+        try:
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx != -1 and end_idx > start_idx:
+                json_str = response_text[start_idx:end_idx]
+                analysis = json.loads(json_str)
+                return analysis
+        except json.JSONDecodeError:
+            self.logger.warning("Could not parse high-level analysis")
+            return None
+
+    def generate_notification(self, file_issues: List[Dict], web_findings: List[Dict], overall_analysis: Optional[Dict] = None):
         """Generate notification file for Slack."""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         notification_file = self.notification_dir / f"{timestamp}-codebase-improvements.md"
@@ -340,7 +433,7 @@ Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"f
 
 **Generated**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 **Project**: cursor-sandboxed
-**Analysis Type**: Automated Daily Review
+**Analysis Type**: Automated Weekly Review
 
 ---
 
@@ -355,6 +448,65 @@ Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"f
 ---
 
 """
+
+        # Add high-level analysis if available
+        if overall_analysis:
+            content += "## 🏗️ High-Level Codebase Analysis\n\n"
+
+            # Architecture
+            if 'architecture' in overall_analysis:
+                arch = overall_analysis['architecture']
+                content += "### Architecture\n\n"
+                content += f"**Assessment**: {arch.get('assessment', 'N/A')}\n\n"
+                if arch.get('strengths'):
+                    content += "**Strengths**:\n"
+                    for s in arch['strengths']:
+                        content += f"- {s}\n"
+                    content += "\n"
+                if arch.get('concerns'):
+                    content += "**Concerns**:\n"
+                    for c in arch['concerns']:
+                        content += f"- {c}\n"
+                    content += "\n"
+
+            # Security
+            if 'security' in overall_analysis:
+                sec = overall_analysis['security']
+                rating = sec.get('overall_rating', 'UNKNOWN')
+                emoji = {'STRONG': '🟢', 'ADEQUATE': '🟡', 'NEEDS_IMPROVEMENT': '🟠', 'CRITICAL': '🔴'}.get(rating, '⚪')
+                content += f"### Security Posture: {emoji} {rating}\n\n"
+                if sec.get('key_strengths'):
+                    content += "**Strengths**:\n"
+                    for s in sec['key_strengths']:
+                        content += f"- {s}\n"
+                    content += "\n"
+                if sec.get('key_risks'):
+                    content += "**Key Risks**:\n"
+                    for r in sec['key_risks']:
+                        content += f"- ⚠️ {r}\n"
+                    content += "\n"
+
+            # Technology Stack
+            if 'technology' in overall_analysis:
+                tech = overall_analysis['technology']
+                content += "### Technology Stack\n\n"
+                content += f"**Assessment**: {tech.get('stack_assessment', 'N/A')}\n\n"
+                if tech.get('recommendations'):
+                    content += "**Recommendations**:\n"
+                    for r in tech['recommendations']:
+                        content += f"- {r}\n"
+                    content += "\n"
+
+            # Strategic Recommendations
+            if 'strategic_recommendations' in overall_analysis:
+                content += "### 🎯 Strategic Recommendations\n\n"
+                for rec in overall_analysis['strategic_recommendations']:
+                    priority_emoji = '🔴' if rec.get('priority') == 'HIGH' else '🟡'
+                    content += f"{priority_emoji} **{rec.get('title', 'Untitled')}**\n"
+                    content += f"- {rec.get('description', 'N/A')}\n"
+                    content += f"- *Impact*: {rec.get('impact', 'N/A')}\n\n"
+
+            content += "---\n\n"
 
         # Add file-specific issues
         if file_issues:
@@ -417,7 +569,7 @@ Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"f
 
 ---
 
-📅 Next analysis: Tomorrow at 11:00 AM PST
+📅 Next analysis: Next week (Monday 11:00 AM PST)
 🤖 Automated by cursor-sandboxed codebase analyzer
 """
 
@@ -447,6 +599,10 @@ Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"f
 
         self.logger.info(f"Found issues in {len(file_issues)} files")
 
+        # High-level codebase analysis
+        self.logger.info("Generating high-level codebase analysis...")
+        overall_analysis = self.analyze_codebase_overall(files, file_issues)
+
         # Web search for improvements
         web_findings = []
         if enable_web_search:
@@ -455,8 +611,8 @@ Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"f
             self.logger.info("Web search disabled")
 
         # Generate notification if we have findings
-        if file_issues or web_findings:
-            notification_file = self.generate_notification(file_issues, web_findings)
+        if file_issues or web_findings or overall_analysis:
+            notification_file = self.generate_notification(file_issues, web_findings, overall_analysis)
             self.logger.info(f"Analysis complete! Notification: {notification_file}")
             return True
         else:

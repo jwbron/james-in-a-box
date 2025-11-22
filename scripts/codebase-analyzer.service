@@ -9,9 +9,6 @@ Type=oneshot
 User=jwies
 Group=jwies
 
-# Environment
-Environment="ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
-
 # Working directory
 WorkingDirectory=/home/jwies/khan/cursor-sandboxed/scripts
 
@@ -28,7 +25,7 @@ PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/jwies/.claude-sandbox-sharing/notifications
+ReadWritePaths=/home/jwies/sharing/notifications
 
 # Restart behavior
 Restart=no
