@@ -85,13 +85,13 @@ case "${1:-}" in
             exit 0
         fi
 
-        local pid=$(get_pid)
+        pid=$(get_pid)
         echo "Stopping Slack notifier (PID: $pid)..."
 
         kill "$pid" 2>/dev/null || true
 
         # Wait for process to stop
-        local count=0
+        count=0
         while kill -0 "$pid" 2>/dev/null && [ $count -lt 10 ]; do
             sleep 1
             count=$((count + 1))
