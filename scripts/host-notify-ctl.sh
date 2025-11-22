@@ -61,7 +61,7 @@ case "${1:-}" in
 
         # Start the notifier in the background
         nohup python3 "$NOTIFIER_SCRIPT" >> "$LOG_FILE" 2>&1 &
-        local pid=$!
+        pid=$!
 
         # Save PID
         echo $pid > "$LOCK_FILE"
@@ -115,7 +115,7 @@ case "${1:-}" in
     status)
         echo "=== Slack Notifier Status ==="
         if is_running; then
-            local pid=$(get_pid)
+            pid=$(get_pid)
             echo "✓ Notifier is running (PID: $pid)"
             echo ""
             echo "Process info:"

@@ -121,10 +121,18 @@ status() {
             if command -v jq > /dev/null 2>&1; then
                 local incoming=$(jq -r '.incoming_directory // "~/.claude-sandbox-sharing/incoming"' "$CONFIG_FILE")
                 local responses=$(jq -r '.responses_directory // "~/.claude-sandbox-sharing/responses"' "$CONFIG_FILE")
+                local self_dm=$(jq -r '.self_dm_channel // ""' "$CONFIG_FILE")
+                local owner_id=$(jq -r '.owner_user_id // ""' "$CONFIG_FILE")
                 local allowed=$(jq -r '.allowed_users // [] | join(", ")' "$CONFIG_FILE")
 
                 echo "  Incoming dir: $incoming"
                 echo "  Responses dir: $responses"
+                if [ -n "$self_dm" ]; then
+                    echo "  Self-DM channel: $self_dm"
+                fi
+                if [ -n "$owner_id" ]; then
+                    echo "  Owner user ID: $owner_id"
+                fi
                 if [ -n "$allowed" ]; then
                     echo "  Allowed users: $allowed"
                 else
@@ -167,6 +175,14 @@ setup() {
     read -p "Slack Bot Token (SLACK_TOKEN, starts with xoxb-): " slack_token
     read -p "Slack App Token (SLACK_APP_TOKEN, starts with xapp-): " slack_app_token
 
+    # Get self-DM channel and user ID
+    echo ""
+    echo "Your Slack workspace information:"
+    echo "Example: Self-DM URL: https://workspace.slack.com/archives/D07S8SAB5FE"
+    echo "         Profile URL: https://workspace.slack.com/team/U07SK26JPJ5"
+    read -p "Your self-DM channel ID (e.g., D07S8SAB5FE): " self_dm_channel
+    read -p "Your Slack user ID (e.g., U07SK26JPJ5): " owner_user_id
+
     # Optional: allowed users
     echo ""
     echo "Allowed users (optional - leave empty to allow all):"
@@ -186,6 +202,8 @@ setup() {
   "slack_token": "$slack_token",
   "slack_app_token": "$slack_app_token",
   "allowed_users": $allowed_users,
+  "self_dm_channel": "$self_dm_channel",
+  "owner_user_id": "$owner_user_id",
   "incoming_directory": "~/.claude-sandbox-sharing/incoming",
   "responses_directory": "~/.claude-sandbox-sharing/responses"
 }

@@ -12,15 +12,39 @@ You need **TWO tokens**:
 
 ### 1. Create Slack App
 
+**Option A: Using the Manifest (Fastest)**
+
+1. Go to https://api.slack.com/apps
+2. Click **"Create New App"**
+3. Choose **"From an app manifest"**
+4. Select your workspace (e.g., khanbottesting)
+5. Choose **YAML** tab
+6. Copy and paste contents of `slack-app-manifest.yaml` from this directory
+7. Click **"Next"** → Review → **"Create"**
+8. Done! Skip to Step 2 (Enable Socket Mode)
+
+**Option B: Manual Setup (Step-by-step)**
+
 1. Go to https://api.slack.com/apps
 2. Click **"Create New App"**
 3. Choose **"From scratch"**
 4. Enter app details:
    - **App Name**: `Claude Notifier` (or your preferred name)
-   - **Workspace**: Select your Khan Academy workspace
+   - **Workspace**: Select your workspace (e.g., khanbottesting)
 5. Click **"Create App"**
 
-### 2. Enable Socket Mode
+### 2. Enable Messages Tab (Allow DMs to Bot)
+
+The bot needs to be able to receive direct messages.
+
+1. In the left sidebar, click **"App Home"**
+2. Scroll down to **"Show Tabs"** section
+3. Check the box: **"Allow users to send Slash commands and messages from the messages tab"**
+4. Ensure **"Messages Tab"** is enabled
+
+This allows you to find the bot in your DMs and message it directly.
+
+### 3. Enable Socket Mode
 
 Socket Mode allows the bot to receive messages in real-time without needing a public webhook URL.
 
@@ -37,7 +61,7 @@ Socket Mode allows the bot to receive messages in real-time without needing a pu
    - You won't be able to see it again!
 5. Click **"Done"**
 
-### 3. Add Bot Scopes (Permissions)
+### 4. Add Bot Scopes (Permissions)
 
 1. In the left sidebar, click **"OAuth & Permissions"**
 2. Scroll down to **"Scopes"** section
@@ -53,7 +77,7 @@ Socket Mode allows the bot to receive messages in real-time without needing a pu
 
 5. Your scopes section should now show all 5 scopes
 
-### 4. Subscribe to Bot Events
+### 5. Subscribe to Bot Events
 
 This tells Slack which events to send to your bot.
 
@@ -66,7 +90,7 @@ This tells Slack which events to send to your bot.
 
 6. Click **"Save Changes"** at the bottom
 
-### 5. Install App to Workspace
+### 6. Install App to Workspace
 
 1. In the left sidebar, click **"OAuth & Permissions"**
 2. At the top, click **"Install to Workspace"** (or "Reinstall to Workspace" if updating)
@@ -78,11 +102,18 @@ This tells Slack which events to send to your bot.
    - This is your **Bot Token** - you'll need it later
    - Keep this page open or save the token somewhere safe
 
-### 6. Get Your Slack User ID
+### 7. Get Your Slack User ID
 
 You need your user ID to configure the allowed users list.
 
-**Method 1: From Slack UI**
+**Method 1: From Profile URL**
+1. In Slack, click your profile picture
+2. Click **"View profile"**
+3. Look at the URL: `https://khanbottesting.slack.com/team/U07SK26JPJ5`
+4. Your user ID is the part after `/team/`
+5. Example: `U07SK26JPJ5`
+
+**Method 2: From Slack UI**
 1. Click your profile picture in Slack
 2. Click **"Profile"**
 3. Click the three dots (More)
@@ -100,16 +131,15 @@ curl -H "Authorization: Bearer xoxb-YOUR-BOT-TOKEN" \
 **Method 3: After starting receiver**
 Send a test message and check logs - the user ID will be shown.
 
-### 7. Get Your Self-DM Channel ID
+### 8. Get Your Self-DM Channel ID
 
-Your self-DM channel ID is already hardcoded: `D04CMDR7LBT`
-
-But if you need to verify or find it:
+You need your self-DM channel ID for the bot to recognize your task messages.
 
 **Method 1: From Slack URL**
 1. In Slack, open your self-DM (message yourself)
-2. Look at the URL: `https://khanacademy.slack.com/archives/D04CMDR7LBT`
+2. Look at the URL: `https://khanbottesting.slack.com/archives/D07S8SAB5FE`
 3. The channel ID is the part after `/archives/`
+4. Example: `D07S8SAB5FE`
 
 **Method 2: From API**
 ```bash
@@ -126,8 +156,8 @@ After completing the above steps, you should have:
 |------------|--------|---------|--------------|
 | **Bot Token** | `xoxb-...` | `xoxb-1234567890123-1234567890123-abc...` | Config: `slack_token` |
 | **App Token** | `xapp-...` | `xapp-1-A01234567890-1234567890123-abc...` | Config: `slack_app_token` |
-| **User ID** | `U...` | `U01234567AB` | Config: `allowed_users` |
-| **Self-DM Channel** | `D...` | `D04CMDR7LBT` | Hardcoded in code |
+| **User ID** | `U...` | `U07SK26JPJ5` | Config: `owner_user_id` |
+| **Self-DM Channel** | `D...` | `D07S8SAB5FE` | Config: `self_dm_channel` |
 
 ## Configuration
 
@@ -140,7 +170,9 @@ After completing the above steps, you should have:
 Enter when prompted:
 - **Slack Bot Token**: `xoxb-...` (from step 5)
 - **Slack App Token**: `xapp-...` (from step 2)
-- **Allowed Users**: `U01234567AB` (your user ID from step 6)
+- **Self-DM Channel ID**: `D07S8SAB5FE` (from step 7)
+- **Your User ID**: `U07SK26JPJ5` (from step 6)
+- **Allowed Users**: `U07SK26JPJ5` (same as your user ID, or leave empty)
 
 ### Option 2: Manual Configuration
 
@@ -150,7 +182,9 @@ Create `~/.config/slack-notifier/config.json`:
 {
   "slack_token": "xoxb-1234567890123-1234567890123-abcdefghijklmnopqrstuvwx",
   "slack_app_token": "xapp-1-A01234567890-1234567890123-abcdef1234567890abcdef1234567890abcdef1234567890abcdef12",
-  "allowed_users": ["U01234567AB"],
+  "self_dm_channel": "D07S8SAB5FE",
+  "owner_user_id": "U07SK26JPJ5",
+  "allowed_users": ["U07SK26JPJ5"],
   "incoming_directory": "~/.claude-sandbox-sharing/incoming",
   "responses_directory": "~/.claude-sandbox-sharing/responses"
 }

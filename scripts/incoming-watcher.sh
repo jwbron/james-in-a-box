@@ -17,11 +17,16 @@ set -euo pipefail
 INCOMING_DIR="${HOME}/sharing/incoming"
 RESPONSES_DIR="${HOME}/sharing/responses"
 STATE_DIR="${HOME}/sharing/tracking"
+TASK_OUTPUT_DIR="${HOME}/sharing/task-output"
 STATE_FILE="${STATE_DIR}/incoming-watcher.state"
 LOG_FILE="${STATE_DIR}/incoming-watcher.log"
+CLAUDE_LOG_FILE="${STATE_DIR}/claude-tasks.log"
 
 # Ensure directories exist
-mkdir -p "$INCOMING_DIR" "$RESPONSES_DIR" "$STATE_DIR"
+mkdir -p "$INCOMING_DIR" "$RESPONSES_DIR" "$STATE_DIR" "$TASK_OUTPUT_DIR"
+
+# Create log files if they don't exist
+touch "$LOG_FILE" "$CLAUDE_LOG_FILE"
 
 # Logging function
 log() {
@@ -110,8 +115,110 @@ EOF
 
     log "✅ Task acknowledged: $notify_file"
 
-    # TODO: In future, could automatically trigger Claude here
-    # For now, Claude will pick this up when user starts conversation
+    # Automatically invoke Claude to process the task
+    log "🤖 Invoking Claude to process task..."
+
+    # Create output directory for this task
+    local task_timestamp=$(date +%Y%m%d-%H%M%S)
+    local output_dir="${TASK_OUTPUT_DIR}/${task_timestamp}"
+    mkdir -p "$output_dir"
+
+    # Build the full prompt with context
+    local full_prompt="# Task from Slack (Received: $(date '+%Y-%m-%d %H:%M:%S'))
+
+You received this task via Slack DM. Complete it autonomously following the guidelines in your mission.
+
+**What to do**:
+1. Read and understand the task below
+2. Gather context from codebase, Confluence docs, or saved context as needed
+3. Complete the task (implement, test, document)
+4. Save any code changes to \`~/sharing/staged-changes/\`
+5. **REQUIRED**: When done, write a completion summary to \`~/sharing/notifications/\`
+
+**IMPORTANT - How to respond**:
+When you complete this task (or need guidance), you MUST write a notification file:
+
+\`\`\`bash
+cat > ~/sharing/notifications/\$(date +%Y%m%d-%H%M%S)-task-response.md <<'EOF'
+# ✅ Task Complete: [Brief description]
+
+**Status**: [Completed/Need Guidance/Blocked]
+
+## What I Did
+[Summary of work completed]
+
+## Results
+[What was produced - code changes, analysis, etc.]
+
+## Next Steps
+[What human should review or do next, if anything]
+EOF
+\`\`\`
+
+This notification will be sent to the human via Slack automatically.
+
+**Task**:
+$task_content
+
+**Remember**:
+- ~/khan/ is read-only. Stage any code changes in ~/sharing/staged-changes/ with clear documentation.
+- You MUST create a notification file when done - this is how you communicate back via Slack."
+
+    # Invoke Claude in non-interactive mode with the task
+    # Claude will use the rules from ~/CLAUDE.md automatically
+    # Run from home directory so paths work correctly
+    # Use --dangerously-skip-permissions to bypass all permission prompts (safe in sandbox)
+    if cd "${HOME}" && /usr/local/bin/claude --print --dangerously-skip-permissions "$full_prompt" > "$output_dir/output.log" 2>&1; then
+        log "✅ Claude completed task successfully"
+
+        # Create completion notification
+        local completion_file="${HOME}/sharing/notifications/$(date +%Y%m%d-%H%M%S)-task-completed.md"
+        cat > "$completion_file" <<EOF
+# ✅ Task Completed
+
+**Original task:** \`$filename\`
+**Completed:** $(date '+%Y-%m-%d %H:%M:%S')
+
+## Task
+$task_content
+
+## Output
+See: \`$output_dir/output.log\`
+
+---
+📨 *Processed by Claude automatically*
+EOF
+        log "📬 Completion notification: $completion_file"
+
+        # Also log summary to claude-tasks.log
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Task completed: $filename" >> "$CLAUDE_LOG_FILE"
+        echo "Output: $output_dir/output.log" >> "$CLAUDE_LOG_FILE"
+    else
+        log "❌ Claude failed to process task"
+
+        # Create error notification
+        local error_file="${HOME}/sharing/notifications/$(date +%Y%m%d-%H%M%S)-task-failed.md"
+        cat > "$error_file" <<EOF
+# ❌ Task Failed
+
+**Original task:** \`$filename\`
+**Failed:** $(date '+%Y-%m-%d %H:%M:%S')
+
+## Task
+$task_content
+
+## Error
+Claude encountered an error. Check logs: \`$output_dir/output.log\`
+
+---
+📨 *Processed by Claude automatically*
+EOF
+        log "📬 Error notification: $error_file"
+
+        # Also log error to claude-tasks.log
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ❌ Task failed: $filename" >> "$CLAUDE_LOG_FILE"
+        echo "Error log: $output_dir/output.log" >> "$CLAUDE_LOG_FILE"
+    fi
 
     mark_processed "$file"
 }
@@ -171,9 +278,18 @@ EOF
 # Watch for new files
 watch_directories() {
     log "👀 Starting incoming message watcher"
-    log "Monitoring:"
-    log "  - $INCOMING_DIR (new tasks)"
-    log "  - $RESPONSES_DIR (responses to notifications)"
+    log "PID: $$"
+    log ""
+    log "Directories:"
+    log "  - Incoming: $INCOMING_DIR"
+    log "  - Responses: $RESPONSES_DIR"
+    log "  - Task output: $TASK_OUTPUT_DIR"
+    log ""
+    log "Logs:"
+    log "  - Watcher: $LOG_FILE"
+    log "  - Claude tasks: $CLAUDE_LOG_FILE"
+    log ""
+    log "Monitoring for new files..."
 
     while true; do
         # Check for new tasks

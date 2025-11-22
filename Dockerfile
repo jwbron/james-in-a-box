@@ -193,11 +193,19 @@ BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
 echo "✓ Claude alias created (bypasses permissions in sandbox)"
 
+# Ensure tracking directory exists for watcher logs
+if [ -d "${USER_HOME}/sharing" ]; then
+    mkdir -p "${USER_HOME}/sharing/tracking"
+    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/tracking"
+fi
+
 # Start context-watcher in background (if configured)
 if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh" ]; then
     echo "Starting context-watcher in background..."
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "nohup ${USER_HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh >> ${USER_HOME}/sharing/tracking/watcher.log 2>&1 &"
     echo "✓ Context watcher started (monitoring ~/context-sync/)"
+else
+    echo "⚠ Context watcher script not found at ${USER_HOME}/khan/cursor-sandboxed/scripts/context-watcher.sh"
 fi
 
 # Start incoming-watcher in background (if configured)
@@ -205,6 +213,8 @@ if [ -f "${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh" ]; then
     echo "Starting incoming message watcher in background..."
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "nohup ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh >> ${USER_HOME}/sharing/tracking/incoming-watcher.log 2>&1 &"
     echo "✓ Incoming watcher started (monitoring ~/sharing/incoming/ and ~/sharing/responses/)"
+else
+    echo "⚠ Incoming watcher script not found at ${USER_HOME}/khan/cursor-sandboxed/scripts/incoming-watcher.sh"
 fi
 
 # Drop privileges and start shell or run claude

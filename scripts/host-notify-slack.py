@@ -253,12 +253,15 @@ class SlackNotifier:
         i = inotify.adapters.Inotify()
 
         # Add watches for each directory (recursive)
+        watches_added = 0
         for watch_dir in self.watch_dirs:
             try:
                 i.add_watch(str(watch_dir), mask=inotify.constants.IN_CREATE |
                                                  inotify.constants.IN_MODIFY |
                                                  inotify.constants.IN_DELETE |
                                                  inotify.constants.IN_MOVED_TO)
+                watches_added += 1
+                self.logger.info(f"Added watch for: {watch_dir}")
                 # Also watch subdirectories
                 for root, dirs, files in os.walk(watch_dir):
                     for d in dirs:
@@ -274,39 +277,58 @@ class SlackNotifier:
             except Exception as e:
                 self.logger.error(f"Failed to watch {watch_dir}: {e}")
 
+        self.logger.info(f"Total watches added: {watches_added}")
+        if watches_added == 0:
+            self.logger.error("No watches were added - cannot monitor for changes")
+            return
+
         # Main event loop
+        self.logger.info("Starting main event loop...")
+        event_count = 0
         try:
-            for event in i.event_gen(yield_nones=False, timeout_s=1):
-                if not self.running:
-                    break
+            while self.running:
+                for event in i.event_gen(yield_nones=False, timeout_s=1):
+                    if event is None:
+                        continue
 
-                (_, type_names, path, filename) = event
+                    event_count += 1
+                    if event_count % 100 == 0:
+                        self.logger.debug(f"Processed {event_count} events...")
 
-                # Build full path
-                if filename:
-                    full_path = os.path.join(path, filename)
-                else:
-                    full_path = path
+                    if not self.running:
+                        self.logger.info("Received shutdown signal, exiting loop")
+                        break
 
-                # Skip ignored files
-                if self._should_ignore(full_path):
-                    continue
+                    (_, type_names, path, filename) = event
 
-                # Add to pending changes
-                self.pending_changes.add(full_path)
-                self.logger.debug(f"Change detected: {full_path} ({', '.join(type_names)})")
+                    # Build full path
+                    if filename:
+                        full_path = os.path.join(path, filename)
+                    else:
+                        full_path = path
 
-                # Check if batch window has elapsed
-                if time.time() - self.last_batch_time >= self.batch_window:
-                    self._process_batch()
+                    # Skip ignored files
+                    if self._should_ignore(full_path):
+                        continue
 
-                # Process any remaining changes when shutting down
-                if not self.running and self.pending_changes:
-                    self._process_batch()
+                    # Add to pending changes
+                    self.pending_changes.add(full_path)
+                    self.logger.debug(f"Change detected: {full_path} ({', '.join(type_names)})")
+
+                    # Check if batch window has elapsed
+                    if time.time() - self.last_batch_time >= self.batch_window:
+                        self._process_batch()
+
+                    # Process any remaining changes when shutting down
+                    if not self.running and self.pending_changes:
+                        self._process_batch()
 
         except KeyboardInterrupt:
             self.logger.info("Interrupted by user")
+        except Exception as e:
+            self.logger.error(f"Error in main loop: {e}", exc_info=True)
         finally:
+            self.logger.info(f"Event loop exited after {event_count} events")
             # Process any remaining changes
             if self.pending_changes:
                 self._process_batch()

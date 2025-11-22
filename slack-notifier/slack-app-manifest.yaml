@@ -1,0 +1,44 @@
+# Slack App Manifest for Claude Notifier
+#
+# Use this manifest to quickly create your Slack app:
+# 1. Go to https://api.slack.com/apps
+# 2. Click "Create New App"
+# 3. Choose "From an app manifest"
+# 4. Select your workspace
+# 5. Paste this YAML
+# 6. Review and create
+
+display_information:
+  name: Claude Notifier
+  description: Bidirectional communication with Claude Code sandboxed agent
+  background_color: "#2c2d30"
+
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true           # Enable DMs to the bot
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Claude Notifier
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write           # Send messages (Claude notifications to you)
+      - channels:history     # Read thread parent messages (extract timestamps)
+      - im:history          # Read DM history (receive your messages)
+      - im:read             # Read DM metadata (identify channels)
+      - users:read          # Get user info (validate authorized users)
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.im         # Direct messages to the bot
+
+  interactivity:
+    is_enabled: false      # Not using interactive components
+
+  org_deploy_enabled: false
+  socket_mode_enabled: true   # Enable Socket Mode for real-time messaging
+  token_rotation_enabled: false

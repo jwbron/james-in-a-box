@@ -1,0 +1,8 @@
+# Slack SDK for bidirectional communication
+slack-sdk>=3.27.0
+
+# HTTP requests for outgoing notifications
+requests>=2.31.0
+
+# File system monitoring for outgoing notifications
+inotify>=0.2.10

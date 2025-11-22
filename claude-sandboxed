@@ -428,8 +428,9 @@ def setup() -> bool:
             else:
                 continue
 
-        mounts.append(f"{mount_path}:{mode}")
-        print(f"Added: {mount_path} ({mode})")
+        # Add SELinux label for Fedora/RHEL compatibility
+        mounts.append(f"{mount_path}:{mode},z")
+        print(f"Added: {mount_path} ({mode}, SELinux relabeled)")
 
     # Save configuration
     Config.CONFIG_FILE.write_text("\n".join(mounts))
@@ -489,7 +490,7 @@ def run_claude() -> bool:
         if not mount:
             continue
         parts = mount.rsplit(":", 2)  # Split from right, max 2 splits
-        
+
         if len(parts) == 2:
             # Old format: path:mode
             mount_path, mode = parts
@@ -500,11 +501,15 @@ def run_claude() -> bool:
         else:
             warn(f"Invalid mount format: {mount}")
             continue
-        
+
+        # Ensure SELinux label is present (add if missing for backwards compatibility)
+        if not mode.endswith(",z") and not mode.endswith(":z"):
+            mode = f"{mode},z"
+
         mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
-        mode_str = "READ-ONLY" if mode == "ro" else "READ-WRITE"
+        mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
         display_path = container_path if container_path != mount_path else mount_path
-        print(f"  • {display_path} ({mode_str})")
+        print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
     print()
 
     # Remove old container if exists
@@ -529,10 +534,16 @@ def run_claude() -> bool:
     print("  Container can: Access Claude API, download packages")
     print("  Container cannot: Access host services, accept inbound connections")
     print()
-    
-    # Note: Claude OAuth authentication will happen via browser on first run
-    # Credentials persist in container's ~/.claude/ directory
-    info("Claude authentication: Will authenticate with browser on first run")
+
+    # Mount Claude OAuth credentials if they exist on host
+    claude_creds = Path.home() / ".claude" / ".credentials.json"
+    if claude_creds.exists():
+        cmd.extend(["-v", f"{claude_creds}:/opt/host-claude-credentials.json:ro,z"])
+        info("Claude authentication: Using credentials from host ~/.claude/.credentials.json")
+    else:
+        info("Claude authentication: Will authenticate with browser on first run")
+        print("  Tip: After authenticating, credentials will auto-sync on next run")
+    print()
 
     # Add mount arguments
     cmd.extend(mount_args)

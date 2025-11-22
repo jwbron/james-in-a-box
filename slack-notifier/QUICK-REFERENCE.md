@@ -2,8 +2,8 @@
 
 ## TL;DR
 
-**Respond to Claude**: Reply in thread to notification
-**Send task to Claude**: Self-DM with `claude: [task]`
+**Respond to Claude**: Reply in thread to notification in bot's DM
+**Send task to Claude**: DM the bot directly (any message)
 
 ## Setup (First Time Only)
 
@@ -33,14 +33,15 @@ notifications/: 20251121-143000-topic.md → Timestamp: 20251121-143000
 
 ### When You Want Claude to Do Something
 
-**In Slack, message yourself**:
+**In Slack, DM the bot**:
 ```
-claude: Implement OAuth2 for JIRA-1234
+Implement OAuth2 for JIRA-1234
 ```
 
-**Bot confirms** (in your self-DM):
+**Bot confirms** (in the same DM):
 ```
 ✅ Task received and queued for Claude
+📁 Saved to: task-20251121-150000.md
 ```
 
 **Then**:

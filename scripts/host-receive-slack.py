@@ -63,6 +63,8 @@ class SlackReceiver:
 
         # Configuration
         self.allowed_users = self.config.get('allowed_users', [])
+        self.self_dm_channel = self.config.get('self_dm_channel')  # User's self-DM channel ID
+        self.owner_user_id = self.config.get('owner_user_id')  # User's Slack user ID
         self.bot_user_id = None
         self.incoming_dir = Path(self.config.get('incoming_directory',
                                                   '~/.claude-sandbox-sharing/incoming')).expanduser()
@@ -115,6 +117,8 @@ class SlackReceiver:
                 'slack_token': os.environ.get('SLACK_TOKEN', ''),
                 'slack_app_token': os.environ.get('SLACK_APP_TOKEN', ''),
                 'allowed_users': [],  # Empty = allow all
+                'self_dm_channel': '',  # User's self-DM channel ID (e.g., D07S8SAB5FE)
+                'owner_user_id': '',  # User's Slack user ID (e.g., U07SK26JPJ5)
                 'incoming_directory': '~/.claude-sandbox-sharing/incoming',
                 'responses_directory': '~/.claude-sandbox-sharing/responses'
             }
@@ -167,8 +171,7 @@ class SlackReceiver:
 
         Message types:
         1. Thread reply to notification → Response to Claude
-        2. Self-DM starting with "claude:" → New task
-        3. Direct message to bot → New task (legacy, but still supported)
+        2. Direct message to bot → New task
 
         Args:
             text: Message text
@@ -195,18 +198,8 @@ class SlackReceiver:
                 'thread_ts': thread_ts
             }
 
-        # Pattern 2: Self-DM with "claude:" prefix
-        # Check if this is a self-DM (D04CMDR7LBT is James's self-DM channel)
-        if channel == 'D04CMDR7LBT' and text.lower().startswith('claude:'):
-            # Remove the "claude:" prefix
-            task_content = text[7:].strip()  # Remove "claude:" (case insensitive)
-            return {
-                'type': 'task',
-                'content': task_content
-            }
-
-        # Pattern 3: Direct message to bot (legacy support)
-        # Any DM sent directly to the bot
+        # Pattern 2: Direct message to bot
+        # Any non-threaded DM is treated as a new task
         return {
             'type': 'task',
             'content': text
@@ -390,6 +383,14 @@ class SlackReceiver:
 
         self.logger.info(f"Incoming messages → {self.incoming_dir}")
         self.logger.info(f"Responses → {self.responses_dir}")
+
+        if self.self_dm_channel:
+            self.logger.info(f"Self-DM channel: {self.self_dm_channel}")
+        else:
+            self.logger.warning("No self-DM channel configured - will not detect 'claude:' tasks")
+
+        if self.owner_user_id:
+            self.logger.info(f"Owner user ID: {self.owner_user_id}")
 
         if self.allowed_users:
             self.logger.info(f"Allowed users: {', '.join(self.allowed_users)}")
