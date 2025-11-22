@@ -106,11 +106,11 @@ print_header "Slack Configuration"
 
 if [ -n "${SLACK_TOKEN:-}" ]; then
     check_mark "SLACK_TOKEN environment variable is set"
-    echo -e "  Value: ${SLACK_TOKEN:0:10}...${SLACK_TOKEN: -5}"
+    # SECURITY FIX: Do not display any part of the token
 else
     cross_mark "SLACK_TOKEN environment variable is NOT set"
     echo ""
-    echo "You need to set your Slack bot token:"
+    echo "You need to set your Slack bot token securely:"
     echo ""
     echo "1. Get a token from: https://api.slack.com/apps"
     echo "   - Create a new app or select existing"
@@ -119,11 +119,20 @@ else
     echo "   - Install app to workspace"
     echo "   - Copy the 'Bot User OAuth Token' (starts with xoxb-)"
     echo ""
-    echo "2. Set the environment variable:"
+    echo "2. SECURE OPTION (recommended): Store in a secure file with restricted permissions:"
+    echo -e "   ${YELLOW}mkdir -p ~/.config/jib-notifier${NC}"
+    echo -e "   ${YELLOW}echo 'xoxb-your-token-here' > ~/.config/jib-notifier/slack-token${NC}"
+    echo -e "   ${YELLOW}chmod 600 ~/.config/jib-notifier/slack-token${NC}"
+    echo -e "   ${YELLOW}export SLACK_TOKEN=\$(cat ~/.config/jib-notifier/slack-token)${NC}"
+    echo ""
+    echo "3. ALTERNATIVE: Set the environment variable (less secure):"
     echo -e "   ${YELLOW}export SLACK_TOKEN=\"xoxb-your-token-here\"${NC}"
     echo ""
-    echo "3. Make it permanent by adding to ~/.bashrc:"
-    echo -e "   ${YELLOW}echo 'export SLACK_TOKEN=\"xoxb-your-token-here\"' >> ~/.bashrc${NC}"
+    echo "4. To make it permanent, add to ~/.bashrc (ONLY if using secure file method):"
+    echo -e "   ${YELLOW}echo 'export SLACK_TOKEN=\$(cat ~/.config/jib-notifier/slack-token)' >> ~/.bashrc${NC}"
+    echo ""
+    echo "   NOTE: Using a secure file with restricted permissions (chmod 600) provides"
+    echo "   better security than storing tokens directly in ~/.bashrc"
     echo ""
     exit 1
 fi

@@ -5,8 +5,14 @@
 set -euo pipefail
 
 WATCHER_SCRIPT="${HOME}/khan/james-in-a-box/scripts/context-watcher.sh"
-LOCK_FILE="/tmp/context-watcher.lock"
+# SECURITY FIX: Use user-controlled directory instead of /tmp to prevent symlink attacks
+LOCK_DIR="${HOME}/.cache/context-watcher"
+LOCK_FILE="${LOCK_DIR}/watcher.lock"
 LOG_FILE="${HOME}/sharing/context-tracking/watcher.log"
+
+# Create lock directory with secure permissions
+mkdir -p "$LOCK_DIR"
+chmod 700 "$LOCK_DIR"
 
 usage() {
     cat << EOF
@@ -24,10 +30,36 @@ EOF
     exit 1
 }
 
+# SECURITY FIX: Validate PID before using it
+is_valid_process() {
+    local pid="$1"
+
+    # Validate PID is numeric
+    if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+        return 1
+    fi
+
+    # Check if process exists
+    if ! kill -0 "$pid" 2>/dev/null; then
+        return 1
+    fi
+
+    # SECURITY FIX: Validate that PID belongs to the expected script
+    if [ -r "/proc/$pid/cmdline" ]; then
+        local cmdline
+        cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || echo "")
+        if [[ "$cmdline" == *"context-watcher.sh"* ]]; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
 start() {
     if [ -f "$LOCK_FILE" ]; then
         PID=$(cat "$LOCK_FILE")
-        if kill -0 "$PID" 2>/dev/null; then
+        if is_valid_process "$PID"; then
             echo "Context watcher is already running (PID: $PID)"
             return 1
         else
@@ -42,9 +74,14 @@ start() {
 
     if [ -f "$LOCK_FILE" ]; then
         PID=$(cat "$LOCK_FILE")
-        echo "Context watcher started (PID: $PID)"
-        echo "Logs: $LOG_FILE"
-        return 0
+        if is_valid_process "$PID"; then
+            echo "Context watcher started (PID: $PID)"
+            echo "Logs: $LOG_FILE"
+            return 0
+        else
+            echo "Failed to start context watcher"
+            return 1
+        fi
     else
         echo "Failed to start context watcher"
         return 1
@@ -58,7 +95,7 @@ stop() {
     fi
 
     PID=$(cat "$LOCK_FILE")
-    if kill -0 "$PID" 2>/dev/null; then
+    if is_valid_process "$PID"; then
         echo "Stopping context watcher (PID: $PID)..."
         kill "$PID"
         sleep 1
@@ -84,7 +121,7 @@ status() {
     fi
 
     PID=$(cat "$LOCK_FILE")
-    if kill -0 "$PID" 2>/dev/null; then
+    if is_valid_process "$PID"; then
         echo "Context watcher is running (PID: $PID)"
         echo "Log file: $LOG_FILE"
 

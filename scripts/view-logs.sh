@@ -82,7 +82,13 @@ tail_all() {
     echo ""
 
     if [ -d "$TRACKING_DIR" ]; then
-        tail -f "$TRACKING_DIR"/*.log 2>/dev/null
+        # SECURITY FIX: Use find with -print0 and xargs -0 to safely handle filenames
+        # This prevents command injection via glob expansion with special characters
+        if find "$TRACKING_DIR" -maxdepth 1 -name '*.log' -type f -print0 2>/dev/null | xargs -0 -r tail -f 2>/dev/null; then
+            :  # Command succeeded
+        else
+            echo "No log files found or unable to tail logs"
+        fi
     else
         echo "Tracking directory not found: $TRACKING_DIR"
         echo "Is the container running?"

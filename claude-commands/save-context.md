@@ -1,8 +1,8 @@
 # Claude Command: Save Context Document
 
-**Command**: `@save-context <filename>`
+**Command**: `/save-context <filename>`
 
-**Example**: `@save-context tf-hackathon`
+**Example**: `/save-context tf-hackathon`
 
 ## Purpose
 Create or update a context-sharing document that captures accumulated knowledge from the current session using the ACE (Agentic Context Engineering) methodology.
@@ -11,33 +11,51 @@ Create or update a context-sharing document that captures accumulated knowledge 
 
 When you see this command:
 
-1. **Ensure directory exists**: `~/sharing/context/`
-   - Use absolute paths: `/home/<username>/sharing/context/`
+1. **Validate filename parameter**:
+   - **SECURITY FIX**: Filename must be alphanumeric with hyphens/underscores only
+   - Maximum length: 100 characters
+   - Pattern: `^[a-zA-Z0-9_-]+$`
+   - Reject if contains: path separators (`/`, `\`), dots (`..`), or special characters
+   - Example valid names: `terraform-migration`, `feature_x`, `sprint23`
+   - Example invalid: `../etc/passwd`, `my.file`, `test/path`
+
+2. **Ensure directory exists**: `~/sharing/context/`
+   - Use absolute paths: Resolve `~/sharing/context/` to full path
    - Create directory if needed: `mkdir -p ~/sharing/context/`
+   - **ERROR HANDLING**: Check write permissions with test write
+   - **ERROR HANDLING**: If mkdir fails, report error and halt
    - This directory is MOUNTED and persists across container rebuilds
 
-2. **Check for existing document** at `~/sharing/context/<filename>.md`
+3. **Check for existing document** at `~/sharing/context/<filename>.md`
+   - **ERROR HANDLING**: Handle file read errors gracefully
    - If exists: Read it and prepare to append new session
    - If new: Create with Session 1 structure
+   - **ERROR HANDLING**: If file is corrupted or has invalid structure, ask user to confirm recreate vs append
 
-3. **Generate content** using 3-phase process:
+4. **Generate content** using 3-phase process:
    - **Phase 1 - Generation**: What happened (implementation, commands, timeline)
    - **Phase 2 - Reflection**: What we learned (surprises, failures, pivots)
    - **Phase 3 - Curation**: Actionable patterns (playbooks, anti-patterns)
 
-4. **Append to document** (NEVER replace existing content):
+5. **Append to document** (NEVER replace existing content):
    - Update metadata (Last Updated, Session count)
    - Add new session: `## Session N: YYYY-MM-DD - <Description>`
    - Preserve ALL previous content
    - Version playbooks when refining them
    - Accumulate anti-patterns and lessons learned
 
-5. **Write file** using absolute path
+6. **Write file** using absolute path
+   - **ERROR HANDLING**: Verify write succeeded by reading back file size
+   - **ERROR HANDLING**: If write fails, preserve original file and report error
+   - **ERROR HANDLING**: Confirm absolute path resolution worked correctly
 
 ## Critical Rules
 
 ✅ **ALWAYS DO**:
-- Use absolute paths (`/home/username/...`, never `~/`)
+- **NEW**: Validate filename against security pattern before any file operations
+- **NEW**: Check directory write permissions before proceeding
+- **NEW**: Handle all file operation errors gracefully with clear messages
+- Use absolute paths (resolve `~/` to full path like `/home/username/sharing/context/`)
 - Append to existing files, never replace
 - Add session headers with dates
 - Preserve all historical lessons and failures
@@ -45,10 +63,38 @@ When you see this command:
 - Include negative results and failed approaches
 
 ❌ **NEVER DO**:
-- Use `~/` in paths (doesn't expand properly)
+- **NEW**: Accept filenames with path separators, dots, or special characters
+- **NEW**: Proceed with file operations without validating write access
+- **NEW**: Silently fail on errors - always report what went wrong
 - Summarize or condense previous sessions
 - Remove "resolved" issues or old decisions
 - Delete historical content
+
+## Error Handling Examples
+
+**Invalid filename**:
+```
+User: /save-context ../etc/passwd
+Claude: ❌ Error: Invalid filename. Filenames must contain only letters, numbers,
+hyphens, and underscores (no path separators or special characters).
+Example: /save-context terraform-migration
+```
+
+**Permission error**:
+```
+Claude: ❌ Error: Cannot write to ~/sharing/context/
+The directory may not exist or you may not have write permissions.
+Please check: ls -la ~/sharing/context/
+```
+
+**File corruption**:
+```
+Claude: ⚠️ Warning: Existing file ~/sharing/context/project.md appears corrupted.
+Would you like me to:
+1. Create backup and recreate the file
+2. Attempt to append anyway
+3. Cancel operation
+```
 
 ## Document Structure
 
@@ -97,7 +143,7 @@ When you see this command:
 ### What Was Implemented
 [This session's work]
 
-### Lessons Learned  
+### Lessons Learned
 [New lessons - append to accumulated knowledge]
 
 ### Playbooks (Updated)
@@ -148,4 +194,3 @@ Steps:
 ## Reference
 Based on: "Agentic Context Engineering" (Zhang et al., 2025)
 https://arxiv.org/abs/2510.04618
-

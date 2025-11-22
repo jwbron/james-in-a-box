@@ -22,10 +22,38 @@ check_python_deps() {
     return 0
 }
 
+# SECURITY FIX: Validate PID is numeric and belongs to the correct process
+is_valid_pid() {
+    local pid="$1"
+
+    # Validate PID is numeric
+    if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+        return 1
+    fi
+
+    # Check if process exists
+    if ! ps -p "$pid" > /dev/null 2>&1; then
+        return 1
+    fi
+
+    # Validate it's a Python process running our receiver script
+    if [ -r "/proc/$pid/cmdline" ]; then
+        local cmdline
+        cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || echo "")
+        if [[ "$cmdline" == *"host-receive-slack.py"* ]]; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
 is_running() {
     if [ -f "$PID_FILE" ]; then
-        local pid=$(cat "$PID_FILE")
-        if ps -p "$pid" > /dev/null 2>&1; then
+        local pid
+        pid=$(cat "$PID_FILE")
+        # SECURITY FIX: Use validated PID check
+        if is_valid_pid "$pid"; then
             return 0
         else
             # Stale PID file
@@ -37,7 +65,12 @@ is_running() {
 
 get_pid() {
     if [ -f "$PID_FILE" ]; then
-        cat "$PID_FILE"
+        local pid
+        pid=$(cat "$PID_FILE")
+        # SECURITY FIX: Only return PID if it's valid
+        if is_valid_pid "$pid"; then
+            echo "$pid"
+        fi
     fi
 }
 
@@ -83,7 +116,16 @@ stop() {
         return 0
     fi
 
-    local pid=$(get_pid)
+    local pid
+    pid=$(get_pid)
+
+    # SECURITY FIX: Validate PID before using in kill command
+    if ! [[ "$pid" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}✗ Invalid PID in lock file${NC}"
+        rm -f "$PID_FILE"
+        return 1
+    fi
+
     echo "Stopping receiver (PID: $pid)..."
 
     kill "$pid" 2>/dev/null
@@ -107,7 +149,8 @@ stop() {
 
 status() {
     if is_running; then
-        local pid=$(get_pid)
+        local pid
+        pid=$(get_pid)
         echo -e "${GREEN}✓ Receiver is running (PID: $pid)${NC}"
 
         # Show config
@@ -119,11 +162,17 @@ status() {
 
             # Parse config
             if command -v jq > /dev/null 2>&1; then
-                local incoming=$(jq -r '.incoming_directory // "~/.jib-sharing/incoming"' "$CONFIG_FILE")
-                local responses=$(jq -r '.responses_directory // "~/.jib-sharing/responses"' "$CONFIG_FILE")
-                local self_dm=$(jq -r '.self_dm_channel // ""' "$CONFIG_FILE")
-                local owner_id=$(jq -r '.owner_user_id // ""' "$CONFIG_FILE")
-                local allowed=$(jq -r '.allowed_users // [] | join(", ")' "$CONFIG_FILE")
+                local incoming
+                local responses
+                local self_dm
+                local owner_id
+                local allowed
+
+                incoming=$(jq -r '.incoming_directory // "~/.jib-sharing/incoming"' "$CONFIG_FILE")
+                responses=$(jq -r '.responses_directory // "~/.jib-sharing/responses"' "$CONFIG_FILE")
+                self_dm=$(jq -r '.self_dm_channel // ""' "$CONFIG_FILE")
+                owner_id=$(jq -r '.owner_user_id // ""' "$CONFIG_FILE")
+                allowed=$(jq -r '.allowed_users // [] | join(", ")' "$CONFIG_FILE")
 
                 echo "  Incoming dir: $incoming"
                 echo "  Responses dir: $responses"
@@ -178,8 +227,8 @@ setup() {
     # Get self-DM channel and user ID
     echo ""
     echo "Your Slack workspace information:"
-    echo "Example: Self-DM URL: https://workspace.slack.com/archives/D07S8SAB5FE"
-    echo "         Profile URL: https://workspace.slack.com/team/U07SK26JPJ5"
+    echo "Example: Self-DM URL: https://workspace.slack.com/archives/<CHANNEL_ID>"
+    echo "         Profile URL: https://workspace.slack.com/team/<USER_ID>"
     read -p "Your self-DM channel ID (e.g., D07S8SAB5FE): " self_dm_channel
     read -p "Your Slack user ID (e.g., U07SK26JPJ5): " owner_user_id
 
@@ -213,6 +262,7 @@ EOF
 
     echo ""
     echo -e "${GREEN}✓ Configuration saved to: $CONFIG_FILE${NC}"
+    echo -e "${YELLOW}⚠ File permissions set to 600 for security${NC}"
     echo ""
     echo "Next steps:"
     echo "  1. Ensure your Slack app has Socket Mode enabled"

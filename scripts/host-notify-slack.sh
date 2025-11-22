@@ -6,7 +6,9 @@ set -euo pipefail
 
 # Configuration
 SLACK_TOKEN="${SLACK_TOKEN:-}"
-SLACK_CHANNEL="D04CMDR7LBT"  # James Wiesebron DM
+# SECURITY FIX: Use environment variable for channel ID instead of hardcoding
+SLACK_CHANNEL="${SLACK_CHANNEL:-}"
+
 WATCH_DIRS=(
     "${HOME}/.jib-sharing"
     "${HOME}/.jib-tools"
@@ -16,7 +18,8 @@ WATCH_DIRS=(
 STATE_DIR="${HOME}/.jib-notify"
 STATE_FILE="${STATE_DIR}/notify-state.json"
 LOG_FILE="${STATE_DIR}/notify.log"
-LOCK_FILE="/tmp/claude-notify.lock"
+# SECURITY FIX: Use user-controlled directory instead of /tmp to prevent race conditions
+LOCK_FILE="${STATE_DIR}/notify.lock"
 
 # Notification batching
 BATCH_WINDOW=30  # seconds to batch changes before notifying
@@ -63,12 +66,32 @@ check_dependencies() {
         error "SLACK_TOKEN environment variable not set"
         error "Please set it to your Slack bot token:"
         error "  export SLACK_TOKEN=xoxb-your-token-here"
+        error ""
+        error "For secure storage, use:"
+        error "  mkdir -p ~/.config/jib-notifier"
+        error "  echo 'xoxb-your-token-here' > ~/.config/jib-notifier/slack-token"
+        error "  chmod 600 ~/.config/jib-notifier/slack-token"
+        error "  export SLACK_TOKEN=\$(cat ~/.config/jib-notifier/slack-token)"
+        exit 1
+    fi
+
+    # SECURITY FIX: Require SLACK_CHANNEL to be set
+    if [ -z "$SLACK_CHANNEL" ]; then
+        error "SLACK_CHANNEL environment variable not set"
+        error "Please set it to your Slack channel/DM ID:"
+        error "  export SLACK_CHANNEL=D04CMDR7LBT  # Your DM channel ID"
+        error ""
+        error "To find your DM channel ID:"
+        error "  1. Open Slack in browser"
+        error "  2. Navigate to your DM with the bot"
+        error "  3. Copy the ID from the URL: https://workspace.slack.com/archives/<CHANNEL_ID>"
         exit 1
     fi
 }
 
 setup_dirs() {
     mkdir -p "$STATE_DIR"
+    chmod 700 "$STATE_DIR"
 
     # Initialize state file if it doesn't exist
     if [ ! -f "$STATE_FILE" ]; then
@@ -80,7 +103,8 @@ acquire_lock() {
     if [ -f "$LOCK_FILE" ]; then
         local pid
         pid=$(cat "$LOCK_FILE")
-        if kill -0 "$pid" 2>/dev/null; then
+        # Validate PID is numeric and process exists
+        if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
             error "Another instance is already running (PID: $pid)"
             exit 1
         else
@@ -101,8 +125,8 @@ send_slack_message() {
 
     # Escape message for JSON
     local json_message
-    json_message=$(jq -n --arg msg "$message" '{
-        channel: env.SLACK_CHANNEL,
+    json_message=$(jq -n --arg msg "$message" --arg channel "$SLACK_CHANNEL" '{
+        channel: $channel,
         text: $msg
     }')
 
