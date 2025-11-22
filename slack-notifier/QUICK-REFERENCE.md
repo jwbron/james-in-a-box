@@ -45,7 +45,7 @@ Implement OAuth2 for JIRA-1234
 ```
 
 **Then**:
-- Start Claude session: `./claude-sandboxed`
+- Start Claude session: `./jib`
 - Claude will see the task in `~/sharing/incoming/`
 
 ## Common Commands
@@ -61,7 +61,7 @@ Implement OAuth2 for JIRA-1234
 ~/khan/james-in-a-box/scripts/host-receive-ctl.sh restart
 
 # Start container
-./claude-sandboxed
+./jib
 ```
 
 ## Token Locations

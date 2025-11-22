@@ -35,7 +35,7 @@ An isolated Docker environment where Claude Code operates as an **autonomous age
 
 ```bash
 # First time: Build and start
-./claude-sandboxed
+./jib
 
 # Inside container: Start Claude
 claude
@@ -270,7 +270,7 @@ Prepare pull request artifacts (analyzes commits, generates description file).
 
 ```bash
 # 1. Start container
-./claude-sandboxed
+./jib
 claude
 
 # 2. Load context
@@ -394,7 +394,7 @@ last time..."
 
 ```
 james-in-a-box/
-├── claude-sandboxed              # Main orchestration script
+├── jib                           # Main orchestration script
 ├── Dockerfile                    # Container definition
 ├── docker-setup.py               # Dev environment installer
 ├── README.md                     # This file
@@ -416,15 +416,15 @@ james-in-a-box/
 
 ```bash
 # Run agent (builds on first use)
-./claude-sandboxed
+./jib
 
 # Inside container
 claude                          # Start Claude Code CLI
 exit                            # Exit container
 
 # Management (if needed)
-./claude-sandboxed --setup      # Reconfigure mounts
-./claude-sandboxed --reset      # Complete reset
+./jib --setup                   # Reconfigure mounts
+./jib --reset                   # Complete reset
 ```
 
 ## Troubleshooting

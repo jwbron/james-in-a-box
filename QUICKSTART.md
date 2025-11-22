@@ -6,7 +6,7 @@ Daily usage guide with accurate paths and commands.
 
 ```bash
 # Start container
-./claude-sandboxed
+./jib
 
 # Inside container
 claude                          # Start Claude Code CLI
@@ -24,7 +24,7 @@ exit                           # Done
 cd ~/khan/james-in-a-box
 
 # 2. Run (builds Docker image on first use)
-./claude-sandboxed
+./jib
 
 # 3. First run: Browser opens for OAuth login
 # After login: Claude Code is ready!
@@ -41,7 +41,7 @@ claude
 
 ```bash
 # From host
-./claude-sandboxed
+./jib
 
 # Inside container
 claude
@@ -244,7 +244,7 @@ gcloud app deploy
 ### 1. Feature Implementation
 
 ```bash
-./claude-sandboxed
+./jib
 claude
 
 You: Implement user profile editing feature
@@ -300,11 +300,11 @@ Claude: [Creates ~/tools/check-pr.sh]
 
 ```bash
 # Start container (builds on first run)
-./claude-sandboxed
+./jib
 
 # Management commands (rarely needed)
-./claude-sandboxed --setup      # Reconfigure mounts
-./claude-sandboxed --reset      # Complete reset
+./jib --setup      # Reconfigure mounts
+./jib --reset      # Complete reset
 
 # Inside container
 claude                          # Start Claude Code
@@ -328,7 +328,7 @@ claude
 # Browser opens for OAuth login
 
 # Then restart container
-./claude-sandboxed
+./jib
 ```
 
 ### "Container won't start"
@@ -338,7 +338,7 @@ claude
 docker ps
 
 # If needed, rebuild
-./claude-sandboxed --setup
+./jib --setup
 ```
 
 ### "My changes disappeared"
@@ -430,7 +430,7 @@ npm test -- --coverage --verbose
 ```bash
 # 1. Start (from host)
 cd ~/khan/james-in-a-box
-./claude-sandboxed
+./jib
 
 # 2. Launch Claude (inside container)
 claude

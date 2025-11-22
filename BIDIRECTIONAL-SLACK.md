@@ -253,7 +253,7 @@ pip install --user slack-sdk
 The incoming-watcher will start automatically when container boots:
 
 ```bash
-./claude-sandboxed
+./jib
 ```
 
 You should see:

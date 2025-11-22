@@ -189,7 +189,7 @@ python3 ~/khan/james-in-a-box/scripts/host-notify-slack.py
 
 ## Integration with Claude Sandbox
 
-This notifier complements the claude-sandboxed workflow:
+This notifier complements the james-in-a-box (jib) workflow:
 
 ```
 ┌─────────────────────────────────────┐

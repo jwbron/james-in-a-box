@@ -51,11 +51,11 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 
 These rules are automatically installed during Docker image build:
 
-1. **`claude-sandboxed` script** copies `claude-rules/` to build context
+1. **`jib` script** copies `claude-rules/` to build context
 2. **`Dockerfile`** copies rules into image
 3. **Entrypoint script** combines and installs as `CLAUDE.md` files
 
-See `claude-sandboxed` and `Dockerfile` for implementation details.
+See `jib` and `Dockerfile` for implementation details.
 
 ## Maintenance
 
@@ -63,5 +63,5 @@ When updating rules:
 - Keep files focused on their specific domain
 - Avoid redundancy across files
 - Use markdown for consistency
-- Rebuild container to apply changes: `./claude-sandboxed`
+- Rebuild container to apply changes: `./jib`
 

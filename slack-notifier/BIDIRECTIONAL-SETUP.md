@@ -13,7 +13,7 @@ Complete setup for two-way Slack communication with Claude.
 1. Slack workspace access
 2. Ability to create Slack apps
 3. Python 3.x with pip
-4. Running `claude-sandboxed` container
+4. Running `jib` container
 
 ## Step-by-Step Setup
 
@@ -105,7 +105,7 @@ The incoming-watcher will start automatically:
 exit
 
 # Restart container
-./claude-sandboxed
+./jib
 ```
 
 You should see:
@@ -144,7 +144,7 @@ Check it was received:
 # Should see: "Message written: incoming/task-YYYYMMDD-HHMMSS.md"
 
 # Container: Check incoming watcher logs
-docker exec -it claude-sandboxed bash
+docker exec -it jib bash
 tail ~/sharing/tracking/incoming-watcher.log
 # Should see: "New task received: task-YYYYMMDD-HHMMSS.md"
 ```
@@ -278,7 +278,7 @@ echo "test" > ~/.jib-sharing/notifications/test-notif.md
 ~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
 
 # Container: Check watcher
-docker exec -it claude-sandboxed bash
+docker exec -it jib bash
 ps aux | grep incoming-watcher
 tail -f ~/sharing/tracking/incoming-watcher.log
 

@@ -24,8 +24,9 @@ import tempfile
 import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 import subprocess
+import fnmatch
 
 # Only requests is required
 try:
@@ -49,14 +50,11 @@ class CodebaseAnalyzer:
             self.logger.error("claude CLI not found in PATH")
             raise ValueError("claude command not available")
 
-        # Files to analyze (ignore certain patterns)
-        self.ignore_patterns = {
-            '__pycache__',
-            '.git',
-            '.pyc',
-            'node_modules',
-            '.log',
-        }
+        # Load gitignore patterns
+        self.gitignore_patterns = self._load_gitignore_patterns()
+
+        # Additional patterns to always ignore
+        self.always_ignore = {'.git'}
 
     def _check_claude_cli(self) -> bool:
         """Check if claude CLI is available."""
@@ -85,10 +83,95 @@ class CodebaseAnalyzer:
 
         return logger
 
+    def _load_gitignore_patterns(self) -> Set[str]:
+        """Load and parse .gitignore file."""
+        patterns = set()
+        gitignore_path = self.codebase_path / '.gitignore'
+
+        if not gitignore_path.exists():
+            self.logger.warning(f"No .gitignore found at {gitignore_path}")
+            return patterns
+
+        try:
+            with open(gitignore_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    # Remove comments and whitespace
+                    line = line.split('#')[0].strip()
+
+                    # Skip empty lines
+                    if not line:
+                        continue
+
+                    # Add pattern
+                    patterns.add(line)
+
+            self.logger.info(f"Loaded {len(patterns)} patterns from .gitignore")
+            return patterns
+
+        except Exception as e:
+            self.logger.warning(f"Error reading .gitignore: {e}")
+            return patterns
+
+    def _matches_gitignore(self, file_path: Path) -> bool:
+        """Check if file matches any gitignore pattern."""
+        # Get path relative to codebase root
+        try:
+            rel_path = file_path.relative_to(self.codebase_path)
+        except ValueError:
+            return False
+
+        # Convert to string with forward slashes (gitignore standard)
+        path_str = str(rel_path).replace(os.sep, '/')
+
+        # Check against each gitignore pattern
+        for pattern in self.gitignore_patterns:
+            # Handle directory patterns (ending with /)
+            if pattern.endswith('/'):
+                dir_pattern = pattern.rstrip('/')
+                # Check if any parent directory matches
+                parts = path_str.split('/')
+                for i, part in enumerate(parts[:-1]):  # Exclude filename
+                    if fnmatch.fnmatch(part, dir_pattern):
+                        return True
+                # Also check full path prefix
+                if path_str.startswith(dir_pattern + '/'):
+                    return True
+
+            # Handle wildcards and exact matches
+            else:
+                # Check filename alone
+                if fnmatch.fnmatch(file_path.name, pattern):
+                    return True
+
+                # Check full relative path
+                if fnmatch.fnmatch(path_str, pattern):
+                    return True
+
+                # Check if pattern matches any path component
+                if '/' not in pattern:
+                    parts = path_str.split('/')
+                    for part in parts:
+                        if fnmatch.fnmatch(part, pattern):
+                            return True
+
+                # Handle ** glob patterns (matches any subdirectories)
+                if '**' in pattern:
+                    glob_pattern = pattern.replace('**/', '**/').replace('/**', '/**')
+                    import re
+                    regex = glob_pattern.replace('**/', '(.*/)?').replace('*', '[^/]*').replace('?', '[^/]')
+                    if re.match(regex, path_str):
+                        return True
+
+        return False
+
     def should_analyze_file(self, file_path: Path) -> bool:
         """Determine if file should be analyzed."""
-        # Check ignore patterns
-        for pattern in self.ignore_patterns:
+        # Check if file is in gitignore
+        if self._matches_gitignore(file_path):
+            return False
+
+        # Check always-ignore patterns (like .git)
+        for pattern in self.always_ignore:
             if pattern in str(file_path):
                 return False
 

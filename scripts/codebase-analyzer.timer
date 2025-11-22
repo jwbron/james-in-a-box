@@ -1,6 +1,6 @@
 [Unit]
 Description=Weekly Codebase Improvement Analysis Timer
-Documentation=https://github.com/jwiesebron/cursor-sandboxed
+Documentation=https://github.com/jwiesebron/james-in-a-box
 Requires=codebase-analyzer.service
 
 [Timer]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Claude Code Sandboxed - Run Claude Code CLI in an isolated Docker container
+jib (james-in-a-box) - Run Claude Code CLI in an isolated Docker container
 
 Prevents AI agents from accessing credentials while allowing full code editing.
 
@@ -46,16 +46,16 @@ def error(msg: str) -> None:
 
 class Config:
     """Configuration paths and constants"""
-    CONFIG_DIR = Path.home() / ".claude-sandbox"
+    CONFIG_DIR = Path.home() / ".jib"
     CONFIG_FILE = CONFIG_DIR / "mounts.conf"
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
-    IMAGE_NAME = "claude-sandbox"
-    CONTAINER_NAME = "claude-sandbox"
+    IMAGE_NAME = "james-in-a-box"
+    CONTAINER_NAME = "jib"
     KHAN_SOURCE = Path.home() / "khan"
     CLAUDE_SOURCE = Path.home() / ".claude"
     # Persistent directories for agent use
-    TOOLS_DIR = Path.home() / ".claude-sandbox-tools"
-    SHARING_DIR = Path.home() / ".claude-sandbox-sharing"
+    TOOLS_DIR = Path.home() / ".jib-tools"
+    SHARING_DIR = Path.home() / ".jib-sharing"
 
     # Note: ~/khan/ is mounted READ-ONLY to prevent interference with systemd jobs
     # Agent stages changes in ~/sharing/ for human review and manual application
@@ -91,10 +91,10 @@ def check_docker_permissions() -> bool:
         capture_output=True,
         text=True
     )
-    
+
     if result.returncode == 0:
         return True
-    
+
     if "permission denied" in result.stderr.lower():
         error("Docker permission denied - you are not in the docker group")
         print()
@@ -109,10 +109,10 @@ def check_docker_permissions() -> bool:
         print("  then LOG OUT and LOG BACK IN")
         print()
         print("Option 2: Run with sudo (temporary workaround)")
-        print("  sudo $(which claude-sandboxed)")
+        print("  sudo $(which jib)")
         print()
         return False
-    
+
     return False
 
 
@@ -122,7 +122,7 @@ def check_docker() -> bool:
 
     if subprocess.run(["which", "docker"], capture_output=True).returncode != 0:
         error("Docker is not installed.")
-        
+
         if platform_name == "macos":
             # TODO: Add macOS Docker Desktop installation
             info("On macOS, please install Docker Desktop from:")
@@ -157,7 +157,7 @@ def check_docker() -> bool:
         else:
             error("Docker is required")
             return False
-    
+
     # Check Docker daemon is running and we have permissions
     return check_docker_permissions()
 
@@ -182,9 +182,9 @@ def is_dangerous_dir(path: Path) -> bool:
 def create_dockerfile() -> None:
     """Create the Dockerfile for the container"""
     import shutil
-    
+
     script_dir = Path(__file__).parent
-    
+
     # Copy docker-setup.py to config directory
     setup_script = script_dir / "docker-setup.py"
     setup_dest = Config.CONFIG_DIR / "docker-setup.py"
@@ -194,7 +194,7 @@ def create_dockerfile() -> None:
         setup_dest.chmod(0o755)
     else:
         warn("docker-setup.py not found, skipping dev tools installation")
-    
+
     # Copy claude-commands directory to config directory
     commands_src = script_dir / "claude-commands"
     commands_dest = Config.CONFIG_DIR / "claude-commands"
@@ -205,7 +205,7 @@ def create_dockerfile() -> None:
         info("Claude commands copied to build context")
     else:
         warn("claude-commands directory not found")
-    
+
     # Copy claude-rules directory to build context
     rules_src = script_dir / "claude-rules"
     rules_dest = Config.CONFIG_DIR / "claude-rules"
@@ -216,8 +216,8 @@ def create_dockerfile() -> None:
         info("Claude rules directory copied to build context")
     else:
         warn("claude-rules directory not found, skipping agent rules")
-    
-    
+
+
     # Copy Dockerfile from script directory
     dockerfile_src = script_dir / "Dockerfile"
     if dockerfile_src.exists():
@@ -243,7 +243,7 @@ def build_image() -> bool:
             "-f", str(Config.DOCKERFILE),
             str(Config.CONFIG_DIR)
         ]
-        
+
         # Docker automatically uses cache for unchanged layers
         subprocess.run(cmd, check=True)
         return True
@@ -360,7 +360,7 @@ def setup() -> bool:
     # Create and mount persistent directories for agent
     print()
     info("Setting up persistent directories...")
-    
+
     # Tools directory - for reusable scripts built by agent
     Config.TOOLS_DIR.mkdir(parents=True, exist_ok=True)
     tools_container_path = f"/home/{os.environ['USER']}/tools"
@@ -381,7 +381,7 @@ def setup() -> bool:
     print(f"    - Context documents (@save-context)")
     print(f"    - Code ready for review")
     print(f"    - Any work that must survive container rebuilds")
-    
+
     print()
     print("Add additional directories? (optional)")
     print("Format: /path/to/dir        (read-write)")
@@ -449,7 +449,7 @@ def setup() -> bool:
     # Create Dockerfile and build image
     create_dockerfile()
     print()
-    
+
     # Let Docker's cache handle what needs rebuilding
     info("Building Docker image (Docker will cache unchanged layers)...")
     if not build_image():
@@ -474,7 +474,7 @@ def run_claude() -> bool:
         info("Configuration not found. Running initial setup...")
         if not setup():
             return False
-    
+
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
     if not build_image():
         error("Docker build failed")
@@ -566,13 +566,13 @@ def run_claude() -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run Claude Code CLI in an isolated Docker container",
+        description="Run Claude Code CLI in an isolated Docker container (james-in-a-box)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  claude-sandboxed              # Run Claude Code (setup on first use)
-  claude-sandboxed --setup      # Reconfigure mounts
-  claude-sandboxed --reset      # Reset configuration and remove Docker image
+  jib              # Run Claude Code (setup on first use)
+  jib --setup      # Reconfigure mounts
+  jib --reset      # Reset configuration and remove Docker image
         """
     )
     parser.add_argument(
@@ -595,7 +595,7 @@ Examples:
         import shutil
         if Config.CONFIG_DIR.exists():
             shutil.rmtree(Config.CONFIG_DIR)
-        
+
         # Ask about persistent directories
         if Config.TOOLS_DIR.exists() or Config.SHARING_DIR.exists():
             print()
@@ -615,7 +615,7 @@ Examples:
                     warn(f"Removed: {Config.SHARING_DIR}")
             else:
                 info("Preserved persistent directories")
-        
+
         success("Configuration reset. Run again to set up fresh.")
         return 0
 

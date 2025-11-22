@@ -84,7 +84,7 @@ These files are copied to `/usr/local/share/claude-commands/` during Docker imag
 
 1. Create a new `.md` file in `/home/jwies/khan/james-in-a-box/claude-commands/`
 2. Follow the format of existing commands
-3. Rebuild the Docker image: `./claude-sandboxed --rebuild`
+3. Rebuild the Docker image: `./jib --rebuild`
 4. New command will be available in the container
 
 ## Command Format

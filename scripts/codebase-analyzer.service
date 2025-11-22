@@ -1,6 +1,6 @@
 [Unit]
 Description=Codebase Improvement Analyzer
-Documentation=https://github.com/jwiesebron/cursor-sandboxed
+Documentation=https://github.com/jwiesebron/james-in-a-box
 After=network-online.target
 Wants=network-online.target
 
@@ -10,10 +10,10 @@ User=jwies
 Group=jwies
 
 # Working directory
-WorkingDirectory=/home/jwies/khan/cursor-sandboxed/scripts
+WorkingDirectory=/home/jwies/khan/james-in-a-box/scripts
 
 # Execute the analyzer
-ExecStart=/usr/bin/python3 /home/jwies/khan/cursor-sandboxed/scripts/codebase-analyzer.py
+ExecStart=/usr/bin/python3 /home/jwies/khan/james-in-a-box/scripts/codebase-analyzer.py
 
 # Logging
 StandardOutput=journal

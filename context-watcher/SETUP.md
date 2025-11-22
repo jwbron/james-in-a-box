@@ -4,7 +4,7 @@ Quick setup guide for the context monitoring system.
 
 ## Prerequisites
 
-The SELinux issue has been fixed! The `claude-sandboxed` script now automatically adds the `:z` flag to all mount points, which tells Docker to relabel directories for container access.
+The SELinux issue has been fixed! The `jib` script now automatically adds the `:z` flag to all mount points, which tells Docker to relabel directories for container access.
 
 ## Setup Steps
 
@@ -17,7 +17,7 @@ If you're already in a running container, you'll need to restart it for the SELi
 exit
 
 # Rebuild and restart (on host)
-~/khan/james-in-a-box/claude-sandboxed
+~/khan/james-in-a-box/jib
 ```
 
 ### 2. Verify Directories

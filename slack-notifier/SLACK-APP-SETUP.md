@@ -398,7 +398,7 @@ This ensures only you can send commands to Claude.
 
 1. ✅ Complete this setup
 2. ✅ Test with `claude: test task`
-3. ✅ Start container: `./claude-sandboxed`
+3. ✅ Start container: `./jib`
 4. ✅ Test notification response (see BIDIRECTIONAL-SETUP.md)
 5. ✅ Enable auto-start (systemd)
 
