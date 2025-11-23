@@ -46,9 +46,9 @@ RUN npm install -g @anthropic-ai/claude-code
 
 # Copy Claude authentication from host (if available during build)
 # This allows reusing host's Claude Code auth instead of re-authenticating in container
-# Build will succeed even if .claude directory is not present (using || true)
+# Note: jib script copies ~/.claude to build context if it exists with credentials
 RUN mkdir -p /opt/claude-host-auth
-COPY .claude/ /opt/claude-host-auth/ || true
+COPY .claude/ /opt/claude-host-auth/
 
 # Copy Claude command documentation
 RUN mkdir -p /usr/local/share/claude-commands

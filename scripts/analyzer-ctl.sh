@@ -45,13 +45,6 @@ check_requirements() {
         exit 1
     fi
 
-    # Check if anthropic package is installed
-    if ! python3 -c "import anthropic" 2>/dev/null; then
-        log_warning "anthropic package not found"
-        log_info "Install with: pip install anthropic"
-        exit 1
-    fi
-
     # Check if requests package is installed
     if ! python3 -c "import requests" 2>/dev/null; then
         log_warning "requests package not found"
@@ -59,12 +52,11 @@ check_requirements() {
         exit 1
     fi
 
-    # Check ANTHROPIC_API_KEY
-    if [ -z "$ANTHROPIC_API_KEY" ]; then
-        log_warning "ANTHROPIC_API_KEY environment variable not set"
-        log_info "Add to your shell profile: export ANTHROPIC_API_KEY='your-key'"
-        log_info "Or create ${HOME}/.config/environment.d/anthropic.conf with:"
-        log_info "  ANTHROPIC_API_KEY=your-key"
+    # Check for claude CLI (uses same auth as Claude Code)
+    if ! command -v claude &> /dev/null; then
+        log_warning "claude CLI not found in PATH"
+        log_info "The analyzer uses 'claude --print' for analysis"
+        log_info "Install Claude Code CLI: npm install -g @anthropic-ai/claude-code"
     fi
 
     log_success "Requirements check complete"
@@ -118,21 +110,6 @@ uninstall_service() {
 
 enable_service() {
     log_info "Enabling codebase analyzer timer..."
-
-    # SECURITY FIX: Verify ANTHROPIC_API_KEY is configured before enabling
-    if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-        log_error "ANTHROPIC_API_KEY environment variable is not set"
-        log_error "The analyzer requires Claude API access to function."
-        log_error ""
-        log_error "Set it with:"
-        log_error "  mkdir -p ~/.config/environment.d"
-        log_error "  echo 'ANTHROPIC_API_KEY=your-key-here' > ~/.config/environment.d/anthropic.conf"
-        log_error "  chmod 600 ~/.config/environment.d/anthropic.conf"
-        log_error ""
-        log_error "Or export it in your current session:"
-        log_error "  export ANTHROPIC_API_KEY=your-key-here"
-        exit 1
-    fi
 
     systemctl --user enable "${SERVICE_NAME}.timer"
     systemctl --user start "${SERVICE_NAME}.timer"
