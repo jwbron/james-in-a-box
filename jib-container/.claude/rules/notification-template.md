@@ -2,6 +2,20 @@
 
 When you need to send an asynchronous notification to the human, use this template.
 
+## Notification Patterns
+
+There are two patterns for notifications:
+
+### 1. Simple Guidance Request (Single File)
+Used when you need human input or guidance on a decision. Creates a single notification file.
+
+### 2. Automated Reports (Summary + Thread)
+Used for automated analysis reports from scheduled jobs. Creates two files:
+- **Summary file**: `{timestamp}-{topic}.md` - Concise top-level message
+- **Detail file**: `RESPONSE-{timestamp}-{topic}.md` - Full context in thread
+
+**Key principle**: Mobile-first Slack experience. The summary should be readable at a glance, with full details available in the thread.
+
 ## When to Send Notifications
 
 Send notifications when:
@@ -21,7 +35,11 @@ Send notifications when:
 - ❌ Routine status updates (use conversation instead)
 - ❌ Trivial choices (pick reasonable default)
 
-## Template
+## Pattern 1: Simple Guidance Request
+
+Use this for ad-hoc questions and guidance needs.
+
+### Template
 
 ```bash
 cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-brief-topic.md <<'EOF'
@@ -321,3 +339,122 @@ fi
 - Nice-to-have improvements
 
 **Use your judgment**: If you can make reasonable progress while waiting, do so. If you're completely blocked, it's okay to wait.
+
+## Pattern 2: Automated Reports with Threading
+
+Use this pattern for automated analysis reports (conversation analyzer, codebase analyzer, etc.).
+
+### File Naming Convention
+
+**Summary file**: `{timestamp}-{topic}.md`
+- This creates the top-level Slack message
+- Should be concise but informative
+- Include key metrics and priority
+
+**Detail file**: `RESPONSE-{timestamp}-{topic}.md`
+- This creates a threaded reply under the summary
+- Contains full report with all context
+- Can be verbose - users can expand to read
+
+### Threading Pattern
+
+```python
+# Generate task ID
+timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+task_id = f"{timestamp}-{topic}"
+
+# 1. Create summary notification (top-level message)
+summary_file = notification_dir / f"{task_id}.md"
+summary = f"""# {emoji} {Title}
+
+**Priority**: {priority} | Key metric 1 | Key metric 2
+
+**Quick Stats:**
+- Stat 1: {value}
+- Stat 2: {value}
+- Stat 3: {value}
+
+📄 Full {context_type} in thread below
+"""
+summary_file.write_text(summary)
+
+# 2. Create detailed report (thread reply)
+detail_file = notification_dir / f"RESPONSE-{task_id}.md"
+detail = f"""# Full {Title}
+
+## Detailed Section 1
+[Full content...]
+
+## Detailed Section 2
+[Full content...]
+
+## Next Steps
+[Action items...]
+
+---
+📅 Generated: {timestamp}
+🤖 Automated by {component_name}
+"""
+detail_file.write_text(detail)
+```
+
+### Examples
+
+**Conversation Analyzer Summary**:
+```markdown
+# 📊 Conversation Analysis Complete
+
+**Priority**: Medium | 12 conversations analyzed | 8 recommendations
+
+**Quick Stats:**
+- ✅ Success: 10 | ❌ Failed: 1 | 🚫 Blocked: 1
+- Quality: 8.2/10 | Single-iteration success: 75.0%
+- 🎯 Prompt improvements: 5 | 💬 Communication improvements: 3
+
+📄 Full report in thread below
+```
+
+**Codebase Analyzer Summary**:
+```markdown
+# 🔍 Codebase Analysis Complete
+
+**Priority**: High | 45 files analyzed | 23 issues found
+
+**Quick Stats:**
+- 🔴 HIGH: 8 file issues, 3 web findings
+- 🟡 MEDIUM: 12 file issues, 5 web findings
+- 🛡️ Security: ADEQUATE
+
+📄 Full analysis in thread below
+```
+
+### Guidelines for Summaries
+
+**DO**:
+- ✅ Keep to 3-5 lines of key information
+- ✅ Use priority indicators (High/Medium/Low)
+- ✅ Include 2-4 key metrics
+- ✅ Use emojis for quick visual scanning
+- ✅ End with "Full [X] in thread below"
+
+**DON'T**:
+- ❌ Include full lists or tables
+- ❌ Add detailed explanations
+- ❌ Repeat information from detail file
+- ❌ Use more than 5-6 lines
+
+### Guidelines for Detailed Reports
+
+**DO**:
+- ✅ Include all sections from analysis
+- ✅ Use proper markdown formatting
+- ✅ Group related items together
+- ✅ Include next steps and action items
+- ✅ Add metadata footer (timestamp, automation source)
+
+**Structure**:
+1. Title and metadata
+2. Detailed summary section
+3. Main analysis sections (2-5 sections)
+4. Next steps / action items
+5. Footer with timestamp and source
