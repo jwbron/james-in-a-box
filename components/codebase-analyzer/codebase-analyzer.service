@@ -7,8 +7,6 @@ OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot
-User=jwies
-Group=jwies
 
 # Working directory
 WorkingDirectory=/home/jwies/khan/james-in-a-box/components/codebase-analyzer
