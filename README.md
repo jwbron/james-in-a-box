@@ -46,19 +46,42 @@ JIB is an **LLM-powered autonomous software engineer** that runs in a Docker san
                       ↕
 ┌─────────────────────────────────────────────────────┐
 │  Docker Container (Sandbox)                         │
-│  • Claude agent with codebase access                │
+│  • Claude agent with isolated worktree workspace    │
 │  • No credentials (SSH keys, cloud tokens excluded) │
 │  • Network isolation (outbound HTTP only)           │
-│  • Context watcher (monitors doc updates)           │
+│  • Ephemeral - spun up per task, auto-cleanup       │
 └─────────────────────────────────────────────────────┘
 ```
 
 **Workflow:**
 1. Send task via Slack DM to bot
-2. Agent receives task, gathers context (docs, code)
-3. Agent implements changes, writes tests, prepares PR
-4. Agent sends Slack notification with summary
-5. You review PR from phone and merge
+2. Container spawns with isolated git worktree (host repos stay clean)
+3. Agent implements changes, writes tests, commits to branch
+4. Container shuts down, worktrees auto-cleanup
+5. Agent sends Slack notification with branch name
+6. You review commits and create PR from phone
+
+### Worktree Isolation
+
+Each container gets its own ephemeral git worktree, keeping your host repositories clean:
+
+```
+Host:
+~/khan/webapp/                      # Your working directory (untouched!)
+~/.jib-worktrees/
+  └── jib-20251123-103045-12345/    # Container's isolated workspace
+      └── webapp/                   # Worktree with changes
+
+Container:
+~/khan/webapp/                      # Mounted from worktree (not host repo)
+```
+
+**Benefits:**
+- **Host protection**: Your `~/khan/` repos stay clean while you work
+- **True parallelism**: Multiple containers can work on same repo simultaneously
+- **Isolated branches**: Each container works on its own branch
+- **Auto-cleanup**: Worktrees removed when container exits
+- **Orphan detection**: Watcher cleans up crashed container worktrees every 15 min
 
 ## Quick Start
 
@@ -141,6 +164,7 @@ All host components run as systemd user services for reliability and auto-restar
 
 - **[slack-notifier](components/slack-notifier/README.md)** - Sends Claude's notifications to Slack (inotify-based, instant)
 - **[slack-receiver](components/slack-receiver/README.md)** - Receives your messages and responses from Slack (Socket Mode)
+- **[worktree-watcher](components/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
 - **[codebase-analyzer](components/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
 - **[conversation-analyzer](components/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
 - **[service-monitor](components/service-monitor/README.md)** - Notifies on service failures
@@ -163,6 +187,11 @@ All host components run as systemd user services for reliability and auto-restar
 │   └── RESPONSE-YYYYMMDD-HHMMSS.md
 └── context/                         # Persistent agent knowledge
     └── project-name.md
+
+~/.jib-worktrees/                    # Ephemeral (per-container workspaces)
+└── jib-YYYYMMDD-HHMMSS-PID/        # Unique container ID
+    ├── webapp/                      # Isolated worktree for webapp repo
+    └── frontend/                    # Isolated worktree for frontend repo
 
 ~/context-sync/                      # Read-only context sources
 ├── confluence/                      # Confluence docs (ADRs, runbooks)

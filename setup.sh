@@ -116,6 +116,7 @@ components=(
     "slack-notifier:Slack Notifier (Claude → You)"
     "slack-receiver:Slack Receiver (You → Claude)"
     "service-monitor:Service Failure Monitor"
+    "worktree-watcher:Worktree Watcher (cleanup orphaned worktrees)"
     "codebase-analyzer:Codebase Analyzer (weekly)"
     "conversation-analyzer:Conversation Analyzer (daily)"
 )
@@ -154,6 +155,7 @@ print_header "Service Status"
 services=(
     "slack-notifier.service:Slack Notifier"
     "slack-receiver.service:Slack Receiver"
+    "worktree-watcher.timer:Worktree Watcher"
     "codebase-analyzer.timer:Codebase Analyzer"
     "conversation-analyzer.timer:Conversation Analyzer"
 )

@@ -10,10 +10,12 @@ Platform Support:
 """
 
 import argparse
+import atexit
 import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -56,9 +58,11 @@ class Config:
     # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
     TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
+    # Worktree base directory (ephemeral workspaces per container)
+    WORKTREE_BASE = Path.home() / ".jib-worktrees"
 
-    # Note: ~/khan/ is mounted READ-WRITE so agent can work directly on code
-    # Agent makes changes directly and commits them
+    # Note: Each container gets its own worktree to isolate changes
+    # Host repos (~/khan/) stay clean while containers work independently
 
     # Directories that are dangerous to mount (contain credentials)
     DANGEROUS_DIRS = [
@@ -263,6 +267,117 @@ def image_exists() -> bool:
         ["docker", "image", "inspect", Config.IMAGE_NAME],
         capture_output=True
     ).returncode == 0
+
+
+def generate_container_id() -> str:
+    """Generate unique container ID based on timestamp and process ID"""
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    pid = os.getpid()
+    return f"jib-{timestamp}-{pid}"
+
+
+def create_worktrees(container_id: str) -> dict:
+    """Create git worktrees for all repos in ~/khan/
+
+    Returns:
+        Dictionary mapping repo names to worktree paths
+    """
+    worktree_dir = Config.WORKTREE_BASE / container_id
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    worktrees = {}
+
+    if not Config.KHAN_SOURCE.exists():
+        warn(f"Khan source directory not found: {Config.KHAN_SOURCE}")
+        return worktrees
+
+    # Iterate through all repos in ~/khan/
+    for repo_path in Config.KHAN_SOURCE.iterdir():
+        if not repo_path.is_dir():
+            continue
+
+        # Check if it's a git repository
+        git_dir = repo_path / ".git"
+        if not git_dir.exists():
+            continue
+
+        repo_name = repo_path.name
+        worktree_path = worktree_dir / repo_name
+
+        try:
+            info(f"Creating worktree for {repo_name}...")
+
+            # Create temporary branch for this container
+            branch_name = f"jib-temp-{container_id}"
+
+            # Create worktree
+            result = subprocess.run(
+                ["git", "worktree", "add", str(worktree_path), "-b", branch_name],
+                cwd=repo_path,
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode == 0:
+                worktrees[repo_name] = worktree_path
+                success(f"  ✓ {repo_name} -> {worktree_path}")
+            else:
+                warn(f"  ✗ Failed to create worktree for {repo_name}: {result.stderr}")
+
+        except Exception as e:
+            warn(f"  ✗ Error creating worktree for {repo_name}: {e}")
+
+    return worktrees
+
+
+def cleanup_worktrees(container_id: str) -> None:
+    """Clean up worktrees for a container
+
+    Args:
+        container_id: Unique container identifier
+    """
+    worktree_dir = Config.WORKTREE_BASE / container_id
+
+    if not worktree_dir.exists():
+        return
+
+    info(f"Cleaning up worktrees for {container_id}...")
+
+    # Remove each worktree
+    for worktree_path in worktree_dir.iterdir():
+        if not worktree_path.is_dir():
+            continue
+
+        repo_name = worktree_path.name
+        original_repo = Config.KHAN_SOURCE / repo_name
+
+        if not original_repo.exists():
+            continue
+
+        try:
+            # Remove worktree from git
+            result = subprocess.run(
+                ["git", "worktree", "remove", str(worktree_path), "--force"],
+                cwd=original_repo,
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode == 0:
+                info(f"  ✓ Removed worktree: {repo_name}")
+            else:
+                warn(f"  ✗ Failed to remove worktree {repo_name}: {result.stderr}")
+
+        except Exception as e:
+            warn(f"  ✗ Error removing worktree {repo_name}: {e}")
+
+    # Remove container worktree directory
+    try:
+        import shutil
+        shutil.rmtree(worktree_dir)
+        info(f"  ✓ Removed directory: {worktree_dir}")
+    except Exception as e:
+        warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
 
 def setup() -> bool:
@@ -502,11 +617,33 @@ def run_claude(exec_command: Optional[List[str]] = None) -> bool:
         error("Docker build failed")
         return False
 
+    # Generate unique container ID
+    container_id = generate_container_id()
+
     if exec_command:
         info(f"Executing command in container: {' '.join(exec_command)}")
     else:
         info("Launching sandboxed Claude Code environment...")
     print()
+
+    info(f"Container ID: {container_id}")
+    print()
+
+    # Create worktrees for repos (isolates container from host repos)
+    info("Creating isolated worktrees...")
+    print()
+    worktrees = create_worktrees(container_id)
+
+    if worktrees:
+        print()
+        info(f"Created {len(worktrees)} worktree(s)")
+        print()
+
+    # Register cleanup on exit
+    def cleanup_on_exit():
+        cleanup_worktrees(container_id)
+
+    atexit.register(cleanup_on_exit)
 
     # Parse mount configuration
     mount_args = []
@@ -527,6 +664,11 @@ def run_claude(exec_command: Optional[List[str]] = None) -> bool:
             warn(f"Invalid mount format: {mount}")
             continue
 
+        # Check if this is a khan repo mount - replace with worktree
+        if Config.KHAN_SOURCE and mount_path.startswith(str(Config.KHAN_SOURCE)):
+            # This is a khan repo - skip it, we'll add worktrees instead
+            continue
+
         # Ensure SELinux label is present (add if missing for backwards compatibility)
         if not mode.endswith(",z") and not mode.endswith(":z"):
             mode = f"{mode},z"
@@ -535,10 +677,17 @@ def run_claude(exec_command: Optional[List[str]] = None) -> bool:
         mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
         display_path = container_path if container_path != mount_path else mount_path
         print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
+
+    # Add worktree mounts
+    for repo_name, worktree_path in worktrees.items():
+        container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
+        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
+        print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
+
     print()
 
-    # Remove old container if exists
-    subprocess.run(["docker", "rm", "-f", Config.CONTAINER_NAME],
+    # Remove old container if exists (cleanup any previous runs)
+    subprocess.run(["docker", "rm", "-f", container_id],
                   stdout=subprocess.DEVNULL,
                   stderr=subprocess.DEVNULL)
 
@@ -554,10 +703,11 @@ def run_claude(exec_command: Optional[List[str]] = None) -> bool:
         cmd.extend(["-it"])
 
     cmd.extend([
-        "--name", Config.CONTAINER_NAME,
+        "--name", container_id,
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
+        "-e", f"CONTAINER_ID={container_id}",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ])
 
