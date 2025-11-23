@@ -77,7 +77,21 @@ JIB is an **LLM-powered autonomous software engineer** that runs in a Docker san
    cd james-in-a-box
    ```
 
-2. **Set up host services** (Slack integration, analyzers):
+2. **Run master setup script**:
+   ```bash
+   ./setup.sh
+   ```
+
+   This will:
+   - Install all host services (Slack notifier/receiver, analyzers, monitoring)
+   - Enable systemd services and timers
+   - Create required directories
+   - Verify dependencies
+   - Display setup status
+
+   <details>
+   <summary>Or set up components individually</summary>
+
    ```bash
    # Slack notifier (Claude → You)
    cd components/slack-notifier && ./setup.sh
@@ -85,23 +99,34 @@ JIB is an **LLM-powered autonomous software engineer** that runs in a Docker san
    # Slack receiver (You → Claude)
    cd components/slack-receiver && ./setup.sh
 
-   # Conversation analyzer (optional, daily quality checks)
+   # Conversation analyzer (optional)
    cd components/conversation-analyzer && ./setup.sh
 
-   # Codebase analyzer (optional, weekly code review)
+   # Codebase analyzer (optional)
    cd components/codebase-analyzer && ./setup.sh
 
-   # Service failure notifications (optional, monitors above services)
+   # Service monitor (optional)
    cd components/service-monitor && ./setup.sh
    ```
+   </details>
 
-3. **Start container**:
+3. **Configure Slack tokens** (if not done during setup):
+   ```bash
+   # Edit config file
+   nano ~/.config/jib-notifier/config.json
+
+   # Add your tokens:
+   # - Bot token (xoxb-...)
+   # - App token (xapp-...)
+   ```
+
+4. **Start container**:
    ```bash
    cd ~/khan/james-in-a-box
    bin/jib
    ```
 
-4. **Send first task** (from Slack):
+5. **Send first task** (from Slack):
    ```
    DM the bot: "Implement hello world function in Python with tests"
    ```
