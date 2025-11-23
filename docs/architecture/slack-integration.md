@@ -213,7 +213,7 @@ pip install --user slack-sdk
 
 ```bash
 # Run interactive setup
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup
+~/khan/james-in-a-box/bin/host-receive-ctl setup
 
 # It will prompt for:
 # - SLACK_TOKEN (bot token, xoxb-...)
@@ -239,13 +239,13 @@ pip install --user slack-sdk
 
 ```bash
 # Start receiver
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh start
+~/khan/james-in-a-box/bin/host-receive-ctl start
 
 # Check status
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/bin/host-receive-ctl status
 
 # View logs
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 ```
 
 ### Step 5: Start Container
@@ -273,7 +273,7 @@ Test task: analyze the codebase structure
 Check logs:
 ```bash
 # Host receiver logs
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 
 # Container watcher logs (inside container)
 tail -f ~/sharing/tracking/incoming-watcher.log
@@ -375,25 +375,25 @@ You're away from your workstation but want to trigger work:
 
 ```bash
 # Start/stop receiver
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh start
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh stop
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh restart
+~/khan/james-in-a-box/bin/host-receive-ctl start
+~/khan/james-in-a-box/bin/host-receive-ctl stop
+~/khan/james-in-a-box/bin/host-receive-ctl restart
 
 # Monitor
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh logs
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl status
+~/khan/james-in-a-box/bin/host-receive-ctl logs
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 
 # Configure
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup
+~/khan/james-in-a-box/bin/host-receive-ctl setup
 ```
 
 ### Notifier Control (Outgoing)
 
 ```bash
 # Already configured from HOST-SLACK-NOTIFIER.md
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh logs
+~/khan/james-in-a-box/bin/host-notify-ctl status
+~/khan/james-in-a-box/bin/host-notify-ctl logs
 ```
 
 ### Container Watchers
@@ -428,7 +428,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/scripts/host-receive-slack.py
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/internal/host-receive-slack.py
 Restart=on-failure
 RestartSec=30s
 Nice=10
@@ -470,7 +470,7 @@ cat ~/.config/jib-notifier/config.json
 
 **Check logs**:
 ```bash
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 ```
 
 ### Not Receiving Messages
@@ -479,12 +479,12 @@ cat ~/.config/jib-notifier/config.json
 2. **Check bot events** are configured (`message.im`)
 3. **Check receiver is running**:
    ```bash
-   ~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
+   ~/khan/james-in-a-box/bin/host-receive-ctl status
    ```
 4. **Check allowed_users** in config (if set, must include your user ID)
 5. **Check logs** for errors:
    ```bash
-   ~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+   ~/khan/james-in-a-box/bin/host-receive-ctl tail
    ```
 
 ### Messages Not Being Processed in Container
@@ -521,7 +521,7 @@ cat ~/.config/jib-notifier/config.json
 Send a DM to your bot, then check receiver logs:
 
 ```bash
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 # Look for: "Received message from <name> (U01234567)"
 ```
 

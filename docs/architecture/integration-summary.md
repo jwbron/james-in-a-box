@@ -64,8 +64,8 @@ Our staged files include:
 # On host
 cd ~/khan/james-in-a-box
 cp ~/.jib-sharing/staged-changes/james-in-a-box/Dockerfile .
-cp ~/.jib-sharing/staged-changes/james-in-a-box/scripts/codebase-analyzer.* scripts/
-chmod +x scripts/codebase-analyzer.py
+cp ~/.jib-sharing/staged-changes/james-in-a-box/internal/codebase-analyzer.* scripts/
+chmod +x internal/codebase-analyzer.py
 ```
 
 ---

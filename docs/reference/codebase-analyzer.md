@@ -92,19 +92,19 @@ Searches for:
 ### Setup
 
 ```bash
-cd ~/khan/james-in-a-box/scripts
+cd ~/khan/james-in-a-box
 
 # Check requirements
-./analyzer-ctl.sh check
+./bin/analyzer-ctl check
 
 # Install systemd service
-./analyzer-ctl.sh install
+./bin/analyzer-ctl install
 
 # Enable and start timer
-./analyzer-ctl.sh enable
+./bin/analyzer-ctl enable
 
 # Check status
-./analyzer-ctl.sh status
+./bin/analyzer-ctl status
 ```
 
 ## Usage
@@ -113,38 +113,38 @@ cd ~/khan/james-in-a-box/scripts
 
 ```bash
 # Check requirements and configuration
-./analyzer-ctl.sh check
+./bin/analyzer-ctl check
 
 # Install service
-./analyzer-ctl.sh install
+./bin/analyzer-ctl install
 
 # Enable timer (start automatic runs)
-./analyzer-ctl.sh enable
+./bin/analyzer-ctl enable
 
 # Disable timer (stop automatic runs)
-./analyzer-ctl.sh disable
+./bin/analyzer-ctl disable
 
 # Run analyzer once (manual)
-./analyzer-ctl.sh start
+./bin/analyzer-ctl start
 
 # Check service status
-./analyzer-ctl.sh status
+./bin/analyzer-ctl status
 
 # View logs
-./analyzer-ctl.sh logs
+./bin/analyzer-ctl logs
 
 # Test run (direct execution)
-./analyzer-ctl.sh test
+./bin/analyzer-ctl test
 
 # Uninstall service
-./analyzer-ctl.sh uninstall
+./bin/analyzer-ctl uninstall
 ```
 
 ### Manual Execution
 
 ```bash
-cd ~/khan/james-in-a-box/scripts
-python3 ./codebase-analyzer.py
+cd ~/khan/james-in-a-box
+python3 ./internal/codebase-analyzer.py
 ```
 
 ### Check Scheduled Runs
@@ -228,7 +228,7 @@ OnBootSec=5min
 
 Then reload:
 ```bash
-./analyzer-ctl.sh install  # Reinstall
+./bin/analyzer-ctl install  # Reinstall
 systemctl --user daemon-reload
 ```
 
@@ -244,7 +244,7 @@ journalctl --user -u codebase-analyzer.service -n 50
 echo $ANTHROPIC_API_KEY
 
 # Test manually
-python3 ./codebase-analyzer.py
+python3 ./internal/codebase-analyzer.py
 ```
 
 ### No notifications received
@@ -292,12 +292,16 @@ At Claude API pricing (~$3 per million tokens for Sonnet):
 ## Files
 
 ```
-james-in-a-box/scripts/
-├── codebase-analyzer.py           # Main analyzer script
-├── codebase-analyzer.service      # Systemd service file
-├── codebase-analyzer.timer        # Systemd timer file
-├── analyzer-ctl.sh                # Control script
-└── CODEBASE-ANALYZER-README.md    # This file
+james-in-a-box/
+├── bin/
+│   └── analyzer-ctl                        # Control script
+├── internal/
+│   └── codebase-analyzer.py                # Main analyzer script
+├── systemd/analyzers/
+│   ├── codebase-analyzer.service           # Systemd service file
+│   └── codebase-analyzer.timer             # Systemd timer file
+└── docs/reference/
+    └── CODEBASE-ANALYZER-README.md         # This file
 ```
 
 ## Security Considerations
@@ -326,7 +330,7 @@ Part of the james-in-a-box project.
 ## Support
 
 For issues or questions:
-1. Check logs: `./analyzer-ctl.sh logs`
-2. Test manually: `./analyzer-ctl.sh test`
+1. Check logs: `./bin/analyzer-ctl logs`
+2. Test manually: `./bin/analyzer-ctl test`
 3. Review this README
 4. Check james-in-a-box main documentation

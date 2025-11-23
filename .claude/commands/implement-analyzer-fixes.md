@@ -63,7 +63,7 @@ This command helps you systematically implement those fixes by:
    {
      "scripts": [
        {
-         "file": "scripts/host-notify-slack.py",
+         "file": "internal/host-notify-slack.py",
          "issue": "Hardcoded channel ID",
          "suggestion": "Use environment variable",
          "priority": "HIGH"
@@ -113,7 +113,7 @@ For each category in priority order (scripts → config → docs):
 1. **Copy to staging**:
    ```bash
    mkdir -p ~/sharing/staged-changes/scripts
-   cp ~/khan/james-in-a-box/scripts/$file ~/sharing/staged-changes/scripts/
+   cp ~/khan/james-in-a-box/internal/$file ~/sharing/staged-changes/scripts/
    ```
 
 2. **Apply fixes using Edit tool**:
@@ -138,7 +138,7 @@ For each category in priority order (scripts → config → docs):
 
 3. **Maintain executability**:
    ```bash
-   chmod +x ~/sharing/staged-changes/scripts/$file
+   chmod +x ~/sharing/staged-changes/internal/$file
    ```
 
 #### For Documentation:
@@ -192,7 +192,7 @@ For each category in priority order (scripts → config → docs):
 
    ### Category: Python Scripts
 
-   #### File: scripts/host-notify-slack.py
+   #### File: internal/host-notify-slack.py
 
    **Issues Fixed**:
    - **HIGH**: Hardcoded Slack channel ID exposed in code
@@ -221,8 +221,8 @@ For each category in priority order (scripts → config → docs):
    1. **Review all changes**:
       ```bash
       # Compare each file
-      diff ~/sharing/staged-changes/scripts/host-notify-slack.py \
-           ~/khan/james-in-a-box/scripts/host-notify-slack.py
+      diff ~/sharing/staged-changes/internal/host-notify-slack.py \
+           ~/khan/james-in-a-box/internal/host-notify-slack.py
       ```
 
    2. **Test critical changes** (if applicable):
@@ -383,7 +383,7 @@ Continuing with remaining files...
 ⚠️  Warning: Staging area not empty
 
 ~/sharing/staged-changes/ contains uncommitted changes:
-- scripts/host-notify-slack.py (modified 2 days ago)
+- internal/host-notify-slack.py (modified 2 days ago)
 - docs/README.md (modified 2 days ago)
 
 Options:

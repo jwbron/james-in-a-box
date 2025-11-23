@@ -9,8 +9,8 @@
 
 1. **Create Slack app**: See `SLACK-APP-SETUP.md`
 2. **Get tokens**: Bot token (`xoxb-...`) and App token (`xapp-...`)
-3. **Configure**: `~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup`
-4. **Start receiver**: `~/khan/james-in-a-box/scripts/host-receive-ctl.sh start`
+3. **Configure**: `~/khan/james-in-a-box/bin/host-receive-ctl setup`
+4. **Start receiver**: `~/khan/james-in-a-box/bin/host-receive-ctl start`
 5. **Test**: Send `claude: test` to yourself in Slack
 
 ## Daily Usage
@@ -52,13 +52,13 @@ Implement OAuth2 for JIRA-1234
 
 ```bash
 # Check receiver status
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/bin/host-receive-ctl status
 
 # View logs
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 
 # Restart receiver
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh restart
+~/khan/james-in-a-box/bin/host-receive-ctl restart
 
 # Start container
 ./jib

@@ -5,7 +5,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="slack-notifier"
-NOTIFIER_CTL="${SCRIPT_DIR}/../scripts/host-notify-ctl.sh"
+NOTIFIER_CTL="${SCRIPT_DIR}/../bin/host-notify-ctl"
 
 show_usage() {
     cat <<EOF

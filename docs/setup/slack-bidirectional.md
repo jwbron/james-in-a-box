@@ -59,7 +59,7 @@ You'll need TWO tokens:
 
 ```bash
 # Run interactive setup
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh setup
+~/khan/james-in-a-box/bin/host-receive-ctl setup
 ```
 
 Enter when prompted:
@@ -70,7 +70,7 @@ Enter when prompted:
 **Find your Slack user ID**:
 ```bash
 # Method 1: Send test DM to bot, check receiver logs
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 
 # Method 2: Slack UI
 # Click your profile → More → Copy member ID
@@ -80,10 +80,10 @@ Enter when prompted:
 
 ```bash
 # Start receiver
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh start
+~/khan/james-in-a-box/bin/host-receive-ctl start
 
 # Verify it's running
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/bin/host-receive-ctl status
 ```
 
 Expected output:
@@ -138,7 +138,7 @@ Bot will respond in your self-DM with:
 Check it was received:
 ```bash
 # Host: Check receiver logs
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 
 # Should see: "Received message from <your name>"
 # Should see: "Message written: incoming/task-YYYYMMDD-HHMMSS.md"
@@ -205,7 +205,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/scripts/host-receive-slack.py
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/internal/host-receive-slack.py
 Restart=on-failure
 RestartSec=30s
 Nice=10
@@ -245,7 +245,7 @@ systemctl --user status slack-receiver  # Incoming (You → Claude)
 cat ~/.config/jib-notifier/config.json | grep app_token
 
 # Check logs for specific error
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh tail
+~/khan/james-in-a-box/bin/host-receive-ctl tail
 ```
 
 ### "Not receiving messages in Slack"
@@ -257,7 +257,7 @@ cat ~/.config/jib-notifier/config.json | grep app_token
 **Fix**:
 ```bash
 # Check notifier status
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
+~/khan/james-in-a-box/bin/host-notify-ctl status
 
 # Test by creating file
 echo "test" > ~/.jib-sharing/notifications/test-notif.md
@@ -275,7 +275,7 @@ echo "test" > ~/.jib-sharing/notifications/test-notif.md
 **Fix**:
 ```bash
 # Host: Check receiver
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh status
+~/khan/james-in-a-box/bin/host-receive-ctl status
 
 # Container: Check watcher
 docker exec -it jib bash
@@ -302,7 +302,7 @@ cat ~/.config/jib-notifier/config.json
 # Edit config.json: "allowed_users": []
 
 # Restart receiver
-~/khan/james-in-a-box/scripts/host-receive-ctl.sh restart
+~/khan/james-in-a-box/bin/host-receive-ctl restart
 ```
 
 ## Configuration Files

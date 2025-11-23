@@ -71,35 +71,35 @@ export SLACK_TOKEN="xoxb-your-token-here"
 export SLACK_TOKEN="xoxb-your-token-here"
 
 # Start the service
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh start
+~/khan/james-in-a-box/bin/host-notify-ctl start
 ```
 
 ### Check Status
 
 ```bash
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
+~/khan/james-in-a-box/bin/host-notify-ctl status
 ```
 
 ### View Logs
 
 ```bash
 # View all logs
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh logs
+~/khan/james-in-a-box/bin/host-notify-ctl logs
 
 # Tail logs (live view)
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh tail
+~/khan/james-in-a-box/bin/host-notify-ctl tail
 ```
 
 ### Stop the Notifier
 
 ```bash
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh stop
+~/khan/james-in-a-box/bin/host-notify-ctl stop
 ```
 
 ### Restart
 
 ```bash
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh restart
+~/khan/james-in-a-box/bin/host-notify-ctl restart
 ```
 
 ## How It Works
@@ -142,7 +142,7 @@ The script automatically filters out:
 
 ### Change Watched Directories
 
-Edit `~/khan/james-in-a-box/scripts/host-notify-slack.sh`:
+Edit `~/khan/james-in-a-box/internal/host-notify-slack.sh`:
 
 ```bash
 WATCH_DIRS=(
@@ -187,7 +187,7 @@ After=network.target
 Type=simple
 User=jwies
 Environment="SLACK_TOKEN=xoxb-your-token-here"
-ExecStart=/home/jwies/khan/james-in-a-box/scripts/host-notify-slack.sh
+ExecStart=/home/jwies/khan/james-in-a-box/internal/host-notify-slack.sh
 Restart=on-failure
 RestartSec=10
 
@@ -215,7 +215,7 @@ After=network.target
 [Service]
 Type=simple
 Environment="SLACK_TOKEN=xoxb-your-token-here"
-ExecStart=%h/khan/james-in-a-box/scripts/host-notify-slack.sh
+ExecStart=%h/khan/james-in-a-box/internal/host-notify-slack.sh
 Restart=on-failure
 RestartSec=10
 
@@ -238,7 +238,7 @@ Add to `~/.bashrc`:
 ```bash
 # Auto-start Claude notifier
 if [ -n "$SLACK_TOKEN" ] && ! pgrep -f host-notify-slack.sh > /dev/null; then
-    ~/khan/james-in-a-box/scripts/host-notify-ctl.sh start >/dev/null 2>&1
+    ~/khan/james-in-a-box/bin/host-notify-ctl start >/dev/null 2>&1
 fi
 ```
 
@@ -287,12 +287,12 @@ Your Slack app needs the `chat:write` scope. Go to your app settings and add it 
 
 1. Check if the notifier is running:
    ```bash
-   ~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
+   ~/khan/james-in-a-box/bin/host-notify-ctl status
    ```
 
 2. Check logs:
    ```bash
-   ~/khan/james-in-a-box/scripts/host-notify-ctl.sh tail
+   ~/khan/james-in-a-box/bin/host-notify-ctl tail
    ```
 
 3. Test by creating a file:
@@ -318,8 +318,8 @@ Common issues:
 
 ### Host Machine
 
-- **Main Script**: `~/khan/james-in-a-box/scripts/host-notify-slack.sh`
-- **Control Script**: `~/khan/james-in-a-box/scripts/host-notify-ctl.sh`
+- **Main Script**: `~/khan/james-in-a-box/internal/host-notify-slack.sh`
+- **Control Script**: `~/khan/james-in-a-box/bin/host-notify-ctl`
 - **State Directory**: `~/.jib-notify/`
 - **Log File**: `~/.jib-notify/notify.log`
 - **Lock File**: `/tmp/claude-notify.lock`
@@ -370,11 +370,11 @@ export SLACK_TOKEN="xoxb-1234567890-..."
 echo 'export SLACK_TOKEN="xoxb-1234567890-..."' >> ~/.bashrc
 
 # Start notifier
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh start
+~/khan/james-in-a-box/bin/host-notify-ctl start
 # Output: ✓ Notifier started (PID: 12345)
 
 # Check status
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh status
+~/khan/james-in-a-box/bin/host-notify-ctl status
 # Output: ✓ Notifier is running (PID: 12345)
 
 # Test it
@@ -383,7 +383,7 @@ echo "test" > ~/.jib-sharing/test.txt
 # Wait 30 seconds, check Slack DM from Claude Notifier bot
 
 # View logs
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh tail
+~/khan/james-in-a-box/bin/host-notify-ctl tail
 # Output: [2025-01-15 10:30:15] Change detected: /home/jwies/.jib-sharing/test.txt
 #         [2025-01-15 10:30:45] Sending notification for 1 change(s)
 #         [2025-01-15 10:30:46] Notification sent successfully

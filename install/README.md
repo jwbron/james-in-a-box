@@ -14,30 +14,24 @@ Sets up the Slack notification system on the host machine.
 
 **What it does:**
 - Configures Slack API credentials
-- Sets up systemd service
-- Creates necessary directories
+- Sets up systemd services for host-side Slack integration
+- Creates necessary directories and persistent data structure
 - Tests the connection
+- Configures the conversation analyzer and context watcher services
 
 **Prerequisites:**
-- Slack app created with bot token
+- Slack app created with bot token and app token
 - Docker installed
 - Systemd available
 
-### fix-host-credentials.sh
-Fixes credential-related issues with Slack integration.
-
-**Usage:**
-```bash
-./install/fix-host-credentials.sh
-```
-
-**What it does:**
-- Validates Slack credentials
-- Repairs configuration files
-- Resets permissions
-- Restarts services if needed
+**Components installed:**
+- Host Slack notifier (outbound notifications)
+- Host Slack receiver (inbound messages)
+- Conversation analyzer (periodic analysis with Slack notifications)
+- Context watcher (monitors conversation context files)
 
 ## See Also
 - [Setup Guide](../docs/setup/slack-quickstart.md)
 - [Slack App Setup](../docs/setup/slack-app-setup.md)
-- [Troubleshooting](../docs/reference/)
+- [Host Slack Notifier Architecture](../docs/architecture/host-slack-notifier.md)
+- [Integration Summary](../docs/architecture/integration-summary.md)
