@@ -167,7 +167,7 @@
    - Track which Confluence/JIRA docs included
    - Weekly manual log review
 
-5. **Create `.claude/rules/khan-academy-culture.md`**
+5. **Create `jib-container/.claude/rules/khan-academy-culture.md`**
    - Extract SE level expectations from Confluence (L3, L4, L5)
    - Document KA engineering values
    - Technical excellence, communication, problem-solving, collaboration standards

@@ -187,7 +187,7 @@ This ADR establishes the architecture, security model, and operational patterns 
 **Rationale:** Start on laptop to validate quickly, evolve to cloud-native infrastructure for production scale and multi-engineer support.
 
 **7. Agent Demeanor and Cultural Alignment: Khan Academy Engineering Standards**
-- **Current approach:** Agent behavior defined by `.claude/rules/` configuration files
+- **Current approach:** Agent behavior defined by `jib-container/.claude/rules/` configuration files
 - **Core principle:** Agent should embody Khan Academy engineering values and expectations
 - **Implementation:**
   - Load Khan Academy engineering guidelines from Confluence docs
@@ -196,13 +196,13 @@ This ADR establishes the architecture, security model, and operational patterns 
   - Communication style (clarity, precision, collaboration)
   - Problem-solving approach (systematic, data-driven, user-focused)
 - **Continuous refinement:** Conversation analyzer evaluates tone, collaboration quality, technical communication
-- **Configuration location:** `.claude/rules/khan-academy-culture.md` references Confluence guidelines
+- **Configuration location:** `jib-container/.claude/rules/khan-academy-culture.md` references Confluence guidelines
 
 **Rationale:** Agent effectiveness depends on cultural fit, not just technical capability. Khan Academy has specific expectations for engineers (thoroughness, clarity, user empathy, collaborative problem-solving). Agent should demonstrate these values in all interactions. Using Confluence-documented standards ensures alignment with actual organizational expectations.
 
 **Example Integration:**
 ```markdown
-# .claude/rules/khan-academy-culture.md
+# jib-container/.claude/rules/khan-academy-culture.md
 
 ## Khan Academy Engineering Values (from Confluence)
 
@@ -264,7 +264,7 @@ Agent should demonstrate L3-L4 behaviors:
 | **Deployment Model** | Human reviews and approves all changes | Safety, learning opportunity, regulatory compliance | Fully autonomous deployment, staged rollout, feature flags |
 | **Improvement Mechanism** | Automated analyzers with prompt refinement | Data-driven, continuous improvement, low overhead | Manual tuning, A/B testing, user feedback only |
 | **Infrastructure Deployment** | Laptop (Phase 1), Cloud Run via Terraform (Phase 3) | Fast MVP iteration, scales to cloud-native production | Direct cloud deployment, VM-based, Kubernetes |
-| **Cultural Alignment** | Confluence-sourced KA engineering standards in .claude/rules/ | Behavior aligns with org values, feels like KA engineer | Generic LLM behavior, manual prompt tuning, no cultural context |
+| **Cultural Alignment** | Confluence-sourced KA engineering standards in jib-container/.claude/rules/ | Behavior aligns with org values, feels like KA engineer | Generic LLM behavior, manual prompt tuning, no cultural context |
 
 ## High-Level Design
 
@@ -305,8 +305,9 @@ Agent should demonstrate L3-L4 behaviors:
 │  │ Code    │   │ Context │   │ Prompts  │      │ Analysis │  │
 │  │ (R/W)   │   │ (R/O)   │   │ (R/O)    │      │ (Output) │  │
 │  │         │   │         │   │          │      │          │  │
-│  │ ~/khan  │   │ Confl.  │   │ .claude/ │      │ ~/sharing│  │
-│  │         │   │ JIRA    │   │ rules    │      │ /notif.  │  │
+│  │ ~/khan  │   │ Confl.  │   │ jib-     │      │ ~/sharing│  │
+│  │         │   │ JIRA    │   │ container│      │ /notif.  │  │
+│  │         │   │         │   │ /.claude │      │          │  │
 │  └─────────┘   └─────────┘   └──────────┘      └──────────┘  │
 │                                                                   │
 │  Security Boundary: No credentials, no direct push, no deploy    │
@@ -776,7 +777,7 @@ The conversation analyzer specifically assesses:
 - **Escalation timing:** Asking for help appropriately (not too early, not thrashing)
 
 If agent drifts from Khan Academy engineering culture, analyzer recommends:
-- Specific prompt adjustments to `.claude/rules/khan-academy-culture.md`
+- Specific prompt adjustments to `jib-container/.claude/rules/khan-academy-culture.md`
 - Examples of desired vs. observed behavior
 - Training data from Confluence guidelines to reinforce standards
 
@@ -834,7 +835,7 @@ If agent drifts from Khan Academy engineering culture, analyzer recommends:
 ### Phase 2: Enhanced Mobile & Context
 - [ ] Automated PR creation fully operational
 - [ ] Mobile review workflow optimized (quick actions, inline diffs)
-- [ ] **Cultural alignment implementation** (khan-academy-culture.md from Confluence guidelines)
+- [ ] **Cultural alignment implementation** (jib-container/.claude/rules/khan-academy-culture.md from Confluence guidelines)
 - [ ] **Conversation analyzer demeanor evaluation** (assess cultural fit)
 - [ ] **Assess MCP servers** for real-time context access
 - [ ] **Evaluate API integration** for JIRA/GitHub bi-directional updates
