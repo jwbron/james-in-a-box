@@ -9,17 +9,11 @@ Convenient symlinks to commonly used commands.
 - `docker-setup.py` - Container setup
 - `view-logs` - View container logs
 
-**Host Services:**
-- `host-notify-ctl` - Slack notifier control
-- `host-receive-ctl` - Slack receiver control
-- `analyzer-ctl` - Codebase analyzer control
-- `conversation-analyzer-ctl` - Conversation analyzer control
-
-**Setup:**
-- `setup-slack-notifier` - Install Slack notifier
-- `setup-slack-receiver` - Install Slack receiver
+**Setup Scripts:**
+- `setup-slack-notifier` - Install Slack notifier service
+- `setup-slack-receiver` - Install Slack receiver service
 - `setup-service-monitor` - Install service monitor
-- `setup-codebase-analyzer` - Install codebase analyzer
+- `setup-codebase-analyzer` - Install codebase analyzer service
 
 ## Note
 
@@ -41,5 +35,3 @@ systemctl --user restart slack-notifier.service
 # View logs
 journalctl --user -u slack-notifier.service -f
 ```
-
-The `*-ctl` scripts are legacy and deprecated. Use systemctl instead.
