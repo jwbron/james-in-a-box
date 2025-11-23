@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-WATCHER_SCRIPT="${HOME}/khan/james-in-a-box/internal/context-watcher.sh"
+WATCHER_SCRIPT="${HOME}/khan/james-in-a-box/jib-container/components/context-watcher/context-watcher.sh"
 # SECURITY FIX: Use user-controlled directory instead of /tmp to prevent symlink attacks
 LOCK_DIR="${HOME}/.cache/context-watcher"
 LOCK_FILE="${LOCK_DIR}/watcher.lock"

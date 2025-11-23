@@ -3,6 +3,7 @@ Description=Codebase Improvement Analyzer
 Documentation=https://github.com/jwiesebron/james-in-a-box
 After=network-online.target
 Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot
@@ -10,10 +11,10 @@ User=jwies
 Group=jwies
 
 # Working directory
-WorkingDirectory=/home/jwies/khan/james-in-a-box/internal
+WorkingDirectory=/home/jwies/khan/james-in-a-box/components/codebase-analyzer
 
 # Execute the analyzer
-ExecStart=/usr/bin/python3 /home/jwies/khan/james-in-a-box/internal/codebase-analyzer.py
+ExecStart=/usr/bin/python3 /home/jwies/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py
 
 # Logging
 StandardOutput=journal
