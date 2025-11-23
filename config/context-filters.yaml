@@ -1,0 +1,35 @@
+# Context Source Filtering Configuration
+# Controls which Confluence spaces and JIRA projects are synced
+
+confluence:
+  allowed_spaces:
+    - ENG          # Engineering documentation
+    - INFRA        # Infrastructure docs  
+    - PRODUCT      # Product docs (internal)
+  
+  blocked_spaces:
+    - POPS         # People Ops - HR data
+    - SCHOOL       # School partnerships - customer data
+    - SALES        # Sales - customer data
+    - FINANCE      # Finance - confidential
+    - LEGAL        # Legal - confidential
+    - SUPPORT      # Customer support - PII
+
+jira:
+  allowed_projects:
+    - ENG
+    - INFRA
+    - WEBAPP
+    - MOBILE
+  
+  blocked_projects:
+    - SUPPORT      # Customer support - PII
+    - SALES        # Sales - customer data
+    - HR           # HR - personnel data
+    - FINANCE      # Finance - confidential
+
+# Phase tracking
+phase_info:
+  current_phase: "Phase 1"
+  current_risk_level: "MEDIUM"
+  target_risk_level: "LOW (Phase 3 with DLP)"
