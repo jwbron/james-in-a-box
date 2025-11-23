@@ -4,7 +4,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NOTIFIER_SCRIPT="${SCRIPT_DIR}/host-notify-slack.py"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+NOTIFIER_SCRIPT="${REPO_ROOT}/internal/host-notify-slack.py"
 LOCK_FILE="/tmp/jib-notifier.lock"
 CONFIG_DIR="${HOME}/.config/jib-notifier"
 LOG_FILE="${CONFIG_DIR}/notifier.log"

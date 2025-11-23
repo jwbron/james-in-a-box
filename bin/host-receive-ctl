@@ -2,7 +2,8 @@
 # Control script for Slack receiver
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RECEIVER_SCRIPT="${SCRIPT_DIR}/host-receive-slack.py"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+RECEIVER_SCRIPT="${REPO_ROOT}/internal/host-receive-slack.py"
 PID_FILE="${HOME}/.config/jib-notifier/receiver.pid"
 LOG_FILE="${HOME}/.config/jib-notifier/receiver.log"
 CONFIG_FILE="${HOME}/.config/jib-notifier/config.json"
