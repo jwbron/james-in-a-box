@@ -47,5 +47,26 @@ systemctl --user disable codebase-analyzer.timer
 
 - Weekly codebase analysis
 - Pattern detection and anti-pattern identification
-- Sends reports to Slack
+- Sends reports to Slack (summary + threaded detail)
 - Systemd timer integration
+
+## Notification Format
+
+Reports use the **summary + thread pattern** for mobile-first Slack experience:
+
+**Summary (top-level message)**:
+- Concise key metrics (3-5 lines)
+- Priority indicator
+- Quick stats (HIGH/MEDIUM issue counts, security rating)
+
+**Detail (threaded reply)**:
+- Full analysis report
+- File-specific improvements
+- Web research findings
+- Strategic recommendations
+
+This creates two files:
+- `YYYYMMDD-HHMMSS-codebase-improvements.md` (summary)
+- `RESPONSE-YYYYMMDD-HHMMSS-codebase-improvements.md` (detail)
+
+See: `slack-notifier` component for threading implementation

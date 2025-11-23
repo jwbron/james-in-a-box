@@ -48,5 +48,25 @@ systemctl --user disable conversation-analyzer.timer
 - Daily conversation analysis
 - Cultural alignment evaluation (Khan Academy L3-L4 standards)
 - Tone and communication quality assessment
-- Sends reports to Slack
+- Sends reports to Slack (summary + threaded detail)
 - Systemd timer integration
+
+## Notification Format
+
+Reports use the **summary + thread pattern** for mobile-first Slack experience:
+
+**Summary (top-level message)**:
+- Concise key metrics (3-5 lines)
+- Priority indicator
+- Quick stats (success rate, quality score)
+
+**Detail (threaded reply)**:
+- Full analysis report
+- Session outcomes breakdown
+- Recommendations and next steps
+
+This creates two files:
+- `YYYYMMDD-HHMMSS-conversation-analysis.md` (summary)
+- `RESPONSE-YYYYMMDD-HHMMSS-conversation-analysis.md` (detail)
+
+See: `slack-notifier` component for threading implementation
