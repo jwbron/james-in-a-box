@@ -1,9 +1,8 @@
 [Unit]
 Description=JIB Conversation Analyzer
 Documentation=https://github.com/jwiesebron/james-in-a-box
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
-Requires=docker.service
 
 [Service]
 Type=oneshot
@@ -11,7 +10,7 @@ User=%u
 
 # Execute via jib (runs analyzer in container environment)
 # Note: Requires jib script to have --exec flag implemented
-ExecStart=%h/khan-jib/james-in-a-box/jib --exec /home/jwies/tools/analyze-conversations --days 7
+ExecStart=%h/khan/james-in-a-box/jib --exec /home/jwies/tools/analyze-conversations --days 7
 
 # Logging
 StandardOutput=journal
