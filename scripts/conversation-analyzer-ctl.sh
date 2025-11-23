@@ -46,14 +46,14 @@ check_requirements() {
     fi
 
     # Check if jib script exists
-    if [ ! -f "${HOME}/khan-jib/james-in-a-box/jib" ]; then
-        log_error "jib script not found at ~/khan-jib/james-in-a-box/jib"
-        log_info "Make sure james-in-a-box is cloned to ~/khan-jib/"
+    if [ ! -f "${HOME}/khan/james-in-a-box/jib" ]; then
+        log_error "jib script not found at ~/khan/james-in-a-box/jib"
+        log_info "Make sure james-in-a-box is cloned to ~/khan/"
         exit 1
     fi
 
     # Check if jib has --exec support
-    if ! "${HOME}/khan-jib/james-in-a-box/jib" --help 2>&1 | grep -q "\-\-exec"; then
+    if ! "${HOME}/khan/james-in-a-box/jib" --help 2>&1 | grep -q "\-\-exec"; then
         log_error "jib script does not have --exec flag support"
         log_error "Please apply the patch from ~/.jib-sharing/jib-exec-implementation.md"
         exit 1

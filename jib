@@ -51,13 +51,13 @@ class Config:
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
     IMAGE_NAME = "james-in-a-box"
     CONTAINER_NAME = "jib"
-    KHAN_SOURCE = Path.home() / "khan-jib"
+    KHAN_SOURCE = Path.home() / "khan"
     CLAUDE_SOURCE = Path.home() / ".claude"
     # Persistent directories for agent use
     TOOLS_DIR = Path.home() / ".jib-tools"
     SHARING_DIR = Path.home() / ".jib-sharing"
 
-    # Note: ~/khan-jib/ is mounted READ-WRITE so agent can work directly on code
+    # Note: ~/khan/ is mounted READ-WRITE so agent can work directly on code
     # Agent makes changes directly and commits them
 
     # Directories that are dangerous to mount (contain credentials)
@@ -313,7 +313,7 @@ def setup() -> bool:
     print("  ✗ NO access to GSM secrets")
     print()
     print("HOW IT WORKS:")
-    print("  1. Your ~/khan-jib is MOUNTED into the container as ~/khan (read-write)")
+    print("  1. Your ~/khan is MOUNTED into the container as ~/khan (read-write)")
     print("  2. Changes in container = changes on host (same files)")
     print("  3. Agent works on code, creates commits")
     print("  4. YOU review commits and push from host (with credentials)")
