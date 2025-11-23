@@ -112,6 +112,17 @@ Container:
    - Verify dependencies
    - Display setup status
 
+   **Updating existing installation:**
+   ```bash
+   ./setup.sh --update
+   ```
+
+   This will:
+   - Re-symlink service files (pick up any changes)
+   - Reload systemd daemon
+   - Restart all services
+   - Skip interactive prompts
+
    <details>
    <summary>Or set up components individually</summary>
 

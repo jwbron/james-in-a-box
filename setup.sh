@@ -2,6 +2,42 @@
 # Master setup script for james-in-a-box host components
 set -e
 
+# Parse arguments
+UPDATE_MODE=false
+FORCE_MODE=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --update)
+            UPDATE_MODE=true
+            shift
+            ;;
+        --force)
+            FORCE_MODE=true
+            shift
+            ;;
+        --help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --update    Update existing installation (reload configs, restart services)"
+            echo "  --force     Force reinstall even if already installed"
+            echo "  --help      Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0              # Initial setup (interactive)"
+            echo "  $0 --update     # Update/reload all components"
+            echo "  $0 --force      # Force reinstall everything"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Run '$0 --help' for usage information"
+            exit 1
+            ;;
+    esac
+done
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -43,6 +79,36 @@ check_dependency() {
     return 0
 }
 
+is_service_installed() {
+    local service_name=$1
+    systemctl --user list-unit-files "$service_name" &>/dev/null
+}
+
+check_installation_status() {
+    local installed_count=0
+    local services=(
+        "slack-notifier.service"
+        "slack-receiver.service"
+        "worktree-watcher.timer"
+        "codebase-analyzer.timer"
+        "conversation-analyzer.timer"
+    )
+
+    for service in "${services[@]}"; do
+        if is_service_installed "$service"; then
+            ((installed_count++))
+        fi
+    done
+
+    if [ $installed_count -eq ${#services[@]} ]; then
+        return 0  # Fully installed
+    elif [ $installed_count -gt 0 ]; then
+        return 1  # Partially installed
+    else
+        return 2  # Not installed
+    fi
+}
+
 # Check if running on host (not in container)
 if [ -f "/.dockerenv" ]; then
     print_error "This script must be run on the host machine, not inside the container"
@@ -51,12 +117,64 @@ fi
 
 print_header "James-In-A-Box Host Setup"
 
-echo "This script will:"
-echo "  • Install and configure Slack integration (notifier and receiver)"
-echo "  • Set up automated analyzers (codebase and conversation)"
-echo "  • Configure service failure monitoring"
-echo "  • Enable and start all systemd services"
-echo ""
+# Check installation status
+if check_installation_status; then
+    ALREADY_INSTALLED=true
+    if [ "$UPDATE_MODE" = true ]; then
+        print_info "Update mode: Reloading configurations and restarting services"
+        echo ""
+    elif [ "$FORCE_MODE" = true ]; then
+        print_warning "Force mode: Reinstalling all components"
+        echo ""
+    else
+        print_success "JIB is already installed!"
+        echo ""
+        echo "What would you like to do?"
+        echo "  1) Update/reload (refresh configs and restart services)"
+        echo "  2) Force reinstall (clean install)"
+        echo "  3) Exit"
+        echo ""
+        read -p "Choose [1-3]: " -n 1 -r
+        echo
+        case $REPLY in
+            1)
+                UPDATE_MODE=true
+                print_info "Switching to update mode"
+                echo ""
+                ;;
+            2)
+                FORCE_MODE=true
+                print_warning "Switching to force reinstall mode"
+                echo ""
+                ;;
+            3)
+                print_info "Exiting"
+                exit 0
+                ;;
+            *)
+                print_error "Invalid choice"
+                exit 1
+                ;;
+        esac
+    fi
+else
+    ALREADY_INSTALLED=false
+fi
+
+if [ "$UPDATE_MODE" = true ]; then
+    echo "This will:"
+    echo "  • Re-symlink all service files (pick up changes)"
+    echo "  • Reload systemd daemon"
+    echo "  • Restart all JIB services"
+    echo ""
+else
+    echo "This script will:"
+    echo "  • Install and configure Slack integration (notifier and receiver)"
+    echo "  • Set up automated analyzers (codebase and conversation)"
+    echo "  • Configure service failure monitoring and worktree cleanup"
+    echo "  • Enable and start all systemd services"
+    echo ""
+fi
 
 # Check for required dependencies
 print_info "Checking dependencies..."
@@ -101,12 +219,15 @@ if ! docker ps &> /dev/null; then
 fi
 print_success "Docker is running"
 
-echo ""
-read -p "Continue with setup? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    print_info "Setup cancelled"
-    exit 0
+# Skip confirmation in update mode
+if [ "$UPDATE_MODE" = false ]; then
+    echo ""
+    read -p "Continue with setup? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Setup cancelled"
+        exit 0
+    fi
 fi
 
 # Setup components
@@ -148,6 +269,41 @@ done
 print_header "Finalizing Setup"
 systemctl --user daemon-reload
 print_success "Systemd daemon reloaded"
+
+# Restart services if in update mode
+if [ "$UPDATE_MODE" = true ]; then
+    echo ""
+    print_info "Restarting services to pick up changes..."
+
+    services_to_restart=(
+        "slack-notifier.service"
+        "slack-receiver.service"
+        "worktree-watcher.timer"
+        "codebase-analyzer.timer"
+        "conversation-analyzer.timer"
+    )
+
+    for service in "${services_to_restart[@]}"; do
+        if systemctl --user is-active --quiet "$service" 2>/dev/null; then
+            echo -n "  Restarting $service... "
+            if systemctl --user restart "$service" 2>/dev/null; then
+                print_success "done"
+            else
+                print_warning "failed (may not be enabled)"
+            fi
+        elif systemctl --user is-enabled --quiet "$service" 2>/dev/null; then
+            echo -n "  Starting $service... "
+            if systemctl --user start "$service" 2>/dev/null; then
+                print_success "done"
+            else
+                print_warning "failed"
+            fi
+        fi
+    done
+
+    echo ""
+    print_success "All services restarted/reloaded"
+fi
 
 # Summary of services
 print_header "Service Status"
@@ -223,29 +379,46 @@ fi
 # Container setup info
 print_header "Next Steps"
 
-echo "Host setup complete! Next steps:"
-echo ""
-echo "1. Configure Slack tokens (if not done):"
-echo "   Edit: ~/.config/jib-notifier/config.json"
-echo "   Add your Slack bot token (xoxb-...) and app token (xapp-...)"
-echo ""
-echo "2. Start the JIB container:"
-echo "   cd $SCRIPT_DIR"
-echo "   bin/jib"
-echo ""
-echo "3. Test Slack integration:"
-echo "   Send a DM to your Slack bot"
-echo ""
-echo "4. Monitor services:"
-echo "   systemctl --user status slack-notifier.service"
-echo "   systemctl --user list-timers | grep -E 'conversation|codebase'"
-echo ""
-echo "5. View logs:"
-echo "   journalctl --user -u slack-notifier.service -f"
-echo "   journalctl --user -u slack-receiver.service -f"
-echo ""
+if [ "$UPDATE_MODE" = true ]; then
+    echo "Update complete! Services have been reloaded and restarted."
+    echo ""
+    echo "What was updated:"
+    echo "  ✓ Service files re-symlinked (picks up any changes)"
+    echo "  ✓ Systemd daemon reloaded"
+    echo "  ✓ All services restarted"
+    echo ""
+    echo "To verify:"
+    echo "  systemctl --user status slack-notifier.service"
+    echo "  systemctl --user list-timers | grep -E 'conversation|codebase|worktree'"
+    echo ""
+else
+    echo "Host setup complete! Next steps:"
+    echo ""
+    echo "1. Configure Slack tokens (if not done):"
+    echo "   Edit: ~/.config/jib-notifier/config.json"
+    echo "   Add your Slack bot token (xoxb-...) and app token (xapp-...)"
+    echo ""
+    echo "2. Start the JIB container:"
+    echo "   cd $SCRIPT_DIR"
+    echo "   bin/jib"
+    echo ""
+    echo "3. Test Slack integration:"
+    echo "   Send a DM to your Slack bot"
+    echo ""
+    echo "4. Monitor services:"
+    echo "   systemctl --user status slack-notifier.service"
+    echo "   systemctl --user list-timers | grep -E 'conversation|codebase|worktree'"
+    echo ""
+    echo "5. View logs:"
+    echo "   journalctl --user -u slack-notifier.service -f"
+    echo "   journalctl --user -u slack-receiver.service -f"
+    echo ""
+fi
 
 print_header "Useful Commands"
+echo "Update JIB (reload configs and restart services):"
+echo "  cd $SCRIPT_DIR && ./setup.sh --update"
+echo ""
 echo "Check all services:"
 echo "  systemctl --user status slack-notifier slack-receiver"
 echo "  systemctl --user list-timers"
@@ -260,4 +433,8 @@ echo "Start container:"
 echo "  bin/jib"
 echo ""
 
-print_success "Setup complete!"
+if [ "$UPDATE_MODE" = true ]; then
+    print_success "Update complete!"
+else
+    print_success "Setup complete!"
+fi
