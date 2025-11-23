@@ -8,10 +8,10 @@ SYSTEMD_DIR="${HOME}/.config/systemd/user"
 
 echo "Setting up Slack Receiver service..."
 
-# Copy service file
+# Symlink service file
 mkdir -p "$SYSTEMD_DIR"
-cp "$COMPONENT_DIR/$SERVICE_NAME" "$SYSTEMD_DIR/"
-echo "✓ Service file installed to $SYSTEMD_DIR/$SERVICE_NAME"
+ln -sf "$COMPONENT_DIR/$SERVICE_NAME" "$SYSTEMD_DIR/"
+echo "✓ Service file symlinked to $SYSTEMD_DIR/$SERVICE_NAME"
 
 # Reload systemd
 systemctl --user daemon-reload
