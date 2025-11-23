@@ -449,7 +449,62 @@ Period: Last {self.days} days
         print(f"  Recommendations: {recs_file}")
         print(f"  Latest: {latest_report}")
 
+        # Send notification to Slack if there are recommendations
+        if prompt_recs or comm_recs:
+            self.send_notification(metrics, len(prompt_recs), len(comm_recs), report_file)
+
         return report
+
+    def send_notification(self, metrics: Dict[str, Any], prompt_rec_count: int, comm_rec_count: int, report_file: Path):
+        """Send notification about analysis results via Slack"""
+        notification_dir = Path.home() / ".jib-sharing" / "notifications"
+        notification_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        notification_file = notification_dir / f"{timestamp}-conversation-analysis.md"
+
+        # Determine priority based on recommendations
+        total_recs = prompt_rec_count + comm_rec_count
+        if total_recs >= 5:
+            priority = "HIGH"
+        elif total_recs >= 2:
+            priority = "MEDIUM"
+        else:
+            priority = "LOW"
+
+        notification = f"""# 📊 Conversation Analysis Complete
+
+**Priority**: {priority}
+
+## Summary
+Analyzed {metrics['total_sessions']} conversations from the last 7 days.
+
+**Session Outcomes:**
+- ✅ Successful: {metrics['successful_sessions']}
+- ❌ Failed: {metrics['failed_sessions']}
+- 🚫 Blocked: {metrics['blocked_sessions']}
+- ⚠️ Partial: {metrics['partial_sessions']}
+
+**Performance Metrics:**
+- Average iterations: {metrics['avg_iterations']:.1f}
+- Average quality score: {metrics['avg_quality_score']:.1f}/10
+- Single-iteration success rate: {metrics['single_iteration_success_rate']:.1f}%
+
+## Recommendations Generated
+- 🎯 Prompt improvements: {prompt_rec_count}
+- 💬 Communication improvements: {comm_rec_count}
+
+## Next Steps
+Review the full analysis report at:
+`~/.jib-sharing/analysis/latest-report.md`
+
+Or view: `{report_file}`
+"""
+
+        with open(notification_file, 'w') as f:
+            f.write(notification)
+
+        print(f"  Notification sent: {notification_file}")
 
 
 def main():
