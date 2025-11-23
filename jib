@@ -53,9 +53,10 @@ class Config:
     CONTAINER_NAME = "jib"
     KHAN_SOURCE = Path.home() / "khan"
     CLAUDE_SOURCE = Path.home() / ".claude"
-    # Persistent directories for agent use
-    TOOLS_DIR = Path.home() / ".jib-tools"
+    # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
+    TOOLS_DIR = SHARING_DIR / "tools"  # Tools are now inside sharing dir
+    TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
 
     # Note: ~/khan/ is mounted READ-WRITE so agent can work directly on code
     # Agent makes changes directly and commits them
@@ -386,27 +387,26 @@ def setup() -> bool:
     print()
     info("Setting up persistent directories...")
 
-    # Tools directory - for reusable scripts built by agent
-    Config.TOOLS_DIR.mkdir(parents=True, exist_ok=True)
-    tools_container_path = f"/home/{os.environ['USER']}/tools"
-    # Add :z flag for SELinux systems
-    mounts.append(f"{Config.TOOLS_DIR}:{tools_container_path}:rw,z")
-    print(f"  ✓ Tools: {Config.TOOLS_DIR}")
-    print(f"    Mounted as: ~/tools/ (read-write, SELinux relabeled)")
-    print(f"    Purpose: Reusable scripts and utilities built by agent")
-
-    # Sharing directory - for ALL persistent data
+    # Sharing directory - single location for ALL persistent data
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
+    Config.TOOLS_DIR.mkdir(parents=True, exist_ok=True)  # tools/ inside sharing/
+    Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
+
     sharing_container_path = f"/home/{os.environ['USER']}/sharing"
     # Add :z flag for SELinux systems
     mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
     print(f"    Mounted as: ~/sharing/ (read-write, SELinux relabeled)")
-    print(f"    Purpose: Data that persists across rebuilds")
-    print(f"    - Context documents (@save-context)")
-    print(f"    - Notifications to human")
-    print(f"    - Incoming tasks from Slack")
-    print(f"    - Any other persistent data")
+    print(f"    Purpose: All persistent data and tools")
+    print(f"    - ~/sharing/tools/         Reusable scripts (also at ~/tools)")
+    print(f"    - ~/sharing/tmp/           Persistent workspace (also at ~/tmp)")
+    print(f"    - ~/sharing/context/       Context documents (@save-context)")
+    print(f"    - ~/sharing/notifications/ Notifications to human")
+    print(f"    - ~/sharing/incoming/      Incoming tasks from Slack")
+    print(f"    - ~/sharing/analysis/      Analysis reports")
+
+    # Create convenience symlinks in container for tools and tmp
+    # Note: Actual symlink creation happens in container entrypoint
 
     print()
     print("Add additional directories? (optional)")

@@ -133,28 +133,48 @@ grep -r "JIRA-1234" ~/context-sync/jira/
 cat ~/context-sync/confluence/INFRA/runbooks/
 ```
 
-### `~/tools/` - Reusable Utilities
-**Purpose**: Build scripts that persist across sessions
-**Access**: Read-write
-**Persistence**: Mounted from host (`~/.jib-tools/`)
-**Usage**:
-- Create helper scripts and automation
-- Build test runners, code generators
-- Store development utilities
-**See**: `tools-guide.md` for comprehensive guide
-
-### `~/sharing/` - Persistent Data
-**Purpose**: Data that must persist across container rebuilds
+### `~/sharing/` - Persistent Data (Consolidated)
+**Purpose**: ALL persistent data that must survive container rebuilds
 **Access**: Read-write
 **Persistence**: Mounted from host (`~/.jib-sharing/`)
-**What goes here**:
+**Structure**: All shared data is organized under this single directory for cleaner host organization
+
+**Subdirectories**:
+- **`~/sharing/tools/`** - Reusable scripts and utilities (also accessible as `~/tools/` symlink)
+  - Create helper scripts and automation
+  - Build test runners, code generators
+  - Store development utilities
+  - **See**: `tools-guide.md` for comprehensive guide
+
+- **`~/sharing/tmp/`** - Persistent scratch space (also accessible as `~/tmp/` symlink)
+  - Download and inspect files
+  - Build temporary test environments
+  - Prototype before moving to main workspace
+  - Store intermediate build artifacts
+  - NOTE: Unlike container's `/tmp`, this PERSISTS across rebuilds
+
 - **`~/sharing/notifications/`** - Notifications to human (triggers Slack DM)
+  - Write notification files here to send async messages to human
+  - Host Slack notifier watches this directory
+  - See "Notifications - Async Communication" section below
+
 - **`~/sharing/context/`** - Context documents (`@save-context` / `@load-context`)
-- Pull request artifacts
-- Analysis reports
-- Any work product that should survive rebuilds
+  - Accumulated knowledge from previous sessions
+  - Used by `@load-context` and `@save-context` commands
+  - Helps avoid repeating mistakes across sessions
+
+- **`~/sharing/tracking/`** - Logs from background services
+  - Watcher logs
+  - Analyzer logs
+  - System monitoring output
+
+**Convenience Symlinks** (for easier access):
+- `~/tools/` → `~/sharing/tools/`
+- `~/tmp/` → `~/sharing/tmp/`
 
 **Note**: Code changes are made directly in `~/khan/` and committed to git, not staged in `~/sharing/`
+
+**Host Location**: All of this maps to `~/.jib-sharing/` on the host machine
 
 **Notifications - Async Communication**:
 ```bash
@@ -190,15 +210,6 @@ EOF
 
 **Human access**: `~/.jib-sharing/notifications/` on host
 
-### `~/tmp/` - Scratch Space
-**Purpose**: Temporary work, not persisted
-**Access**: Read-write
-**Persistence**: Container-only (ephemeral)
-**Usage**:
-- Download and inspect files
-- Build temporary test environments
-- Prototype before moving to main workspace
-- Store intermediate build artifacts
 
 ### Container Filesystem - System Level
 **Purpose**: System-wide changes
