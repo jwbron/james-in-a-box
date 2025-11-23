@@ -11,7 +11,6 @@ SLACK_CHANNEL="${SLACK_CHANNEL:-}"
 
 WATCH_DIRS=(
     "${HOME}/.jib-sharing"
-    "${HOME}/.jib-tools"
 )
 
 # State and logging
@@ -157,13 +156,10 @@ format_change_message() {
 
     # Group changes by directory
     local sharing_changes=()
-    local tools_changes=()
 
     for change in "${changes[@]}"; do
         if [[ "$change" == *".jib-sharing"* ]]; then
             sharing_changes+=("$change")
-        elif [[ "$change" == *".jib-tools"* ]]; then
-            tools_changes+=("$change")
         fi
     done
 
@@ -172,16 +168,6 @@ format_change_message() {
         for change in "${sharing_changes[@]}"; do
             # Extract relative path
             local rel_path="${change#*/.jib-sharing/}"
-            message+="  • \`$rel_path\`\n"
-        done
-        message+="\n"
-    fi
-
-    if [ ${#tools_changes[@]} -gt 0 ]; then
-        message+="*Tools Directory* (\`~/.jib-tools/\`):\n"
-        for change in "${tools_changes[@]}"; do
-            # Extract relative path
-            local rel_path="${change#*/.jib-tools/}"
             message+="  • \`$rel_path\`\n"
         done
         message+="\n"

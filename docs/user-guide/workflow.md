@@ -154,9 +154,8 @@ patch -p1 < ~/.jib-sharing/staged-changes/webapp/server.py.patch
 │   ├── webapp/              # Changes to webapp repo
 │   ├── jenkins-jobs/        # Changes to jenkins-jobs
 │   └── frontend/            # Changes to frontend
-├── context/                 # Context documents
-│   └── project.md
-└── tools/                   # (Actually at ~/.jib-tools/)
+└── context/                 # Context documents
+    └── project.md
 ```
 
 ## Tips for Claude

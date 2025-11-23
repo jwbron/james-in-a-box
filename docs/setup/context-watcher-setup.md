@@ -170,7 +170,6 @@ If you still can't access `~/sharing/` or `~/tools/` after restarting:
    ```bash
    # On host (outside container):
    sudo chcon -R -t container_file_t ~/.jib-sharing/
-   sudo chcon -R -t container_file_t ~/.jib-tools/
    sudo chcon -R -t container_file_t ~/context-sync/
    ```
 

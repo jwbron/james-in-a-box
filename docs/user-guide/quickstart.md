@@ -183,7 +183,6 @@ Flags:
 
 ```
 ~/.jib/                      Build context and config
-~/.jib-tools/                Mapped to ~/tools/ in container
 ~/.jib-sharing/              Mapped to ~/sharing/ in container
 ~/khan/                      Your real codebase (MOUNTED to container)
 ```

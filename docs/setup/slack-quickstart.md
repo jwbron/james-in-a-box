@@ -1,6 +1,6 @@
 # Slack Notifier - Quick Start
 
-Monitor `~/.jib-sharing/` and `~/.jib-tools/` for changes and send Slack notifications.
+Monitor `~/.jib-sharing/` for changes and send Slack notifications.
 
 ## Prerequisites
 
@@ -75,7 +75,7 @@ Configuration is saved to `~/.config/jib-notifier/config.json` with secure permi
 
 ## How It Works
 
-1. **Monitors**: Watches `~/.jib-sharing/` and `~/.jib-tools/` for file changes
+1. **Monitors**: Watches `~/.jib-sharing/` for file changes
 2. **Batches**: Collects changes over 30-second window
 3. **Notifies**: Sends Slack DM with list of changed files
 4. **Runs continuously**: Systemd service ensures it's always running
@@ -89,10 +89,7 @@ Configuration is saved to `~/.config/jib-notifier/config.json` with secure permi
   • `notifications/summary-2025-01-15.md`
   • `context-tracking/updates.md`
 
-.jib-tools/ (`/home/jwies/.jib-tools`):
-  • `scripts/new-helper.sh`
-
-Total changes: 3
+Total changes: 2
 ```
 
 ## Configuration
@@ -105,8 +102,7 @@ Edit `~/.config/jib-notifier/config.json`:
   "slack_channel": "<YOUR-CHANNEL-ID>",  // Replace with your actual Slack channel/DM ID
   "batch_window_seconds": 30,
   "watch_directories": [
-    "/home/jwies/.jib-sharing",
-    "/home/jwies/.jib-tools"
+    "/home/jwies/.jib-sharing"
   ]
 }
 ```

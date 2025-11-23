@@ -6,7 +6,6 @@ Monitors shared directories on the **host machine** (outside the container) and 
 
 This system watches:
 - `~/.jib-sharing/` - Shared data between host and container
-- `~/.jib-tools/` - Shared tools directory
 
 When changes are detected, it sends a Slack direct message to James Wiesebron with a summary of what changed.
 
@@ -125,10 +124,7 @@ Sharing Directory (~/.jib-sharing/):
   • notifications/summary-2025-01-15.md
   • context-tracking/watcher-state.json
 
-Tools Directory (~/.jib-tools/):
-  • scripts/new-helper.sh
-
-Total changes: 3
+Total changes: 2
 ```
 
 ### Filtering
@@ -147,7 +143,6 @@ Edit `~/khan/james-in-a-box/internal/host-notify-slack.sh`:
 ```bash
 WATCH_DIRS=(
     "${HOME}/.jib-sharing"
-    "${HOME}/.jib-tools"
     "${HOME}/context-sync"  # Add more directories
 )
 ```
@@ -327,7 +322,6 @@ Common issues:
 ### Watched Directories
 
 - **Sharing**: `~/.jib-sharing/` (container: `~/sharing/`)
-- **Tools**: `~/.jib-tools/` (container: `~/tools/`)
 
 ## Integration with Container Watcher
 
