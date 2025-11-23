@@ -250,8 +250,6 @@ class SlackNotifier:
         for watch_dir in self.watch_dirs:
             try:
                 i.add_watch(str(watch_dir), mask=inotify.constants.IN_CREATE |
-                                                 inotify.constants.IN_MODIFY |
-                                                 inotify.constants.IN_DELETE |
                                                  inotify.constants.IN_MOVED_TO)
                 watches_added += 1
                 self.logger.info(f"Added watch for: {watch_dir}")
@@ -262,8 +260,6 @@ class SlackNotifier:
                         if not self._should_ignore(subdir):
                             try:
                                 i.add_watch(subdir, mask=inotify.constants.IN_CREATE |
-                                                         inotify.constants.IN_MODIFY |
-                                                         inotify.constants.IN_DELETE |
                                                          inotify.constants.IN_MOVED_TO)
                             except Exception as e:
                                 self.logger.debug(f"Could not watch {subdir}: {e}")
