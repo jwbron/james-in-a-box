@@ -8,7 +8,6 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 
 **Installation:**
 - `~/CLAUDE.md` → All rules combined (mission.md + environment.md + khan-academy.md)
-- `tools-guide.md` → Installed as `~/tools-guide.md` for reference
 
 **Why one file?** Since `~/khan/` is mounted from the host (not copied), we can't reliably write to it during container startup. Combining all rules into `~/CLAUDE.md` ensures they're always available.
 
@@ -38,14 +37,6 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
   - Common commands and tools
   - File organization
   - Development workflow
-
-### Reference Documentation
-
-- **tools-guide.md** - Building reusable utilities
-  - Purpose of `~/tools/` directory
-  - When to create tools vs one-off scripts
-  - Examples and templates
-  - Best practices for tool development
 
 ## Build Process
 

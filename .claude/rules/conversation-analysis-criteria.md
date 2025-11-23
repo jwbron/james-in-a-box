@@ -380,8 +380,8 @@ Quality checklist for every code change:
 **Analysis Window:** Last 7 days
 **Minimum Conversations:** 5 (skip analysis if fewer)
 
-**Analyzer Script:** `~/tools/analyze-conversations` (inside container)
-**Invocation:** Via systemd timer → jib --exec
+**Analyzer Script:** `~/khan/james-in-a-box/internal/conversation-analyzer.py` (runs on host)
+**Invocation:** Via systemd timer (daily at 2:00 AM)
 
 ---
 

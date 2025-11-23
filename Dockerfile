@@ -115,15 +115,13 @@ else
     echo "⚠ Khan workspace not found - check mount configuration"
 fi
 
-# Create convenience symlinks to ~/sharing subdirectories
+# Create convenience symlink to ~/sharing/tmp
 # All shared data is now under ~/sharing/ for cleaner host organization
 if [ -d "${USER_HOME}/sharing" ]; then
-    # Create symlinks: ~/tools → ~/sharing/tools, ~/tmp → ~/sharing/tmp
-    ln -sf "${USER_HOME}/sharing/tools" "${USER_HOME}/tools"
+    # Create symlink: ~/tmp → ~/sharing/tmp
     ln -sf "${USER_HOME}/sharing/tmp" "${USER_HOME}/tmp"
 
     # Ensure subdirectories exist in sharing/
-    mkdir -p "${USER_HOME}/sharing/tools"
     mkdir -p "${USER_HOME}/sharing/tmp"
     mkdir -p "${USER_HOME}/sharing/notifications"
     mkdir -p "${USER_HOME}/sharing/context"
@@ -131,11 +129,10 @@ if [ -d "${USER_HOME}/sharing" ]; then
 
     chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing"
     echo "✓ Shared directories configured:"
-    echo "  ~/sharing/tools/         (mounted from ~/.jib-sharing/tools/)"
     echo "  ~/sharing/tmp/           (mounted from ~/.jib-sharing/tmp/)"
     echo "  ~/sharing/notifications/ (mounted from ~/.jib-sharing/notifications/)"
     echo "  ~/sharing/context/       (mounted from ~/.jib-sharing/context/)"
-    echo "  Convenience symlinks: ~/tools → ~/sharing/tools, ~/tmp → ~/sharing/tmp"
+    echo "  Convenience symlink: ~/tmp → ~/sharing/tmp"
 else
     echo "⚠ Sharing directory not found - check mount configuration"
 fi
@@ -155,13 +152,6 @@ if [ -f "/opt/claude-rules/mission.md" ] && [ -f "/opt/claude-rules/environment.
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/CLAUDE.md"
     echo "✓ AI agent rules installed: ~/CLAUDE.md (mission + environment + Khan standards)"
     echo "  Note: All rules combined in one file since ~/khan/ is mounted from host"
-fi
-
-# Copy tools guide as reference (not loaded into CLAUDE.md)
-if [ -f "/opt/claude-rules/tools-guide.md" ]; then
-    cp /opt/claude-rules/tools-guide.md "${USER_HOME}/tools-guide.md"
-    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/tools-guide.md"
-    echo "✓ Tools guide available at ~/tools-guide.md"
 fi
 
 # Set up .claude directory with settings that avoid known bugs
@@ -287,7 +277,6 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "📋 Your Instructions:"
     echo "  • ~/CLAUDE.md                      (all rules: mission, environment, Khan)"
-    echo "  • ~/tools-guide.md                 (building reusable tools)"
     echo "  Note: ~/khan/ is mounted from host - all code changes persist immediately"
     echo ""
     echo "🚀 Quick Start:"
@@ -303,14 +292,12 @@ if [ $# -eq 0 ]; then
     echo "    - ~/context-sync/confluence/            (ADRs, runbooks, docs)"
     echo "    - ~/context-sync/jira/                  (JIRA tickets, issues)"
     echo "  • Sharing: ~/sharing/                     (ALL persistent data, MOUNTED rw)"
-    echo "    - ~/sharing/tools/                      (reusable scripts, symlinked to ~/tools/)"
     echo "    - ~/sharing/tmp/                        (persistent scratch, symlinked to ~/tmp/)"
     echo "    - ~/sharing/notifications/              (Claude → You via Slack)"
     echo "    - ~/sharing/incoming/                   (You → Claude via Slack)"
     echo "    - ~/sharing/responses/                  (Your replies via Slack)"
     echo "    - ~/sharing/context/                    (context docs)"
     echo "    - ~/sharing/tracking/                   (background service logs)"
-    echo "  • Tools: ~/tools/ → ~/sharing/tools/      (symlink for convenience)"
     echo "  • Tmp: ~/tmp/ → ~/sharing/tmp/            (symlink for convenience)"
     echo ""
     echo "📖 Custom Commands (type to use):"
@@ -328,7 +315,7 @@ if [ $# -eq 0 ]; then
     echo "  • Check ~/sharing/responses/ for replies to your notifications"
     echo "  • Save context after significant work to build knowledge"
     echo "  • Use ~/sharing/ for ANYTHING that must persist across rebuilds"
-    echo "  • All shared data under ~/sharing/ (tools, tmp, notifications, context, etc.)"
+    echo "  • All shared data under ~/sharing/ (tmp, notifications, context, etc.)"
     echo ""
     echo "🔒 Security:"
     echo "  • Bridge network (isolated from host services)"

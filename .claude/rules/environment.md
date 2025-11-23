@@ -35,7 +35,6 @@ Even with internet access, you cannot:
 ✅ Access the internet for package downloads and AI features
 ✅ Read documentation and search codebases
 ✅ Install packages (`apt-get`, `pip`, `npm install -g`)
-✅ Build reusable tools in `~/tools/`
 ✅ Use `~/tmp/` for temporary work and prototyping
 ✅ Use `~/sharing/` for persistent data and notifications
 
@@ -140,12 +139,6 @@ cat ~/context-sync/confluence/INFRA/runbooks/
 **Structure**: All shared data is organized under this single directory for cleaner host organization
 
 **Subdirectories**:
-- **`~/sharing/tools/`** - Reusable scripts and utilities (also accessible as `~/tools/` symlink)
-  - Create helper scripts and automation
-  - Build test runners, code generators
-  - Store development utilities
-  - **See**: `tools-guide.md` for comprehensive guide
-
 - **`~/sharing/tmp/`** - Persistent scratch space (also accessible as `~/tmp/` symlink)
   - Download and inspect files
   - Build temporary test environments
@@ -168,8 +161,7 @@ cat ~/context-sync/confluence/INFRA/runbooks/
   - Analyzer logs
   - System monitoring output
 
-**Convenience Symlinks** (for easier access):
-- `~/tools/` → `~/sharing/tools/`
+**Convenience Symlink** (for easier access):
 - `~/tmp/` → `~/sharing/tmp/`
 
 **Note**: Code changes are made directly in `~/khan/` and committed to git, not staged in `~/sharing/`
@@ -382,19 +374,8 @@ npm install --save package-name
 pip install package-name >> requirements.txt
 ```
 
-### For Persistent System Tools
-Create setup script in `~/tools/`:
-```bash
-#!/bin/bash
-# ~/tools/setup-dev-env.sh
-apt-get update && apt-get install -y ripgrep fd-find
-pip install pytest-watch black mypy
-npm install -g prettier eslint
-```
-
-Then run on each container start if needed.
 
 ---
 
-**See also**: `mission.md` for your role and workflow, `tools-guide.md` for building reusable utilities.
+**See also**: `mission.md` for your role and workflow.
 

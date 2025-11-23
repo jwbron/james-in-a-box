@@ -55,7 +55,6 @@ class Config:
     CLAUDE_SOURCE = Path.home() / ".claude"
     # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
-    TOOLS_DIR = SHARING_DIR / "tools"  # Tools are now inside sharing dir
     TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
 
     # Note: ~/khan/ is mounted READ-WRITE so agent can work directly on code
@@ -369,7 +368,6 @@ def setup() -> bool:
 
     # Sharing directory - single location for ALL persistent data
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
-    Config.TOOLS_DIR.mkdir(parents=True, exist_ok=True)  # tools/ inside sharing/
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
 
     sharing_container_path = f"/home/{os.environ['USER']}/sharing"
@@ -377,15 +375,14 @@ def setup() -> bool:
     mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
     print(f"    Mounted as: ~/sharing/ (read-write, SELinux relabeled)")
-    print(f"    Purpose: All persistent data and tools")
-    print(f"    - ~/sharing/tools/         Reusable scripts (also at ~/tools)")
+    print(f"    Purpose: All persistent data")
     print(f"    - ~/sharing/tmp/           Persistent workspace (also at ~/tmp)")
     print(f"    - ~/sharing/context/       Context documents (@save-context)")
     print(f"    - ~/sharing/notifications/ Notifications to human")
     print(f"    - ~/sharing/incoming/      Incoming tasks from Slack")
     print(f"    - ~/sharing/analysis/      Analysis reports")
 
-    # Create convenience symlinks in container for tools and tmp
+    # Create convenience symlink in container for tmp
     # Note: Actual symlink creation happens in container entrypoint
 
     # Mount Claude credentials for runtime copy (not build-time baking)
