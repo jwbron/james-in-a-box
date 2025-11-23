@@ -219,30 +219,10 @@ def create_dockerfile() -> None:
     else:
         warn("claude-rules directory not found, skipping agent rules")
 
-    # Copy host's .claude directory to build context (for authentication)
-    # This allows the container to reuse the host's Claude Code authentication
-    claude_src = Path.home() / ".claude"
-    claude_dest = Config.CONFIG_DIR / ".claude"
-
-    if claude_src.exists():
-        # Check if credentials file exists
-        credentials_file = claude_src / ".credentials.json"
-        if credentials_file.exists():
-            # Copy the entire .claude directory
-            if claude_dest.exists():
-                shutil.rmtree(claude_dest)
-            shutil.copytree(claude_src, claude_dest, ignore=shutil.ignore_patterns(
-                'commands',  # Don't copy commands (will use container's custom commands)
-                'settings.json',  # Don't copy settings (container creates its own)
-                '*.log',  # Don't copy logs
-                'cache',  # Don't copy cache
-            ))
-            info("Claude authentication copied from host")
-            print(f"  Credentials: {credentials_file}")
-        else:
-            warn("~/.claude exists but no credentials found - will auth in container")
-    else:
-        info("No ~/.claude directory found - will authenticate in container on first run")
+    # Note: Claude credentials are mounted at runtime (not copied at build time)
+    # This ensures the container always uses the host's CURRENT credentials
+    # Avoids issues with stale/revoked OAuth tokens from previous builds
+    info("Claude credentials will be mounted from host at runtime (see setup output above)")
 
     # Copy Dockerfile from script directory
     dockerfile_src = script_dir / "Dockerfile"
@@ -407,6 +387,21 @@ def setup() -> bool:
 
     # Create convenience symlinks in container for tools and tmp
     # Note: Actual symlink creation happens in container entrypoint
+
+    # Mount Claude credentials for runtime copy (not build-time baking)
+    # This ensures container always uses host's CURRENT credentials
+    claude_dir = Path.home() / ".claude"
+    if claude_dir.exists() and (claude_dir / ".credentials.json").exists():
+        # Mount to temp location for runtime copy (not directly to ~/.claude)
+        # Container will copy from here at startup to get fresh credentials
+        mounts.append(f"{claude_dir}:/tmp/host-claude:ro,z")
+        info(f"Claude credentials will be mounted from host (always fresh)")
+        print(f"  Host: {claude_dir}")
+        print(f"  Container will copy credentials at startup (no stale tokens)")
+    else:
+        warn("~/.claude/.credentials.json not found on host")
+        warn("Authenticate Claude Code on host first: claude")
+        warn("Container will prompt for authentication on first run")
 
     print()
     print("Add additional directories? (optional)")

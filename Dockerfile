@@ -44,11 +44,9 @@ RUN pip3 install requests
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
-# Copy Claude authentication from host (if available during build)
-# This allows reusing host's Claude Code auth instead of re-authenticating in container
-# Note: jib script copies ~/.claude to build context if it exists with credentials
-RUN mkdir -p /opt/claude-host-auth
-COPY .claude/ /opt/claude-host-auth/
+# Note: Claude authentication is mounted at runtime from host (not baked into image)
+# This ensures container always uses host's current credentials (no stale OAuth tokens)
+# See entrypoint script for runtime credential copy from /tmp/host-claude mount
 
 # Copy Claude command documentation
 RUN mkdir -p /usr/local/share/claude-commands
@@ -171,23 +169,33 @@ mkdir -p "${USER_HOME}/.claude"
 mkdir -p "${USER_HOME}/.claude/commands"
 mkdir -p "${USER_HOME}/.config/claude-code"
 
-# Copy host's Claude auth if available (from build-time copy)
-if [ -d "/opt/claude-host-auth" ] && [ "$(ls -A /opt/claude-host-auth 2>/dev/null)" ]; then
-    echo "✓ Copying Claude authentication from host..."
-    # Copy all files from host's .claude directory
-    cp -r /opt/claude-host-auth/* "${USER_HOME}/.claude/" 2>/dev/null || true
-    # Specifically handle credentials file
-    if [ -f "/opt/claude-host-auth/.credentials.json" ]; then
-        cp /opt/claude-host-auth/.credentials.json "${USER_HOME}/.claude/.credentials.json"
-        echo "  ✓ OAuth credentials copied from host"
+# Copy FRESH credentials from mounted host .claude (not stale image credentials)
+# Mount point: /tmp/host-claude (read-only mount from host ~/.claude)
+if [ -d "/tmp/host-claude" ] && [ -f "/tmp/host-claude/.credentials.json" ]; then
+    echo "✓ Copying FRESH Claude credentials from host..."
+    # Copy credentials file
+    cp /tmp/host-claude/.credentials.json "${USER_HOME}/.claude/.credentials.json"
+    chmod 600 "${USER_HOME}/.claude/.credentials.json"
+    echo "  ✓ OAuth credentials copied (always current from host)"
+
+    # Copy other auth-related files if they exist (statsig, session-env)
+    if [ -d "/tmp/host-claude/statsig" ]; then
+        cp -r /tmp/host-claude/statsig "${USER_HOME}/.claude/" 2>/dev/null || true
+        echo "  ✓ Statsig data copied"
     fi
+    if [ -d "/tmp/host-claude/session-env" ]; then
+        cp -r /tmp/host-claude/session-env "${USER_HOME}/.claude/" 2>/dev/null || true
+        echo "  ✓ Session environment copied"
+    fi
+
     # Handle auth.json if it exists in .config location
-    if [ -f "/opt/claude-host-auth/auth.json" ]; then
-        cp /opt/claude-host-auth/auth.json "${USER_HOME}/.config/claude-code/auth.json"
-        echo "  ✓ Auth config copied from host"
+    if [ -f "/tmp/host-claude/auth.json" ]; then
+        cp /tmp/host-claude/auth.json "${USER_HOME}/.config/claude-code/auth.json"
+        echo "  ✓ Auth config copied"
     fi
 else
-    echo "ℹ No host Claude auth found - will authenticate with browser on first run"
+    echo "ℹ No host Claude auth mounted - will authenticate with browser on first run"
+    echo "  To fix: Ensure ~/.claude/.credentials.json exists on host"
 fi
 
 # Copy custom commands to where Claude Code looks for them
