@@ -51,7 +51,7 @@ The watcher script currently references the old location. Update it:
 
 ```bash
 # Edit the watcher script
-vi ~/khan/james-in-a-box/scripts/context-watcher.sh
+vi ~/khan/james-in-a-box/internal/context-watcher.sh
 
 # Change line 8 from:
 CONFIG_FILE="${HOME}/khan/james-in-a-box/.context-watcher/config/context-watcher.yaml"
@@ -75,9 +75,9 @@ LOG_FILE="${HOME}/sharing/context-tracking/watcher.log"
 Or run this sed command to do it automatically:
 
 ```bash
-sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/config/context-watcher.yaml|${HOME}/sharing/config/context-watcher.yaml|' ~/khan/james-in-a-box/scripts/context-watcher.sh
-sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/tracking/watcher-state.json|${HOME}/sharing/context-tracking/watcher-state.json|' ~/khan/james-in-a-box/scripts/context-watcher.sh
-sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/tracking/watcher.log|${HOME}/sharing/context-tracking/watcher.log|' ~/khan/james-in-a-box/scripts/context-watcher.sh
+sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/config/context-watcher.yaml|${HOME}/sharing/config/context-watcher.yaml|' ~/khan/james-in-a-box/internal/context-watcher.sh
+sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/tracking/watcher-state.json|${HOME}/sharing/context-tracking/watcher-state.json|' ~/khan/james-in-a-box/internal/context-watcher.sh
+sed -i 's|${HOME}/khan/james-in-a-box/.context-watcher/tracking/watcher.log|${HOME}/sharing/context-tracking/watcher.log|' ~/khan/james-in-a-box/internal/context-watcher.sh
 ```
 
 ### 5. Populate Context Sync Directory
@@ -107,13 +107,13 @@ cp -r /path/to/confluence-exports ~/context-sync/confluence/
 chmod +x ~/khan/james-in-a-box/scripts/context-watcher*.sh
 
 # Start the service
-~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start
+~/khan/james-in-a-box/bin/context-watcher-ctl start
 
 # Check status
-~/khan/james-in-a-box/scripts/context-watcher-ctl.sh status
+~/khan/james-in-a-box/bin/context-watcher-ctl status
 
 # Watch logs
-~/khan/james-in-a-box/scripts/context-watcher-ctl.sh tail
+~/khan/james-in-a-box/bin/context-watcher-ctl tail
 ```
 
 ### 7. Test the System
@@ -129,7 +129,7 @@ echo "This is a test ADR to verify the context watcher is working." >> ~/context
 
 # Wait for the next check cycle (default 5 minutes)
 # Or restart the watcher to trigger immediate check
-~/khan/james-in-a-box/scripts/context-watcher-ctl.sh restart
+~/khan/james-in-a-box/bin/context-watcher-ctl restart
 
 # Check for output in ~/sharing/notifications/
 ls -la ~/sharing/notifications/
@@ -225,8 +225,8 @@ Add to `~/.bashrc`:
 
 ```bash
 # Auto-start context watcher
-if [ -f ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh ]; then
-    ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start >/dev/null 2>&1
+if [ -f ~/khan/james-in-a-box/bin/context-watcher-ctl ]; then
+    ~/khan/james-in-a-box/bin/context-watcher-ctl start >/dev/null 2>&1
 fi
 ```
 

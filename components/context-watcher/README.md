@@ -55,13 +55,13 @@ vi ~/sharing/config/context-watcher.yaml
 
 ```bash
 # Start in background
-~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start
+~/khan/james-in-a-box/bin/context-watcher-ctl start
 
 # Check status
-~/khan/james-in-a-box/scripts/context-watcher-ctl.sh status
+~/khan/james-in-a-box/bin/context-watcher-ctl status
 
 # View logs
-~/khan/james-in-a-box/scripts/context-watcher-ctl.sh tail
+~/khan/james-in-a-box/bin/context-watcher-ctl tail
 ```
 
 ## Usage
@@ -70,22 +70,22 @@ vi ~/sharing/config/context-watcher.yaml
 
 ```bash
 # Start the watcher
-./scripts/context-watcher-ctl.sh start
+./bin/context-watcher-ctl start
 
 # Stop the watcher
-./scripts/context-watcher-ctl.sh stop
+./bin/context-watcher-ctl stop
 
 # Restart the watcher
-./scripts/context-watcher-ctl.sh restart
+./bin/context-watcher-ctl restart
 
 # Check status
-./scripts/context-watcher-ctl.sh status
+./bin/context-watcher-ctl status
 
 # View logs (interactive)
-./scripts/context-watcher-ctl.sh logs
+./bin/context-watcher-ctl logs
 
 # Tail logs (follow)
-./scripts/context-watcher-ctl.sh tail
+./bin/context-watcher-ctl tail
 ```
 
 ### Manual Analysis
@@ -180,7 +180,7 @@ Changes are considered relevant if they:
 
 1. Check for lock file: `ls -la /tmp/context-watcher.lock`
 2. Remove if stale: `rm /tmp/context-watcher.lock`
-3. Check logs: `./scripts/context-watcher-ctl.sh logs`
+3. Check logs: `./bin/context-watcher-ctl logs`
 
 ### Can't Write to ~/sharing
 
@@ -204,7 +204,7 @@ sudo chcon -R -t container_file_t ~/.jib-sharing/
 
 1. Check Claude CLI is available: `which claude`
 2. Test Claude: `claude --version`
-3. Check the logs for errors: `./scripts/context-watcher-ctl.sh tail`
+3. Check the logs for errors: `./bin/context-watcher-ctl tail`
 
 ## Advanced Usage
 
@@ -214,8 +214,8 @@ Add to your container's startup script or `.bashrc`:
 
 ```bash
 # Auto-start context watcher
-if [ -f ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh ]; then
-    ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start
+if [ -f ~/khan/james-in-a-box/bin/context-watcher-ctl ]; then
+    ~/khan/james-in-a-box/bin/context-watcher-ctl start
 fi
 ```
 
@@ -272,5 +272,5 @@ export SLACK_TOKEN="xoxb-your-token-here"  # Set Slack token
 
 - Configuration: Edit `~/sharing/config/context-watcher.yaml`
 - Slash command: Edit `~/.claude/commands/analyze-context-changes.md`
-- Watcher logic: Edit `~/khan/james-in-a-box/scripts/context-watcher.sh`
+- Watcher logic: Edit `~/khan/james-in-a-box/internal/context-watcher.sh`
 - Report issues: Check logs and adjust configuration

@@ -28,7 +28,7 @@ echo ""
 
 # Check scripts
 echo "3. Checking scripts..."
-for script in ~/khan/james-in-a-box/scripts/context-watcher.sh ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh; do
+for script in ~/khan/james-in-a-box/internal/context-watcher.sh ~/khan/james-in-a-box/bin/context-watcher-ctl; do
     if [ -x "$script" ]; then
         echo "  ✓ $(basename $script) is executable"
     else
@@ -78,19 +78,19 @@ echo ""
 
 # Check watcher status
 echo "7. Checking watcher status..."
-if ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh status >/dev/null 2>&1; then
+if ~/khan/james-in-a-box/bin/context-watcher-ctl status >/dev/null 2>&1; then
     echo "  ✓ Watcher is running"
-    ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh status | tail -5
+    ~/khan/james-in-a-box/bin/context-watcher-ctl status | tail -5
 else
     echo "  ℹ Watcher is not running"
-    echo "    Start with: ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start"
+    echo "    Start with: ~/khan/james-in-a-box/bin/context-watcher-ctl start"
 fi
 echo ""
 
 echo "=== Test Complete ==="
 echo ""
 echo "Next steps:"
-echo "1. If watcher is not running: ~/khan/james-in-a-box/scripts/context-watcher-ctl.sh start"
+echo "1. If watcher is not running: ~/khan/james-in-a-box/bin/context-watcher-ctl start"
 echo "2. Wait 5-6 minutes for next check cycle (or restart watcher)"
 echo "3. Check for outputs: ls -la ~/sharing/notifications/"
 echo "4. View summary: cat ~/sharing/notifications/summary-*.md"
