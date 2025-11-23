@@ -15,6 +15,7 @@ import sys
 import json
 import logging
 import signal
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
@@ -165,13 +166,62 @@ class SlackReceiver:
             return True
         return user_id in self.allowed_users
 
+    def _execute_command(self, command_text: str) -> bool:
+        """
+        Execute remote control command.
+
+        Returns True if command was executed, False otherwise.
+        """
+        # Path to remote control script
+        script_dir = Path(__file__).parent
+        remote_control = script_dir / "remote-control.sh"
+
+        if not remote_control.exists():
+            self.logger.error(f"Remote control script not found: {remote_control}")
+            return False
+
+        # Parse command text
+        # Expected format: "/jib restart" or "/service restart slack-notifier.service" or "help"
+        parts = command_text.strip().split()
+
+        if not parts:
+            return False
+
+        # Handle "help" command
+        if parts[0].lower() == "help" or parts[0] == "/help":
+            parts = ["help"]
+        # Handle commands starting with /
+        elif parts[0].startswith("/"):
+            # Remove leading slash
+            parts[0] = parts[0][1:]
+
+        # Execute command in background (async)
+        try:
+            self.logger.info(f"Executing remote command: {' '.join(parts)}")
+
+            # Run command in background
+            subprocess.Popen(
+                [str(remote_control)] + parts,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True  # Detach from parent
+            )
+
+            self.logger.info("Command dispatched successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to execute command: {e}")
+            return False
+
     def _parse_message(self, text: str, thread_ts: str = None, channel: str = None) -> Dict[str, Any]:
         """
         Parse incoming message to determine type and content.
 
         Message types:
-        1. Thread reply to notification → Response to Claude
-        2. Direct message to bot → New task
+        1. Remote control command → Execute system command
+        2. Thread reply to notification → Response to Claude
+        3. Direct message to bot → New task
 
         Args:
             text: Message text
@@ -181,7 +231,15 @@ class SlackReceiver:
         text = text.strip()
         import re
 
-        # Pattern 1: Thread reply to notification
+        # Pattern 1: Remote control commands
+        # Commands start with "/" or are just "help"
+        if text.startswith("/") or text.lower() in ["help", "commands"]:
+            return {
+                'type': 'command',
+                'content': text
+            }
+
+        # Pattern 2: Thread reply to notification
         # If message is in a thread, extract the parent message timestamp
         if thread_ts:
             # Thread replies are responses to Claude's notifications
@@ -198,7 +256,7 @@ class SlackReceiver:
                 'thread_ts': thread_ts
             }
 
-        # Pattern 2: Direct message to bot
+        # Pattern 3: Direct message to bot
         # Any non-threaded DM is treated as a new task
         return {
             'type': 'task',
@@ -386,6 +444,19 @@ class SlackReceiver:
         # Parse message
         parsed = self._parse_message(text, thread_ts=thread_ts, channel=channel)
         msg_type = parsed['type']
+
+        # Handle remote control commands
+        if msg_type == 'command':
+            self.logger.info(f"Processing remote control command: {parsed['content']}")
+
+            if self._execute_command(parsed['content']):
+                ack_msg = "🎮 Command dispatched. Check notifications for result."
+                self._send_ack(channel, ack_msg)
+            else:
+                ack_msg = "❌ Failed to execute command. Check logs."
+                self._send_ack(channel, ack_msg)
+
+            return  # Don't write commands to disk
 
         # Override referenced_notification if we extracted it from parent
         if referenced_notif:

@@ -199,6 +199,24 @@ You: Yes, switch to session caching and update the spec
 
 Your response is automatically linked by timestamp.
 
+### Remote Control Commands
+
+Control JIB remotely from Slack:
+```
+/jib restart                     - Restart container
+/jib rebuild                     - Rebuild and restart
+/jib status                      - Check container status
+/jib logs                        - View recent logs
+
+/service restart <name>          - Restart a service
+/service status <name>           - Check service status
+/service list                    - List all services
+
+help                             - Show all commands
+```
+
+Commands execute asynchronously and send results as notifications.
+
 ## Security Model
 
 **5-Layer Defense Against Data Exfiltration:**

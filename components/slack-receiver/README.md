@@ -44,3 +44,36 @@ systemctl --user stop slack-receiver.service
 - Thread context detection
 - Full conversation history in task files
 - User authentication and allowlisting
+- **Remote control commands** (restart/rebuild container, manage services)
+
+## Remote Control Commands
+
+Control JIB remotely via Slack DMs:
+
+### Container Commands
+```
+/jib status          - Check container status
+/jib restart         - Restart container
+/jib rebuild         - Rebuild and restart container
+/jib logs            - Show recent container logs
+```
+
+### Service Commands
+```
+/service list                    - List all JIB services
+/service status <name>           - Check service status
+/service restart <name>          - Restart a service
+/service start <name>            - Start a service
+/service stop <name>             - Stop a service
+/service logs <name> [lines]     - Show service logs
+```
+
+### Examples
+```
+/jib restart
+/service restart slack-notifier.service
+/service logs slack-receiver.service 100
+help                             - Show available commands
+```
+
+Commands execute asynchronously and send results as notifications (~30 seconds).
