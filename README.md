@@ -227,7 +227,7 @@ Commands execute asynchronously and send results as notifications.
 /pr create frontend --ready      - Create non-draft PR
 ```
 
-PR descriptions are generated using Claude in the JIB container following Khan Academy standards.
+PR descriptions are generated using Claude in the JIB container following Khan Academy standards. Notifications include repository, source branch, target branch, and PR URL.
 
 ## Security Model
 

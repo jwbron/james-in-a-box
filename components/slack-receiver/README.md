@@ -79,7 +79,14 @@ Control JIB remotely via Slack DMs:
 2. Uses JIB container to generate PR description with Claude
 3. Follows Khan Academy commit template format
 4. Pushes branch and creates PR via GitHub CLI
-5. Sends notification with PR URL
+5. Sends notification with PR URL and branch details
+
+**Notification includes:**
+- Repository name
+- Source branch (your changes)
+- Target branch (merging into)
+- Draft/ready status
+- PR URL and description preview
 
 **Examples:**
 ```

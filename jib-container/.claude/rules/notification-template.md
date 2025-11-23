@@ -458,3 +458,156 @@ detail_file.write_text(detail)
 3. Main analysis sections (2-5 sections)
 4. Next steps / action items
 5. Footer with timestamp and source
+
+## Pattern 3: Work Completed Notification
+
+Use this pattern when you've completed a task and committed changes to a branch.
+
+**When to use:**
+- Finished implementing a feature or fix
+- Made commits to a branch
+- Task is ready for human review or PR creation
+- Need to report what branch contains your changes
+
+### Template
+
+```bash
+cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-work-completed.md <<'EOF'
+# ✅ Work Completed: [Brief description]
+
+**Repository**: [repo name]
+**Branch**: `[branch-name]`
+**Commits**: [number] commit(s)
+
+## What Was Done
+
+[2-3 sentence summary of what was implemented/fixed/changed]
+
+## Changes Made
+
+- [Key change 1]
+- [Key change 2]
+- [Key change 3]
+
+## Testing
+
+- [Test approach 1]
+- [Test approach 2]
+- [Test results]
+
+## Next Steps
+
+- [ ] Human review commits on branch `[branch-name]`
+- [ ] Create PR: `/pr create [repo]` via Slack (or let me know to create it)
+- [ ] [Any other follow-up needed]
+
+---
+📅 $(date)
+📂 Repository: [~/khan/repo-name]
+🔀 Branch: `[branch-name]`
+🔗 Related: [JIRA ticket, context doc, etc.]
+EOF
+```
+
+### Example: Feature Implementation
+
+```markdown
+# ✅ Work Completed: OAuth2 Authentication Added
+
+**Repository**: webapp
+**Branch**: `feature/oauth2-authentication`
+**Commits**: 5 commit(s)
+
+## What Was Done
+
+Implemented OAuth2 authentication for the user service with session-based
+caching. Integrated with existing auth-service infrastructure and added
+comprehensive test coverage.
+
+## Changes Made
+
+- Added OAuth2Handler class with token exchange and validation
+- Created session caching layer (aligned with ADR-087)
+- Added 15 unit tests and 3 integration tests
+- Updated configuration for OAuth2 client settings
+- Added migration for oauth_sessions table
+
+## Testing
+
+- All tests pass: `pytest tests/test_oauth.py` (100% coverage)
+- Manual testing: OAuth flow works end-to-end
+- Verified backward compatibility with existing session tokens
+- Tested token refresh after 1-hour expiry
+
+## Next Steps
+
+- [ ] Human review commits on branch `feature/oauth2-authentication`
+- [ ] Create PR: `/pr create webapp` via Slack
+- [ ] Coordinate with auth-service team for deployment
+
+---
+📅 2025-11-23 10:30:00
+📂 Repository: ~/khan/webapp
+🔀 Branch: `feature/oauth2-authentication`
+🔗 Related: JIRA-1234, ADR-087
+```
+
+### Example: Bug Fix
+
+```markdown
+# ✅ Work Completed: Fixed Memory Leak in Conversation Analyzer
+
+**Repository**: james-in-a-box
+**Branch**: `fix/conversation-analyzer-memory-leak`
+**Commits**: 2 commit(s)
+
+## What Was Done
+
+Fixed memory leak in conversation analyzer caused by unclosed file handles.
+Added proper context managers and verified leak is resolved.
+
+## Changes Made
+
+- Added context managers (`with` statements) for file operations
+- Fixed 3 instances of unclosed file handles
+- Added memory profiling test to prevent regression
+
+## Testing
+
+- Memory usage stable after 1000 iterations (was growing before)
+- All existing tests still pass
+- Added new test: `test_no_memory_leak_in_batch_processing`
+
+## Next Steps
+
+- [ ] Human review commits on branch `fix/conversation-analyzer-memory-leak`
+- [ ] Create PR: `/pr create` via Slack (targeting main)
+
+---
+📅 2025-11-23 11:15:00
+📂 Repository: ~/khan/james-in-a-box
+🔀 Branch: `fix/conversation-analyzer-memory-leak`
+🔗 Related: Discovered during weekly analysis
+```
+
+### Guidelines for Work Completed Notifications
+
+**Always include:**
+- ✅ Repository name (which repo in ~/khan/)
+- ✅ Branch name (where the commits are)
+- ✅ Number of commits
+- ✅ What was done (brief summary)
+- ✅ Key changes (bulleted list)
+- ✅ Testing performed
+- ✅ Next steps (usually PR creation)
+
+**Be specific:**
+- Mention the exact branch name so human can find your work
+- Include commit count so human knows scope
+- Specify which repo (especially important with multiple repos)
+- Reference any related tickets, ADRs, or context docs
+
+**Next steps should guide human:**
+- Typically: review commits, create PR
+- Sometimes: additional testing needed, coordination with other teams
+- Make it clear what action you're expecting from human

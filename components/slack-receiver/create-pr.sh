@@ -289,12 +289,14 @@ Check that you have push permissions and the remote is configured correctly."
 
         notify "✅ Pull Request Created
 
-**URL**: $pr_url
-**Branch**: \`$current_branch\` → \`$base_branch\`
+**Repository**: $repo_name
+**Source Branch**: \`$current_branch\` (your changes)
+**Target Branch**: \`$base_branch\` (merging into)
 **Status**: ${draft:+Draft }PR
 **Commits**: $commits_ahead commit(s)
+**PR URL**: $pr_url
 
-**Description** (first 20 lines):
+**Description Preview** (first 20 lines):
 \`\`\`
 $pr_desc
 \`\`\`
