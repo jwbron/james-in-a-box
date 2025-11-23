@@ -504,15 +504,52 @@ Return as JSON:
             return None
 
     def generate_notification(self, file_issues: List[Dict], web_findings: List[Dict], overall_analysis: Optional[Dict] = None):
-        """Generate notification file for Slack."""
+        """Generate notification files for Slack (summary + detailed thread)."""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notification_file = self.notification_dir / f"{timestamp}-codebase-improvements.md"
+        task_id = f"{timestamp}-codebase-improvements"
 
         # Ensure notification directory exists
         self.notification_dir.mkdir(parents=True, exist_ok=True)
 
-        # Build notification content
-        content = f"""# 🔍 Codebase Improvement Analysis
+        # Calculate key metrics
+        high_count = sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('priority') == 'HIGH')
+        medium_count = sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('priority') == 'MEDIUM')
+        total_file_issues = high_count + medium_count
+        high_web = len([f for f in web_findings if f.get('priority') == 'HIGH'])
+        medium_web = len([f for f in web_findings if f.get('priority') == 'MEDIUM'])
+
+        # Determine priority based on findings
+        if high_count > 5 or high_web > 2:
+            priority = "High"
+        elif high_count > 0 or high_web > 0:
+            priority = "Medium"
+        else:
+            priority = "Low"
+
+        # Get security rating if available
+        security_rating = "N/A"
+        if overall_analysis and 'security' in overall_analysis:
+            security_rating = overall_analysis['security'].get('overall_rating', 'N/A')
+
+        # Create concise summary notification (top-level message)
+        summary_file = self.notification_dir / f"{task_id}.md"
+        summary = f"""# 🔍 Codebase Analysis Complete
+
+**Priority**: {priority} | {len(file_issues)} files analyzed | {total_file_issues} issues found
+
+**Quick Stats:**
+- 🔴 HIGH: {high_count} file issues, {high_web} web findings
+- 🟡 MEDIUM: {medium_count} file issues, {medium_web} web findings
+- 🛡️ Security: {security_rating}
+
+📄 Full analysis in thread below
+"""
+
+        summary_file.write_text(summary)
+        self.logger.info(f"Summary notification written to: {summary_file}")
+
+        # Build detailed report content for thread
+        detail_content = f"""# 🔍 Full Codebase Improvement Analysis
 
 **Generated**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 **Project**: james-in-a-box
@@ -520,13 +557,13 @@ Return as JSON:
 
 ---
 
-## 📊 Summary
+## 📊 Detailed Summary
 
 - **Files Analyzed**: {len(file_issues)} files with potential improvements
 - **Web Research Findings**: {len(web_findings)} relevant discoveries
 - **Priority Breakdown**:
-  - HIGH: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('priority') == 'HIGH')} file issues
-  - MEDIUM: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('priority') == 'MEDIUM')} file issues
+  - HIGH: {high_count} file issues + {high_web} web findings
+  - MEDIUM: {medium_count} file issues + {medium_web} web findings
 
 ---
 
@@ -534,113 +571,113 @@ Return as JSON:
 
         # Add high-level analysis if available
         if overall_analysis:
-            content += "## 🏗️ High-Level Codebase Analysis\n\n"
+            detail_content += "## 🏗️ High-Level Codebase Analysis\n\n"
 
             # Architecture
             if 'architecture' in overall_analysis:
                 arch = overall_analysis['architecture']
-                content += "### Architecture\n\n"
-                content += f"**Assessment**: {arch.get('assessment', 'N/A')}\n\n"
+                detail_content += "### Architecture\n\n"
+                detail_content += f"**Assessment**: {arch.get('assessment', 'N/A')}\n\n"
                 if arch.get('strengths'):
-                    content += "**Strengths**:\n"
+                    detail_content += "**Strengths**:\n"
                     for s in arch['strengths']:
-                        content += f"- {s}\n"
-                    content += "\n"
+                        detail_content += f"- {s}\n"
+                    detail_content += "\n"
                 if arch.get('concerns'):
-                    content += "**Concerns**:\n"
+                    detail_content += "**Concerns**:\n"
                     for c in arch['concerns']:
-                        content += f"- {c}\n"
-                    content += "\n"
+                        detail_content += f"- {c}\n"
+                    detail_content += "\n"
 
             # Security
             if 'security' in overall_analysis:
                 sec = overall_analysis['security']
                 rating = sec.get('overall_rating', 'UNKNOWN')
                 emoji = {'STRONG': '🟢', 'ADEQUATE': '🟡', 'NEEDS_IMPROVEMENT': '🟠', 'CRITICAL': '🔴'}.get(rating, '⚪')
-                content += f"### Security Posture: {emoji} {rating}\n\n"
+                detail_content += f"### Security Posture: {emoji} {rating}\n\n"
                 if sec.get('key_strengths'):
-                    content += "**Strengths**:\n"
+                    detail_content += "**Strengths**:\n"
                     for s in sec['key_strengths']:
-                        content += f"- {s}\n"
-                    content += "\n"
+                        detail_content += f"- {s}\n"
+                    detail_content += "\n"
                 if sec.get('key_risks'):
-                    content += "**Key Risks**:\n"
+                    detail_content += "**Key Risks**:\n"
                     for r in sec['key_risks']:
-                        content += f"- ⚠️ {r}\n"
-                    content += "\n"
+                        detail_content += f"- ⚠️ {r}\n"
+                    detail_content += "\n"
 
             # Technology Stack
             if 'technology' in overall_analysis:
                 tech = overall_analysis['technology']
-                content += "### Technology Stack\n\n"
-                content += f"**Assessment**: {tech.get('stack_assessment', 'N/A')}\n\n"
+                detail_content += "### Technology Stack\n\n"
+                detail_content += f"**Assessment**: {tech.get('stack_assessment', 'N/A')}\n\n"
                 if tech.get('recommendations'):
-                    content += "**Recommendations**:\n"
+                    detail_content += "**Recommendations**:\n"
                     for r in tech['recommendations']:
-                        content += f"- {r}\n"
-                    content += "\n"
+                        detail_content += f"- {r}\n"
+                    detail_content += "\n"
 
             # Strategic Recommendations
             if 'strategic_recommendations' in overall_analysis:
-                content += "### 🎯 Strategic Recommendations\n\n"
+                detail_content += "### 🎯 Strategic Recommendations\n\n"
                 for rec in overall_analysis['strategic_recommendations']:
                     priority_emoji = '🔴' if rec.get('priority') == 'HIGH' else '🟡'
-                    content += f"{priority_emoji} **{rec.get('title', 'Untitled')}**\n"
-                    content += f"- {rec.get('description', 'N/A')}\n"
-                    content += f"- *Impact*: {rec.get('impact', 'N/A')}\n\n"
+                    detail_content += f"{priority_emoji} **{rec.get('title', 'Untitled')}**\n"
+                    detail_content += f"- {rec.get('description', 'N/A')}\n"
+                    detail_content += f"- *Impact*: {rec.get('impact', 'N/A')}\n\n"
 
-            content += "---\n\n"
+            detail_content += "---\n\n"
 
         # Add file-specific issues
         if file_issues:
-            content += "## 🔧 File-Specific Improvements\n\n"
+            detail_content += "## 🔧 File-Specific Improvements\n\n"
 
             # Group by priority
             high_priority = [f for f in file_issues if any(i.get('priority') == 'HIGH' for i in f['analysis']['issues'])]
             medium_priority = [f for f in file_issues if f not in high_priority]
 
             if high_priority:
-                content += "### ⚠️ HIGH Priority\n\n"
+                detail_content += "### ⚠️ HIGH Priority\n\n"
                 for item in high_priority:
-                    content += f"**File**: `{item['file']}`\n\n"
+                    detail_content += f"**File**: `{item['file']}`\n\n"
                     for issue in item['analysis']['issues']:
                         if issue.get('priority') == 'HIGH':
-                            content += f"- **{issue['category'].title()}**: {issue['description']}\n"
-                            content += f"  - *Suggestion*: {issue['suggestion']}\n\n"
+                            detail_content += f"- **{issue['category'].title()}**: {issue['description']}\n"
+                            detail_content += f"  - *Suggestion*: {issue['suggestion']}\n\n"
 
             if medium_priority:
-                content += "### 📋 MEDIUM Priority\n\n"
+                detail_content += "### 📋 MEDIUM Priority\n\n"
                 for item in medium_priority[:5]:  # Limit to top 5
-                    content += f"**File**: `{item['file']}`\n\n"
+                    detail_content += f"**File**: `{item['file']}`\n\n"
                     for issue in item['analysis']['issues']:
                         if issue.get('priority') == 'MEDIUM':
-                            content += f"- **{issue['category'].title()}**: {issue['description']}\n"
-                            content += f"  - *Suggestion*: {issue['suggestion']}\n\n"
+                            detail_content += f"- **{issue['category'].title()}**: {issue['description']}\n"
+                            detail_content += f"  - *Suggestion*: {issue['suggestion']}\n\n"
 
         # Add web findings
         if web_findings:
-            content += "\n## 🌐 Technology & Best Practice Research\n\n"
+            detail_content += "\n## 🌐 Technology & Best Practice Research\n\n"
 
             # Group by priority
             high_web = [f for f in web_findings if f.get('priority') == 'HIGH']
             medium_web = [f for f in web_findings if f.get('priority') == 'MEDIUM']
 
             if high_web:
-                content += "### ⚠️ HIGH Priority Findings\n\n"
+                detail_content += "### ⚠️ HIGH Priority Findings\n\n"
                 for finding in high_web:
-                    content += f"**{finding['topic']}**\n"
-                    content += f"- {finding['description']}\n"
-                    content += f"- *Relevance*: {finding['relevance']}\n\n"
+                    detail_content += f"**{finding['topic']}**\n"
+                    detail_content += f"- {finding['description']}\n"
+                    detail_content += f"- *Relevance*: {finding['relevance']}\n\n"
 
             if medium_web:
-                content += "### 📋 MEDIUM Priority Findings\n\n"
+                detail_content += "### 📋 MEDIUM Priority Findings\n\n"
                 for finding in medium_web:
-                    content += f"**{finding['topic']}**\n"
-                    content += f"- {finding['description']}\n"
-                    content += f"- *Relevance*: {finding['relevance']}\n\n"
+                    detail_content += f"**{finding['topic']}**\n"
+                    detail_content += f"- {finding['description']}\n"
+                    detail_content += f"- *Relevance*: {finding['relevance']}\n\n"
 
         # Add footer
-        content += f"""
+        detail_content += f"""
 ---
 
 ## 🎯 Next Steps
@@ -656,11 +693,12 @@ Return as JSON:
 🤖 Automated by james-in-a-box codebase analyzer
 """
 
-        # Write notification
-        notification_file.write_text(content)
-        self.logger.info(f"Notification written to: {notification_file}")
+        # Write detailed report as thread response
+        detail_file = self.notification_dir / f"RESPONSE-{task_id}.md"
+        detail_file.write_text(detail_content)
+        self.logger.info(f"Detail notification written to: {detail_file}")
 
-        return notification_file
+        return summary_file
 
     def run_analysis(self, enable_web_search: bool = True):
         """Main analysis workflow."""
