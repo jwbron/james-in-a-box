@@ -60,6 +60,8 @@ This system enables:
 
 **When**: Claude needs guidance, finds better approach, skeptical about solution, etc.
 
+#### Pattern 1: Simple Guidance Request (Single Message)
+
 ```
 Claude writes notification
     ↓
@@ -83,6 +85,77 @@ Working on Redis caching for user service (JIRA-1234). Spec says to cache
 user objects, but I found caching user sessions would reduce DB load by 80%
 instead of 40%. Should I switch to session caching?
 ```
+
+#### Pattern 2: Automated Reports (Summary + Threaded Detail)
+
+**When**: Automated analyzers (conversation analyzer, codebase analyzer, etc.) generate reports
+
+**File naming pattern**:
+- **Summary**: `YYYYMMDD-HHMMSS-topic.md` (top-level message)
+- **Detail**: `RESPONSE-YYYYMMDD-HHMMSS-topic.md` (threaded reply)
+
+```
+Analyzer completes analysis
+    ↓
+Writes two files:
+  1. YYYYMMDD-HHMMSS-topic.md (summary)
+  2. RESPONSE-YYYYMMDD-HHMMSS-topic.md (detail)
+    ↓
+host-notify-slack.py detects both files
+    ↓
+Creates top-level message from summary
+    ↓
+Creates threaded reply with full detail
+    ↓
+You see concise summary in Slack feed
+    ↓
+Full report available in thread
+```
+
+**Example - Conversation Analyzer**:
+
+**Summary (top-level)**:
+```markdown
+# 📊 Conversation Analysis Complete
+
+**Priority**: Medium | 12 conversations analyzed | 8 recommendations
+
+**Quick Stats:**
+- ✅ Success: 10 | ❌ Failed: 1 | 🚫 Blocked: 1
+- Quality: 8.2/10 | Single-iteration success: 75.0%
+- 🎯 Prompt improvements: 5 | 💬 Communication improvements: 3
+
+📄 Full report in thread below
+```
+
+**Detail (in thread)**:
+```markdown
+# Full Conversation Analysis Report
+
+## Session Outcomes
+- ✅ Successful: 10
+- ❌ Failed: 1
+...
+
+## Recommendations
+1. Improve prompt clarity for X
+2. Add validation for Y
+...
+
+## Next Steps
+- Review high-priority recommendations
+- Update prompts based on findings
+
+---
+📅 Generated: 2025-11-23 10:00:00
+🤖 Automated by conversation-analyzer
+```
+
+**Why this pattern?**
+- **Mobile-first**: Summary readable at a glance on phone
+- **Full context available**: Thread contains complete report
+- **Clean feed**: Top-level messages stay concise
+- **Same workflow**: Thread replies work the same for responses
 
 ### Flow 2: You → Claude (Responses)
 
