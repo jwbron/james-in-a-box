@@ -212,10 +212,22 @@ Control JIB remotely from Slack:
 /service status <name>           - Check service status
 /service list                    - List all services
 
+/pr create [repo]                - Create draft PR for current branch
+/pr create [repo] --ready        - Create ready-for-review PR
+
 help                             - Show all commands
 ```
 
 Commands execute asynchronously and send results as notifications.
+
+**PR Creation Examples:**
+```
+/pr create                       - Create PR in james-in-a-box
+/pr create webapp                - Create PR in ~/khan/webapp
+/pr create frontend --ready      - Create non-draft PR
+```
+
+PR descriptions are generated using Claude in the JIB container following Khan Academy standards.
 
 ## Security Model
 

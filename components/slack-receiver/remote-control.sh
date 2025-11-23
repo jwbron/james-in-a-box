@@ -209,6 +209,38 @@ Timers:
 $timers"
 }
 
+# PR operations
+pr_create() {
+    local repo_name=$1
+    local ready_flag=""
+
+    if [ "$repo_name" = "--ready" ]; then
+        ready_flag="--ready"
+        repo_name=$2
+    elif [ "$2" = "--ready" ]; then
+        ready_flag="--ready"
+    fi
+
+    log "Creating PR for repo: ${repo_name:-current}"
+
+    # Execute create-pr.sh script
+    local create_pr_script="$SCRIPT_DIR/components/slack-receiver/create-pr.sh"
+
+    if [ ! -f "$create_pr_script" ]; then
+        notify "❌ PR creation script not found: $create_pr_script"
+        return 1
+    fi
+
+    # Execute in background
+    if [ -n "$repo_name" ]; then
+        bash "$create_pr_script" "$repo_name" $ready_flag &
+    else
+        bash "$create_pr_script" $ready_flag &
+    fi
+
+    log "PR creation initiated"
+}
+
 # Help text
 show_help() {
     notify "JIB Remote Control Commands
@@ -227,10 +259,20 @@ Services:
   /service stop <name>             - Stop a service
   /service logs <name> [lines]     - Show service logs
 
+Pull Requests:
+  /pr create [repo]                - Create draft PR for current branch
+  /pr create [repo] --ready        - Create ready-for-review PR
+
+  Examples:
+    /pr create                     - Create PR in james-in-a-box
+    /pr create webapp              - Create PR in ~/khan/webapp
+    /pr create frontend --ready    - Create non-draft PR
+
 Examples:
   /jib restart
   /service restart slack-notifier.service
-  /service logs slack-receiver.service 100"
+  /service logs slack-receiver.service 100
+  /pr create webapp"
 }
 
 # Main command routing
@@ -260,6 +302,12 @@ main() {
                 start)    service_start "$arg1" ;;
                 stop)     service_stop "$arg1" ;;
                 logs)     service_logs "$arg1" "${arg2:-50}" ;;
+                *)        show_help ;;
+            esac
+            ;;
+        pr)
+            case "$subcommand" in
+                create)   pr_create "$arg1" "$arg2" ;;
                 *)        show_help ;;
             esac
             ;;
