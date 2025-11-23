@@ -98,7 +98,7 @@ JIB is an **LLM-powered autonomous software engineer** that runs in a Docker san
 3. **Start container**:
    ```bash
    cd ~/khan/james-in-a-box
-   ./jib
+   bin/jib
    ```
 
 4. **Send first task** (from Slack):
@@ -252,10 +252,10 @@ systemctl --user restart slack-receiver.service
 
 ```bash
 # Start container
-./jib
+bin/jib
 
 # Rebuild container (if Docker config changes)
-./jib --rebuild
+bin/jib --rebuild
 
 # Stop container
 docker stop jib-claude
@@ -287,7 +287,6 @@ docker logs -f jib-claude
 
 ### Guides
 
-- **[MIGRATION.md](MIGRATION.md)** - Update instructions for host machine changes
 - **[Notification Template](jib-container/.claude/rules/notification-template.md)** - How to send notifications from agent
 - **[Slack Quick Reference](docs/reference/slack-quick-reference.md)** - Common Slack commands
 
@@ -341,7 +340,7 @@ docker logs jib-claude
 
 **Rebuild if needed**:
 ```bash
-./jib --rebuild
+bin/jib --rebuild
 ```
 
 ### Slack Not Receiving Messages

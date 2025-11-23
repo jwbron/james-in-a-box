@@ -1,6 +1,6 @@
 [Unit]
 Description=Slack Notifier - Monitor Claude sandbox and send Slack notifications
-Documentation=file:///home/jwies/khan/james-in-a-box/HOST-SLACK-NOTIFIER.md
+Documentation=file:///home/jwies/khan/james-in-a-box/components/slack-notifier/README.md
 OnFailure=service-failure-notify@%n.service
 
 [Service]
