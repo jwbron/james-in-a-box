@@ -71,35 +71,35 @@ export SLACK_TOKEN="xoxb-your-token-here"
 export SLACK_TOKEN="xoxb-your-token-here"
 
 # Start the service
-~/khan/james-in-a-box/bin/host-notify-ctl start
+systemctl --user start
 ```
 
 ### Check Status
 
 ```bash
-~/khan/james-in-a-box/bin/host-notify-ctl status
+systemctl --user status
 ```
 
 ### View Logs
 
 ```bash
 # View all logs
-~/khan/james-in-a-box/bin/host-notify-ctl logs
+systemctl --user logs
 
 # Tail logs (live view)
-~/khan/james-in-a-box/bin/host-notify-ctl tail
+systemctl --user tail
 ```
 
 ### Stop the Notifier
 
 ```bash
-~/khan/james-in-a-box/bin/host-notify-ctl stop
+systemctl --user stop
 ```
 
 ### Restart
 
 ```bash
-~/khan/james-in-a-box/bin/host-notify-ctl restart
+systemctl --user restart
 ```
 
 ## How It Works
@@ -238,7 +238,7 @@ Add to `~/.bashrc`:
 ```bash
 # Auto-start Claude notifier
 if [ -n "$SLACK_TOKEN" ] && ! pgrep -f host-notify-slack.sh > /dev/null; then
-    ~/khan/james-in-a-box/bin/host-notify-ctl start >/dev/null 2>&1
+    systemctl --user start >/dev/null 2>&1
 fi
 ```
 
@@ -287,12 +287,12 @@ Your Slack app needs the `chat:write` scope. Go to your app settings and add it 
 
 1. Check if the notifier is running:
    ```bash
-   ~/khan/james-in-a-box/bin/host-notify-ctl status
+   systemctl --user status
    ```
 
 2. Check logs:
    ```bash
-   ~/khan/james-in-a-box/bin/host-notify-ctl tail
+   systemctl --user tail
    ```
 
 3. Test by creating a file:
@@ -319,7 +319,7 @@ Common issues:
 ### Host Machine
 
 - **Main Script**: `~/khan/james-in-a-box/internal/host-notify-slack.sh`
-- **Control Script**: `~/khan/james-in-a-box/bin/host-notify-ctl`
+- **Control Script**: `systemctl --user`
 - **State Directory**: `~/.jib-notify/`
 - **Log File**: `~/.jib-notify/notify.log`
 - **Lock File**: `/tmp/claude-notify.lock`
@@ -370,11 +370,11 @@ export SLACK_TOKEN="xoxb-1234567890-..."
 echo 'export SLACK_TOKEN="xoxb-1234567890-..."' >> ~/.bashrc
 
 # Start notifier
-~/khan/james-in-a-box/bin/host-notify-ctl start
+systemctl --user start
 # Output: ✓ Notifier started (PID: 12345)
 
 # Check status
-~/khan/james-in-a-box/bin/host-notify-ctl status
+systemctl --user status
 # Output: ✓ Notifier is running (PID: 12345)
 
 # Test it
@@ -383,7 +383,7 @@ echo "test" > ~/.jib-sharing/test.txt
 # Wait 30 seconds, check Slack DM from Claude Notifier bot
 
 # View logs
-~/khan/james-in-a-box/bin/host-notify-ctl tail
+systemctl --user tail
 # Output: [2025-01-15 10:30:15] Change detected: /home/jwies/.jib-sharing/test.txt
 #         [2025-01-15 10:30:45] Sending notification for 1 change(s)
 #         [2025-01-15 10:30:46] Notification sent successfully

@@ -36,7 +36,6 @@ systemctl --user stop slack-receiver.service
 - `slack-receiver.service` - Systemd service file
 - `setup.sh` - Installation script
 - `host-receive-slack.py` - Slack Socket Mode receiver
-- `host-receive-ctl` - Legacy control script (deprecated, use systemctl)
 - `incoming-watcher.sh` - Monitor incoming directory
 
 ## Features
@@ -45,7 +44,3 @@ systemctl --user stop slack-receiver.service
 - Thread context detection
 - Full conversation history in task files
 - User authentication and allowlisting
-
-## Legacy Control Script
-
-The `host-receive-ctl` script is deprecated. Use systemctl commands instead.

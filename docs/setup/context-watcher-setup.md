@@ -264,7 +264,7 @@ export SLACK_TOKEN="xoxb-your-token-here"
 ~/khan/james-in-a-box/scripts/setup-host-notifier.sh
 
 # 4. Start the notifier
-~/khan/james-in-a-box/scripts/host-notify-ctl.sh start
+~/khan/james-in-a-box/scripts/systemctl --user.sh start
 ```
 
 This gives you immediate awareness whenever Claude creates notifications, draft responses, or action items.

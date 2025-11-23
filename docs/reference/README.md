@@ -25,7 +25,7 @@ Automated code analysis system reference.
 ## Common Issues
 
 **Slack not receiving notifications:**
-1. Check service: `bin/host-notify-ctl status`
+1. Check service: `bin/systemctl --user status`
 2. Verify token: Check logs for authentication errors
 3. Test manually: Write file to `~/.jib-sharing/notifications/`
 

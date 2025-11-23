@@ -12,7 +12,7 @@
    - Our additions: Analyzer entrypoint (lines 220-228) preserved
 
 2. **Other repo changes** (not affecting analyzer)
-   - host-notify-ctl.sh: Invalid local declarations fixed
+   - systemctl --user.sh: Invalid local declarations fixed
    - host-notify-slack.py: Reduced batch window to 15 seconds
    - incoming-watcher.sh: Made polling interval configurable
    - *Note: These don't affect analyzer files*

@@ -92,7 +92,7 @@ This command helps you systematically implement those fixes by:
 
    ### Scripts (N files)
    - host-notify-slack.py: Hardcoded channel ID
-   - analyzer-ctl.sh: Missing API key validation
+   - codebase-analyzer.py: Missing API key validation
    ...
 
    ### Documentation (N files)
@@ -428,7 +428,7 @@ Creating implementation plan...
 Proceeding with implementation...
 
 ✓ Fixed host-notify-slack.py (removed hardcoded channel ID)
-✓ Fixed analyzer-ctl.sh (added API key validation)
+✓ Fixed codebase-analyzer.py (added API key validation)
 ✓ Fixed QUICKSTART.md (removed hardcoded secrets)
 ...
 [Progress for all files]

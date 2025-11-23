@@ -213,7 +213,7 @@ pip install --user slack-sdk
 
 ```bash
 # Run interactive setup
-~/khan/james-in-a-box/bin/host-receive-ctl setup
+systemctl --user setup
 
 # It will prompt for:
 # - SLACK_TOKEN (bot token, xoxb-...)
@@ -239,13 +239,13 @@ pip install --user slack-sdk
 
 ```bash
 # Start receiver
-~/khan/james-in-a-box/bin/host-receive-ctl start
+systemctl --user start
 
 # Check status
-~/khan/james-in-a-box/bin/host-receive-ctl status
+systemctl --user status
 
 # View logs
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user tail
 ```
 
 ### Step 5: Start Container
@@ -273,7 +273,7 @@ Test task: analyze the codebase structure
 Check logs:
 ```bash
 # Host receiver logs
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user tail
 
 # Container watcher logs (inside container)
 tail -f ~/sharing/tracking/incoming-watcher.log
@@ -375,25 +375,25 @@ You're away from your workstation but want to trigger work:
 
 ```bash
 # Start/stop receiver
-~/khan/james-in-a-box/bin/host-receive-ctl start
-~/khan/james-in-a-box/bin/host-receive-ctl stop
-~/khan/james-in-a-box/bin/host-receive-ctl restart
+systemctl --user start
+systemctl --user stop
+systemctl --user restart
 
 # Monitor
-~/khan/james-in-a-box/bin/host-receive-ctl status
-~/khan/james-in-a-box/bin/host-receive-ctl logs
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user status
+systemctl --user logs
+systemctl --user tail
 
 # Configure
-~/khan/james-in-a-box/bin/host-receive-ctl setup
+systemctl --user setup
 ```
 
 ### Notifier Control (Outgoing)
 
 ```bash
 # Already configured from HOST-SLACK-NOTIFIER.md
-~/khan/james-in-a-box/bin/host-notify-ctl status
-~/khan/james-in-a-box/bin/host-notify-ctl logs
+systemctl --user status
+systemctl --user logs
 ```
 
 ### Container Watchers
@@ -470,7 +470,7 @@ cat ~/.config/jib-notifier/config.json
 
 **Check logs**:
 ```bash
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user tail
 ```
 
 ### Not Receiving Messages
@@ -479,12 +479,12 @@ cat ~/.config/jib-notifier/config.json
 2. **Check bot events** are configured (`message.im`)
 3. **Check receiver is running**:
    ```bash
-   ~/khan/james-in-a-box/bin/host-receive-ctl status
+   systemctl --user status
    ```
 4. **Check allowed_users** in config (if set, must include your user ID)
 5. **Check logs** for errors:
    ```bash
-   ~/khan/james-in-a-box/bin/host-receive-ctl tail
+   systemctl --user tail
    ```
 
 ### Messages Not Being Processed in Container
@@ -521,7 +521,7 @@ cat ~/.config/jib-notifier/config.json
 Send a DM to your bot, then check receiver logs:
 
 ```bash
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user tail
 # Look for: "Received message from <name> (U01234567)"
 ```
 
@@ -658,8 +658,8 @@ CLAUDE: refactor auth service
 
 1. **Set up Socket Mode** in Slack app
 2. **Get app token** (xapp-...) for Socket Mode
-3. **Run setup**: `host-receive-ctl.sh setup`
-4. **Start receiver**: `host-receive-ctl.sh start`
+3. **Run setup**: `systemctl --user.sh setup`
+4. **Start receiver**: `systemctl --user.sh start`
 5. **Restart container** to start incoming-watcher
 6. **Test**: Send `claude: test task` to yourself
 7. **Enable auto-start** with systemd

@@ -164,7 +164,7 @@ After completing the above steps, you should have:
 ### Option 1: Interactive Setup (Recommended)
 
 ```bash
-~/khan/james-in-a-box/bin/host-receive-ctl setup
+systemctl --user setup
 ```
 
 Enter when prompted:
@@ -215,7 +215,7 @@ Before proceeding, verify:
 ### Start the Receiver
 
 ```bash
-~/khan/james-in-a-box/bin/host-receive-ctl start
+systemctl --user start
 ```
 
 Expected output:
@@ -228,7 +228,7 @@ Starting Slack receiver...
 ### Check Status
 
 ```bash
-~/khan/james-in-a-box/bin/host-receive-ctl status
+systemctl --user status
 ```
 
 Expected output:
@@ -245,7 +245,7 @@ Configuration:
 ### View Logs
 
 ```bash
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user tail
 ```
 
 You should see:
@@ -268,7 +268,7 @@ claude: test task
 
 Check logs:
 ```bash
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user tail
 ```
 
 Should show:
@@ -294,7 +294,7 @@ And in Slack, you should get a reply in your self-DM:
 2. Select your app
 3. Go to "OAuth & Permissions"
 4. Copy the Bot User OAuth Token again
-5. Update config: `~/khan/james-in-a-box/bin/host-receive-ctl setup`
+5. Update config: `systemctl --user setup`
 
 ### "missing_scope" Error
 
@@ -306,7 +306,7 @@ And in Slack, you should get a reply in your self-DM:
 3. Go to "OAuth & Permissions"
 4. Add missing scopes from step 3 above
 5. Click "Reinstall to Workspace" at the top
-6. Restart receiver: `~/khan/james-in-a-box/bin/host-receive-ctl restart`
+6. Restart receiver: `systemctl --user restart`
 
 ### "Socket Mode connection failed"
 
@@ -324,7 +324,7 @@ And in Slack, you should get a reply in your self-DM:
 ### Not Receiving Messages
 
 **Checklist**:
-1. [ ] Receiver is running: `host-receive-ctl.sh status`
+1. [ ] Receiver is running: `systemctl --user.sh status`
 2. [ ] Event subscription enabled with `message.im`
 3. [ ] Self-DM channel ID is correct (`<YOUR-CHANNEL-ID>`)
 4. [ ] Message starts with `claude:` prefix
@@ -333,7 +333,7 @@ And in Slack, you should get a reply in your self-DM:
 **Debug**:
 ```bash
 # Watch logs in real-time
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user tail
 
 # In another terminal, send test message
 # Then check if anything appears in logs

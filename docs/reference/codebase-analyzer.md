@@ -95,16 +95,16 @@ Searches for:
 cd ~/khan/james-in-a-box
 
 # Check requirements
-./bin/analyzer-ctl check
+./bin/systemctl --user check
 
 # Install systemd service
-./bin/analyzer-ctl install
+./bin/systemctl --user install
 
 # Enable and start timer
-./bin/analyzer-ctl enable
+./bin/systemctl --user enable
 
 # Check status
-./bin/analyzer-ctl status
+./bin/systemctl --user status
 ```
 
 ## Usage
@@ -113,31 +113,31 @@ cd ~/khan/james-in-a-box
 
 ```bash
 # Check requirements and configuration
-./bin/analyzer-ctl check
+./bin/systemctl --user check
 
 # Install service
-./bin/analyzer-ctl install
+./bin/systemctl --user install
 
 # Enable timer (start automatic runs)
-./bin/analyzer-ctl enable
+./bin/systemctl --user enable
 
 # Disable timer (stop automatic runs)
-./bin/analyzer-ctl disable
+./bin/systemctl --user disable
 
 # Run analyzer once (manual)
-./bin/analyzer-ctl start
+./bin/systemctl --user start
 
 # Check service status
-./bin/analyzer-ctl status
+./bin/systemctl --user status
 
 # View logs
-./bin/analyzer-ctl logs
+./bin/systemctl --user logs
 
 # Test run (direct execution)
-./bin/analyzer-ctl test
+./bin/systemctl --user test
 
 # Uninstall service
-./bin/analyzer-ctl uninstall
+./bin/systemctl --user uninstall
 ```
 
 ### Manual Execution
@@ -228,7 +228,7 @@ OnBootSec=5min
 
 Then reload:
 ```bash
-./bin/analyzer-ctl install  # Reinstall
+./bin/systemctl --user install  # Reinstall
 systemctl --user daemon-reload
 ```
 
@@ -294,7 +294,7 @@ At Claude API pricing (~$3 per million tokens for Sonnet):
 ```
 james-in-a-box/
 ├── bin/
-│   └── analyzer-ctl                        # Control script
+│   └── systemctl --user                        # Control script
 ├── internal/
 │   └── codebase-analyzer.py                # Main analyzer script
 ├── systemd/analyzers/
@@ -330,7 +330,7 @@ Part of the james-in-a-box project.
 ## Support
 
 For issues or questions:
-1. Check logs: `./bin/analyzer-ctl logs`
-2. Test manually: `./bin/analyzer-ctl test`
+1. Check logs: `./bin/systemctl --user logs`
+2. Test manually: `./bin/systemctl --user test`
 3. Review this README
 4. Check james-in-a-box main documentation

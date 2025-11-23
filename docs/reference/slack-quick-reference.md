@@ -9,8 +9,8 @@
 
 1. **Create Slack app**: See `SLACK-APP-SETUP.md`
 2. **Get tokens**: Bot token (`xoxb-...`) and App token (`xapp-...`)
-3. **Configure**: `~/khan/james-in-a-box/bin/host-receive-ctl setup`
-4. **Start receiver**: `~/khan/james-in-a-box/bin/host-receive-ctl start`
+3. **Configure**: `systemctl --user setup`
+4. **Start receiver**: `systemctl --user start`
 5. **Test**: Send `claude: test` to yourself in Slack
 
 ## Daily Usage
@@ -52,13 +52,13 @@ Implement OAuth2 for JIRA-1234
 
 ```bash
 # Check receiver status
-~/khan/james-in-a-box/bin/host-receive-ctl status
+systemctl --user status
 
 # View logs
-~/khan/james-in-a-box/bin/host-receive-ctl tail
+systemctl --user tail
 
 # Restart receiver
-~/khan/james-in-a-box/bin/host-receive-ctl restart
+systemctl --user restart
 
 # Start container
 ./jib
@@ -76,7 +76,7 @@ Implement OAuth2 for JIRA-1234
 
 | Problem | Solution |
 |---------|----------|
-| Bot not responding | Check `host-receive-ctl.sh status` |
+| Bot not responding | Check `systemctl --user.sh status` |
 | No self-DM messages detected | Verify channel ID in config matches your Slack DM channel |
 | "invalid_auth" | Regenerate bot token, update config |
 | Thread replies not working | Add `channels:history` scope |
