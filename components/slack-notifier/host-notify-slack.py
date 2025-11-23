@@ -41,6 +41,7 @@ class SlackNotifier:
         self.config_dir = config_dir
         self.config_file = config_dir / "config.json"
         self.state_file = config_dir / "state.json"
+        self.threads_file = config_dir / "threads.json"
         self.log_file = config_dir / "notifier.log"
 
         # Ensure config directory exists with secure permissions
@@ -74,6 +75,7 @@ class SlackNotifier:
         self.pending_changes: Set[str] = set()
         self.last_batch_time = time.time()
         self.running = True
+        self.threads = self._load_threads()
 
         # Set up signal handlers
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -137,6 +139,26 @@ class SlackNotifier:
         os.chmod(self.config_file, 0o600)
         self.logger.info(f"Configuration saved to {self.config_file}")
 
+    def _load_threads(self) -> dict:
+        """Load thread state mapping task IDs to Slack thread_ts."""
+        if self.threads_file.exists():
+            try:
+                with open(self.threads_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.error(f"Failed to load threads file: {e}")
+                return {}
+        return {}
+
+    def _save_threads(self):
+        """Save thread state to file."""
+        try:
+            with open(self.threads_file, 'w') as f:
+                json.dump(self.threads, f, indent=2)
+            os.chmod(self.threads_file, 0o600)
+        except Exception as e:
+            self.logger.error(f"Failed to save threads file: {e}")
+
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
         self.logger.info(f"Received signal {signum}, shutting down...")
@@ -151,10 +173,27 @@ class SlackNotifier:
         ]
         return any(pattern in path for pattern in ignore_patterns)
 
-    def _send_slack_message(self, changes: List[str]) -> bool:
-        """Send notification files to Slack.
+    def _extract_task_id(self, filename: str) -> str:
+        """Extract task ID from notification filename.
 
-        Reads each notification file and sends its full content as a separate message.
+        Examples:
+          - task-20251123-143022.md → task-20251123-143022
+          - RESPONSE-task-20251123-143022.md → task-20251123-143022
+          - notification-20251123-143022.md → notification-20251123-143022
+        """
+        import re
+        # Remove .md extension
+        name = filename.replace('.md', '')
+        # Remove RESPONSE- prefix if present
+        name = re.sub(r'^RESPONSE-', '', name)
+        return name
+
+    def _send_slack_message(self, changes: List[str]) -> bool:
+        """Send notification files to Slack with threading support.
+
+        Reads each notification file and sends its full content.
+        - If this is a response to an existing task, replies in thread
+        - If this is a new notification, creates a new thread and stores thread_ts
         """
         if not changes:
             return True
@@ -181,7 +220,23 @@ class SlackNotifier:
                 self.logger.error(f"Failed to read {path}: {e}")
                 continue
 
-            # Send full content to Slack
+            # Extract task ID to check for existing thread
+            task_id = self._extract_task_id(path.name)
+            thread_ts = self.threads.get(task_id)
+
+            # Prepare message payload
+            payload = {
+                'channel': self.slack_channel,
+                'text': content,
+                'mrkdwn': True
+            }
+
+            # If we have an existing thread, reply in that thread
+            if thread_ts:
+                payload['thread_ts'] = thread_ts
+                self.logger.info(f"Replying in thread {thread_ts} for task {task_id}")
+
+            # Send to Slack
             try:
                 response = requests.post(
                     'https://slack.com/api/chat.postMessage',
@@ -189,11 +244,7 @@ class SlackNotifier:
                         'Authorization': f'Bearer {self.slack_token}',
                         'Content-Type': 'application/json'
                     },
-                    json={
-                        'channel': self.slack_channel,
-                        'text': content,
-                        'mrkdwn': True
-                    },
+                    json=payload,
                     timeout=10
                 )
 
@@ -202,6 +253,13 @@ class SlackNotifier:
                 if result.get('ok'):
                     self.logger.info(f"Sent notification: {path.name}")
                     success_count += 1
+
+                    # Store thread_ts for future replies if this is a new thread
+                    if not thread_ts and result.get('ts'):
+                        self.threads[task_id] = result['ts']
+                        self._save_threads()
+                        self.logger.info(f"Created new thread for task {task_id}: {result['ts']}")
+
                 else:
                     error = result.get('error', 'unknown error')
                     self.logger.error(f"Failed to send {path.name}: {error}")
