@@ -218,6 +218,30 @@ def create_dockerfile() -> None:
     else:
         warn("claude-rules directory not found, skipping agent rules")
 
+    # Copy host's .claude directory to build context (for authentication)
+    # This allows the container to reuse the host's Claude Code authentication
+    claude_src = Path.home() / ".claude"
+    claude_dest = Config.CONFIG_DIR / ".claude"
+
+    if claude_src.exists():
+        # Check if credentials file exists
+        credentials_file = claude_src / ".credentials.json"
+        if credentials_file.exists():
+            # Copy the entire .claude directory
+            if claude_dest.exists():
+                shutil.rmtree(claude_dest)
+            shutil.copytree(claude_src, claude_dest, ignore=shutil.ignore_patterns(
+                'commands',  # Don't copy commands (will use container's custom commands)
+                'settings.json',  # Don't copy settings (container creates its own)
+                '*.log',  # Don't copy logs
+                'cache',  # Don't copy cache
+            ))
+            info("Claude authentication copied from host")
+            print(f"  Credentials: {credentials_file}")
+        else:
+            warn("~/.claude exists but no credentials found - will auth in container")
+    else:
+        info("No ~/.claude directory found - will authenticate in container on first run")
 
     # Copy Dockerfile from script directory
     dockerfile_src = script_dir / "Dockerfile"
@@ -463,8 +487,12 @@ def setup() -> bool:
     return True
 
 
-def run_claude() -> bool:
-    """Run Claude Code CLI in the sandboxed container"""
+def run_claude(exec_command: Optional[List[str]] = None) -> bool:
+    """Run Claude Code CLI in the sandboxed container or execute a command
+
+    Args:
+        exec_command: Optional command to execute instead of starting interactive Claude
+    """
     # Check if image exists
     if not image_exists():
         info("Docker image not found. Running initial setup...")
@@ -482,7 +510,10 @@ def run_claude() -> bool:
         error("Docker build failed")
         return False
 
-    info("Launching sandboxed Claude Code environment...")
+    if exec_command:
+        info(f"Executing command in container: {' '.join(exec_command)}")
+    else:
+        info("Launching sandboxed Claude Code environment...")
     print()
 
     # Parse mount configuration
@@ -524,27 +555,38 @@ def run_claude() -> bool:
     cmd = [
         "docker", "run",
         "--rm",  # Auto-remove container after exit
-        "-it",   # Interactive with TTY
+    ]
+
+    # Only add interactive TTY if not executing a command
+    if not exec_command:
+        cmd.extend(["-it"])
+
+    cmd.extend([
         "--name", Config.CONTAINER_NAME,
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
-    ]
+    ])
 
-    info("Network mode: Bridge (isolated from host, outbound HTTP only)")
-    print("  Container can: Access Claude API, download packages")
-    print("  Container cannot: Access host services, accept inbound connections")
-    print()
+    if not exec_command:
+        info("Network mode: Bridge (isolated from host, outbound HTTP only)")
+        print("  Container can: Access Claude API, download packages")
+        print("  Container cannot: Access host services, accept inbound connections")
+        print()
 
-    info("Claude authentication: Will authenticate with browser on first run")
-    print()
+        info("Claude authentication: Will authenticate with browser on first run")
+        print()
 
     # Add mount arguments
     cmd.extend(mount_args)
 
     # Add image name
     cmd.append(Config.IMAGE_NAME)
+
+    # Add command to execute if provided
+    if exec_command:
+        cmd.extend(exec_command)
 
     # Run container
     try:
@@ -565,9 +607,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  jib              # Run Claude Code (setup on first use)
-  jib --setup      # Reconfigure mounts
-  jib --reset      # Reset configuration and remove Docker image
+  jib                                      # Run Claude Code (setup on first use)
+  jib --setup                              # Reconfigure mounts
+  jib --reset                              # Reset configuration and remove Docker image
+  jib --exec <command> [args...]          # Execute command in container (non-interactive)
+  jib --exec /home/jwies/tools/analyze-conversations --days 7
         """
     )
     parser.add_argument(
@@ -579,6 +623,11 @@ Examples:
         "--reset",
         action="store_true",
         help="Clear configuration and start over"
+    )
+    parser.add_argument(
+        "--exec",
+        nargs=argparse.REMAINDER,
+        help="Execute a command in the container (non-interactive)"
     )
 
     args = parser.parse_args()
@@ -624,6 +673,12 @@ Examples:
     # Handle setup
     if args.setup:
         if not setup():
+            return 1
+        return 0
+
+    # Handle exec
+    if args.exec:
+        if not run_claude(exec_command=args.exec):
             return 1
         return 0
 

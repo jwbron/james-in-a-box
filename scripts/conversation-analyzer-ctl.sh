@@ -1,0 +1,285 @@
+#!/bin/bash
+#
+# Conversation Analyzer Control Script
+#
+# Manages the conversation analyzer systemd service and timer
+#
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_NAME="conversation-analyzer"
+SERVICE_FILE="${SCRIPT_DIR}/${SERVICE_NAME}.service"
+TIMER_FILE="${SCRIPT_DIR}/${SERVICE_NAME}.timer"
+SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+check_requirements() {
+    log_info "Checking requirements..."
+
+    # Check Docker
+    if ! command -v docker &> /dev/null; then
+        log_error "docker not found - Docker is required to run jib"
+        exit 1
+    fi
+
+    # Check if jib script exists
+    if [ ! -f "${HOME}/khan-jib/james-in-a-box/jib" ]; then
+        log_error "jib script not found at ~/khan-jib/james-in-a-box/jib"
+        log_info "Make sure james-in-a-box is cloned to ~/khan-jib/"
+        exit 1
+    fi
+
+    # Check if jib has --exec support
+    if ! "${HOME}/khan-jib/james-in-a-box/jib" --help 2>&1 | grep -q "\-\-exec"; then
+        log_error "jib script does not have --exec flag support"
+        log_error "Please apply the patch from ~/.jib-sharing/jib-exec-implementation.md"
+        exit 1
+    fi
+
+    # Check if analyzer script exists in container mount
+    if [ ! -f "${HOME}/.jib-tools/analyze-conversations" ]; then
+        log_error "analyze-conversations script not found in ~/.jib-tools/"
+        log_info "Make sure JIB tuning system is set up inside the container"
+        exit 1
+    fi
+
+    # Check if logs directory exists
+    if [ ! -d "${HOME}/.jib-sharing/logs/conversations" ]; then
+        log_warning "Logs directory not found at ~/.jib-sharing/logs/conversations"
+        log_info "Directory will be created when first conversation is logged"
+    fi
+
+    log_success "Requirements check complete"
+}
+
+install_service() {
+    log_info "Installing conversation analyzer service..."
+
+    # Validate service files exist
+    if [ ! -f "$SERVICE_FILE" ]; then
+        log_error "Service file not found: $SERVICE_FILE"
+        exit 1
+    fi
+    if [ ! -f "$TIMER_FILE" ]; then
+        log_error "Timer file not found: $TIMER_FILE"
+        exit 1
+    fi
+
+    # Create systemd user directory
+    mkdir -p "$SYSTEMD_USER_DIR"
+
+    # Copy service and timer files
+    cp "$SERVICE_FILE" "$SYSTEMD_USER_DIR/"
+    cp "$TIMER_FILE" "$SYSTEMD_USER_DIR/"
+
+    log_success "Service files copied to $SYSTEMD_USER_DIR"
+
+    # Reload systemd
+    systemctl --user daemon-reload
+
+    log_success "Service installed successfully"
+    log_info "To enable and start: ${SCRIPT_DIR}/conversation-analyzer-ctl.sh enable"
+}
+
+uninstall_service() {
+    log_info "Uninstalling conversation analyzer service..."
+
+    # Stop and disable if running
+    systemctl --user stop "${SERVICE_NAME}.timer" 2>/dev/null || true
+    systemctl --user disable "${SERVICE_NAME}.timer" 2>/dev/null || true
+
+    # Remove service files
+    rm -f "${SYSTEMD_USER_DIR}/${SERVICE_NAME}.service"
+    rm -f "${SYSTEMD_USER_DIR}/${SERVICE_NAME}.timer"
+
+    # Reload systemd
+    systemctl --user daemon-reload
+
+    log_success "Service uninstalled successfully"
+}
+
+enable_service() {
+    log_info "Enabling conversation analyzer timer..."
+
+    systemctl --user enable "${SERVICE_NAME}.timer"
+    systemctl --user start "${SERVICE_NAME}.timer"
+
+    log_success "Timer enabled and started"
+    log_info "Next run times:"
+    systemctl --user list-timers "${SERVICE_NAME}.timer"
+}
+
+disable_service() {
+    log_info "Disabling conversation analyzer timer..."
+
+    systemctl --user stop "${SERVICE_NAME}.timer"
+    systemctl --user disable "${SERVICE_NAME}.timer"
+
+    log_success "Timer disabled and stopped"
+}
+
+start_service() {
+    log_info "Starting conversation analyzer (one-time run)..."
+
+    systemctl --user start "${SERVICE_NAME}.service"
+
+    log_success "Service started"
+    log_info "Check status with: ${SCRIPT_DIR}/conversation-analyzer-ctl.sh status"
+}
+
+status_service() {
+    log_info "Service status:"
+    systemctl --user status "${SERVICE_NAME}.service" --no-pager || true
+
+    echo ""
+    log_info "Timer status:"
+    systemctl --user status "${SERVICE_NAME}.timer" --no-pager || true
+
+    echo ""
+    log_info "Next scheduled runs:"
+    systemctl --user list-timers "${SERVICE_NAME}.timer" --no-pager || true
+}
+
+show_logs() {
+    log_info "Recent logs (press Ctrl+C to exit):"
+    journalctl --user -u "${SERVICE_NAME}.service" -f
+}
+
+test_run() {
+    log_info "Running analyzer test (manual execution via jib)..."
+
+    "${HOME}/khan-jib/james-in-a-box/jib" --exec /home/jwies/tools/analyze-conversations --days 7 --print
+
+    log_success "Test run complete"
+}
+
+show_usage() {
+    cat << EOF
+Conversation Analyzer Control Script
+
+Usage: $0 <command>
+
+Commands:
+    check       Check requirements and configuration
+    install     Install systemd service and timer
+    uninstall   Uninstall systemd service and timer
+    enable      Enable and start the timer
+    disable     Disable and stop the timer
+    start       Run analyzer once (manual trigger)
+    status      Show service and timer status
+    logs        Show recent logs (follow mode)
+    test        Test run the analyzer manually
+    help        Show this help message
+
+Examples:
+    # First time setup
+    $0 check
+    $0 install
+    $0 enable
+
+    # Check status
+    $0 status
+
+    # Manual run
+    $0 start
+
+    # View logs
+    $0 logs
+
+    # Test manually
+    $0 test
+
+Configuration:
+    The analyzer runs via jib (james-in-a-box) in the container environment.
+
+    Command executed:
+        ~/khan-jib/james-in-a-box/jib --exec /home/jwies/tools/analyze-conversations --days 7
+
+    Reads conversation logs from:
+        ~/.jib-sharing/logs/conversations/ (container: ~/sharing/logs/conversations/)
+
+    Analysis results saved to:
+        ~/.jib-sharing/analysis/ (container: ~/sharing/analysis/)
+
+Schedule:
+    - Daily at 2:00 AM (system local time)
+    - 10 minutes after system boot
+    - Analyzes last 7 days of conversations
+    - Generates prompt tuning recommendations
+
+Requirements:
+    - Docker installed and running
+    - jib script with --exec support (see ~/.jib-sharing/jib-exec-implementation.md)
+    - JIB tuning tools installed in container (~/.jib-tools/)
+
+See also:
+    ~/.jib-sharing/jib-exec-implementation.md - How to add --exec to jib
+    ~/.jib-sharing/CONVERSATION-TUNING-README.md
+    ~/.jib-sharing/TUNING-GUIDE.md
+
+EOF
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    check)
+        check_requirements
+        ;;
+    install)
+        check_requirements
+        install_service
+        ;;
+    uninstall)
+        uninstall_service
+        ;;
+    enable)
+        enable_service
+        ;;
+    disable)
+        disable_service
+        ;;
+    start)
+        start_service
+        ;;
+    status)
+        status_service
+        ;;
+    logs)
+        show_logs
+        ;;
+    test)
+        test_run
+        ;;
+    help|--help|-h)
+        show_usage
+        ;;
+    *)
+        log_error "Unknown command: ${1:-}"
+        echo ""
+        show_usage
+        exit 1
+        ;;
+esac

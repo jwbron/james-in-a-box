@@ -1,0 +1,23 @@
+[Unit]
+Description=Daily JIB Conversation Analysis Timer
+Documentation=https://github.com/jwiesebron/james-in-a-box
+Requires=conversation-analyzer.service
+
+[Timer]
+# Run daily at 2:00 AM (system local time)
+OnCalendar=*-*-* 02:00:00
+
+# Run 10 minutes after system boot
+OnBootSec=10min
+
+# If system was off when timer should have run, run it on next boot
+Persistent=true
+
+# Randomize start time by up to 5 minutes to avoid resource spikes
+RandomizedDelaySec=5min
+
+# Timer unit to activate
+Unit=conversation-analyzer.service
+
+[Install]
+WantedBy=timers.target
