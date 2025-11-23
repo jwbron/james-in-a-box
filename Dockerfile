@@ -44,6 +44,12 @@ RUN pip3 install requests
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
+# Copy Claude authentication from host (if available during build)
+# This allows reusing host's Claude Code auth instead of re-authenticating in container
+# Build will succeed even if .claude directory is not present (using || true)
+RUN mkdir -p /opt/claude-host-auth
+COPY .claude/ /opt/claude-host-auth/ || true
+
 # Copy Claude command documentation
 RUN mkdir -p /usr/local/share/claude-commands
 COPY claude-commands/*.md /usr/local/share/claude-commands/
@@ -143,6 +149,26 @@ fi
 # Set up .claude directory with settings that avoid known bugs
 mkdir -p "${USER_HOME}/.claude"
 mkdir -p "${USER_HOME}/.claude/commands"
+mkdir -p "${USER_HOME}/.config/claude-code"
+
+# Copy host's Claude auth if available (from build-time copy)
+if [ -d "/opt/claude-host-auth" ] && [ "$(ls -A /opt/claude-host-auth 2>/dev/null)" ]; then
+    echo "✓ Copying Claude authentication from host..."
+    # Copy all files from host's .claude directory
+    cp -r /opt/claude-host-auth/* "${USER_HOME}/.claude/" 2>/dev/null || true
+    # Specifically handle credentials file
+    if [ -f "/opt/claude-host-auth/.credentials.json" ]; then
+        cp /opt/claude-host-auth/.credentials.json "${USER_HOME}/.claude/.credentials.json"
+        echo "  ✓ OAuth credentials copied from host"
+    fi
+    # Handle auth.json if it exists in .config location
+    if [ -f "/opt/claude-host-auth/auth.json" ]; then
+        cp /opt/claude-host-auth/auth.json "${USER_HOME}/.config/claude-code/auth.json"
+        echo "  ✓ Auth config copied from host"
+    fi
+else
+    echo "ℹ No host Claude auth found - will authenticate with browser on first run"
+fi
 
 # Copy custom commands to where Claude Code looks for them
 if [ -d "/usr/local/share/claude-commands" ]; then
@@ -157,6 +183,7 @@ if [ -d "/usr/local/share/claude-commands" ]; then
 fi
 
 chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude"
+chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.config/claude-code"
 chmod 700 "${USER_HOME}/.claude"
 
 # Create settings.json with:
