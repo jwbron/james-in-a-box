@@ -6,7 +6,7 @@ Documentation=file:///home/jwies/khan/james-in-a-box/HOST-SLACK-NOTIFIER.md
 Type=simple
 WorkingDirectory=/home/jwies/khan/james-in-a-box
 # Configuration loaded from ~/.config/jib-notifier/config.json
-ExecStart=/usr/bin/python3 /home/jwies/khan/james-in-a-box/scripts/host-notify-slack.py
+ExecStart=/usr/bin/python3 /home/jwies/khan/james-in-a-box/internal/host-notify-slack.py
 
 # Restart on failure
 Restart=on-failure
