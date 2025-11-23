@@ -51,14 +51,14 @@ class Config:
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
     IMAGE_NAME = "james-in-a-box"
     CONTAINER_NAME = "jib"
-    KHAN_SOURCE = Path.home() / "khan"
+    KHAN_SOURCE = Path.home() / "khan-jib"
     CLAUDE_SOURCE = Path.home() / ".claude"
     # Persistent directories for agent use
     TOOLS_DIR = Path.home() / ".jib-tools"
     SHARING_DIR = Path.home() / ".jib-sharing"
 
-    # Note: ~/khan/ is mounted READ-ONLY to prevent interference with systemd jobs
-    # Agent stages changes in ~/sharing/ for human review and manual application
+    # Note: ~/khan-jib/ is mounted READ-WRITE so agent can work directly on code
+    # Agent makes changes directly and commits them
 
     # Directories that are dangerous to mount (contain credentials)
     DANGEROUS_DIRS = [
@@ -289,7 +289,7 @@ def setup() -> bool:
     print("  ✗ NO access to GSM secrets")
     print()
     print("HOW IT WORKS:")
-    print("  1. Your ~/khan is MOUNTED into the container (read-write)")
+    print("  1. Your ~/khan-jib is MOUNTED into the container as ~/khan (read-write)")
     print("  2. Changes in container = changes on host (same files)")
     print("  3. Agent works on code, creates commits")
     print("  4. YOU review commits and push from host (with credentials)")
@@ -313,15 +313,15 @@ def setup() -> bool:
     Config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     mounts = []
 
-    # Khan directory - mount READ-ONLY to prevent interference with systemd jobs
+    # Khan directory - mount READ-WRITE so agent can work directly
     if Config.KHAN_SOURCE.exists():
         khan_container_path = f"/home/{os.environ['USER']}/khan"
-        # Mount as read-only with SELinux relabeling
-        mounts.append(f"{Config.KHAN_SOURCE}:{khan_container_path}:ro,z")
+        # Mount as read-write with SELinux relabeling
+        mounts.append(f"{Config.KHAN_SOURCE}:{khan_container_path}:rw,z")
         info(f"Khan workspace: {Config.KHAN_SOURCE}")
-        print(f"    Mounted as: ~/khan/ (READ-ONLY, SELinux relabeled)")
-        print(f"    Purpose: Code reference - agent reads for context")
-        print(f"    Changes: Agent stages modifications in ~/sharing/ for your review")
+        print(f"    Mounted as: ~/khan/ (READ-WRITE, SELinux relabeled)")
+        print(f"    Purpose: Agent works directly on code, makes commits")
+        print(f"    Changes: Agent modifies files in place - you review and push")
     else:
         warn(f"{Config.KHAN_SOURCE} not found - workspace will not be available")
 
@@ -378,10 +378,11 @@ def setup() -> bool:
     mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
     print(f"    Mounted as: ~/sharing/ (read-write, SELinux relabeled)")
-    print(f"    Purpose: ALL data that persists across rebuilds")
+    print(f"    Purpose: Data that persists across rebuilds")
     print(f"    - Context documents (@save-context)")
-    print(f"    - Code ready for review")
-    print(f"    - Any work that must survive container rebuilds")
+    print(f"    - Notifications to human")
+    print(f"    - Incoming tasks from Slack")
+    print(f"    - Any other persistent data")
 
     print()
     print("Add additional directories? (optional)")

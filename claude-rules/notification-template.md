@@ -134,7 +134,7 @@ aligns with ADR-087, and prevents future refactoring.
 
 ---
 📅 2025-11-21 14:30:00
-📂 Working in: ~/sharing/staged-changes/webapp/services/user-service/
+📂 Working in: ~/khan/webapp/services/user-service/
 🔗 References: JIRA-1234, ADR-087
 ```
 
@@ -193,7 +193,7 @@ violates ADR-042 and creates a security vulnerability.
 
 ---
 📅 2025-11-21 14:45:00
-📂 Working in: ~/sharing/staged-changes/webapp/services/auth-service/
+📂 Working in: ~/khan/webapp/services/auth-service/
 🔗 References: JIRA-5678, ADR-042, OWASP A7:2021
 ```
 
@@ -255,7 +255,7 @@ is not acceptable for a production service with global users.
 
 ---
 📅 2025-11-21 15:00:00
-📂 Working in: ~/sharing/staged-changes/webapp/migrations/
+📂 Working in: ~/khan/webapp/migrations/
 🔗 References: JIRA-9999, Migration Runbook (confluence)
 ```
 

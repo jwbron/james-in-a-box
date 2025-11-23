@@ -37,7 +37,7 @@ Even with internet access, you cannot:
 ✅ Install packages (`apt-get`, `pip`, `npm install -g`)
 ✅ Build reusable tools in `~/tools/`
 ✅ Use `~/tmp/` for temporary work and prototyping
-✅ Share code for review in `~/sharing/`
+✅ Use `~/sharing/` for persistent data and notifications
 
 ### What You CANNOT Do (Deliberately)
 ❌ **Push to git** (no SSH keys available) - user will push from host
@@ -67,42 +67,41 @@ These commands are installed in `~/.claude/commands/` and available as slash com
 
 ## File System Layout
 
-### `~/khan/` - Main Workspace (READ-ONLY)
-**Purpose**: Code reference for understanding the codebase
-**Access**: Read-only
-**Persistence**: Mounted from host
-**Why read-only**: Prevents interference with systemd jobs running on host
+### `~/khan/` - Main Workspace (READ-WRITE)
+**Purpose**: Working directory for code development
+**Access**: Read-write
+**Persistence**: Mounted from host (`~/khan-jib/`)
+**Usage**: Make changes directly in place, commit to git
 
 **IMPORTANT WORKFLOW**:
-You CANNOT modify files in `~/khan/` directly. Instead:
+You CAN modify files in `~/khan/` directly:
 
 1. **Read** - Explore `~/khan/` to understand code structure and context
-2. **Copy** - Copy files you want to modify to `~/sharing/staged-changes/<repo-name>/`
-3. **Modify** - Make your changes in `~/sharing/staged-changes/`
-4. **Document** - Create a clear summary of changes for human review
-5. **Human applies** - Human reviews and manually applies approved changes to host
+2. **Modify** - Make your changes directly in `~/khan/`
+3. **Test** - Run tests to verify your changes
+4. **Commit** - Commit your changes with clear messages
+5. **Human reviews** - Human reviews commits and pushes from host
 
 **Example workflow**:
 ```bash
 # 1. Read code for context
 cat ~/khan/webapp/server.py
 
-# 2. Copy to staging area
-mkdir -p ~/sharing/staged-changes/webapp
-cp ~/khan/webapp/server.py ~/sharing/staged-changes/webapp/
+# 2. Modify the file directly
+vim ~/khan/webapp/server.py
 
-# 3. Modify the staged copy
-vim ~/sharing/staged-changes/webapp/server.py
+# 3. Test your changes
+pytest tests/test_server.py
 
-# 4. Document changes
-cat > ~/sharing/staged-changes/webapp/CHANGES.md <<EOF
-## Changes to server.py
-- Added OAuth2 authentication
+# 4. Commit changes
+git add ~/khan/webapp/server.py
+git commit -m "Add OAuth2 authentication
+
+- Added OAuth2 middleware
 - Fixed timeout handling
-- See: JIRA-1234
-EOF
+- See: JIRA-1234"
 
-# 5. Tell human changes are ready for review
+# 5. Human reviews and pushes from host
 ```
 
 ### `~/context-sync/` - Context Sources
@@ -144,70 +143,18 @@ cat ~/context-sync/confluence/INFRA/runbooks/
 - Store development utilities
 **See**: `tools-guide.md` for comprehensive guide
 
-### `~/sharing/` - Persistent Data & Staging Area
-**Purpose**: ALL data that must persist across container rebuilds, including staged code changes
+### `~/sharing/` - Persistent Data
+**Purpose**: Data that must persist across container rebuilds
 **Access**: Read-write
 **Persistence**: Mounted from host (`~/.jib-sharing/`)
 **What goes here**:
-- **`~/sharing/staged-changes/`** - Modified code for human review (PRIMARY USE)
 - **`~/sharing/notifications/`** - Notifications to human (triggers Slack DM)
 - **`~/sharing/context/`** - Context documents (`@save-context` / `@load-context`)
 - Pull request artifacts
 - Analysis reports
 - Any work product that should survive rebuilds
 
-**Critical Usage for Code Changes**:
-```bash
-# THIS IS HOW YOU MODIFY CODE (~/khan/ is read-only!)
-
-# 1. Create staging area for a repo
-mkdir -p ~/sharing/staged-changes/webapp
-
-# 2. Copy files you want to modify
-cp ~/khan/webapp/server.py ~/sharing/staged-changes/webapp/
-cp ~/khan/webapp/models.py ~/sharing/staged-changes/webapp/
-
-# 3. Make your changes
-vim ~/sharing/staged-changes/webapp/server.py
-
-# 4. REQUIRED: Document what changed and why in CHANGES.md
-cat > ~/sharing/staged-changes/webapp/CHANGES.md <<'EOF'
-# Changes for JIRA-1234: Add OAuth2 Support
-
-## Overview
-Brief description of what this change accomplishes.
-
-## Files Modified
-- server.py: Added OAuth2 middleware
-- models.py: Added User.oauth_token field
-
-## Testing
-- Unit tests passing (see test_oauth.py)
-- Tested with Google OAuth provider
-
-## Deployment
-How human should apply these changes:
-```bash
-cp ~/sharing/staged-changes/webapp/* ~/khan/webapp/
-```
-
-## Dependencies
-Any new packages or system requirements.
-
-## Breaking Changes
-Any backwards incompatible changes.
-EOF
-
-# 5. Tell human
-echo "Changes staged in ~/sharing/staged-changes/webapp/ - ready for review"
-echo "See CHANGES.md for complete documentation"
-```
-
-**IMPORTANT**: Always include a `CHANGES.md` file in the staging directory. This allows the human to:
-- Understand what changed and why
-- Review changes before applying
-- Have documentation for git commits
-- Track dependencies and breaking changes
+**Note**: Code changes are made directly in `~/khan/` and committed to git, not staged in `~/sharing/`
 
 **Notifications - Async Communication**:
 ```bash
@@ -241,9 +188,7 @@ EOF
 - Critical issue found
 - Important assumption needs validation
 
-**Human access**: `~/.jib-sharing/staged-changes/` and `~/.jib-sharing/notifications/` on host
-
-**Important**: `~/khan/` is READ-ONLY. ALL code modifications must go through `~/sharing/staged-changes/`!
+**Human access**: `~/.jib-sharing/notifications/` on host
 
 ### `~/tmp/` - Scratch Space
 **Purpose**: Temporary work, not persisted
