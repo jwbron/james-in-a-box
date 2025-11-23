@@ -451,17 +451,17 @@ Period: Last {self.days} days
 
         # Send notification to Slack if there are recommendations
         if prompt_recs or comm_recs:
-            self.send_notification(metrics, len(prompt_recs), len(comm_recs), report_file)
+            self.send_notification(metrics, len(prompt_recs), len(comm_recs), report_file, report)
 
         return report
 
-    def send_notification(self, metrics: Dict[str, Any], prompt_rec_count: int, comm_rec_count: int, report_file: Path):
-        """Send notification about analysis results via Slack"""
+    def send_notification(self, metrics: Dict[str, Any], prompt_rec_count: int, comm_rec_count: int, report_file: Path, full_report: str):
+        """Send notification about analysis results via Slack with threading"""
         notification_dir = Path.home() / ".jib-sharing" / "notifications"
         notification_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notification_file = notification_dir / f"{timestamp}-conversation-analysis.md"
+        task_id = f"{timestamp}-conversation-analysis"
 
         # Determine priority based on recommendations
         total_recs = prompt_rec_count + comm_rec_count
@@ -472,39 +472,59 @@ Period: Last {self.days} days
         else:
             priority = "LOW"
 
-        notification = f"""# 📊 Conversation Analysis Complete
+        # Create short summary notification (top-level message)
+        summary_file = notification_dir / f"{task_id}.md"
+        summary = f"""# 📊 Conversation Analysis Complete
 
-**Priority**: {priority}
+**Priority**: {priority} | {metrics['total_sessions']} conversations analyzed | {total_recs} recommendations
 
-## Summary
-Analyzed {metrics['total_sessions']} conversations from the last 7 days.
+**Quick Stats:**
+- ✅ Success: {metrics['successful_sessions']} | ❌ Failed: {metrics['failed_sessions']} | 🚫 Blocked: {metrics['blocked_sessions']}
+- Quality: {metrics['avg_quality_score']:.1f}/10 | Single-iteration success: {metrics['single_iteration_success_rate']:.1f}%
+- 🎯 Prompt improvements: {prompt_rec_count} | 💬 Communication improvements: {comm_rec_count}
 
-**Session Outcomes:**
+📄 Full report in thread below
+"""
+
+        with open(summary_file, 'w') as f:
+            f.write(summary)
+
+        print(f"  Summary notification: {summary_file}")
+
+        # Create detailed report (thread reply)
+        detail_file = notification_dir / f"RESPONSE-{task_id}.md"
+        detail = f"""# Full Conversation Analysis Report
+
+## Session Outcomes
 - ✅ Successful: {metrics['successful_sessions']}
 - ❌ Failed: {metrics['failed_sessions']}
 - 🚫 Blocked: {metrics['blocked_sessions']}
 - ⚠️ Partial: {metrics['partial_sessions']}
 
-**Performance Metrics:**
+## Performance Metrics
 - Average iterations: {metrics['avg_iterations']:.1f}
 - Average quality score: {metrics['avg_quality_score']:.1f}/10
 - Single-iteration success rate: {metrics['single_iteration_success_rate']:.1f}%
+- Average duration: {metrics['avg_duration_minutes']:.1f} minutes
+- Average messages: {metrics['avg_messages_per_session']:.1f} per session
 
-## Recommendations Generated
+## Recommendations
 - 🎯 Prompt improvements: {prompt_rec_count}
 - 💬 Communication improvements: {comm_rec_count}
 
-## Next Steps
-Review the full analysis report at:
-`~/.jib-sharing/analysis/latest-report.md`
+---
 
-Or view: `{report_file}`
+{full_report}
+
+---
+
+**Report Location**: `{report_file}`
 """
 
-        with open(notification_file, 'w') as f:
-            f.write(notification)
+        with open(detail_file, 'w') as f:
+            f.write(detail)
 
-        print(f"  Notification sent: {notification_file}")
+        print(f"  Detailed report (thread): {detail_file}")
 
 
 def main():
