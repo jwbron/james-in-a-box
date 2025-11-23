@@ -53,17 +53,9 @@ check_requirements() {
         exit 1
     fi
 
-    # Check if jib has --exec support
-    if ! "${HOME}/khan/james-in-a-box/jib" --help 2>&1 | grep -q "\-\-exec"; then
-        log_error "jib script does not have --exec flag support"
-        log_error "Please apply the patch from ~/.jib-sharing/jib-exec-implementation.md"
-        exit 1
-    fi
-
-    # Check if analyzer script exists in container mount
-    if [ ! -f "${HOME}/.jib-tools/analyze-conversations" ]; then
-        log_error "analyze-conversations script not found in ~/.jib-tools/"
-        log_info "Make sure JIB tuning system is set up inside the container"
+    # Check if analyzer script exists in repo
+    if [ ! -f "${HOME}/khan/james-in-a-box/internal/conversation-analyzer.py" ]; then
+        log_error "conversation-analyzer.py not found in ~/khan/james-in-a-box/internal/"
         exit 1
     fi
 
@@ -170,9 +162,9 @@ show_logs() {
 }
 
 test_run() {
-    log_info "Running analyzer test (manual execution via jib)..."
+    log_info "Running analyzer test (manual execution)..."
 
-    "${HOME}/khan-jib/james-in-a-box/jib" --exec /home/jwies/tools/analyze-conversations --days 7 --print
+    python3 "${HOME}/khan/james-in-a-box/internal/conversation-analyzer.py" --days 7
 
     log_success "Test run complete"
 }
@@ -214,16 +206,16 @@ Examples:
     $0 test
 
 Configuration:
-    The analyzer runs via jib (james-in-a-box) in the container environment.
+    The analyzer runs directly on the host (not in container).
 
     Command executed:
-        ~/khan-jib/james-in-a-box/jib --exec /home/jwies/tools/analyze-conversations --days 7
+        python3 ~/khan/james-in-a-box/internal/conversation-analyzer.py --days 7
 
     Reads conversation logs from:
-        ~/.jib-sharing/logs/conversations/ (container: ~/sharing/logs/conversations/)
+        ~/.jib-sharing/logs/conversations/
 
     Analysis results saved to:
-        ~/.jib-sharing/analysis/ (container: ~/sharing/analysis/)
+        ~/.jib-sharing/analysis/
 
 Schedule:
     - Daily at 2:00 AM (system local time)
@@ -232,14 +224,7 @@ Schedule:
     - Generates prompt tuning recommendations
 
 Requirements:
-    - Docker installed and running
-    - jib script with --exec support (see ~/.jib-sharing/jib-exec-implementation.md)
-    - JIB tuning tools installed in container (~/.jib-tools/)
-
-See also:
-    ~/.jib-sharing/jib-exec-implementation.md - How to add --exec to jib
-    ~/.jib-sharing/CONVERSATION-TUNING-README.md
-    ~/.jib-sharing/TUNING-GUIDE.md
+    - Python 3 with standard library (no external dependencies)
 
 EOF
 }

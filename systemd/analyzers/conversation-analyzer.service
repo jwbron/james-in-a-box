@@ -6,11 +6,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=%u
 
-# Execute via jib (runs analyzer in container environment)
-# Note: Requires jib script to have --exec flag implemented
-ExecStart=%h/khan/james-in-a-box/jib --exec /home/jwies/tools/analyze-conversations --days 7
+# Execute the conversation analyzer directly from the repo
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/internal/conversation-analyzer.py --days 7
 
 # Logging
 StandardOutput=journal
