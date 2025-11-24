@@ -11,10 +11,9 @@ ExecStart=%h/khan/james-in-a-box/components/context-sync/.venv/bin/python %h/kha
 
 # After syncing context data, run analysis in JIB container
 # Context watchers analyze Confluence docs and JIRA tickets for updates
-# Note: These scripts only read data and send notifications (no git operations)
-# If a script needs to create branches/commits, add --worktree flag for isolation
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/context-watcher/confluence-watcher.py
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/context-watcher/jira-watcher.py
+# Uses --worktree for git isolation in case scripts create branches/commits
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec --worktree python3 %h/khan/james-in-a-box/jib-container/components/context-watcher/confluence-watcher.py
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec --worktree python3 %h/khan/james-in-a-box/jib-container/components/context-watcher/jira-watcher.py
 
 # Logging
 StandardOutput=journal

@@ -348,8 +348,9 @@ class SlackReceiver:
             self.logger.info(f"Triggering processing for {filepath.name}")
 
             # Execute in background (non-blocking)
+            # Uses --worktree for git isolation in case script creates branches/commits
             subprocess.Popen(
-                [str(jib_script), "--exec", "python3", str(processor_script), container_path],
+                [str(jib_script), "--exec", "--worktree", "python3", str(processor_script), container_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True  # Detach from parent
