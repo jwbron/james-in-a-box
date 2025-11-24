@@ -153,7 +153,12 @@ This is the **single source of truth** for which repos jib has read/write access
 
 To check which repos are configured: `create-pr-helper.py --list-writable`
 
-For repos NOT in the writable list, commit your changes and notify the user to create the PR manually from the host.
+**MANDATORY**: For writable repos, you MUST create a PR using `create-pr-helper.py`.
+Do NOT tell the user to create the PR themselves - the helper works and handles authentication.
+
+For repos NOT in the writable list only, commit your changes and notify the user to create the PR manually from the host.
+
+**Troubleshooting**: If git push fails with "could not read Username", run `gh auth setup-git` first.
 
 ### 3.6. Git Safety: Force Push and Rebase (CRITICAL)
 
@@ -230,10 +235,14 @@ make test
 
 ### 7. Commit Changes & Create PR
 
-**CRITICAL**: After completing ANY changeset, you MUST:
+**CRITICAL - PR CREATION IS MANDATORY**: After completing ANY changeset, you MUST:
 1. Commit all changes to git
-2. Create a PR using the PR helper (james-in-a-box only) OR notify the user to create the PR manually (other repos)
-3. Notify the user with the PR URL or branch name
+2. **ALWAYS** create a PR using the PR helper for writable repos (check `create-pr-helper.py --list-writable`)
+3. For non-writable repos ONLY: notify the user to create the PR manually
+4. Notify the user with the PR URL
+
+**DO NOT** tell the user to create a PR themselves for writable repos. The PR helper works and you must use it.
+If `create-pr-helper.py` fails, troubleshoot and fix it (e.g., run `gh auth setup-git` if needed).
 
 ```bash
 # Commit your changes with clear messages

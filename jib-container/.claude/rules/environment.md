@@ -17,12 +17,14 @@ You are running in a **sandboxed Docker container** with isolated access to code
 - **Inbound isolation** - Cannot accept connections, no ports exposed
 
 Even with internet access, you cannot:
-- Push code to GitHub (no SSH keys)
 - Deploy to GCP/AWS (no cloud credentials)
 - Access production databases (no credentials)
 - Access host services (network isolated)
 - Accept inbound connections (no ports exposed)
 - Damage the host system (containerized)
+
+**Note**: You CAN push to GitHub and create PRs using the GitHub token (`GITHUB_TOKEN`).
+The PR helper (`create-pr-helper.py`) handles authentication automatically.
 
 ## Capabilities
 
@@ -242,14 +244,26 @@ git branch
 git checkout -b feature/new-work
 ```
 
-### What Happens at Push
+### Git Push and PR Creation
+
+**For writable repos** (listed in `config/repositories.yaml`):
 ```bash
-git push
-# ❌ Permission denied (publickey)
-# This is intentional - no SSH keys in sandbox
+# ✅ Use the PR helper - it handles authentication automatically
+create-pr-helper.py --auto --reviewer jwbron
+
+# This will:
+# 1. Push your branch to GitHub
+# 2. Create a PR with auto-generated title/body
+# 3. Send a Slack notification with the PR URL
 ```
 
-**Solution**: Use the PR helper to push and create PRs (for writable repos in config/repositories.yaml)
+**Direct git push** also works (uses GITHUB_TOKEN via `gh auth setup-git`):
+```bash
+git push -u origin $(git branch --show-current)
+# Then create PR with: gh pr create --fill
+```
+
+**IMPORTANT**: Always use the PR helper for writable repos - it creates notifications.
 
 ### Workflow
 1. You: Make changes, commit locally
@@ -310,22 +324,22 @@ make fix
 
 ### Permission Denied Errors
 If you encounter credential-related errors:
-1. **Don't try to authenticate** - You don't have access
-2. **Document the limitation** - Note what needs user action
-3. **Work around it** - Focus on what you can accomplish
-4. **Be clear** - Tell user what they need to do on host
+1. **For GitHub**: Run `gh auth setup-git` if git push fails (should be auto-configured)
+2. **For cloud services**: You don't have access - document what the user needs to do
+3. **Be clear** - Tell user what they need to do on host for non-GitHub operations
 
 Examples:
 ```bash
-# ❌ This will fail (expected)
-git push
+# ❌ These will fail (expected) - no cloud credentials
 gcloud app deploy
 gsm read secret-name
 
-# ✅ Do this instead
-git commit -m "changes ready"
-# Tell human: "Changes committed locally, ready for you to push"
+# ✅ GitHub operations work
+git push -u origin $(git branch --show-current)  # Works with GITHUB_TOKEN
+create-pr-helper.py --auto  # Preferred - handles everything
 ```
+
+**If git push fails with "could not read Username"**: Run `gh auth setup-git` to configure git credentials.
 
 ### Service Conflicts
 If PostgreSQL or Redis fail to start:
