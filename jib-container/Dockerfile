@@ -204,6 +204,27 @@ else
     echo "  All future containers will automatically use these credentials"
 fi
 
+# Authenticate GitHub CLI if token is provided
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    echo "ℹ Authenticating GitHub CLI..."
+    # Create gh config directory
+    mkdir -p "${USER_HOME}/.config/gh"
+    chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.config/gh"
+
+    # Authenticate gh as the runtime user
+    if echo "${GITHUB_TOKEN}" | gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth login --with-token 2>/dev/null; then
+        echo "✓ GitHub CLI authenticated (PR creation enabled)"
+        echo "  Token provided via GITHUB_TOKEN environment variable"
+    else
+        echo "⚠ GitHub CLI authentication failed"
+        echo "  PR creation features will not be available"
+    fi
+else
+    echo "ℹ No GitHub token provided"
+    echo "  PR creation features not available"
+    echo "  Add token with: ./setup.sh --update (on host)"
+fi
+
 # Copy custom commands to where Claude Code looks for them
 if [ -d "/usr/local/share/claude-commands" ]; then
     for cmd in /usr/local/share/claude-commands/*.md; do
