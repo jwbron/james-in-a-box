@@ -186,7 +186,7 @@ All host components run as systemd user services for reliability and auto-restar
 ### Container Components
 
 - **[context-watcher](jib-container/components/context-watcher/README.md)** - Monitors `~/context-sync/` for doc updates
-- **[github-watcher](jib-container/components/github-watcher/README.md)** - Monitors PR check failures, auto-fixes issues, and provides on-demand code reviews
+- **[github-watcher](jib-container/components/github-watcher/README.md)** - Monitors PR check failures, auto-fixes issues, provides on-demand code reviews, and suggests comment responses
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 - **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
 
@@ -216,9 +216,10 @@ All host components run as systemd user services for reliability and auto-restar
 ~/context-sync/                      # Read-only context sources
 ├── confluence/                      # Confluence docs (ADRs, runbooks)
 ├── jira/                           # JIRA tickets (issues, epics)
-└── github/                         # GitHub PR data (metadata, diffs, checks)
+└── github/                         # GitHub PR data (metadata, diffs, checks, comments)
     ├── prs/                        # PR files and diffs
-    └── checks/                     # Check status and logs
+    ├── checks/                     # Check status and logs
+    └── comments/                   # PR comments for response tracking
 ```
 
 ## Usage Patterns

@@ -24,10 +24,12 @@ class GitHubSync:
         self.sync_dir = sync_dir
         self.prs_dir = sync_dir / "prs"
         self.checks_dir = sync_dir / "checks"
+        self.comments_dir = sync_dir / "comments"
 
         # Ensure directories exist
         self.prs_dir.mkdir(parents=True, exist_ok=True)
         self.checks_dir.mkdir(parents=True, exist_ok=True)
+        self.comments_dir.mkdir(parents=True, exist_ok=True)
 
     def gh_api(self, cmd: str) -> Any:
         """Run gh CLI command and return JSON output"""
@@ -107,6 +109,9 @@ class GitHubSync:
 
                 # Write checks JSON and fetch logs for failures
                 self.write_checks(pr_num, pr_full['repository']['nameWithOwner'], checks)
+
+                # Write comments JSON for tracking
+                self.write_comments(pr_num, pr_full['repository']['nameWithOwner'], pr_full.get('comments', []))
 
             except Exception as e:
                 print(f"    Error syncing PR #{pr_num}: {e}", file=sys.stderr)
@@ -226,6 +231,39 @@ class GitHubSync:
             return None
         except:
             return None
+
+    def write_comments(self, pr_num: int, repo: str, comments: List[Dict]):
+        """Write PR comments to JSON file for tracking"""
+        repo_name = repo.split('/')[-1]
+        comments_file = self.comments_dir / f"{repo_name}-PR-{pr_num}-comments.json"
+
+        # Structure comments for easy tracking
+        comments_data = {
+            'pr_number': pr_num,
+            'repository': repo,
+            'last_updated': datetime.utcnow().isoformat() + 'Z',
+            'comment_count': len(comments),
+            'comments': []
+        }
+
+        for comment in comments:
+            comment_data = {
+                'id': comment.get('id'),
+                'author': comment.get('author', {}).get('login', 'unknown'),
+                'body': comment.get('body', ''),
+                'created_at': comment.get('createdAt', ''),
+                'updated_at': comment.get('updatedAt', ''),
+                'author_association': comment.get('authorAssociation', ''),
+                # Check if comment is from PR author or reviewer
+                'is_author': comment.get('author', {}).get('login') == comment.get('authorAssociation') == 'OWNER'
+            }
+            comments_data['comments'].append(comment_data)
+
+        with comments_file.open('w') as f:
+            json.dump(comments_data, f, indent=2)
+
+        if len(comments) > 0:
+            print(f"    ✓ Wrote {len(comments)} comment(s)")
 
     def write_index(self, prs: List[Dict]):
         """Write quick index of all PRs"""

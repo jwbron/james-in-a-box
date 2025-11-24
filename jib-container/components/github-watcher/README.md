@@ -1,11 +1,12 @@
 # GitHub Watcher
 
-Container-side component that monitors GitHub PR check failures and provides on-demand PR code reviews.
+Container-side component that provides comprehensive GitHub PR automation.
 
 **Type**: Container background service
-**Purpose**:
-- Detect CI/CD failures, analyze logs, suggest/implement fixes automatically
-- Generate comprehensive code reviews for PRs on demand
+**Capabilities**:
+- **Failure Monitoring**: Detect CI/CD failures, analyze logs, auto-implement fixes
+- **Code Review**: Generate comprehensive on-demand PR reviews
+- **Comment Response**: Automatically suggest responses to PR comments
 
 ## Overview
 
@@ -98,6 +99,81 @@ Sends Slack notification with full review
 - **JavaScript**: var keyword, == vs ===, dangerouslySetInnerHTML
 - **Performance**: Potential performance bottlenecks
 - **Testing**: Missing test coverage for new code
+
+## Comment Response (Automatic)
+
+Automatically detects new PR comments and generates suggested responses:
+
+```
+Host syncs PR comments every 15 min
+        ↓
+~/context-sync/github/comments/
+    repo-PR-123-comments.json
+        ↓
+Comment Responder (runs every 5 min)
+        ↓
+Detects new comment (not previously seen)
+        ↓
+Analyzes comment type:
+    - Question (?, "why", "how", "what about")
+    - Change request ("fix", "update", "change to")
+    - Concern ("worried", "concern", "might")
+    - Positive feedback ("LGTM", "looks good")
+        ↓
+Creates Beads task: "Respond to {author}'s comment on PR #{num}"
+        ↓
+Generates contextual response:
+    - Based on comment type
+    - PR context and description
+    - Appropriate tone and detail level
+        ↓
+Sends Slack notification:
+    - Original comment
+    - Suggested response (with placeholders if needed)
+    - Type and confidence level
+    - Next steps for customization
+        ↓
+User reviews, customizes, and posts response
+```
+
+**Comment Types and Responses:**
+
+**Question** - User asking "why" or "how":
+```
+Original: "Why did you use Redis here instead of direct DB queries?"
+Suggested: "Good question! The reasoning behind this approach is [EXPLAIN DECISION].
+This allows us to [BENEFIT], though I'm open to alternative approaches if you have suggestions."
+Type: question, Confidence: medium
+```
+
+**Change Request** - User requesting specific changes:
+```
+Original: "Please change the timeout from 30s to 60s"
+Suggested: "Good catch! I'll update this. Let me make that change and push an update."
+Type: change_request, Confidence: high, Action required: YES
+```
+
+**Concern** - User expressing worry:
+```
+Original: "I'm concerned this might cause issues with concurrent requests"
+Suggested: "That's a valid concern. [EXPLAIN HOW CURRENT APPROACH ADDRESSES THIS].
+Would that address your concern?"
+Type: concern, Confidence: medium
+```
+
+**Positive** - LGTM or approval:
+```
+Original: "Looks good to me!"
+Suggested: "Thanks @reviewer! 🙏"
+Type: positive, Confidence: high
+```
+
+**Features:**
+- Automatic detection of comment type
+- Context-aware response generation
+- Placeholder markers for customization needs
+- Action flags for change requests
+- Beads task tracking
 
 ## Automatic Fix Examples
 

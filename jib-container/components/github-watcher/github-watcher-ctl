@@ -4,6 +4,7 @@
 WATCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WATCHER_SCRIPT="$WATCHER_DIR/watcher.py"
 COMMAND_HANDLER_SCRIPT="$WATCHER_DIR/command-handler.py"
+COMMENT_RESPONDER_SCRIPT="$WATCHER_DIR/comment-responder.py"
 LOG_FILE="$HOME/sharing/tracking/github-watcher.log"
 PID_FILE="$HOME/sharing/tracking/github-watcher.pid"
 
@@ -16,8 +17,8 @@ case "${1:-}" in
             exit 0
         fi
 
-        echo "Starting GitHub watcher and command handler..."
-        # Run watcher and command handler in loop (check every 5 minutes)
+        echo "Starting GitHub watcher, command handler, and comment responder..."
+        # Run all watchers in loop (check every 5 minutes)
         (
             while true; do
                 # Run check failure watcher
@@ -26,6 +27,9 @@ case "${1:-}" in
                 # Run command handler (processes PR review requests)
                 python3 "$COMMAND_HANDLER_SCRIPT" >> "$LOG_FILE" 2>&1
 
+                # Run comment responder (detects and responds to new comments)
+                python3 "$COMMENT_RESPONDER_SCRIPT" >> "$LOG_FILE" 2>&1
+
                 sleep 300  # 5 minutes
             done
         ) &
@@ -33,6 +37,7 @@ case "${1:-}" in
         echo "GitHub watcher started (PID: $!)"
         echo "  - Check failure monitoring active"
         echo "  - PR review command handler active"
+        echo "  - Comment response generator active"
         ;;
 
     stop)
