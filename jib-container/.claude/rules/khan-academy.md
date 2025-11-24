@@ -56,11 +56,23 @@ export const MyComponent: React.FC<Props> = ({name}) => {
 };
 ```
 
-### Testing
-- Write tests for new features
+### Testing (REQUIRED Before PR)
+
+**Core Requirements:**
+- Write tests for new features (no exceptions)
 - Update tests when changing behavior
-- Run test suites before committing
+- Run test suites before committing AND before opening PR
 - Aim for high coverage on critical paths
+- **Never open a PR with failing tests**
+
+**Test Coverage Expectations:**
+- New features: Must have corresponding tests
+- Bug fixes: Add a test that would have caught the bug
+- Refactoring: Existing tests should still pass (no test changes needed unless API changed)
+
+**Test Naming Conventions:**
+- Python: `test_<function_name>_<scenario>` (e.g., `test_login_with_invalid_password`)
+- JavaScript: `describe('<Component/Module>')` → `it('should <expected behavior>')`
 
 ## Common Commands
 
@@ -73,37 +85,71 @@ make serve
 make build
 ```
 
-### Testing
+### Testing (Run These BEFORE Opening Any PR)
+
+**REQUIRED: Run full test suite before PR:**
 ```bash
-# Run all tests
+# Run all tests (MANDATORY before PR)
 make test
-
-# Python tests
-pytest path/to/test.py
-pytest -v  # verbose
-pytest -k test_name  # specific test
-
-# JavaScript tests
-npm test
-npm test -- --watch
 ```
 
-### Linting and Formatting
+**For faster iteration during development:**
 ```bash
-# Check linting
+# Python tests - specific file
+pytest path/to/test.py -v
+
+# Python tests - specific test
+pytest -k test_name -v
+
+# Python tests - see full output on failures
+pytest --tb=long
+
+# JavaScript tests - all
+npm test
+
+# JavaScript tests - watch mode (during development)
+npm test -- --watch
+
+# JavaScript tests - specific file
+npm test -- --testPathPattern="filename"
+```
+
+**Verify test results before PR:**
+```bash
+# Good (proceed to PR):
+# ==================== 47 passed in 3.21s ====================
+
+# Bad (FIX BEFORE PR):
+# ==================== 45 passed, 2 failed in 3.45s ====================
+```
+
+### Linting and Formatting (Run These BEFORE Opening Any PR)
+
+**REQUIRED: Run linters before PR:**
+```bash
+# Check linting (MANDATORY before PR)
 make lint
 
 # Auto-fix linting issues
 make fix
-
-# Python specific
-black path/to/file.py
-pylint path/to/file.py
-
-# JavaScript specific
-eslint path/to/file.js
-prettier --write path/to/file.js
 ```
+
+**Language-specific tools:**
+```bash
+# Python - format and lint
+black path/to/file.py      # Auto-format
+pylint path/to/file.py     # Lint check
+mypy path/to/file.py       # Type check (if used)
+
+# JavaScript/TypeScript - format and lint
+prettier --write path/to/file.js   # Auto-format
+eslint path/to/file.js             # Lint check
+eslint --fix path/to/file.js       # Auto-fix lint issues
+```
+
+**Before PR, ensure:**
+- `make lint` passes with no errors
+- `make test` passes with all tests green
 
 ### Database
 ```bash
@@ -148,27 +194,45 @@ npm install
 2. **Make changes with tests**
    - Write code
    - Write/update tests
-   - Run tests locally
+   - Run tests frequently during development
 
-3. **Run linters and tests locally**
+3. **Run linters and fix issues**
    ```bash
-   make lint
-   make test
+   make lint       # Check for issues
+   make fix        # Auto-fix what can be fixed
+   make lint       # Verify all issues resolved
    ```
 
-4. **Commit with clear messages**
+4. **Run full test suite (MANDATORY)**
+   ```bash
+   make test
+   # Must see "X passed, 0 failed" before proceeding
+   # If tests fail: FIX THEM before continuing
+   ```
+
+5. **Commit with clear messages**
    ```bash
    git add .
-   git commit -m "feat: Add feature description"
+   git commit -m "feat: Add feature description
+
+   - Detail 1
+   - Detail 2
+   - All tests passing: X passed"
    ```
 
-5. **Prepare PR artifacts**
+6. **Final verification before PR**
    ```bash
-   @create-pr audit
-   # Generates PR description file
+   # One last check
+   make lint && make test
+   # Both must pass with no errors
    ```
-   
-6. **Human pushes, opens PR, and merges** (from host)
+
+7. **Create PR** (for writable repos)
+   ```bash
+   create-pr-helper.py --auto --reviewer jwiesebron
+   ```
+
+8. **Human reviews and merges** (from GitHub)
 
 ## Debugging Tips
 

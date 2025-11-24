@@ -277,19 +277,70 @@ git push -u origin $(git branch --show-current)
 
 ## Testing and Validation
 
+**IMPORTANT**: Always run tests and verify they pass BEFORE creating a PR. See `mission.md` for the full testing protocol.
+
 ### Running Tests
+
+**Step 1: Find relevant tests for your changes:**
 ```bash
-# Python tests
+# Find test files related to your changes
+find . -name "test_*.py" -o -name "*_test.py" | grep -i <module_name>
+find . -name "*.test.ts" -o -name "*.test.tsx" | grep -i <component_name>
+```
+
+**Step 2: Run specific tests first (faster feedback):**
+```bash
+# Python tests - specific file
+pytest tests/test_specific.py -v
+
+# Python tests - specific test function
+pytest tests/test_specific.py::test_function_name -v
+
+# JavaScript/Node tests - specific file
+npm test -- --testPathPattern="specific.test"
+
+# JavaScript tests - specific describe block
+npm test -- --testNamePattern="ComponentName"
+```
+
+**Step 3: Run full test suite (REQUIRED before PR):**
+```bash
+# Python tests - all
 pytest tests/
 python -m pytest path/to/test.py
 
-# JavaScript/Node tests  
+# JavaScript/Node tests - all
 npm test
 npm run test:watch
 
 # Project-specific (Khan Academy)
 make test
 ```
+
+**Step 4: Verify test output:**
+```bash
+# Good output example:
+# ==================== 47 passed in 3.21s ====================
+
+# Bad output example (DO NOT create PR with this):
+# ==================== 45 passed, 2 failed in 3.45s ====================
+```
+
+### Handling Test Failures
+
+If tests fail, follow this decision tree:
+
+1. **Is the failure in code you changed?**
+   - Yes → You likely introduced a bug. Fix your code.
+   - No → Proceed to step 2.
+
+2. **Is the test expectation outdated due to your intentional change?**
+   - Yes → Update the test to match new expected behavior.
+   - No → Proceed to step 3.
+
+3. **Was the test already failing before your changes?**
+   - Yes → Document this in PR: "Pre-existing test failure in test_foo - unrelated to this PR"
+   - No → Your change broke something. Investigate and fix.
 
 ### Running Services
 ```bash
@@ -377,12 +428,48 @@ service redis-server status
 - Check linters pass
 - Document non-obvious decisions
 
-### After Completing Work
-- Run full test suite
-- Create PR with `create-pr-helper.py --auto --reviewer jwiesebron` (for writable repos) OR notify user with branch name (non-writable repos)
-- Check writable repos: `create-pr-helper.py --list-writable`
+### After Completing Work (Pre-PR Checklist)
+
+**1. Testing (MANDATORY):**
+```bash
+# Run full test suite
+make test        # or pytest / npm test
+
+# Verify output shows all tests passing
+# Example: "47 passed, 0 failed"
+```
+
+**2. Linting (MANDATORY):**
+```bash
+# Run linters
+make lint        # or pylint / eslint
+
+# Fix any issues
+make fix         # or black / prettier --write
+```
+
+**3. Self-Review:**
+```bash
+# Review your changes one more time
+git diff --staged
+# or
+git diff HEAD~1
+```
+
+**4. Only if all above pass - Create PR:**
+```bash
+# For writable repos
+create-pr-helper.py --auto --reviewer jwiesebron
+
+# Check which repos are writable:
+create-pr-helper.py --list-writable
+```
+
+**5. Final steps:**
 - Save context with `@save-context <project>`
 - Summarize what was done for human
+
+**DO NOT create PR if tests or linting fail.** Fix issues first.
 
 ## Working with Confluence Documentation
 

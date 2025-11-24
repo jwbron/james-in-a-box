@@ -220,13 +220,73 @@ bd update bd-xyz1 --notes "Completed: schema designed per ADR-042"
 bd update bd-xyz2 --remove-blocker bd-xyz1  # Unblock next task
 ```
 
-### 5. Test Thoroughly
-```bash
-# Run relevant tests
-npm test
-pytest
-make test
-```
+### 5. Test Thoroughly (MANDATORY BEFORE PR)
+
+**CRITICAL**: You MUST run tests and verify they pass BEFORE creating a PR. Opening a PR with failing tests wastes the human reviewer's time. A PR with failing tests is NOT ready for review.
+
+**Testing Protocol:**
+
+1. **Identify relevant tests** for your changes:
+   ```bash
+   # Find test files related to your changes
+   # If you modified src/foo/bar.py, look for tests/foo/test_bar.py
+   # If you modified components/Button.tsx, look for components/Button.test.tsx
+   ```
+
+2. **Run the relevant tests first** (faster feedback):
+   ```bash
+   # Python - specific test file
+   pytest path/to/test_file.py -v
+
+   # JavaScript - specific test
+   npm test -- --testPathPattern="ComponentName"
+
+   # Project-specific
+   make test-unit  # if available
+   ```
+
+3. **Run the full test suite** before creating PR:
+   ```bash
+   # Run ALL tests to catch regressions
+   make test        # or the project's test command
+   pytest           # Python projects
+   npm test         # JavaScript projects
+   ```
+
+4. **Run linters and type checkers**:
+   ```bash
+   make lint        # or project-specific linting
+   mypy .           # Python type checking (if applicable)
+   npm run typecheck  # TypeScript checking (if applicable)
+   ```
+
+5. **If tests fail, FIX THEM before proceeding:**
+   - Read the test failure output carefully
+   - Determine if your code has a bug OR if the test needs updating
+   - If the test expectation is outdated due to intentional behavior change, update the test
+   - If your code has a bug, fix the code
+   - Re-run tests until they pass
+   - **DO NOT proceed to PR creation with failing tests**
+
+6. **Document test results** in your commit message:
+   ```
+   feat: Add user authentication endpoint
+
+   - Added /api/auth/login endpoint
+   - Added session token generation
+   - All tests passing: 47 passed, 0 failed
+   ```
+
+**When Tests Don't Exist:**
+- If you're adding new functionality, **write tests for it**
+- If tests are missing for code you're modifying, consider adding them
+- At minimum, manually verify your changes work as expected
+- Document how you verified the changes in the PR description
+
+**When Tests Can't Run:**
+- Some repos may not have tests configured in this container
+- Document this in your PR: "Tests: Could not run in container - needs [dependency/setup]"
+- Ask the human reviewer to run tests on their end before merging
 
 ### 6. Document
 - Update code comments
@@ -355,15 +415,41 @@ Human reviews PR and ships!
 
 ## Quality Standards
 
-### Before Creating PR
+### Before Creating PR (MANDATORY CHECKLIST)
+
+**Testing (REQUIRED - do not skip):**
+- [ ] Identified all test files related to your changes
+- [ ] Ran relevant unit tests and they PASS
+- [ ] Ran full test suite (`make test` / `pytest` / `npm test`) and it PASSES
+- [ ] If adding new functionality: wrote tests for it
+- [ ] If no tests exist/can't run: documented manual verification steps
+
+**Linting and Type Checking (REQUIRED):**
+- [ ] Ran linters (`make lint` / `pylint` / `eslint`) and they PASS
+- [ ] Ran type checkers if applicable (`mypy` / `tsc`) and they PASS
+- [ ] Fixed any auto-fixable issues (`make fix` / `black` / `prettier`)
+
+**Code Quality:**
 - [ ] Code follows project style guide
-- [ ] Tests pass locally
-- [ ] Linters pass
-- [ ] Documentation updated
-- [ ] No console.logs or debug code
-- [ ] **Changes are committed to git** with clear, descriptive commit messages
+- [ ] No console.logs, print statements, or debug code left in
+- [ ] No commented-out code left in
+- [ ] No hardcoded secrets, credentials, or sensitive data
+
+**Documentation:**
+- [ ] Updated relevant documentation if behavior changed
+- [ ] Added/updated docstrings for new/modified functions
+- [ ] Commit messages clearly describe what and why
+
+**Git:**
+- [ ] **All changes are committed to git** with clear, descriptive commit messages
+- [ ] Commit message includes test results summary (e.g., "All tests passing: 47 passed")
 - [ ] Beads task updated with completion notes
+
+**Final Verification:**
+- [ ] Re-read the diff one more time before creating PR
 - [ ] Ready to create PR for human review
+
+**If any checkbox is not checked, DO NOT create the PR.** Fix the issue first.
 
 ### Code Quality
 - Prefer clarity over cleverness
