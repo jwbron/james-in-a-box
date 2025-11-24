@@ -102,7 +102,12 @@ Sends Slack notification with full review
 
 ## Comment Response (Automatic)
 
-Automatically detects new PR comments and generates suggested responses:
+Automatically detects new PR comments on **your PRs** and generates suggested responses:
+
+**Scope**: Only processes:
+- PRs you've opened (`--author @me`)
+- Comments from others (skips your own comments and bots)
+- Future expansion: PRs you're tagged on for review
 
 ```
 Host syncs PR comments every 15 min

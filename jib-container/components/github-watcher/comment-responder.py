@@ -2,8 +2,15 @@
 """
 Comment Responder - Detects new PR comments and generates response suggestions
 
-Monitors PR comments, detects comments that need responses (questions, change
-requests), and generates suggested responses for human approval.
+Monitors PR comments on YOUR OWN PRs (PRs you've opened), detects comments
+that need responses (questions, change requests), and generates suggested
+responses for human approval.
+
+Scope:
+- Only processes PRs you've opened (--author @me)
+- Skips your own comments (no need to respond to yourself)
+- Skips bot comments
+- Future: Will expand to PRs you're tagged on
 """
 
 import json
@@ -85,13 +92,30 @@ class CommentResponder:
         self.save_state()
 
     def needs_response(self, comment: Dict) -> bool:
-        """Determine if a comment needs a response"""
+        """
+        Determine if a comment needs a response
+
+        Note: Only processes comments on PRs you've opened.
+        Skips your own comments and bot comments.
+        """
         body = comment.get('body', '').lower()
         author = comment.get('author', '')
 
         # Skip bot comments
         if 'bot' in author.lower():
             return False
+
+        # Skip your own comments (get current user from gh cli)
+        try:
+            result = subprocess.run(['gh', 'api', 'user', '--jq', '.login'],
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                current_user = result.stdout.strip()
+                if author.lower() == current_user.lower():
+                    return False
+        except:
+            # If we can't determine current user, proceed anyway
+            pass
 
         # Patterns indicating a response is needed
         question_patterns = [

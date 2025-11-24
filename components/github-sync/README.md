@@ -6,6 +6,11 @@ Syncs GitHub PR data to `~/context-sync/github/` for JIB consumption.
 **Type**: Host-side systemd timer service
 **Purpose**: Enable JIB to monitor PR check failures and provide automated assistance
 
+**Scope**: Currently syncs only PRs you've opened (`--author @me`).
+- ✅ Your open PRs
+- ❌ PRs you're reviewing (future expansion)
+- ❌ PRs you're tagged on (future expansion)
+
 ## Overview
 
 GitHub Sync fetches data for all open PRs you've authored and stores it locally as markdown and JSON. This enables JIB to:
