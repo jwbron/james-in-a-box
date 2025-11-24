@@ -10,6 +10,7 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 
 - **Slack-based control**: Send tasks, receive notifications, review work from your phone
 - **Secure sandbox**: No credentials, network isolation, human-in-the-loop for all PRs
+- **GitHub PR integration**: Auto-creates PRs, reviews others' PRs, responds to comments
 - **Context-aware**: Syncs Confluence docs, JIRA tickets, and codebase knowledge
 - **Persistent memory**: Beads task tracking survives restarts, enables multi-session work
 - **Mobile-first**: Fully productive workflow from phone (notifications, PR reviews, approvals)
@@ -407,8 +408,56 @@ See [Beads documentation](https://github.com/steveyegge/beads) and container rul
 4. **Approve and merge** (or request changes)
 5. **Deploy** when ready (human controls deployment)
 
-**Agent does**: Generate, document, test
-**Human does**: Review and ship
+**Agent does**: Generate, document, test, create PR
+**Human does**: Review and merge
+
+## GitHub PR Integration
+
+jib provides comprehensive GitHub PR automation:
+
+### PR Creation (After Task Completion)
+
+When jib completes a task with code changes, it can automatically create a PR:
+
+```bash
+# Inside container (automatic after task completion)
+create-pr-helper.py --auto --reviewer jwiesebron
+```
+
+This:
+1. Pushes the branch to remote (via HTTPS using `gh` CLI)
+2. Creates PR with auto-generated title/body from commits
+3. Requests review from configured reviewer
+4. Sends Slack notification with PR URL
+
+### Auto-Review (Others' PRs)
+
+jib automatically reviews new PRs from others after each github-sync (every 15 min):
+
+- Scans for new PRs not yet reviewed
+- Skips your own PRs (no self-review)
+- Analyzes code quality, security, and performance
+- Creates notification with findings
+
+**State**: Tracked in `~/sharing/tracking/pr-reviewer-state.json`
+
+### Comment Response
+
+jib suggests responses to comments on your PRs:
+
+- Detects new comments after each sync
+- Classifies type (question, change request, concern, etc.)
+- Generates contextual response suggestions
+- Creates Beads task for tracking
+
+### Check Failure Analysis
+
+When CI/CD checks fail on your PRs:
+
+- Analyzes failure logs
+- Determines root cause
+- Suggests or implements fixes (for auto-fixable issues like linting)
+- Sends notification with analysis
 
 ## Management Commands
 
@@ -473,18 +522,24 @@ docker logs -f jib-claude
 
 ## Roadmap
 
-**Current (Phase 1)**:
+**Current (Phase 1)** - Complete:
 - ✅ Docker sandbox with Slack integration
 - ✅ File-based context sync (Confluence, JIRA)
 - ✅ Mobile-first notification system
 - ✅ Automated analyzers (code, conversations)
 - ✅ Service monitoring and failure alerts
+- ✅ **GitHub PR integration**:
+  - ✅ Automated PR creation after task completion
+  - ✅ Auto-review of others' PRs
+  - ✅ Comment response suggestions
+  - ✅ Check failure analysis and auto-fix
 
 **Phase 2** (Near-term):
 - Context source filtering (allowlists/blocklists)
 - Content classification (Public/Internal/Confidential)
 - Monitoring infrastructure (API calls, task completion)
 - MCP servers for real-time context access
+- Mobile-optimized PR review workflow
 
 **Phase 3** (Future):
 - Cloud Run deployment (multi-engineer)

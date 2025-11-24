@@ -51,10 +51,15 @@
 - Cloud Run deployment via Terraform (production)
 
 **In Progress:**
-- Automated PR creation from mobile
 - Production hardening
 - MCP server evaluation for context integration
 - GCP read-only service account design
+
+**Recently Completed:**
+- ✅ **Automated PR creation** - Agent creates PRs via `gh` CLI after task completion
+- ✅ **PR auto-review** - Agent reviews PRs from others automatically after github-sync
+- ✅ **Comment response** - Agent detects and suggests responses to PR comments
+- ✅ **Full repo PR sync** - Sync all PRs in repo (not just @me) for cross-team visibility
 
 ## Context
 
@@ -383,11 +388,15 @@ Agent should demonstrate L3-L4 behaviors:
 - **Source:** GitHub API (PR data, checks, comments)
 - **Output:** `~/context-sync/github/` - JSON files
 - **Structure:**
-  - `prs/{repo}-PR-{num}.json` - PR metadata and diffs
+  - `prs/{repo}-PR-{num}.md` - PR metadata, description, comments
+  - `prs/{repo}-PR-{num}.diff` - Full diff
   - `checks/{repo}-PR-{num}-checks.json` - Check status and logs
   - `comments/{repo}-PR-{num}-comments.json` - PR comments for response tracking
-- **Scope:** Only PRs opened by current user (for now)
-- **Container Analysis:** `check-monitor.py` triggered via `jib --exec --worktree` after sync
+- **Scope:** All open PRs in configured repository (`--repo` and `--all-prs` flags)
+- **Container Analysis:** After sync, triggers via `jib --exec`:
+  1. `check-monitor.py` - Analyzes check failures, suggests/implements fixes
+  2. `pr-reviewer.py --watch` - Auto-reviews new PRs from others
+  3. `comment-responder.py` - Detects comments needing responses on your PRs
 
 **Container-Side Active Analysis:**
 
@@ -407,10 +416,22 @@ Agent should demonstrate L3-L4 behaviors:
   - Sends Slack notifications
 
 **GitHub Watcher** (`jib-container/components/github-watcher/`)
-- **Architecture:** Exec-based pattern triggered by `github-sync.service` via `jib --exec --worktree`
-- **Check Monitor:** Analyzes PR check failures after sync (every 15 min), suggests automated fixes
-- **Comment Responder (Phase 3):** Analyzes PR comments, suggests responses
-- **Scope:** Only user's own PRs currently
+- **Architecture:** Exec-based pattern triggered by `github-sync.service` via `jib --exec`
+- **Check Monitor:** Analyzes PR check failures after sync (every 15 min), suggests/implements automated fixes
+- **PR Reviewer:** Auto-reviews new PRs from others (`--watch` mode), skips self-authored PRs
+- **Comment Responder:** Analyzes PR comments on your PRs, suggests contextual responses
+- **Scope:** All PRs in configured repository (reviews others' PRs, responds to comments on your PRs)
+
+**PR Creation Helper** (`jib-container/scripts/create-pr-helper.py`)
+- **Purpose:** Enables jib to create PRs after completing tasks
+- **Invocation:** `create-pr-helper.py --auto --reviewer <username>`
+- **Capabilities:**
+  - Auto-generates PR title/body from git commits
+  - Pushes branch to remote (uses `gh auth setup-git` for HTTPS auth)
+  - Creates PR via `gh pr create`
+  - Requests review from configured reviewer
+  - Creates Slack notification with PR URL
+- **Integration:** Called by `incoming-processor.py` after task completion
 
 **Sprint Analysis** (`jib-container/scripts/analyze-sprint.py`)
 - **On-Demand:** Execute via `bin/jib --exec`
@@ -1671,7 +1692,10 @@ Benefits:
 - [x] Mobile-accessible Slack interface
 
 ### Phase 2 (In Progress)
-- [ ] Safe automated PR creation (agent creates, human merges)
+- [x] Safe automated PR creation (agent creates, human merges)
+- [x] PR auto-review for others' PRs (pattern-based analysis)
+- [x] Comment response suggestions (contextual response generation)
+- [x] Full repo PR sync (--repo and --all-prs flags)
 - [ ] Mobile-optimized review workflow (quick actions, inline diffs)
 - [ ] **Khan Academy cultural alignment** (`.claude/rules/khan-academy-culture.md` from Confluence)
 - [ ] **Conversation analyzer demeanor evaluation** (cultural fit assessment)
@@ -1712,6 +1736,6 @@ Benefits:
 
 ---
 
-**Last Updated:** 2025-11-23
-**Next Review:** 2025-12-23 (Monthly context strategy assessment)
+**Last Updated:** 2025-11-24
+**Next Review:** 2025-12-24 (Monthly context strategy assessment)
 **Status:** Living Document (updates as implementation progresses)
