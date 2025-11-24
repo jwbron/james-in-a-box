@@ -115,19 +115,27 @@ class GitHubSync:
                 # Get check status
                 # Note: gh pr checks uses different field names than gh api
                 # Available: bucket, completedAt, description, event, link, name, startedAt, state, workflow
-                checks = self.gh_api(
-                    f"pr checks {pr_num} --repo {repo_with_owner} "
-                    f"--json name,state,startedAt,completedAt,link,description,workflow"
-                )
+                # May fail if no checks are configured for the repo
+                try:
+                    checks = self.gh_api(
+                        f"pr checks {pr_num} --repo {repo_with_owner} "
+                        f"--json name,state,startedAt,completedAt,link,description,workflow"
+                    )
+                except subprocess.CalledProcessError as e:
+                    if "no checks reported" in e.stderr.lower():
+                        checks = []
+                        print(f"    (no CI checks configured)")
+                    else:
+                        raise
 
                 # Write PR markdown and diff
-                self.write_pr_markdown(pr_full, diff)
+                self.write_pr_markdown(pr_full, diff, repo_with_owner)
 
                 # Write checks JSON and fetch logs for failures
-                self.write_checks(pr_num, pr_full['headRepository']['nameWithOwner'], checks)
+                self.write_checks(pr_num, repo_with_owner, checks)
 
                 # Write comments JSON for tracking
-                self.write_comments(pr_num, pr_full['headRepository']['nameWithOwner'], pr_full.get('comments', []))
+                self.write_comments(pr_num, repo_with_owner, pr_full.get('comments', []))
 
             except Exception as e:
                 print(f"    Error syncing PR #{pr_num}: {e}", file=sys.stderr)
@@ -139,17 +147,17 @@ class GitHubSync:
         # Cleanup old PRs that are no longer open
         self.cleanup_closed_prs(pr_numbers)
 
-    def write_pr_markdown(self, pr: Dict, diff: str):
+    def write_pr_markdown(self, pr: Dict, diff: str, repo_with_owner: str):
         """Write PR as markdown file"""
         pr_num = pr['number']
-        repo_name = pr['headRepository']['name']
+        repo_name = repo_with_owner.split('/')[-1]
         pr_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.md"
         diff_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.diff"
 
         # Write markdown
         with pr_file.open('w') as f:
             f.write(f"# PR #{pr_num}: {pr['title']}\n\n")
-            f.write(f"**Repository**: {pr['headRepository']['nameWithOwner']}\n")
+            f.write(f"**Repository**: {repo_with_owner}\n")
             f.write(f"**Author**: {pr['author']['login']}\n")
             f.write(f"**State**: {pr['state']}\n")
             f.write(f"**URL**: {pr['url']}\n")
@@ -207,7 +215,7 @@ class GitHubSync:
             json.dump({
                 'pr_number': pr_num,
                 'repository': repo,
-                'last_updated': datetime.utcnow().isoformat() + 'Z',
+                'last_updated': datetime.now().isoformat() + 'Z',
                 'checks': enriched_checks,
                 'summary': {
                     'total': len(checks),
@@ -285,13 +293,18 @@ class GitHubSync:
 
     def write_index(self, prs: List[Dict]):
         """Write quick index of all PRs"""
+        def extract_repo_from_url(url: str) -> str:
+            """Extract owner/repo from PR URL"""
+            parts = url.split('/')
+            return f"{parts[3]}/{parts[4]}"
+
         index = {
-            'last_sync': datetime.utcnow().isoformat() + 'Z',
+            'last_sync': datetime.now().isoformat() + 'Z',
             'pr_count': len(prs),
             'prs': [
                 {
                     'number': pr['number'],
-                    'repository': pr['headRepository']['nameWithOwner'],
+                    'repository': extract_repo_from_url(pr['url']),
                     'title': pr['title'],
                     'url': pr['url'],
                     'head_branch': pr['headRefName'],
