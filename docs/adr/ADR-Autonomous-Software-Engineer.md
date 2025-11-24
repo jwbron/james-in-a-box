@@ -533,38 +533,40 @@ This solves the fundamental "LLM amnesia" problem while enabling true autonomous
 
 **Architecture:**
 ```
-Host systemd service syncs data → Triggers analysis via jib --exec --worktree
+Host systemd service syncs data → Triggers analysis via jib --exec
   ↓
-Container: docker exec in running container
-  ↓
-Create temporary git worktree for isolation
+Spawn new ephemeral container (docker run --rm)
   ↓
 Analysis script runs once → Sends notifications → Exits
   ↓
-Cleanup: Remove temporary worktree
+Container automatically removed (--rm flag)
 ```
 
 **Benefits:**
 - **Event-driven:** Analysis only when data changes (after sync completes)
 - **No background processes:** Container has no continuous watchers
-- **Git isolation:** Each analysis gets its own worktree with temporary branch
+- **Total isolation:** Each execution in separate container, can't affect interactive sessions
 - **Concurrent safe:** Multiple analyses can run simultaneously without conflicts
+- **Automatic cleanup:** Containers removed immediately after exit (--rm flag)
 - **Lower resource usage:** No polling loops, scripts exit after completion
 - **Simpler debugging:** One-shot executions easier to trace than continuous loops
+- **No git complexity:** Mounts main repos directly, no worktree management needed
 
 **Implementation:**
-- **github-sync.service:** `ExecStartPost` triggers `check-monitor.py` via `jib --exec --worktree`
+- **github-sync.service:** `ExecStartPost` triggers `check-monitor.py` via `jib --exec`
 - **context-sync.service:** `ExecStartPost` triggers `jira-watcher.py` and `confluence-watcher.py`
 - **slack-receiver:** Triggers `incoming-processor.py` when message arrives
-- **Worktrees:** Each execution gets isolated branch (`jib-exec-{timestamp}`)
-- **Cleanup:** Automatic worktree removal after script completes
+- **Containers:** Each execution gets unique ID (`jib-exec-{timestamp}-{pid}`)
+- **Cleanup:** Automatic via Docker `--rm` flag (no manual cleanup needed)
 
-**Why exec-based over continuous watchers:**
-1. **Resource efficiency:** No CPU cycles wasted on polling empty directories
-2. **Clearer architecture:** Analysis explicitly coupled to data availability
-3. **Better error handling:** Failed analysis doesn't affect container lifecycle
-4. **Easier testing:** Can manually trigger analysis via `jib --exec`
-5. **Scalability:** Adding new analysis scripts doesn't increase baseline load
+**Why ephemeral containers over docker exec:**
+1. **Isolation:** Cannot affect running Claude Code sessions or other jobs
+2. **Simplicity:** No worktree creation/cleanup logic needed
+3. **Resource efficiency:** No CPU cycles wasted on polling empty directories
+4. **Clearer architecture:** Analysis explicitly coupled to data availability
+5. **Better error handling:** Failed analysis doesn't affect container lifecycle
+6. **Easier testing:** Can manually trigger analysis via `jib --exec`
+7. **Scalability:** Adding new analysis scripts doesn't increase baseline load
 
 ## User Interaction Model
 

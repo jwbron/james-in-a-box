@@ -2,7 +2,8 @@
 # Worktree Watcher - Cleans up orphaned git worktrees from stopped/crashed containers
 # Runs periodically via systemd timer to prevent worktree accumulation
 
-set -e
+# Don't use set -e - we want to continue even if some cleanups fail
+set -u
 
 WORKTREE_BASE="$HOME/.jib-worktrees"
 LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
@@ -65,9 +66,14 @@ cleanup_orphaned_worktrees() {
             fi
         done
 
-        # Remove container directory
+        # Remove container directory (best effort - some files may be owned by root/docker)
         log "  Removing directory: $container_dir"
-        rm -rf "$container_dir"
+        if rm -rf "$container_dir" 2>/dev/null; then
+            log "  Successfully removed directory"
+        else
+            log "  Warning: Could not remove all files (permission denied on some files)"
+            log "  Manual cleanup may be needed: rm -rf $container_dir"
+        fi
 
         total_cleaned=$((total_cleaned + 1))
         log "  Cleaned up $worktrees_removed worktree(s) for container $container_id"
@@ -76,7 +82,39 @@ cleanup_orphaned_worktrees() {
     log "Cleanup complete: checked $total_checked container(s), cleaned $total_cleaned orphaned worktree(s)"
 }
 
+prune_stale_worktree_references() {
+    log "Pruning stale worktree references..."
+
+    # Prune worktree references in all khan repos
+    local repos_pruned=0
+    for repo in "$HOME/khan"/*; do
+        if [ ! -d "$repo/.git" ]; then
+            continue
+        fi
+
+        repo_name=$(basename "$repo")
+        cd "$repo"
+
+        # Prune stale worktree references (ignore errors)
+        local prune_output
+        prune_output=$(git worktree prune -v 2>&1 || true)
+        if echo "$prune_output" | grep -q "Removing"; then
+            log "  Pruned stale references in $repo_name"
+            repos_pruned=$((repos_pruned + 1))
+        fi
+    done
+
+    if [ $repos_pruned -gt 0 ]; then
+        log "Pruned stale references in $repos_pruned repo(s)"
+    else
+        log "No stale references found"
+    fi
+}
+
 # Run cleanup
 cleanup_orphaned_worktrees
+
+# Prune stale references
+prune_stale_worktree_references
 
 exit 0

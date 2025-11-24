@@ -338,19 +338,20 @@ class SlackReceiver:
         """Trigger message processing in JIB container via jib --exec."""
         try:
             jib_script = Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
-            processor_script = Path.home() / "khan" / "james-in-a-box" / "jib-container" / "components" / "incoming-processor.py"
 
-            # Convert host path to container path
-            # Host: ~/.jib-sharing/incoming/task.md
-            # Container: ~/sharing/incoming/task.md
-            container_path = str(filepath).replace(str(Path.home() / ".jib-sharing"), f"/home/{os.environ['USER']}/sharing")
+            # Convert host paths to container paths
+            # Host: ~/.jib-sharing/incoming/task.md → Container: ~/sharing/incoming/task.md
+            container_message_path = str(filepath).replace(str(Path.home() / ".jib-sharing"), f"/home/{os.environ['USER']}/sharing")
+
+            # Container path to processor script (james-in-a-box mounted at ~/khan/james-in-a-box/)
+            container_processor = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/components/incoming-processor.py"
 
             self.logger.info(f"Triggering processing for {filepath.name}")
 
-            # Execute in background (non-blocking)
-            # Uses --worktree for git isolation in case script creates branches/commits
+            # Execute in background (non-blocking) in a new ephemeral container
+            # IMPORTANT: --exec must be LAST (uses argparse.REMAINDER)
             subprocess.Popen(
-                [str(jib_script), "--exec", "--worktree", "python3", str(processor_script), container_path],
+                [str(jib_script), "--exec", "python3", container_processor, container_message_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True  # Detach from parent

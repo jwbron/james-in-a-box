@@ -110,11 +110,27 @@ fi
 export HOME="${USER_HOME}"
 export USER="${RUNTIME_USER}"
 export PATH="/usr/local/bin:${PATH}"
+# Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
+export PYTHONDONTWRITEBYTECODE=1
 
-# Khan directory is mounted READ-ONLY from host at runtime
+# Fix worktree .git files to point to mounted git directories
+# Worktrees have .git files that reference the main repo's .git directory
+# We mount the main .git at ~/.git-main/{repo}/ so we need to rewrite these references
 if [ -d "${USER_HOME}/khan" ]; then
-    echo "✓ Khan workspace mounted (READ-ONLY for reference)"
-    echo "  Agent stages changes in ~/sharing/ for your review"
+    for repo_dir in "${USER_HOME}/khan"/*; do
+        if [ -f "${repo_dir}/.git" ]; then
+            repo_name=$(basename "$repo_dir")
+            # Read the original gitdir path
+            original_gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
+            # Extract the worktree admin directory name (last component of path)
+            worktree_admin=$(basename "$original_gitdir")
+            # Rewrite .git file to point to the mounted location
+            echo "gitdir: ${USER_HOME}/.git-main/${repo_name}/worktrees/${worktree_admin}" > "${repo_dir}/.git"
+            chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
+        fi
+    done
+    echo "✓ Khan worktrees configured (isolated from host)"
+    echo "  Git metadata mounted read-only from ~/.git-main/"
 else
     echo "⚠ Khan workspace not found - check mount configuration"
 fi

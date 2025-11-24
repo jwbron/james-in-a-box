@@ -57,10 +57,10 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 **Workflow:**
 1. Send task via Slack DM to bot
 2. Container spawns with isolated git worktree (host repos stay clean)
-3. Agent implements changes, writes tests, commits to branch
-4. Container shuts down, worktrees auto-cleanup
+3. Agent implements changes, writes tests, commits to branch `jib-temp-{container-id}`
+4. Container shuts down, worktree directory cleaned up (commits preserved on branch)
 5. Agent sends Slack notification with branch name
-6. You review commits and create PR from phone
+6. You review commits and create PR from phone or desktop
 
 ### Worktree Isolation
 
@@ -69,19 +69,23 @@ Each container gets its own ephemeral git worktree, keeping your host repositori
 ```
 Host:
 ~/khan/webapp/                      # Your working directory (untouched!)
+~/khan/webapp/.git/                 # Git metadata (mounted read-only to containers)
 ~/.jib-worktrees/
   └── jib-20251123-103045-12345/    # Container's isolated workspace
       └── webapp/                   # Worktree with changes
 
 Container:
 ~/khan/webapp/                      # Mounted from worktree (not host repo)
+~/.git-main/webapp/                 # Read-only git metadata (enables git commands)
 ```
 
 **Benefits:**
 - **Host protection**: Your `~/khan/` repos stay clean while you work
 - **True parallelism**: Multiple containers can work on same repo simultaneously
-- **Isolated branches**: Each container works on its own branch
-- **Auto-cleanup**: Worktrees removed when container exits
+- **Isolated branches**: Each container works on `jib-temp-{container-id}` branch
+- **Git commands work**: Full git functionality inside container (status, log, commit, diff)
+- **Commits preserved**: All commits saved on branch even after container exits
+- **Auto-cleanup**: Worktrees removed when container exits, commits remain accessible
 - **Orphan detection**: Watcher cleans up crashed container worktrees every 15 min
 
 ## Quick Start

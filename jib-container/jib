@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -416,41 +417,46 @@ def cleanup_worktrees(container_id: str) -> None:
 
     info(f"Cleaning up worktrees for {container_id}...")
 
-    # Remove each worktree
+    # Collect repos that need pruning
+    repos_to_prune = set()
     for worktree_path in worktree_dir.iterdir():
-        if not worktree_path.is_dir():
-            continue
-
-        repo_name = worktree_path.name
-        original_repo = Config.KHAN_SOURCE / repo_name
-
-        if not original_repo.exists():
-            continue
-
-        try:
-            # Remove worktree from git
-            result = subprocess.run(
-                ["git", "worktree", "remove", str(worktree_path), "--force"],
-                cwd=original_repo,
-                capture_output=True,
-                text=True
-            )
-
-            if result.returncode == 0:
-                info(f"  ✓ Removed worktree: {repo_name}")
-            else:
-                warn(f"  ✗ Failed to remove worktree {repo_name}: {result.stderr}")
-
-        except Exception as e:
-            warn(f"  ✗ Error removing worktree {repo_name}: {e}")
+        if worktree_path.is_dir():
+            repo_name = worktree_path.name
+            original_repo = Config.KHAN_SOURCE / repo_name
+            if original_repo.exists():
+                repos_to_prune.add(original_repo)
 
     # Remove container worktree directory
+    # Don't use 'git worktree remove' because:
+    # - Container modified .git files to point to container paths
+    # - Git cannot validate the worktree state from the host
+    # - Commits are already safe in git (on the jib-temp-* branch)
+    # - We just need to clean up the working directory and prune metadata
     try:
         import shutil
         shutil.rmtree(worktree_dir)
-        info(f"  ✓ Removed directory: {worktree_dir}")
+        info(f"  ✓ Removed worktree directory")
     except Exception as e:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
+
+    # Prune stale worktree metadata from each repo
+    # This removes the .git/worktrees/* admin directories
+    # All commits on jib-temp-* branches are preserved
+    for repo_path in repos_to_prune:
+        try:
+            subprocess.run(
+                ["git", "worktree", "prune", "-v"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        except Exception:
+            pass  # Non-critical if pruning fails
+
+    if repos_to_prune:
+        info(f"  ✓ Pruned metadata in {len(repos_to_prune)} repo(s)")
+        info(f"  💡 Commits preserved on branch: jib-temp-{container_id}")
 
 
 def create_temp_worktree(repo_name: str) -> Optional[Path]:
@@ -924,10 +930,23 @@ def run_claude() -> bool:
         print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
 
     # Add worktree mounts
+    # Also track which main repos need their .git directories mounted
+    main_repos_needed = set()
     for repo_name, worktree_path in worktrees.items():
         container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
+        main_repos_needed.add(repo_name)
+
+    # Mount main repo .git directories (read-only) so worktrees can access git metadata
+    for repo_name in main_repos_needed:
+        main_repo = Config.KHAN_SOURCE / repo_name
+        if (main_repo / ".git").exists():
+            # Mount the main repo's .git directory at a special location
+            # Worktree .git files will be rewritten to point here
+            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+            mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:ro,z"])
+            print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-only)")
 
     # Mount worktree base directory for jib --exec temporary worktrees
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
@@ -982,6 +1001,102 @@ def run_claude() -> bool:
         return False
 
 
+def exec_in_new_container(command: List[str]) -> bool:
+    """Execute a command in a new ephemeral container.
+
+    This is simpler and safer than docker exec:
+    - Total isolation from interactive sessions
+    - No worktree complexity
+    - Automatic cleanup (--rm)
+    - Mounts main repos directly (read-write for simplicity)
+
+    Args:
+        command: Command to execute
+
+    Returns:
+        True if successful, False otherwise
+    """
+    # Check if image exists
+    if not image_exists():
+        info("Docker image not found. Running initial setup...")
+        if not setup():
+            return False
+
+    # Load mount configuration
+    if not Config.CONFIG_FILE.exists():
+        info("Configuration not found. Running initial setup...")
+        if not setup():
+            return False
+
+    # Build/update image
+    if not build_image():
+        error("Docker build failed")
+        return False
+
+    # Generate unique container ID for this exec
+    container_id = f"jib-exec-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
+
+    info(f"Executing command in new container: {container_id}")
+    print(f"Command: {' '.join(command)}")
+    print()
+
+    # Parse mount configuration (same as run_claude, but simpler - no worktrees)
+    mount_args = []
+    mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
+
+    for mount in mounts:
+        if not mount:
+            continue
+        parts = mount.rsplit(":", 2)
+
+        if len(parts) == 2:
+            mount_path, mode = parts
+            container_path = mount_path
+        elif len(parts) == 3:
+            mount_path, container_path, mode = parts
+        else:
+            warn(f"Invalid mount format: {mount}")
+            continue
+
+        # Ensure SELinux label
+        if not mode.endswith(",z") and not mode.endswith(":z"):
+            mode = f"{mode},z"
+
+        mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
+
+    # Build docker run command
+    cmd = [
+        "docker", "run",
+        "--rm",  # Auto-remove container after exit
+        "--name", container_id,
+        "-e", f"RUNTIME_USER={os.environ['USER']}",
+        "-e", f"RUNTIME_UID={os.getuid()}",
+        "-e", f"RUNTIME_GID={os.getgid()}",
+        "-e", f"CONTAINER_ID={container_id}",
+    ]
+
+    # Add mount arguments
+    cmd.extend(mount_args)
+
+    # Add image name
+    cmd.append(Config.IMAGE_NAME)
+
+    # Add the command to execute
+    cmd.extend(command)
+
+    # Run container
+    try:
+        result = subprocess.run(cmd)
+        return result.returncode == 0
+    except KeyboardInterrupt:
+        print()
+        warn("Interrupted by user")
+        return False
+    except Exception as e:
+        error(f"Failed to run container: {e}")
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run Claude Code CLI in an isolated Docker container (james-in-a-box)",
@@ -991,13 +1106,10 @@ Examples:
   jib                                      # Run Claude Code (setup on first use)
   jib --setup                              # Reconfigure mounts
   jib --reset                              # Reset configuration and remove Docker image
-  jib --exec <command> [args...]          # Execute command in running container
-  jib --exec python3 ~/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
-  jib --exec --worktree python3 script.py # Execute with git isolation (temporary worktree)
-  jib --exec --worktree --repo webapp <command>  # Use webapp repo for worktree
+  jib --exec <command> [args...]          # Execute command in new ephemeral container
+  jib --exec python3 /home/jwies/khan/james-in-a-box/jib-container/components/incoming-processor.py /home/jwies/sharing/incoming/task.md
 
-Note: --exec requires a container to be running. Start one first with 'jib'
-      --worktree creates a temporary git worktree for isolation (auto-cleaned up after)
+Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
         """
     )
     parser.add_argument(
@@ -1013,17 +1125,7 @@ Note: --exec requires a container to be running. Start one first with 'jib'
     parser.add_argument(
         "--exec",
         nargs=argparse.REMAINDER,
-        help="Execute a command in the running container (requires container to be running)"
-    )
-    parser.add_argument(
-        "--worktree",
-        action="store_true",
-        help="Create temporary worktree for --exec command (provides git isolation)"
-    )
-    parser.add_argument(
-        "--repo",
-        default="james-in-a-box",
-        help="Repository name for worktree (default: james-in-a-box)"
+        help="Execute a command in a new ephemeral container (automatic cleanup)"
     )
 
     args = parser.parse_args()
@@ -1076,9 +1178,9 @@ Note: --exec requires a container to be running. Start one first with 'jib'
             return 1
         return 0
 
-    # Handle exec - execute in running container
+    # Handle exec - execute in a new ephemeral container
     if args.exec:
-        if not exec_in_running_container(args.exec, use_worktree=args.worktree, repo_name=args.repo):
+        if not exec_in_new_container(args.exec):
             return 1
         return 0
 
