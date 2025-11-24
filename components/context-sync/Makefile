@@ -46,28 +46,38 @@ docs-sync-limited: deps
 	@echo "Syncing documentation from Confluence (limited to 100 pages)..."
 	CONFLUENCE_MAX_PAGES=100 ${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; exit(main())"
 
-# Basic sync with ID or URL, optional format
+# Basic sync with ID or URL, optional format and full flag
+# Usage: make docs-sync-page PAGE_ID=12345 [FORMAT=markdown] [FULL=1]
 .PHONY: docs-sync-page
 docs-sync-page: deps
 	@if [ -z "$(PAGE_ID)$(PAGE_URL)" ]; then \
 		echo "Usage:"; \
-		echo "  make docs-sync-page PAGE_ID=12345 [FORMAT=markdown]"; \
-		echo "  make docs-sync-page PAGE_URL=\"https://company.atlassian.net/wiki/...\" [FORMAT=markdown]"; \
+		echo "  make docs-sync-page PAGE_ID=12345 [FORMAT=markdown] [FULL=1]"; \
+		echo "  make docs-sync-page PAGE_URL=\"https://company.atlassian.net/wiki/...\" [FORMAT=markdown] [FULL=1]"; \
+		echo ""; \
+		echo "Options:"; \
+		echo "  FORMAT=markdown  Output in markdown format (default: html)"; \
+		echo "  FULL=1           Force full sync, ignoring cache (re-fetch comments)"; \
 		exit 1; \
 	fi
-	@if [ -n "$(PAGE_ID)" ]; then \
+	@FULL_FLAG=""; \
+	if [ -n "$(FULL)" ]; then \
+		FULL_FLAG="--full"; \
+		echo "Full sync mode (ignoring cache)"; \
+	fi; \
+	if [ -n "$(PAGE_ID)" ]; then \
 		echo "Syncing page by ID: $(PAGE_ID) (format: $(or $(FORMAT),html))"; \
 		if [ -n "$(FORMAT)" ]; then \
-			${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; import sys; sys.argv = ['sync', '--page-id', '$(PAGE_ID)', '--format', '$(FORMAT)']; exit(main())"; \
+			${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; import sys; sys.argv = ['sync', '--page-id', '$(PAGE_ID)', '--format', '$(FORMAT)'] + (['--full'] if '$(FULL)' else []); exit(main())"; \
 		else \
-			${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; import sys; sys.argv = ['sync', '--page-id', '$(PAGE_ID)']; exit(main())"; \
+			${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; import sys; sys.argv = ['sync', '--page-id', '$(PAGE_ID)'] + (['--full'] if '$(FULL)' else []); exit(main())"; \
 		fi \
 	elif [ -n "$(PAGE_URL)" ]; then \
 		echo "Syncing page by URL: $(PAGE_URL) (format: $(or $(FORMAT),html))"; \
 		if [ -n "$(FORMAT)" ]; then \
-			${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; import sys; sys.argv = ['sync', '--page-url', '$(PAGE_URL)', '--format', '$(FORMAT)']; exit(main())"; \
+			${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; import sys; sys.argv = ['sync', '--page-url', '$(PAGE_URL)', '--format', '$(FORMAT)'] + (['--full'] if '$(FULL)' else []); exit(main())"; \
 		else \
-			${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; import sys; sys.argv = ['sync', '--page-url', '$(PAGE_URL)']; exit(main())"; \
+			${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; import sys; sys.argv = ['sync', '--page-url', '$(PAGE_URL)'] + (['--full'] if '$(FULL)' else []); exit(main())"; \
 		fi \
 	fi
 
@@ -235,8 +245,8 @@ help:
 	@echo "  make docs-sync       - Sync documentation from Confluence (incremental)"
 	@echo "  make docs-sync-full  - Full sync (clean + sync all pages)"
 	@echo "  make docs-sync-limited - Sync with 100 page limit (for testing)"
-	@echo "  make docs-sync-page PAGE_ID=12345 [FORMAT=markdown] - Sync single page by ID"
-	@echo "  make docs-sync-page PAGE_URL=\"https://...\" [FORMAT=markdown] - Sync single page by URL"
+	@echo "  make docs-sync-page PAGE_ID=12345 [FORMAT=markdown] [FULL=1] - Sync single page by ID"
+	@echo "  make docs-sync-page PAGE_URL=\"https://...\" [FORMAT=markdown] [FULL=1] - Sync single page by URL"
 	@echo "  make docs-sync-page-markdown PAGE_ID=12345 - Sync single page as Markdown"
 	@echo "  make docs-search QUERY=\"term\" - Search synced documentation"
 	@echo "  make docs-search --stats - Show documentation statistics"
