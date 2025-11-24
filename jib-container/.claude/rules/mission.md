@@ -197,7 +197,7 @@ git commit -m "Brief description of changes
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
-Co-Authored-By: Claude <noreply@anthropic.com>"
+Co-Authored-By: jib <jib@khan.org>"
 
 # Check and report your branch/worktree
 git branch --show-current

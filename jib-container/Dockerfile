@@ -113,6 +113,11 @@ export PATH="/usr/local/bin:${PATH}"
 # Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
 export PYTHONDONTWRITEBYTECODE=1
 
+# Configure git to commit as "jib"
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.name "jib"
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.org"
+echo "✓ Git configured to commit as jib <jib@khan.org>"
+
 # Fix worktree .git files to point to mounted git directories
 # Worktrees have .git files that reference the main repo's .git directory
 # We mount the main .git at ~/.git-main/{repo}/ so we need to rewrite these references
