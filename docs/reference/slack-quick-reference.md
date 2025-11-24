@@ -108,6 +108,6 @@ Container:
 
 ## Full Documentation
 
-- **Slack App Setup**: `SLACK-APP-SETUP.md`
-- **Bidirectional Setup**: `BIDIRECTIONAL-SETUP.md`
-- **Complete Guide**: `../BIDIRECTIONAL-SLACK.md`
+- **Slack App Setup**: See `../setup/slack-app-setup.md`
+- **Bidirectional Setup**: See `../setup/slack-bidirectional.md`
+- **Slack Architecture**: See `../architecture/slack-integration.md`

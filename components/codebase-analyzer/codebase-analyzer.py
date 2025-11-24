@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Set
 import subprocess
 import fnmatch
+import re
 
 # Only requests is required
 try:
@@ -174,7 +175,6 @@ class CodebaseAnalyzer:
                 # Handle ** glob patterns (matches any subdirectories)
                 if '**' in pattern:
                     glob_pattern = pattern.replace('**/', '**/').replace('/**', '/**')
-                    import re
                     regex = glob_pattern.replace('**/', '(.*/)?').replace('*', '[^/]*').replace('?', '[^/]')
                     if re.match(regex, path_str):
                         return True
@@ -201,7 +201,7 @@ class CodebaseAnalyzer:
         try:
             if file_path.stat().st_size > 100_000:
                 return False
-        except:
+        except OSError:
             return False
 
         return True
@@ -353,7 +353,6 @@ If no significant issues found, return {{"has_issues": false, "issues": []}}"""
             results = []
 
             # Extract result snippets (very basic approach)
-            import re
             snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', text, re.DOTALL)
             for snippet in snippets[:5]:  # Top 5 results
                 # Clean HTML tags
@@ -459,7 +458,7 @@ Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"f
             file_types[ext] = file_types.get(ext, 0) + 1
             try:
                 total_size += f.stat().st_size
-            except:
+            except OSError:
                 pass
 
         # Build context about the project

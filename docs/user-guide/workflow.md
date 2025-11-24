@@ -1,5 +1,7 @@
 # Staging Workflow - Read-Only Code with Review
 
+> **DEPRECATED**: This document describes an outdated staging workflow. The current workflow uses git commits directly in `~/khan/` with PR creation via `create-pr-helper.py`. See the main [README.md](../../README.md) and [jib-container/.claude/rules/mission.md](../../jib-container/.claude/rules/mission.md) for the current workflow.
+
 ## The Problem
 
 Some directories in `~/khan/` are used by systemd jobs running on the host (e.g., `context-watcher`, `jenkins-jobs`, `buildmaster2`). If Claude modifies these files directly, it could break running services.
