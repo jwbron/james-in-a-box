@@ -48,9 +48,9 @@ RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/i
 # Pin to specific version to match host (avoid credential compatibility issues)
 RUN npm install -g @anthropic-ai/claude-code@2.0.22
 
-# Note: Claude authentication is mounted at runtime from host (not baked into image)
-# This ensures container always uses host's current credentials (no stale OAuth tokens)
-# See entrypoint script for runtime credential copy from /tmp/host-claude mount
+# Note: Claude authentication is mounted at runtime from ~/.jib/claude/ on host
+# This directory is shared across all containers for consistent authentication
+# See entrypoint script for setup and credential detection
 
 # Copy Claude command documentation
 RUN mkdir -p /usr/local/share/claude-commands
@@ -175,39 +175,21 @@ if [ -f "/opt/claude-rules/mission.md" ] && [ -f "/opt/claude-rules/environment.
     echo "  Note: All rules combined in one file since ~/khan/ is mounted from host"
 fi
 
-# Set up .claude directory with settings that avoid known bugs
-mkdir -p "${USER_HOME}/.claude"
+# Set up .claude directory structure
+# Note: ~/.claude is mounted from host at ~/.jib/claude/ (shared across all containers)
+# We just need to ensure subdirectories exist and set permissions
 mkdir -p "${USER_HOME}/.claude/commands"
 mkdir -p "${USER_HOME}/.config/claude-code"
 
-# Copy FRESH credentials from mounted host .claude (not stale image credentials)
-# Mount point: /tmp/host-claude (read-only mount from host ~/.claude)
-if [ -d "/tmp/host-claude" ]; then
-    echo "✓ Copying Claude config from host..."
-
-    # Copy entire directory structure (credentials, statsig, session-env, etc.)
-    # This handles all auth state regardless of which files exist
-    cp -r /tmp/host-claude/* "${USER_HOME}/.claude/" 2>/dev/null || true
-    cp -r /tmp/host-claude/.* "${USER_HOME}/.claude/" 2>/dev/null || true
-
-    # Set proper permissions on credentials file if it exists
-    if [ -f "${USER_HOME}/.claude/.credentials.json" ]; then
-        chmod 600 "${USER_HOME}/.claude/.credentials.json"
-        echo "  ✓ OAuth credentials copied (always current from host)"
-    else
-        echo "  ℹ No credentials file found - container will prompt for authentication"
-        echo "    After authenticating in container, you can copy credentials to host:"
-        echo "    cp ~/.claude/.credentials.json /tmp/host-claude/.credentials.json"
-    fi
-
-    # Report other copied files
-    [ -d "${USER_HOME}/.claude/statsig" ] && echo "  ✓ Statsig data copied"
-    [ -d "${USER_HOME}/.claude/session-env" ] && echo "  ✓ Session environment copied"
-    [ -f "${USER_HOME}/.claude/auth.json" ] && echo "  ✓ Auth config copied"
+# Check authentication status
+if [ -f "${USER_HOME}/.claude/.credentials.json" ]; then
+    chmod 600 "${USER_HOME}/.claude/.credentials.json"
+    echo "✓ Claude credentials found (shared across all containers)"
+    echo "  Location: ~/.jib/claude/ on host"
 else
-    echo "ℹ No host Claude directory mounted"
-    echo "  Container will authenticate independently"
-    echo "  Run: claude (and let interactive session start)"
+    echo "ℹ No credentials found - this container will authenticate"
+    echo "  After authentication, credentials will be saved to ~/.jib/claude/"
+    echo "  All future containers will automatically use these credentials"
 fi
 
 # Copy custom commands to where Claude Code looks for them
