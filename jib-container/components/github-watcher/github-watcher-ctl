@@ -1,0 +1,67 @@
+#!/bin/bash
+# GitHub Watcher control script - manages background watcher process
+
+WATCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WATCHER_SCRIPT="$WATCHER_DIR/watcher.py"
+LOG_FILE="$HOME/sharing/tracking/github-watcher.log"
+PID_FILE="$HOME/sharing/tracking/github-watcher.pid"
+
+mkdir -p "$(dirname "$LOG_FILE")"
+
+case "${1:-}" in
+    start)
+        if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
+            echo "GitHub watcher already running (PID: $(cat "$PID_FILE"))"
+            exit 0
+        fi
+
+        echo "Starting GitHub watcher..."
+        # Run watcher in loop (check every 5 minutes)
+        (
+            while true; do
+                python3 "$WATCHER_SCRIPT" >> "$LOG_FILE" 2>&1
+                sleep 300  # 5 minutes
+            done
+        ) &
+        echo $! > "$PID_FILE"
+        echo "GitHub watcher started (PID: $!)"
+        ;;
+
+    stop)
+        if [ -f "$PID_FILE" ]; then
+            PID=$(cat "$PID_FILE")
+            if kill -0 "$PID" 2>/dev/null; then
+                echo "Stopping GitHub watcher (PID: $PID)..."
+                kill "$PID"
+                rm "$PID_FILE"
+                echo "GitHub watcher stopped"
+            else
+                echo "GitHub watcher not running (stale PID file)"
+                rm "$PID_FILE"
+            fi
+        else
+            echo "GitHub watcher not running"
+        fi
+        ;;
+
+    status)
+        if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
+            echo "GitHub watcher is running (PID: $(cat "$PID_FILE"))"
+            exit 0
+        else
+            echo "GitHub watcher is not running"
+            exit 1
+        fi
+        ;;
+
+    restart)
+        $0 stop
+        sleep 1
+        $0 start
+        ;;
+
+    *)
+        echo "Usage: $0 {start|stop|status|restart}"
+        exit 1
+        ;;
+esac

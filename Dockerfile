@@ -280,6 +280,15 @@ else
     echo "⚠ Incoming watcher script not found at ${USER_HOME}/khan/james-in-a-box/components/slack-receiver/incoming-watcher.sh"
 fi
 
+# Start github-watcher in background (if configured)
+if [ -f "${USER_HOME}/khan/james-in-a-box/jib-container/components/github-watcher/github-watcher-ctl" ]; then
+    echo "Starting GitHub PR check watcher in background..."
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME}/khan/james-in-a-box/jib-container/components/github-watcher && ./github-watcher-ctl start"
+    echo "✓ GitHub watcher started (monitoring PR check failures every 5 min)"
+else
+    echo "⚠ GitHub watcher script not found at ${USER_HOME}/khan/james-in-a-box/jib-container/components/github-watcher/github-watcher-ctl"
+fi
+
 # Run codebase analyzer on startup (if configured)
 # Checks if analysis was run in last 7 days before running
 if [ -f "${USER_HOME}/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py" ]; then

@@ -177,6 +177,7 @@ All host components run as systemd user services for reliability and auto-restar
 - **[slack-notifier](components/slack-notifier/README.md)** - Sends Claude's notifications to Slack (inotify-based, instant)
 - **[slack-receiver](components/slack-receiver/README.md)** - Receives your messages and responses from Slack (Socket Mode)
 - **[context-sync](components/context-sync/README.md)** - Syncs Confluence/JIRA to `~/context-sync/` (hourly)
+- **[github-sync](components/github-sync/README.md)** - Syncs PR data and check status to `~/context-sync/github/` (every 15 min)
 - **[worktree-watcher](components/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
 - **[codebase-analyzer](components/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
 - **[conversation-analyzer](components/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
@@ -185,6 +186,7 @@ All host components run as systemd user services for reliability and auto-restar
 ### Container Components
 
 - **[context-watcher](jib-container/components/context-watcher/README.md)** - Monitors `~/context-sync/` for doc updates
+- **[github-watcher](jib-container/components/github-watcher/README.md)** - Monitors PR check failures, analyzes and suggests fixes
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 - **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
 
@@ -213,7 +215,10 @@ All host components run as systemd user services for reliability and auto-restar
 
 ~/context-sync/                      # Read-only context sources
 ├── confluence/                      # Confluence docs (ADRs, runbooks)
-└── jira/                           # JIRA tickets (issues, epics)
+├── jira/                           # JIRA tickets (issues, epics)
+└── github/                         # GitHub PR data (metadata, diffs, checks)
+    ├── prs/                        # PR files and diffs
+    └── checks/                     # Check status and logs
 ```
 
 ## Usage Patterns
