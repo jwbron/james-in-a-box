@@ -16,6 +16,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Set
 import subprocess
+import re
 
 # Check for required dependencies
 try:
@@ -180,7 +181,6 @@ class SlackNotifier:
           - RESPONSE-task-20251123-143022.md → task-20251123-143022
           - notification-20251123-143022.md → notification-20251123-143022
         """
-        import re
         # Remove .md extension
         name = filename.replace('.md', '')
         # Remove RESPONSE- prefix if present

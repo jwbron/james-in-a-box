@@ -1,5 +1,7 @@
 # Quick Reference - Claude Code Sandboxed
 
+> **DEPRECATED**: This document describes an outdated staging workflow. The current workflow uses git commits directly in `~/khan/` with PR creation via `create-pr-helper.py`. See the main [README.md](../../README.md) and [jib-container/.claude/rules/mission.md](../../jib-container/.claude/rules/mission.md) for the current workflow.
+
 Daily usage guide with accurate paths and commands.
 
 ## TL;DR
