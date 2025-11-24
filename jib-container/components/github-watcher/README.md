@@ -1,9 +1,11 @@
 # GitHub Watcher
 
-Container-side component that monitors GitHub PR check failures and triggers proactive analysis.
+Container-side component that monitors GitHub PR check failures and provides on-demand PR code reviews.
 
 **Type**: Container background service
-**Purpose**: Detect CI/CD failures, analyze logs, suggest/implement fixes automatically
+**Purpose**:
+- Detect CI/CD failures, analyze logs, suggest/implement fixes automatically
+- Generate comprehensive code reviews for PRs on demand
 
 ## Overview
 
@@ -49,6 +51,53 @@ Creates Slack notification:
         ↓
 User replies via Slack or JIB acts automatically
 ```
+
+## PR Code Review (On-Demand)
+
+In addition to automatic failure monitoring, you can request on-demand code reviews for any PR:
+
+```
+User sends via Slack: "review PR 123" or "review PR 123 in webapp"
+        ↓
+Message appears in ~/sharing/incoming/
+        ↓
+Command Handler (runs every 5 min)
+        ↓
+Parses command: PR #123, repo: webapp
+        ↓
+PR Reviewer analyzes:
+    - Diff content and file changes
+    - Code quality patterns
+    - Security concerns (eval, SQL injection, XSS)
+    - Performance issues
+    - Best practice violations
+    - Testing coverage
+        ↓
+Creates Beads task: "Review PR #123: {title}"
+        ↓
+Generates comprehensive review:
+    - Overall assessment
+    - File-by-file analysis
+    - Security/performance concerns
+    - Testing gaps
+    - Prioritized suggestions
+        ↓
+Sends Slack notification with full review
+```
+
+**Supported Commands:**
+- `review PR 123` - Review PR #123 (auto-detects repository)
+- `review PR 123 in webapp` - Review PR #123 in specific repo
+- `/pr review 123` - Alternative syntax
+- `/pr review 123 webapp` - Alternative with repo
+
+**Review Coverage:**
+- **Code Quality**: Console logs, TODOs, hardcoded values, code smells
+- **Security**: eval/exec usage, SQL injection risks, XSS vulnerabilities
+- **Python**: Bare exceptions, print statements, string formatting
+- **JavaScript**: var keyword, == vs ===, dangerouslySetInnerHTML
+- **Performance**: Potential performance bottlenecks
+- **Testing**: Missing test coverage for new code
 
 ## Automatic Fix Examples
 

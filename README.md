@@ -186,7 +186,7 @@ All host components run as systemd user services for reliability and auto-restar
 ### Container Components
 
 - **[context-watcher](jib-container/components/context-watcher/README.md)** - Monitors `~/context-sync/` for doc updates
-- **[github-watcher](jib-container/components/github-watcher/README.md)** - Monitors PR check failures, analyzes and suggests fixes
+- **[github-watcher](jib-container/components/github-watcher/README.md)** - Monitors PR check failures, auto-fixes issues, and provides on-demand code reviews
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 - **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
 
@@ -266,6 +266,7 @@ Control JIB remotely from Slack:
 
 /pr create [repo]                - Create draft PR for current branch
 /pr create [repo] --ready        - Create ready-for-review PR
+/pr review <num> [repo]          - Generate code review for PR
 
 help                             - Show all commands
 ```
@@ -280,6 +281,22 @@ Commands execute asynchronously and send results as notifications.
 ```
 
 PR descriptions are generated using Claude in the JIB container following Khan Academy standards. Notifications include repository, source branch, target branch, and PR URL.
+
+**PR Review Examples:**
+```
+review PR 123                    - Generate code review for PR #123
+review PR 123 in webapp          - Review PR in specific repository
+/pr review 456                   - Alternative command syntax
+```
+
+Reviews analyze code changes for:
+- Security concerns (SQL injection, XSS, eval usage)
+- Performance issues
+- Code quality and best practices
+- Testing coverage gaps
+- File-by-file detailed feedback
+
+Reviews are sent as Slack notifications with prioritized findings (high/medium/low severity).
 
 ### Using Beads for Task Tracking
 
