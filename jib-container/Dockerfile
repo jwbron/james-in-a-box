@@ -42,7 +42,9 @@ RUN chmod +x /tmp/docker-setup.py && \
 # Add Go bin to PATH for beads installation
 ENV PATH="/root/go/bin:${PATH}"
 RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
-    which bd || (echo "ERROR: beads (bd) installation failed" && exit 1)
+    which bd || (echo "ERROR: beads (bd) installation failed" && exit 1) && \
+    # Copy bd to /usr/local/bin so non-root users can access it
+    cp $(which bd) /usr/local/bin/bd && chmod 755 /usr/local/bin/bd
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -245,31 +247,25 @@ if [ -d "${USER_HOME}/sharing" ]; then
     mkdir -p "${USER_HOME}/sharing/beads"
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/beads"
 
-    # Check if bd is available
-    if command -v bd >/dev/null 2>&1; then
-        # Initialize Beads repo if not already initialized
-        if [ ! -f "${USER_HOME}/sharing/beads/issues.jsonl" ]; then
-            echo "Initializing Beads memory system..."
-            cd "${USER_HOME}/sharing/beads"
-            gosu "${RUNTIME_UID}:${RUNTIME_GID}" git init
-            gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd init
-            echo "✓ Beads initialized (persistent memory for tasks and context)"
-        else
-            echo "✓ Beads memory system available"
-        fi
-
-        # Create convenience symlink: ~/beads → ~/sharing/beads
-        ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
-
-        # Build SQLite cache for fast queries
+    # Initialize Beads repo if not already initialized
+    if [ ! -f "${USER_HOME}/sharing/beads/issues.jsonl" ]; then
+        echo "Initializing Beads memory system..."
         cd "${USER_HOME}/sharing/beads"
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd build-cache > /dev/null 2>&1 || true
-        echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
-        echo "  Usage: bd add 'task description' --tags feature,important"
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" git init
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd init
+        echo "✓ Beads initialized (persistent memory for tasks and context)"
     else
-        echo "⚠ Beads (bd) not installed - skipping initialization"
-        echo "  Beads provides persistent task/context memory across sessions"
+        echo "✓ Beads memory system available"
     fi
+
+    # Create convenience symlink: ~/beads → ~/sharing/beads
+    ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
+
+    # Build SQLite cache for fast queries
+    cd "${USER_HOME}/sharing/beads"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd build-cache > /dev/null 2>&1 || true
+    echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
+    echo "  Usage: bd add 'task description' --tags feature,important"
 fi
 
 # NOTE: Background watchers have been removed in favor of exec-based pattern
