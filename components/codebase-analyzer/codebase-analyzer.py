@@ -56,6 +56,23 @@ class CodebaseAnalyzer:
         # Additional patterns to always ignore
         self.always_ignore = {'.git'}
 
+        # Run metrics tracking
+        self.run_metrics = {
+            'start_time': datetime.now(),
+            'files_analyzed': 0,
+            'files_with_issues': 0,
+            'claude_calls_success': 0,
+            'claude_calls_failed': 0,
+            'issues_by_category': {},
+            'issues_by_priority': {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0},
+            'web_search_queries': 0,
+            'web_search_results': 0
+        }
+
+        # Path to persistent log file
+        self.run_log_file = Path.home() / "sharing" / "tracking" / "codebase-analyzer-runs.jsonl"
+        self.run_log_file.parent.mkdir(parents=True, exist_ok=True)
+
     def _check_claude_cli(self) -> bool:
         """Check if claude CLI is available."""
         try:
@@ -212,15 +229,19 @@ class CodebaseAnalyzer:
             )
 
             if result.returncode == 0:
+                self.run_metrics['claude_calls_success'] += 1
                 return result.stdout
             else:
+                self.run_metrics['claude_calls_failed'] += 1
                 self.logger.warning(f"Claude returned error: {result.stderr}")
                 return ""
 
         except subprocess.TimeoutExpired:
+            self.run_metrics['claude_calls_failed'] += 1
             self.logger.error("Claude call timed out")
             return ""
         except Exception as e:
+            self.run_metrics['claude_calls_failed'] += 1
             self.logger.error(f"Error calling Claude: {e}")
             return ""
 
@@ -291,6 +312,18 @@ If no significant issues found, return {{"has_issues": false, "issues": []}}"""
                 analysis = {"has_issues": False, "issues": []}
 
             if analysis.get('has_issues'):
+                self.run_metrics['files_with_issues'] += 1
+
+                # Track issues by category and priority
+                for issue in analysis.get('issues', []):
+                    category = issue.get('category', 'unknown')
+                    priority = issue.get('priority', 'LOW')
+
+                    self.run_metrics['issues_by_category'][category] = \
+                        self.run_metrics['issues_by_category'].get(category, 0) + 1
+                    self.run_metrics['issues_by_priority'][priority] = \
+                        self.run_metrics['issues_by_priority'].get(priority, 0) + 1
+
                 return {
                     'file': str(relative_path),
                     'analysis': analysis
@@ -351,6 +384,7 @@ If no significant issues found, return {{"has_issues": false, "issues": []}}"""
 
         for query in search_queries:
             try:
+                self.run_metrics['web_search_queries'] += 1
                 self.logger.info(f"Searching: {query}")
 
                 # Perform web search
@@ -358,6 +392,8 @@ If no significant issues found, return {{"has_issues": false, "issues": []}}"""
 
                 if not search_results:
                     continue
+
+                self.run_metrics['web_search_results'] += len(search_results)
 
                 # Combine search results
                 search_context = "\n\n".join(search_results[:3])
@@ -503,7 +539,157 @@ Return as JSON:
             self.logger.warning("Could not parse high-level analysis")
             return None
 
-    def generate_notification(self, file_issues: List[Dict], web_findings: List[Dict], overall_analysis: Optional[Dict] = None):
+    def save_run_metrics(self):
+        """Save current run metrics to persistent log file."""
+        try:
+            # Calculate duration
+            duration_seconds = (datetime.now() - self.run_metrics['start_time']).total_seconds()
+
+            # Create log entry
+            log_entry = {
+                'timestamp': datetime.now().isoformat(),
+                'duration_seconds': duration_seconds,
+                'files_analyzed': self.run_metrics['files_analyzed'],
+                'files_with_issues': self.run_metrics['files_with_issues'],
+                'claude_calls_success': self.run_metrics['claude_calls_success'],
+                'claude_calls_failed': self.run_metrics['claude_calls_failed'],
+                'issues_by_category': self.run_metrics['issues_by_category'],
+                'issues_by_priority': self.run_metrics['issues_by_priority'],
+                'web_search_queries': self.run_metrics['web_search_queries'],
+                'web_search_results': self.run_metrics['web_search_results']
+            }
+
+            # Append to JSONL file
+            with self.run_log_file.open('a') as f:
+                f.write(json.dumps(log_entry) + '\n')
+
+            self.logger.info(f"Run metrics saved to {self.run_log_file}")
+
+        except Exception as e:
+            self.logger.error(f"Error saving run metrics: {e}")
+
+    def load_historical_logs(self, limit: int = 10) -> List[Dict]:
+        """Load historical run logs for analysis."""
+        logs = []
+
+        if not self.run_log_file.exists():
+            return logs
+
+        try:
+            with self.run_log_file.open('r') as f:
+                for line in f:
+                    try:
+                        log_entry = json.loads(line.strip())
+                        logs.append(log_entry)
+                    except json.JSONDecodeError:
+                        continue
+
+            # Return most recent N logs
+            return logs[-limit:] if logs else []
+
+        except Exception as e:
+            self.logger.error(f"Error loading historical logs: {e}")
+            return []
+
+    def analyze_self_performance(self) -> Optional[Dict]:
+        """Analyze historical logs to identify self-improvement opportunities."""
+        logs = self.load_historical_logs(limit=10)
+
+        if len(logs) < 2:
+            # Not enough data for analysis
+            return None
+
+        try:
+            # Calculate statistics
+            avg_duration = sum(log.get('duration_seconds', 0) for log in logs) / len(logs)
+            avg_files = sum(log.get('files_analyzed', 0) for log in logs) / len(logs)
+            avg_issue_rate = sum(
+                log.get('files_with_issues', 0) / max(log.get('files_analyzed', 1), 1)
+                for log in logs
+            ) / len(logs)
+
+            total_claude_success = sum(log.get('claude_calls_success', 0) for log in logs)
+            total_claude_failed = sum(log.get('claude_calls_failed', 0) for log in logs)
+            total_claude_calls = total_claude_success + total_claude_failed
+            success_rate = total_claude_success / max(total_claude_calls, 1)
+
+            # Aggregate issue categories across all runs
+            all_categories = {}
+            for log in logs:
+                for category, count in log.get('issues_by_category', {}).items():
+                    all_categories[category] = all_categories.get(category, 0) + count
+
+            # Find most common issue categories
+            top_categories = sorted(all_categories.items(), key=lambda x: -x[1])[:3]
+
+            # Current run metrics
+            current_duration = (datetime.now() - self.run_metrics['start_time']).total_seconds()
+            current_files = self.run_metrics['files_analyzed']
+
+            # Generate insights and recommendations
+            insights = []
+            recommendations = []
+
+            # Performance insights
+            if current_duration > avg_duration * 1.5:
+                insights.append(f"Current run ({current_duration:.0f}s) is significantly slower than average ({avg_duration:.0f}s)")
+                recommendations.append({
+                    'priority': 'MEDIUM',
+                    'area': 'Performance',
+                    'issue': 'Analysis duration has increased',
+                    'suggestion': 'Consider optimizing file selection, parallelizing Claude calls, or caching results'
+                })
+
+            # Claude API success rate
+            if success_rate < 0.9:
+                insights.append(f"Claude API success rate is {success_rate:.1%} (target: >90%)")
+                recommendations.append({
+                    'priority': 'HIGH',
+                    'area': 'Reliability',
+                    'issue': 'High Claude API failure rate',
+                    'suggestion': 'Add retry logic, increase timeout, or implement request batching'
+                })
+
+            # Issue detection patterns
+            if top_categories:
+                category_names = ', '.join(cat for cat, _ in top_categories)
+                insights.append(f"Most common issue categories: {category_names}")
+                recommendations.append({
+                    'priority': 'LOW',
+                    'area': 'Analysis Focus',
+                    'issue': f'Repeatedly finding {top_categories[0][0]} issues',
+                    'suggestion': 'Add linter pre-checks or create automated fixes for common patterns'
+                })
+
+            # Web search effectiveness
+            avg_web_results = sum(log.get('web_search_results', 0) for log in logs) / len(logs)
+            if avg_web_results < 5:
+                insights.append(f"Web searches returning few results (avg: {avg_web_results:.1f})")
+                recommendations.append({
+                    'priority': 'MEDIUM',
+                    'area': 'Web Research',
+                    'issue': 'Low web search result yield',
+                    'suggestion': 'Update search queries, try different search engines, or use API-based search'
+                })
+
+            return {
+                'has_insights': len(insights) > 0,
+                'runs_analyzed': len(logs),
+                'avg_duration': avg_duration,
+                'avg_files': avg_files,
+                'avg_issue_rate': avg_issue_rate,
+                'claude_success_rate': success_rate,
+                'top_categories': top_categories,
+                'insights': insights,
+                'recommendations': recommendations
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error analyzing self performance: {e}")
+            return None
+
+    def generate_notification(self, file_issues: List[Dict], web_findings: List[Dict],
+                             overall_analysis: Optional[Dict] = None, self_analysis: Optional[Dict] = None):
         """Generate notification files for Slack (summary + detailed thread)."""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         task_id = f"{timestamp}-codebase-improvements"
@@ -676,6 +862,59 @@ Return as JSON:
                     detail_content += f"- {finding['description']}\n"
                     detail_content += f"- *Relevance*: {finding['relevance']}\n\n"
 
+        # Add self-analysis section
+        if self_analysis and self_analysis.get('has_insights'):
+            detail_content += "\n## 🔧 Analyzer Self-Improvement Analysis\n\n"
+            detail_content += f"*Based on last {self_analysis['runs_analyzed']} analyzer runs*\n\n"
+
+            # Performance stats
+            detail_content += "### 📊 Performance Metrics\n\n"
+            detail_content += f"- **Average Duration**: {self_analysis['avg_duration']:.1f} seconds\n"
+            detail_content += f"- **Average Files Analyzed**: {self_analysis['avg_files']:.0f}\n"
+            detail_content += f"- **Average Issue Detection Rate**: {self_analysis['avg_issue_rate']:.1%}\n"
+            detail_content += f"- **Claude API Success Rate**: {self_analysis['claude_success_rate']:.1%}\n\n"
+
+            # Top issue categories
+            if self_analysis.get('top_categories'):
+                detail_content += "**Most Common Issue Categories**:\n"
+                for category, count in self_analysis['top_categories']:
+                    detail_content += f"- {category}: {count} occurrences\n"
+                detail_content += "\n"
+
+            # Insights
+            if self_analysis.get('insights'):
+                detail_content += "### 💡 Key Insights\n\n"
+                for insight in self_analysis['insights']:
+                    detail_content += f"- {insight}\n"
+                detail_content += "\n"
+
+            # Recommendations
+            if self_analysis.get('recommendations'):
+                detail_content += "### 🎯 Self-Improvement Recommendations\n\n"
+
+                # Group by priority
+                high_recs = [r for r in self_analysis['recommendations'] if r.get('priority') == 'HIGH']
+                medium_recs = [r for r in self_analysis['recommendations'] if r.get('priority') == 'MEDIUM']
+                low_recs = [r for r in self_analysis['recommendations'] if r.get('priority') == 'LOW']
+
+                if high_recs:
+                    detail_content += "**🔴 HIGH Priority**:\n"
+                    for rec in high_recs:
+                        detail_content += f"- **{rec['area']}**: {rec['issue']}\n"
+                        detail_content += f"  - *Suggestion*: {rec['suggestion']}\n\n"
+
+                if medium_recs:
+                    detail_content += "**🟡 MEDIUM Priority**:\n"
+                    for rec in medium_recs:
+                        detail_content += f"- **{rec['area']}**: {rec['issue']}\n"
+                        detail_content += f"  - *Suggestion*: {rec['suggestion']}\n\n"
+
+                if low_recs:
+                    detail_content += "**⚪ LOW Priority**:\n"
+                    for rec in low_recs:
+                        detail_content += f"- **{rec['area']}**: {rec['issue']}\n"
+                        detail_content += f"  - *Suggestion*: {rec['suggestion']}\n\n"
+
         # Add footer
         detail_content += f"""
 ---
@@ -713,6 +952,7 @@ Return as JSON:
 
         self.logger.info(f"Analyzing {len(files)} files...")
         for i, file_path in enumerate(files):
+            self.run_metrics['files_analyzed'] += 1
             self.logger.info(f"[{i+1}/{len(files)}] Analyzing {file_path.name}")
             result = self.analyze_file(file_path)
             if result:
@@ -731,13 +971,27 @@ Return as JSON:
         else:
             self.logger.info("Web search disabled")
 
+        # Self-performance analysis
+        self.logger.info("Analyzing self-performance for improvements...")
+        self_analysis = self.analyze_self_performance()
+
         # Generate notification if we have findings
         if file_issues or web_findings or overall_analysis:
-            notification_file = self.generate_notification(file_issues, web_findings, overall_analysis)
+            notification_file = self.generate_notification(
+                file_issues, web_findings, overall_analysis, self_analysis
+            )
             self.logger.info(f"Analysis complete! Notification: {notification_file}")
+
+            # Save run metrics for future self-analysis
+            self.save_run_metrics()
+
             return True
         else:
             self.logger.info("No significant improvements found")
+
+            # Still save metrics even if no findings
+            self.save_run_metrics()
+
             return False
 
 

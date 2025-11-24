@@ -45,10 +45,15 @@ systemctl --user disable codebase-analyzer.timer
 
 ## Features
 
-- Weekly codebase analysis
-- Pattern detection and anti-pattern identification
-- Sends reports to Slack (summary + threaded detail)
-- Systemd timer integration
+- **Weekly codebase analysis** - File-by-file code review and architectural analysis
+- **Pattern detection** - Identifies anti-patterns and best practice violations
+- **Web research** - Searches for new technologies and improvements
+- **Self-improvement analysis** - Tracks its own performance and suggests improvements to itself
+  - Monitors run duration, Claude API success rates, issue detection patterns
+  - Analyzes historical logs to identify optimization opportunities
+  - Recommends performance, reliability, and effectiveness improvements
+- **Slack notifications** - Summary + threaded detail for mobile-first experience
+- **Systemd timer integration** - Automated scheduling (Monday 11 AM PST)
 
 ## Notification Format
 
@@ -70,3 +75,25 @@ This creates two files:
 - `RESPONSE-YYYYMMDD-HHMMSS-codebase-improvements.md` (detail)
 
 See: `slack-notifier` component for threading implementation
+
+## Self-Improvement Tracking
+
+The analyzer tracks its own performance metrics to identify optimization opportunities:
+
+**Metrics tracked** (`~/.jib-sharing/tracking/codebase-analyzer-runs.jsonl`):
+- Run duration and file analysis counts
+- Claude API success/failure rates
+- Issue detection by category and priority
+- Web search query effectiveness
+
+**Analysis performed** (based on last 10 runs):
+- Performance trends (duration, throughput)
+- API reliability patterns
+- Common issue categories (for automated fixes)
+- Search result yield effectiveness
+
+**Self-improvement recommendations included in reports**:
+- Performance optimizations (caching, parallelization)
+- Reliability improvements (retry logic, timeouts)
+- Analysis focus adjustments (linters, automated fixes)
+- Research effectiveness (query updates, new search sources)
