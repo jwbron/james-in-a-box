@@ -1027,6 +1027,39 @@ def run_claude() -> bool:
         if not setup():
             return False
 
+    # Check Claude Code authentication before launching container
+    print()
+    print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
+
+    creds_exist, has_full_scopes = check_claude_credentials()
+
+    if not creds_exist:
+        warn("Claude Code credentials not found on host")
+        warn("")
+        warn("To authenticate Claude Code:")
+        warn("  1. Run: claude")
+        warn("  2. Follow the browser authentication flow")
+        warn("  3. Let the interactive session start (this grants full scopes)")
+        warn("  4. Exit with Ctrl+C once authenticated")
+        warn("")
+        warn("Container will prompt for authentication on first run")
+    elif not has_full_scopes:
+        warn("Claude Code credentials exist but are missing required scope")
+        warn("")
+        warn("Current scopes: user:inference, user:profile")
+        warn("Missing scope: user:sessions:claude_code")
+        warn("")
+        warn("To fix: Run interactive Claude Code session once:")
+        warn("  1. Run: claude")
+        warn("  2. This will trigger re-authentication with full scopes")
+        warn("  3. Exit with Ctrl+C once session starts")
+        warn("")
+        warn("Container will work with limited functionality (--print mode only)")
+    else:
+        success("Claude Code properly authenticated with full scopes")
+
+    print()
+
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
     if not build_image():
         error("Docker build failed")
