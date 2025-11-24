@@ -134,12 +134,32 @@ make test
 - Update relevant docs
 - Add to runbooks if operational change
 
-### 7. Prepare PR Artifacts
+### 7. Commit Changes & Prepare PR Artifacts
 ```bash
+# Commit your changes with clear messages
+cd ~/khan/<repo>
+git add <files>
+git commit -m "Brief description of changes
+
+- Detail 1
+- Detail 2
+- Related to JIRA-1234
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+# Generate PR description
 @create-pr audit
-# Generates PR description file
-# Human will open the actual PR on GitHub
+# Creates PR description file
+# Human will review commits and open PR on GitHub
 ```
+
+**Commit message guidelines:**
+- First line: Brief summary (50 chars max, imperative mood)
+- Body: Explain what and why (not how)
+- Reference JIRA tickets, ADRs, related issues
+- Include co-author attribution
 
 ### 8. Complete Beads Task
 ```bash
@@ -201,8 +221,9 @@ Human opens PR, reviews, and ships!
 - [ ] Linters pass
 - [ ] Documentation updated
 - [ ] No console.logs or debug code
-- [ ] Commit messages are clear
-- [ ] Ready for human to open PR
+- [ ] **Changes are committed to git** with clear, descriptive commit messages
+- [ ] Beads task updated with completion notes
+- [ ] Ready for human to review commits and open PR
 
 ### Code Quality
 - Prefer clarity over cleverness
