@@ -234,7 +234,8 @@ cat > "${USER_HOME}/.claude/settings.json" << 'SETTINGS'
   "defaultPermissionMode": "bypassPermissions",
   "autoApproveEdits": true,
   "editorMode": "normal",
-  "autoUpdate": false
+  "autoUpdate": false,
+  "outputStyle": "default"
 }
 SETTINGS
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude/settings.json"
