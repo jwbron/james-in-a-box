@@ -491,93 +491,6 @@ def cleanup_worktrees(container_id: str) -> None:
         info(f"  💡 Commits preserved on branch: jib-temp-{container_id}")
 
 
-def create_temp_worktree(repo_name: str) -> Optional[Path]:
-    """Create a temporary worktree for a single repo (used by jib --exec)
-
-    Args:
-        repo_name: Name of the repository (e.g., "webapp", "james-in-a-box")
-
-    Returns:
-        Path to the created worktree, or None if creation failed
-    """
-    original_repo = Config.KHAN_SOURCE / repo_name
-
-    if not original_repo.exists() or not (original_repo / ".git").exists():
-        error(f"Repository not found: {original_repo}")
-        return None
-
-    # Create unique temp worktree ID
-    temp_id = f"exec-{int(time.time())}-{os.getpid()}"
-    worktree_dir = Config.WORKTREE_BASE / temp_id
-    worktree_dir.mkdir(parents=True, exist_ok=True)
-
-    worktree_path = worktree_dir / repo_name
-    branch_name = f"jib-exec-{temp_id}"
-
-    try:
-        info(f"Creating temporary worktree for {repo_name}...")
-
-        # Create worktree
-        result = subprocess.run(
-            ["git", "worktree", "add", str(worktree_path), "-b", branch_name],
-            cwd=original_repo,
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode == 0:
-            success(f"  ✓ Temporary worktree: {worktree_path}")
-            return worktree_path
-        else:
-            error(f"  ✗ Failed to create worktree: {result.stderr}")
-            return None
-
-    except Exception as e:
-        error(f"  ✗ Error creating worktree: {e}")
-        return None
-
-
-def cleanup_temp_worktree(worktree_path: Path) -> None:
-    """Clean up a temporary worktree created by create_temp_worktree
-
-    Args:
-        worktree_path: Path to the worktree to remove
-    """
-    if not worktree_path.exists():
-        return
-
-    repo_name = worktree_path.name
-    original_repo = Config.KHAN_SOURCE / repo_name
-
-    if not original_repo.exists():
-        return
-
-    try:
-        # Remove worktree from git
-        result = subprocess.run(
-            ["git", "worktree", "remove", str(worktree_path), "--force"],
-            cwd=original_repo,
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode == 0:
-            info(f"  ✓ Cleaned up temporary worktree")
-        else:
-            warn(f"  ✗ Failed to clean up worktree: {result.stderr}")
-
-    except Exception as e:
-        warn(f"  ✗ Error cleaning up worktree: {e}")
-
-    # Remove worktree directory
-    try:
-        import shutil
-        worktree_dir = worktree_path.parent
-        shutil.rmtree(worktree_dir)
-    except Exception as e:
-        warn(f"  ✗ Failed to remove directory: {e}")
-
-
 def setup() -> bool:
     """Interactive setup process"""
     print()
@@ -807,98 +720,6 @@ def setup() -> bool:
     return True
 
 
-def get_running_container() -> Optional[str]:
-    """Get the name of the running JIB container, if any."""
-    try:
-        result = subprocess.run(
-            ["docker", "ps", "--filter", "name=jib-", "--format", "{{.Names}}"],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            # Return first running container (there should only be one)
-            containers = result.stdout.strip().split('\n')
-            return containers[0] if containers else None
-    except Exception:
-        pass
-    return None
-
-
-def exec_in_running_container(command: List[str], use_worktree: bool = False, repo_name: str = "james-in-a-box") -> bool:
-    """Execute a command in the running JIB container.
-
-    Args:
-        command: Command to execute
-        use_worktree: If True, create a temporary worktree for isolation
-        repo_name: Repository name for worktree (default: james-in-a-box)
-
-    Returns:
-        True if successful, False otherwise
-    """
-    container_name = get_running_container()
-
-    if not container_name:
-        error("No running JIB container found")
-        print()
-        print("Start the JIB container first:")
-        print("  bin/jib")
-        print()
-        print("Or run in a new container:")
-        print("  bin/jib --exec-new <command>")
-        return False
-
-    info(f"Executing in running container: {container_name}")
-    print(f"Command: {' '.join(command)}")
-
-    # Create temporary worktree if requested
-    worktree_path = None
-    if use_worktree:
-        print()
-        worktree_path = create_temp_worktree(repo_name)
-        if not worktree_path:
-            error("Failed to create temporary worktree")
-            return False
-
-    print()
-
-    try:
-        # Build docker exec command
-        docker_cmd = ["docker", "exec", "-it"]
-
-        # Set working directory to worktree if created
-        if worktree_path:
-            # Translate host path to container path
-            container_worktree = str(worktree_path).replace(
-                str(Config.WORKTREE_BASE),
-                f"/home/{os.environ['USER']}/.jib-worktrees"
-            )
-            docker_cmd.extend(["-w", container_worktree])
-            info(f"Working directory: {container_worktree}")
-            print()
-
-        docker_cmd.append(container_name)
-        docker_cmd.extend(command)
-
-        # Execute command in running container
-        result = subprocess.run(docker_cmd, check=False)
-        success_result = result.returncode == 0
-
-        return success_result
-
-    except KeyboardInterrupt:
-        print()
-        warn("Interrupted by user")
-        return False
-    except Exception as e:
-        error(f"Failed to execute command: {e}")
-        return False
-    finally:
-        # Clean up temporary worktree
-        if worktree_path:
-            print()
-            cleanup_temp_worktree(worktree_path)
-
-
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     # Check if image exists
@@ -1038,10 +859,10 @@ def run_claude() -> bool:
             mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
 
-    # Mount worktree base directory for jib --exec temporary worktrees
+    # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
-    print(f"  • ~/.jib-worktrees/ (for jib --exec temporary worktrees)")
+    print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
     print()
 
@@ -1103,11 +924,11 @@ def run_claude() -> bool:
 def exec_in_new_container(command: List[str]) -> bool:
     """Execute a command in a new ephemeral container with isolated worktrees.
 
-    Creates temporary worktrees for all repos to isolate changes:
+    Creates worktrees for all repos to isolate changes (same as interactive mode):
     - Total isolation from interactive sessions and main repos
     - Worktrees allow parallel work without conflicts
     - Automatic cleanup (--rm)
-    - All commits go to temporary branches (jib-exec-*)
+    - All commits go to temporary branches (jib-temp-jib-exec-*)
 
     Args:
         command: Command to execute
