@@ -45,8 +45,7 @@ RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/i
     which bd || (echo "ERROR: beads (bd) installation failed" && exit 1)
 
 # Install Claude Code CLI globally
-# Pin to specific version to match host (avoid credential compatibility issues)
-RUN npm install -g @anthropic-ai/claude-code@2.0.22
+RUN npm install -g @anthropic-ai/claude-code
 
 # Note: Claude authentication is mounted at runtime from ~/.jib/claude/ on host
 # This directory is shared across all containers for consistent authentication
