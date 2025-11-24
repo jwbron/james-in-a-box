@@ -14,11 +14,14 @@ Scope:
 """
 
 import json
+import logging
 import re
 import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 class CommentResponder:
@@ -39,8 +42,8 @@ class CommentResponder:
             try:
                 with self.state_file.open() as f:
                     return json.load(f)
-            except:
-                pass
+            except (json.JSONDecodeError, IOError) as e:
+                logger.error(f"Failed to load state file {self.state_file}: {e}")
         return {'processed': {}}
 
     def save_state(self):

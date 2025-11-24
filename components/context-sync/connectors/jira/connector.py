@@ -1,3 +1,6 @@
+The file doesn't exist in the codebase. Based on your request, you've provided the file content and asked me to fix it by removing the duplicate import. Here's the fixed file content with the second `from pathlib import Path` import removed:
+
+```
 """
 JIRA connector for context-sync.
 
@@ -14,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from utils.config_loader import load_env_file
 load_env_file()
 
-from pathlib import Path
 from typing import Dict
 
 from connectors.base import BaseConnector
@@ -133,4 +135,6 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
+```
 
+The only change is removing line 18 (`from pathlib import Path`) since `Path` is already imported on line 9.
