@@ -7,7 +7,7 @@ Type=oneshot
 WorkingDirectory=%h/khan/james-in-a-box/components/github-sync
 
 # Sync all PRs in the repo (not just @me) so we can review others' PRs
-ExecStart=%h/khan/james-in-a-box/components/github-sync/sync.py --repo jwiesebron/james-in-a-box --all-prs
+ExecStart=%h/khan/james-in-a-box/components/github-sync/sync.py --repo jwbron/james-in-a-box --all-prs
 
 # After syncing PR data, run analysis in JIB container (new ephemeral container)
 # 1. Check monitor - analyzes failed checks and suggests fixes
