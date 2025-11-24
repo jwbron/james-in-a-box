@@ -2,46 +2,32 @@
 """
 Codebase Improvement Analyzer
 
-Analyzes the james-in-a-box codebase for potential improvements:
-- File-by-file code review for best practices
-- High-level architectural analysis
-- Web search for new technologies and improvements
-- Generates notification with findings
-- Can automatically implement top 10 high-priority fixes and open a PR
+Analyzes the james-in-a-box codebase for potential improvements using a SINGLE
+Claude call, then optionally implements the top fixes and opens a PR.
 
-Uses 'claude code --print' for analysis (reuses existing authentication)
+Efficiency: Uses one Claude call to analyze all files at once, instead of
+one call per file.
 
-Runs on host (not in sandbox) via systemd timer:
-- Weekly (checks if last run was >7 days ago)
-- 5 minutes after system startup (if not run in last week)
-- Can force run with --force flag
-- Can implement fixes with --implement flag
+Usage:
+  codebase-analyzer.py                    # Analyze and report
+  codebase-analyzer.py --implement        # Analyze, fix top 10 issues, open PR
+  codebase-analyzer.py --implement --max-fixes 5  # Fix top 5 issues
 """
 
 import os
 import sys
 import json
 import logging
-import tempfile
 import argparse
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Optional, Set
 import subprocess
 import fnmatch
-import re
-
-# Only requests is required
-try:
-    import requests
-except ImportError:
-    print("Error: requests module not found.", file=sys.stderr)
-    print("Install with: pip install requests", file=sys.stderr)
-    sys.exit(1)
 
 
 class CodebaseAnalyzer:
-    """Analyzes codebase for improvements using Claude Code CLI."""
+    """Analyzes codebase for improvements using a single Claude Code call."""
 
     def __init__(self, codebase_path: Path, notification_dir: Path):
         self.codebase_path = codebase_path
@@ -55,26 +41,7 @@ class CodebaseAnalyzer:
 
         # Load gitignore patterns
         self.gitignore_patterns = self._load_gitignore_patterns()
-
-        # Additional patterns to always ignore
-        self.always_ignore = {'.git'}
-
-        # Run metrics tracking
-        self.run_metrics = {
-            'start_time': datetime.now(),
-            'files_analyzed': 0,
-            'files_with_issues': 0,
-            'claude_calls_success': 0,
-            'claude_calls_failed': 0,
-            'issues_by_category': {},
-            'issues_by_priority': {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0},
-            'web_search_queries': 0,
-            'web_search_results': 0
-        }
-
-        # Path to persistent log file
-        self.run_log_file = Path.home() / "sharing" / "tracking" / "codebase-analyzer-runs.jsonl"
-        self.run_log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.always_ignore = {'.git', '__pycache__', 'node_modules', '.venv'}
 
     def _check_claude_cli(self) -> bool:
         """Check if claude CLI is available."""
@@ -93,14 +60,12 @@ class CodebaseAnalyzer:
         """Configure logging."""
         logger = logging.getLogger('codebase-analyzer')
         logger.setLevel(logging.INFO)
-
-        # Console handler
-        console = logging.StreamHandler()
-        console.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        console.setFormatter(formatter)
-        logger.addHandler(console)
-
+        if not logger.handlers:
+            console = logging.StreamHandler()
+            console.setLevel(logging.INFO)
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            console.setFormatter(formatter)
+            logger.addHandler(console)
         return logger
 
     def _load_gitignore_patterns(self) -> Set[str]:
@@ -108,100 +73,33 @@ class CodebaseAnalyzer:
         patterns = set()
         gitignore_path = self.codebase_path / '.gitignore'
 
-        if not gitignore_path.exists():
-            self.logger.warning(f"No .gitignore found at {gitignore_path}")
-            return patterns
+        if gitignore_path.exists():
+            try:
+                with open(gitignore_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.split('#')[0].strip()
+                        if line:
+                            patterns.add(line)
+            except Exception as e:
+                self.logger.warning(f"Error reading .gitignore: {e}")
 
-        try:
-            with open(gitignore_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    # Remove comments and whitespace
-                    line = line.split('#')[0].strip()
+        return patterns
 
-                    # Skip empty lines
-                    if not line:
-                        continue
-
-                    # Add pattern
-                    patterns.add(line)
-
-            self.logger.info(f"Loaded {len(patterns)} patterns from .gitignore")
-            return patterns
-
-        except Exception as e:
-            self.logger.warning(f"Error reading .gitignore: {e}")
-            return patterns
-
-    def _matches_gitignore(self, file_path: Path) -> bool:
-        """Check if file matches any gitignore pattern."""
-        # Get path relative to codebase root
-        try:
-            rel_path = file_path.relative_to(self.codebase_path)
-        except ValueError:
-            return False
-
-        # Convert to string with forward slashes (gitignore standard)
-        path_str = str(rel_path).replace(os.sep, '/')
-
-        # Check against each gitignore pattern
-        for pattern in self.gitignore_patterns:
-            # Handle directory patterns (ending with /)
-            if pattern.endswith('/'):
-                dir_pattern = pattern.rstrip('/')
-                # Check if any parent directory matches
-                parts = path_str.split('/')
-                for i, part in enumerate(parts[:-1]):  # Exclude filename
-                    if fnmatch.fnmatch(part, dir_pattern):
-                        return True
-                # Also check full path prefix
-                if path_str.startswith(dir_pattern + '/'):
-                    return True
-
-            # Handle wildcards and exact matches
-            else:
-                # Check filename alone
-                if fnmatch.fnmatch(file_path.name, pattern):
-                    return True
-
-                # Check full relative path
-                if fnmatch.fnmatch(path_str, pattern):
-                    return True
-
-                # Check if pattern matches any path component
-                if '/' not in pattern:
-                    parts = path_str.split('/')
-                    for part in parts:
-                        if fnmatch.fnmatch(part, pattern):
-                            return True
-
-                # Handle ** glob patterns (matches any subdirectories)
-                if '**' in pattern:
-                    glob_pattern = pattern.replace('**/', '**/').replace('/**', '/**')
-                    regex = glob_pattern.replace('**/', '(.*/)?').replace('*', '[^/]*').replace('?', '[^/]')
-                    if re.match(regex, path_str):
-                        return True
-
-        return False
-
-    def should_analyze_file(self, file_path: Path) -> bool:
+    def _should_analyze(self, file_path: Path) -> bool:
         """Determine if file should be analyzed."""
-        # Check if file is in gitignore
-        if self._matches_gitignore(file_path):
-            return False
-
-        # Check always-ignore patterns (like .git)
+        # Check always-ignore patterns
         for pattern in self.always_ignore:
             if pattern in str(file_path):
                 return False
 
         # Only analyze specific file types
-        valid_extensions = {'.py', '.sh', '.md', '.dockerfile', '.yml', '.yaml', '.json'}
+        valid_extensions = {'.py', '.sh', '.md', '.yml', '.yaml', '.json'}
         if file_path.suffix.lower() not in valid_extensions and file_path.name != 'Dockerfile':
             return False
 
-        # Skip very large files (>100KB)
+        # Skip very large files (>50KB)
         try:
-            if file_path.stat().st_size > 100_000:
+            if file_path.stat().st_size > 50_000:
                 return False
         except OSError:
             return False
@@ -212,781 +110,120 @@ class CodebaseAnalyzer:
         """Get list of files to analyze from codebase."""
         files = []
         for file_path in self.codebase_path.rglob('*'):
-            if file_path.is_file() and self.should_analyze_file(file_path):
+            if file_path.is_file() and self._should_analyze(file_path):
                 files.append(file_path)
 
         self.logger.info(f"Found {len(files)} files to analyze")
         return files
 
-    def call_claude(self, prompt: str) -> str:
-        """Call Claude Code CLI with a prompt."""
-        try:
-            # Call claude code --print with prompt via stdin
-            result = subprocess.run(
-                ['claude', 'code', '--print'],
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
+    def build_codebase_summary(self, files: List[Path]) -> str:
+        """Build a summary of the codebase for Claude to analyze."""
+        summary_parts = []
 
-            if result.returncode == 0:
-                self.run_metrics['claude_calls_success'] += 1
-                return result.stdout
-            else:
-                self.run_metrics['claude_calls_failed'] += 1
-                self.logger.warning(f"Claude returned error: {result.stderr}")
-                return ""
-
-        except subprocess.TimeoutExpired:
-            self.run_metrics['claude_calls_failed'] += 1
-            self.logger.error("Claude call timed out")
-            return ""
-        except Exception as e:
-            self.run_metrics['claude_calls_failed'] += 1
-            self.logger.error(f"Error calling Claude: {e}")
-            return ""
-
-    def analyze_file(self, file_path: Path) -> Optional[Dict]:
-        """Analyze a single file for improvements."""
-        try:
-            # Read file content
-            content = file_path.read_text(encoding='utf-8', errors='ignore')
-
-            # Skip empty or very small files
-            if len(content.strip()) < 50:
-                return None
-
-            relative_path = file_path.relative_to(self.codebase_path)
-
-            # Build analysis prompt
-            prompt = f"""Analyze this file from the james-in-a-box codebase for potential improvements.
-
-File: {relative_path}
-Language: {file_path.suffix}
-
-Focus on:
-1. Security vulnerabilities or concerns
-2. Performance optimizations
-3. Code maintainability and readability
-4. Missing or inadequate error handling
-5. Documentation gaps
-6. Modern best practices not being followed
-
-Content:
-```
-{content[:4000]}
-```
-
-Provide a concise analysis. Only report HIGH and MEDIUM priority issues.
-Format as JSON:
-{{
-  "has_issues": true/false,
-  "issues": [
-    {{
-      "priority": "HIGH" or "MEDIUM",
-      "category": "security|performance|maintainability|documentation|error_handling|modern_practices",
-      "description": "brief description",
-      "suggestion": "specific recommendation"
-    }}
-  ]
-}}
-
-If no significant issues found, return {{"has_issues": false, "issues": []}}"""
-
-            response_text = self.call_claude(prompt)
-
-            if not response_text:
-                return None
-
-            # Try to extract JSON from response
+        for file_path in files:
             try:
-                # Find JSON in response
-                start_idx = response_text.find('{')
-                end_idx = response_text.rfind('}') + 1
-                if start_idx != -1 and end_idx > start_idx:
-                    json_str = response_text[start_idx:end_idx]
-                    analysis = json.loads(json_str)
-                else:
-                    analysis = {"has_issues": False, "issues": []}
-            except json.JSONDecodeError:
-                self.logger.warning(f"Could not parse JSON from response for {relative_path}")
-                analysis = {"has_issues": False, "issues": []}
+                rel_path = file_path.relative_to(self.codebase_path)
+                content = file_path.read_text(encoding='utf-8', errors='ignore')
 
-            if analysis.get('has_issues'):
-                self.run_metrics['files_with_issues'] += 1
+                # Truncate large files
+                if len(content) > 3000:
+                    content = content[:3000] + "\n... [truncated]"
 
-                # Track issues by category and priority
-                for issue in analysis.get('issues', []):
-                    category = issue.get('category', 'unknown')
-                    priority = issue.get('priority', 'LOW')
-
-                    self.run_metrics['issues_by_category'][category] = \
-                        self.run_metrics['issues_by_category'].get(category, 0) + 1
-                    self.run_metrics['issues_by_priority'][priority] = \
-                        self.run_metrics['issues_by_priority'].get(priority, 0) + 1
-
-                return {
-                    'file': str(relative_path),
-                    'analysis': analysis
-                }
-
-            return None
-
-        except Exception as e:
-            self.logger.error(f"Error analyzing {file_path}: {e}")
-            return None
-
-    def search_web(self, query: str) -> List[str]:
-        """Perform actual web search using DuckDuckGo."""
-        try:
-            # Use DuckDuckGo HTML search (no API key required)
-            url = "https://html.duckduckgo.com/html/"
-            params = {"q": query}
-            headers = {
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-            }
-
-            response = requests.post(url, data=params, headers=headers, timeout=10)
-            response.raise_for_status()
-
-            # Basic parsing of results (just get snippets for Claude to analyze)
-            text = response.text
-            results = []
-
-            # Extract result snippets (very basic approach)
-            snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', text, re.DOTALL)
-            for snippet in snippets[:5]:  # Top 5 results
-                # Clean HTML tags
-                clean_snippet = re.sub(r'<[^>]+>', '', snippet)
-                clean_snippet = clean_snippet.strip()
-                if clean_snippet:
-                    results.append(clean_snippet)
-
-            return results
-
-        except Exception as e:
-            self.logger.warning(f"Web search failed for '{query}': {e}")
-            return []
-
-    def search_web_for_improvements(self) -> List[Dict]:
-        """Search web for new technologies and improvements."""
-        self.logger.info("Searching web for technology improvements...")
-
-        search_queries = [
-            "Docker sandbox best practices 2025",
-            "Claude Code CLI improvements",
-            "Python systemd integration security",
-            "Slack bot best practices",
-            "inotify alternatives Linux",
-        ]
-
-        all_findings = []
-
-        for query in search_queries:
-            try:
-                self.run_metrics['web_search_queries'] += 1
-                self.logger.info(f"Searching: {query}")
-
-                # Perform web search
-                search_results = self.search_web(query)
-
-                if not search_results:
-                    continue
-
-                self.run_metrics['web_search_results'] += len(search_results)
-
-                # Combine search results
-                search_context = "\n\n".join(search_results[:3])
-
-                # Ask Claude to analyze search results
-                prompt = f"""Based on these web search results for "{query}":
-
-{search_context}
-
-Identify potential improvements for the james-in-a-box project (a Docker sandbox for Claude Code CLI with Slack integration, systemd services, and file watching).
-
-Focus on:
-1. New technologies or tools worth considering
-2. Security improvements
-3. Performance optimizations
-4. Modern best practices we might not be following
-
-Return findings as JSON:
-{{
-  "findings": [
-    {{
-      "topic": "brief topic",
-      "description": "specific actionable insight",
-      "relevance": "how it applies to our project",
-      "priority": "HIGH|MEDIUM|LOW"
-    }}
-  ]
-}}
-
-Only include HIGH and MEDIUM priority findings. If nothing relevant, return {{"findings": []}}"""
-
-                response_text = self.call_claude(prompt)
-
-                if not response_text:
-                    continue
-
-                # Extract JSON
-                try:
-                    start_idx = response_text.find('{')
-                    end_idx = response_text.rfind('}') + 1
-                    if start_idx != -1 and end_idx > start_idx:
-                        json_str = response_text[start_idx:end_idx]
-                        result = json.loads(json_str)
-                        if result.get('findings'):
-                            all_findings.extend(result['findings'])
-                except json.JSONDecodeError:
-                    self.logger.warning(f"Could not parse analysis results for: {query}")
+                summary_parts.append(f"=== FILE: {rel_path} ===\n{content}\n")
 
             except Exception as e:
-                self.logger.error(f"Error processing '{query}': {e}")
+                self.logger.warning(f"Error reading {file_path}: {e}")
 
-        return all_findings
+        return "\n".join(summary_parts)
 
-    def analyze_codebase_overall(self, files: List[Path], file_issues: List[Dict]) -> Optional[Dict]:
-        """Perform high-level analysis of the entire codebase."""
-        self.logger.info("Performing high-level codebase analysis...")
+    def analyze_codebase(self, files: List[Path]) -> List[Dict]:
+        """Analyze entire codebase in a single Claude call."""
+        self.logger.info("Building codebase summary...")
+        codebase_summary = self.build_codebase_summary(files)
 
-        # Gather codebase overview
-        file_types = {}
-        total_size = 0
-        for f in files:
-            ext = f.suffix or 'no-extension'
-            file_types[ext] = file_types.get(ext, 0) + 1
+        self.logger.info(f"Codebase summary: {len(codebase_summary)} characters")
+
+        prompt = f"""Analyze this codebase for issues that can be automatically fixed.
+
+CODEBASE: james-in-a-box (Docker sandbox for Claude Code CLI)
+
+{codebase_summary}
+
+TASK: Identify the top 10-15 HIGH and MEDIUM priority issues that can be automatically fixed.
+
+Focus on:
+1. Bare except clauses (should use specific exceptions)
+2. Missing error handling
+3. Hardcoded paths that should be configurable
+4. Code style issues (unused imports, inline imports)
+5. Security issues (unquoted shell variables, etc.)
+6. Outdated patterns
+
+For each issue, provide:
+- file: relative path to file
+- line_hint: approximate line number or function name
+- priority: HIGH or MEDIUM
+- category: error_handling, security, maintainability, modern_practices
+- description: what's wrong
+- suggestion: specific fix to apply
+
+Return as JSON array:
+[
+  {{
+    "file": "path/to/file.py",
+    "line_hint": "in function foo() around line 50",
+    "priority": "HIGH",
+    "category": "error_handling",
+    "description": "Bare except clause catches all exceptions",
+    "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error"
+  }}
+]
+
+Return ONLY the JSON array, no other text."""
+
+        self.logger.info("Calling Claude for analysis (single call)...")
+
+        try:
+            result = subprocess.run(
+                ['claude', '-p', prompt],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout for large analysis
+            )
+
+            if result.returncode != 0:
+                self.logger.error(f"Claude returned error: {result.stderr}")
+                return []
+
+            response = result.stdout.strip()
+
+            # Extract JSON from response
             try:
-                total_size += f.stat().st_size
-            except OSError:
-                pass
+                # Find JSON array in response
+                start_idx = response.find('[')
+                end_idx = response.rfind(']') + 1
+                if start_idx != -1 and end_idx > start_idx:
+                    json_str = response[start_idx:end_idx]
+                    issues = json.loads(json_str)
+                    self.logger.info(f"Found {len(issues)} issues")
+                    return issues
+                else:
+                    self.logger.warning("No JSON array found in response")
+                    return []
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse JSON: {e}")
+                self.logger.debug(f"Response was: {response[:500]}")
+                return []
 
-        # Build context about the project
-        context = f"""Analyze the james-in-a-box project as a whole based on this overview:
-
-**Project**: Docker sandbox for Claude Code CLI (autonomous software engineering agent)
-
-**Codebase Statistics**:
-- Total files: {len(files)}
-- File types: {', '.join(f'{k}({v})' for k, v in sorted(file_types.items(), key=lambda x: -x[1])[:5])}
-- Total size: {total_size / 1024:.1f} KB
-- Issues found: {len(file_issues)} files with {sum(len(f['analysis']['issues']) for f in file_issues)} total issues
-
-**Key Components** (based on file analysis):
-- Docker containerization (Dockerfile, docker-setup.py)
-- Slack integration (bidirectional messaging, notifications)
-- File watching (inotify-based context and incoming watchers)
-- Systemd services (background processes on host)
-- Claude Code CLI integration (custom commands, agent rules)
-- Security isolation (read-only mounts, no credentials)
-
-**Issue Categories Found**:
-- Security: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('category') == 'security')} issues
-- Error handling: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('category') == 'error_handling')} issues
-- Documentation: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('category') == 'documentation')} issues
-- Modern practices: {sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('category') == 'modern_practices')} issues
-
-Provide a high-level architectural analysis covering:
-
-1. **Overall Architecture Assessment**: System design, component organization, separation of concerns
-2. **Security Posture**: Overall security model, potential system-wide vulnerabilities, defense-in-depth
-3. **Technology Stack**: Appropriateness of tech choices, modern alternatives, compatibility
-4. **Code Quality**: Overall maintainability, consistency, technical debt
-5. **Operational Concerns**: Deployment, monitoring, resilience, observability
-6. **Strategic Recommendations**: Top 3-5 improvements that would have the biggest impact
-
-Return as JSON:
-{{
-  "architecture": {{
-    "assessment": "overall architectural quality",
-    "strengths": ["strength 1", "strength 2"],
-    "concerns": ["concern 1", "concern 2"]
-  }},
-  "security": {{
-    "overall_rating": "STRONG|ADEQUATE|NEEDS_IMPROVEMENT|CRITICAL",
-    "key_strengths": ["strength 1"],
-    "key_risks": ["risk 1"]
-  }},
-  "technology": {{
-    "stack_assessment": "modern|dated|mixed",
-    "recommendations": ["rec 1"]
-  }},
-  "strategic_recommendations": [
-    {{
-      "priority": "HIGH|MEDIUM",
-      "title": "brief title",
-      "description": "what and why",
-      "impact": "expected benefit"
-    }}
-  ]
-}}"""
-
-        response_text = self.call_claude(context)
-
-        if not response_text:
-            return None
-
-        # Extract JSON
-        try:
-            start_idx = response_text.find('{')
-            end_idx = response_text.rfind('}') + 1
-            if start_idx != -1 and end_idx > start_idx:
-                json_str = response_text[start_idx:end_idx]
-                analysis = json.loads(json_str)
-                return analysis
-        except json.JSONDecodeError:
-            self.logger.warning("Could not parse high-level analysis")
-            return None
-
-    def save_run_metrics(self):
-        """Save current run metrics to persistent log file."""
-        try:
-            # Calculate duration
-            duration_seconds = (datetime.now() - self.run_metrics['start_time']).total_seconds()
-
-            # Create log entry
-            log_entry = {
-                'timestamp': datetime.now().isoformat(),
-                'duration_seconds': duration_seconds,
-                'files_analyzed': self.run_metrics['files_analyzed'],
-                'files_with_issues': self.run_metrics['files_with_issues'],
-                'claude_calls_success': self.run_metrics['claude_calls_success'],
-                'claude_calls_failed': self.run_metrics['claude_calls_failed'],
-                'issues_by_category': self.run_metrics['issues_by_category'],
-                'issues_by_priority': self.run_metrics['issues_by_priority'],
-                'web_search_queries': self.run_metrics['web_search_queries'],
-                'web_search_results': self.run_metrics['web_search_results']
-            }
-
-            # Append to JSONL file
-            with self.run_log_file.open('a') as f:
-                f.write(json.dumps(log_entry) + '\n')
-
-            self.logger.info(f"Run metrics saved to {self.run_log_file}")
-
+        except subprocess.TimeoutExpired:
+            self.logger.error("Claude call timed out")
+            return []
         except Exception as e:
-            self.logger.error(f"Error saving run metrics: {e}")
-
-    def load_historical_logs(self, limit: int = 10) -> List[Dict]:
-        """Load historical run logs for analysis."""
-        logs = []
-
-        if not self.run_log_file.exists():
-            return logs
-
-        try:
-            with self.run_log_file.open('r') as f:
-                for line in f:
-                    try:
-                        log_entry = json.loads(line.strip())
-                        logs.append(log_entry)
-                    except json.JSONDecodeError:
-                        continue
-
-            # Return most recent N logs
-            return logs[-limit:] if logs else []
-
-        except Exception as e:
-            self.logger.error(f"Error loading historical logs: {e}")
+            self.logger.error(f"Error calling Claude: {e}")
             return []
 
-    def analyze_self_performance(self) -> Optional[Dict]:
-        """Analyze historical logs to identify self-improvement opportunities."""
-        logs = self.load_historical_logs(limit=10)
-
-        if len(logs) < 2:
-            # Not enough data for analysis
-            return None
-
-        try:
-            # Calculate statistics
-            avg_duration = sum(log.get('duration_seconds', 0) for log in logs) / len(logs)
-            avg_files = sum(log.get('files_analyzed', 0) for log in logs) / len(logs)
-            avg_issue_rate = sum(
-                log.get('files_with_issues', 0) / max(log.get('files_analyzed', 1), 1)
-                for log in logs
-            ) / len(logs)
-
-            total_claude_success = sum(log.get('claude_calls_success', 0) for log in logs)
-            total_claude_failed = sum(log.get('claude_calls_failed', 0) for log in logs)
-            total_claude_calls = total_claude_success + total_claude_failed
-            success_rate = total_claude_success / max(total_claude_calls, 1)
-
-            # Aggregate issue categories across all runs
-            all_categories = {}
-            for log in logs:
-                for category, count in log.get('issues_by_category', {}).items():
-                    all_categories[category] = all_categories.get(category, 0) + count
-
-            # Find most common issue categories
-            top_categories = sorted(all_categories.items(), key=lambda x: -x[1])[:3]
-
-            # Current run metrics
-            current_duration = (datetime.now() - self.run_metrics['start_time']).total_seconds()
-            current_files = self.run_metrics['files_analyzed']
-
-            # Generate insights and recommendations
-            insights = []
-            recommendations = []
-
-            # Performance insights
-            if current_duration > avg_duration * 1.5:
-                insights.append(f"Current run ({current_duration:.0f}s) is significantly slower than average ({avg_duration:.0f}s)")
-                recommendations.append({
-                    'priority': 'MEDIUM',
-                    'area': 'Performance',
-                    'issue': 'Analysis duration has increased',
-                    'suggestion': 'Consider optimizing file selection, parallelizing Claude calls, or caching results'
-                })
-
-            # Claude API success rate
-            if success_rate < 0.9:
-                insights.append(f"Claude API success rate is {success_rate:.1%} (target: >90%)")
-                recommendations.append({
-                    'priority': 'HIGH',
-                    'area': 'Reliability',
-                    'issue': 'High Claude API failure rate',
-                    'suggestion': 'Add retry logic, increase timeout, or implement request batching'
-                })
-
-            # Issue detection patterns
-            if top_categories:
-                category_names = ', '.join(cat for cat, _ in top_categories)
-                insights.append(f"Most common issue categories: {category_names}")
-                recommendations.append({
-                    'priority': 'LOW',
-                    'area': 'Analysis Focus',
-                    'issue': f'Repeatedly finding {top_categories[0][0]} issues',
-                    'suggestion': 'Add linter pre-checks or create automated fixes for common patterns'
-                })
-
-            # Web search effectiveness
-            avg_web_results = sum(log.get('web_search_results', 0) for log in logs) / len(logs)
-            if avg_web_results < 5:
-                insights.append(f"Web searches returning few results (avg: {avg_web_results:.1f})")
-                recommendations.append({
-                    'priority': 'MEDIUM',
-                    'area': 'Web Research',
-                    'issue': 'Low web search result yield',
-                    'suggestion': 'Update search queries, try different search engines, or use API-based search'
-                })
-
-            return {
-                'has_insights': len(insights) > 0,
-                'runs_analyzed': len(logs),
-                'avg_duration': avg_duration,
-                'avg_files': avg_files,
-                'avg_issue_rate': avg_issue_rate,
-                'claude_success_rate': success_rate,
-                'top_categories': top_categories,
-                'insights': insights,
-                'recommendations': recommendations
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error analyzing self performance: {e}")
-            return None
-
-    def generate_notification(self, file_issues: List[Dict], web_findings: List[Dict],
-                             overall_analysis: Optional[Dict] = None, self_analysis: Optional[Dict] = None):
-        """Generate notification files for Slack (summary + detailed thread)."""
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        task_id = f"{timestamp}-codebase-improvements"
-
-        # Ensure notification directory exists
-        self.notification_dir.mkdir(parents=True, exist_ok=True)
-
-        # Calculate key metrics
-        high_count = sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('priority') == 'HIGH')
-        medium_count = sum(1 for f in file_issues for i in f['analysis']['issues'] if i.get('priority') == 'MEDIUM')
-        total_file_issues = high_count + medium_count
-        high_web = len([f for f in web_findings if f.get('priority') == 'HIGH'])
-        medium_web = len([f for f in web_findings if f.get('priority') == 'MEDIUM'])
-
-        # Determine priority based on findings
-        if high_count > 5 or high_web > 2:
-            priority = "High"
-        elif high_count > 0 or high_web > 0:
-            priority = "Medium"
-        else:
-            priority = "Low"
-
-        # Get security rating if available
-        security_rating = "N/A"
-        if overall_analysis and 'security' in overall_analysis:
-            security_rating = overall_analysis['security'].get('overall_rating', 'N/A')
-
-        # Create concise summary notification (top-level message)
-        summary_file = self.notification_dir / f"{task_id}.md"
-        summary = f"""# 🔍 Codebase Analysis Complete
-
-**Priority**: {priority} | {len(file_issues)} files analyzed | {total_file_issues} issues found
-
-**Quick Stats:**
-- 🔴 HIGH: {high_count} file issues, {high_web} web findings
-- 🟡 MEDIUM: {medium_count} file issues, {medium_web} web findings
-- 🛡️ Security: {security_rating}
-
-📄 Full analysis in thread below
-"""
-
-        summary_file.write_text(summary)
-        self.logger.info(f"Summary notification written to: {summary_file}")
-
-        # Build detailed report content for thread
-        detail_content = f"""# 🔍 Full Codebase Improvement Analysis
-
-**Generated**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-**Project**: james-in-a-box
-**Analysis Type**: Automated Weekly Review
-
----
-
-## 📊 Detailed Summary
-
-- **Files Analyzed**: {len(file_issues)} files with potential improvements
-- **Web Research Findings**: {len(web_findings)} relevant discoveries
-- **Priority Breakdown**:
-  - HIGH: {high_count} file issues + {high_web} web findings
-  - MEDIUM: {medium_count} file issues + {medium_web} web findings
-
----
-
-"""
-
-        # Add high-level analysis if available
-        if overall_analysis:
-            detail_content += "## 🏗️ High-Level Codebase Analysis\n\n"
-
-            # Architecture
-            if 'architecture' in overall_analysis:
-                arch = overall_analysis['architecture']
-                detail_content += "### Architecture\n\n"
-                detail_content += f"**Assessment**: {arch.get('assessment', 'N/A')}\n\n"
-                if arch.get('strengths'):
-                    detail_content += "**Strengths**:\n"
-                    for s in arch['strengths']:
-                        detail_content += f"- {s}\n"
-                    detail_content += "\n"
-                if arch.get('concerns'):
-                    detail_content += "**Concerns**:\n"
-                    for c in arch['concerns']:
-                        detail_content += f"- {c}\n"
-                    detail_content += "\n"
-
-            # Security
-            if 'security' in overall_analysis:
-                sec = overall_analysis['security']
-                rating = sec.get('overall_rating', 'UNKNOWN')
-                emoji = {'STRONG': '🟢', 'ADEQUATE': '🟡', 'NEEDS_IMPROVEMENT': '🟠', 'CRITICAL': '🔴'}.get(rating, '⚪')
-                detail_content += f"### Security Posture: {emoji} {rating}\n\n"
-                if sec.get('key_strengths'):
-                    detail_content += "**Strengths**:\n"
-                    for s in sec['key_strengths']:
-                        detail_content += f"- {s}\n"
-                    detail_content += "\n"
-                if sec.get('key_risks'):
-                    detail_content += "**Key Risks**:\n"
-                    for r in sec['key_risks']:
-                        detail_content += f"- ⚠️ {r}\n"
-                    detail_content += "\n"
-
-            # Technology Stack
-            if 'technology' in overall_analysis:
-                tech = overall_analysis['technology']
-                detail_content += "### Technology Stack\n\n"
-                detail_content += f"**Assessment**: {tech.get('stack_assessment', 'N/A')}\n\n"
-                if tech.get('recommendations'):
-                    detail_content += "**Recommendations**:\n"
-                    for r in tech['recommendations']:
-                        detail_content += f"- {r}\n"
-                    detail_content += "\n"
-
-            # Strategic Recommendations
-            if 'strategic_recommendations' in overall_analysis:
-                detail_content += "### 🎯 Strategic Recommendations\n\n"
-                for rec in overall_analysis['strategic_recommendations']:
-                    priority_emoji = '🔴' if rec.get('priority') == 'HIGH' else '🟡'
-                    detail_content += f"{priority_emoji} **{rec.get('title', 'Untitled')}**\n"
-                    detail_content += f"- {rec.get('description', 'N/A')}\n"
-                    detail_content += f"- *Impact*: {rec.get('impact', 'N/A')}\n\n"
-
-            detail_content += "---\n\n"
-
-        # Add file-specific issues
-        if file_issues:
-            detail_content += "## 🔧 File-Specific Improvements\n\n"
-
-            # Group by priority
-            high_priority = [f for f in file_issues if any(i.get('priority') == 'HIGH' for i in f['analysis']['issues'])]
-            medium_priority = [f for f in file_issues if f not in high_priority]
-
-            if high_priority:
-                detail_content += "### ⚠️ HIGH Priority\n\n"
-                for item in high_priority:
-                    detail_content += f"**File**: `{item['file']}`\n\n"
-                    for issue in item['analysis']['issues']:
-                        if issue.get('priority') == 'HIGH':
-                            detail_content += f"- **{issue['category'].title()}**: {issue['description']}\n"
-                            detail_content += f"  - *Suggestion*: {issue['suggestion']}\n\n"
-
-            if medium_priority:
-                detail_content += "### 📋 MEDIUM Priority\n\n"
-                for item in medium_priority[:5]:  # Limit to top 5
-                    detail_content += f"**File**: `{item['file']}`\n\n"
-                    for issue in item['analysis']['issues']:
-                        if issue.get('priority') == 'MEDIUM':
-                            detail_content += f"- **{issue['category'].title()}**: {issue['description']}\n"
-                            detail_content += f"  - *Suggestion*: {issue['suggestion']}\n\n"
-
-        # Add web findings
-        if web_findings:
-            detail_content += "\n## 🌐 Technology & Best Practice Research\n\n"
-
-            # Group by priority
-            high_web = [f for f in web_findings if f.get('priority') == 'HIGH']
-            medium_web = [f for f in web_findings if f.get('priority') == 'MEDIUM']
-
-            if high_web:
-                detail_content += "### ⚠️ HIGH Priority Findings\n\n"
-                for finding in high_web:
-                    detail_content += f"**{finding['topic']}**\n"
-                    detail_content += f"- {finding['description']}\n"
-                    detail_content += f"- *Relevance*: {finding['relevance']}\n\n"
-
-            if medium_web:
-                detail_content += "### 📋 MEDIUM Priority Findings\n\n"
-                for finding in medium_web:
-                    detail_content += f"**{finding['topic']}**\n"
-                    detail_content += f"- {finding['description']}\n"
-                    detail_content += f"- *Relevance*: {finding['relevance']}\n\n"
-
-        # Add self-analysis section
-        if self_analysis and self_analysis.get('has_insights'):
-            detail_content += "\n## 🔧 Analyzer Self-Improvement Analysis\n\n"
-            detail_content += f"*Based on last {self_analysis['runs_analyzed']} analyzer runs*\n\n"
-
-            # Performance stats
-            detail_content += "### 📊 Performance Metrics\n\n"
-            detail_content += f"- **Average Duration**: {self_analysis['avg_duration']:.1f} seconds\n"
-            detail_content += f"- **Average Files Analyzed**: {self_analysis['avg_files']:.0f}\n"
-            detail_content += f"- **Average Issue Detection Rate**: {self_analysis['avg_issue_rate']:.1%}\n"
-            detail_content += f"- **Claude API Success Rate**: {self_analysis['claude_success_rate']:.1%}\n\n"
-
-            # Top issue categories
-            if self_analysis.get('top_categories'):
-                detail_content += "**Most Common Issue Categories**:\n"
-                for category, count in self_analysis['top_categories']:
-                    detail_content += f"- {category}: {count} occurrences\n"
-                detail_content += "\n"
-
-            # Insights
-            if self_analysis.get('insights'):
-                detail_content += "### 💡 Key Insights\n\n"
-                for insight in self_analysis['insights']:
-                    detail_content += f"- {insight}\n"
-                detail_content += "\n"
-
-            # Recommendations
-            if self_analysis.get('recommendations'):
-                detail_content += "### 🎯 Self-Improvement Recommendations\n\n"
-
-                # Group by priority
-                high_recs = [r for r in self_analysis['recommendations'] if r.get('priority') == 'HIGH']
-                medium_recs = [r for r in self_analysis['recommendations'] if r.get('priority') == 'MEDIUM']
-                low_recs = [r for r in self_analysis['recommendations'] if r.get('priority') == 'LOW']
-
-                if high_recs:
-                    detail_content += "**🔴 HIGH Priority**:\n"
-                    for rec in high_recs:
-                        detail_content += f"- **{rec['area']}**: {rec['issue']}\n"
-                        detail_content += f"  - *Suggestion*: {rec['suggestion']}\n\n"
-
-                if medium_recs:
-                    detail_content += "**🟡 MEDIUM Priority**:\n"
-                    for rec in medium_recs:
-                        detail_content += f"- **{rec['area']}**: {rec['issue']}\n"
-                        detail_content += f"  - *Suggestion*: {rec['suggestion']}\n\n"
-
-                if low_recs:
-                    detail_content += "**⚪ LOW Priority**:\n"
-                    for rec in low_recs:
-                        detail_content += f"- **{rec['area']}**: {rec['issue']}\n"
-                        detail_content += f"  - *Suggestion*: {rec['suggestion']}\n\n"
-
-        # Add footer
-        detail_content += f"""
----
-
-## 🎯 Next Steps
-
-1. Review HIGH priority items first
-2. Evaluate web findings for applicability
-3. Create JIRA tickets for approved improvements
-4. Schedule implementation in next sprint
-
----
-
-📅 Next analysis: Next week (Monday 11:00 AM PST)
-🤖 Automated by james-in-a-box codebase analyzer
-"""
-
-        # Write detailed report as thread response
-        detail_file = self.notification_dir / f"RESPONSE-{task_id}.md"
-        detail_file.write_text(detail_content)
-        self.logger.info(f"Detail notification written to: {detail_file}")
-
-        return summary_file
-
-    def select_top_issues(self, file_issues: List[Dict], max_issues: int = 10) -> List[Dict]:
-        """Select top N high-priority issues that can be automatically fixed.
-
-        Returns a list of issues with file path and fix details, prioritized by:
-        1. HIGH priority first
-        2. Categories that are easily auto-fixable (error_handling, modern_practices, maintainability)
-        3. Smaller files (easier to fix without breaking things)
-        """
-        # Flatten all issues with their file context
-        all_issues = []
-        for file_item in file_issues:
-            file_path = file_item['file']
-            for issue in file_item['analysis'].get('issues', []):
-                all_issues.append({
-                    'file': file_path,
-                    'priority': issue.get('priority', 'LOW'),
-                    'category': issue.get('category', 'unknown'),
-                    'description': issue.get('description', ''),
-                    'suggestion': issue.get('suggestion', '')
-                })
-
-        # Define fixability scores by category (higher = more automatable)
-        fixability = {
-            'error_handling': 5,      # Usually straightforward
-            'modern_practices': 4,    # Pattern replacements
-            'maintainability': 3,     # Code cleanup
-            'documentation': 2,       # Adding docs
-            'performance': 2,         # May need careful review
-            'security': 1,            # Needs careful human review
-        }
-
-        # Score and sort issues
-        def score_issue(issue):
-            priority_score = 10 if issue['priority'] == 'HIGH' else 5 if issue['priority'] == 'MEDIUM' else 1
-            category_score = fixability.get(issue['category'], 1)
-            return priority_score * category_score
-
-        all_issues.sort(key=score_issue, reverse=True)
-
-        # Return top N issues
-        return all_issues[:max_issues]
-
     def implement_fix(self, issue: Dict) -> bool:
-        """Implement a single fix using Claude Code.
-
-        Returns True if fix was successfully applied.
-        """
+        """Implement a single fix using Claude Code."""
         file_path = self.codebase_path / issue['file']
 
         if not file_path.exists():
@@ -994,85 +231,67 @@ Return as JSON:
             return False
 
         try:
-            # Read current file content
             content = file_path.read_text(encoding='utf-8')
 
-            # Build implementation prompt
-            prompt = f"""Fix the following issue in this file. Make ONLY the minimal changes needed.
+            prompt = f"""Fix this issue in the file. Make ONLY the minimal change needed.
 
 FILE: {issue['file']}
 ISSUE: {issue['description']}
-CATEGORY: {issue['category']}
+LOCATION: {issue.get('line_hint', 'unknown')}
 SUGGESTION: {issue['suggestion']}
 
-CURRENT CONTENT:
+CURRENT FILE:
 ```
 {content}
 ```
 
-INSTRUCTIONS:
-1. Apply the fix described above
-2. Make minimal changes - don't refactor unrelated code
-3. Preserve the existing code style
-4. Return ONLY the complete fixed file content, nothing else
-5. Do NOT include any explanation or markdown - just the raw file content
+Return ONLY the complete fixed file content. No explanations, no markdown fences."""
 
-OUTPUT THE FIXED FILE CONTENT:"""
-
-            # Call Claude to generate the fix
             result = subprocess.run(
-                ['claude', 'code', '--print'],
-                input=prompt,
+                ['claude', '-p', prompt],
                 capture_output=True,
                 text=True,
                 timeout=120
             )
 
             if result.returncode != 0:
-                self.logger.error(f"Claude returned error for {issue['file']}: {result.stderr}")
+                self.logger.error(f"Claude error for {issue['file']}: {result.stderr}")
                 return False
 
             fixed_content = result.stdout.strip()
 
-            # Basic validation - make sure we got something reasonable
-            if len(fixed_content) < len(content) * 0.5:
-                self.logger.warning(f"Fixed content too short for {issue['file']}, skipping")
-                return False
-
-            if len(fixed_content) > len(content) * 2:
-                self.logger.warning(f"Fixed content too long for {issue['file']}, skipping")
-                return False
-
-            # Remove any markdown code fences if present
+            # Remove markdown fences if present
             if fixed_content.startswith('```'):
                 lines = fixed_content.split('\n')
-                # Remove first line (```python or similar)
-                lines = lines[1:]
-                # Remove last line if it's ```
+                lines = lines[1:]  # Remove first line
                 if lines and lines[-1].strip() == '```':
                     lines = lines[:-1]
                 fixed_content = '\n'.join(lines)
 
-            # Write the fixed content
+            # Validate the fix
+            if len(fixed_content) < len(content) * 0.3:
+                self.logger.warning(f"Fixed content too short for {issue['file']}, skipping")
+                return False
+
+            if len(fixed_content) > len(content) * 3:
+                self.logger.warning(f"Fixed content too long for {issue['file']}, skipping")
+                return False
+
+            # Write the fix
             file_path.write_text(fixed_content, encoding='utf-8')
             self.logger.info(f"✓ Fixed: {issue['file']} ({issue['category']})")
-
             return True
 
         except subprocess.TimeoutExpired:
-            self.logger.error(f"Timeout implementing fix for {issue['file']}")
+            self.logger.error(f"Timeout fixing {issue['file']}")
             return False
         except Exception as e:
-            self.logger.error(f"Error implementing fix for {issue['file']}: {e}")
+            self.logger.error(f"Error fixing {issue['file']}: {e}")
             return False
 
-    def commit_and_create_pr(self, implemented_issues: List[Dict]) -> Optional[str]:
-        """Commit changes and create a PR.
-
-        Returns the PR URL if successful, None otherwise.
-        """
-        if not implemented_issues:
-            self.logger.warning("No issues were implemented, skipping PR creation")
+    def create_pr(self, implemented: List[Dict]) -> Optional[str]:
+        """Commit changes and create a PR."""
+        if not implemented:
             return None
 
         try:
@@ -1088,11 +307,10 @@ OUTPUT THE FIXED FILE CONTENT:"""
                 self.logger.warning("No changes to commit")
                 return None
 
-            # Create a descriptive branch name
+            # Create branch
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            branch_name = f"auto-fix/codebase-improvements-{timestamp}"
+            branch_name = f"auto-fix/codebase-{timestamp}"
 
-            # Create and checkout new branch
             subprocess.run(
                 ['git', 'checkout', '-b', branch_name],
                 cwd=self.codebase_path,
@@ -1100,33 +318,24 @@ OUTPUT THE FIXED FILE CONTENT:"""
                 capture_output=True
             )
 
-            # Stage all changes
-            subprocess.run(
-                ['git', 'add', '-A'],
-                cwd=self.codebase_path,
-                check=True,
-                capture_output=True
-            )
+            # Stage and commit
+            subprocess.run(['git', 'add', '-A'], cwd=self.codebase_path, check=True, capture_output=True)
 
-            # Build commit message
-            categories = set(issue['category'] for issue in implemented_issues)
-            files_changed = set(issue['file'] for issue in implemented_issues)
-
-            commit_body = "Automated fixes for the following issues:\n\n"
-            for issue in implemented_issues:
-                commit_body += f"- [{issue['priority']}] {issue['file']}: {issue['description'][:60]}...\n"
-
-            commit_msg = f"""Auto-fix: {len(implemented_issues)} codebase improvements
+            categories = set(i['category'] for i in implemented)
+            commit_msg = f"""Auto-fix: {len(implemented)} codebase improvements
 
 Categories: {', '.join(categories)}
-Files changed: {len(files_changed)}
 
-{commit_body}
+Fixes:
+"""
+            for issue in implemented:
+                commit_msg += f"- {issue['file']}: {issue['description'][:50]}...\n"
+
+            commit_msg += """
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>"""
 
-            # Commit
             subprocess.run(
                 ['git', 'commit', '-m', commit_msg],
                 cwd=self.codebase_path,
@@ -1134,9 +343,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                 capture_output=True
             )
 
-            self.logger.info(f"Committed changes to branch: {branch_name}")
-
-            # Push branch
+            # Push
             result = subprocess.run(
                 ['git', 'push', '-u', 'origin', branch_name],
                 cwd=self.codebase_path,
@@ -1145,42 +352,23 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             )
 
             if result.returncode != 0:
-                self.logger.error(f"Failed to push branch: {result.stderr}")
+                self.logger.error(f"Push failed: {result.stderr}")
                 return None
 
-            self.logger.info("Pushed branch to origin")
-
             # Create PR
-            pr_body = f"""## Summary
-
-Automated codebase improvements generated by the codebase-analyzer.
-
-**{len(implemented_issues)} fixes implemented** across {len(files_changed)} files.
-
-### Changes by Category
-
-"""
-            for category in sorted(categories):
-                cat_issues = [i for i in implemented_issues if i['category'] == category]
-                pr_body += f"**{category.title()}** ({len(cat_issues)} fixes):\n"
-                for issue in cat_issues:
-                    pr_body += f"- `{issue['file']}`: {issue['description'][:80]}\n"
+            pr_body = f"## Auto-fix: {len(implemented)} improvements\n\n"
+            for cat in sorted(categories):
+                cat_issues = [i for i in implemented if i['category'] == cat]
+                pr_body += f"### {cat.title()} ({len(cat_issues)})\n"
+                for i in cat_issues:
+                    pr_body += f"- `{i['file']}`: {i['description'][:60]}\n"
                 pr_body += "\n"
 
-            pr_body += """## Test plan
-
-- [ ] Review each change for correctness
-- [ ] Run tests to verify no regressions
-- [ ] Verify Python syntax with `python3 -m py_compile`
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-"""
+            pr_body += "\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
             result = subprocess.run(
-                ['gh', 'pr', 'create',
-                 '--base', 'main',
-                 '--head', branch_name,
-                 '--title', f'Auto-fix: {len(implemented_issues)} codebase improvements',
+                ['gh', 'pr', 'create', '--base', 'main', '--head', branch_name,
+                 '--title', f'Auto-fix: {len(implemented)} codebase improvements',
                  '--body', pr_body],
                 cwd=self.codebase_path,
                 capture_output=True,
@@ -1188,295 +376,109 @@ Automated codebase improvements generated by the codebase-analyzer.
             )
 
             if result.returncode != 0:
-                self.logger.error(f"Failed to create PR: {result.stderr}")
+                self.logger.error(f"PR creation failed: {result.stderr}")
                 return None
 
             pr_url = result.stdout.strip()
             self.logger.info(f"✓ Created PR: {pr_url}")
-
             return pr_url
 
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Git/GitHub error: {e}")
-            return None
         except Exception as e:
             self.logger.error(f"Error creating PR: {e}")
             return None
 
-    def run_implementation(self, file_issues: List[Dict], max_fixes: int = 10) -> Optional[str]:
-        """Run the implementation workflow: select issues, implement fixes, create PR.
+    def create_notification(self, issues: List[Dict], pr_url: Optional[str] = None):
+        """Create a notification with findings."""
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        notif_file = self.notification_dir / f"{timestamp}-codebase-analysis.md"
 
-        Returns the PR URL if successful.
-        """
-        self.logger.info("=" * 60)
-        self.logger.info("IMPLEMENTATION MODE")
-        self.logger.info("=" * 60)
+        self.notification_dir.mkdir(parents=True, exist_ok=True)
 
-        # Select top issues to fix
-        self.logger.info(f"Selecting top {max_fixes} issues to implement...")
-        top_issues = self.select_top_issues(file_issues, max_fixes)
-
-        if not top_issues:
-            self.logger.warning("No issues selected for implementation")
-            return None
-
-        self.logger.info(f"Selected {len(top_issues)} issues:")
-        for i, issue in enumerate(top_issues, 1):
-            self.logger.info(f"  {i}. [{issue['priority']}] {issue['file']}: {issue['category']}")
-
-        # Implement each fix
-        self.logger.info("\nImplementing fixes...")
-        implemented = []
-        failed = []
-
-        for issue in top_issues:
-            self.logger.info(f"\nFixing: {issue['file']} ({issue['category']})")
-            if self.implement_fix(issue):
-                implemented.append(issue)
-            else:
-                failed.append(issue)
-
-        self.logger.info(f"\n✓ Implemented: {len(implemented)}")
-        self.logger.info(f"✗ Failed: {len(failed)}")
-
-        if not implemented:
-            self.logger.error("No fixes were successfully implemented")
-            return None
-
-        # Commit and create PR
-        self.logger.info("\nCreating PR...")
-        pr_url = self.commit_and_create_pr(implemented)
+        content = f"# 🔍 Codebase Analysis\n\n"
+        content += f"**Found {len(issues)} issues**\n\n"
 
         if pr_url:
-            # Create notification about the PR
-            self._create_implementation_notification(implemented, failed, pr_url)
+            content += f"**PR Created**: {pr_url}\n\n"
 
-        return pr_url
+        # Group by priority
+        high = [i for i in issues if i.get('priority') == 'HIGH']
+        medium = [i for i in issues if i.get('priority') == 'MEDIUM']
 
-    def _create_implementation_notification(self, implemented: List[Dict],
-                                            failed: List[Dict], pr_url: str):
-        """Create a notification about the automated implementation."""
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notif_file = self.notification_dir / f"{timestamp}-auto-implementation.md"
+        if high:
+            content += "## 🔴 HIGH Priority\n\n"
+            for i in high:
+                content += f"- `{i['file']}`: {i['description']}\n"
+            content += "\n"
 
-        content = f"""# 🔧 Automated Codebase Fixes Applied
+        if medium:
+            content += "## 🟡 MEDIUM Priority\n\n"
+            for i in medium:
+                content += f"- `{i['file']}`: {i['description']}\n"
+            content += "\n"
 
-**PR Created**: {pr_url}
-
-## Summary
-
-- **Fixes Implemented**: {len(implemented)}
-- **Fixes Failed**: {len(failed)}
-
-## Implemented Changes
-
-"""
-        for issue in implemented:
-            content += f"- ✓ `{issue['file']}` [{issue['priority']}]: {issue['description'][:60]}...\n"
-
-        if failed:
-            content += "\n## Failed Fixes (require manual review)\n\n"
-            for issue in failed:
-                content += f"- ✗ `{issue['file']}` [{issue['priority']}]: {issue['description'][:60]}...\n"
-
-        content += f"""
-## Next Steps
-
-1. Review the PR: {pr_url}
-2. Run tests to verify changes
-3. Merge if everything looks good
-
----
-📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-🤖 Automated by codebase-analyzer --implement
-"""
+        content += f"\n---\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
 
         notif_file.write_text(content)
-        self.logger.info(f"Notification created: {notif_file}")
+        self.logger.info(f"Notification: {notif_file}")
 
-    def run_analysis(self, enable_web_search: bool = True, implement: bool = False, max_fixes: int = 10):
+    def run(self, implement: bool = False, max_fixes: int = 10):
         """Main analysis workflow."""
-        self.logger.info("Starting codebase analysis...")
-        self.logger.info(f"Analyzing: {self.codebase_path}")
-        if implement:
-            self.logger.info(f"Implementation mode: Will fix up to {max_fixes} issues")
+        self.logger.info("=" * 60)
+        self.logger.info("Codebase Analyzer")
+        self.logger.info("=" * 60)
 
-        # Get files to analyze
+        # Get files
         files = self.get_files_to_analyze()
 
-        # Analyze ALL files (not limited)
-        file_issues = []
+        # Analyze (single Claude call)
+        issues = self.analyze_codebase(files)
 
-        self.logger.info(f"Analyzing {len(files)} files...")
-        for i, file_path in enumerate(files):
-            self.run_metrics['files_analyzed'] += 1
-            self.logger.info(f"[{i+1}/{len(files)}] Analyzing {file_path.name}")
-            result = self.analyze_file(file_path)
-            if result:
-                file_issues.append(result)
+        if not issues:
+            self.logger.info("No issues found")
+            return
 
-        self.logger.info(f"Found issues in {len(file_issues)} files")
+        # Implement fixes if requested
+        pr_url = None
+        if implement:
+            self.logger.info(f"\nImplementing top {max_fixes} fixes...")
+            to_fix = issues[:max_fixes]
+            implemented = []
 
-        # If implement mode, run implementation and skip reporting
-        if implement and file_issues:
-            pr_url = self.run_implementation(file_issues, max_fixes)
-            self.save_run_metrics()
-            return pr_url is not None
+            for issue in to_fix:
+                if self.implement_fix(issue):
+                    implemented.append(issue)
 
-        # High-level codebase analysis (skip if implementing)
-        overall_analysis = None
-        if not implement:
-            self.logger.info("Generating high-level codebase analysis...")
-            overall_analysis = self.analyze_codebase_overall(files, file_issues)
+            self.logger.info(f"Implemented {len(implemented)}/{len(to_fix)} fixes")
 
-        # Web search for improvements (skip if implementing)
-        web_findings = []
-        if enable_web_search and not implement:
-            web_findings = self.search_web_for_improvements()
-        elif not implement:
-            self.logger.info("Web search disabled")
+            if implemented:
+                pr_url = self.create_pr(implemented)
 
-        # Self-performance analysis (skip if implementing)
-        self_analysis = None
-        if not implement:
-            self.logger.info("Analyzing self-performance for improvements...")
-            self_analysis = self.analyze_self_performance()
+        # Create notification
+        self.create_notification(issues, pr_url)
 
-        # Generate notification if we have findings
-        if file_issues or web_findings or overall_analysis:
-            notification_file = self.generate_notification(
-                file_issues, web_findings, overall_analysis, self_analysis
-            )
-            self.logger.info(f"Analysis complete! Notification: {notification_file}")
-
-            # Save run metrics for future self-analysis
-            self.save_run_metrics()
-
-            return True
-        else:
-            self.logger.info("No significant improvements found")
-
-            # Still save metrics even if no findings
-            self.save_run_metrics()
-
-            return False
-
-
-def check_last_run(notification_dir: Path) -> Optional[datetime]:
-    """Check when the analyzer was last run by finding the most recent report."""
-    try:
-        # Find all codebase improvement notifications
-        reports = list(notification_dir.glob("*-codebase-improvements.md"))
-
-        if not reports:
-            return None
-
-        # Sort by modification time, get most recent
-        reports.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        most_recent = reports[0]
-
-        # Get modification time
-        mtime = datetime.fromtimestamp(most_recent.stat().st_mtime)
-        return mtime
-    except Exception as e:
-        logging.error(f"Error checking last run: {e}")
-        return None
-
-
-def should_run_analysis(notification_dir: Path, force: bool = False) -> bool:
-    """Determine if analysis should run based on weekly schedule."""
-    if force:
-        print("Force flag set - running analysis")
-        return True
-
-    last_run = check_last_run(notification_dir)
-
-    if last_run is None:
-        print("No previous analysis found - running analysis")
-        return True
-
-    days_since_last_run = (datetime.now() - last_run).days
-
-    if days_since_last_run >= 7:
-        print(f"Last analysis was {days_since_last_run} days ago - running analysis")
-        return True
-    else:
-        print(f"Last analysis was {days_since_last_run} days ago (< 7 days) - skipping")
-        print(f"Use --force to run anyway")
-        return False
+        self.logger.info("Done!")
 
 
 def main():
-    """Main entry point."""
-    # Parse arguments
-    parser = argparse.ArgumentParser(
-        description="Analyze james-in-a-box codebase for improvements",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s                    # Run if last analysis was >7 days ago
-  %(prog)s --force            # Force run regardless of schedule
-  %(prog)s --no-web-search    # Skip web search (faster)
-  %(prog)s --implement        # Analyze AND implement top 10 fixes, open PR
-  %(prog)s --implement --max-fixes 5  # Implement only top 5 fixes
-        """
-    )
-    parser.add_argument(
-        '--force',
-        action='store_true',
-        help='Force analysis even if run recently'
-    )
-    parser.add_argument(
-        '--no-web-search',
-        action='store_true',
-        help='Skip web search (faster, code analysis only)'
-    )
-    parser.add_argument(
-        '--implement',
-        action='store_true',
-        help='Implement top fixes and create a PR (implies --force)'
-    )
-    parser.add_argument(
-        '--max-fixes',
-        type=int,
-        default=10,
-        help='Maximum number of fixes to implement (default: 10)'
-    )
+    parser = argparse.ArgumentParser(description="Analyze codebase for improvements")
+    parser.add_argument('--implement', action='store_true', help='Implement fixes and create PR')
+    parser.add_argument('--max-fixes', type=int, default=10, help='Max fixes to implement')
+    parser.add_argument('--force', action='store_true', help='Force run (ignored, kept for compatibility)')
 
     args = parser.parse_args()
 
-    # --implement implies --force
-    if args.implement:
-        args.force = True
-
-    # Configuration
     codebase_path = Path.home() / "khan" / "james-in-a-box"
     notification_dir = Path.home() / "sharing" / "notifications"
 
-    # Validate paths
     if not codebase_path.exists():
-        print(f"Error: Codebase path not found: {codebase_path}", file=sys.stderr)
+        print(f"Error: {codebase_path} not found", file=sys.stderr)
         sys.exit(1)
 
-    # Check if we should run based on weekly schedule
-    if not should_run_analysis(notification_dir, force=args.force):
-        sys.exit(0)
-
-    # Create analyzer and run
     try:
         analyzer = CodebaseAnalyzer(codebase_path, notification_dir)
-        enable_web_search = not args.no_web_search
-        success = analyzer.run_analysis(
-            enable_web_search=enable_web_search,
-            implement=args.implement,
-            max_fixes=args.max_fixes
-        )
-        if args.implement and not success:
-            print("Implementation failed - no PR created", file=sys.stderr)
-            sys.exit(1)
+        analyzer.run(implement=args.implement, max_fixes=args.max_fixes)
     except Exception as e:
-        print(f"Error running analysis: {e}", file=sys.stderr)
-        logging.exception("Analysis failed")
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
