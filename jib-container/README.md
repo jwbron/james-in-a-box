@@ -32,10 +32,11 @@ The jib container provides a secure, isolated environment for the Claude agent t
 
 ## Container Lifecycle
 
-**Start container**:
+**Start container** (interactive mode - auto-starts Claude):
 ```bash
 cd ~/khan/james-in-a-box
 ./jib
+# Claude Code starts automatically in sandboxed environment
 ```
 
 **Rebuild container** (if Dockerfile changes):

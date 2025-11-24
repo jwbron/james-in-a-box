@@ -368,11 +368,11 @@ if [ $# -eq 0 ]; then
     echo "  Note: ~/khan/ is mounted from host - all code changes persist immediately"
     echo ""
     echo "🚀 Quick Start:"
-    echo "  1. claude                          # Start Claude (no permissions prompts)"
-    echo "  2. @load-context <project>         # Load accumulated knowledge"
-    echo "  3. [work on task]"
-    echo "  4. @create-pr audit                # Create PR for review"
-    echo "  5. @save-context <project>         # Save learnings"
+    echo "  Claude starts automatically when container launches!"
+    echo "  1. @load-context <project>         # Load accumulated knowledge"
+    echo "  2. [work on task]"
+    echo "  3. @create-pr audit                # Create PR for review"
+    echo "  4. @save-context <project>         # Save learnings"
     echo ""
     echo "📚 Available Resources:"
     echo "  • Workspace: ~/khan/                      (code reference, MOUNTED ro)"
@@ -417,7 +417,8 @@ if [ $# -eq 0 ]; then
     echo ""
     # Start in khan directory
     cd "${USER_HOME}/khan" 2>/dev/null || cd "${USER_HOME}"
-    exec gosu "${RUNTIME_UID}:${RUNTIME_GID}" /bin/bash
+    # Auto-start Claude Code (bypasses permissions since we're in a sandbox)
+    exec gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude --dangerously-skip-permissions
 else
     exec gosu "${RUNTIME_UID}:${RUNTIME_GID}" "$@"
 fi
