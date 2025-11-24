@@ -38,6 +38,7 @@ class SlackReceiver:
     def __init__(self, config_dir: Path):
         self.config_dir = config_dir
         self.config_file = config_dir / "config.json"
+        self.threads_file = config_dir / "threads.json"
         self.log_file = config_dir / "receiver.log"
 
         # Ensure config directory exists with secure permissions
@@ -49,6 +50,9 @@ class SlackReceiver:
 
         # Load configuration
         self.config = self._load_config()
+
+        # Load thread state
+        self.threads = self._load_threads()
 
         # Validate tokens
         self.bot_token = self.config.get('slack_token')
@@ -139,6 +143,26 @@ class SlackReceiver:
             json.dump(config, f, indent=2)
         os.chmod(self.config_file, 0o600)
         self.logger.info(f"Configuration saved to {self.config_file}")
+
+    def _load_threads(self) -> dict:
+        """Load thread state mapping task IDs to Slack thread_ts."""
+        if self.threads_file.exists():
+            try:
+                with open(self.threads_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.error(f"Failed to load threads file: {e}")
+                return {}
+        return {}
+
+    def _save_threads(self):
+        """Save thread state to file."""
+        try:
+            with open(self.threads_file, 'w') as f:
+                json.dump(self.threads, f, indent=2)
+            os.chmod(self.threads_file, 0o600)
+        except Exception as e:
+            self.logger.error(f"Failed to save threads file: {e}")
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
@@ -345,6 +369,9 @@ class SlackReceiver:
 
         filepath = target_dir / filename
 
+        # Extract task ID for thread tracking
+        task_id = filename.replace('.md', '')  # e.g., "task-20251124-112705"
+
         # Build message document
         doc_parts = []
 
@@ -383,6 +410,14 @@ class SlackReceiver:
                 f.write('\n'.join(doc_parts))
 
             self.logger.info(f"Message written: {filepath}")
+
+            # Save thread_ts mapping for new tasks
+            # This allows future notifications to reply in the same thread
+            if msg_type == 'task' and metadata.get('thread_ts'):
+                self.threads[task_id] = metadata['thread_ts']
+                self._save_threads()
+                self.logger.info(f"Saved thread mapping: {task_id} → {metadata['thread_ts']}")
+
             return filepath
         except Exception as e:
             self.logger.error(f"Failed to write message to {filepath}: {e}")
@@ -581,12 +616,14 @@ class SlackReceiver:
             parsed['referenced_notification'] = referenced_notif
 
         # Write to shared directory
+        # IMPORTANT: Use reply_thread_ts (which is thread_ts OR message_ts)
+        # This ensures new tasks get the message_ts saved for future thread replies
         metadata = {
             'user_id': user_id,
             'user_name': user_name,
             'channel': channel,
             'referenced_notification': parsed.get('referenced_notification'),
-            'thread_ts': thread_ts,
+            'thread_ts': reply_thread_ts,  # Use reply_thread_ts, not thread_ts
             'thread_context': thread_context
         }
 
