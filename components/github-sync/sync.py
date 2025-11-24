@@ -9,6 +9,9 @@ Fetches:
 - Full logs for failed checks (user's PRs only)
 
 Stores to: ~/context-sync/github/
+
+Repository configuration is loaded from config/repositories.yaml
+which is the single source of truth for repos jib has access to.
 """
 
 import json
@@ -17,6 +20,14 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+
+# Add config to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+try:
+    from config.repo_config import get_repos_for_sync, get_sync_config
+    HAS_REPO_CONFIG = True
+except ImportError:
+    HAS_REPO_CONFIG = False
 
 
 class GitHubSync:
@@ -358,16 +369,50 @@ def main():
     parser.add_argument("--all-prs", "-a", action="store_true",
                         help="Sync ALL open PRs in repo, not just your own")
     parser.add_argument("--output", "-o", help="Output directory (default: ~/context-sync/github)")
+    parser.add_argument("--use-config", action="store_true",
+                        help="Use repositories.yaml config for repo list (syncs all configured repos)")
 
     args = parser.parse_args()
 
     sync_dir = Path(args.output) if args.output else Path.home() / "context-sync" / "github"
 
-    print("=" * 60)
-    print("GitHub PR Sync")
-    if args.repo:
+    # Determine repos to sync
+    repos_to_sync = []
+    all_prs = args.all_prs
+
+    if args.use_config and HAS_REPO_CONFIG:
+        # Load repos from config
+        repos_to_sync = get_repos_for_sync()
+        sync_config = get_sync_config()
+        all_prs = sync_config.get("sync_all_prs", True)
+        print("=" * 60)
+        print("GitHub PR Sync (using repositories.yaml config)")
+        print(f"Repositories: {len(repos_to_sync)}")
+        for repo in repos_to_sync:
+            print(f"  - {repo}")
+    elif args.repo:
+        repos_to_sync = [args.repo]
+        print("=" * 60)
+        print("GitHub PR Sync")
         print(f"Repository: {args.repo}")
-    if args.all_prs:
+    else:
+        # No repo specified, try to use config as default
+        if HAS_REPO_CONFIG:
+            repos_to_sync = get_repos_for_sync()
+            sync_config = get_sync_config()
+            all_prs = sync_config.get("sync_all_prs", True)
+            print("=" * 60)
+            print("GitHub PR Sync (using repositories.yaml config)")
+            print(f"Repositories: {len(repos_to_sync)}")
+            for repo in repos_to_sync:
+                print(f"  - {repo}")
+        else:
+            print("=" * 60)
+            print("GitHub PR Sync")
+            print("No --repo specified and config not available")
+            print("Will sync all PRs authored by you across all repos")
+
+    if all_prs:
         print("Mode: All PRs in repository")
     else:
         print("Mode: Your PRs only")
@@ -375,8 +420,17 @@ def main():
     print()
 
     try:
-        syncer = GitHubSync(sync_dir, repo=args.repo, all_prs=args.all_prs)
-        syncer.sync_prs()
+        if repos_to_sync:
+            # Sync each configured repo
+            for repo in repos_to_sync:
+                print(f"\n--- Syncing {repo} ---")
+                syncer = GitHubSync(sync_dir, repo=repo, all_prs=all_prs)
+                syncer.sync_prs()
+        else:
+            # Legacy mode: no specific repo
+            syncer = GitHubSync(sync_dir, repo=None, all_prs=all_prs)
+            syncer.sync_prs()
+
         print()
         print("=" * 60)
         print("Sync complete")

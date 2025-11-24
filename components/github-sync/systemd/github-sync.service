@@ -6,8 +6,9 @@ Documentation=file://%h/khan/james-in-a-box/components/github-sync/README.md
 Type=oneshot
 WorkingDirectory=%h/khan/james-in-a-box/components/github-sync
 
-# Sync all PRs in the repo (not just @me) so we can review others' PRs
-ExecStart=%h/khan/james-in-a-box/components/github-sync/sync.py --repo jwbron/james-in-a-box --all-prs
+# Sync repos defined in config/repositories.yaml (the single source of truth)
+# Use --use-config to load repo list and sync settings from the config file
+ExecStart=%h/khan/james-in-a-box/components/github-sync/sync.py --use-config
 
 # After syncing PR data, run analysis in JIB container (new ephemeral container)
 # 1. Check monitor - analyzes failed checks and suggests fixes

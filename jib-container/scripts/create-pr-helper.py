@@ -11,6 +11,9 @@ Usage:
   create-pr-helper.py --title "PR title" --body "Description" [--reviewer jwiesebron]
   create-pr-helper.py --from-file pr-details.json
   create-pr-helper.py --auto  # Auto-generate from git log
+
+Repository configuration (including default reviewer and writable repos) is loaded
+from config/repositories.yaml - the single source of truth for jib repo access.
 """
 
 import argparse
@@ -21,12 +24,68 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+# Try to load repo config for default reviewer and writable repos check
+try:
+    # When running inside container, config is at ~/khan/james-in-a-box/config/
+    config_paths = [
+        Path(__file__).parent.parent.parent / "config",  # From scripts dir
+        Path.home() / "khan" / "james-in-a-box" / "config",  # From container
+    ]
+    for config_path in config_paths:
+        if (config_path / "repo_config.py").exists():
+            sys.path.insert(0, str(config_path.parent))
+            break
+    from config.repo_config import get_default_reviewer, is_writable_repo, get_writable_repos
+    HAS_REPO_CONFIG = True
+except ImportError:
+    HAS_REPO_CONFIG = False
+
+    def get_default_reviewer():
+        return "jwiesebron"
+
+    def is_writable_repo(repo):
+        return True  # Allow by default if config unavailable
+
+    def get_writable_repos():
+        return ["jwiesebron/james-in-a-box"]
+
 
 class PRCreator:
     def __init__(self):
         self.repo_root = self.find_repo_root()
         self.notifications_dir = Path.home() / "sharing" / "notifications"
         self.notifications_dir.mkdir(parents=True, exist_ok=True)
+
+    def get_repo_name(self) -> Optional[str]:
+        """Get the owner/repo name from git remote origin."""
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                capture_output=True, text=True, check=True
+            )
+            url = result.stdout.strip()
+            # Handle SSH URLs: git@github.com:owner/repo.git
+            if url.startswith("git@"):
+                parts = url.split(":")[-1]
+                return parts.replace(".git", "")
+            # Handle HTTPS URLs: https://github.com/owner/repo.git
+            elif "github.com" in url:
+                parts = url.split("github.com/")[-1]
+                return parts.replace(".git", "")
+            return None
+        except subprocess.CalledProcessError:
+            return None
+
+    def check_writable(self) -> tuple[bool, str]:
+        """Check if current repo is in the writable repos list.
+
+        Returns:
+            (is_writable, repo_name) - Whether repo is writable and its name
+        """
+        repo_name = self.get_repo_name()
+        if not repo_name:
+            return False, "unknown"
+        return is_writable_repo(repo_name), repo_name
 
     def find_repo_root(self) -> Optional[Path]:
         """Find the git repository root"""
@@ -224,24 +283,52 @@ class PRCreator:
 
 
 def main():
+    # Get default reviewer from config
+    default_reviewer = get_default_reviewer()
+
     parser = argparse.ArgumentParser(description="Create GitHub PR for completed task")
     parser.add_argument("--title", "-t", help="PR title")
     parser.add_argument("--body", "-b", help="PR description body")
-    parser.add_argument("--reviewer", "-r", default="jwiesebron", help="Reviewer to request (default: jwiesebron)")
+    parser.add_argument("--reviewer", "-r", default=default_reviewer,
+                        help=f"Reviewer to request (default: {default_reviewer}, from config)")
     parser.add_argument("--base", help="Base branch (default: auto-detect main/master)")
     parser.add_argument("--draft", action="store_true", help="Create as draft PR")
     parser.add_argument("--from-file", "-f", help="Read PR details from JSON file")
     parser.add_argument("--auto", "-a", action="store_true", help="Auto-generate title/body from git log")
     parser.add_argument("--no-notify", action="store_true", help="Skip creating notification")
     parser.add_argument("--context", "-c", help="Task context for notification")
+    parser.add_argument("--list-writable", action="store_true",
+                        help="List repositories where jib has write access")
 
     args = parser.parse_args()
+
+    # Handle --list-writable flag
+    if args.list_writable:
+        print("Repositories where jib has write access:")
+        print("(From config/repositories.yaml)")
+        print()
+        for repo in get_writable_repos():
+            print(f"  - {repo}")
+        print()
+        print(f"Default reviewer: {default_reviewer}")
+        sys.exit(0)
 
     creator = PRCreator()
 
     if not creator.repo_root:
         print("Error: Not in a git repository", file=sys.stderr)
         sys.exit(1)
+
+    # Check if this repo is in the writable repos list
+    is_writable, repo_name = creator.check_writable()
+    if not is_writable:
+        print(f"Warning: Repository '{repo_name}' is not in the writable repos list.", file=sys.stderr)
+        print(f"Writable repos (from config/repositories.yaml):", file=sys.stderr)
+        for repo in get_writable_repos():
+            print(f"  - {repo}", file=sys.stderr)
+        print(f"\nYou can still create the PR, but jib may not have push access.", file=sys.stderr)
+        print(f"If the PR creation fails, notify the user to push manually from host.", file=sys.stderr)
+        print()
 
     # Determine PR details
     title = args.title
