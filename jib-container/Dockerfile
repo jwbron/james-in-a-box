@@ -228,8 +228,25 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
     if echo "${GITHUB_TOKEN}" | gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth login --with-token 2>/dev/null; then
         echo "✓ GitHub CLI authenticated (PR creation enabled)"
         echo "  Token provided via GITHUB_TOKEN environment variable"
+
         # Configure git to use gh as credential helper for git push/pull
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth setup-git 2>/dev/null || true
+        # Note: gh auth setup-git modifies ~/.gitconfig which affects all repos
+        if gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth setup-git; then
+            echo "✓ Git credential helper configured (gh)"
+        else
+            echo "⚠ gh auth setup-git failed, setting credential helper manually..."
+            # Fallback: Set credential helper manually
+            gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper '!gh auth git-credential'
+            gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.https://github.com.helper '!gh auth git-credential'
+            echo "✓ Git credential helper configured (manual fallback)"
+        fi
+
+        # Verify git can authenticate by checking gh auth status
+        if gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth status >/dev/null 2>&1; then
+            echo "✓ GitHub authentication verified"
+        else
+            echo "⚠ GitHub auth verification failed - push may not work"
+        fi
     else
         echo "⚠ GitHub CLI authentication failed"
         echo "  PR creation features will not be available"
