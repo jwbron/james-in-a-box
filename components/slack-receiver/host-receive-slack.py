@@ -334,6 +334,31 @@ class SlackReceiver:
         except Exception as e:
             self.logger.error(f"Failed to send ack: {e}")
 
+    def _trigger_processing(self, filepath: Path):
+        """Trigger message processing in JIB container via jib --exec."""
+        try:
+            jib_script = Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
+            processor_script = Path.home() / "khan" / "james-in-a-box" / "jib-container" / "components" / "incoming-processor.py"
+
+            # Convert host path to container path
+            # Host: ~/.jib-sharing/incoming/task.md
+            # Container: ~/sharing/incoming/task.md
+            container_path = str(filepath).replace(str(Path.home() / ".jib-sharing"), f"/home/{os.environ['USER']}/sharing")
+
+            self.logger.info(f"Triggering processing for {filepath.name}")
+
+            # Execute in background (non-blocking)
+            subprocess.Popen(
+                [str(jib_script), "--exec", "python3", str(processor_script), container_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True  # Detach from parent
+            )
+
+            self.logger.info(f"Processing triggered for {filepath.name}")
+        except Exception as e:
+            self.logger.error(f"Failed to trigger processing: {e}")
+
     def _get_thread_parent_text(self, channel: str, thread_ts: str) -> str:
         """Fetch the parent message text from a thread."""
         try:
@@ -482,6 +507,9 @@ class SlackReceiver:
                 ack_msg = f"✅ Task received and queued for Claude\n📁 Saved to: `{filepath.name}`"
 
             self._send_ack(channel, ack_msg)
+
+            # Trigger processing in JIB container
+            self._trigger_processing(filepath)
         else:
             self._send_ack(channel, "❌ Failed to process message. Please check logs.")
 

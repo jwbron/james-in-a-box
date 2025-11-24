@@ -9,6 +9,11 @@ Environment="PATH=%h/khan/james-in-a-box/components/context-sync/.venv/bin:/usr/
 # Configuration is loaded from ~/.config/context-sync/.env by sync_all.py
 ExecStart=%h/khan/james-in-a-box/components/context-sync/.venv/bin/python %h/khan/james-in-a-box/components/context-sync/sync_all.py
 
+# After syncing context data, run analysis in JIB container
+# Context watchers analyze Confluence docs and JIRA tickets for updates
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/context-watcher/confluence-watcher.py
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/context-watcher/jira-watcher.py
+
 # Logging
 StandardOutput=journal
 StandardError=journal

@@ -262,51 +262,31 @@ if [ -d "${USER_HOME}/sharing" ]; then
     echo "  Usage: beads add 'task description' --tags feature,important"
 fi
 
-# Start context-watcher in background (if configured)
-if [ -f "${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher/context-watcher-ctl" ]; then
-    echo "Starting context-watcher in background..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher && ./context-watcher-ctl start"
-    echo "✓ Context watcher started (monitoring ~/context-sync/)"
-else
-    echo "⚠ Context watcher script not found at ${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher/context-watcher-ctl"
-fi
+# NOTE: Background watchers have been removed in favor of exec-based pattern
+# Analysis scripts are now triggered by host-side systemd services via `jib --exec`
+#
+# Pattern:
+#   Host systemd service → Syncs data → Calls `jib --exec <analysis-script>`
+#   Container → Analysis script runs once → Sends notification → Exits
+#
+# Benefits:
+#   - No continuous background processes in container
+#   - Analysis only runs when data changes (triggered by sync)
+#   - Simpler architecture, easier to debug
+#   - Lower resource usage
+#
+# Analysis scripts location: ~/khan/james-in-a-box/jib-container/components/
+#   - context-watcher/jira-watcher.py (triggered by context-sync)
+#   - context-watcher/confluence-watcher.py (triggered by context-sync)
+#   - github-watcher/check-monitor.py (triggered by github-sync)
+#   - incoming-processor.py (triggered by slack-receiver)
 
-# Start incoming-watcher in background (if configured)
-if [ -f "${USER_HOME}/khan/james-in-a-box/components/slack-receiver/incoming-watcher.sh" ]; then
-    echo "Starting incoming message watcher in background..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "CHECK_INTERVAL=5 nohup ${USER_HOME}/khan/james-in-a-box/components/slack-receiver/incoming-watcher.sh >> ${USER_HOME}/sharing/tracking/incoming-watcher.log 2>&1 &"
-    echo "✓ Incoming watcher started (checking every 5 seconds for new messages)"
-else
-    echo "⚠ Incoming watcher script not found at ${USER_HOME}/khan/james-in-a-box/components/slack-receiver/incoming-watcher.sh"
-fi
-
-# Start github-watcher in background (if configured)
-if [ -f "${USER_HOME}/khan/james-in-a-box/jib-container/components/github-watcher/github-watcher-ctl" ]; then
-    echo "Starting GitHub PR check watcher in background..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME}/khan/james-in-a-box/jib-container/components/github-watcher && ./github-watcher-ctl start"
-    echo "✓ GitHub watcher started (monitoring PR check failures every 5 min)"
-else
-    echo "⚠ GitHub watcher script not found at ${USER_HOME}/khan/james-in-a-box/jib-container/components/github-watcher/github-watcher-ctl"
-fi
-
-# Start enhanced-context-watcher in background (JIRA + Confluence monitoring)
-if [ -f "${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher/enhanced-watcher-ctl" ]; then
-    echo "Starting enhanced context watcher (JIRA + Confluence) in background..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher && ./enhanced-watcher-ctl start"
-    echo "✓ Enhanced context watcher started (monitoring JIRA/Confluence every 5 min)"
-else
-    echo "⚠ Enhanced context watcher script not found at ${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher/enhanced-watcher-ctl"
-fi
-
-# Run codebase analyzer on startup (if configured)
-# Checks if analysis was run in last 7 days before running
-if [ -f "${USER_HOME}/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py" ]; then
-    echo "Running codebase analyzer (checks if run in last week)..."
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME} && python3 ${USER_HOME}/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py >> ${USER_HOME}/sharing/tracking/analyzer.log 2>&1 &"
-    echo "✓ Codebase analyzer started (weekly analysis + web research)"
-else
-    echo "⚠ Codebase analyzer script not found at ${USER_HOME}/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py"
-fi
+echo ""
+echo "📊 Analysis Pattern: Exec-based (triggered by host services)"
+echo "  - Context analysis: Triggered after context-sync"
+echo "  - GitHub analysis: Triggered after github-sync"
+echo "  - Message processing: Triggered by slack-receiver"
+echo ""
 
 # Drop privileges and start shell or run claude
 if [ $# -eq 0 ]; then
