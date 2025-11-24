@@ -28,10 +28,12 @@
 - ✅ Docker-based Claude Code sandbox (james-in-a-box)
 - ✅ Slack integration for bidirectional communication
 - ✅ Context syncing (Confluence, JIRA → local markdown)
+- ✅ Persistent task memory (Beads - git-backed task tracking)
 - ✅ Automated code and conversation analyzers
 - ✅ Systemd service management
 - ✅ File-based notification system
 - ✅ Mobile-accessible Slack interface
+- ✅ Git worktree isolation for concurrent containers
 - ✅ **Deployment:** Local laptop (development/pilot)
 
 **Planned:**
@@ -301,14 +303,14 @@ Agent should demonstrate L3-L4 behaviors:
 │  └──┬──────────────┬───────────────┬───────────────────┬───┘   │
 │     │              │               │                   │        │
 │     │              │               │                   │        │
-│  ┌──▼──────┐   ┌──▼──────┐   ┌───▼──────┐      ┌────▼─────┐  │
-│  │ Code    │   │ Context │   │ Prompts  │      │ Analysis │  │
-│  │ (R/W)   │   │ (R/O)   │   │ (R/O)    │      │ (Output) │  │
-│  │         │   │         │   │          │      │          │  │
-│  │ ~/khan  │   │ Confl.  │   │ jib-     │      │ ~/sharing│  │
-│  │         │   │ JIRA    │   │ container│      │ /notif.  │  │
-│  │         │   │         │   │ /.claude │      │          │  │
-│  └─────────┘   └─────────┘   └──────────┘      └──────────┘  │
+│  ┌──▼──────┐   ┌──▼──────┐   ┌───▼──────┐   ┌────▼─────┐   ┌────▼─────┐  │
+│  │ Code    │   │ Context │   │ Prompts  │   │ Memory   │   │ Analysis │  │
+│  │ (R/W)   │   │ (R/O)   │   │ (R/O)    │   │ (R/W)    │   │ (Output) │  │
+│  │         │   │         │   │          │   │          │   │          │  │
+│  │ ~/khan  │   │ Confl.  │   │ jib-     │   │ ~/beads  │   │ ~/sharing│  │
+│  │         │   │ JIRA    │   │ container│   │ (tasks   │   │ /notif.  │  │
+│  │         │   │         │   │ /.claude │   │  state)  │   │          │  │
+│  └─────────┘   └─────────┘   └──────────┘   └──────────┘   └──────────┘  │
 │                                                                   │
 │  Security Boundary: No credentials, no direct push, no deploy    │
 └───────────────────────────────────────────────────────────────────┘
@@ -319,7 +321,8 @@ Agent should demonstrate L3-L4 behaviors:
 **1. james-in-a-box (Docker Container)**
 - Isolated execution environment
 - Claude Code CLI with custom commands and rules
-- Mounts: code (RW), context (RO), tools (RW), sharing (RW)
+- Mounts: code (RW), context (RO), beads (RW), sharing (RW)
+- Persistent memory: Beads git repository for task state across restarts
 - No SSH keys, cloud credentials, or production access
 - Bridge networking: outbound HTTP only
 
@@ -358,6 +361,96 @@ Agent should demonstrate L3-L4 behaviors:
 - **Notifications:** `~/sharing/notifications/` → Slack
 - **Incoming Tasks:** `~/sharing/incoming/` → Agent pickup
 - **Tracking:** State management for async workflows
+
+### Persistent Memory & State Management
+
+**Challenge:** LLMs are stateless - each conversation starts fresh. Without persistent memory:
+- Work interruptions mean lost context
+- Container restarts lose all progress
+- Multiple concurrent containers can duplicate work
+- No knowledge of what's already been done
+- Cannot resume interrupted tasks
+
+**Solution: Beads (Git-Backed Task Memory)**
+
+Beads provides automatic persistent memory for the agent, solving the "LLM amnesia" problem:
+
+**Architecture:**
+```
+~/.jib-sharing/beads/          # Host storage (persists across rebuilds)
+├── issues.jsonl               # Task database (source of truth)
+├── .git/                      # Version history
+└── .beads.sqlite             # SQLite cache (disposable, auto-rebuilt)
+       ↑
+       │ Git sync
+       │
+Container 1: ~/beads/          # Symlink, shares same git repo
+Container 2: ~/beads/          # Another container, same repo
+Container N: ~/beads/          # All containers coordinate
+```
+
+**Automatic Workflow Integration:**
+
+Agent automatically (without being asked):
+1. **On startup:** Check for in-progress tasks (`beads list --status in-progress`)
+2. **On new task:** Create Beads entry (`beads add "Implement OAuth2 for JIRA-1234"`)
+3. **During work:** Update status and notes (`beads update bd-a3f8 --status in-progress`)
+4. **Multi-step tasks:** Break into subtasks with dependencies
+5. **On completion:** Mark done, unblock dependent tasks
+
+**Key Features:**
+- **Git-backed:** All changes versioned, can review history
+- **Multi-container safe:** Hash-based IDs (bd-a3f8) prevent conflicts
+- **Dependency tracking:** Tasks can block other tasks
+- **Parent-child relationships:** Complex features broken into subtasks
+- **Automatic resumption:** Agent picks up where it left off after restarts
+- **Cross-session memory:** Context preserved indefinitely
+
+**Example Workflow:**
+
+```bash
+# Engineer sends: "Implement OAuth2 authentication for JIRA-1234"
+# Agent automatically:
+
+cd ~/beads
+beads list --search "OAuth2 JIRA-1234"  # Check if already exists
+beads add "Implement OAuth2 for JIRA-1234" --tags feature,jira-1234,slack
+beads update bd-a3f8 --status in-progress
+
+# Break into subtasks
+beads add "Design auth schema" --parent bd-a3f8
+beads add "Implement OAuth2 endpoints" --parent bd-a3f8 --add-blocker bd-b1
+beads add "Write integration tests" --parent bd-a3f8 --add-blocker bd-b2,bd-b3
+
+# Work on tasks, update progress
+beads update bd-b1 --status done
+beads update bd-b1 --notes "Schema designed per ADR-042, using httpOnly cookies"
+beads update bd-b2 --remove-blocker bd-b1  # Unblock next task
+
+# Container crashes/restarts...
+
+# On resume:
+beads list --status in-progress
+# Shows: bd-a3f8 "Implement OAuth2..." and remaining subtasks
+beads show bd-a3f8  # Read all previous notes and context
+# Continue work seamlessly
+```
+
+**Benefits:**
+- **No lost work:** Container crashes don't lose context
+- **Parallel work:** Multiple containers coordinate via shared git repo
+- **Progress visibility:** Can check status of all tasks across all sessions
+- **Knowledge accumulation:** Notes on decisions, blockers, approaches persist
+- **Automatic resumption:** Agent knows exactly where to pick up
+
+**Implementation:**
+- **Storage:** `~/.jib-sharing/beads/` (git repository on host)
+- **Access:** `~/beads/` symlink in container
+- **CLI:** `beads` command (beads-cli package)
+- **Format:** JSONL (human-readable, git-friendly)
+- **Cache:** SQLite for fast queries (auto-rebuilt each session)
+
+This solves the fundamental "LLM amnesia" problem while enabling true autonomous operation across sessions and containers.
 
 ## User Interaction Model
 
