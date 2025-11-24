@@ -88,7 +88,6 @@ Process this task now."""
         result = subprocess.run(
             ["claude"],
             input=prompt,
-            stdin=subprocess.DEVNULL,  # Close stdin to prevent hanging
             text=True,
             capture_output=True,  # Capture output to create notification
             timeout=600  # 10 minute timeout
@@ -218,7 +217,7 @@ Process this response now."""
         result = subprocess.run(
             ["claude"],
             input=prompt,
-            stdin=subprocess.DEVNULL,  # Close stdin to prevent hanging
+            text=True,
             capture_output=True,  # Capture output to create notification
             timeout=600  # 10 minute timeout
         )
