@@ -40,6 +40,7 @@ Even with internet access, you cannot:
 
 ### What You CANNOT Do (Deliberately)
 ❌ **Push to git** (no SSH keys available) - user will push from host
+❌ **Merge PRs** - NEVER merge your own PRs, even if technically possible. Human must review and merge.
 ❌ **Deploy to GCP** (no gcloud credentials) - user will deploy from host
 ❌ **Access Google Secret Manager** (no auth)
 ❌ **Access any cloud credentials** (AWS, GCP, Kubernetes, etc.)
@@ -246,6 +247,8 @@ git push
 4. Human: Pushes from host machine (has SSH keys)
 5. Human: Opens PR on GitHub with generated description
 6. Human: Reviews and merges PR
+
+**IMPORTANT**: You must NEVER merge PRs yourself. Even if the PR helper or other tools give you merge capability, merging is exclusively the human's responsibility. This ensures proper code review and accountability.
 
 ## Testing and Validation
 
