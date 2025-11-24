@@ -992,11 +992,6 @@ def run_claude() -> bool:
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
     print(f"  • ~/.jib-worktrees/ (for jib --exec temporary worktrees)")
 
-    # Mount Claude credentials for runtime copy (read-only)
-    if Config.CLAUDE_SOURCE.exists() and (Config.CLAUDE_SOURCE / ".credentials.json").exists():
-        mount_args.extend(["-v", f"{Config.CLAUDE_SOURCE}:/tmp/host-claude:ro,z"])
-        print(f"  • ~/.claude (OAuth credentials, mounted to /tmp/host-claude)")
-
     print()
 
     # Remove old container if exists (cleanup any previous runs)
@@ -1107,11 +1102,6 @@ def exec_in_new_container(command: List[str]) -> bool:
             mode = f"{mode},z"
 
         mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
-
-    # Mount Claude credentials for runtime copy (read-only)
-    if Config.CLAUDE_SOURCE.exists() and (Config.CLAUDE_SOURCE / ".credentials.json").exists():
-        mount_args.extend(["-v", f"{Config.CLAUDE_SOURCE}:/tmp/host-claude:ro,z"])
-        info("Claude credentials mounted from host (OAuth, version 2.0.22)")
 
     # Build docker run command
     cmd = [
