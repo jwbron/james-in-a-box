@@ -496,11 +496,14 @@ else
         print_success "GitHub token saved to jib config"
         echo "   Location: $github_token_file"
     else
-        # Prompt for token
-        read -p "Enter GitHub token (or press Enter to skip): " -s GITHUB_TOKEN
-        echo ""
+        # Prompt for token (input hidden for security)
+        echo -n "Enter GitHub token (input hidden, press Enter when done): "
+        read -s GITHUB_TOKEN
+        echo ""  # newline after hidden input
 
         if [ -n "$GITHUB_TOKEN" ]; then
+            # Take only the first token if user pasted multiple times
+            GITHUB_TOKEN=$(echo "$GITHUB_TOKEN" | grep -oE '(ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)' | head -1)
             echo "$GITHUB_TOKEN" > "$github_token_file"
             chmod 600 "$github_token_file"
             print_success "GitHub token saved to jib config"
