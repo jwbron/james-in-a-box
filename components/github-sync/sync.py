@@ -72,7 +72,7 @@ class GitHubSync:
         # Get list of open PRs
         prs = self.gh_api(
             "pr list --author @me --state open "
-            "--json number,title,url,updatedAt,headRefName,baseRefName,repository"
+            "--json number,title,url,updatedAt,headRefName,baseRefName,headRepository"
         )
 
         print(f"Found {len(prs)} open PR(s)")
@@ -80,7 +80,8 @@ class GitHubSync:
         pr_numbers = []
         for pr in prs:
             pr_num = pr['number']
-            repo = pr['repository']['name']
+            repo = pr['headRepository']['name']
+            repo_with_owner = pr['headRepository']['nameWithOwner']
             pr_numbers.append(pr_num)
 
             print(f"  Syncing PR #{pr_num} ({repo}): {pr['title']}")
@@ -88,19 +89,19 @@ class GitHubSync:
             try:
                 # Get full PR details
                 pr_full = self.gh_api(
-                    f"pr view {pr_num} --repo {pr['repository']['nameWithOwner']} "
+                    f"pr view {pr_num} --repo {repo_with_owner} "
                     f"--json number,title,body,author,url,state,createdAt,updatedAt,"
-                    f"files,comments,headRefName,baseRefName,repository"
+                    f"files,comments,headRefName,baseRefName,headRepository"
                 )
 
                 # Get diff
                 diff = self.gh_text(
-                    f"pr diff {pr_num} --repo {pr['repository']['nameWithOwner']}"
+                    f"pr diff {pr_num} --repo {repo_with_owner}"
                 )
 
                 # Get check status
                 checks = self.gh_api(
-                    f"pr checks {pr_num} --repo {pr['repository']['nameWithOwner']} "
+                    f"pr checks {pr_num} --repo {repo_with_owner} "
                     f"--json name,status,conclusion,startedAt,completedAt,detailsUrl"
                 )
 
@@ -108,10 +109,10 @@ class GitHubSync:
                 self.write_pr_markdown(pr_full, diff)
 
                 # Write checks JSON and fetch logs for failures
-                self.write_checks(pr_num, pr_full['repository']['nameWithOwner'], checks)
+                self.write_checks(pr_num, pr_full['headRepository']['nameWithOwner'], checks)
 
                 # Write comments JSON for tracking
-                self.write_comments(pr_num, pr_full['repository']['nameWithOwner'], pr_full.get('comments', []))
+                self.write_comments(pr_num, pr_full['headRepository']['nameWithOwner'], pr_full.get('comments', []))
 
             except Exception as e:
                 print(f"    Error syncing PR #{pr_num}: {e}", file=sys.stderr)
@@ -126,14 +127,14 @@ class GitHubSync:
     def write_pr_markdown(self, pr: Dict, diff: str):
         """Write PR as markdown file"""
         pr_num = pr['number']
-        repo_name = pr['repository']['name']
+        repo_name = pr['headRepository']['name']
         pr_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.md"
         diff_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.diff"
 
         # Write markdown
         with pr_file.open('w') as f:
             f.write(f"# PR #{pr_num}: {pr['title']}\n\n")
-            f.write(f"**Repository**: {pr['repository']['nameWithOwner']}\n")
+            f.write(f"**Repository**: {pr['headRepository']['nameWithOwner']}\n")
             f.write(f"**Author**: {pr['author']['login']}\n")
             f.write(f"**State**: {pr['state']}\n")
             f.write(f"**URL**: {pr['url']}\n")
@@ -273,7 +274,7 @@ class GitHubSync:
             'prs': [
                 {
                     'number': pr['number'],
-                    'repository': pr['repository']['nameWithOwner'],
+                    'repository': pr['headRepository']['nameWithOwner'],
                     'title': pr['title'],
                     'url': pr['url'],
                     'head_branch': pr['headRefName'],
