@@ -269,7 +269,6 @@ create-pr-helper.py --title "Your PR title" --body "Description" --reviewer jwie
 ```
 
 **For other repositories:** The PR helper currently only supports `james-in-a-box`. For other repos, commit your changes and notify the user with the branch name so they can push and create the PR from the host.
-
 The PR helper creates a notification that triggers a Slack DM to the user with the PR URL.
 
 ### 8. Complete Beads Task
