@@ -456,68 +456,62 @@ else
     cd "$SCRIPT_DIR"
 fi
 
-# Check and configure GitHub CLI for PR management
-print_info "Checking GitHub CLI (gh)..."
+# Check and configure GitHub token for container PR management
+print_info "Checking GitHub token for container..."
 
-if command -v gh &> /dev/null; then
-    print_success "GitHub CLI (gh) found"
+# Token is stored in ~/.config/jib/github-token (separate from Docker staging in ~/.jib/)
+jib_user_config_dir="$HOME/.config/jib"
+github_token_file="$jib_user_config_dir/github-token"
 
-    # Check if already authenticated
-    if gh auth status &> /dev/null; then
-        print_success "GitHub CLI authenticated"
+mkdir -p "$jib_user_config_dir"
+chmod 700 "$jib_user_config_dir"
+
+if [ -f "$github_token_file" ] && [ -s "$github_token_file" ]; then
+    print_success "GitHub token found in jib config"
+    echo "   Location: $github_token_file"
+    echo "   Container will use this token for PR management"
+else
+    echo ""
+    print_info "GitHub token needed for container PR management"
+    echo ""
+    echo "The container needs a GitHub token to create PRs, push to branches, etc."
+    echo "This is stored separately from your host's gh authentication."
+    echo ""
+    echo "Create a fine-grained token at: https://github.com/settings/tokens?type=beta"
+    echo ""
+    echo "Token configuration:"
+    echo "  - Name: james-in-a-box-pr-access"
+    echo "  - Repository: jwiesebron/james-in-a-box (only)"
+    echo "  - Permissions:"
+    echo "      Contents: Read and write"
+    echo "      Pull requests: Read and write"
+    echo "      Workflows: Read-only"
+    echo ""
+
+    # Check for environment variable first
+    if [ -n "$GITHUB_TOKEN" ]; then
+        print_info "Using GITHUB_TOKEN from environment..."
+        echo "$GITHUB_TOKEN" > "$github_token_file"
+        chmod 600 "$github_token_file"
+        print_success "GitHub token saved to jib config"
+        echo "   Location: $github_token_file"
     else
-        echo ""
-        print_info "GitHub CLI needs authentication for PR management"
-        echo ""
-        echo "Create a fine-grained token at: https://github.com/settings/tokens?type=beta"
-        echo ""
-        echo "Token configuration:"
-        echo "  - Name: james-in-a-box-pr-access"
-        echo "  - Repository: jwiesebron/james-in-a-box (only)"
-        echo "  - Permissions:"
-        echo "      Contents: Read and write"
-        echo "      Pull requests: Read and write"
-        echo "      Workflows: Read-only"
+        # Prompt for token
+        read -p "Enter GitHub token (or press Enter to skip): " -s GITHUB_TOKEN
         echo ""
 
-        # Check for environment variable first
         if [ -n "$GITHUB_TOKEN" ]; then
-            print_info "Using GITHUB_TOKEN from environment..."
-            echo "$GITHUB_TOKEN" | gh auth login --with-token 2>/dev/null
-
-            if gh auth status &> /dev/null; then
-                print_success "GitHub CLI authenticated successfully"
-            else
-                print_error "Authentication failed with provided token"
-            fi
+            echo "$GITHUB_TOKEN" > "$github_token_file"
+            chmod 600 "$github_token_file"
+            print_success "GitHub token saved to jib config"
+            echo "   Location: $github_token_file"
+            echo "   Container will authenticate gh on startup"
         else
-            # Prompt for token
-            read -p "Enter GitHub token (or press Enter to skip): " -s GITHUB_TOKEN
-            echo ""
-
-            if [ -n "$GITHUB_TOKEN" ]; then
-                print_info "Authenticating GitHub CLI..."
-                echo "$GITHUB_TOKEN" | gh auth login --with-token 2>/dev/null
-
-                if gh auth status &> /dev/null; then
-                    print_success "GitHub CLI authenticated successfully"
-                    echo "   Token stored in ~/.config/gh/hosts.yml"
-                else
-                    print_error "Authentication failed"
-                    echo "   You can authenticate later with: gh auth login --with-token"
-                fi
-            else
-                print_warning "Skipping GitHub authentication"
-                echo "   PR creation features will not be available"
-                echo "   Authenticate later with: gh auth login --with-token"
-            fi
+            print_warning "Skipping GitHub token setup"
+            echo "   PR creation features will not be available in container"
+            echo "   Add token later: echo 'your-token' > $github_token_file"
         fi
     fi
-else
-    print_warning "GitHub CLI (gh) not installed"
-    echo "   Install from: https://cli.github.com/"
-    echo "   Or: The container will have gh after rebuild"
-    echo "   PR creation features will not be available until gh is installed"
 fi
 
 # Container setup info

@@ -62,9 +62,11 @@ def check_claude_credentials() -> bool:
 
 class Config:
     """Configuration paths and constants"""
-    CONFIG_DIR = Path.home() / ".jib"
+    CONFIG_DIR = Path.home() / ".jib"  # Docker staging directory
     CONFIG_FILE = CONFIG_DIR / "mounts.conf"
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
+    USER_CONFIG_DIR = Path.home() / ".config" / "jib"  # User config (secrets, preferences)
+    GITHUB_TOKEN_FILE = USER_CONFIG_DIR / "github-token"
     IMAGE_NAME = "james-in-a-box"
     CONTAINER_NAME = "jib"
     KHAN_SOURCE = Path.home() / "khan"
@@ -101,6 +103,22 @@ def get_platform() -> str:
     elif system == "darwin":
         return "macos"
     return "unknown"
+
+
+def get_github_token() -> Optional[str]:
+    """Get GitHub token from jib config file.
+
+    Returns:
+        Token string if found and valid, None otherwise
+    """
+    if Config.GITHUB_TOKEN_FILE.exists():
+        try:
+            token = Config.GITHUB_TOKEN_FILE.read_text().strip()
+            if token and token.startswith(("ghp_", "github_pat_")):
+                return token
+        except Exception:
+            pass
+    return None
 
 
 def check_docker_permissions() -> bool:
@@ -1046,6 +1064,15 @@ def run_claude() -> bool:
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
+    # Add GitHub token if available (for PR creation/management)
+    github_token = get_github_token()
+    if github_token:
+        cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
+        info("GitHub token: Found (PR creation enabled)")
+    else:
+        warn("GitHub token: Not found (PR creation disabled)")
+        print("  Configure with: ./setup.sh --update")
+
     info("Network mode: Bridge (isolated from host, outbound HTTP only)")
     print("  Container can: Access Claude API, download packages")
     print("  Container cannot: Access host services, accept inbound connections")
@@ -1182,6 +1209,11 @@ def exec_in_new_container(command: List[str]) -> bool:
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
     ]
+
+    # Add GitHub token if available (for PR creation/management)
+    github_token = get_github_token()
+    if github_token:
+        cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
 
     # Add mount arguments
     cmd.extend(mount_args)
