@@ -682,19 +682,28 @@ def setup() -> bool:
     print()
     print(f"{Colors.BOLD}Claude Code authentication...{Colors.NC}")
 
+    # Mount ~/.claude/ directory
     claude_container_path = f"/home/{os.environ['USER']}/.claude"
     mounts.append(f"{Config.CLAUDE_SHARED_DIR}:{claude_container_path}:rw,z")
+
+    # Mount ~/.claude.json file (user state with userID)
+    claude_json_file = Config.CONFIG_DIR / "claude.json"
+    claude_json_file.touch(exist_ok=True)  # Create if doesn't exist
+    claude_json_container_path = f"/home/{os.environ['USER']}/.claude.json"
+    mounts.append(f"{claude_json_file}:{claude_json_container_path}:rw,z")
 
     # Check if credentials already exist in shared directory
     shared_creds = Config.CLAUDE_SHARED_DIR / ".credentials.json"
     if shared_creds.exists():
         success("Claude credentials found in shared directory")
-        print(f"  All containers will use: {Config.CLAUDE_SHARED_DIR}")
-        print(f"  Mounted at: ~/.claude/ in container")
+        print(f"  All containers will use:")
+        print(f"    ~/.claude/ → {Config.CLAUDE_SHARED_DIR}")
+        print(f"    ~/.claude.json → {claude_json_file}")
     else:
         info("Claude credentials not yet configured")
-        print(f"  Shared location: {Config.CLAUDE_SHARED_DIR}")
-        print(f"  Mounted at: ~/.claude/ in container")
+        print(f"  Shared locations:")
+        print(f"    ~/.claude/ → {Config.CLAUDE_SHARED_DIR}")
+        print(f"    ~/.claude.json → {claude_json_file}")
         print()
         info("The first container will authenticate and save credentials.")
         info("All other containers will automatically use the same credentials.")
