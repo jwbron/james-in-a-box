@@ -16,10 +16,10 @@ from datetime import datetime
 
 
 def process_task(message_file: Path):
-    """Process an incoming task from Slack."""
+    """Process an incoming task from Slack using Claude Code."""
     print(f"📋 Processing task: {message_file.name}")
 
-    # Read message content
+    # Read full message content
     content = message_file.read_text()
 
     # Extract task description (after "## Current Message" header)
@@ -43,40 +43,71 @@ def process_task(message_file: Path):
 
     print(f"Task: {task_content[:100]}...")
 
-    # Create acknowledgment notification
-    notifications_dir = Path.home() / "sharing" / "notifications"
-    notifications_dir.mkdir(parents=True, exist_ok=True)
+    # Construct prompt for Claude with full context
+    prompt = f"""# Slack Task Processing
 
-    ack_file = notifications_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-task-received.md"
-    ack_file.write_text(f"""# 🎯 Task Received from Slack
+You received a task via Slack. Process it according to the workflow below.
+
+## Message Details
 
 **File:** `{message_file.name}`
-**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-## Task Description
+## Task from User
 
 {task_content}
 
----
+## Your Workflow
 
-**Status:** Acknowledged and ready to begin
-**Next:** Task will be processed
+1. **Understand the request**: Analyze what the user is asking for
+2. **Track in Beads**: Add task to beads with `bd add` (include relevant tags)
+3. **Execute the task**:
+   - Read relevant code/documentation
+   - Make necessary changes
+   - Run tests if applicable
+   - Commit changes with clear messages
+4. **Create notification**: Write result to `~/sharing/notifications/` with:
+   - Summary of what was done
+   - Branch name (if commits were made)
+   - Next steps for user
+   - Any blockers or questions
 
----
-📨 *Delivered via Slack → incoming/ → Claude*
-""")
+## Important Notes
 
-    print(f"✅ Task acknowledged: {ack_file.name}")
+- You're in an ephemeral container (will exit when done)
+- All work should be committed to git (user will review and push)
+- Use beads to track progress across sessions
+- Send notification so user gets Slack DM with results
+- Working directory: You can access all repos in `~/khan/`
 
-    # TODO: Process task with Claude
-    # For now, just acknowledge receipt
-    # Future: Integrate with Claude CLI or agent
+Process this task now."""
 
-    return True
+    # Run Claude Code in print mode
+    try:
+        result = subprocess.run(
+            ["claude", "--print", prompt],
+            capture_output=False,  # Let output go to stdout/stderr for logging
+            text=True,
+            timeout=600  # 10 minute timeout
+        )
+
+        if result.returncode == 0:
+            print(f"✅ Task processed successfully")
+            return True
+        else:
+            print(f"⚠️ Claude exited with code {result.returncode}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        print("⚠️ Task processing timed out after 10 minutes")
+        return False
+    except Exception as e:
+        print(f"❌ Error running Claude: {e}")
+        return False
 
 
 def process_response(message_file: Path):
-    """Process a response to Claude's notification."""
+    """Process a user's response to a previous notification using Claude Code."""
     print(f"💬 Processing response: {message_file.name}")
 
     # Read response content
@@ -84,6 +115,7 @@ def process_response(message_file: Path):
 
     # Extract referenced notification if present
     referenced_notif = None
+    original_notif_content = None
     for line in content.split('\n'):
         if 'Re:**' in line and 'Notification' in line:
             # Extract timestamp from line like: **Re:** Notification `20251124-123456`
@@ -92,20 +124,13 @@ def process_response(message_file: Path):
                 referenced_notif = parts[1]
                 break
 
+    # Try to load original notification for context
     if referenced_notif:
         print(f"Response references: {referenced_notif}")
-
-        # Create response link in notifications
         notifications_dir = Path.home() / "sharing" / "notifications"
-        response_link = notifications_dir / f"RESPONSE-{referenced_notif}.md"
-        response_link.write_text(content)
-        print(f"✅ Response linked: {response_link.name}")
-    else:
-        print("⚠️ Response does not reference specific notification")
-
-    # Create receipt notification
-    notifications_dir = Path.home() / "sharing" / "notifications"
-    receipt_file = notifications_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-response-received.md"
+        original_file = notifications_dir / f"{referenced_notif}.md"
+        if original_file.exists():
+            original_notif_content = original_file.read_text()
 
     # Extract response content
     response_lines = []
@@ -122,28 +147,66 @@ def process_response(message_file: Path):
 
     response_content = '\n'.join(response_lines).strip()
 
-    receipt_file.write_text(f"""# 💬 Response Received from Slack
+    if not response_content:
+        print("⚠️ Empty response content")
+        return False
 
-**File:** `{message_file.name}`
-**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-{f'**Re:** `{referenced_notif}`' if referenced_notif else ''}
+    # Construct prompt for Claude with full context
+    prompt = f"""# Slack Response Processing
 
-## Response Content
+You sent a notification that prompted a response from the user. Process their response and take appropriate action.
+
+## Original Notification
+
+{original_notif_content if original_notif_content else "*(Original notification not found)*"}
+
+## User's Response
 
 {response_content}
 
----
+## Your Workflow
 
-**Status:** Response available for review
-**Location:** `responses/{message_file.name}`
-{f'**Linked:** `notifications/RESPONSE-{referenced_notif}.md`' if referenced_notif else ''}
+1. **Understand the response**: What is the user asking or telling you?
+2. **Check Beads context**: Use `bd` to see related tasks and previous work
+3. **Take appropriate action**:
+   - If they answered a question: Continue the work
+   - If they gave feedback: Incorporate it
+   - If they requested changes: Make the changes
+   - If they asked a question: Research and respond
+4. **Update Beads**: Update task status as appropriate
+5. **Create notification**: Send result back via `~/sharing/notifications/`
 
----
-📨 *Delivered via Slack → responses/ → Claude*
-""")
+## Important Notes
 
-    print(f"✅ Response processed: {receipt_file.name}")
-    return True
+- You're in an ephemeral container (will exit when done)
+- All work should be committed to git
+- Use beads to track progress and maintain context
+- The user is responding in a Slack thread - keep them updated
+
+Process this response now."""
+
+    # Run Claude Code in print mode
+    try:
+        result = subprocess.run(
+            ["claude", "--print", prompt],
+            capture_output=False,  # Let output go to stdout/stderr for logging
+            text=True,
+            timeout=600  # 10 minute timeout
+        )
+
+        if result.returncode == 0:
+            print(f"✅ Response processed successfully")
+            return True
+        else:
+            print(f"⚠️ Claude exited with code {result.returncode}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        print("⚠️ Response processing timed out after 10 minutes")
+        return False
+    except Exception as e:
+        print(f"❌ Error running Claude: {e}")
+        return False
 
 
 def main():
