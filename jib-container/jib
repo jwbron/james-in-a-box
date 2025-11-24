@@ -47,6 +47,40 @@ def error(msg: str) -> None:
     print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
 
 
+def check_claude_credentials() -> tuple[bool, bool]:
+    """
+    Check if Claude credentials exist and have the required scopes.
+
+    Returns:
+        tuple[bool, bool]: (credentials_exist, has_full_scopes)
+    """
+    claude_dir = Path.home() / ".claude"
+    credentials_file = claude_dir / ".credentials.json"
+
+    if not credentials_file.exists():
+        return (False, False)
+
+    try:
+        with open(credentials_file, 'r') as f:
+            creds = json.load(f)
+
+        scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
+
+        # Required scopes for full Claude Code functionality
+        required_scopes = {
+            "user:inference",      # For running commands
+            "user:profile",        # For user info
+            "user:sessions:claude_code"  # For interactive sessions
+        }
+
+        has_full_scopes = required_scopes.issubset(set(scopes))
+        return (True, has_full_scopes)
+
+    except (json.JSONDecodeError, KeyError, OSError) as e:
+        warn(f"Could not read Claude credentials: {e}")
+        return (False, False)
+
+
 class Config:
     """Configuration paths and constants"""
     CONFIG_DIR = Path.home() / ".jib"
@@ -668,18 +702,44 @@ def setup() -> bool:
 
     # Mount Claude credentials for runtime copy (not build-time baking)
     # This ensures container always uses host's CURRENT credentials
-    claude_dir = Path.home() / ".claude"
-    if claude_dir.exists() and (claude_dir / ".credentials.json").exists():
-        # Mount to temp location for runtime copy (not directly to ~/.claude)
-        # Container will copy from here at startup to get fresh credentials
-        mounts.append(f"{claude_dir}:/tmp/host-claude:ro,z")
-        info(f"Claude credentials will be mounted from host (always fresh)")
-        print(f"  Host: {claude_dir}")
-        print(f"  Container will copy credentials at startup (no stale tokens)")
-    else:
-        warn("~/.claude/.credentials.json not found on host")
-        warn("Authenticate Claude Code on host first: claude")
+    print()
+    print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
+
+    creds_exist, has_full_scopes = check_claude_credentials()
+
+    if not creds_exist:
+        warn("Claude Code credentials not found on host")
+        warn("")
+        warn("To authenticate Claude Code:")
+        warn("  1. Run: claude")
+        warn("  2. Follow the browser authentication flow")
+        warn("  3. Let the interactive session start (this grants full scopes)")
+        warn("  4. Exit with Ctrl+C once authenticated")
+        warn("")
         warn("Container will prompt for authentication on first run")
+    elif not has_full_scopes:
+        warn("Claude Code credentials exist but are missing required scope")
+        warn("")
+        warn("Current scopes: user:inference, user:profile")
+        warn("Missing scope: user:sessions:claude_code")
+        warn("")
+        warn("To fix: Run interactive Claude Code session once:")
+        warn("  1. Run: claude")
+        warn("  2. This will trigger re-authentication with full scopes")
+        warn("  3. Exit with Ctrl+C once session starts")
+        warn("")
+        warn("Container will work with limited functionality (--print mode only)")
+        # Still mount the credentials - they work for --print mode
+        claude_dir = Path.home() / ".claude"
+        mounts.append(f"{claude_dir}:/tmp/host-claude:ro,z")
+        print(f"  Mounting credentials (partial scopes): {claude_dir}")
+    else:
+        # All good - mount credentials
+        claude_dir = Path.home() / ".claude"
+        mounts.append(f"{claude_dir}:/tmp/host-claude:ro,z")
+        success("Claude Code properly authenticated with full scopes")
+        print(f"  Host: {claude_dir}")
+        print(f"  Container will copy credentials at startup")
 
     print()
     print("Add additional directories? (optional)")

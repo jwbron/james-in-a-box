@@ -188,6 +188,19 @@ if [ -d "/tmp/host-claude" ] && [ -f "/tmp/host-claude/.credentials.json" ]; the
     chmod 600 "${USER_HOME}/.claude/.credentials.json"
     echo "  ✓ OAuth credentials copied (always current from host)"
 
+    # Check if credentials have full scopes
+    if command -v jq &> /dev/null; then
+        SCOPES=$(jq -r '.claudeAiOauth.scopes[]' "${USER_HOME}/.claude/.credentials.json" 2>/dev/null || echo "")
+        if echo "$SCOPES" | grep -q "user:sessions:claude_code"; then
+            echo "  ✓ Credentials have full scopes (interactive mode supported)"
+        else
+            echo "  ⚠ Credentials missing 'user:sessions:claude_code' scope"
+            echo "    Interactive 'claude' mode may not work"
+            echo "    'claude --print' commands will work fine"
+            echo "    To fix: Run 'claude' on host to trigger re-authentication"
+        fi
+    fi
+
     # Copy other auth-related files if they exist (statsig, session-env)
     if [ -d "/tmp/host-claude/statsig" ]; then
         cp -r /tmp/host-claude/statsig "${USER_HOME}/.claude/" 2>/dev/null || true
@@ -206,6 +219,7 @@ if [ -d "/tmp/host-claude" ] && [ -f "/tmp/host-claude/.credentials.json" ]; the
 else
     echo "ℹ No host Claude auth mounted - will authenticate with browser on first run"
     echo "  To fix: Ensure ~/.claude/.credentials.json exists on host"
+    echo "  Run: claude (and let interactive session start)"
 fi
 
 # Copy custom commands to where Claude Code looks for them
