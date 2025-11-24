@@ -1,10 +1,10 @@
 [Unit]
-Description=GitHub PR Sync Timer - Runs every 15 minutes
+Description=GitHub PR Sync Timer - Runs every 5 minutes
 Documentation=file://%h/khan/james-in-a-box/components/github-sync/README.md
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=15min
+OnUnitActiveSec=5min
 Persistent=true
 
 [Install]

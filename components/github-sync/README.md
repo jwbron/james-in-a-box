@@ -6,18 +6,20 @@ Syncs GitHub PR data to `~/context-sync/github/` for jib consumption.
 **Type**: Host-side systemd timer service
 **Purpose**: Enable jib to monitor PR check failures and provide automated assistance
 
-**Scope**: Currently syncs only PRs you've opened (`--author @me`).
-- ✅ Your open PRs
-- ❌ PRs you're reviewing (future expansion)
-- ❌ PRs you're tagged on (future expansion)
+**Scope**: Configurable via command-line flags.
+- ✅ Your open PRs (default: `--author @me`)
+- ✅ All PRs in a specific repo (`--repo <owner/repo> --all-prs`)
+- ✅ PRs from others for auto-review
 
 ## Overview
 
-GitHub Sync fetches data for all open PRs you've authored and stores it locally as markdown and JSON. This enables jib to:
+GitHub Sync fetches PR data and stores it locally as markdown and JSON. This enables jib to:
 - Monitor CI/CD check failures proactively
 - Analyze failed test logs and suggest fixes
 - Automatically implement obvious fixes in separate branches
 - Track PR comments and discussions
+- **Auto-review PRs from others** (when using `--all-prs`)
+- **Respond to comments on your PRs**
 
 ## How It Fits Into jib
 
@@ -32,16 +34,21 @@ GitHub Sync (host systemd timer, runs every 15 min)
 │   ├── webapp-PR-123.md         # PR metadata, description, comments
 │   ├── webapp-PR-123.diff       # Full diff
 │   └── frontend-PR-456.md
-└── checks/
-    ├── webapp-PR-123-checks.json    # Check status + full logs for failures
-    └── frontend-PR-456-checks.json
+├── checks/
+│   ├── webapp-PR-123-checks.json    # Check status + full logs for failures
+│   └── frontend-PR-456-checks.json
+└── comments/
+    └── webapp-PR-123-comments.json  # PR comments for response tracking
         ↓
-github-sync.service completes → Triggers check-monitor.py via `jib --exec`
+github-sync.service completes → Triggers analysis via `jib --exec`:
+  1. check-monitor.py    - Analyze failures, suggest/implement fixes
+  2. pr-reviewer.py      - Auto-review new PRs from others
+  3. comment-responder.py - Detect comments needing responses
         ↓
-jib Container (one-time analysis)
-~/context-sync/github/ → check-monitor.py analyzes failures → exits
+jib Container (one-time analysis per script)
+~/context-sync/github/ → Script analyzes data → Creates notifications → exits
         ↓
-Proactive analysis + Slack notification
+Proactive analysis + Slack notifications
 ```
 
 ## Setup
@@ -110,9 +117,33 @@ systemctl --user status github-sync.timer
 systemctl --user start github-sync.service
 ```
 
+## Command-Line Options
+
+```bash
+# Default: Sync only your PRs
+python3 sync.py
+
+# Sync all PRs in a specific repo (enables auto-review of others' PRs)
+python3 sync.py --repo jwiesebron/james-in-a-box --all-prs
+
+# Sync to custom output directory
+python3 sync.py --output /path/to/output
+```
+
+**Flags:**
+- `--repo, -r` - Specific repository to sync (e.g., `owner/repo`)
+- `--all-prs, -a` - Sync ALL open PRs in repo, not just yours
+- `--output, -o` - Output directory (default: `~/context-sync/github`)
+
+**Systemd Configuration:**
+The default systemd service is configured to sync all PRs in `jwiesebron/james-in-a-box`:
+```ini
+ExecStart=sync.py --repo jwiesebron/james-in-a-box --all-prs
+```
+
 ## What Gets Synced
 
-For each **open PR you've authored**:
+For each **open PR** (filtered by flags):
 
 1. **PR Metadata** (`~/context-sync/github/prs/<repo>-PR-<number>.md`):
    - Title, description, author
@@ -139,13 +170,28 @@ Why 15 minutes:
 
 ## jib Integration
 
-After each sync, the github-sync service automatically triggers jib's `check-monitor.py` via `jib --exec`. The analysis script:
+After each sync, the github-sync service automatically triggers three analysis scripts via `jib --exec`:
 
-1. **Detects new check failures**
-2. **Analyzes failure logs** (full logs available for user's PRs)
-3. **Determines root cause** and suggests fixes
-4. **Implements obvious fixes** in a separate branch automatically
-5. **Sends Slack notification** with analysis and next steps
+### 1. Check Monitor (`check-monitor.py`)
+- **Detects** new check failures
+- **Analyzes** failure logs (full logs available for user's PRs)
+- **Determines** root cause and suggests fixes
+- **Implements** obvious fixes (e.g., linting) automatically
+- **Sends** Slack notification with analysis and next steps
+
+### 2. PR Reviewer (`pr-reviewer.py --watch`)
+- **Scans** for new PRs that haven't been reviewed
+- **Skips** your own PRs (no self-review)
+- **Analyzes** code quality, security, performance patterns
+- **Creates** review notification with findings
+- **Tracks** reviewed PRs to avoid duplicate reviews
+
+### 3. Comment Responder (`comment-responder.py`)
+- **Detects** new comments on your PRs
+- **Classifies** comment type (question, change request, concern, etc.)
+- **Generates** contextual response suggestions
+- **Creates** Beads task for tracking
+- **Sends** notification with suggested response
 
 This exec-based pattern ensures analysis only runs when new data is available (after sync completes).
 
@@ -217,7 +263,7 @@ GitHub has API rate limits (5000 requests/hour for authenticated users). With 15
 
 ## Future Enhancements
 
-- Support for PRs you're reviewing (not just authored)
-- Filter by repository
+- ~~Support for PRs you're reviewing (not just authored)~~ ✅ Done (`--all-prs` flag)
+- ~~Filter by repository~~ ✅ Done (`--repo` flag)
 - Webhook-based real-time updates
 - GitHub Actions log streaming

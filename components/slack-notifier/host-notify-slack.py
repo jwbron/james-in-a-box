@@ -285,7 +285,17 @@ class SlackNotifier:
 
             # Extract task ID to check for existing thread
             task_id = self._extract_task_id(path.name)
+
+            # CRITICAL: Reload threads from disk before lookup
+            # The receiver may have saved new thread mappings since we started
+            # Without this, responses won't thread correctly with the original message
+            self.threads = self._load_threads()
+
             thread_ts = self.threads.get(task_id)
+            if thread_ts:
+                self.logger.info(f"Found thread mapping: {task_id} → {thread_ts}")
+            else:
+                self.logger.info(f"No thread mapping found for: {task_id}")
 
             # Split content into chunks if too long
             chunks = self._chunk_message(content)

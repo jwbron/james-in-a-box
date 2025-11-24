@@ -2,32 +2,44 @@
 
 Container-side component that provides comprehensive GitHub PR automation.
 
-**Type**: Container background service
+**Type**: Exec-based analysis (triggered by github-sync.service)
 **Capabilities**:
 - **Failure Monitoring**: Detect CI/CD failures, analyze logs, auto-implement fixes
+- **Auto-Review**: Automatically review new PRs from others (`--watch` mode)
 - **Code Review**: Generate comprehensive on-demand PR reviews
 - **Comment Response**: Automatically suggest responses to PR comments
 
 ## Overview
 
-GitHub Watcher runs inside the jib container and monitors `~/context-sync/github/` (synced by the host-side github-sync component) for PR check failures. When detected, it:
+GitHub Watcher runs inside the jib container and analyzes `~/context-sync/github/` (synced by the host-side github-sync component). It is triggered via `jib --exec` after each github-sync run and provides three main capabilities:
 
-1. **Detects** new check failures
-2. **Creates Beads task** for tracking the fix
-3. **Analyzes** failure logs to determine root cause
-4. **Determines** if fix is obvious and can be automated
-5. **Sends Slack notification** with analysis and suggested actions
-6. **Implements fix** automatically if obvious (in separate branch)
+1. **Check Monitor** - Detects CI/CD failures and suggests/implements fixes
+2. **PR Reviewer** - Auto-reviews new PRs from others (watch mode)
+3. **Comment Responder** - Suggests responses to comments on your PRs
 
-## How It Works
+## Execution Model
 
 ```
-Host syncs PR data every 15 min
+github-sync.service completes
         ↓
-~/context-sync/github/checks/
-    repo-PR-123-checks.json (includes full logs for failures)
+Triggers via ExecStartPost:
+  jib --exec python3 check-monitor.py
+  jib --exec python3 pr-reviewer.py --watch
+  jib --exec python3 comment-responder.py
         ↓
-GitHub Watcher (runs every 5 min in container)
+Each script runs in ephemeral container, analyzes data, exits
+        ↓
+Notifications sent to ~/sharing/notifications/ → Slack
+```
+
+## Check Monitor (`check-monitor.py`)
+
+Analyzes CI/CD check failures and suggests or implements fixes.
+
+```
+~/context-sync/github/checks/repo-PR-123-checks.json
+        ↓
+check-monitor.py (runs after github-sync)
         ↓
 Detects new failure (not previously notified)
         ↓
@@ -43,14 +55,48 @@ Determines if auto-fixable:
     - Simple test fixes: MAYBE
     - Complex failures: NO (human needed)
         ↓
-Creates Slack notification:
-    - Failure summary
-    - Log excerpts
-    - Root cause analysis
-    - Suggested actions
-    - "Implement fix" button if auto-fixable
+Creates Slack notification with analysis and suggested actions
+```
+
+## PR Auto-Review (`pr-reviewer.py --watch`)
+
+Automatically reviews new PRs from others when running in watch mode.
+
+```
+~/context-sync/github/prs/*.md (all synced PRs)
         ↓
-User replies via Slack or jib acts automatically
+pr-reviewer.py --watch (runs after github-sync)
+        ↓
+Scans for new PRs not yet reviewed
+        ↓
+Skips your own PRs (no self-review)
+        ↓
+For each new PR from others:
+    - Analyzes diff content and patterns
+    - Checks for security concerns
+    - Reviews code quality
+    - Identifies performance issues
+        ↓
+Creates review notification with findings
+        ↓
+Marks PR as reviewed (tracks in state file)
+```
+
+**State Tracking:**
+- State file: `~/sharing/tracking/pr-reviewer-state.json`
+- Tracks which PRs have been reviewed to avoid duplicates
+- Persists across container restarts
+
+**Usage:**
+```bash
+# Watch mode (scan and review new PRs)
+python3 pr-reviewer.py --watch
+
+# Review specific PR
+python3 pr-reviewer.py 123
+
+# Review specific PR in repo
+python3 pr-reviewer.py 123 repo-name
 ```
 
 ## PR Code Review (On-Demand)
@@ -303,15 +349,18 @@ tail -n 50 ~/sharing/tracking/github-watcher.log
 
 ## Startup
 
-GitHub Watcher starts automatically when the jib container starts (via Docker entrypoint script).
+GitHub Watcher scripts are triggered automatically by the host's `github-sync.service` via `jib --exec` after each sync (every 15 minutes).
+
+**No background process** - Each script runs once, performs analysis, creates notifications, and exits.
 
 ## Configuration
 
 No configuration needed - automatically discovers PRs from synced data.
 
-**Check interval**: Every 5 minutes (inside container)
-**Host sync interval**: Every 15 minutes
+**Sync interval**: Every 15 minutes (host-side github-sync.timer)
+**Analysis trigger**: Immediately after sync completes
 
-This means failures are detected within 5-20 minutes:
-- Best case: 5 min (just after host sync)
-- Worst case: 20 min (just before host sync)
+Detection timing:
+- Check failures: Within 15 minutes of failure occurring
+- New PRs to review: Within 15 minutes of PR creation
+- New comments: Within 15 minutes of comment posting
