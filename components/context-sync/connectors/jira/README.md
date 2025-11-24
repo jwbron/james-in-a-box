@@ -4,10 +4,11 @@ Syncs JIRA tickets and comments to local markdown files.
 
 ## Features
 
-- Syncs tickets based on JQL query (default: your assigned tickets)
+- Syncs tickets based on JQL query (default: all open INFRA project tickets)
 - Includes ticket comments
 - Includes attachment metadata
 - Includes work logs (optional)
+- Includes epics and all issue types
 - Converts Atlassian Document Format (ADF) to markdown
 - Incremental sync (only updates changed tickets)
 - Outputs clean markdown files
@@ -27,8 +28,8 @@ JIRA_API_TOKEN=your_api_token
 ### Optional
 
 ```bash
-# JQL query to filter tickets (default: assigned to you)
-JIRA_JQL_QUERY="assignee = currentUser() ORDER BY updated DESC"
+# JQL query to filter tickets (default: all open INFRA tickets)
+JIRA_JQL_QUERY="project = INFRA AND resolution = Unresolved ORDER BY updated DESC"
 
 # Maximum tickets to sync (0 = unlimited)
 JIRA_MAX_TICKETS=0
@@ -87,23 +88,26 @@ The JIRA connector is automatically included when you run:
 ## JQL Query Examples
 
 ```bash
-# Your assigned tickets
-JIRA_JQL_QUERY="assignee = currentUser() ORDER BY updated DESC"
+# All open INFRA tickets (including epics) - DEFAULT
+JIRA_JQL_QUERY="project = INFRA AND resolution = Unresolved ORDER BY updated DESC"
 
-# Open tickets assigned to you
-JIRA_JQL_QUERY="assignee = currentUser() AND status != Done ORDER BY updated DESC"
+# Only your assigned INFRA tickets
+JIRA_JQL_QUERY="project = INFRA AND assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+
+# All INFRA epics
+JIRA_JQL_QUERY="project = INFRA AND type = Epic ORDER BY updated DESC"
+
+# Your assigned tickets (any project)
+JIRA_JQL_QUERY="assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
 
 # Recently updated tickets you're watching
 JIRA_JQL_QUERY="watcher = currentUser() AND updated >= -7d ORDER BY updated DESC"
 
-# Tickets in specific project
-JIRA_JQL_QUERY="project = INFRA AND assignee = currentUser()"
-
 # Tickets with specific label
-JIRA_JQL_QUERY="labels = terraform AND assignee = currentUser()"
+JIRA_JQL_QUERY="project = INFRA AND labels = terraform ORDER BY updated DESC"
 
-# Tickets you reported
-JIRA_JQL_QUERY="reporter = currentUser() ORDER BY created DESC"
+# Tickets in current sprint
+JIRA_JQL_QUERY="project = INFRA AND sprint in openSprints() ORDER BY updated DESC"
 ```
 
 ## Output Format
@@ -190,7 +194,8 @@ echo $JIRA_USERNAME
 
 - Check your JQL query: `echo $JIRA_JQL_QUERY`
 - Test the query in JIRA's web interface
-- Make sure you have tickets assigned to you
+- Make sure the INFRA project exists and has open tickets
+- If using custom JQL, verify the syntax is correct
 
 ### Rate Limiting
 

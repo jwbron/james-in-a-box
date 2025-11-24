@@ -23,10 +23,11 @@ class JIRAConfig:
     )
     
     # Sync options
-    # JQL query to filter tickets (default: open tickets assigned to current user)
+    # JQL query to filter tickets
+    # Default: All open INFRA project tickets (including epics)
     JQL_QUERY: str = os.getenv(
         "JIRA_JQL_QUERY",
-        "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+        "project = INFRA AND resolution = Unresolved ORDER BY updated DESC"
     )
     
     # Maximum tickets to sync (0 = unlimited)
