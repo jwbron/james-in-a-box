@@ -35,8 +35,27 @@ systemctl --user stop slack-receiver.service
 
 - `slack-receiver.service` - Systemd service file
 - `setup.sh` - Installation script
-- `host-receive-slack.py` - Slack Socket Mode receiver
-- `incoming-watcher.sh` - Monitor incoming directory
+- `host-receive-slack.py` - Slack Socket Mode receiver (triggers processing via `jib --exec`)
+- `../../jib-container/components/incoming-processor.py` - Message processor (runs in container)
+
+## How It Works
+
+```
+Slack DM received
+        ↓
+host-receive-slack.py (Socket Mode)
+        ↓
+Write message to ~/.jib-sharing/incoming/ or ~/.jib-sharing/responses/
+        ↓
+Trigger processing via `jib --exec incoming-processor.py <message-file>`
+        ↓
+JIB Container (one-time processing)
+incoming-processor.py reads message → creates notification → exits
+        ↓
+Notification sent to Slack via slack-notifier
+```
+
+This exec-based pattern ensures processing only runs when messages are received (event-driven).
 
 ## Features
 
@@ -45,6 +64,7 @@ systemctl --user stop slack-receiver.service
 - Full conversation history in task files
 - User authentication and allowlisting
 - **Remote control commands** (restart/rebuild container, manage services)
+- **Event-driven processing** via `jib --exec` (no background watchers)
 
 ## Remote Control Commands
 

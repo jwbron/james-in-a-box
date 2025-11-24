@@ -36,8 +36,10 @@ GitHub Sync (host systemd timer, runs every 15 min)
     ├── webapp-PR-123-checks.json    # Check status + full logs for failures
     └── frontend-PR-456-checks.json
         ↓
-JIB Container (read-only mount)
-~/context-sync/github/ → github-watcher monitors for failures
+github-sync.service completes → Triggers check-monitor.py via `jib --exec`
+        ↓
+JIB Container (one-time analysis)
+~/context-sync/github/ → check-monitor.py analyzes failures → exits
         ↓
 Proactive analysis + Slack notification
 ```
@@ -137,13 +139,15 @@ Why 15 minutes:
 
 ## JIB Integration
 
-JIB's `github-watcher` component monitors the synced data and:
+After each sync, the github-sync service automatically triggers JIB's `check-monitor.py` via `jib --exec`. The analysis script:
 
 1. **Detects new check failures**
 2. **Analyzes failure logs** (full logs available for user's PRs)
 3. **Determines root cause** and suggests fixes
 4. **Implements obvious fixes** in a separate branch automatically
 5. **Sends Slack notification** with analysis and next steps
+
+This exec-based pattern ensures analysis only runs when new data is available (after sync completes).
 
 ## Management
 

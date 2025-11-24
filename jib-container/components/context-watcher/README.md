@@ -8,7 +8,7 @@ Proactively monitors and analyzes Confluence and JIRA updates.
 
 ## Overview
 
-Context Watcher consists of two active monitoring components that run every 5 minutes:
+Context Watcher consists of two analysis components triggered after context-sync completes:
 
 ### 1. JIRA Watcher
 - **Detects** new or updated JIRA tickets assigned to you
@@ -26,33 +26,39 @@ Context Watcher consists of two active monitoring components that run every 5 mi
 - **Flags** action items and deprecations
 - **Sends** Slack notifications with analysis
 
-Both components work similarly to github-watcher: they analyze synced data and send proactive notifications.
+Both components use an exec-based pattern: they run once after context-sync completes, analyze the data, and exit. This ensures analysis only happens when new data is available.
 
 ## How It Works
 
 ```
-Host context-sync (hourly)
+Host context-sync (hourly via systemd timer)
         ↓
 ~/context-sync/jira/ and ~/context-sync/confluence/
         ↓
-Enhanced Context Watcher (every 5 min in container)
+context-sync.service completes → Triggers watchers via `jib --exec`
         ↓
-JIRA Watcher:
-  - Detects new/updated tickets
-  - Parses metadata, description, acceptance criteria
-  - Analyzes scope and action items
-  - Creates Beads task
-  - Sends notification
-        ↓
-Confluence Watcher:
-  - Detects new/updated docs (especially ADRs)
-  - Summarizes changes
-  - Identifies impact
-  - Flags action items
-  - Sends notification
+JIB Container (one-time analysis):
+
+  jira-watcher.py:
+    - Detects new/updated tickets
+    - Parses metadata, description, acceptance criteria
+    - Analyzes scope and action items
+    - Creates Beads task
+    - Sends notification
+    - Exits
+
+  confluence-watcher.py:
+    - Detects new/updated docs (especially ADRs)
+    - Summarizes changes
+    - Identifies impact
+    - Flags action items
+    - Sends notification
+    - Exits
         ↓
 Slack notifications with summaries and next steps
 ```
+
+This exec-based pattern ensures analysis only runs after context data is synced (event-driven, not continuous polling).
 
 ### JIRA Ticket Workflow
 
@@ -113,20 +119,21 @@ Send Slack notification:
 
 ## Management
 
-The enhanced watcher starts automatically on container startup. Manual control:
+The watchers are triggered automatically by context-sync.service after each sync. Manual triggering:
 
 ```bash
-# Inside container
+# From host - trigger after context sync
+systemctl --user start context-sync.service
+
+# Or trigger watchers directly via jib --exec
+cd ~/khan/james-in-a-box
+bin/jib --exec python3 ~/khan/james-in-a-box/jib-container/components/context-watcher/jira-watcher.py
+bin/jib --exec python3 ~/khan/james-in-a-box/jib-container/components/context-watcher/confluence-watcher.py
+
+# Inside container - run analysis scripts directly
 cd ~/khan/james-in-a-box/jib-container/components/context-watcher
-
-# Control enhanced watcher (JIRA + Confluence)
-./enhanced-watcher-ctl start
-./enhanced-watcher-ctl stop
-./enhanced-watcher-ctl status
-./enhanced-watcher-ctl restart
-
-# View logs
-tail -f ~/sharing/tracking/enhanced-context-watcher.log
+python3 jira-watcher.py
+python3 confluence-watcher.py
 
 # Check state files
 cat ~/sharing/tracking/jira-watcher-state.json
@@ -139,24 +146,32 @@ See `config/README.md` for filtering options and watch patterns.
 
 ## Files
 
-- `context-watcher-ctl` - Control script (start/stop/status)
-- `context-watcher.sh` - Main watcher script
+- `jira-watcher.py` - JIRA ticket analysis script
+- `confluence-watcher.py` - Confluence doc analysis script
 - `config/` - Configuration files
 
 ## Troubleshooting
 
-**Watcher not starting**:
+**Watchers not running**:
 ```bash
-# Check if running
-ps aux | grep context-watcher
+# From host - check if context-sync service is working
+systemctl --user status context-sync.service
+journalctl --user -u context-sync.service -n 50
 
-# Check logs
-cat ~/sharing/tracking/watcher.log
+# Manually trigger sync + analysis
+systemctl --user start context-sync.service
 
-# Restart
-./context-watcher-ctl restart
+# Or trigger analysis directly
+cd ~/khan/james-in-a-box
+bin/jib --exec python3 ~/khan/james-in-a-box/jib-container/components/context-watcher/jira-watcher.py
 ```
 
 **Directory not found**:
 - Ensure `~/context-sync/` is mounted from host
 - Check Docker volume mounts in `jib` script
+- Verify context-sync has run at least once
+
+**No notifications sent**:
+- Check state files in `~/sharing/tracking/`
+- Ensure slack-notifier is running on host
+- Verify JIB container has write access to `~/sharing/notifications/`
