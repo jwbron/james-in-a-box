@@ -13,7 +13,7 @@ SyslogIdentifier=service-failure-notify
 PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=/home/jwies/sharing/notifications
+ReadWritePaths=%h/.jib-sharing/notifications
 
 [Install]
 WantedBy=multi-user.target

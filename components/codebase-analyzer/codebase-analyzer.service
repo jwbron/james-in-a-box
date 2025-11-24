@@ -11,20 +11,13 @@ Type=oneshot
 # Working directory
 WorkingDirectory=/home/jwies/khan/james-in-a-box/components/codebase-analyzer
 
-# Execute the analyzer
-ExecStart=/usr/bin/python3 /home/jwies/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py
+# Execute the analyzer via jib --exec (runs in ephemeral container with Claude Code)
+ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py
 
 # Logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=codebase-analyzer
-
-# Security hardening
-PrivateTmp=yes
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/jwies/sharing/notifications
 
 # Restart behavior
 Restart=no
