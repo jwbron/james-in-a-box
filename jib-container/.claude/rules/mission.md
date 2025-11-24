@@ -145,6 +145,44 @@ create-pr-helper.py --auto --reviewer jwiesebron
 create-pr-helper.py --title "Fix bug in some-file" --body "Detailed description"
 ```
 
+### 3.6. Git Safety: Force Push and Rebase (CRITICAL)
+
+**NEVER use `git reset --hard` or `git push --force` without preserving your commits first!**
+
+When fixing merge conflicts or rebasing:
+1. **ALWAYS save your branch first**: `git branch backup-branch` before any destructive operation
+2. **Use `git rebase` carefully**: Resolve conflicts file by file, don't abort and reset
+3. **If rebase has many conflicts**: Consider cherry-picking specific commits instead of resetting
+4. **Before force pushing**: Verify your branch still contains ALL your intended changes with `git log`
+
+**Safe conflict resolution workflow:**
+```bash
+# Save a backup of your branch first
+git branch my-branch-backup
+
+# Then attempt rebase
+git fetch origin main
+git rebase origin/main
+
+# If conflicts, resolve them one by one
+# Edit conflicted files, then:
+git add <resolved-file>
+git rebase --continue
+
+# Only force push after verifying all commits are present
+git log --oneline  # Check your commits are all there!
+git push --force-with-lease
+```
+
+**If you accidentally lose commits:**
+```bash
+# Find lost commits in reflog
+git reflog
+
+# Recover them
+git cherry-pick <commit-hash>
+```
+
 ### 4. Plan & Implement
 ```bash
 # For multi-step tasks: Break down into Beads subtasks
