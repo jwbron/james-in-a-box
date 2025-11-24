@@ -190,6 +190,16 @@ All host components run as systemd user services for reliability and auto-restar
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 - **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
 
+### Container Scripts
+
+**[Sprint Analysis](jib-container/scripts/README.md)** - Analyze sprint tickets and suggest next steps:
+```bash
+# From host
+bin/jib --exec /home/jwies/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
+```
+
+Analyzes your assigned JIRA tickets, groups by status, suggests next steps, and recommends backlog tickets to pull in.
+
 ### Shared Directories
 
 ```
