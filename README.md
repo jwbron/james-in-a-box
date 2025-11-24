@@ -11,6 +11,7 @@ JIB is an **LLM-powered autonomous software engineer** that runs in a Docker san
 - **Slack-based control**: Send tasks, receive notifications, review work from your phone
 - **Secure sandbox**: No credentials, network isolation, human-in-the-loop for all PRs
 - **Context-aware**: Syncs Confluence docs, JIRA tickets, and codebase knowledge
+- **Persistent memory**: Beads task tracking survives restarts, enables multi-session work
 - **Mobile-first**: Fully productive workflow from phone (notifications, PR reviews, approvals)
 - **Cultural alignment**: Behavior matches Khan Academy L3-L4 engineering standards
 
@@ -185,6 +186,7 @@ All host components run as systemd user services for reliability and auto-restar
 
 - **[context-watcher](jib-container/components/context-watcher/README.md)** - Monitors `~/context-sync/` for doc updates
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
+- **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
 
 ### Shared Directories
 
@@ -197,8 +199,12 @@ All host components run as systemd user services for reliability and auto-restar
 │   └── task-YYYYMMDD-HHMMSS.md
 ├── responses/                       # You → Claude (replies)
 │   └── RESPONSE-YYYYMMDD-HHMMSS.md
-└── context/                         # Persistent agent knowledge
-    └── project-name.md
+├── context/                         # Persistent agent knowledge
+│   └── project-name.md
+└── beads/                          # Persistent task memory (git repo)
+    ├── issues.jsonl                # Task database (source of truth)
+    ├── .git/                       # Git history
+    └── .beads.sqlite               # SQLite cache (auto-rebuilt)
 
 ~/.jib-worktrees/                    # Ephemeral (per-container workspaces)
 └── jib-YYYYMMDD-HHMMSS-PID/        # Unique container ID
@@ -269,6 +275,48 @@ Commands execute asynchronously and send results as notifications.
 ```
 
 PR descriptions are generated using Claude in the JIB container following Khan Academy standards. Notifications include repository, source branch, target branch, and PR URL.
+
+### Using Beads for Task Tracking
+
+**Beads** provides persistent task memory that survives container rebuilds and enables coordination across multiple containers.
+
+**When to use:**
+- Multi-session tasks that span multiple container restarts
+- Complex features with dependencies and subtasks
+- Coordinating work across concurrent containers
+- Tracking blockers and progress over time
+
+**Quick start:**
+```bash
+# Inside container
+cd ~/beads
+
+# Create task
+beads add "Implement OAuth2 authentication" --tags feature,security
+
+# List tasks ready to work on
+beads ready
+
+# Update status
+beads update bd-a3f8 --status in-progress
+
+# Add notes
+beads update bd-a3f8 --notes "Using RFC 6749 spec, per ADR-042"
+
+# Mark complete
+beads update bd-a3f8 --status done
+```
+
+**Custom commands:**
+- `@beads-status` - Show current tasks, ready work, and blockers
+- `@beads-sync` - Commit Beads state to git and rebuild cache
+
+**Storage:**
+- Location: `~/.jib-sharing/beads/` (git repository)
+- Access: `~/beads/` in container (all containers share same database)
+- Persistence: Survives container rebuilds, accessible to all containers
+
+See [Beads documentation](https://github.com/steveyegge/beads) and container rules at `jib-container/.claude/rules/beads-usage.md` for detailed usage.
 
 ## Security Model
 

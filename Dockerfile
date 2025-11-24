@@ -39,7 +39,7 @@ RUN chmod +x /tmp/docker-setup.py && \
     rm /tmp/docker-setup.py
 
 # Install Python packages needed for scripts
-RUN pip3 install requests
+RUN pip3 install requests beads-cli
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -236,6 +236,32 @@ if [ -d "${USER_HOME}/sharing" ]; then
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/tracking"
 fi
 
+# Initialize Beads persistent memory system
+if [ -d "${USER_HOME}/sharing" ]; then
+    mkdir -p "${USER_HOME}/sharing/beads"
+    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/beads"
+
+    # Initialize Beads repo if not already initialized
+    if [ ! -f "${USER_HOME}/sharing/beads/issues.jsonl" ]; then
+        echo "Initializing Beads memory system..."
+        cd "${USER_HOME}/sharing/beads"
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" git init
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" beads init
+        echo "✓ Beads initialized (persistent memory for tasks and context)"
+    else
+        echo "✓ Beads memory system available"
+    fi
+
+    # Create convenience symlink: ~/beads → ~/sharing/beads
+    ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
+
+    # Build SQLite cache for fast queries
+    cd "${USER_HOME}/sharing/beads"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" beads build-cache > /dev/null 2>&1 || true
+    echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
+    echo "  Usage: beads add 'task description' --tags feature,important"
+fi
+
 # Start context-watcher in background (if configured)
 if [ -f "${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher/context-watcher-ctl" ]; then
     echo "Starting context-watcher in background..."
@@ -297,7 +323,9 @@ if [ $# -eq 0 ]; then
     echo "    - ~/sharing/incoming/                   (You → Claude via Slack)"
     echo "    - ~/sharing/responses/                  (Your replies via Slack)"
     echo "    - ~/sharing/context/                    (context docs)"
+    echo "    - ~/sharing/beads/                      (persistent task memory)"
     echo "    - ~/sharing/tracking/                   (background service logs)"
+    echo "  • Beads: ~/beads/ → ~/sharing/beads/      (persistent task/session memory)"
     echo "  • Tmp: ~/tmp/ → ~/sharing/tmp/            (symlink for convenience)"
     echo ""
     echo "📖 Custom Commands (type to use):"
