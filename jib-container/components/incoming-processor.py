@@ -84,13 +84,15 @@ Process this task now."""
 
     # Run Claude Code via stdin (not --print which creates restricted session)
     # This allows full access to tools and filesystem
+    # Important: Start in ~/khan/ and use bypass permissions
     try:
         result = subprocess.run(
-            ["claude"],
+            ["claude", "--dangerously-skip-permissions"],
             input=prompt,
             text=True,
             capture_output=True,  # Capture output to create notification
-            timeout=600  # 10 minute timeout
+            timeout=600,  # 10 minute timeout
+            cwd=str(Path.home() / "khan")  # Start in khan directory
         )
 
         if result.returncode == 0:
@@ -213,13 +215,15 @@ Process this response now."""
 
     # Run Claude Code via stdin (not --print which creates restricted session)
     # This allows full access to tools and filesystem
+    # Important: Start in ~/khan/ and use bypass permissions
     try:
         result = subprocess.run(
-            ["claude"],
+            ["claude", "--dangerously-skip-permissions"],
             input=prompt,
             text=True,
             capture_output=True,  # Capture output to create notification
-            timeout=600  # 10 minute timeout
+            timeout=600,  # 10 minute timeout
+            cwd=str(Path.home() / "khan")  # Start in khan directory
         )
 
         if result.returncode == 0:
