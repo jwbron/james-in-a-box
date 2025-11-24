@@ -45,7 +45,8 @@ RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/i
     which bd || (echo "ERROR: beads (bd) installation failed" && exit 1)
 
 # Install Claude Code CLI globally
-RUN npm install -g @anthropic-ai/claude-code
+# Pin to specific version to match host (avoid credential compatibility issues)
+RUN npm install -g @anthropic-ai/claude-code@2.0.22
 
 # Note: Claude authentication is mounted at runtime from host (not baked into image)
 # This ensures container always uses host's current credentials (no stale OAuth tokens)
@@ -193,19 +194,6 @@ if [ -d "/tmp/host-claude" ]; then
     if [ -f "${USER_HOME}/.claude/.credentials.json" ]; then
         chmod 600 "${USER_HOME}/.claude/.credentials.json"
         echo "  ✓ OAuth credentials copied (always current from host)"
-
-        # Check if credentials have full scopes
-        if command -v jq &> /dev/null; then
-            SCOPES=$(jq -r '.claudeAiOauth.scopes[]' "${USER_HOME}/.claude/.credentials.json" 2>/dev/null || echo "")
-            if echo "$SCOPES" | grep -q "user:sessions:claude_code"; then
-                echo "  ✓ Credentials have full scopes (interactive mode supported)"
-            else
-                echo "  ⚠ Credentials missing 'user:sessions:claude_code' scope"
-                echo "    Interactive 'claude' mode may not work"
-                echo "    'claude --print' commands will work fine"
-                echo "    To fix: Run 'claude' on host to trigger re-authentication"
-            fi
-        fi
     else
         echo "  ℹ No credentials file found - container will prompt for authentication"
         echo "    After authenticating in container, you can copy credentials to host:"

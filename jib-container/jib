@@ -47,119 +47,17 @@ def error(msg: str) -> None:
     print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
 
 
-def check_claude_credentials() -> tuple[bool, bool]:
+def check_claude_credentials() -> bool:
     """
-    Check if Claude credentials exist and have the required scopes.
+    Check if Claude credentials exist.
 
     Returns:
-        tuple[bool, bool]: (credentials_exist, has_full_scopes)
+        bool: credentials_exist
     """
     claude_dir = Path.home() / ".claude"
     credentials_file = claude_dir / ".credentials.json"
 
-    if not credentials_file.exists():
-        return (False, False)
-
-    try:
-        with open(credentials_file, 'r') as f:
-            creds = json.load(f)
-
-        scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
-
-        # Required scopes for full Claude Code functionality
-        required_scopes = {
-            "user:inference",      # For running commands
-            "user:profile",        # For user info
-            "user:sessions:claude_code"  # For interactive sessions
-        }
-
-        has_full_scopes = required_scopes.issubset(set(scopes))
-        return (True, has_full_scopes)
-
-    except (json.JSONDecodeError, KeyError, OSError) as e:
-        warn(f"Could not read Claude credentials: {e}")
-        return (False, False)
-
-
-def fix_claude_scopes() -> bool:
-    """
-    Automatically fix Claude credentials with incomplete scopes.
-
-    Launches interactive Claude session to trigger re-authentication
-    with full OAuth scopes, then verifies the fix.
-
-    Returns:
-        bool: True if scopes were successfully fixed, False otherwise
-    """
-    print()
-    print(f"{Colors.BOLD}Auto-fixing Claude scopes...{Colors.NC}")
-    print()
-    info("This will launch an interactive Claude session to re-authenticate.")
-    info("The OAuth flow will request the full set of required scopes.")
-    print()
-    info("What will happen:")
-    print("  1. Claude will open in your browser for authentication")
-    print("  2. Complete the OAuth flow in your browser")
-    print("  3. Once you see the Claude prompt, press Ctrl+C to exit")
-    print("  4. Setup will continue automatically")
-    print()
-
-    try:
-        response = input(f"{Colors.YELLOW}Press Enter to start, or Ctrl+C to skip: {Colors.NC}").strip()
-    except KeyboardInterrupt:
-        print()
-        warn("Skipped scope fix - continuing with partial scopes")
-        return False
-
-    print()
-    info("Launching Claude for re-authentication...")
-    print()
-
-    try:
-        # Launch interactive Claude session
-        # This triggers OAuth with full scopes
-        result = subprocess.run(
-            ["claude"],
-            stdin=subprocess.DEVNULL,
-            timeout=60  # 60 second timeout for auth
-        )
-
-        # If claude exited normally (Ctrl+C), check if scopes were fixed
-        print()
-        info("Verifying credentials...")
-
-        _, has_full_scopes = check_claude_credentials()
-
-        if has_full_scopes:
-            success("Credentials updated with full scopes!")
-            return True
-        else:
-            warn("Credentials still missing required scopes")
-            warn("You may need to complete the OAuth flow in your browser")
-            return False
-
-    except subprocess.TimeoutExpired:
-        warn("Authentication timed out after 60 seconds")
-        warn("Please complete authentication and run setup again")
-        return False
-    except FileNotFoundError:
-        error("'claude' command not found - is Claude Code installed?")
-        return False
-    except KeyboardInterrupt:
-        print()
-        info("Authentication interrupted")
-
-        # Check if scopes were updated before interruption
-        _, has_full_scopes = check_claude_credentials()
-        if has_full_scopes:
-            success("Credentials updated with full scopes!")
-            return True
-        else:
-            warn("Authentication incomplete - scopes not updated")
-            return False
-    except Exception as e:
-        error(f"Failed to fix scopes: {e}")
-        return False
+    return credentials_file.exists()
 
 
 class Config:
@@ -726,10 +624,6 @@ def setup() -> bool:
     else:
         warn(f"{Config.KHAN_SOURCE} not found - workspace will not be available")
 
-    # Claude OAuth authentication
-    print()
-    info("Claude authentication: Browser OAuth on first run (credentials persist in container)")
-
     # Add context-sync directory (read-only) - includes Confluence, JIRA, and more
     print()
     context_sync_dir = Path.home() / "context-sync"
@@ -1000,21 +894,6 @@ def run_claude() -> bool:
         try:
             with open(shared_creds, 'r') as f:
                 creds = json.load(f)
-
-            scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
-            required_scopes = {
-                "user:inference",
-                "user:profile",
-                "user:sessions:claude_code"
-            }
-
-            if required_scopes.issubset(set(scopes)):
-                success("Claude Code authenticated with full scopes (shared)")
-                print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
-            else:
-                warn("Claude Code credentials found but missing required scopes")
-                warn("  Container will work with limited functionality (--print mode only)")
-                print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
         except Exception as e:
             warn(f"Could not read shared credentials: {e}")
             warn("Container will prompt for authentication on first run")
@@ -1112,6 +991,11 @@ def run_claude() -> bool:
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
     print(f"  • ~/.jib-worktrees/ (for jib --exec temporary worktrees)")
+
+    # Mount Claude credentials for runtime copy (read-only)
+    if Config.CLAUDE_SOURCE.exists() and (Config.CLAUDE_SOURCE / ".credentials.json").exists():
+        mount_args.extend(["-v", f"{Config.CLAUDE_SOURCE}:/tmp/host-claude:ro,z"])
+        print(f"  • ~/.claude (OAuth credentials, mounted to /tmp/host-claude)")
 
     print()
 
@@ -1223,6 +1107,11 @@ def exec_in_new_container(command: List[str]) -> bool:
             mode = f"{mode},z"
 
         mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
+
+    # Mount Claude credentials for runtime copy (read-only)
+    if Config.CLAUDE_SOURCE.exists() and (Config.CLAUDE_SOURCE / ".credentials.json").exists():
+        mount_args.extend(["-v", f"{Config.CLAUDE_SOURCE}:/tmp/host-claude:ro,z"])
+        info("Claude credentials mounted from host (OAuth, version 2.0.22)")
 
     # Build docker run command
     cmd = [
