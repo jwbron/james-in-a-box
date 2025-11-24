@@ -114,7 +114,7 @@ Every jib container (interactive and `--exec` mode) gets its own isolated worktr
 1. **Your branch is temporary** - Named like `jib-temp-jib-20251124-123456-789`
 2. **DO NOT create new branches** - You're already on an isolated temporary branch
 3. **Just commit directly** - Your commits will be on your temporary branch
-4. **Create a PR when done** - Use the PR helper to push and create the PR (currently only supported for `james-in-a-box` repo)
+4. **Create a PR when done** - Use the PR helper to push and create the PR (for repos in config/repositories.yaml)
 
 **Example workflow:**
 ```bash
@@ -132,20 +132,33 @@ git commit -m "Fix bug in some-file
 - Detailed explanation
 - Related to JIRA-1234"
 
-# Create a PR for the user to review (james-in-a-box repo only)
+# Create a PR for the user to review (for writable repos)
 create-pr-helper.py --auto --reviewer jwiesebron
 ```
 
-**After committing, ALWAYS create a PR (james-in-a-box repo only):**
+**After committing, ALWAYS create a PR (for writable repos):**
 ```bash
 # Use the PR helper to push branch and create PR
 create-pr-helper.py --auto --reviewer jwiesebron
 
 # Or with custom title/body:
 create-pr-helper.py --title "Fix bug in some-file" --body "Detailed description"
+
+# To see which repos jib has write access to:
+create-pr-helper.py --list-writable
 ```
 
-**NOTE**: The PR helper currently only supports the `james-in-a-box` repository. For other repos, commit your changes and notify the user to create the PR manually from the host.
+**IMPORTANT**: The PR helper works for repositories listed in `config/repositories.yaml`.
+This is the **single source of truth** for which repos jib has read/write access to.
+
+To check which repos are configured: `create-pr-helper.py --list-writable`
+
+**MANDATORY**: For writable repos, you MUST create a PR using `create-pr-helper.py`.
+Do NOT tell the user to create the PR themselves - the helper works and handles authentication.
+
+For repos NOT in the writable list only, commit your changes and notify the user to create the PR manually from the host.
+
+**Troubleshooting**: If git push fails with "could not read Username", run `gh auth setup-git` first.
 
 ### 3.6. Git Safety: Force Push and Rebase (CRITICAL)
 
@@ -222,10 +235,14 @@ make test
 
 ### 7. Commit Changes & Create PR
 
-**CRITICAL**: After completing ANY changeset, you MUST:
+**CRITICAL - PR CREATION IS MANDATORY**: After completing ANY changeset, you MUST:
 1. Commit all changes to git
-2. Create a PR using the PR helper (james-in-a-box only) OR notify the user to create the PR manually (other repos)
-3. Notify the user with the PR URL or branch name
+2. **ALWAYS** create a PR using the PR helper for writable repos (check `create-pr-helper.py --list-writable`)
+3. For non-writable repos ONLY: notify the user to create the PR manually
+4. Notify the user with the PR URL
+
+**DO NOT** tell the user to create a PR themselves for writable repos. The PR helper works and you must use it.
+If `create-pr-helper.py` fails, troubleshoot and fix it (e.g., run `gh auth setup-git` if needed).
 
 ```bash
 # Commit your changes with clear messages
@@ -241,15 +258,18 @@ git commit -m "Brief description of changes
 
 Co-Authored-By: jib <jib@khan.org>"
 
-# For james-in-a-box repo: Create a PR for the user to review
+# For writable repos (see config/repositories.yaml): Create a PR for the user to review
 create-pr-helper.py --auto --reviewer jwiesebron
 # This will:
 # 1. Push the branch to origin
 # 2. Create a PR with auto-generated title/body
-# 3. Request review from jwiesebron
+# 3. Request review from the default reviewer (from config)
 # 4. Create a notification with the PR URL
 
-# For other repos: Notify the user to create the PR manually
+# To check which repos are writable:
+# create-pr-helper.py --list-writable
+
+# For repos NOT in the writable list: Notify the user to create the PR manually
 # Include branch name in your notification so user can push and create PR from host
 ```
 
@@ -259,16 +279,19 @@ create-pr-helper.py --auto --reviewer jwiesebron
 - Reference JIRA tickets, ADRs, related issues
 - Include co-author attribution
 
-**After committing, create a PR (james-in-a-box only):**
+**After committing, create a PR (for writable repos):**
 ```bash
 # Auto-generate PR from commits:
 create-pr-helper.py --auto --reviewer jwiesebron
 
 # Or with custom title/body:
 create-pr-helper.py --title "Your PR title" --body "Description" --reviewer jwiesebron
+
+# Check which repos are writable:
+create-pr-helper.py --list-writable
 ```
 
-**For other repositories:** The PR helper currently only supports `james-in-a-box`. For other repos, commit your changes and notify the user with the branch name so they can push and create the PR from the host.
+**For non-writable repositories:** For repos not in `config/repositories.yaml`, commit your changes and notify the user with the branch name so they can push and create the PR from the host.
 The PR helper creates a notification that triggers a Slack DM to the user with the PR URL.
 
 ### 8. Complete Beads Task
