@@ -1,0 +1,22 @@
+[Unit]
+Description=Context Sync Timer - Run hourly
+Documentation=file:///home/jwies/khan/confluence-cursor-sync/README.md
+
+[Timer]
+# Run every hour (change this to customize frequency)
+# Examples:
+#   *:0/15           - Every 15 minutes
+#   *:0/30           - Every 30 minutes
+#   hourly           - Every hour (default)
+#   *-*-* 00:00:00   - Daily at midnight
+OnCalendar=hourly
+# Run 5 minutes after boot if missed
+OnBootSec=5min
+# Allow random delay of up to 2 minutes to avoid load spikes
+RandomizedDelaySec=2min
+# Persist timestamp across reboots
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

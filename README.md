@@ -175,6 +175,7 @@ All host components run as systemd user services for reliability and auto-restar
 
 - **[slack-notifier](components/slack-notifier/README.md)** - Sends Claude's notifications to Slack (inotify-based, instant)
 - **[slack-receiver](components/slack-receiver/README.md)** - Receives your messages and responses from Slack (Socket Mode)
+- **[context-sync](components/context-sync/README.md)** - Syncs Confluence/JIRA to `~/context-sync/` (hourly)
 - **[worktree-watcher](components/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
 - **[codebase-analyzer](components/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
 - **[conversation-analyzer](components/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)

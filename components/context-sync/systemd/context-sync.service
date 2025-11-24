@@ -1,0 +1,24 @@
+[Unit]
+Description=Context Sync - Sync all connectors (Confluence, JIRA, etc.)
+Documentation=file:///home/jwies/khan/james-in-a-box/components/context-sync/README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/khan/james-in-a-box/components/context-sync
+Environment="PATH=%h/khan/james-in-a-box/components/context-sync/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+# Configuration is loaded from ~/.config/context-sync/.env by sync_all.py
+ExecStart=%h/khan/james-in-a-box/components/context-sync/.venv/bin/python %h/khan/james-in-a-box/components/context-sync/sync_all.py
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=context-sync
+
+# Resource limits
+Nice=10
+IOSchedulingClass=2
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=default.target
+

@@ -1,0 +1,422 @@
+"""
+JIRA sync script.
+
+Syncs JIRA tickets and their comments to local markdown files.
+"""
+
+import base64
+import hashlib
+import json
+import pickle
+import re
+import requests
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from connectors.jira.config import JIRAConfig
+
+
+class JIRASync:
+    """Sync JIRA tickets to local files."""
+    
+    def __init__(self):
+        self.config = JIRAConfig
+        self.session = requests.Session()
+        self._setup_auth()
+        self.sync_state_file = Path(self.config.OUTPUT_DIR) / ".sync_state"
+    
+    def _setup_auth(self):
+        """Setup authentication for JIRA API."""
+        if not self.config.validate():
+            raise ValueError(
+                "Missing required configuration. Please set JIRA_BASE_URL, "
+                "JIRA_USERNAME, and JIRA_API_TOKEN"
+            )
+        
+        # Use Basic auth with email:token for Atlassian Cloud
+        auth_string = f"{self.config.USERNAME}:{self.config.API_TOKEN}"
+        auth_bytes = auth_string.encode('ascii')
+        auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
+        
+        self.session.headers.update({
+            'Authorization': f'Basic {auth_b64}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        })
+    
+    def _load_sync_state(self) -> Dict:
+        """Load sync state from file."""
+        if self.sync_state_file.exists():
+            try:
+                with open(self.sync_state_file, 'rb') as f:
+                    return pickle.load(f)
+            except:
+                pass
+        return {}
+    
+    def _save_sync_state(self, state: Dict):
+        """Save sync state to file."""
+        self.sync_state_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.sync_state_file, 'wb') as f:
+            pickle.dump(state, f)
+    
+    def _get_ticket_hash(self, issue: Dict) -> str:
+        """Generate hash for ticket to detect changes."""
+        # Include updated timestamp and comment count
+        issue_key = issue.get('key', '')
+        updated = issue.get('fields', {}).get('updated', '')
+        comment_count = issue.get('fields', {}).get('comment', {}).get('total', 0)
+        
+        content = f"{issue_key}_{updated}_{comment_count}"
+        return hashlib.md5(content.encode()).hexdigest()
+    
+    def _sanitize_filename(self, filename: str) -> str:
+        """Sanitize filename for filesystem."""
+        # Remove problematic characters
+        filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+        filename = re.sub(r'[\x00-\x1f\x7f]', '', filename)
+        filename = filename.strip()
+        return filename[:200]
+    
+    def search_issues(self, jql: str = None) -> List[Dict]:
+        """Search for issues using JQL."""
+        if jql is None:
+            jql = self.config.JQL_QUERY
+        
+        issues = []
+        start_at = 0
+        max_results = 50
+        
+        print(f"Searching JIRA with JQL: {jql}")
+        
+        while True:
+            url = f"{self.config.BASE_URL}/rest/api/3/search/jql"
+            params = {
+                'jql': jql,
+                'startAt': start_at,
+                'maxResults': max_results,
+                'fields': 'summary,description,status,assignee,reporter,created,updated,priority,labels,components,issuetype,comment,attachment,worklog'
+            }
+            
+            try:
+                response = self.session.get(url, params=params, timeout=self.config.REQUEST_TIMEOUT)
+                response.raise_for_status()
+                
+                data = response.json()
+                new_issues = data.get('issues', [])
+                issues.extend(new_issues)
+                
+                print(f"  Fetched {len(new_issues)} issues (total: {len(issues)})")
+                
+                # Check if we have more results
+                total = data.get('total', 0)
+                if start_at + max_results >= total:
+                    break
+                
+                # Check if we've hit our limit
+                if self.config.MAX_TICKETS != float('inf') and len(issues) >= self.config.MAX_TICKETS:
+                    print(f"  Reached limit of {self.config.MAX_TICKETS} issues")
+                    break
+                
+                start_at += max_results
+                
+            except requests.exceptions.RequestException as e:
+                print(f"Error searching issues: {e}")
+                break
+        
+        if self.config.MAX_TICKETS != float('inf'):
+            return issues[:int(self.config.MAX_TICKETS)]
+        return issues
+    
+    def format_issue_as_markdown(self, issue: Dict) -> str:
+        """Format a JIRA issue as markdown."""
+        fields = issue.get('fields', {})
+        issue_key = issue.get('key', '')
+        
+        # Build markdown content
+        lines = []
+        lines.append(f"# {issue_key}: {fields.get('summary', 'No title')}")
+        lines.append("")
+        
+        # Metadata
+        issue_url = f"{self.config.BASE_URL}/browse/{issue_key}"
+        lines.append(f"**URL:** [{issue_key}]({issue_url})")
+        lines.append(f"**Type:** {fields.get('issuetype', {}).get('name', 'Unknown')}")
+        lines.append(f"**Status:** {fields.get('status', {}).get('name', 'Unknown')}")
+        lines.append(f"**Priority:** {fields.get('priority', {}).get('name', 'Unknown')}")
+        
+        # People
+        assignee = fields.get('assignee')
+        if assignee:
+            lines.append(f"**Assignee:** {assignee.get('displayName', 'Unknown')}")
+        
+        reporter = fields.get('reporter')
+        if reporter:
+            lines.append(f"**Reporter:** {reporter.get('displayName', 'Unknown')}")
+        
+        # Dates
+        created = fields.get('created', '')
+        if created:
+            lines.append(f"**Created:** {created}")
+        
+        updated = fields.get('updated', '')
+        if updated:
+            lines.append(f"**Updated:** {updated}")
+        
+        # Labels
+        labels = fields.get('labels', [])
+        if labels:
+            lines.append(f"**Labels:** {', '.join(labels)}")
+        
+        # Components
+        components = fields.get('components', [])
+        if components:
+            comp_names = [c.get('name', '') for c in components]
+            lines.append(f"**Components:** {', '.join(comp_names)}")
+        
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        
+        # Description
+        lines.append("## Description")
+        lines.append("")
+        description = fields.get('description')
+        if description:
+            # JIRA API v3 uses Atlassian Document Format
+            lines.append(self._format_adf_content(description))
+        else:
+            lines.append("*No description*")
+        lines.append("")
+        
+        # Comments
+        if self.config.INCLUDE_COMMENTS:
+            comments = fields.get('comment', {}).get('comments', [])
+            if comments:
+                lines.append("## Comments")
+                lines.append("")
+                for idx, comment in enumerate(comments, 1):
+                    author = comment.get('author', {}).get('displayName', 'Unknown')
+                    created = comment.get('created', '')
+                    lines.append(f"### Comment {idx} - {author} ({created})")
+                    lines.append("")
+                    body = comment.get('body')
+                    if body:
+                        lines.append(self._format_adf_content(body))
+                    lines.append("")
+        
+        # Attachments
+        if self.config.INCLUDE_ATTACHMENTS:
+            attachments = fields.get('attachment', [])
+            if attachments:
+                lines.append("## Attachments")
+                lines.append("")
+                for att in attachments:
+                    filename = att.get('filename', 'Unknown')
+                    size = att.get('size', 0)
+                    created = att.get('created', '')
+                    author = att.get('author', {}).get('displayName', 'Unknown')
+                    content_url = att.get('content', '')
+                    lines.append(f"- **{filename}** ({size} bytes) - uploaded by {author} on {created}")
+                    if content_url:
+                        lines.append(f"  - [Download]({content_url})")
+                lines.append("")
+        
+        # Work logs
+        if self.config.INCLUDE_WORKLOGS:
+            worklogs = fields.get('worklog', {}).get('worklogs', [])
+            if worklogs:
+                lines.append("## Work Logs")
+                lines.append("")
+                for log in worklogs:
+                    author = log.get('author', {}).get('displayName', 'Unknown')
+                    started = log.get('started', '')
+                    time_spent = log.get('timeSpent', '')
+                    comment = log.get('comment', '')
+                    lines.append(f"- **{author}** - {time_spent} on {started}")
+                    if comment:
+                        lines.append(f"  - {comment}")
+                lines.append("")
+        
+        return '\n'.join(lines)
+    
+    def _format_adf_content(self, adf: Dict) -> str:
+        """Format Atlassian Document Format (ADF) content to markdown."""
+        if not isinstance(adf, dict):
+            return str(adf)
+        
+        if adf.get('type') == 'doc':
+            # Process document content
+            content_parts = []
+            for node in adf.get('content', []):
+                content_parts.append(self._format_adf_node(node))
+            return '\n\n'.join(content_parts)
+        
+        return str(adf)
+    
+    def _format_adf_node(self, node: Dict) -> str:
+        """Format a single ADF node to markdown."""
+        node_type = node.get('type', '')
+        
+        if node_type == 'paragraph':
+            content_parts = []
+            for item in node.get('content', []):
+                content_parts.append(self._format_adf_node(item))
+            return ''.join(content_parts)
+        
+        elif node_type == 'text':
+            text = node.get('text', '')
+            # Apply marks (bold, italic, etc.)
+            for mark in node.get('marks', []):
+                mark_type = mark.get('type')
+                if mark_type == 'strong':
+                    text = f"**{text}**"
+                elif mark_type == 'em':
+                    text = f"*{text}*"
+                elif mark_type == 'code':
+                    text = f"`{text}`"
+                elif mark_type == 'link':
+                    href = mark.get('attrs', {}).get('href', '')
+                    text = f"[{text}]({href})"
+            return text
+        
+        elif node_type == 'heading':
+            level = node.get('attrs', {}).get('level', 1)
+            content_parts = []
+            for item in node.get('content', []):
+                content_parts.append(self._format_adf_node(item))
+            heading_text = ''.join(content_parts)
+            return f"{'#' * level} {heading_text}"
+        
+        elif node_type == 'bulletList':
+            items = []
+            for item in node.get('content', []):
+                items.append(self._format_adf_node(item))
+            return '\n'.join(items)
+        
+        elif node_type == 'orderedList':
+            items = []
+            for idx, item in enumerate(node.get('content', []), 1):
+                formatted = self._format_adf_node(item)
+                # Replace bullet with number
+                formatted = formatted.replace('- ', f'{idx}. ', 1)
+                items.append(formatted)
+            return '\n'.join(items)
+        
+        elif node_type == 'listItem':
+            content_parts = []
+            for item in node.get('content', []):
+                content_parts.append(self._format_adf_node(item))
+            return f"- {''.join(content_parts)}"
+        
+        elif node_type == 'codeBlock':
+            language = node.get('attrs', {}).get('language', '')
+            text_parts = []
+            for item in node.get('content', []):
+                if item.get('type') == 'text':
+                    text_parts.append(item.get('text', ''))
+            code = ''.join(text_parts)
+            return f"```{language}\n{code}\n```"
+        
+        elif node_type == 'blockquote':
+            content_parts = []
+            for item in node.get('content', []):
+                content_parts.append(self._format_adf_node(item))
+            quoted = '\n'.join(content_parts)
+            # Add > to each line
+            return '\n'.join(f"> {line}" for line in quoted.split('\n'))
+        
+        elif node_type == 'hardBreak':
+            return '\n'
+        
+        # Fallback for unknown types
+        return f"[{node_type}]"
+    
+    def sync_all_issues(self, incremental: bool = True):
+        """Sync all issues matching the JQL query."""
+        print(f"Syncing JIRA issues to: {self.config.OUTPUT_DIR}")
+        
+        # Create output directory
+        output_dir = Path(self.config.OUTPUT_DIR)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Load sync state for incremental sync
+        sync_state = self._load_sync_state() if incremental else {}
+        
+        # Get all issues
+        issues = self.search_issues()
+        print(f"Found {len(issues)} issues")
+        
+        updated_count = 0
+        new_count = 0
+        
+        for issue in issues:
+            issue_key = issue.get('key', '')
+            issue_hash = self._get_ticket_hash(issue)
+            
+            # Check if issue needs updating
+            if incremental and issue_key in sync_state:
+                if sync_state[issue_key] == issue_hash:
+                    print(f"  - {issue_key} (no changes)")
+                    continue
+            
+            # Format and write issue
+            print(f"  Processing: {issue_key}")
+            content = self.format_issue_as_markdown(issue)
+            
+            # Create filename
+            summary = issue.get('fields', {}).get('summary', 'untitled')
+            sanitized_summary = self._sanitize_filename(summary)
+            filename = f"{issue_key}_{sanitized_summary}.md"
+            filepath = output_dir / filename
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            # Update sync state
+            sync_state[issue_key] = issue_hash
+            
+            if issue_key in sync_state and sync_state[issue_key] != issue_hash:
+                updated_count += 1
+                print(f"  - {issue_key} (updated)")
+            else:
+                new_count += 1
+                print(f"  - {issue_key} (new)")
+        
+        # Save sync state
+        self._save_sync_state(sync_state)
+        
+        print(f"Sync complete: {new_count} new issues, {updated_count} updated issues")
+
+
+def main():
+    """Main entry point for running JIRA sync standalone."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Sync JIRA tickets')
+    parser.add_argument('--full', action='store_true',
+                       help='Full sync (not incremental)')
+    parser.add_argument('--jql', type=str,
+                       help='Custom JQL query')
+    
+    args = parser.parse_args()
+    
+    try:
+        syncer = JIRASync()
+        
+        if args.jql:
+            # Override JQL query
+            syncer.config.JQL_QUERY = args.jql
+        
+        syncer.sync_all_issues(incremental=not args.full)
+        
+        return 0
+    except Exception as e:
+        print(f"Sync failed: {e}")
+        return 1
+
+
+if __name__ == "__main__":
+    exit(main())
+

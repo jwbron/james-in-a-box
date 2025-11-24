@@ -89,6 +89,7 @@ check_installation_status() {
     local services=(
         "slack-notifier.service"
         "slack-receiver.service"
+        "context-sync.timer"
         "worktree-watcher.timer"
         "codebase-analyzer.timer"
         "conversation-analyzer.timer"
@@ -236,6 +237,7 @@ print_header "Setting Up Components"
 components=(
     "slack-notifier:Slack Notifier (Claude → You)"
     "slack-receiver:Slack Receiver (You → Claude)"
+    "context-sync:Context Sync (Confluence, JIRA → Local)"
     "service-monitor:Service Failure Monitor"
     "worktree-watcher:Worktree Watcher (cleanup orphaned worktrees)"
     "codebase-analyzer:Codebase Analyzer (weekly)"
@@ -278,6 +280,7 @@ if [ "$UPDATE_MODE" = true ]; then
     services_to_restart=(
         "slack-notifier.service"
         "slack-receiver.service"
+        "context-sync.timer"
         "worktree-watcher.timer"
         "codebase-analyzer.timer"
         "conversation-analyzer.timer"
@@ -311,6 +314,7 @@ print_header "Service Status"
 services=(
     "slack-notifier.service:Slack Notifier"
     "slack-receiver.service:Slack Receiver"
+    "context-sync.timer:Context Sync"
     "worktree-watcher.timer:Worktree Watcher"
     "codebase-analyzer.timer:Codebase Analyzer"
     "conversation-analyzer.timer:Conversation Analyzer"
