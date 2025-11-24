@@ -209,7 +209,7 @@ EOF
 **Persistence**: NOT persisted on rebuild
 **Usage**:
 ```bash
-# Install packages (lost on --rebuild)
+# Install packages (lost on container rebuild - Docker determines layers to rebuild)
 apt-get update && apt-get install -y ripgrep
 pip install pytest-watch
 npm install -g typescript-language-server
