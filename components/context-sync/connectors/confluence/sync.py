@@ -275,7 +275,9 @@ class ConfluenceSync:
     def get_page_comments(self, page_id: str) -> List[Dict]:
         """Get all comments for a page using v2 API."""
         comments = []
-        url = f"{self.config.BASE_URL}/api/v2/pages/{page_id}/footer-comments"
+        base_url = f"{self.config.BASE_URL}/api/v2/pages/{page_id}/footer-comments"
+        # Must include body-format=storage to get comment body content (v2 API)
+        url = f"{base_url}?body-format=storage"
 
         try:
             # Fetch all comments with pagination
@@ -321,8 +323,9 @@ class ConfluenceSync:
             # Get created date
             created_at = version_info.get('createdAt', 'Unknown date')
 
-            # Get comment body
-            body = comment.get('body', {}).get('view', {}).get('value', '')
+            # Get comment body (try storage format first, then view for compatibility)
+            body_data = comment.get('body', {})
+            body = body_data.get('storage', {}).get('value', '') or body_data.get('view', {}).get('value', '')
 
             # Convert to markdown if configured
             if self.config.OUTPUT_FORMAT == 'markdown' and body:
