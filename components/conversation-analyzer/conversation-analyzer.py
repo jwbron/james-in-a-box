@@ -5,25 +5,29 @@ Conversation Analysis Job for jib (James-in-a-Box)
 Analyzes conversation logs to generate prompt tuning recommendations and
 communication improvement suggestions.
 
-This should run daily (via cron) to process accumulated logs and identify
-patterns that can improve jib's performance.
+Runs on host (not in sandbox) via systemd timer:
+- Weekly on Monday at 11 AM (checks if last run was within 7 days)
+- 10 minutes after system startup (if not run in last 7 days)
+- Can force run with --force flag
 
 Usage:
-    analyze-conversations [--days N] [--output DIR]
+    conversation-analyzer.py [--days N] [--output DIR] [--force]
 
 Example:
-    analyze-conversations --days 7
-    analyze-conversations --days 30 --output ~/sharing/analysis/monthly
+    conversation-analyzer.py --days 7
+    conversation-analyzer.py --force
+    conversation-analyzer.py --days 30 --output ~/sharing/analysis/monthly
 """
 
 import argparse
 import json
+import logging
 import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import subprocess
 
 # Constants
@@ -527,13 +531,78 @@ Period: Last {self.days} days
         print(f"  Detailed report (thread): {detail_file}")
 
 
+def check_last_run(analysis_dir: Path) -> Optional[datetime]:
+    """Check when the analyzer was last run by finding the most recent report."""
+    try:
+        # Find all conversation analysis reports
+        reports = list(analysis_dir.glob("analysis-*.md"))
+
+        if not reports:
+            return None
+
+        # Sort by modification time, get most recent
+        reports.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        most_recent = reports[0]
+
+        # Get modification time
+        mtime = datetime.fromtimestamp(most_recent.stat().st_mtime)
+        return mtime
+    except Exception as e:
+        logging.error(f"Error checking last run: {e}")
+        return None
+
+
+def should_run_analysis(analysis_dir: Path, force: bool = False) -> bool:
+    """Determine if analysis should run based on weekly schedule."""
+    if force:
+        print("Force flag set - running analysis")
+        return True
+
+    last_run = check_last_run(analysis_dir)
+
+    if last_run is None:
+        print("No previous analysis found - running analysis")
+        return True
+
+    days_since_last_run = (datetime.now() - last_run).days
+
+    if days_since_last_run >= 7:
+        print(f"Last analysis was {days_since_last_run} days ago - running analysis")
+        return True
+    else:
+        print(f"Last analysis was {days_since_last_run} days ago (< 7 days) - skipping")
+        print(f"Use --force to run anyway")
+        return False
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Analyze jib conversation logs")
+    parser = argparse.ArgumentParser(
+        description="Analyze jib conversation logs",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                    # Run if last analysis was >7 days ago
+  %(prog)s --force            # Force run regardless of schedule
+  %(prog)s --days 30          # Analyze last 30 days of logs
+        """
+    )
     parser.add_argument('--days', type=int, default=7, help='Number of days to analyze (default: 7)')
     parser.add_argument('--output', type=Path, help='Output directory (default: ~/sharing/analysis)')
     parser.add_argument('--print', action='store_true', help='Print report to stdout')
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Force analysis even if run recently'
+    )
 
     args = parser.parse_args()
+
+    # Determine analysis directory
+    analysis_dir = args.output if args.output else ANALYSIS_DIR
+
+    # Check if we should run based on weekly schedule
+    if not should_run_analysis(analysis_dir, force=args.force):
+        sys.exit(0)
 
     analyzer = ConversationAnalyzer(days=args.days)
 

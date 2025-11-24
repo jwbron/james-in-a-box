@@ -287,40 +287,45 @@ class ConfluenceSync:
             return None
 
     def get_page_comments(self, page_id: str) -> List[Dict]:
-        """Get all comments for a page using v2 API."""
-        comments = []
-        base_url = f"{self.config.BASE_URL}/api/v2/pages/{page_id}/footer-comments"
-        # Must include body-format=storage to get comment body content (v2 API)
-        url = f"{base_url}?body-format=storage"
+        """Get all comments (footer + inline) for a page using v2 API."""
+        all_comments = []
 
-        try:
-            # Fetch all comments with pagination
-            while url:
-                response = self.session.get(url, timeout=30)
+        # Fetch both footer comments and inline comments
+        comment_endpoints = [
+            ('footer', f"{self.config.BASE_URL}/api/v2/pages/{page_id}/footer-comments?body-format=storage"),
+            ('inline', f"{self.config.BASE_URL}/api/v2/pages/{page_id}/inline-comments?body-format=storage"),
+        ]
 
-                # Check for rate limiting
-                if response.status_code == 429:
-                    retry_after = response.headers.get('Retry-After', '60')
-                    print(f"      Rate limited! Waiting {retry_after} seconds...")
-                    import time
-                    time.sleep(int(retry_after))
+        for comment_type, url in comment_endpoints:
+            try:
+                # Fetch all comments with pagination
+                while url:
                     response = self.session.get(url, timeout=30)
 
-                response.raise_for_status()
-                data = response.json()
+                    # Check for rate limiting
+                    if response.status_code == 429:
+                        retry_after = response.headers.get('Retry-After', '60')
+                        print(f"      Rate limited! Waiting {retry_after} seconds...")
+                        import time
+                        time.sleep(int(retry_after))
+                        response = self.session.get(url, timeout=30)
 
-                # Add comments from this page
-                comments.extend(data.get('results', []))
+                    response.raise_for_status()
+                    data = response.json()
 
-                # Check for next page
-                next_link = data.get('_links', {}).get('next')
-                url = f"{self.config.BASE_URL}{next_link}" if next_link else None
+                    # Add comments from this page, tagging with type
+                    for comment in data.get('results', []):
+                        comment['_comment_type'] = comment_type
+                        all_comments.append(comment)
 
-            return comments
+                    # Check for next page
+                    next_link = data.get('_links', {}).get('next')
+                    url = f"{self.config.BASE_URL}{next_link}" if next_link else None
 
-        except requests.exceptions.RequestException as e:
-            print(f"      Failed to get comments for page {page_id}: {e}")
-            return []
+            except requests.exceptions.RequestException as e:
+                print(f"      Failed to get {comment_type} comments for page {page_id}: {e}")
+
+        return all_comments
 
     def format_comments(self, comments: List[Dict]) -> str:
         """Format comments for inclusion in page output."""
@@ -333,6 +338,7 @@ class ConfluenceSync:
             # Get comment author
             author_name = comment.get('authorId', 'Unknown')
             version_info = comment.get('version', {})
+            comment_type = comment.get('_comment_type', 'footer')
 
             # Get created date
             created_at = version_info.get('createdAt', 'Unknown date')
@@ -345,7 +351,8 @@ class ConfluenceSync:
             if self.config.OUTPUT_FORMAT == 'markdown' and body:
                 body = self.convert_html_to_markdown(body)
 
-            formatted += f"### Comment {i} - {author_name} ({created_at})\n\n"
+            type_label = f"[{comment_type}] " if comment_type == 'inline' else ""
+            formatted += f"### Comment {i} {type_label}- {author_name} ({created_at})\n\n"
             formatted += f"{body}\n\n"
 
         return formatted
