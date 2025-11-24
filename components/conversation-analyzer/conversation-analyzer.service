@@ -1,6 +1,6 @@
 [Unit]
 Description=JIB Conversation Analyzer
-Documentation=https://github.com/jwiesebron/james-in-a-box
+Documentation=https://github.com/jwbron/james-in-a-box
 After=network-online.target
 Wants=network-online.target
 OnFailure=service-failure-notify@%n.service
