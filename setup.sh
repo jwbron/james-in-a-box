@@ -214,6 +214,46 @@ else
     fi
 fi
 
+# Check and install Beads (bd) - persistent task memory system
+print_info "Checking for Beads (bd)..."
+if command -v bd &> /dev/null; then
+    print_success "beads (bd) found"
+else
+    print_warning "beads (bd) not found"
+
+    # Check if Go is installed (required for beads)
+    if ! command -v go &> /dev/null; then
+        print_error "Go is required to install beads"
+        echo "Install Go first: https://go.dev/doc/install"
+        exit 1
+    fi
+
+    echo "Install from: https://github.com/steveyegge/beads"
+    read -p "Install now? (y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Installing beads..."
+        # Use the same installation command as Dockerfile
+        if curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash; then
+            # Add Go bin to PATH for current session if not already there
+            export PATH="$HOME/go/bin:$PATH"
+            if command -v bd &> /dev/null; then
+                print_success "beads installed successfully"
+            else
+                print_error "beads installation failed - bd command not found"
+                echo "You may need to add ~/go/bin to your PATH"
+                exit 1
+            fi
+        else
+            print_error "beads installation failed"
+            exit 1
+        fi
+    else
+        print_error "beads (bd) required for persistent task memory"
+        exit 1
+    fi
+fi
+
 # Check if Docker is running
 if ! docker ps &> /dev/null; then
     print_error "Docker is not running. Please start Docker first."
@@ -382,6 +422,38 @@ else
     print_info "Creating shared directory: $shared_dir"
     mkdir -p "$shared_dir"/{notifications,incoming,responses,context}
     print_success "Shared directory created"
+fi
+
+# Initialize Beads persistent memory system
+print_info "Setting up Beads persistent memory system..."
+
+beads_dir="$shared_dir/beads"
+if [ -f "$beads_dir/issues.jsonl" ]; then
+    print_success "Beads already initialized: $beads_dir"
+else
+    print_info "Initializing Beads repository..."
+    mkdir -p "$beads_dir"
+    cd "$beads_dir"
+
+    # Initialize git repo (required by beads)
+    if git init > /dev/null 2>&1; then
+        # Initialize beads
+        if bd init > /dev/null 2>&1; then
+            # Build SQLite cache for fast queries
+            bd build-cache > /dev/null 2>&1 || true
+            print_success "Beads initialized: $beads_dir"
+            echo "   Usage in container: bd add 'task description' --tags feature"
+        else
+            print_error "Failed to initialize beads"
+            exit 1
+        fi
+    else
+        print_error "Failed to initialize git repository for beads"
+        exit 1
+    fi
+
+    # Return to script directory
+    cd "$SCRIPT_DIR"
 fi
 
 # Container setup info

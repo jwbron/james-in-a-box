@@ -1,12 +1,12 @@
-# James-In-A-Box (JIB)
+# james-in-a-box (jib)
 
 **Autonomous software engineering agent in a sandboxed Docker container**
 
-JIB enables engineers to delegate development tasks to Claude via Slack, with the agent working in a secure, isolated environment. The agent can read code, implement features, run tests, and prepare pull requests—all while you're mobile.
+jib enables engineers to delegate development tasks to Claude via Slack, with the agent working in a secure, isolated environment. The agent can read code, implement features, run tests, and prepare pull requests—all while you're mobile.
 
-## What is JIB?
+## What is jib?
 
-JIB is an **LLM-powered autonomous software engineer** that runs in a Docker sandbox with:
+jib is an **LLM-powered autonomous software engineer** that runs in a Docker sandbox with:
 
 - **Slack-based control**: Send tasks, receive notifications, review work from your phone
 - **Secure sandbox**: No credentials, network isolation, human-in-the-loop for all PRs
@@ -264,7 +264,7 @@ Your response is automatically linked by timestamp.
 
 ### Remote Control Commands
 
-Control JIB remotely from Slack:
+Control jib remotely from Slack:
 ```
 /jib restart                     - Restart container
 /jib rebuild                     - Rebuild and restart
@@ -291,7 +291,7 @@ Commands execute asynchronously and send results as notifications.
 /pr create frontend --ready      - Create non-draft PR
 ```
 
-PR descriptions are generated using Claude in the JIB container following Khan Academy standards. Notifications include repository, source branch, target branch, and PR URL.
+PR descriptions are generated using Claude in the jib container following Khan Academy standards. Notifications include repository, source branch, target branch, and PR URL.
 
 **PR Review Examples:**
 ```

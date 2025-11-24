@@ -42,9 +42,7 @@ RUN chmod +x /tmp/docker-setup.py && \
 # Add Go bin to PATH for beads installation
 ENV PATH="/root/go/bin:${PATH}"
 RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
-    which bd || (echo "ERROR: beads (bd) installation failed" && exit 1) && \
-    # Copy bd to /usr/local/bin so non-root users can access it
-    cp $(which bd) /usr/local/bin/bd && chmod 755 /usr/local/bin/bd
+    which bd || (echo "ERROR: beads (bd) installation failed" && exit 1)
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -242,31 +240,44 @@ if [ -d "${USER_HOME}/sharing" ]; then
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/tracking"
 fi
 
-# Initialize Beads persistent memory system
-if [ -d "${USER_HOME}/sharing" ]; then
-    mkdir -p "${USER_HOME}/sharing/beads"
-    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/beads"
-
-    # Initialize Beads repo if not already initialized
-    if [ ! -f "${USER_HOME}/sharing/beads/issues.jsonl" ]; then
-        echo "Initializing Beads memory system..."
-        cd "${USER_HOME}/sharing/beads"
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" git init
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd init
-        echo "✓ Beads initialized (persistent memory for tasks and context)"
-    else
-        echo "✓ Beads memory system available"
-    fi
-
-    # Create convenience symlink: ~/beads → ~/sharing/beads
-    ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
-
-    # Build SQLite cache for fast queries
-    cd "${USER_HOME}/sharing/beads"
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd build-cache > /dev/null 2>&1 || true
-    echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
-    echo "  Usage: bd add 'task description' --tags feature,important"
+# Validate Beads persistent memory system (initialized by setup.sh)
+if [ ! -d "${USER_HOME}/sharing/beads" ]; then
+    echo "❌ ERROR: Beads directory not found"
+    echo ""
+    echo "Beads must be initialized before starting the container."
+    echo "Please run setup.sh on the host:"
+    echo ""
+    echo "  cd ~/khan/james-in-a-box"
+    echo "  ./setup.sh"
+    echo ""
+    exit 1
 fi
+
+if [ ! -f "${USER_HOME}/sharing/beads/issues.jsonl" ]; then
+    echo "❌ ERROR: Beads not initialized"
+    echo ""
+    echo "Beads repository exists but is not properly initialized."
+    echo "Please run setup.sh on the host:"
+    echo ""
+    echo "  cd ~/khan/james-in-a-box"
+    echo "  ./setup.sh"
+    echo ""
+    exit 1
+fi
+
+# Beads is properly initialized - set it up
+chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/beads"
+
+# Create convenience symlink: ~/beads → ~/sharing/beads
+ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
+
+# Rebuild cache in case it's stale
+cd "${USER_HOME}/sharing/beads"
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd build-cache > /dev/null 2>&1 || true
+
+echo "✓ Beads memory system ready"
+echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
+echo "  Usage: bd add 'task description' --tags feature,important"
 
 # NOTE: Background watchers have been removed in favor of exec-based pattern
 # Analysis scripts are now triggered by host-side systemd services via `jib --exec`

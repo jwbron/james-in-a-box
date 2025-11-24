@@ -135,6 +135,12 @@ make test
 - Add to runbooks if operational change
 
 ### 7. Commit Changes & Prepare PR Artifacts
+
+**CRITICAL**: After completing ANY changeset, you MUST:
+1. Commit all changes to git
+2. Tell the user what branch/worktree you're working in
+3. Provide clear instructions on how to access the changes
+
 ```bash
 # Commit your changes with clear messages
 cd ~/khan/<repo>
@@ -149,6 +155,10 @@ git commit -m "Brief description of changes
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
 
+# Check and report your branch/worktree
+git branch --show-current
+# Tell user: "Changes committed to branch: <branch-name>"
+
 # Generate PR description
 @create-pr audit
 # Creates PR description file
@@ -160,6 +170,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Body: Explain what and why (not how)
 - Reference JIRA tickets, ADRs, related issues
 - Include co-author attribution
+
+**After committing, ALWAYS tell the user:**
+- What branch you committed to
+- Where to find the changes (e.g., "Changes committed to branch: jib-temp-xxx")
+- How to merge them (e.g., "Run: git merge <branch-name>")
 
 ### 8. Complete Beads Task
 ```bash
