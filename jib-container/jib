@@ -688,7 +688,9 @@ def setup() -> bool:
 
     # Mount ~/.claude.json file (user state with userID)
     claude_json_file = Config.CONFIG_DIR / "claude.json"
-    claude_json_file.touch(exist_ok=True)  # Create if doesn't exist
+    if not claude_json_file.exists():
+        # Initialize with empty JSON object (Claude Code will populate on first run)
+        claude_json_file.write_text("{}\n")
     claude_json_container_path = f"/home/{os.environ['USER']}/.claude.json"
     mounts.append(f"{claude_json_file}:{claude_json_container_path}:rw,z")
 
@@ -893,6 +895,13 @@ def run_claude() -> bool:
         if not setup():
             return False
 
+    # Ensure shared authentication files exist
+    Config.CLAUDE_SHARED_DIR.mkdir(parents=True, exist_ok=True)
+    claude_json_file = Config.CONFIG_DIR / "claude.json"
+    if not claude_json_file.exists():
+        # Initialize with empty JSON object (Claude Code will populate on first run)
+        claude_json_file.write_text("{}\n")
+
     # Check Claude Code authentication in shared directory
     print()
     print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
@@ -903,6 +912,21 @@ def run_claude() -> bool:
         try:
             with open(shared_creds, 'r') as f:
                 creds = json.load(f)
+
+            scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
+            required_scopes = {
+                "user:inference",
+                "user:profile",
+                "user:sessions:claude_code"
+            }
+
+            if required_scopes.issubset(set(scopes)):
+                success("Claude Code authenticated with full scopes (shared)")
+                print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
+            else:
+                warn("Claude Code credentials found but missing required scopes")
+                warn("  Container will work with limited functionality (--print mode only)")
+                print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
         except Exception as e:
             warn(f"Could not read shared credentials: {e}")
             warn("Container will prompt for authentication on first run")
