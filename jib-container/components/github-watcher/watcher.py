@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
+from subprocess import TimeoutExpired
 
 
 class GitHubWatcher:
@@ -138,6 +139,11 @@ class GitHubWatcher:
         # Analyze the failure
         analysis = self.analyze_failure(pr_context, failed_checks)
 
+        # If auto-fix is possible, implement it immediately
+        fix_result = None
+        if analysis.get('can_auto_fix'):
+            fix_result = self.implement_auto_fix(pr_num, repo_name, pr_context, analysis, beads_id)
+
         # Create notification
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         notif_file = self.notifications_dir / f"{timestamp}-pr-check-failed-{pr_num}.md"
@@ -193,14 +199,27 @@ class GitHubWatcher:
                 f.write(f"{i}. {action}\n")
             f.write("\n")
 
-            if analysis.get('can_auto_fix'):
-                f.write("## 🤖 Automatic Fix Available\n\n")
-                f.write("JIB can automatically implement a fix for this issue.\n\n")
-                f.write(f"**Fix**: {analysis['auto_fix_description']}\n\n")
+            if fix_result:
+                f.write("## ✅ Automatic Fix Implemented\n\n")
+                f.write(f"**Branch**: `{fix_result['branch']}`\n")
+                f.write(f"**Changes**: {fix_result['changes']}\n\n")
+                if fix_result.get('commit'):
+                    f.write(f"**Commit**: {fix_result['commit']}\n\n")
                 f.write("**Next Steps**:\n")
-                f.write("- Reply 'implement fix' to create a branch with the fix\n")
+                f.write(f"1. Review the changes in branch `{fix_result['branch']}`\n")
+                f.write("2. Test locally if needed\n")
+                f.write("3. Push the branch and update the PR or create a new one\n")
+                f.write("\n")
+                if fix_result.get('notes'):
+                    f.write(f"**Notes**: {fix_result['notes']}\n\n")
+            elif analysis.get('can_auto_fix'):
+                f.write("## ⚠️ Auto-Fix Failed\n\n")
+                f.write(f"An automatic fix was attempted but failed.\n\n")
+                f.write(f"**Intended Fix**: {analysis['auto_fix_description']}\n\n")
+                f.write("**Next Steps**:\n")
+                f.write("- Review the failure manually\n")
                 f.write("- Reply 'analyze further' for more detailed investigation\n")
-                f.write("- Reply 'skip' to handle manually\n")
+                f.write("\n")
             else:
                 f.write("## 📋 Next Steps\n\n")
                 f.write("This failure requires manual investigation.\n\n")
@@ -214,6 +233,175 @@ class GitHubWatcher:
             f.write(f"📂 PR #{pr_num} in {repo}\n")
 
         print(f"  ✓ Created notification: {notif_file.name}")
+
+    def implement_auto_fix(self, pr_num: int, repo_name: str, pr_context: Dict, analysis: Dict, beads_id: Optional[str]) -> Optional[Dict]:
+        """
+        Implement automatic fix for obvious issues (e.g., linting)
+
+        Returns dict with fix result:
+        {
+            'branch': 'fix/pr-123-linting',
+            'changes': 'Description of changes',
+            'commit': 'commit hash',
+            'notes': 'Additional notes'
+        }
+        """
+        try:
+            # Determine repository path
+            repo_path = Path.home() / "khan" / repo_name
+            if not repo_path.exists():
+                print(f"  ⚠️ Repository not found: {repo_path}")
+                return None
+
+            # Get current branch from PR context
+            pr_branch = pr_context.get('branch', '').split(' → ')[0].strip()
+            if not pr_branch:
+                print(f"  ⚠️ Could not determine PR branch")
+                return None
+
+            # Create fix branch name
+            fix_branch = f"fix/pr-{pr_num}-autofix-{datetime.now().strftime('%Y%m%d')}"
+
+            print(f"  🔧 Implementing auto-fix in {repo_name}")
+            print(f"     Base branch: {pr_branch}")
+            print(f"     Fix branch: {fix_branch}")
+
+            # Change to repo directory
+            original_dir = Path.cwd()
+
+            try:
+                import os
+                os.chdir(repo_path)
+
+                # Ensure we're on the PR branch
+                result = subprocess.run(
+                    ['git', 'checkout', pr_branch],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode != 0:
+                    print(f"  ⚠️ Could not checkout branch {pr_branch}: {result.stderr}")
+                    return None
+
+                # Pull latest changes
+                subprocess.run(['git', 'pull'], capture_output=True)
+
+                # Create new fix branch
+                result = subprocess.run(
+                    ['git', 'checkout', '-b', fix_branch],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode != 0:
+                    print(f"  ⚠️ Could not create branch {fix_branch}: {result.stderr}")
+                    return None
+
+                # Determine and run appropriate fix command based on analysis
+                fix_commands = []
+                changes_description = []
+
+                if 'eslint' in analysis['auto_fix_description'].lower():
+                    fix_commands.append(['npx', 'eslint', '.', '--fix'])
+                    changes_description.append("Ran eslint --fix")
+                elif 'pylint' in analysis['auto_fix_description'].lower() or 'black' in analysis['auto_fix_description'].lower():
+                    # Run black for Python formatting
+                    fix_commands.append(['black', '.'])
+                    changes_description.append("Ran black formatter")
+                else:
+                    # Generic linting fix - try both
+                    fix_commands.append(['npx', 'eslint', '.', '--fix'])
+                    fix_commands.append(['black', '.'])
+                    changes_description.append("Ran available linters")
+
+                # Run fix commands
+                fix_output = []
+                for cmd in fix_commands:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                    if result.returncode == 0 or result.stdout:
+                        fix_output.append(f"{' '.join(cmd)}: {result.stdout[:200]}")
+
+                # Check if there are changes
+                result = subprocess.run(
+                    ['git', 'diff', '--name-only'],
+                    capture_output=True,
+                    text=True
+                )
+
+                changed_files = result.stdout.strip().split('\n')
+                changed_files = [f for f in changed_files if f]
+
+                if not changed_files:
+                    print(f"  ℹ️ No changes after running fix commands")
+                    # Clean up branch
+                    subprocess.run(['git', 'checkout', pr_branch], capture_output=True)
+                    subprocess.run(['git', 'branch', '-D', fix_branch], capture_output=True)
+                    return None
+
+                # Stage all changes
+                subprocess.run(['git', 'add', '-A'], capture_output=True)
+
+                # Commit changes
+                commit_message = f"Auto-fix linting issues for PR #{pr_num}\n\n"
+                commit_message += f"Automatically fixed linting failures detected in PR checks.\n\n"
+                commit_message += "Changes:\n"
+                for desc in changes_description:
+                    commit_message += f"- {desc}\n"
+                commit_message += f"\nFixed {len(changed_files)} file(s)\n"
+                commit_message += "\n🤖 Generated with Claude Code (https://claude.com/claude-code)\n"
+                commit_message += "Co-Authored-By: Claude <noreply@anthropic.com>"
+
+                result = subprocess.run(
+                    ['git', 'commit', '-m', commit_message],
+                    capture_output=True,
+                    text=True
+                )
+
+                if result.returncode != 0:
+                    print(f"  ⚠️ Commit failed: {result.stderr}")
+                    return None
+
+                # Get commit hash
+                result = subprocess.run(
+                    ['git', 'rev-parse', '--short', 'HEAD'],
+                    capture_output=True,
+                    text=True
+                )
+                commit_hash = result.stdout.strip()
+
+                print(f"  ✅ Auto-fix committed: {commit_hash}")
+                print(f"     Files changed: {len(changed_files)}")
+
+                # Update Beads task if available
+                if beads_id:
+                    notes = f"Auto-fix implemented in branch {fix_branch}\n"
+                    notes += f"Commit: {commit_hash}\n"
+                    notes += f"Files changed: {len(changed_files)}"
+
+                    subprocess.run(
+                        ['beads', 'update', beads_id, '--notes', notes],
+                        cwd=self.beads_dir,
+                        capture_output=True
+                    )
+
+                return {
+                    'branch': fix_branch,
+                    'changes': f"Fixed {len(changed_files)} file(s): " + ", ".join(changed_files[:5]) + ("..." if len(changed_files) > 5 else ""),
+                    'commit': commit_hash,
+                    'notes': f"Auto-fix applied using: {', '.join(changes_description)}"
+                }
+
+            finally:
+                # Always return to original directory
+                os.chdir(original_dir)
+
+        except subprocess.TimeoutExpired:
+            print(f"  ⚠️ Fix command timed out")
+            return None
+        except Exception as e:
+            print(f"  ⚠️ Auto-fix failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def create_beads_task(self, pr_num: int, repo_name: str, pr_context: Dict, failed_checks: List[Dict]) -> Optional[str]:
         """Create Beads task for the PR failure"""

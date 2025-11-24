@@ -52,40 +52,53 @@ User replies via Slack or JIB acts automatically
 
 ## Automatic Fix Examples
 
-### Linting Failures
+### Linting Failures (IMPLEMENTED ✅)
 ```
 Detected: ESLint failures in PR #123
 Analysis: Code style violations
 Auto-fix: YES
-Action:
-  1. Create branch: fix/pr-123-linting
-  2. Run: eslint --fix
-  3. Commit changes
-  4. Notify user with branch name
+
+Automatic Action:
+  1. Checkout PR branch
+  2. Create fix branch: fix/pr-123-autofix-YYYYMMDD
+  3. Run: eslint --fix (or black for Python)
+  4. Commit changes with descriptive message
+  5. Update Beads task with fix details
+  6. Notify user with branch name and commit hash
+
+Result:
+  - Branch: fix/pr-123-autofix-20251124
+  - Commit: a3f8e2d
+  - Files changed: 5 files fixed
+  - Status: Ready for review and push
 ```
 
-### Missing Import
+### Missing Import (NOT AUTO-FIXED)
 ```
 Detected: ImportError in tests
 Analysis: Missing dependency in requirements.txt
-Auto-fix: MAYBE (if dependency is obvious)
+Auto-fix: NO (requires human judgment)
+
 Action:
-  1. Identify missing package from error
-  2. Add to requirements.txt
-  3. Create branch and commit
-  4. Notify user for review
+  1. Create Beads task
+  2. Analyze error to identify missing package
+  3. Notify user with suggested dependency
+  4. Wait for human to review and add dependency
 ```
 
-### Complex Test Failure
+### Complex Test Failure (NOT AUTO-FIXED)
 ```
 Detected: Test assertion failures
 Analysis: Logic error in new code
 Auto-fix: NO
+
 Action:
   1. Create Beads task
-  2. Provide detailed log analysis
-  3. Suggest debugging steps
-  4. Wait for human investigation
+  2. Extract relevant log excerpts
+  3. Provide root cause analysis
+  4. Suggest debugging steps
+  5. Send notification with analysis
+  6. Wait for human investigation
 ```
 
 ## Monitored Check Types
