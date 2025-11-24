@@ -100,8 +100,10 @@ git commit -m "Add OAuth2 authentication
 - Fixed timeout handling
 - See: JIRA-1234"
 
-# 5. Create PR for human review
+# 5. Create PR for human review (james-in-a-box repo only)
 create-pr-helper.py --auto --reviewer jwiesebron
+
+# For other repos: Notify user with branch name to create PR from host
 ```
 
 ### `~/context-sync/` - Context Sources
@@ -238,12 +240,12 @@ git push
 # This is intentional - no SSH keys in sandbox
 ```
 
-**Solution**: Use the PR helper to push and create PRs
+**Solution**: Use the PR helper to push and create PRs (james-in-a-box repo only)
 
 ### Workflow
 1. You: Make changes, commit locally
-2. You: Create PR with `create-pr-helper.py --auto --reviewer jwiesebron`
-3. Human: Reviews PR on GitHub
+2. You: Create PR with `create-pr-helper.py --auto --reviewer jwiesebron` (james-in-a-box only) OR notify user with branch name (other repos)
+3. Human: Reviews PR on GitHub (or creates PR from host for other repos)
 4. Human: Approves and merges PR
 
 **IMPORTANT**: You must NEVER merge PRs yourself. Even if the PR helper or other tools give you merge capability, merging is exclusively the human's responsibility. This ensures proper code review and accountability.
@@ -352,7 +354,7 @@ service redis-server status
 
 ### After Completing Work
 - Run full test suite
-- Create PR with `create-pr-helper.py --auto --reviewer jwiesebron`
+- Create PR with `create-pr-helper.py --auto --reviewer jwiesebron` (james-in-a-box only) OR notify user with branch name (other repos)
 - Save context with `@save-context <project>`
 - Summarize what was done for human
 
