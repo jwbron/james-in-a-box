@@ -7,6 +7,7 @@ Analyzes the james-in-a-box codebase for potential improvements:
 - High-level architectural analysis
 - Web search for new technologies and improvements
 - Generates notification with findings
+- Can automatically implement top 10 high-priority fixes and open a PR
 
 Uses 'claude code --print' for analysis (reuses existing authentication)
 
@@ -14,6 +15,7 @@ Runs on host (not in sandbox) via systemd timer:
 - Weekly (checks if last run was >7 days ago)
 - 5 minutes after system startup (if not run in last week)
 - Can force run with --force flag
+- Can implement fixes with --implement flag
 """
 
 import os
@@ -938,10 +940,366 @@ Return as JSON:
 
         return summary_file
 
-    def run_analysis(self, enable_web_search: bool = True):
+    def select_top_issues(self, file_issues: List[Dict], max_issues: int = 10) -> List[Dict]:
+        """Select top N high-priority issues that can be automatically fixed.
+
+        Returns a list of issues with file path and fix details, prioritized by:
+        1. HIGH priority first
+        2. Categories that are easily auto-fixable (error_handling, modern_practices, maintainability)
+        3. Smaller files (easier to fix without breaking things)
+        """
+        # Flatten all issues with their file context
+        all_issues = []
+        for file_item in file_issues:
+            file_path = file_item['file']
+            for issue in file_item['analysis'].get('issues', []):
+                all_issues.append({
+                    'file': file_path,
+                    'priority': issue.get('priority', 'LOW'),
+                    'category': issue.get('category', 'unknown'),
+                    'description': issue.get('description', ''),
+                    'suggestion': issue.get('suggestion', '')
+                })
+
+        # Define fixability scores by category (higher = more automatable)
+        fixability = {
+            'error_handling': 5,      # Usually straightforward
+            'modern_practices': 4,    # Pattern replacements
+            'maintainability': 3,     # Code cleanup
+            'documentation': 2,       # Adding docs
+            'performance': 2,         # May need careful review
+            'security': 1,            # Needs careful human review
+        }
+
+        # Score and sort issues
+        def score_issue(issue):
+            priority_score = 10 if issue['priority'] == 'HIGH' else 5 if issue['priority'] == 'MEDIUM' else 1
+            category_score = fixability.get(issue['category'], 1)
+            return priority_score * category_score
+
+        all_issues.sort(key=score_issue, reverse=True)
+
+        # Return top N issues
+        return all_issues[:max_issues]
+
+    def implement_fix(self, issue: Dict) -> bool:
+        """Implement a single fix using Claude Code.
+
+        Returns True if fix was successfully applied.
+        """
+        file_path = self.codebase_path / issue['file']
+
+        if not file_path.exists():
+            self.logger.warning(f"File not found: {file_path}")
+            return False
+
+        try:
+            # Read current file content
+            content = file_path.read_text(encoding='utf-8')
+
+            # Build implementation prompt
+            prompt = f"""Fix the following issue in this file. Make ONLY the minimal changes needed.
+
+FILE: {issue['file']}
+ISSUE: {issue['description']}
+CATEGORY: {issue['category']}
+SUGGESTION: {issue['suggestion']}
+
+CURRENT CONTENT:
+```
+{content}
+```
+
+INSTRUCTIONS:
+1. Apply the fix described above
+2. Make minimal changes - don't refactor unrelated code
+3. Preserve the existing code style
+4. Return ONLY the complete fixed file content, nothing else
+5. Do NOT include any explanation or markdown - just the raw file content
+
+OUTPUT THE FIXED FILE CONTENT:"""
+
+            # Call Claude to generate the fix
+            result = subprocess.run(
+                ['claude', 'code', '--print'],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+
+            if result.returncode != 0:
+                self.logger.error(f"Claude returned error for {issue['file']}: {result.stderr}")
+                return False
+
+            fixed_content = result.stdout.strip()
+
+            # Basic validation - make sure we got something reasonable
+            if len(fixed_content) < len(content) * 0.5:
+                self.logger.warning(f"Fixed content too short for {issue['file']}, skipping")
+                return False
+
+            if len(fixed_content) > len(content) * 2:
+                self.logger.warning(f"Fixed content too long for {issue['file']}, skipping")
+                return False
+
+            # Remove any markdown code fences if present
+            if fixed_content.startswith('```'):
+                lines = fixed_content.split('\n')
+                # Remove first line (```python or similar)
+                lines = lines[1:]
+                # Remove last line if it's ```
+                if lines and lines[-1].strip() == '```':
+                    lines = lines[:-1]
+                fixed_content = '\n'.join(lines)
+
+            # Write the fixed content
+            file_path.write_text(fixed_content, encoding='utf-8')
+            self.logger.info(f"✓ Fixed: {issue['file']} ({issue['category']})")
+
+            return True
+
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Timeout implementing fix for {issue['file']}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error implementing fix for {issue['file']}: {e}")
+            return False
+
+    def commit_and_create_pr(self, implemented_issues: List[Dict]) -> Optional[str]:
+        """Commit changes and create a PR.
+
+        Returns the PR URL if successful, None otherwise.
+        """
+        if not implemented_issues:
+            self.logger.warning("No issues were implemented, skipping PR creation")
+            return None
+
+        try:
+            # Check for changes
+            result = subprocess.run(
+                ['git', 'status', '--porcelain'],
+                cwd=self.codebase_path,
+                capture_output=True,
+                text=True
+            )
+
+            if not result.stdout.strip():
+                self.logger.warning("No changes to commit")
+                return None
+
+            # Create a descriptive branch name
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            branch_name = f"auto-fix/codebase-improvements-{timestamp}"
+
+            # Create and checkout new branch
+            subprocess.run(
+                ['git', 'checkout', '-b', branch_name],
+                cwd=self.codebase_path,
+                check=True,
+                capture_output=True
+            )
+
+            # Stage all changes
+            subprocess.run(
+                ['git', 'add', '-A'],
+                cwd=self.codebase_path,
+                check=True,
+                capture_output=True
+            )
+
+            # Build commit message
+            categories = set(issue['category'] for issue in implemented_issues)
+            files_changed = set(issue['file'] for issue in implemented_issues)
+
+            commit_body = "Automated fixes for the following issues:\n\n"
+            for issue in implemented_issues:
+                commit_body += f"- [{issue['priority']}] {issue['file']}: {issue['description'][:60]}...\n"
+
+            commit_msg = f"""Auto-fix: {len(implemented_issues)} codebase improvements
+
+Categories: {', '.join(categories)}
+Files changed: {len(files_changed)}
+
+{commit_body}
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"""
+
+            # Commit
+            subprocess.run(
+                ['git', 'commit', '-m', commit_msg],
+                cwd=self.codebase_path,
+                check=True,
+                capture_output=True
+            )
+
+            self.logger.info(f"Committed changes to branch: {branch_name}")
+
+            # Push branch
+            result = subprocess.run(
+                ['git', 'push', '-u', 'origin', branch_name],
+                cwd=self.codebase_path,
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode != 0:
+                self.logger.error(f"Failed to push branch: {result.stderr}")
+                return None
+
+            self.logger.info("Pushed branch to origin")
+
+            # Create PR
+            pr_body = f"""## Summary
+
+Automated codebase improvements generated by the codebase-analyzer.
+
+**{len(implemented_issues)} fixes implemented** across {len(files_changed)} files.
+
+### Changes by Category
+
+"""
+            for category in sorted(categories):
+                cat_issues = [i for i in implemented_issues if i['category'] == category]
+                pr_body += f"**{category.title()}** ({len(cat_issues)} fixes):\n"
+                for issue in cat_issues:
+                    pr_body += f"- `{issue['file']}`: {issue['description'][:80]}\n"
+                pr_body += "\n"
+
+            pr_body += """## Test plan
+
+- [ ] Review each change for correctness
+- [ ] Run tests to verify no regressions
+- [ ] Verify Python syntax with `python3 -m py_compile`
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+"""
+
+            result = subprocess.run(
+                ['gh', 'pr', 'create',
+                 '--base', 'main',
+                 '--head', branch_name,
+                 '--title', f'Auto-fix: {len(implemented_issues)} codebase improvements',
+                 '--body', pr_body],
+                cwd=self.codebase_path,
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode != 0:
+                self.logger.error(f"Failed to create PR: {result.stderr}")
+                return None
+
+            pr_url = result.stdout.strip()
+            self.logger.info(f"✓ Created PR: {pr_url}")
+
+            return pr_url
+
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Git/GitHub error: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating PR: {e}")
+            return None
+
+    def run_implementation(self, file_issues: List[Dict], max_fixes: int = 10) -> Optional[str]:
+        """Run the implementation workflow: select issues, implement fixes, create PR.
+
+        Returns the PR URL if successful.
+        """
+        self.logger.info("=" * 60)
+        self.logger.info("IMPLEMENTATION MODE")
+        self.logger.info("=" * 60)
+
+        # Select top issues to fix
+        self.logger.info(f"Selecting top {max_fixes} issues to implement...")
+        top_issues = self.select_top_issues(file_issues, max_fixes)
+
+        if not top_issues:
+            self.logger.warning("No issues selected for implementation")
+            return None
+
+        self.logger.info(f"Selected {len(top_issues)} issues:")
+        for i, issue in enumerate(top_issues, 1):
+            self.logger.info(f"  {i}. [{issue['priority']}] {issue['file']}: {issue['category']}")
+
+        # Implement each fix
+        self.logger.info("\nImplementing fixes...")
+        implemented = []
+        failed = []
+
+        for issue in top_issues:
+            self.logger.info(f"\nFixing: {issue['file']} ({issue['category']})")
+            if self.implement_fix(issue):
+                implemented.append(issue)
+            else:
+                failed.append(issue)
+
+        self.logger.info(f"\n✓ Implemented: {len(implemented)}")
+        self.logger.info(f"✗ Failed: {len(failed)}")
+
+        if not implemented:
+            self.logger.error("No fixes were successfully implemented")
+            return None
+
+        # Commit and create PR
+        self.logger.info("\nCreating PR...")
+        pr_url = self.commit_and_create_pr(implemented)
+
+        if pr_url:
+            # Create notification about the PR
+            self._create_implementation_notification(implemented, failed, pr_url)
+
+        return pr_url
+
+    def _create_implementation_notification(self, implemented: List[Dict],
+                                            failed: List[Dict], pr_url: str):
+        """Create a notification about the automated implementation."""
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        notif_file = self.notification_dir / f"{timestamp}-auto-implementation.md"
+
+        content = f"""# 🔧 Automated Codebase Fixes Applied
+
+**PR Created**: {pr_url}
+
+## Summary
+
+- **Fixes Implemented**: {len(implemented)}
+- **Fixes Failed**: {len(failed)}
+
+## Implemented Changes
+
+"""
+        for issue in implemented:
+            content += f"- ✓ `{issue['file']}` [{issue['priority']}]: {issue['description'][:60]}...\n"
+
+        if failed:
+            content += "\n## Failed Fixes (require manual review)\n\n"
+            for issue in failed:
+                content += f"- ✗ `{issue['file']}` [{issue['priority']}]: {issue['description'][:60]}...\n"
+
+        content += f"""
+## Next Steps
+
+1. Review the PR: {pr_url}
+2. Run tests to verify changes
+3. Merge if everything looks good
+
+---
+📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🤖 Automated by codebase-analyzer --implement
+"""
+
+        notif_file.write_text(content)
+        self.logger.info(f"Notification created: {notif_file}")
+
+    def run_analysis(self, enable_web_search: bool = True, implement: bool = False, max_fixes: int = 10):
         """Main analysis workflow."""
         self.logger.info("Starting codebase analysis...")
         self.logger.info(f"Analyzing: {self.codebase_path}")
+        if implement:
+            self.logger.info(f"Implementation mode: Will fix up to {max_fixes} issues")
 
         # Get files to analyze
         files = self.get_files_to_analyze()
@@ -959,20 +1317,30 @@ Return as JSON:
 
         self.logger.info(f"Found issues in {len(file_issues)} files")
 
-        # High-level codebase analysis
-        self.logger.info("Generating high-level codebase analysis...")
-        overall_analysis = self.analyze_codebase_overall(files, file_issues)
+        # If implement mode, run implementation and skip reporting
+        if implement and file_issues:
+            pr_url = self.run_implementation(file_issues, max_fixes)
+            self.save_run_metrics()
+            return pr_url is not None
 
-        # Web search for improvements
+        # High-level codebase analysis (skip if implementing)
+        overall_analysis = None
+        if not implement:
+            self.logger.info("Generating high-level codebase analysis...")
+            overall_analysis = self.analyze_codebase_overall(files, file_issues)
+
+        # Web search for improvements (skip if implementing)
         web_findings = []
-        if enable_web_search:
+        if enable_web_search and not implement:
             web_findings = self.search_web_for_improvements()
-        else:
+        elif not implement:
             self.logger.info("Web search disabled")
 
-        # Self-performance analysis
-        self.logger.info("Analyzing self-performance for improvements...")
-        self_analysis = self.analyze_self_performance()
+        # Self-performance analysis (skip if implementing)
+        self_analysis = None
+        if not implement:
+            self.logger.info("Analyzing self-performance for improvements...")
+            self_analysis = self.analyze_self_performance()
 
         # Generate notification if we have findings
         if file_issues or web_findings or overall_analysis:
@@ -1049,6 +1417,8 @@ Examples:
   %(prog)s                    # Run if last analysis was >7 days ago
   %(prog)s --force            # Force run regardless of schedule
   %(prog)s --no-web-search    # Skip web search (faster)
+  %(prog)s --implement        # Analyze AND implement top 10 fixes, open PR
+  %(prog)s --implement --max-fixes 5  # Implement only top 5 fixes
         """
     )
     parser.add_argument(
@@ -1061,8 +1431,23 @@ Examples:
         action='store_true',
         help='Skip web search (faster, code analysis only)'
     )
+    parser.add_argument(
+        '--implement',
+        action='store_true',
+        help='Implement top fixes and create a PR (implies --force)'
+    )
+    parser.add_argument(
+        '--max-fixes',
+        type=int,
+        default=10,
+        help='Maximum number of fixes to implement (default: 10)'
+    )
 
     args = parser.parse_args()
+
+    # --implement implies --force
+    if args.implement:
+        args.force = True
 
     # Configuration
     codebase_path = Path.home() / "khan" / "james-in-a-box"
@@ -1081,7 +1466,14 @@ Examples:
     try:
         analyzer = CodebaseAnalyzer(codebase_path, notification_dir)
         enable_web_search = not args.no_web_search
-        analyzer.run_analysis(enable_web_search=enable_web_search)
+        success = analyzer.run_analysis(
+            enable_web_search=enable_web_search,
+            implement=args.implement,
+            max_fixes=args.max_fixes
+        )
+        if args.implement and not success:
+            print("Implementation failed - no PR created", file=sys.stderr)
+            sys.exit(1)
     except Exception as e:
         print(f"Error running analysis: {e}", file=sys.stderr)
         logging.exception("Analysis failed")
