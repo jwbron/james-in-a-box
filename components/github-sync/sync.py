@@ -91,7 +91,10 @@ class GitHubSync:
         for pr in prs:
             pr_num = pr['number']
             repo = pr['headRepository']['name']
-            repo_with_owner = pr['headRepository']['nameWithOwner']
+            # Extract owner/repo from URL since headRepository.nameWithOwner can be empty
+            # URL format: https://github.com/owner/repo/pull/123
+            url_parts = pr['url'].split('/')
+            repo_with_owner = f"{url_parts[3]}/{url_parts[4]}"
             pr_numbers.append(pr_num)
 
             print(f"  Syncing PR #{pr_num} ({repo}): {pr['title']}")
@@ -110,9 +113,11 @@ class GitHubSync:
                 )
 
                 # Get check status
+                # Note: gh pr checks uses different field names than gh api
+                # Available: bucket, completedAt, description, event, link, name, startedAt, state, workflow
                 checks = self.gh_api(
                     f"pr checks {pr_num} --repo {repo_with_owner} "
-                    f"--json name,status,conclusion,startedAt,completedAt,detailsUrl"
+                    f"--json name,state,startedAt,completedAt,link,description,workflow"
                 )
 
                 # Write PR markdown and diff
@@ -185,7 +190,8 @@ class GitHubSync:
             check_data = check.copy()
 
             # If failed, fetch full logs
-            if check.get('conclusion') == 'failure':
+            # Note: gh pr checks uses 'state' not 'conclusion', and values are like 'FAILURE' not 'failure'
+            if check.get('state', '').upper() in ('FAILURE', 'FAILED'):
                 failed_count += 1
                 print(f"    ⚠ Check failed: {check['name']}, fetching logs...")
                 log = self.get_check_logs(pr_num, repo, check)
@@ -206,8 +212,8 @@ class GitHubSync:
                 'summary': {
                     'total': len(checks),
                     'failed': failed_count,
-                    'passed': len([c for c in checks if c.get('conclusion') == 'success']),
-                    'pending': len([c for c in checks if c.get('status') != 'completed'])
+                    'passed': len([c for c in checks if c.get('state', '').upper() == 'SUCCESS']),
+                    'pending': len([c for c in checks if c.get('state', '').upper() in ('PENDING', 'QUEUED', 'IN_PROGRESS', '')])
                 }
             }, f, indent=2)
 
@@ -220,7 +226,8 @@ class GitHubSync:
         """Fetch full logs for a failed check"""
         # Try to extract run ID from details URL
         # GitHub Actions URL format: https://github.com/org/repo/actions/runs/12345
-        details_url = check.get('detailsUrl', '')
+        # Note: gh pr checks uses 'link' not 'detailsUrl'
+        details_url = check.get('link', '') or check.get('detailsUrl', '')
 
         if '/actions/runs/' in details_url:
             try:
