@@ -8,13 +8,13 @@ Syncs documentation and context from multiple sources (Confluence, JIRA, etc.) t
 
 ## Overview
 
-Context Sync is a multi-connector tool that automatically syncs external knowledge sources into a local directory that JIB containers can access read-only. This gives Claude access to:
+Context Sync is a multi-connector tool that automatically syncs external knowledge sources into a local directory that jib containers can access read-only. This gives Claude access to:
 
 - **Confluence**: ADRs, runbooks, best practices, team documentation
 - **JIRA**: Your assigned tickets, project context, requirements
 - **(Planned)** GitHub PRs, Slack threads, email chains
 
-## How It Fits Into JIB
+## How It Fits Into jib
 
 ```
 Confluence/JIRA (remote)
@@ -30,7 +30,7 @@ Context Sync (host systemd timer, runs hourly)
     ├── ASSIGNED/             # Your tickets
     └── WATCHING/             # Watched tickets
         ↓
-JIB Container (read-only mount)
+jib Container (read-only mount)
 ~/context-sync/ -> Claude can read these docs
 ```
 
@@ -126,9 +126,9 @@ See detailed documentation in [`docs/`](docs/README.md):
 - Advanced features (search, customization)
 - Troubleshooting guide
 
-## Integration with JIB
+## Integration with jib
 
-JIB containers mount `~/context-sync/` as read-only. Claude can:
+jib containers mount `~/context-sync/` as read-only. Claude can:
 
 - Read ADRs before making architectural decisions
 - Check runbooks before operational changes

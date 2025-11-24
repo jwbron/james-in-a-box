@@ -103,7 +103,7 @@ cd ~/khan/
 
 **You are working in an isolated git worktree, NOT the main repository!**
 
-Every JIB container (interactive and `--exec` mode) gets its own isolated worktree:
+Every jib container (interactive and `--exec` mode) gets its own isolated worktree:
 - Your changes DO NOT affect the main repo or other containers
 - All commits go to a temporary branch (like `jib-temp-{container-id}` or `jib-exec-{container-id}`)
 - After you finish, human will `git rebase` your branch onto their working branch

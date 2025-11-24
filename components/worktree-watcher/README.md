@@ -1,6 +1,6 @@
 # Worktree Watcher
 
-Automatically cleans up orphaned git worktrees from stopped or crashed JIB containers.
+Automatically cleans up orphaned git worktrees from stopped or crashed jib containers.
 
 **Status**: Operational
 **Type**: Host-side systemd timer service
@@ -8,7 +8,7 @@ Automatically cleans up orphaned git worktrees from stopped or crashed JIB conta
 
 ## Overview
 
-Each JIB container gets its own ephemeral git worktree to isolate changes from the host repository. When containers exit normally, worktrees are cleaned up automatically. However, if a container crashes or is forcefully killed, worktrees may be left behind.
+Each jib container gets its own ephemeral git worktree to isolate changes from the host repository. When containers exit normally, worktrees are cleaned up automatically. However, if a container crashes or is forcefully killed, worktrees may be left behind.
 
 This service runs periodically to detect and remove orphaned worktrees.
 
@@ -88,7 +88,7 @@ The watcher only removes worktrees for containers that no longer exist. If a con
 To manually clean up all worktrees:
 
 ```bash
-# Stop all JIB containers first
+# Stop all jib containers first
 docker stop $(docker ps -q --filter "name=jib-")
 
 # Run cleanup

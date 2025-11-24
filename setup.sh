@@ -117,7 +117,7 @@ if [ -f "/.dockerenv" ]; then
     exit 1
 fi
 
-print_header "James-In-A-Box Host Setup"
+print_header "james-in-a-box Host Setup"
 
 # Check installation status
 if check_installation_status; then
@@ -129,7 +129,7 @@ if check_installation_status; then
         print_warning "Force mode: Reinstalling all components"
         echo ""
     else
-        print_success "JIB is already installed!"
+        print_success "jib is already installed!"
         echo ""
         echo "What would you like to do?"
         echo "  1) Update/reload (refresh configs and restart services)"
@@ -167,7 +167,7 @@ if [ "$UPDATE_MODE" = true ]; then
     echo "This will:"
     echo "  • Re-symlink all service files (pick up changes)"
     echo "  • Reload systemd daemon"
-    echo "  • Restart all JIB services"
+    echo "  • Restart all jib services"
     echo ""
 else
     echo "This script will:"
@@ -478,7 +478,7 @@ else
     echo "   Edit: ~/.config/jib-notifier/config.json"
     echo "   Add your Slack bot token (xoxb-...) and app token (xapp-...)"
     echo ""
-    echo "2. Start the JIB container:"
+    echo "2. Start the jib container:"
     echo "   cd $SCRIPT_DIR"
     echo "   bin/jib"
     echo ""
@@ -496,7 +496,7 @@ else
 fi
 
 print_header "Useful Commands"
-echo "Update JIB (reload configs and restart services):"
+echo "Update jib (reload configs and restart services):"
 echo "  cd $SCRIPT_DIR && ./setup.sh --update"
 echo ""
 echo "Check all services:"

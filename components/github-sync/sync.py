@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GitHub PR Sync - Syncs open PRs to disk for JIB consumption
+GitHub PR Sync - Syncs open PRs to disk for jib consumption
 
 Fetches:
 - PR metadata, description, files

@@ -2,7 +2,7 @@
 """
 GitHub PR Check Watcher - Monitors for CI/CD failures and triggers analysis
 
-Runs in JIB container, monitors ~/context-sync/github/ for check failures,
+Runs in jib container, monitors ~/context-sync/github/ for check failures,
 automatically analyzes failures and creates notifications with suggested fixes.
 """
 

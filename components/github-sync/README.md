@@ -1,10 +1,10 @@
 # GitHub Sync
 
-Syncs GitHub PR data to `~/context-sync/github/` for JIB consumption.
+Syncs GitHub PR data to `~/context-sync/github/` for jib consumption.
 
 **Status**: Operational
 **Type**: Host-side systemd timer service
-**Purpose**: Enable JIB to monitor PR check failures and provide automated assistance
+**Purpose**: Enable jib to monitor PR check failures and provide automated assistance
 
 **Scope**: Currently syncs only PRs you've opened (`--author @me`).
 - ✅ Your open PRs
@@ -13,13 +13,13 @@ Syncs GitHub PR data to `~/context-sync/github/` for JIB consumption.
 
 ## Overview
 
-GitHub Sync fetches data for all open PRs you've authored and stores it locally as markdown and JSON. This enables JIB to:
+GitHub Sync fetches data for all open PRs you've authored and stores it locally as markdown and JSON. This enables jib to:
 - Monitor CI/CD check failures proactively
 - Analyze failed test logs and suggest fixes
 - Automatically implement obvious fixes in separate branches
 - Track PR comments and discussions
 
-## How It Fits Into JIB
+## How It Fits Into jib
 
 ```
 GitHub (remote PRs)
@@ -38,7 +38,7 @@ GitHub Sync (host systemd timer, runs every 15 min)
         ↓
 github-sync.service completes → Triggers check-monitor.py via `jib --exec`
         ↓
-JIB Container (one-time analysis)
+jib Container (one-time analysis)
 ~/context-sync/github/ → check-monitor.py analyzes failures → exits
         ↓
 Proactive analysis + Slack notification
@@ -137,9 +137,9 @@ Why 15 minutes:
 - Slow enough to avoid API rate limits
 - Balances freshness with resource usage
 
-## JIB Integration
+## jib Integration
 
-After each sync, the github-sync service automatically triggers JIB's `check-monitor.py` via `jib --exec`. The analysis script:
+After each sync, the github-sync service automatically triggers jib's `check-monitor.py` via `jib --exec`. The analysis script:
 
 1. **Detects new check failures**
 2. **Analyzes failure logs** (full logs available for user's PRs)
@@ -212,8 +212,8 @@ GitHub has API rate limits (5000 requests/hour for authenticated users). With 15
 - Requires GitHub authentication (via `gh auth`)
 - Only syncs **your** PRs (not all org PRs)
 - Data stored locally (not shared)
-- JIB container has **read-only** access
-- No GitHub write access from JIB container
+- jib container has **read-only** access
+- No GitHub write access from jib container
 
 ## Future Enhancements
 

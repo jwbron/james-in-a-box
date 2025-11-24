@@ -457,7 +457,7 @@ class SlackReceiver:
             self.logger.error(f"Failed to send ack: {e}")
 
     def _trigger_processing(self, filepath: Path):
-        """Trigger message processing in JIB container via jib --exec."""
+        """Trigger message processing in jib container via jib --exec."""
         try:
             jib_script = Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
 
@@ -638,7 +638,7 @@ class SlackReceiver:
 
             self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
 
-            # Trigger processing in JIB container
+            # Trigger processing in jib container
             self._trigger_processing(filepath)
         else:
             self._send_ack(channel, "❌ Failed to process message. Please check logs.", thread_ts=reply_thread_ts)

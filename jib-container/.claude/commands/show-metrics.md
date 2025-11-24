@@ -1,6 +1,6 @@
 Generate a monitoring report showing recent agent activity and context usage.
 
-Use the JIB monitoring infrastructure to show:
+Use the jib monitoring infrastructure to show:
 1. API usage metrics (last 7 days)
 2. Task completion statistics
 3. Context source usage (which Confluence spaces, JIRA projects accessed)
@@ -22,7 +22,7 @@ Steps:
 Example output format:
 
 ```
-# JIB Activity Report (Last 7 Days)
+# jib Activity Report (Last 7 Days)
 
 ## Summary
 - 45 API calls, 12.3 MB total prompts

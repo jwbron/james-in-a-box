@@ -1,5 +1,5 @@
 #!/bin/bash
-# Remote control script for JIB - executed from Slack commands
+# Remote control script for jib - executed from Slack commands
 # This runs on the host machine to control container and services
 
 set -e
@@ -35,7 +35,7 @@ EOF
 
 # Container operations
 jib_status() {
-    log "Checking JIB container status"
+    log "Checking jib container status"
 
     if docker ps | grep -q jib-claude; then
         status="✅ Running"
@@ -47,14 +47,14 @@ jib_status() {
         uptime="N/A"
     fi
 
-    notify "JIB Container Status
+    notify "jib Container Status
 Status: $status
 Container ID: $container_id
 Uptime: $uptime"
 }
 
 jib_restart() {
-    log "Restarting JIB container"
+    log "Restarting jib container"
 
     # Stop existing container
     if docker ps | grep -q jib-claude; then
@@ -70,15 +70,15 @@ jib_restart() {
     sleep 3
 
     if docker ps | grep -q jib-claude; then
-        notify "✅ JIB container restarted successfully"
+        notify "✅ jib container restarted successfully"
     else
-        notify "❌ JIB container failed to restart
+        notify "❌ jib container failed to restart
 Check logs: docker logs jib-claude"
     fi
 }
 
 jib_rebuild() {
-    log "Rebuilding JIB container"
+    log "Rebuilding jib container"
 
     # Stop and remove existing container
     if docker ps -a | grep -q jib-claude; then
@@ -95,23 +95,23 @@ jib_rebuild() {
     sleep 5
 
     if docker ps | grep -q jib-claude; then
-        notify "✅ JIB container rebuilt and started successfully"
+        notify "✅ jib container rebuilt and started successfully"
     else
-        notify "❌ JIB container rebuild failed
+        notify "❌ jib container rebuild failed
 Check logs: docker logs jib-claude"
     fi
 }
 
 jib_logs() {
-    log "Fetching JIB container logs"
+    log "Fetching jib container logs"
 
     if docker ps | grep -q jib-claude; then
         logs=$(docker logs --tail 50 jib-claude 2>&1)
-        notify "JIB Container Logs (last 50 lines)
+        notify "jib Container Logs (last 50 lines)
 
 $logs"
     else
-        notify "❌ JIB container is not running"
+        notify "❌ jib container is not running"
     fi
 }
 
@@ -195,12 +195,12 @@ $logs"
 }
 
 list_services() {
-    log "Listing JIB services"
+    log "Listing jib services"
 
-    services=$(systemctl --user list-units --type=service,timer --all | grep -E 'slack-|codebase-|conversation-|service-failure' || echo "No JIB services found")
+    services=$(systemctl --user list-units --type=service,timer --all | grep -E 'slack-|codebase-|conversation-|service-failure' || echo "No jib services found")
     timers=$(systemctl --user list-timers --all | grep -E 'codebase-|conversation-' || echo "No timers found")
 
-    notify "JIB Services and Timers
+    notify "jib Services and Timers
 
 Services:
 $services
@@ -243,7 +243,7 @@ pr_create() {
 
 # Help text
 show_help() {
-    notify "JIB Remote Control Commands
+    notify "jib Remote Control Commands
 
 Container:
   /jib status          - Check container status
@@ -252,7 +252,7 @@ Container:
   /jib logs            - Show recent container logs
 
 Services:
-  /service list                    - List all JIB services
+  /service list                    - List all jib services
   /service status <name>           - Check service status
   /service restart <name>          - Restart a service
   /service start <name>            - Start a service

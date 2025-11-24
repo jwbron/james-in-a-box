@@ -1,5 +1,5 @@
 #!/bin/bash
-# Setup script for JIB Worktree Watcher
+# Setup script for jib Worktree Watcher
 # Installs systemd service and timer for cleaning up orphaned worktrees
 
 set -e
@@ -9,7 +9,7 @@ SYSTEMD_DIR="$HOME/.config/systemd/user"
 SERVICE_NAME="worktree-watcher"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Setting up JIB Worktree Watcher..."
+echo "Setting up jib Worktree Watcher..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Create systemd user directory

@@ -10,7 +10,7 @@ Container-side component that provides comprehensive GitHub PR automation.
 
 ## Overview
 
-GitHub Watcher runs inside the JIB container and monitors `~/context-sync/github/` (synced by the host-side github-sync component) for PR check failures. When detected, it:
+GitHub Watcher runs inside the jib container and monitors `~/context-sync/github/` (synced by the host-side github-sync component) for PR check failures. When detected, it:
 
 1. **Detects** new check failures
 2. **Creates Beads task** for tracking the fix
@@ -50,7 +50,7 @@ Creates Slack notification:
     - Suggested actions
     - "Implement fix" button if auto-fixable
         ↓
-User replies via Slack or JIB acts automatically
+User replies via Slack or jib acts automatically
 ```
 
 ## PR Code Review (On-Demand)
@@ -303,7 +303,7 @@ tail -n 50 ~/sharing/tracking/github-watcher.log
 
 ## Startup
 
-GitHub Watcher starts automatically when the JIB container starts (via Docker entrypoint script).
+GitHub Watcher starts automatically when the jib container starts (via Docker entrypoint script).
 
 ## Configuration
 

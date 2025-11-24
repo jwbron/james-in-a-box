@@ -1,6 +1,6 @@
 #!/bin/bash
-# Create pull request using JIB to generate description
-# This runs on the host machine but uses JIB container for LLM operations
+# Create pull request using jib to generate description
+# This runs on the host machine but uses jib container for LLM operations
 
 set -e
 
@@ -132,12 +132,12 @@ Current branch '$current_branch' has no commits ahead of '$base_branch'"
 
     log "Branch has $commits_ahead commits ahead of $base_branch"
 
-    # Generate PR description using JIB
-    log "Generating PR description using JIB..."
+    # Generate PR description using jib
+    log "Generating PR description using jib..."
 
     local pr_desc_file="/tmp/pr-description-$$.md"
 
-    # Create prompt for Claude in JIB
+    # Create prompt for Claude in jib
     local prompt_file="/tmp/pr-prompt-$$.txt"
     cat > "$prompt_file" <<'PROMPT'
 Generate a pull request description for the current branch.
@@ -165,11 +165,11 @@ Test plan:
 Analyze the git diff and recent commits to understand what changed.
 PROMPT
 
-    # Execute in JIB container to generate description
+    # Execute in jib container to generate description
     # Use docker exec instead of jib --exec for simpler invocation
     if docker ps | grep -q jib-claude; then
         # Container is running, use it
-        log "Using running JIB container to generate PR description"
+        log "Using running jib container to generate PR description"
 
         # Run Claude Code in container to generate description
         docker exec jib-claude bash -c "
@@ -219,7 +219,7 @@ Test plan:
 EOF
         fi
     else
-        log "JIB container not running, using simple template"
+        log "jib container not running, using simple template"
         # Container not running, use simple template
         cat > "$pr_desc_file" <<EOF
 $(git log -1 --pretty=%B)

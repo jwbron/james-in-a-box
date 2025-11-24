@@ -1,6 +1,6 @@
-# JIB Container Scripts
+# jib Container Scripts
 
-Utility scripts that run inside the JIB container for analysis and automation.
+Utility scripts that run inside the jib container for analysis and automation.
 
 ## Available Scripts
 

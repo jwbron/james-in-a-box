@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Conversation Analysis Job for JIB (James-in-a-Box)
+Conversation Analysis Job for jib (James-in-a-Box)
 
 Analyzes conversation logs to generate prompt tuning recommendations and
 communication improvement suggestions.
 
 This should run daily (via cron) to process accumulated logs and identify
-patterns that can improve JIB's performance.
+patterns that can improve jib's performance.
 
 Usage:
     analyze-conversations [--days N] [--output DIR]
@@ -243,7 +243,7 @@ class ConversationAnalyzer:
         return recommendations
 
     def generate_communication_recommendations(self, logs: List[Dict[str, Any]], metrics: Dict[str, Any]) -> List[str]:
-        """Generate recommendations for human to improve communication with JIB"""
+        """Generate recommendations for human to improve communication with jib"""
         recommendations = []
 
         # High iteration sessions might indicate unclear requirements
@@ -289,7 +289,7 @@ class ConversationAnalyzer:
         efficient_text = '\n'.join('- ' + p for p in patterns['efficient_patterns']) if patterns['efficient_patterns'] else '- No single-iteration sessions in this period'
         inefficient_text = '\n'.join('- ' + p for p in patterns['inefficient_patterns']) if patterns['inefficient_patterns'] else '- No multi-iteration sessions in this period'
 
-        report = f"""# JIB Conversation Analysis Report
+        report = f"""# jib Conversation Analysis Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Period: Last {self.days} days
 
@@ -528,7 +528,7 @@ Period: Last {self.days} days
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze JIB conversation logs")
+    parser = argparse.ArgumentParser(description="Analyze jib conversation logs")
     parser.add_argument('--days', type=int, default=7, help='Number of days to analyze (default: 7)')
     parser.add_argument('--output', type=Path, help='Output directory (default: ~/sharing/analysis)')
     parser.add_argument('--print', action='store_true', help='Print report to stdout')

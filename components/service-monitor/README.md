@@ -1,6 +1,6 @@
 # Service Monitor
 
-Sends Slack notifications when JIB services fail.
+Sends Slack notifications when jib services fail.
 
 **Status**: Operational
 **Type**: Host-side systemd service template

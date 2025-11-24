@@ -49,7 +49,7 @@ Write message to ~/.jib-sharing/incoming/ or ~/.jib-sharing/responses/
         ↓
 Trigger processing via `jib --exec incoming-processor.py <message-file>`
         ↓
-JIB Container (one-time processing)
+jib Container (one-time processing)
 incoming-processor.py reads message → creates notification → exits
         ↓
 Notification sent to Slack via slack-notifier
@@ -68,7 +68,7 @@ This exec-based pattern ensures processing only runs when messages are received 
 
 ## Remote Control Commands
 
-Control JIB remotely via Slack DMs:
+Control jib remotely via Slack DMs:
 
 ### Container Commands
 ```
@@ -80,7 +80,7 @@ Control JIB remotely via Slack DMs:
 
 ### Service Commands
 ```
-/service list                    - List all JIB services
+/service list                    - List all jib services
 /service status <name>           - Check service status
 /service restart <name>          - Restart a service
 /service start <name>            - Start a service
@@ -96,7 +96,7 @@ Control JIB remotely via Slack DMs:
 
 **How it works:**
 1. Detects current branch and base branch (main/master)
-2. Uses JIB container to generate PR description with Claude
+2. Uses jib container to generate PR description with Claude
 3. Follows Khan Academy commit template format
 4. Pushes branch and creates PR via GitHub CLI
 5. Sends notification with PR URL and branch details

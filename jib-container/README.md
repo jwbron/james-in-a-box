@@ -1,10 +1,10 @@
-# JIB Container
+# jib Container
 
 Container infrastructure and components that run inside the Docker sandbox.
 
 ## Overview
 
-The JIB container provides a secure, isolated environment for the Claude agent to work in. It includes:
+The jib container provides a secure, isolated environment for the Claude agent to work in. It includes:
 - Context monitoring for Confluence/JIRA docs
 - Claude Code configuration (rules, commands)
 - Shared directories for communication with host

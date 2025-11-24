@@ -5,7 +5,7 @@ Convenient symlinks to commonly used commands.
 ## Commands
 
 **Container:**
-- `jib` - Start/manage JIB container
+- `jib` - Start/manage jib container
 - `docker-setup.py` - Container setup (runs automatically)
 - `view-logs` - View container logs
 

@@ -37,7 +37,7 @@ Host context-sync (hourly via systemd timer)
         ↓
 context-sync.service completes → Triggers watchers via `jib --exec`
         ↓
-JIB Container (one-time analysis):
+jib Container (one-time analysis):
 
   jira-watcher.py:
     - Detects new/updated tickets
@@ -174,4 +174,4 @@ bin/jib --exec python3 ~/khan/james-in-a-box/jib-container/components/context-wa
 **No notifications sent**:
 - Check state files in `~/sharing/tracking/`
 - Ensure slack-notifier is running on host
-- Verify JIB container has write access to `~/sharing/notifications/`
+- Verify jib container has write access to `~/sharing/notifications/`

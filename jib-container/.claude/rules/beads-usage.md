@@ -10,7 +10,7 @@ Beads is a git-backed persistent memory system that **YOU MUST USE AUTOMATICALLY
 
 **Location**: `~/beads/` (symlink to `~/sharing/beads/`)
 **Storage**: Git repository in `~/.jib-sharing/beads/` on host
-**Access**: All JIB containers share the same Beads database
+**Access**: All jib containers share the same Beads database
 
 ## Automatic Workflow Integration
 
