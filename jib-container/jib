@@ -1074,13 +1074,13 @@ def run_claude() -> bool:
 
 
 def exec_in_new_container(command: List[str]) -> bool:
-    """Execute a command in a new ephemeral container.
+    """Execute a command in a new ephemeral container with isolated worktrees.
 
-    This is simpler and safer than docker exec:
-    - Total isolation from interactive sessions
-    - No worktree complexity
+    Creates temporary worktrees for all repos to isolate changes:
+    - Total isolation from interactive sessions and main repos
+    - Worktrees allow parallel work without conflicts
     - Automatic cleanup (--rm)
-    - Mounts main repos directly (read-write for simplicity)
+    - All commits go to temporary branches (jib-exec-*)
 
     Args:
         command: Command to execute
@@ -1112,7 +1112,21 @@ def exec_in_new_container(command: List[str]) -> bool:
     print(f"Command: {' '.join(command)}")
     print()
 
-    # Parse mount configuration (same as run_claude, but simpler - no worktrees)
+    # Create worktrees for repos (isolates container from host repos)
+    info("Creating isolated worktrees...")
+    worktrees = create_worktrees(container_id)
+
+    if worktrees:
+        info(f"Created {len(worktrees)} worktree(s)")
+        print()
+
+    # Register cleanup on exit (even if container fails)
+    def cleanup_on_exit():
+        cleanup_worktrees(container_id)
+
+    atexit.register(cleanup_on_exit)
+
+    # Parse mount configuration
     mount_args = []
     mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
 
@@ -1130,11 +1144,33 @@ def exec_in_new_container(command: List[str]) -> bool:
             warn(f"Invalid mount format: {mount}")
             continue
 
+        # Check if this is a khan repo mount - skip it, we'll add worktrees instead
+        if Config.KHAN_SOURCE and mount_path.startswith(str(Config.KHAN_SOURCE)):
+            continue
+
         # Ensure SELinux label
         if not mode.endswith(",z") and not mode.endswith(":z"):
             mode = f"{mode},z"
 
         mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
+
+    # Add worktree mounts
+    main_repos_needed = set()
+    for repo_name, worktree_path in worktrees.items():
+        container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
+        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
+        print(f"  • ~/khan/{repo_name} (WORKTREE, isolated)")
+        main_repos_needed.add(repo_name)
+
+    # Mount main repo .git directories (read-write) so worktrees can commit changes
+    for repo_name in main_repos_needed:
+        main_repo = Config.KHAN_SOURCE / repo_name
+        if (main_repo / ".git").exists():
+            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+            mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:rw,z"])
+            print(f"  • ~/.git-main/{repo_name} (git metadata)")
+
+    print()
 
     # Build docker run command
     cmd = [

@@ -99,6 +99,50 @@ cd ~/khan/
 # explore and understand
 ```
 
+### 3.5. Understanding Git Worktrees (IMPORTANT)
+
+**You are working in an isolated git worktree, NOT the main repository!**
+
+Every JIB container (interactive and `--exec` mode) gets its own isolated worktree:
+- Your changes DO NOT affect the main repo or other containers
+- All commits go to a temporary branch (like `jib-temp-{container-id}` or `jib-exec-{container-id}`)
+- After you finish, human will `git rebase` your branch onto their working branch
+
+**Key Points:**
+1. **Your branch is temporary** - Named like `jib-temp-jib-20251124-123456-789`
+2. **DO NOT create new branches** - You're already on an isolated temporary branch
+3. **Just commit directly** - Your commits will be on your temporary branch
+4. **Tell the user your branch name** - They need to know which branch to rebase
+
+**Example workflow:**
+```bash
+# Check your current branch (it's a temporary worktree branch)
+git branch --show-current
+# Output: jib-temp-jib-20251124-123456-789
+
+# Make your changes
+vim ~/khan/james-in-a-box/some-file.py
+
+# Commit directly (no need to create a new branch)
+git add some-file.py
+git commit -m "Fix bug in some-file
+
+- Detailed explanation
+- Related to JIRA-1234"
+
+# Tell the user what branch you committed to
+echo "Changes committed to branch: $(git branch --show-current)"
+# User will then run: git rebase jib-temp-jib-20251124-123456-789
+```
+
+**After committing, ALWAYS tell the user:**
+```
+Changes committed to branch: jib-temp-jib-20251124-123456-789
+
+To integrate these changes, run:
+  git rebase jib-temp-jib-20251124-123456-789
+```
+
 ### 4. Plan & Implement
 ```bash
 # For multi-step tasks: Break down into Beads subtasks
