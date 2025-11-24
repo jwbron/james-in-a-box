@@ -1,6 +1,6 @@
 [Unit]
 Description=Codebase Improvement Analyzer
-Documentation=https://github.com/jwiesebron/james-in-a-box
+Documentation=https://github.com/jwbron/james-in-a-box
 After=network-online.target
 Wants=network-online.target
 OnFailure=service-failure-notify@%n.service
@@ -12,7 +12,9 @@ Type=oneshot
 WorkingDirectory=/home/jwies/khan/james-in-a-box/components/codebase-analyzer
 
 # Execute the analyzer via jib --exec (runs in ephemeral container with Claude Code)
-ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py
+# --implement: automatically fix issues and open a PR
+# --max-fixes 10: limit to top 10 highest-priority fixes
+ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py --implement --max-fixes 10
 
 # Logging
 StandardOutput=journal
