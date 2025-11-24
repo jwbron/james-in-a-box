@@ -170,10 +170,11 @@ class Config:
     IMAGE_NAME = "james-in-a-box"
     CONTAINER_NAME = "jib"
     KHAN_SOURCE = Path.home() / "khan"
-    CLAUDE_SOURCE = Path.home() / ".claude"
     # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
     TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
+    # Persistent .claude directory shared by all containers (in ~/.jib/)
+    CLAUDE_SHARED_DIR = CONFIG_DIR / "claude"
     # Worktree base directory (ephemeral workspaces per container)
     WORKTREE_BASE = Path.home() / ".jib-worktrees"
 
@@ -765,6 +766,7 @@ def setup() -> bool:
     # Sharing directory - single location for ALL persistent data
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
+    Config.CLAUDE_SHARED_DIR.mkdir(parents=True, exist_ok=True)  # claude/ inside .jib/
 
     sharing_container_path = f"/home/{os.environ['USER']}/sharing"
     # Add :z flag for SELinux systems
@@ -781,66 +783,27 @@ def setup() -> bool:
     # Create convenience symlink in container for tmp
     # Note: Actual symlink creation happens in container entrypoint
 
-    # Mount Claude credentials for runtime copy (not build-time baking)
-    # This ensures container always uses host's CURRENT credentials
-    # ALWAYS mount ~/.claude so container can access credentials if they exist
-    # or authenticate and potentially share back to host
+    # Mount shared .claude directory (persistent across all containers)
+    # This ensures all containers share the same authentication
     print()
-    print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
+    print(f"{Colors.BOLD}Claude Code authentication...{Colors.NC}")
 
-    creds_exist, has_full_scopes = check_claude_credentials()
-    claude_dir = Path.home() / ".claude"
+    claude_container_path = f"/home/{os.environ['USER']}/.claude"
+    mounts.append(f"{Config.CLAUDE_SHARED_DIR}:{claude_container_path}:rw,z")
 
-    # Always mount ~/.claude directory (even if credentials don't exist yet)
-    # This allows the container to access any existing credentials,
-    # and enables bidirectional sync if user authenticates in container
-    mounts.append(f"{claude_dir}:/tmp/host-claude:ro,z")
-
-    if not creds_exist:
-        warn("Claude Code credentials not found on host")
-        warn("")
-        info(f"Mounting: {claude_dir} (empty - container will prompt for auth)")
-        print()
-        info("The container will prompt for authentication on first launch.")
-        info("After authenticating, you can optionally copy credentials back to host:")
-        print("  cp ~/.claude/.credentials.json /tmp/host-claude/.credentials.json")
-    elif not has_full_scopes:
-        warn("Claude Code credentials exist but are missing required scope")
-        warn("")
-        warn("Current scopes: user:inference, user:profile")
-        warn("Missing scope: user:sessions:claude_code")
-        warn("")
-
-        # Offer to fix automatically
-        try:
-            response = input(f"{Colors.YELLOW}Fix scopes automatically? (yes/no): {Colors.NC}").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            response = "no"
-
-        if response in ["yes", "y"]:
-            # Attempt automatic fix
-            if fix_claude_scopes():
-                # Scopes fixed successfully - update status
-                success("Claude Code properly authenticated with full scopes")
-                print(f"  Host: {claude_dir}")
-                print(f"  Container will copy credentials at startup")
-            else:
-                # Fix failed - continue with partial scopes
-                warn("Could not fix scopes automatically")
-                warn("Container will work with limited functionality (--print mode only)")
-                info(f"Mounting: {claude_dir} (partial scopes)")
-        else:
-            # User declined auto-fix
-            warn("Container will work with limited functionality (--print mode only)")
-            info(f"Mounting: {claude_dir} (partial scopes)")
-            print()
-            info("To fix manually, run: claude")
-            info("Then re-run: jib --setup")
+    # Check if credentials already exist in shared directory
+    shared_creds = Config.CLAUDE_SHARED_DIR / ".credentials.json"
+    if shared_creds.exists():
+        success("Claude credentials found in shared directory")
+        print(f"  All containers will use: {Config.CLAUDE_SHARED_DIR}")
+        print(f"  Mounted at: ~/.claude/ in container")
     else:
-        success("Claude Code properly authenticated with full scopes")
-        print(f"  Host: {claude_dir}")
-        print(f"  Container will copy credentials at startup")
+        info("Claude credentials not yet configured")
+        print(f"  Shared location: {Config.CLAUDE_SHARED_DIR}")
+        print(f"  Mounted at: ~/.claude/ in container")
+        print()
+        info("The first container will authenticate and save credentials.")
+        info("All other containers will automatically use the same credentials.")
 
     print()
     print("Add additional directories? (optional)")
@@ -1027,36 +990,39 @@ def run_claude() -> bool:
         if not setup():
             return False
 
-    # Check Claude Code authentication before launching container
+    # Check Claude Code authentication in shared directory
     print()
     print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
-    creds_exist, has_full_scopes = check_claude_credentials()
+    shared_creds = Config.CLAUDE_SHARED_DIR / ".credentials.json"
 
-    if not creds_exist:
-        warn("Claude Code credentials not found on host")
-        warn("")
-        warn("To authenticate Claude Code:")
-        warn("  1. Run: claude")
-        warn("  2. Follow the browser authentication flow")
-        warn("  3. Let the interactive session start (this grants full scopes)")
-        warn("  4. Exit with Ctrl+C once authenticated")
-        warn("")
-        warn("Container will prompt for authentication on first run")
-    elif not has_full_scopes:
-        warn("Claude Code credentials exist but are missing required scope")
-        warn("")
-        warn("Current scopes: user:inference, user:profile")
-        warn("Missing scope: user:sessions:claude_code")
-        warn("")
-        warn("To fix: Run interactive Claude Code session once:")
-        warn("  1. Run: claude")
-        warn("  2. This will trigger re-authentication with full scopes")
-        warn("  3. Exit with Ctrl+C once session starts")
-        warn("")
-        warn("Container will work with limited functionality (--print mode only)")
+    if shared_creds.exists():
+        try:
+            with open(shared_creds, 'r') as f:
+                creds = json.load(f)
+
+            scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
+            required_scopes = {
+                "user:inference",
+                "user:profile",
+                "user:sessions:claude_code"
+            }
+
+            if required_scopes.issubset(set(scopes)):
+                success("Claude Code authenticated with full scopes (shared)")
+                print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
+            else:
+                warn("Claude Code credentials found but missing required scopes")
+                warn("  Container will work with limited functionality (--print mode only)")
+                print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
+        except Exception as e:
+            warn(f"Could not read shared credentials: {e}")
+            warn("Container will prompt for authentication on first run")
     else:
-        success("Claude Code properly authenticated with full scopes")
+        info("Claude Code not yet authenticated")
+        info("Container will prompt for authentication on first launch")
+        info("Credentials will be saved and shared across all containers")
+        print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
 
     print()
 
