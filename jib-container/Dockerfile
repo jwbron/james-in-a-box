@@ -253,7 +253,7 @@ if [ ! -d "${USER_HOME}/sharing/beads" ]; then
     exit 1
 fi
 
-if [ ! -f "${USER_HOME}/sharing/beads/issues.jsonl" ]; then
+if [ ! -f "${USER_HOME}/sharing/beads/.beads/issues.jsonl" ]; then
     echo "❌ ERROR: Beads not initialized"
     echo ""
     echo "Beads repository exists but is not properly initialized."

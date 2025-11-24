@@ -428,7 +428,7 @@ fi
 print_info "Setting up Beads persistent memory system..."
 
 beads_dir="$shared_dir/beads"
-if [ -f "$beads_dir/issues.jsonl" ]; then
+if [ -f "$beads_dir/.beads/issues.jsonl" ]; then
     print_success "Beads already initialized: $beads_dir"
 else
     print_info "Initializing Beads repository..."
@@ -436,11 +436,11 @@ else
     cd "$beads_dir"
 
     # Initialize git repo (required by beads)
-    if git init > /dev/null 2>&1; then
-        # Initialize beads
-        if bd init > /dev/null 2>&1; then
+    if git init; then
+        # Initialize beads (allow user input for git hooks prompt)
+        if bd init; then
             # Build SQLite cache for fast queries
-            bd build-cache > /dev/null 2>&1 || true
+            bd build-cache || true
             print_success "Beads initialized: $beads_dir"
             echo "   Usage in container: bd add 'task description' --tags feature"
         else
