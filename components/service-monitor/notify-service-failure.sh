@@ -6,7 +6,7 @@ set -euo pipefail
 
 SERVICE_NAME="$1"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-NOTIFICATION_FILE="${HOME}/sharing/notifications/$(date +%Y%m%d-%H%M%S)-service-failure-${SERVICE_NAME}.md"
+NOTIFICATION_FILE="${HOME}/.jib-sharing/notifications/$(date +%Y%m%d-%H%M%S)-service-failure-${SERVICE_NAME}.md"
 
 # Get service status info
 STATUS_OUTPUT=$(systemctl --user status "$SERVICE_NAME" --no-pager -l 2>&1 || true)
