@@ -66,8 +66,15 @@ You received a task via Slack. Process it according to the workflow below.
    - Make necessary changes
    - Run tests if applicable
    - Commit changes with clear messages
-4. **Create notification**: Write result to `~/sharing/notifications/` with:
+4. **Create PR (if code changes were made)**:
+   - Use the PR helper: `~/khan/james-in-a-box/jib-container/scripts/create-pr-helper.py`
+   - Run: `create-pr-helper.py --auto --reviewer jwiesebron`
+   - Or with custom title: `create-pr-helper.py --title "Your PR title" --body "Description"`
+   - The script will push the branch and create a PR automatically
+   - It also creates a notification with the PR URL
+5. **Create notification**: Write result to `~/sharing/notifications/` with:
    - Summary of what was done
+   - PR URL (if created)
    - Branch name (if commits were made)
    - Next steps for user
    - Any blockers or questions
@@ -75,10 +82,12 @@ You received a task via Slack. Process it according to the workflow below.
 ## Important Notes
 
 - You're in an ephemeral container (will exit when done)
-- All work should be committed to git (user will review and push)
+- All work should be committed to git
+- **Create a PR after completing code changes** - this lets the user review on GitHub
 - Use beads to track progress across sessions
 - Send notification so user gets Slack DM with results
 - Working directory: You can access all repos in `~/khan/`
+- The PR helper automatically requests review from @jwiesebron
 
 Process this task now."""
 
