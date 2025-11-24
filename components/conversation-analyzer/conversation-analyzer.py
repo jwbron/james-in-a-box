@@ -5,9 +5,13 @@ Conversation Analysis Job for jib (James-in-a-Box)
 Analyzes conversation logs to generate prompt tuning recommendations and
 communication improvement suggestions.
 
-Runs on host (not in sandbox) via systemd timer:
-- Weekly on Monday at 11 AM (checks if last run was within 7 days)
-- 10 minutes after system startup (if not run in last 7 days)
+Data Locations:
+- Logs: ~/sharing/logs/conversations/*.json
+- Reports: ~/sharing/analysis/
+- Notifications: ~/sharing/notifications/
+
+Runs on host (not in container) via systemd timer:
+- Weekly (checks if last run was within 7 days)
 - Can force run with --force flag
 
 Usage:
@@ -31,10 +35,11 @@ from typing import List, Dict, Any, Optional
 import subprocess
 
 # Constants
-# Use .jib-sharing for host paths (script runs on host, not in container)
-LOGS_DIR = Path.home() / ".jib-sharing" / "logs" / "conversations"
-ANALYSIS_DIR = Path.home() / ".jib-sharing" / "analysis"
-PROMPTS_DIR = Path.home() / ".jib-sharing" / "prompts"
+# Use ~/sharing for host paths (script runs on host, not in container)
+# This maps to ~/.jib-sharing on older setups, but ~/sharing is the canonical path
+LOGS_DIR = Path.home() / "sharing" / "logs" / "conversations"
+ANALYSIS_DIR = Path.home() / "sharing" / "analysis"
+PROMPTS_DIR = Path.home() / "sharing" / "prompts"
 
 
 class ConversationAnalyzer:
@@ -461,7 +466,7 @@ Period: Last {self.days} days
 
     def send_notification(self, metrics: Dict[str, Any], prompt_rec_count: int, comm_rec_count: int, report_file: Path, full_report: str):
         """Send notification about analysis results via Slack with threading"""
-        notification_dir = Path.home() / ".jib-sharing" / "notifications"
+        notification_dir = Path.home() / "sharing" / "notifications"
         notification_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
