@@ -32,9 +32,9 @@
   - ✅ JIRA sync (hourly) - All open INFRA tickets + epics
   - ✅ GitHub sync (15 min) - PR data, checks, comments
 - ✅ Active context monitoring and analysis
-  - ✅ JIRA watcher (5 min) - Analyzes tickets, creates Beads tasks
-  - ✅ Confluence watcher (5 min) - Monitors ADRs, identifies impact
-  - ✅ GitHub watcher - Monitors PR checks, suggests fixes
+  - ✅ JIRA watcher (triggered after sync) - Analyzes tickets, creates Beads tasks
+  - ✅ Confluence watcher (triggered after sync) - Monitors ADRs, identifies impact
+  - ✅ GitHub watcher (triggered after sync) - Monitors PR checks, suggests fixes
 - ✅ Sprint analysis tool - On-demand ticket analysis and recommendations
 - ✅ Persistent task memory (Beads - git-backed task tracking)
 - ✅ Automated code and conversation analyzers
@@ -366,7 +366,7 @@ Agent should demonstrate L3-L4 behaviors:
 - **Output:** `~/context-sync/confluence/` - Markdown files
 - **Format:** Atlassian Document Format (ADF) → Markdown
 - **Connector:** Python-based with incremental sync
-- **Container Analysis:** Passive monitoring via `context-watcher`
+- **Container Analysis:** Triggered via `jib --exec --worktree` after sync completes
 
 **JIRA Sync** (`components/context-sync/connectors/jira/`)
 - **Host Service:** `context-sync.timer` - Runs hourly (same timer as Confluence)
@@ -376,7 +376,7 @@ Agent should demonstrate L3-L4 behaviors:
 - **Format:** `{KEY}_{SUMMARY}.md` with metadata, description, comments
 - **Includes:** All issue types (stories, tasks, bugs, epics)
 - **Incremental Sync:** Tracks ticket hashes to avoid re-fetching unchanged tickets
-- **Container Analysis:** `jira-watcher.py` analyzes tickets, creates Beads tasks, sends notifications
+- **Container Analysis:** `jira-watcher.py` triggered via `jib --exec --worktree` after sync
 
 **GitHub Sync** (`components/github-sync/`)
 - **Host Service:** `github-sync.timer` - Runs every 15 minutes
@@ -387,18 +387,19 @@ Agent should demonstrate L3-L4 behaviors:
   - `checks/{repo}-PR-{num}-checks.json` - Check status and logs
   - `comments/{repo}-PR-{num}-comments.json` - PR comments for response tracking
 - **Scope:** Only PRs opened by current user (for now)
-- **Container Analysis:** `github-watcher` monitors check failures, suggests fixes
+- **Container Analysis:** `check-monitor.py` triggered via `jib --exec --worktree` after sync
 
 **Container-Side Active Analysis:**
 
 **Context Watcher** (`jib-container/components/context-watcher/`)
-- **JIRA Watcher:** Runs every 5 minutes, analyzes new/updated tickets
+- **Architecture:** Exec-based pattern triggered by `context-sync.service` via `jib --exec --worktree`
+- **JIRA Watcher:** Analyzes new/updated tickets after hourly sync
   - Extracts action items from descriptions
   - Estimates scope (small/medium/large)
   - Identifies dependencies and risks
   - Creates Beads tasks automatically
   - Sends Slack notifications with summaries
-- **Confluence Watcher:** Runs every 5 minutes, monitors high-value docs
+- **Confluence Watcher:** Monitors high-value docs after hourly sync
   - Focuses on ADRs and runbooks
   - Detects decision keywords, deprecations, migrations
   - Identifies impact on current work
@@ -406,7 +407,8 @@ Agent should demonstrate L3-L4 behaviors:
   - Sends Slack notifications
 
 **GitHub Watcher** (`jib-container/components/github-watcher/`)
-- **Check Monitor:** Monitors PR check failures, suggests automated fixes
+- **Architecture:** Exec-based pattern triggered by `github-sync.service` via `jib --exec --worktree`
+- **Check Monitor:** Analyzes PR check failures after sync (every 15 min), suggests automated fixes
 - **Comment Responder (Phase 3):** Analyzes PR comments, suggests responses
 - **Scope:** Only user's own PRs currently
 
@@ -524,6 +526,45 @@ beads show bd-a3f8  # Read all previous notes and context
 - **Cache:** SQLite for fast queries (auto-rebuilt each session)
 
 This solves the fundamental "LLM amnesia" problem while enabling true autonomous operation across sessions and containers.
+
+### Exec-Based Analysis Architecture
+
+**Pattern:** Event-driven analysis triggered by host services via `jib --exec`
+
+**Architecture:**
+```
+Host systemd service syncs data → Triggers analysis via jib --exec --worktree
+  ↓
+Container: docker exec in running container
+  ↓
+Create temporary git worktree for isolation
+  ↓
+Analysis script runs once → Sends notifications → Exits
+  ↓
+Cleanup: Remove temporary worktree
+```
+
+**Benefits:**
+- **Event-driven:** Analysis only when data changes (after sync completes)
+- **No background processes:** Container has no continuous watchers
+- **Git isolation:** Each analysis gets its own worktree with temporary branch
+- **Concurrent safe:** Multiple analyses can run simultaneously without conflicts
+- **Lower resource usage:** No polling loops, scripts exit after completion
+- **Simpler debugging:** One-shot executions easier to trace than continuous loops
+
+**Implementation:**
+- **github-sync.service:** `ExecStartPost` triggers `check-monitor.py` via `jib --exec --worktree`
+- **context-sync.service:** `ExecStartPost` triggers `jira-watcher.py` and `confluence-watcher.py`
+- **slack-receiver:** Triggers `incoming-processor.py` when message arrives
+- **Worktrees:** Each execution gets isolated branch (`jib-exec-{timestamp}`)
+- **Cleanup:** Automatic worktree removal after script completes
+
+**Why exec-based over continuous watchers:**
+1. **Resource efficiency:** No CPU cycles wasted on polling empty directories
+2. **Clearer architecture:** Analysis explicitly coupled to data availability
+3. **Better error handling:** Failed analysis doesn't affect container lifecycle
+4. **Easier testing:** Can manually trigger analysis via `jib --exec`
+5. **Scalability:** Adding new analysis scripts doesn't increase baseline load
 
 ## User Interaction Model
 
