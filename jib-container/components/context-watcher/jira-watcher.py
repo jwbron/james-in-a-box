@@ -35,8 +35,8 @@ def main():
             with state_file.open() as f:
                 data = json.load(f)
                 processed_tickets = data.get('processed', {})
-        except:
-            pass
+        except (json.JSONDecodeError, IOError) as e:
+            print(f'Warning: Failed to load state: {e}')
 
     # Collect new or updated tickets
     new_or_updated = []

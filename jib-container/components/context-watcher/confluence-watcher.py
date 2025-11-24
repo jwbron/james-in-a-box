@@ -35,8 +35,8 @@ def main():
             with state_file.open() as f:
                 data = json.load(f)
                 processed_docs = data.get('processed', {})
-        except:
-            pass
+        except (json.JSONDecodeError, IOError) as e:
+            print(f'Warning: Failed to load state: {e}')
 
     # Focus on high-value documents: ADRs and Runbooks
     adr_files = list(confluence_dir.rglob("*ADR*.md")) + list(confluence_dir.rglob("*adr*.md"))

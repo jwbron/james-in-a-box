@@ -28,10 +28,9 @@ class ConfluenceConfig:
     PROCESSED_DIR: str = os.getenv("CONFLUENCE_PROCESSED_DIR", "processed")
     
     # Sync options
-    MAX_PAGES: int = int(os.getenv("CONFLUENCE_MAX_PAGES", "0"))  # Default to unlimited (0 = no limit)
-    # Set to 0 to disable limit entirely
-    if MAX_PAGES == 0:
-        MAX_PAGES = float('inf')  # No limit
+    # MAX_PAGES: None means unlimited, otherwise an int limit
+    _max_pages_env: str = os.getenv("CONFLUENCE_MAX_PAGES", "0")
+    MAX_PAGES: Optional[int] = None if _max_pages_env == "0" else int(_max_pages_env)
     INCLUDE_ATTACHMENTS: bool = os.getenv("CONFLUENCE_INCLUDE_ATTACHMENTS", "false").lower() == "true"
     
     # Sync behavior
@@ -84,4 +83,4 @@ class ConfluenceConfig:
         if cls.OUTPUT_FORMAT not in ['html', 'markdown']:
             errors.append("CONFLUENCE_OUTPUT_FORMAT must be either 'html' or 'markdown'")
         
-        return errors 
+        return errors
