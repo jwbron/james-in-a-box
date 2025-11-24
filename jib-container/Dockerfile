@@ -228,6 +228,8 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
     if echo "${GITHUB_TOKEN}" | gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth login --with-token 2>/dev/null; then
         echo "✓ GitHub CLI authenticated (PR creation enabled)"
         echo "  Token provided via GITHUB_TOKEN environment variable"
+        # Configure git to use gh as credential helper for git push/pull
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth setup-git 2>/dev/null || true
     else
         echo "⚠ GitHub CLI authentication failed"
         echo "  PR creation features will not be available"
