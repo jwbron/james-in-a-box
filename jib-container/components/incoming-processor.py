@@ -102,8 +102,12 @@ Process this task now."""
             notifications_dir = Path.home() / "sharing" / "notifications"
             notifications_dir.mkdir(parents=True, exist_ok=True)
 
+            # IMPORTANT: Preserve original task ID from message_file for threading
+            # Extract task ID from original filename (e.g., "task-20251124-111907.md" → "task-20251124-111907")
+            original_task_id = message_file.stem  # Remove .md extension
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            notification_file = notifications_dir / f"{timestamp}-task-response.md"
+            # Use original task ID so slack-notifier can find the thread
+            notification_file = notifications_dir / f"{original_task_id}.md"
 
             notification_content = f"""# Task Response - {timestamp}
 
@@ -234,7 +238,13 @@ Process this response now."""
             notifications_dir.mkdir(parents=True, exist_ok=True)
 
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            notification_file = notifications_dir / f"{timestamp}-response-processed.md"
+            # IMPORTANT: Use referenced_notif (original task ID) for threading
+            # If we have a referenced notification, use that ID so slack-notifier threads correctly
+            if referenced_notif:
+                notification_file = notifications_dir / f"{referenced_notif}.md"
+            else:
+                # Fallback if no reference found - extract from message filename
+                notification_file = notifications_dir / f"{message_file.stem}.md"
 
             notification_content = f"""# Response Processed - {timestamp}
 
