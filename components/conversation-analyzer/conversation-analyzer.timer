@@ -7,10 +7,9 @@ Requires=conversation-analyzer.service
 # Run weekly on Monday at 11:00 AM (system local time)
 OnCalendar=Mon *-*-* 11:00:00
 
-# Run 10 minutes after system boot
-OnBootSec=10min
-
 # If system was off when timer should have run, run it on next boot
+# (Persistent=true handles this - no need for OnBootSec which causes
+# unwanted runs every time the timer is restarted via setup.sh)
 Persistent=true
 
 # Randomize start time by up to 5 minutes to avoid resource spikes
