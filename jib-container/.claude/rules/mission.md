@@ -294,6 +294,13 @@ create-pr-helper.py --list-writable
 **For non-writable repositories:** For repos not in `config/repositories.yaml`, commit your changes and notify the user with the branch name so they can push and create the PR from the host.
 The PR helper creates a notification that triggers a Slack DM to the user with the PR URL.
 
+**IMPORTANT - Before pushing additional changes to an existing PR:**
+- Always check if the PR is still open before pushing to its branch
+- Use `gh pr view <PR-number> --json state` to check PR status
+- If a PR was merged or closed, create a NEW branch from main for additional changes
+- Never push new commits to merged/closed PRs - create a fresh PR instead
+- Adding comments to merged PRs is fine, but not new commits
+
 ### 8. Complete Beads Task
 ```bash
 cd ~/beads
