@@ -39,7 +39,6 @@ Even with internet access, you cannot:
 ✅ Use `~/sharing/` for persistent data and notifications
 
 ### What You CANNOT Do (Deliberately)
-❌ **Push to git** (no SSH keys available) - user will push from host
 ❌ **Merge PRs** - NEVER merge your own PRs, even if technically possible. Human must review and merge.
 ❌ **Deploy to GCP** (no gcloud credentials) - user will deploy from host
 ❌ **Access Google Secret Manager** (no auth)
@@ -80,7 +79,7 @@ You CAN modify files in `~/khan/` directly:
 2. **Modify** - Make your changes directly in `~/khan/`
 3. **Test** - Run tests to verify your changes
 4. **Commit** - Commit your changes with clear messages
-5. **Human reviews** - Human reviews commits and pushes from host
+5. **Create PR** - Use PR helper to create PR for human review
 
 **Example workflow**:
 ```bash
@@ -101,7 +100,8 @@ git commit -m "Add OAuth2 authentication
 - Fixed timeout handling
 - See: JIRA-1234"
 
-# 5. Human reviews and pushes from host
+# 5. Create PR for human review
+create-pr-helper.py --auto --reviewer jwiesebron
 ```
 
 ### `~/context-sync/` - Context Sources
@@ -238,15 +238,13 @@ git push
 # This is intentional - no SSH keys in sandbox
 ```
 
-**Solution**: Commit locally, human pushes and opens PR from host
+**Solution**: Use the PR helper to push and create PRs
 
 ### Workflow
-1. You: Create branch, make changes, commit locally
-2. You: Prepare PR description with `@create-pr` (generates description file)
-3. Human: Reviews commits in sandbox
-4. Human: Pushes from host machine (has SSH keys)
-5. Human: Opens PR on GitHub with generated description
-6. Human: Reviews and merges PR
+1. You: Make changes, commit locally
+2. You: Create PR with `create-pr-helper.py --auto --reviewer jwiesebron`
+3. Human: Reviews PR on GitHub
+4. Human: Approves and merges PR
 
 **IMPORTANT**: You must NEVER merge PRs yourself. Even if the PR helper or other tools give you merge capability, merging is exclusively the human's responsibility. This ensures proper code review and accountability.
 
@@ -354,10 +352,9 @@ service redis-server status
 
 ### After Completing Work
 - Run full test suite
-- Prepare PR artifacts with `@create-pr audit` (generates description)
+- Create PR with `create-pr-helper.py --auto --reviewer jwiesebron`
 - Save context with `@save-context <project>`
 - Summarize what was done for human
-- Human will open PR on GitHub
 
 ## Installation and Packages
 
