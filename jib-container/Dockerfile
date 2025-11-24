@@ -124,6 +124,19 @@ export PYTHONDONTWRITEBYTECODE=1
 # Configure git to commit as "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.name "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.org"
+
+# Also fix local repo configs in case they were corrupted with Claude's authorship
+# Local configs override global, so we need to ensure they use jib too
+if [ -d "${USER_HOME}/.git-main" ]; then
+    for repo_config in "${USER_HOME}/.git-main"/*/config; do
+        if [ -f "$repo_config" ]; then
+            repo_dir=$(dirname "$repo_config")
+            # Use git config to set local repo identity (will update the config file)
+            git config -f "$repo_config" user.name "jib"
+            git config -f "$repo_config" user.email "jib@khan.org"
+        fi
+    done
+fi
 echo "✓ Git configured to commit as jib <jib@khan.org>"
 
 # Fix worktree .git files to point to mounted git directories
