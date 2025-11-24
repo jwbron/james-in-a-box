@@ -81,6 +81,87 @@ def check_claude_credentials() -> tuple[bool, bool]:
         return (False, False)
 
 
+def fix_claude_scopes() -> bool:
+    """
+    Automatically fix Claude credentials with incomplete scopes.
+
+    Launches interactive Claude session to trigger re-authentication
+    with full OAuth scopes, then verifies the fix.
+
+    Returns:
+        bool: True if scopes were successfully fixed, False otherwise
+    """
+    print()
+    print(f"{Colors.BOLD}Auto-fixing Claude scopes...{Colors.NC}")
+    print()
+    info("This will launch an interactive Claude session to re-authenticate.")
+    info("The OAuth flow will request the full set of required scopes.")
+    print()
+    info("What will happen:")
+    print("  1. Claude will open in your browser for authentication")
+    print("  2. Complete the OAuth flow in your browser")
+    print("  3. Once you see the Claude prompt, press Ctrl+C to exit")
+    print("  4. Setup will continue automatically")
+    print()
+
+    try:
+        response = input(f"{Colors.YELLOW}Press Enter to start, or Ctrl+C to skip: {Colors.NC}").strip()
+    except KeyboardInterrupt:
+        print()
+        warn("Skipped scope fix - continuing with partial scopes")
+        return False
+
+    print()
+    info("Launching Claude for re-authentication...")
+    print()
+
+    try:
+        # Launch interactive Claude session
+        # This triggers OAuth with full scopes
+        result = subprocess.run(
+            ["claude"],
+            stdin=subprocess.DEVNULL,
+            timeout=60  # 60 second timeout for auth
+        )
+
+        # If claude exited normally (Ctrl+C), check if scopes were fixed
+        print()
+        info("Verifying credentials...")
+
+        _, has_full_scopes = check_claude_credentials()
+
+        if has_full_scopes:
+            success("Credentials updated with full scopes!")
+            return True
+        else:
+            warn("Credentials still missing required scopes")
+            warn("You may need to complete the OAuth flow in your browser")
+            return False
+
+    except subprocess.TimeoutExpired:
+        warn("Authentication timed out after 60 seconds")
+        warn("Please complete authentication and run setup again")
+        return False
+    except FileNotFoundError:
+        error("'claude' command not found - is Claude Code installed?")
+        return False
+    except KeyboardInterrupt:
+        print()
+        info("Authentication interrupted")
+
+        # Check if scopes were updated before interruption
+        _, has_full_scopes = check_claude_credentials()
+        if has_full_scopes:
+            success("Credentials updated with full scopes!")
+            return True
+        else:
+            warn("Authentication incomplete - scopes not updated")
+            return False
+    except Exception as e:
+        error(f"Failed to fix scopes: {e}")
+        return False
+
+
 class Config:
     """Configuration paths and constants"""
     CONFIG_DIR = Path.home() / ".jib"
@@ -718,26 +799,44 @@ def setup() -> bool:
     if not creds_exist:
         warn("Claude Code credentials not found on host")
         warn("")
-        warn("To authenticate Claude Code:")
-        warn("  1. Run: claude")
-        warn("  2. Follow the browser authentication flow")
-        warn("  3. Let the interactive session start (this grants full scopes)")
-        warn("  4. Exit with Ctrl+C once authenticated")
-        warn("")
         info(f"Mounting: {claude_dir} (empty - container will prompt for auth)")
+        print()
+        info("The container will prompt for authentication on first launch.")
+        info("After authenticating, you can optionally copy credentials back to host:")
+        print("  cp ~/.claude/.credentials.json /tmp/host-claude/.credentials.json")
     elif not has_full_scopes:
         warn("Claude Code credentials exist but are missing required scope")
         warn("")
         warn("Current scopes: user:inference, user:profile")
         warn("Missing scope: user:sessions:claude_code")
         warn("")
-        warn("To fix: Run interactive Claude Code session once:")
-        warn("  1. Run: claude")
-        warn("  2. This will trigger re-authentication with full scopes")
-        warn("  3. Exit with Ctrl+C once session starts")
-        warn("")
-        warn("Container will work with limited functionality (--print mode only)")
-        info(f"Mounting: {claude_dir} (partial scopes)")
+
+        # Offer to fix automatically
+        try:
+            response = input(f"{Colors.YELLOW}Fix scopes automatically? (yes/no): {Colors.NC}").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            response = "no"
+
+        if response in ["yes", "y"]:
+            # Attempt automatic fix
+            if fix_claude_scopes():
+                # Scopes fixed successfully - update status
+                success("Claude Code properly authenticated with full scopes")
+                print(f"  Host: {claude_dir}")
+                print(f"  Container will copy credentials at startup")
+            else:
+                # Fix failed - continue with partial scopes
+                warn("Could not fix scopes automatically")
+                warn("Container will work with limited functionality (--print mode only)")
+                info(f"Mounting: {claude_dir} (partial scopes)")
+        else:
+            # User declined auto-fix
+            warn("Container will work with limited functionality (--print mode only)")
+            info(f"Mounting: {claude_dir} (partial scopes)")
+            print()
+            info("To fix manually, run: claude")
+            info("Then re-run: jib --setup")
     else:
         success("Claude Code properly authenticated with full scopes")
         print(f"  Host: {claude_dir}")
