@@ -529,7 +529,7 @@ This solves the fundamental "LLM amnesia" problem while enabling true autonomous
 
 ### Exec-Based Analysis Architecture
 
-**Pattern:** Event-driven analysis triggered by host services via `jib --exec`
+**Pattern:** Event-driven analysis triggered by host services via `jib --exec`, using Claude Code for intelligent analysis
 
 **Architecture:**
 ```
@@ -537,13 +537,31 @@ Host systemd service syncs data → Triggers analysis via jib --exec
   ↓
 Spawn new ephemeral container (docker run --rm)
   ↓
-Analysis script runs once → Sends notifications → Exits
+Analysis script collects data → Constructs prompt → Calls claude --print
+  ↓
+Claude Code analyzes, creates Beads tasks, generates notifications
   ↓
 Container automatically removed (--rm flag)
 ```
 
+**Intelligence Layer: Claude Code Integration**
+
+All watchers use `claude --print` for intelligent analysis instead of simple pattern matching:
+
+- **GitHub Check Monitor:** Analyzes PR check failures, understands logs, suggests and attempts automatic fixes
+- **JIRA Watcher:** Parses tickets, assesses scope/complexity, extracts requirements and action items
+- **Confluence Watcher:** Analyzes ADRs and runbooks, identifies architectural decisions and impacts
+- **Slack Processor:** Processes incoming tasks and responses with full context awareness
+
+Each watcher constructs a comprehensive prompt including:
+- Data to analyze (check failures, tickets, documents, messages)
+- Workflow instructions per ADR (analyze → track in Beads → act → notify)
+- Context about the ephemeral container environment
+- Expected output format and actions
+
 **Benefits:**
 - **Event-driven:** Analysis only when data changes (after sync completes)
+- **Intelligent analysis:** Claude Code understands context, not just pattern matching
 - **No background processes:** Container has no continuous watchers
 - **Total isolation:** Each execution in separate container, can't affect interactive sessions
 - **Concurrent safe:** Multiple analyses can run simultaneously without conflicts
@@ -551,13 +569,22 @@ Container automatically removed (--rm flag)
 - **Lower resource usage:** No polling loops, scripts exit after completion
 - **Simpler debugging:** One-shot executions easier to trace than continuous loops
 - **No git complexity:** Mounts main repos directly, no worktree management needed
+- **Autonomous action:** Can attempt automatic fixes, create PRs, update code
 
 **Implementation:**
 - **github-sync.service:** `ExecStartPost` triggers `check-monitor.py` via `jib --exec`
+  - Collects all PR check failures with logs
+  - Calls `claude --print` with analysis workflow
+  - Claude analyzes logs, identifies root causes, attempts automatic fixes
 - **context-sync.service:** `ExecStartPost` triggers `jira-watcher.py` and `confluence-watcher.py`
+  - JIRA: Collects new/updated tickets, calls Claude to analyze requirements and scope
+  - Confluence: Collects new/updated ADRs/runbooks, calls Claude to identify impacts
 - **slack-receiver:** Triggers `incoming-processor.py` when message arrives
+  - Parses incoming tasks or responses
+  - Calls Claude with full context to execute work
 - **Containers:** Each execution gets unique ID (`jib-exec-{timestamp}-{pid}`)
 - **Cleanup:** Automatic via Docker `--rm` flag (no manual cleanup needed)
+- **Timeout:** All Claude invocations have 10-15 minute timeouts to prevent hangs
 
 **Why ephemeral containers over docker exec:**
 1. **Isolation:** Cannot affect running Claude Code sessions or other jobs
@@ -567,6 +594,7 @@ Container automatically removed (--rm flag)
 5. **Better error handling:** Failed analysis doesn't affect container lifecycle
 6. **Easier testing:** Can manually trigger analysis via `jib --exec`
 7. **Scalability:** Adding new analysis scripts doesn't increase baseline load
+8. **Concurrent Claude:** Multiple Claude instances can run in parallel safely
 
 ## User Interaction Model
 
