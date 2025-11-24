@@ -5,11 +5,19 @@ Documentation=file://%h/khan/james-in-a-box/components/github-sync/README.md
 [Service]
 Type=oneshot
 WorkingDirectory=%h/khan/james-in-a-box/components/github-sync
-ExecStart=%h/khan/james-in-a-box/components/github-sync/sync.py
+
+# Sync all PRs in the repo (not just @me) so we can review others' PRs
+ExecStart=%h/khan/james-in-a-box/components/github-sync/sync.py --repo jwiesebron/james-in-a-box --all-prs
 
 # After syncing PR data, run analysis in JIB container (new ephemeral container)
-# GitHub watcher analyzes PR checks and suggests fixes
+# 1. Check monitor - analyzes failed checks and suggests fixes
 ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/github-watcher/check-monitor.py
+
+# 2. PR reviewer - auto-reviews new PRs from others (skips your own)
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/github-watcher/pr-reviewer.py --watch
+
+# 3. Comment responder - detects new comments needing responses on YOUR PRs
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/github-watcher/comment-responder.py
 
 [Install]
 WantedBy=default.target

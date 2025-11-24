@@ -20,11 +20,13 @@ from typing import Dict, List, Any, Optional
 
 
 class GitHubSync:
-    def __init__(self, sync_dir: Path):
+    def __init__(self, sync_dir: Path, repo: str = None, all_prs: bool = False):
         self.sync_dir = sync_dir
         self.prs_dir = sync_dir / "prs"
         self.checks_dir = sync_dir / "checks"
         self.comments_dir = sync_dir / "comments"
+        self.repo = repo  # Optional: specific repo to sync (e.g., "jwiesebron/james-in-a-box")
+        self.all_prs = all_prs  # If True, sync all PRs in repo, not just @me
 
         # Ensure directories exist
         self.prs_dir.mkdir(parents=True, exist_ok=True)
@@ -66,16 +68,24 @@ class GitHubSync:
             return ""
 
     def sync_prs(self):
-        """Sync all open PRs authored by current user"""
+        """Sync open PRs - either all in repo or just authored by current user"""
         print("Fetching open PRs...")
 
-        # Get list of open PRs
-        prs = self.gh_api(
-            "pr list --author @me --state open "
-            "--json number,title,url,updatedAt,headRefName,baseRefName,headRepository"
-        )
+        # Build command based on options
+        cmd_parts = ["pr", "list", "--state", "open",
+                     "--json", "number,title,url,updatedAt,headRefName,baseRefName,headRepository"]
 
-        print(f"Found {len(prs)} open PR(s)")
+        if self.repo:
+            cmd_parts.extend(["--repo", self.repo])
+
+        if not self.all_prs:
+            cmd_parts.extend(["--author", "@me"])
+
+        # Get list of open PRs
+        prs = self.gh_api(" ".join(cmd_parts))
+
+        scope = "all" if self.all_prs else "your"
+        print(f"Found {len(prs)} open PR(s) ({scope} PRs)")
 
         pr_numbers = []
         for pr in prs:
@@ -321,24 +331,40 @@ class GitHubSync:
 
 def main():
     """Main entry point"""
-    sync_dir = Path.home() / "context-sync" / "github"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Sync GitHub PRs to local filesystem")
+    parser.add_argument("--repo", "-r", help="Specific repo to sync (e.g., jwiesebron/james-in-a-box)")
+    parser.add_argument("--all-prs", "-a", action="store_true",
+                        help="Sync ALL open PRs in repo, not just your own")
+    parser.add_argument("--output", "-o", help="Output directory (default: ~/context-sync/github)")
+
+    args = parser.parse_args()
+
+    sync_dir = Path(args.output) if args.output else Path.home() / "context-sync" / "github"
 
     print("=" * 60)
     print("GitHub PR Sync")
+    if args.repo:
+        print(f"Repository: {args.repo}")
+    if args.all_prs:
+        print("Mode: All PRs in repository")
+    else:
+        print("Mode: Your PRs only")
     print("=" * 60)
     print()
 
     try:
-        syncer = GitHubSync(sync_dir)
+        syncer = GitHubSync(sync_dir, repo=args.repo, all_prs=args.all_prs)
         syncer.sync_prs()
         print()
         print("=" * 60)
-        print("✓ Sync complete")
+        print("Sync complete")
         print("=" * 60)
     except Exception as e:
         print()
         print("=" * 60)
-        print(f"✗ Sync failed: {e}", file=sys.stderr)
+        print(f"Sync failed: {e}", file=sys.stderr)
         print("=" * 60)
         sys.exit(1)
 

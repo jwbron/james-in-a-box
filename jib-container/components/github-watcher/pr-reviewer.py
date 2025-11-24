@@ -21,6 +21,90 @@ class PRReviewer:
         self.notifications_dir = Path.home() / "sharing" / "notifications"
         self.beads_dir = Path.home() / "beads"
 
+        # Track which PRs have been reviewed
+        self.state_file = Path.home() / "sharing" / "tracking" / "pr-reviewer-state.json"
+        self.reviewed_prs = self.load_state()
+
+    def load_state(self) -> dict:
+        """Load previously reviewed PR IDs"""
+        if self.state_file.exists():
+            try:
+                with self.state_file.open() as f:
+                    return json.load(f)
+            except:
+                pass
+        return {'reviewed': {}}
+
+    def save_state(self):
+        """Save reviewed PR IDs"""
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        with self.state_file.open('w') as f:
+            json.dump(self.reviewed_prs, f, indent=2)
+
+    def watch(self):
+        """Scan for new PRs and review them"""
+        if not self.prs_dir.exists():
+            print("PRs directory not found - skipping review")
+            return
+
+        print("Scanning for new PRs to review...")
+
+        # Get current user to skip self-reviews
+        current_user = self.get_current_user()
+
+        # Scan all PR files
+        for pr_file in self.prs_dir.glob("*-PR-*.md"):
+            try:
+                # Extract PR number and repo from filename: repo-PR-123.md
+                filename = pr_file.stem
+                parts = filename.split('-PR-')
+                if len(parts) != 2:
+                    continue
+
+                repo_name = parts[0]
+                pr_num = int(parts[1])
+
+                # Check if already reviewed
+                review_key = f"{repo_name}-{pr_num}"
+                if review_key in self.reviewed_prs.get('reviewed', {}):
+                    continue
+
+                # Load PR to check author
+                pr_context = self.load_pr_metadata(pr_file)
+
+                # Skip PRs authored by current user (don't self-review)
+                if current_user and pr_context.get('author', '').lower() == current_user.lower():
+                    print(f"  Skipping PR #{pr_num} (your own PR)")
+                    continue
+
+                print(f"  Reviewing new PR #{pr_num} in {repo_name}")
+
+                # Generate review
+                if self.review_pr(pr_num, repo_name):
+                    # Mark as reviewed
+                    self.reviewed_prs.setdefault('reviewed', {})[review_key] = {
+                        'reviewed_at': datetime.now().isoformat(),
+                        'pr_num': pr_num,
+                        'repo': repo_name
+                    }
+                    self.save_state()
+
+            except Exception as e:
+                print(f"  Error processing {pr_file}: {e}")
+
+    def get_current_user(self) -> str:
+        """Get current GitHub user from gh CLI"""
+        try:
+            result = subprocess.run(
+                ['gh', 'api', 'user', '--jq', '.login'],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except:
+            pass
+        return None
+
     def review_pr(self, pr_num: int, repo_name: str = None) -> bool:
         """Generate a comprehensive review for the specified PR"""
         print(f"Generating review for PR #{pr_num}")
@@ -80,6 +164,7 @@ class PRReviewer:
             'description': '',
             'url': '',
             'branch': '',
+            'author': '',
             'files_changed': [],
             'additions': 0,
             'deletions': 0
@@ -95,6 +180,8 @@ class PRReviewer:
                 metadata['url'] = line.split(':', 1)[1].strip()
             elif line.startswith('**Branch**:'):
                 metadata['branch'] = line.split(':', 1)[1].strip()
+            elif line.startswith('**Author**:'):
+                metadata['author'] = line.split(':', 1)[1].strip()
             elif line.startswith('**Files Changed**:'):
                 # Parse file changes count
                 match = re.search(r'(\d+)', line)
@@ -518,23 +605,30 @@ class PRReviewer:
 def main():
     """Main entry point for PR review"""
     import sys
+    import argparse
 
-    if len(sys.argv) < 2:
-        print("Usage: pr-reviewer.py <pr_number> [repo_name]")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Generate code reviews for GitHub PRs")
+    parser.add_argument("pr_number", nargs="?", type=int, help="PR number to review")
+    parser.add_argument("repo_name", nargs="?", help="Repository name (optional)")
+    parser.add_argument("--watch", "-w", action="store_true",
+                        help="Scan for new PRs and review them (excludes own PRs)")
 
-    try:
-        pr_num = int(sys.argv[1])
-        repo_name = sys.argv[2] if len(sys.argv) > 2 else None
+    args = parser.parse_args()
 
-        reviewer = PRReviewer()
-        success = reviewer.review_pr(pr_num, repo_name)
+    reviewer = PRReviewer()
 
+    if args.watch:
+        # Watch mode: scan for new PRs to review
+        reviewer.watch()
+        sys.exit(0)
+    elif args.pr_number:
+        # Direct PR review
+        success = reviewer.review_pr(args.pr_number, args.repo_name)
         sys.exit(0 if success else 1)
-
-    except ValueError:
-        print("Error: PR number must be an integer")
-        sys.exit(1)
+    else:
+        # Default: run in watch mode
+        reviewer.watch()
+        sys.exit(0)
 
 
 if __name__ == '__main__':
