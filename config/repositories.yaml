@@ -20,7 +20,7 @@
 # - Create PRs via create-pr-helper.py
 # - Implement fixes for failed CI checks
 writable_repos:
-  - jwiesebron/james-in-a-box
+  - jwbron/james-in-a-box
 
 # Default reviewer for PRs created by jib
 default_reviewer: jwiesebron
