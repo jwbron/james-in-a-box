@@ -453,6 +453,93 @@ def cleanup_worktrees(container_id: str) -> None:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
 
+def create_temp_worktree(repo_name: str) -> Optional[Path]:
+    """Create a temporary worktree for a single repo (used by jib --exec)
+
+    Args:
+        repo_name: Name of the repository (e.g., "webapp", "james-in-a-box")
+
+    Returns:
+        Path to the created worktree, or None if creation failed
+    """
+    original_repo = Config.KHAN_SOURCE / repo_name
+
+    if not original_repo.exists() or not (original_repo / ".git").exists():
+        error(f"Repository not found: {original_repo}")
+        return None
+
+    # Create unique temp worktree ID
+    temp_id = f"exec-{int(time.time())}-{os.getpid()}"
+    worktree_dir = Config.WORKTREE_BASE / temp_id
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    worktree_path = worktree_dir / repo_name
+    branch_name = f"jib-exec-{temp_id}"
+
+    try:
+        info(f"Creating temporary worktree for {repo_name}...")
+
+        # Create worktree
+        result = subprocess.run(
+            ["git", "worktree", "add", str(worktree_path), "-b", branch_name],
+            cwd=original_repo,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            success(f"  ✓ Temporary worktree: {worktree_path}")
+            return worktree_path
+        else:
+            error(f"  ✗ Failed to create worktree: {result.stderr}")
+            return None
+
+    except Exception as e:
+        error(f"  ✗ Error creating worktree: {e}")
+        return None
+
+
+def cleanup_temp_worktree(worktree_path: Path) -> None:
+    """Clean up a temporary worktree created by create_temp_worktree
+
+    Args:
+        worktree_path: Path to the worktree to remove
+    """
+    if not worktree_path.exists():
+        return
+
+    repo_name = worktree_path.name
+    original_repo = Config.KHAN_SOURCE / repo_name
+
+    if not original_repo.exists():
+        return
+
+    try:
+        # Remove worktree from git
+        result = subprocess.run(
+            ["git", "worktree", "remove", str(worktree_path), "--force"],
+            cwd=original_repo,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            info(f"  ✓ Cleaned up temporary worktree")
+        else:
+            warn(f"  ✗ Failed to clean up worktree: {result.stderr}")
+
+    except Exception as e:
+        warn(f"  ✗ Error cleaning up worktree: {e}")
+
+    # Remove worktree directory
+    try:
+        import shutil
+        worktree_dir = worktree_path.parent
+        shutil.rmtree(worktree_dir)
+    except Exception as e:
+        warn(f"  ✗ Failed to remove directory: {e}")
+
+
 def setup() -> bool:
     """Interactive setup process"""
     print()
@@ -684,11 +771,13 @@ def get_running_container() -> Optional[str]:
     return None
 
 
-def exec_in_running_container(command: List[str]) -> bool:
+def exec_in_running_container(command: List[str], use_worktree: bool = False, repo_name: str = "james-in-a-box") -> bool:
     """Execute a command in the running JIB container.
 
     Args:
         command: Command to execute
+        use_worktree: If True, create a temporary worktree for isolation
+        repo_name: Repository name for worktree (default: james-in-a-box)
 
     Returns:
         True if successful, False otherwise
@@ -707,16 +796,42 @@ def exec_in_running_container(command: List[str]) -> bool:
 
     info(f"Executing in running container: {container_name}")
     print(f"Command: {' '.join(command)}")
+
+    # Create temporary worktree if requested
+    worktree_path = None
+    if use_worktree:
+        print()
+        worktree_path = create_temp_worktree(repo_name)
+        if not worktree_path:
+            error("Failed to create temporary worktree")
+            return False
+
     print()
 
     try:
+        # Build docker exec command
+        docker_cmd = ["docker", "exec", "-it"]
+
+        # Set working directory to worktree if created
+        if worktree_path:
+            # Translate host path to container path
+            container_worktree = str(worktree_path).replace(
+                str(Config.WORKTREE_BASE),
+                f"/home/{os.environ['USER']}/.jib-worktrees"
+            )
+            docker_cmd.extend(["-w", container_worktree])
+            info(f"Working directory: {container_worktree}")
+            print()
+
+        docker_cmd.append(container_name)
+        docker_cmd.extend(command)
+
         # Execute command in running container
-        # Use same user as container is running with
-        result = subprocess.run(
-            ["docker", "exec", "-it", container_name] + command,
-            check=False
-        )
-        return result.returncode == 0
+        result = subprocess.run(docker_cmd, check=False)
+        success_result = result.returncode == 0
+
+        return success_result
+
     except KeyboardInterrupt:
         print()
         warn("Interrupted by user")
@@ -724,6 +839,11 @@ def exec_in_running_container(command: List[str]) -> bool:
     except Exception as e:
         error(f"Failed to execute command: {e}")
         return False
+    finally:
+        # Clean up temporary worktree
+        if worktree_path:
+            print()
+            cleanup_temp_worktree(worktree_path)
 
 
 def run_claude() -> bool:
@@ -809,6 +929,11 @@ def run_claude() -> bool:
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
 
+    # Mount worktree base directory for jib --exec temporary worktrees
+    worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
+    mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
+    print(f"  • ~/.jib-worktrees/ (for jib --exec temporary worktrees)")
+
     print()
 
     # Remove old container if exists (cleanup any previous runs)
@@ -868,8 +993,11 @@ Examples:
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in running container
   jib --exec python3 ~/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
+  jib --exec --worktree python3 script.py # Execute with git isolation (temporary worktree)
+  jib --exec --worktree --repo webapp <command>  # Use webapp repo for worktree
 
 Note: --exec requires a container to be running. Start one first with 'jib'
+      --worktree creates a temporary git worktree for isolation (auto-cleaned up after)
         """
     )
     parser.add_argument(
@@ -886,6 +1014,16 @@ Note: --exec requires a container to be running. Start one first with 'jib'
         "--exec",
         nargs=argparse.REMAINDER,
         help="Execute a command in the running container (requires container to be running)"
+    )
+    parser.add_argument(
+        "--worktree",
+        action="store_true",
+        help="Create temporary worktree for --exec command (provides git isolation)"
+    )
+    parser.add_argument(
+        "--repo",
+        default="james-in-a-box",
+        help="Repository name for worktree (default: james-in-a-box)"
     )
 
     args = parser.parse_args()
@@ -940,7 +1078,7 @@ Note: --exec requires a container to be running. Start one first with 'jib'
 
     # Handle exec - execute in running container
     if args.exec:
-        if not exec_in_running_container(args.exec):
+        if not exec_in_running_container(args.exec, use_worktree=args.worktree, repo_name=args.repo):
             return 1
         return 0
 

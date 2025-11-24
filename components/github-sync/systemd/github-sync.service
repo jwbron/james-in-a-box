@@ -9,6 +9,8 @@ ExecStart=%h/khan/james-in-a-box/components/github-sync/sync.py
 
 # After syncing PR data, run analysis in JIB container
 # GitHub watcher analyzes PR checks and suggests fixes
+# Note: Add --worktree flag if script creates git branches/commits for isolation
+# Example: jib --exec --worktree python3 check-monitor.py
 ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/github-watcher/check-monitor.py
 
 [Install]
