@@ -10,6 +10,7 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 
 - **Slack-based control**: Send tasks, receive notifications, review work from your phone
 - **Secure sandbox**: No credentials, network isolation, human-in-the-loop for all PRs
+- **GitHub PR integration**: Auto-creates PRs, reviews others' PRs, responds to comments
 - **Context-aware**: Syncs Confluence docs, JIRA tickets, and codebase knowledge
 - **Persistent memory**: Beads task tracking survives restarts, enables multi-session work
 - **Mobile-first**: Fully productive workflow from phone (notifications, PR reviews, approvals)
