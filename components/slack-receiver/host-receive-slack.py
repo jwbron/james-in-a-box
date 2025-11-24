@@ -263,6 +263,70 @@ class SlackReceiver:
             'content': text
         }
 
+    def _chunk_message(self, content: str, max_length: int = 3000) -> list:
+        """Split long messages into chunks that fit Slack's limits.
+
+        Slack's message limit is ~4000 chars, but we chunk at 3000 for safety.
+        Tries to split on natural boundaries (paragraphs, sentences).
+
+        Args:
+            content: The full message content
+            max_length: Maximum characters per chunk (default 3000)
+
+        Returns:
+            List of message chunks
+        """
+        if len(content) <= max_length:
+            return [content]
+
+        chunks = []
+        remaining = content
+
+        while remaining:
+            # If remaining text fits in one chunk, we're done
+            if len(remaining) <= max_length:
+                chunks.append(remaining)
+                break
+
+            # Find the best split point within max_length
+            chunk = remaining[:max_length]
+
+            # Try to split on paragraph boundary (double newline)
+            split_idx = chunk.rfind('\n\n')
+
+            # If no paragraph boundary, try single newline
+            if split_idx == -1:
+                split_idx = chunk.rfind('\n')
+
+            # If no newline, try sentence boundary
+            if split_idx == -1:
+                split_idx = max(
+                    chunk.rfind('. '),
+                    chunk.rfind('! '),
+                    chunk.rfind('? ')
+                )
+                if split_idx != -1:
+                    split_idx += 1  # Include the punctuation
+
+            # If no natural boundary, split at word boundary
+            if split_idx == -1:
+                split_idx = chunk.rfind(' ')
+
+            # If still no good split point, just cut at max_length
+            if split_idx == -1:
+                split_idx = max_length
+
+            # Add this chunk
+            chunks.append(remaining[:split_idx].strip())
+            remaining = remaining[split_idx:].strip()
+
+        # Add chunk indicators if we split the message
+        if len(chunks) > 1:
+            for i, chunk in enumerate(chunks):
+                chunks[i] = f"**(Part {i+1}/{len(chunks)})**\n\n{chunk}"
+
+        return chunks
+
     def _write_message(self, msg_type: str, content: str, metadata: Dict[str, Any]):
         """Write incoming message to appropriate directory."""
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -333,11 +397,27 @@ class SlackReceiver:
             thread_ts: Thread timestamp (creates threaded reply if provided)
         """
         try:
-            self.web_client.chat_postMessage(
-                channel=channel,
-                text=text,
-                thread_ts=thread_ts  # Post as thread reply if provided
-            )
+            # Split into chunks if message is too long
+            chunks = self._chunk_message(text)
+
+            # Send each chunk
+            for chunk_idx, chunk in enumerate(chunks):
+                response = self.web_client.chat_postMessage(
+                    channel=channel,
+                    text=chunk,
+                    thread_ts=thread_ts  # Post as thread reply if provided
+                )
+
+                # For multi-chunk messages, thread subsequent chunks to the first
+                if chunk_idx == 0 and not thread_ts and response.get('ok'):
+                    # First chunk of a new message - use its ts for subsequent chunks
+                    thread_ts = response.get('ts')
+
+                # Small delay between chunks to ensure proper ordering
+                if chunk_idx < len(chunks) - 1:
+                    import time
+                    time.sleep(0.5)
+
         except Exception as e:
             self.logger.error(f"Failed to send ack: {e}")
 

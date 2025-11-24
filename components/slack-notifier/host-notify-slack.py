@@ -338,6 +338,10 @@ class SlackNotifier:
 
                         first_chunk = False
 
+                        # Add small delay between chunks to ensure proper threading
+                        if chunk_idx < len(chunks) - 1:  # Not the last chunk
+                            time.sleep(0.5)
+
                     else:
                         error = result.get('error', 'unknown error')
                         self.logger.error(f"Failed to send {path.name} chunk {chunk_idx + 1}: {error}")
