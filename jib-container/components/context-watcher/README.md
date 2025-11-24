@@ -1,38 +1,136 @@
 # Context Watcher
 
-Monitors `~/context-sync/` for Confluence and JIRA document updates.
+Proactively monitors and analyzes Confluence and JIRA updates.
 
 **Status**: Operational
 **Type**: Container component (runs inside Docker)
-**Purpose**: Notify agent when context documents change
+**Purpose**: Detect, analyze, and notify about JIRA tickets and Confluence doc changes
 
 ## Overview
 
-The context watcher uses `inotifywait` to monitor the context sync directory for changes:
-- Confluence docs (`~/context-sync/confluence/`)
-- JIRA tickets (`~/context-sync/jira/`)
+Context Watcher consists of two active monitoring components that run every 5 minutes:
 
-When changes are detected, it can trigger agent workflows to incorporate new context.
+### 1. JIRA Watcher
+- **Detects** new or updated JIRA tickets assigned to you
+- **Analyzes** requirements and extracts action items
+- **Estimates** scope (small/medium/large)
+- **Identifies** dependencies and risks
+- **Creates** Beads tasks automatically
+- **Sends** Slack notifications with summaries
+
+### 2. Confluence Watcher
+- **Monitors** high-value docs (ADRs, runbooks)
+- **Detects** new or updated documentation
+- **Summarizes** changes and key points
+- **Identifies** impact on current work
+- **Flags** action items and deprecations
+- **Sends** Slack notifications with analysis
+
+Both components work similarly to github-watcher: they analyze synced data and send proactive notifications.
 
 ## How It Works
 
-1. Starts automatically when container launches (via `docker-setup.py`)
-2. Watches `~/context-sync/` recursively for file changes
-3. Logs events to `~/sharing/tracking/watcher.log`
-4. Agent can read logs to detect new context availability
+```
+Host context-sync (hourly)
+        ↓
+~/context-sync/jira/ and ~/context-sync/confluence/
+        ↓
+Enhanced Context Watcher (every 5 min in container)
+        ↓
+JIRA Watcher:
+  - Detects new/updated tickets
+  - Parses metadata, description, acceptance criteria
+  - Analyzes scope and action items
+  - Creates Beads task
+  - Sends notification
+        ↓
+Confluence Watcher:
+  - Detects new/updated docs (especially ADRs)
+  - Summarizes changes
+  - Identifies impact
+  - Flags action items
+  - Sends notification
+        ↓
+Slack notifications with summaries and next steps
+```
+
+### JIRA Ticket Workflow
+
+```
+New ticket assigned: INFRA-12345
+        ↓
+Parse ticket file:
+  - Title, status, priority
+  - Description
+  - Acceptance criteria
+  - Comments
+        ↓
+Analyze:
+  - Extract action items from description
+  - Estimate scope (criteria count + description length)
+  - Identify dependencies ("depends on", "requires")
+  - Flag risks ("concern", "breaking change")
+        ↓
+Create Beads task: "INFRA-12345: Task title"
+        ↓
+Send Slack notification:
+  📊 Quick Summary
+  📄 Description (truncated if long)
+  ✅ Acceptance Criteria
+  🎯 Extracted Action Items
+  🔗 Dependencies/Blockers
+  ⚠️ Potential Risks
+  📋 Suggested Next Steps
+```
+
+### Confluence Doc Workflow
+
+```
+New ADR detected: ADR #123
+        ↓
+Parse document:
+  - Title
+  - Content summary
+  - Key sections
+        ↓
+Analyze:
+  - Extract decision keywords
+  - Identify deprecations/migrations
+  - Find related technologies
+  - Flag action items
+        ↓
+Create Beads task (if ADR): "Review ADR: {title}"
+        ↓
+Send Slack notification:
+  📝 Summary
+  💡 Impact
+  🎯 Key Points
+  🔧 Related Technologies
+  ⚠️ Important Changes
+  ⚡ Action Required (if applicable)
+  📋 Suggested Next Steps
+```
 
 ## Management
 
-The watcher starts automatically. Manual control:
+The enhanced watcher starts automatically on container startup. Manual control:
 
 ```bash
 # Inside container
-./context-watcher-ctl start
-./context-watcher-ctl stop
-./context-watcher-ctl status
+cd ~/khan/james-in-a-box/jib-container/components/context-watcher
+
+# Control enhanced watcher (JIRA + Confluence)
+./enhanced-watcher-ctl start
+./enhanced-watcher-ctl stop
+./enhanced-watcher-ctl status
+./enhanced-watcher-ctl restart
 
 # View logs
-tail -f ~/sharing/tracking/watcher.log
+tail -f ~/sharing/tracking/enhanced-context-watcher.log
+
+# Check state files
+cat ~/sharing/tracking/jira-watcher-state.json
+cat ~/sharing/tracking/confluence-watcher-state.json
 ```
 
 ## Configuration

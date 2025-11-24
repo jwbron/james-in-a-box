@@ -289,6 +289,15 @@ else
     echo "⚠ GitHub watcher script not found at ${USER_HOME}/khan/james-in-a-box/jib-container/components/github-watcher/github-watcher-ctl"
 fi
 
+# Start enhanced-context-watcher in background (JIRA + Confluence monitoring)
+if [ -f "${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher/enhanced-watcher-ctl" ]; then
+    echo "Starting enhanced context watcher (JIRA + Confluence) in background..."
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bash -c "cd ${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher && ./enhanced-watcher-ctl start"
+    echo "✓ Enhanced context watcher started (monitoring JIRA/Confluence every 5 min)"
+else
+    echo "⚠ Enhanced context watcher script not found at ${USER_HOME}/khan/james-in-a-box/jib-container/components/context-watcher/enhanced-watcher-ctl"
+fi
+
 # Run codebase analyzer on startup (if configured)
 # Checks if analysis was run in last 7 days before running
 if [ -f "${USER_HOME}/khan/james-in-a-box/components/codebase-analyzer/codebase-analyzer.py" ]; then

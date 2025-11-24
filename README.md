@@ -185,7 +185,7 @@ All host components run as systemd user services for reliability and auto-restar
 
 ### Container Components
 
-- **[context-watcher](jib-container/components/context-watcher/README.md)** - Monitors `~/context-sync/` for doc updates
+- **[context-watcher](jib-container/components/context-watcher/README.md)** - Monitors JIRA tickets and Confluence docs, analyzes changes, sends summaries and action items
 - **[github-watcher](jib-container/components/github-watcher/README.md)** - Monitors PR check failures, auto-fixes issues, provides on-demand code reviews, and suggests comment responses
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 - **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
