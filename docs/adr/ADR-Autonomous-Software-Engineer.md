@@ -27,10 +27,21 @@
 **Phase 1 Complete:** Core infrastructure established
 - ✅ Docker-based Claude Code sandbox (james-in-a-box)
 - ✅ Slack integration for bidirectional communication
-- ✅ Context syncing (Confluence, JIRA → local markdown)
+- ✅ Context syncing (Confluence, JIRA, GitHub → local markdown/JSON)
+  - ✅ Confluence sync (hourly) - ADRs, runbooks, docs
+  - ✅ JIRA sync (hourly) - All open INFRA tickets + epics
+  - ✅ GitHub sync (15 min) - PR data, checks, comments
+- ✅ Active context monitoring and analysis
+  - ✅ JIRA watcher (5 min) - Analyzes tickets, creates Beads tasks
+  - ✅ Confluence watcher (5 min) - Monitors ADRs, identifies impact
+  - ✅ GitHub watcher - Monitors PR checks, suggests fixes
+- ✅ Sprint analysis tool - On-demand ticket analysis and recommendations
 - ✅ Persistent task memory (Beads - git-backed task tracking)
 - ✅ Automated code and conversation analyzers
+  - ✅ Codebase analyzer with self-improvement tracking
 - ✅ Systemd service management
+  - ✅ Setup script with update/reload support
+  - ✅ Host setup verification in jib command
 - ✅ File-based notification system
 - ✅ Mobile-accessible Slack interface
 - ✅ Git worktree isolation for concurrent containers
@@ -339,11 +350,73 @@ Agent should demonstrate L3-L4 behaviors:
 - **Detailed descriptions:** Agent generates comprehensive PR details
 - **Linked context:** JIRA tickets, design docs automatically referenced
 
-**4. Context Sync (Phase 1: File-Based)**
-- **Confluence:** ADRs, runbooks, docs → `~/confluence-docs/`
-- **JIRA:** Tickets, requirements → `~/jira/`
-- **Scheduled sync:** Every 15-30 minutes (cron)
-- **Format:** Markdown for LLM consumption
+**4. Context Sync (Phase 1: File-Based) - Implementation Details**
+
+**Architecture: Host Syncs Data → Container Analyzes**
+- **Security Boundary:** Host has credentials, container is credential-free
+- **Sync Components:** Run as systemd user services on host
+- **Analysis Components:** Run inside container, analyze synced data
+- **Communication:** File-based via `~/context-sync/` (read-only in container)
+
+**Implemented Sync Systems:**
+
+**Confluence Sync** (`components/context-sync/connectors/confluence/`)
+- **Host Service:** `context-sync.timer` - Runs hourly
+- **Source:** Confluence API (ADRs, runbooks, engineering docs)
+- **Output:** `~/context-sync/confluence/` - Markdown files
+- **Format:** Atlassian Document Format (ADF) → Markdown
+- **Connector:** Python-based with incremental sync
+- **Container Analysis:** Passive monitoring via `context-watcher`
+
+**JIRA Sync** (`components/context-sync/connectors/jira/`)
+- **Host Service:** `context-sync.timer` - Runs hourly (same timer as Confluence)
+- **Source:** JIRA API - All open INFRA project tickets
+- **JQL Query:** `project = INFRA AND resolution = Unresolved ORDER BY updated DESC`
+- **Output:** `~/context-sync/jira/` - Markdown files per ticket
+- **Format:** `{KEY}_{SUMMARY}.md` with metadata, description, comments
+- **Includes:** All issue types (stories, tasks, bugs, epics)
+- **Incremental Sync:** Tracks ticket hashes to avoid re-fetching unchanged tickets
+- **Container Analysis:** `jira-watcher.py` analyzes tickets, creates Beads tasks, sends notifications
+
+**GitHub Sync** (`components/github-sync/`)
+- **Host Service:** `github-sync.timer` - Runs every 15 minutes
+- **Source:** GitHub API (PR data, checks, comments)
+- **Output:** `~/context-sync/github/` - JSON files
+- **Structure:**
+  - `prs/{repo}-PR-{num}.json` - PR metadata and diffs
+  - `checks/{repo}-PR-{num}-checks.json` - Check status and logs
+  - `comments/{repo}-PR-{num}-comments.json` - PR comments for response tracking
+- **Scope:** Only PRs opened by current user (for now)
+- **Container Analysis:** `github-watcher` monitors check failures, suggests fixes
+
+**Container-Side Active Analysis:**
+
+**Context Watcher** (`jib-container/components/context-watcher/`)
+- **JIRA Watcher:** Runs every 5 minutes, analyzes new/updated tickets
+  - Extracts action items from descriptions
+  - Estimates scope (small/medium/large)
+  - Identifies dependencies and risks
+  - Creates Beads tasks automatically
+  - Sends Slack notifications with summaries
+- **Confluence Watcher:** Runs every 5 minutes, monitors high-value docs
+  - Focuses on ADRs and runbooks
+  - Detects decision keywords, deprecations, migrations
+  - Identifies impact on current work
+  - Creates Beads tasks for ADRs
+  - Sends Slack notifications
+
+**GitHub Watcher** (`jib-container/components/github-watcher/`)
+- **Check Monitor:** Monitors PR check failures, suggests automated fixes
+- **Comment Responder (Phase 3):** Analyzes PR comments, suggests responses
+- **Scope:** Only user's own PRs currently
+
+**Sprint Analysis** (`jib-container/scripts/analyze-sprint.py`)
+- **On-Demand:** Execute via `bin/jib --exec`
+- **Analyzes:** Currently assigned JIRA tickets
+- **Groups:** By status (In Progress, In Review, Blocked, To Do)
+- **Suggests:** Next steps for each ticket, backlog tickets to pull in
+- **Scoring:** Prioritizes by urgency, clarity, and recent activity
+- **Output:** Slack notification with actionable recommendations
 
 **5. Context Evolution (Phase 2-3: MCP + APIs + GCP)**
 - **MCP Servers:** Real-time context access for JIRA, GitHub, monitoring
