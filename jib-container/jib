@@ -810,7 +810,10 @@ def exec_in_running_container(command: List[str], use_worktree: bool = False, re
 
     try:
         # Build docker exec command
-        docker_cmd = ["docker", "exec", "-it"]
+        # Only use -it if stdin is a TTY (interactive shell)
+        docker_cmd = ["docker", "exec"]
+        if sys.stdin.isatty():
+            docker_cmd.append("-it")
 
         # Set working directory to worktree if created
         if worktree_path:
