@@ -82,12 +82,14 @@ You received a task via Slack. Process it according to the workflow below.
 
 Process this task now."""
 
-    # Run Claude Code in print mode
+    # Run Claude Code via stdin (not --print which creates restricted session)
+    # This allows full access to tools and filesystem
     try:
         result = subprocess.run(
-            ["claude", "--print", prompt],
-            capture_output=False,  # Let output go to stdout/stderr for logging
+            ["claude"],
+            input=prompt,
             text=True,
+            capture_output=False,  # Let output go to stdout/stderr for logging
             timeout=600  # 10 minute timeout
         )
 
@@ -185,12 +187,14 @@ You sent a notification that prompted a response from the user. Process their re
 
 Process this response now."""
 
-    # Run Claude Code in print mode
+    # Run Claude Code via stdin (not --print which creates restricted session)
+    # This allows full access to tools and filesystem
     try:
         result = subprocess.run(
-            ["claude", "--print", prompt],
-            capture_output=False,  # Let output go to stdout/stderr for logging
+            ["claude"],
+            input=prompt,
             text=True,
+            capture_output=False,  # Let output go to stdout/stderr for logging
             timeout=600  # 10 minute timeout
         )
 

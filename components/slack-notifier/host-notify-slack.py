@@ -187,6 +187,70 @@ class SlackNotifier:
         name = re.sub(r'^RESPONSE-', '', name)
         return name
 
+    def _chunk_message(self, content: str, max_length: int = 3000) -> List[str]:
+        """Split long messages into chunks that fit Slack's limits.
+
+        Slack's message limit is ~4000 chars, but we chunk at 3000 for safety.
+        Tries to split on natural boundaries (paragraphs, sentences).
+
+        Args:
+            content: The full message content
+            max_length: Maximum characters per chunk (default 3000)
+
+        Returns:
+            List of message chunks
+        """
+        if len(content) <= max_length:
+            return [content]
+
+        chunks = []
+        remaining = content
+
+        while remaining:
+            # If remaining text fits in one chunk, we're done
+            if len(remaining) <= max_length:
+                chunks.append(remaining)
+                break
+
+            # Find the best split point within max_length
+            chunk = remaining[:max_length]
+
+            # Try to split on paragraph boundary (double newline)
+            split_idx = chunk.rfind('\n\n')
+
+            # If no paragraph boundary, try single newline
+            if split_idx == -1:
+                split_idx = chunk.rfind('\n')
+
+            # If no newline, try sentence boundary
+            if split_idx == -1:
+                split_idx = max(
+                    chunk.rfind('. '),
+                    chunk.rfind('! '),
+                    chunk.rfind('? ')
+                )
+                if split_idx != -1:
+                    split_idx += 1  # Include the punctuation
+
+            # If no natural boundary, split at word boundary
+            if split_idx == -1:
+                split_idx = chunk.rfind(' ')
+
+            # If still no good split point, just cut at max_length
+            if split_idx == -1:
+                split_idx = max_length
+
+            # Add this chunk
+            chunks.append(remaining[:split_idx].strip())
+            remaining = remaining[split_idx:].strip()
+
+        # Add chunk indicators if we split the message
+        if len(chunks) > 1:
+            for i, chunk in enumerate(chunks):
+                chunks[i] = f"**(Part {i+1}/{len(chunks)})**\n\n{chunk}"
+
+        return chunks
+
     def _send_slack_message(self, changes: List[str]) -> bool:
         """Send notification files to Slack with threading support.
 
@@ -223,48 +287,65 @@ class SlackNotifier:
             task_id = self._extract_task_id(path.name)
             thread_ts = self.threads.get(task_id)
 
-            # Prepare message payload
-            payload = {
-                'channel': self.slack_channel,
-                'text': content,
-                'mrkdwn': True
-            }
+            # Split content into chunks if too long
+            chunks = self._chunk_message(content)
+            self.logger.info(f"Sending {len(chunks)} chunk(s) for {path.name}")
 
-            # If we have an existing thread, reply in that thread
-            if thread_ts:
-                payload['thread_ts'] = thread_ts
-                self.logger.info(f"Replying in thread {thread_ts} for task {task_id}")
+            # Send each chunk
+            first_chunk = True
+            for chunk_idx, chunk in enumerate(chunks):
+                # Prepare message payload
+                payload = {
+                    'channel': self.slack_channel,
+                    'text': chunk,
+                    'mrkdwn': True
+                }
 
-            # Send to Slack
-            try:
-                response = requests.post(
-                    'https://slack.com/api/chat.postMessage',
-                    headers={
-                        'Authorization': f'Bearer {self.slack_token}',
-                        'Content-Type': 'application/json'
-                    },
-                    json=payload,
-                    timeout=10
-                )
+                # If we have an existing thread, reply in that thread
+                # For multi-chunk messages, subsequent chunks reply to first chunk
+                if thread_ts:
+                    payload['thread_ts'] = thread_ts
+                    if first_chunk:
+                        self.logger.info(f"Replying in thread {thread_ts} for task {task_id}")
 
-                result = response.json()
+                # Send to Slack
+                try:
+                    response = requests.post(
+                        'https://slack.com/api/chat.postMessage',
+                        headers={
+                            'Authorization': f'Bearer {self.slack_token}',
+                            'Content-Type': 'application/json'
+                        },
+                        json=payload,
+                        timeout=10
+                    )
 
-                if result.get('ok'):
-                    self.logger.info(f"Sent notification: {path.name}")
-                    success_count += 1
+                    result = response.json()
 
-                    # Store thread_ts for future replies if this is a new thread
-                    if not thread_ts and result.get('ts'):
-                        self.threads[task_id] = result['ts']
-                        self._save_threads()
-                        self.logger.info(f"Created new thread for task {task_id}: {result['ts']}")
+                    if result.get('ok'):
+                        if first_chunk:
+                            self.logger.info(f"Sent notification: {path.name}")
+                            success_count += 1
 
-                else:
-                    error = result.get('error', 'unknown error')
-                    self.logger.error(f"Failed to send {path.name}: {error}")
+                            # Store thread_ts for future replies if this is a new thread
+                            if not thread_ts and result.get('ts'):
+                                thread_ts = result['ts']  # Update for subsequent chunks
+                                self.threads[task_id] = result['ts']
+                                self._save_threads()
+                                self.logger.info(f"Created new thread for task {task_id}: {result['ts']}")
+                        else:
+                            self.logger.info(f"Sent chunk {chunk_idx + 1}/{len(chunks)} for {path.name}")
 
-            except Exception as e:
-                self.logger.error(f"Exception sending {path.name}: {e}")
+                        first_chunk = False
+
+                    else:
+                        error = result.get('error', 'unknown error')
+                        self.logger.error(f"Failed to send {path.name} chunk {chunk_idx + 1}: {error}")
+                        break  # Don't send remaining chunks if one fails
+
+                except Exception as e:
+                    self.logger.error(f"Exception sending {path.name} chunk {chunk_idx + 1}: {e}")
+                    break  # Don't send remaining chunks if one fails
 
         self.logger.info(f"Sent {success_count}/{len(changes)} notifications")
         return success_count > 0
