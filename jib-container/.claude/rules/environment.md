@@ -64,6 +64,12 @@ These commands are installed in `~/.claude/commands/` and available as slash com
   - Saves to `.git/PR_EDITMSG+<branch-name>.save`
   - Optional: `audit` flag for review request, `draft` flag for WIP
 
+- **`@update-confluence-doc <path>`** - Update Confluence documentation
+  - Reads original document with synced comments
+  - Integrates feedback from inline/footer comments
+  - Generates "Changed Sections Only" document
+  - Formats content for Confluence compatibility (bare URLs, proper tables)
+
 ## File System Layout
 
 ### `~/khan/` - Main Workspace (READ-WRITE)
@@ -357,6 +363,80 @@ service redis-server status
 - Create PR with `create-pr-helper.py --auto --reviewer jwiesebron` (james-in-a-box only) OR notify user with branch name (other repos)
 - Save context with `@save-context <project>`
 - Summarize what was done for human
+
+## Working with Confluence Documentation
+
+When updating Confluence documentation (ADRs, runbooks, etc.), follow these guidelines to avoid formatting issues.
+
+### Confluence Markdown Quirks
+
+Confluence has limited markdown support. The following do NOT render correctly:
+
+| Feature | Standard Markdown | Confluence Behavior |
+|---------|-------------------|---------------------|
+| Links | `[text](url)` | Shows as plain text |
+| Tables | Various formats | Only `\| --- \|` separator works |
+| HTML | `<table>`, `<a>` | Shows as raw HTML |
+| Nested lists | Indented `-` | May add extra spacing |
+
+### Best Practice: Changed Sections Only
+
+Instead of creating a full updated document, create a **"Changed Sections Only"** document:
+
+1. **Read the original** - Understand the current structure
+2. **Identify changes** - Note what's new vs. modified
+3. **Create patch document** - List only the changed sections with instructions
+
+**Output format**:
+```markdown
+# [Document Name]: Changed Sections Only
+
+Instructions: Copy each section below into the corresponding location in Confluence.
+
+---
+
+## NEW SECTION: Add after "[Section Name]"
+
+[New content here]
+
+---
+
+## MODIFIED: Replace "[Section Name]"
+
+[Updated content here]
+```
+
+### Formatting Rules for Confluence
+
+When writing content that will be copied to Confluence:
+
+1. **Links**: Use bare URLs instead of markdown links
+   - Do: `See: https://example.com/page`
+   - Don't: `See: [Page Name](https://example.com/page)`
+
+2. **Tables**: Use the `| --- |` separator format
+   ```markdown
+   | Column 1 | Column 2 |
+   | --- | --- |
+   | Value 1 | Value 2 |
+   ```
+
+3. **Lists**: No blank lines between items
+   ```markdown
+   - Item 1
+   - Item 2
+   - Item 3
+   ```
+
+4. **Code blocks**: Use triple backticks with language identifier
+
+### Using the Command
+
+Use `@update-confluence-doc <path>` to help prepare updates for Confluence pages:
+- Reads the original document with comments
+- Identifies feedback to integrate
+- Generates a "changed sections only" document
+- Formats for Confluence compatibility
 
 ## Installation and Packages
 
