@@ -69,7 +69,7 @@ class ConfluenceSync:
         # Handle different version field structures in API v2
         page_id = page.get('id', '')
         version_info = page.get('version', {})
-        
+
         if isinstance(version_info, dict):
             version_number = version_info.get('number', '')
             version_when = version_info.get('when', '')
@@ -77,8 +77,22 @@ class ConfluenceSync:
             # Fallback if version is not a dict
             version_number = str(version_info) if version_info else ''
             version_when = ''
-        
+
         content = f"{page_id}_{version_number}_{version_when}"
+        return hashlib.md5(content.encode()).hexdigest()
+
+    def _get_comments_hash(self, comments: List[Dict]) -> str:
+        """Generate hash for comments to detect changes."""
+        if not comments:
+            return ""
+        # Hash based on comment IDs and their version numbers
+        comment_data = []
+        for comment in comments:
+            comment_id = comment.get('id', '')
+            version_info = comment.get('version', {})
+            version_num = version_info.get('number', '') if isinstance(version_info, dict) else ''
+            comment_data.append(f"{comment_id}:{version_num}")
+        content = "|".join(sorted(comment_data))
         return hashlib.md5(content.encode()).hexdigest()
     
     def get_space_info(self, space_key: str) -> Optional[Dict]:
@@ -473,31 +487,86 @@ class ConfluenceSync:
             file_dir = filepath.parent
             created_directories.add(file_dir)
             all_files.append(filepath)
-            
-            # Check if page needs updating
-            if incremental and page_id in space_state:
-                if space_state[page_id] == page_hash:
-                    print(f"  - {page_title} (no changes)")
-                    continue
-            
-            # Get page content
-            print(f"    Fetching content for page {page_id}...")
-            content = self.get_page_content(page_id)
-            if content is None:
-                print(f"    Failed to get content for {page_title}, skipping")
-                continue
-            print(f"    Content fetched successfully ({len(content)} characters)")
 
-            # Convert to markdown if configured
-            if self.config.OUTPUT_FORMAT == 'markdown':
-                print(f"    Converting to Markdown format...")
-                content = self.convert_html_to_markdown(content)
-
-            # Get page comments
+            # Always fetch comments to check for changes (lightweight API call)
             print(f"    Fetching comments for page {page_id}...")
             comments = self.get_page_comments(page_id)
+            comments_hash = self._get_comments_hash(comments)
             if comments:
                 print(f"    Found {len(comments)} comment(s)")
+
+            # Get stored state for this page
+            stored_state = space_state.get(page_id, {})
+            if isinstance(stored_state, str):
+                # Migrate old format (just page hash) to new format
+                stored_state = {'page_hash': stored_state, 'comments_hash': ''}
+
+            stored_page_hash = stored_state.get('page_hash', '')
+            stored_comments_hash = stored_state.get('comments_hash', '')
+
+            # Check if page content or comments have changed
+            page_changed = (page_hash != stored_page_hash)
+            comments_changed = (comments_hash != stored_comments_hash)
+
+            if incremental and not page_changed and not comments_changed:
+                print(f"  - {page_title} (no changes)")
+                continue
+
+            # Determine what changed for logging
+            change_reasons = []
+            if page_changed:
+                change_reasons.append("content")
+            if comments_changed:
+                change_reasons.append("comments")
+
+            # Get page content (only if page changed, otherwise read from existing file)
+            if page_changed or not filepath.exists():
+                print(f"    Fetching content for page {page_id}...")
+                content = self.get_page_content(page_id)
+                if content is None:
+                    print(f"    Failed to get content for {page_title}, skipping")
+                    continue
+                print(f"    Content fetched successfully ({len(content)} characters)")
+
+                # Convert to markdown if configured
+                if self.config.OUTPUT_FORMAT == 'markdown':
+                    print(f"    Converting to Markdown format...")
+                    content = self.convert_html_to_markdown(content)
+            else:
+                # Page content unchanged, extract from existing file (before comments section)
+                print(f"    Using cached content (only comments changed)")
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        existing_content = f.read()
+                    # Split at comments section if it exists
+                    if '\n\n---\n\n## Comments\n\n' in existing_content:
+                        content = existing_content.split('\n\n---\n\n## Comments\n\n')[0]
+                        # Remove the header we added
+                        lines = content.split('\n')
+                        # Find where the actual content starts (after ---)
+                        content_start = 0
+                        for i, line in enumerate(lines):
+                            if line == '---':
+                                content_start = i + 2  # Skip --- and blank line
+                                break
+                        content = '\n'.join(lines[content_start:])
+                    else:
+                        # No comments section, extract content after header
+                        lines = existing_content.split('\n')
+                        content_start = 0
+                        for i, line in enumerate(lines):
+                            if line == '---':
+                                content_start = i + 2
+                                break
+                        content = '\n'.join(lines[content_start:])
+                except Exception as e:
+                    print(f"    Failed to read existing file, fetching fresh: {e}")
+                    content = self.get_page_content(page_id)
+                    if content is None:
+                        print(f"    Failed to get content for {page_title}, skipping")
+                        continue
+                    if self.config.OUTPUT_FORMAT == 'markdown':
+                        content = self.convert_html_to_markdown(content)
 
             # Small delay to avoid rate limiting
             import time
@@ -524,19 +593,23 @@ class ConfluenceSync:
             # Append comments if any
             if comments:
                 page_content += self.format_comments(comments)
-            
+
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(page_content)
-            
-            # Update sync state
-            space_state[page_id] = page_hash
-            
-            if page_id in space_state:
-                updated_pages += 1
-                print(f"  - {page_title} (updated)")
-            else:
+
+            # Update sync state with both hashes
+            space_state[page_id] = {
+                'page_hash': page_hash,
+                'comments_hash': comments_hash
+            }
+
+            is_new = stored_page_hash == '' and stored_comments_hash == ''
+            if is_new:
                 new_pages += 1
                 print(f"  - {page_title} (new)")
+            else:
+                updated_pages += 1
+                print(f"  - {page_title} (updated: {', '.join(change_reasons)})")
         
         # Create directory indices for better navigation
         print("Creating directory indices...")
@@ -644,43 +717,92 @@ class ConfluenceSync:
             else:
                 break
         
-        # Check incremental sync
+        # Build path with appropriate extension
         page_title = page['title']
+        relative_path = self._build_page_path(page_title, ancestors)
+        if output_format == 'markdown':
+            relative_path = relative_path.with_suffix('.md')
+        filepath = output_dir / relative_path
+
+        # Always fetch comments first to check for changes
+        print(f"Fetching comments for '{page_title}'...")
+        comments = self.get_page_comments(page_id)
+        comments_hash = self._get_comments_hash(comments)
+        if comments:
+            print(f"Found {len(comments)} comment(s)")
+
+        # Check incremental sync with both page and comment hashes
         page_hash = self._get_page_hash(page)
-        
+        state_key = f"{page_id}_{output_format}"
+
         if incremental:
             sync_state = self._load_sync_state()
             space_state = sync_state.get(space_key, {})
-            # Include format in hash check
-            state_key = f"{page_id}_{output_format}"
-            if state_key in space_state and space_state[state_key] == page_hash:
+            stored_state = space_state.get(state_key, {})
+
+            # Handle old format (just page hash string)
+            if isinstance(stored_state, str):
+                stored_state = {'page_hash': stored_state, 'comments_hash': ''}
+
+            stored_page_hash = stored_state.get('page_hash', '')
+            stored_comments_hash = stored_state.get('comments_hash', '')
+
+            page_changed = (page_hash != stored_page_hash)
+            comments_changed = (comments_hash != stored_comments_hash)
+
+            if not page_changed and not comments_changed:
                 print(f"Page '{page_title}' is up to date")
                 return
-        
-        # Build path with appropriate extension
-        relative_path = self._build_page_path(page_title, ancestors)
-        if output_format == 'markdown':
-            # Change extension to .md
-            relative_path = relative_path.with_suffix('.md')
-        filepath = output_dir / relative_path
-        
-        # Get content
-        print(f"Fetching content for '{page_title}'...")
-        content = self.get_page_content(page_id)
-        if content is None:
-            print(f"Failed to get content for {page_title}")
-            return
 
-        # Convert to Markdown if requested
-        if output_format == 'markdown':
-            print(f"Converting to Markdown format...")
-            content = self.convert_html_to_markdown(content)
+            # Log what changed
+            changes = []
+            if page_changed:
+                changes.append("content")
+            if comments_changed:
+                changes.append("comments")
+            print(f"Changes detected: {', '.join(changes)}")
 
-        # Get page comments
-        print(f"Fetching comments for '{page_title}'...")
-        comments = self.get_page_comments(page_id)
-        if comments:
-            print(f"Found {len(comments)} comment(s)")
+        # Get content (only fetch if page changed or file doesn't exist)
+        page_changed_or_new = not incremental or page_hash != stored_page_hash if incremental else True
+
+        if page_changed_or_new or not filepath.exists():
+            print(f"Fetching content for '{page_title}'...")
+            content = self.get_page_content(page_id)
+            if content is None:
+                print(f"Failed to get content for {page_title}")
+                return
+
+            # Convert to Markdown if requested
+            if output_format == 'markdown':
+                print(f"Converting to Markdown format...")
+                content = self.convert_html_to_markdown(content)
+        else:
+            # Only comments changed, reuse existing content
+            print(f"Using cached content (only comments changed)")
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    existing_content = f.read()
+                # Extract content (everything after --- and before comments section)
+                if '\n\n---\n\n## Comments\n\n' in existing_content:
+                    content = existing_content.split('\n\n---\n\n## Comments\n\n')[0]
+                else:
+                    content = existing_content
+                # Remove header to get just content
+                lines = content.split('\n')
+                content_start = 0
+                for i, line in enumerate(lines):
+                    if line == '---':
+                        content_start = i + 2
+                        break
+                content = '\n'.join(lines[content_start:])
+            except Exception as e:
+                print(f"Failed to read existing file, fetching fresh: {e}")
+                content = self.get_page_content(page_id)
+                if content is None:
+                    print(f"Failed to get content for {page_title}")
+                    return
+                if output_format == 'markdown':
+                    content = self.convert_html_to_markdown(content)
 
         # Small delay to avoid rate limiting
         import time
@@ -708,15 +830,17 @@ class ConfluenceSync:
             f.write(page_content)
         
         print(f"✓ Synced: {filepath.relative_to(Path(self.config.OUTPUT_DIR))}")
-        
-        # Update sync state
-        if incremental:
-            sync_state = self._load_sync_state()
-            space_state = sync_state.get(space_key, {})
-            state_key = f"{page_id}_{output_format}"
-            space_state[state_key] = page_hash
-            sync_state[space_key] = space_state
-            self._save_sync_state(sync_state)
+
+        # Update sync state with both page and comment hashes
+        sync_state = self._load_sync_state()
+        space_state = sync_state.get(space_key, {})
+        state_key = f"{page_id}_{output_format}"
+        space_state[state_key] = {
+            'page_hash': page_hash,
+            'comments_hash': comments_hash
+        }
+        sync_state[space_key] = space_state
+        self._save_sync_state(sync_state)
         
         # Create directory index
         self._create_directory_index(filepath.parent, space_key)
