@@ -120,6 +120,79 @@ def check_docker_permissions() -> bool:
     return False
 
 
+def check_host_setup() -> bool:
+    """Check if host setup is complete (services installed, directories exist)"""
+    # Critical systemd services that should be installed
+    critical_services = [
+        "slack-notifier.service",
+        "slack-receiver.service"
+    ]
+
+    # Important directories that should exist
+    critical_dirs = [
+        Path.home() / ".jib-sharing" / "notifications",
+        Path.home() / ".jib-sharing" / "incoming",
+        Path.home() / ".jib-sharing" / "responses",
+    ]
+
+    # Configuration file
+    config_file = Path.home() / ".config" / "jib-notifier" / "config.json"
+
+    issues_found = []
+
+    # Check if systemd services are installed
+    for service in critical_services:
+        result = subprocess.run(
+            ["systemctl", "--user", "list-unit-files", service],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0 or service not in result.stdout:
+            issues_found.append(f"Service not installed: {service}")
+
+    # Check if critical directories exist
+    for dir_path in critical_dirs:
+        if not dir_path.exists():
+            issues_found.append(f"Directory not found: {dir_path}")
+
+    # Check if config exists (warning only, not critical)
+    config_warning = None
+    if not config_file.exists():
+        config_warning = f"Configuration file not found: {config_file}"
+
+    # Report findings
+    if issues_found or config_warning:
+        warn("Host setup appears incomplete")
+        print()
+
+        if issues_found:
+            error("Critical issues found:")
+            for issue in issues_found:
+                print(f"  ✗ {issue}")
+            print()
+
+        if config_warning:
+            warn(config_warning)
+            print()
+
+        print("JIB requires host services to be installed for full functionality:")
+        print("  • Slack integration (notifier and receiver)")
+        print("  • Shared directories for notifications and task communication")
+        print()
+        print("To set up the host:")
+        print("  cd ~/khan/james-in-a-box")
+        print("  ./setup.sh")
+        print()
+
+        if issues_found:
+            response = input("Continue anyway? (yes/no): ").strip().lower()
+            if response != "yes":
+                info("Please run ./setup.sh to configure the host first")
+                return False
+
+    return True
+
+
 def check_docker() -> bool:
     """Check if Docker is installed and offer to install if not"""
     platform_name = get_platform()
@@ -810,6 +883,10 @@ Examples:
         return 1
 
     if not check_docker_permissions():
+        return 1
+
+    # Check host setup (services and directories)
+    if not check_host_setup():
         return 1
 
     # Handle setup
