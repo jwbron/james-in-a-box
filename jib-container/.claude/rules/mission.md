@@ -174,7 +174,9 @@ git branch --show-current
 **After committing, ALWAYS tell the user:**
 - What branch you committed to
 - Where to find the changes (e.g., "Changes committed to branch: jib-temp-xxx")
-- How to merge them (e.g., "Run: git merge <branch-name>")
+- How to integrate them:
+  - For worktree branches (jib-temp-*): "Run: git rebase <branch-name>"
+  - For feature branches: "Run: git rebase <branch-name>" or follow team workflow
 
 ### 8. Complete Beads Task
 ```bash
