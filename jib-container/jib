@@ -998,15 +998,15 @@ def run_claude() -> bool:
         print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
         main_repos_needed.add(repo_name)
 
-    # Mount main repo .git directories (read-only) so worktrees can access git metadata
+    # Mount main repo .git directories (read-write) so worktrees can commit changes
     for repo_name in main_repos_needed:
         main_repo = Config.KHAN_SOURCE / repo_name
         if (main_repo / ".git").exists():
             # Mount the main repo's .git directory at a special location
             # Worktree .git files will be rewritten to point here
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:ro,z"])
-            print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-only)")
+            mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:rw,z"])
+            print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
 
     # Mount worktree base directory for jib --exec temporary worktrees
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"

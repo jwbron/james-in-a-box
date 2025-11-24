@@ -130,7 +130,7 @@ if [ -d "${USER_HOME}/khan" ]; then
         fi
     done
     echo "✓ Khan worktrees configured (isolated from host)"
-    echo "  Git metadata mounted read-only from ~/.git-main/"
+    echo "  Git metadata mounted read-write from ~/.git-main/"
 else
     echo "⚠ Khan workspace not found - check mount configuration"
 fi
