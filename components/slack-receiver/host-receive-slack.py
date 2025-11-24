@@ -324,12 +324,19 @@ class SlackReceiver:
             self.logger.error(f"Failed to write message to {filepath}: {e}")
             return None
 
-    def _send_ack(self, channel: str, text: str):
-        """Send acknowledgment back to Slack."""
+    def _send_ack(self, channel: str, text: str, thread_ts: str = None):
+        """Send acknowledgment back to Slack.
+
+        Args:
+            channel: Channel ID
+            text: Message text
+            thread_ts: Thread timestamp (creates threaded reply if provided)
+        """
         try:
             self.web_client.chat_postMessage(
                 channel=channel,
-                text=text
+                text=text,
+                thread_ts=thread_ts  # Post as thread reply if provided
             )
         except Exception as e:
             self.logger.error(f"Failed to send ack: {e}")
@@ -429,7 +436,11 @@ class SlackReceiver:
         user_id = event.get('user')
         channel = event.get('channel')
         text = event.get('text', '')
+        message_ts = event.get('ts')  # Timestamp of THIS message
         thread_ts = event.get('thread_ts')  # Present if this is a thread reply
+
+        # For threading: use thread_ts if already in a thread, otherwise use message_ts to start a new thread
+        reply_thread_ts = thread_ts or message_ts
 
         # Ignore messages from the bot itself
         if user_id == self.bot_user_id:
@@ -438,7 +449,7 @@ class SlackReceiver:
         # Check if user is allowed
         if not self._is_allowed_user(user_id):
             self.logger.warning(f"Blocked message from unauthorized user: {user_id}")
-            self._send_ack(channel, "⚠️ You are not authorized to send messages to Claude.")
+            self._send_ack(channel, "⚠️ You are not authorized to send messages to Claude.", thread_ts=reply_thread_ts)
             return
 
         # Get user info
@@ -478,10 +489,10 @@ class SlackReceiver:
 
             if self._execute_command(parsed['content']):
                 ack_msg = "🎮 Command dispatched. Check notifications for result."
-                self._send_ack(channel, ack_msg)
+                self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
             else:
                 ack_msg = "❌ Failed to execute command. Check logs."
-                self._send_ack(channel, ack_msg)
+                self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
 
             return  # Don't write commands to disk
 
@@ -508,12 +519,12 @@ class SlackReceiver:
             else:
                 ack_msg = f"✅ Task received and queued for Claude\n📁 Saved to: `{filepath.name}`"
 
-            self._send_ack(channel, ack_msg)
+            self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
 
             # Trigger processing in JIB container
             self._trigger_processing(filepath)
         else:
-            self._send_ack(channel, "❌ Failed to process message. Please check logs.")
+            self._send_ack(channel, "❌ Failed to process message. Please check logs.", thread_ts=reply_thread_ts)
 
     def _handle_event(self, client: SocketModeClient, req: SocketModeRequest):
         """Handle incoming Socket Mode events."""
