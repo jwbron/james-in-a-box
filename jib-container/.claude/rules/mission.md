@@ -114,7 +114,7 @@ Every jib container (interactive and `--exec` mode) gets its own isolated worktr
 1. **Your branch is temporary** - Named like `jib-temp-jib-20251124-123456-789`
 2. **DO NOT create new branches** - You're already on an isolated temporary branch
 3. **Just commit directly** - Your commits will be on your temporary branch
-4. **Create a PR when done** - Use the PR helper to push and create the PR
+4. **Create a PR when done** - Use the PR helper to push and create the PR (currently only supported for `james-in-a-box` repo)
 
 **Example workflow:**
 ```bash
@@ -132,11 +132,11 @@ git commit -m "Fix bug in some-file
 - Detailed explanation
 - Related to JIRA-1234"
 
-# Create a PR for the user to review
+# Create a PR for the user to review (james-in-a-box repo only)
 create-pr-helper.py --auto --reviewer jwiesebron
 ```
 
-**After committing, ALWAYS create a PR:**
+**After committing, ALWAYS create a PR (james-in-a-box repo only):**
 ```bash
 # Use the PR helper to push branch and create PR
 create-pr-helper.py --auto --reviewer jwiesebron
@@ -144,6 +144,8 @@ create-pr-helper.py --auto --reviewer jwiesebron
 # Or with custom title/body:
 create-pr-helper.py --title "Fix bug in some-file" --body "Detailed description"
 ```
+
+**NOTE**: The PR helper currently only supports the `james-in-a-box` repository. For other repos, commit your changes and notify the user to create the PR manually from the host.
 
 ### 3.6. Git Safety: Force Push and Rebase (CRITICAL)
 
@@ -222,8 +224,8 @@ make test
 
 **CRITICAL**: After completing ANY changeset, you MUST:
 1. Commit all changes to git
-2. Create a PR using the PR helper
-3. Notify the user with the PR URL
+2. Create a PR using the PR helper (james-in-a-box only) OR notify the user to create the PR manually (other repos)
+3. Notify the user with the PR URL or branch name
 
 ```bash
 # Commit your changes with clear messages
@@ -239,13 +241,16 @@ git commit -m "Brief description of changes
 
 Co-Authored-By: jib <jib@khan.org>"
 
-# Create a PR for the user to review
+# For james-in-a-box repo: Create a PR for the user to review
 create-pr-helper.py --auto --reviewer jwiesebron
 # This will:
 # 1. Push the branch to origin
 # 2. Create a PR with auto-generated title/body
 # 3. Request review from jwiesebron
 # 4. Create a notification with the PR URL
+
+# For other repos: Notify the user to create the PR manually
+# Include branch name in your notification so user can push and create PR from host
 ```
 
 **Commit message guidelines:**
@@ -254,7 +259,7 @@ create-pr-helper.py --auto --reviewer jwiesebron
 - Reference JIRA tickets, ADRs, related issues
 - Include co-author attribution
 
-**After committing, ALWAYS create a PR:**
+**After committing, create a PR (james-in-a-box only):**
 ```bash
 # Auto-generate PR from commits:
 create-pr-helper.py --auto --reviewer jwiesebron
@@ -262,6 +267,8 @@ create-pr-helper.py --auto --reviewer jwiesebron
 # Or with custom title/body:
 create-pr-helper.py --title "Your PR title" --body "Description" --reviewer jwiesebron
 ```
+
+**For other repositories:** The PR helper currently only supports `james-in-a-box`. For other repos, commit your changes and notify the user with the branch name so they can push and create the PR from the host.
 
 The PR helper creates a notification that triggers a Slack DM to the user with the PR URL.
 
