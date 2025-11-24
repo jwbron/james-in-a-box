@@ -181,44 +181,44 @@ mkdir -p "${USER_HOME}/.config/claude-code"
 
 # Copy FRESH credentials from mounted host .claude (not stale image credentials)
 # Mount point: /tmp/host-claude (read-only mount from host ~/.claude)
-if [ -d "/tmp/host-claude" ] && [ -f "/tmp/host-claude/.credentials.json" ]; then
-    echo "✓ Copying FRESH Claude credentials from host..."
-    # Copy credentials file
-    cp /tmp/host-claude/.credentials.json "${USER_HOME}/.claude/.credentials.json"
-    chmod 600 "${USER_HOME}/.claude/.credentials.json"
-    echo "  ✓ OAuth credentials copied (always current from host)"
+if [ -d "/tmp/host-claude" ]; then
+    echo "✓ Copying Claude config from host..."
 
-    # Check if credentials have full scopes
-    if command -v jq &> /dev/null; then
-        SCOPES=$(jq -r '.claudeAiOauth.scopes[]' "${USER_HOME}/.claude/.credentials.json" 2>/dev/null || echo "")
-        if echo "$SCOPES" | grep -q "user:sessions:claude_code"; then
-            echo "  ✓ Credentials have full scopes (interactive mode supported)"
-        else
-            echo "  ⚠ Credentials missing 'user:sessions:claude_code' scope"
-            echo "    Interactive 'claude' mode may not work"
-            echo "    'claude --print' commands will work fine"
-            echo "    To fix: Run 'claude' on host to trigger re-authentication"
+    # Copy entire directory structure (credentials, statsig, session-env, etc.)
+    # This handles all auth state regardless of which files exist
+    cp -r /tmp/host-claude/* "${USER_HOME}/.claude/" 2>/dev/null || true
+    cp -r /tmp/host-claude/.* "${USER_HOME}/.claude/" 2>/dev/null || true
+
+    # Set proper permissions on credentials file if it exists
+    if [ -f "${USER_HOME}/.claude/.credentials.json" ]; then
+        chmod 600 "${USER_HOME}/.claude/.credentials.json"
+        echo "  ✓ OAuth credentials copied (always current from host)"
+
+        # Check if credentials have full scopes
+        if command -v jq &> /dev/null; then
+            SCOPES=$(jq -r '.claudeAiOauth.scopes[]' "${USER_HOME}/.claude/.credentials.json" 2>/dev/null || echo "")
+            if echo "$SCOPES" | grep -q "user:sessions:claude_code"; then
+                echo "  ✓ Credentials have full scopes (interactive mode supported)"
+            else
+                echo "  ⚠ Credentials missing 'user:sessions:claude_code' scope"
+                echo "    Interactive 'claude' mode may not work"
+                echo "    'claude --print' commands will work fine"
+                echo "    To fix: Run 'claude' on host to trigger re-authentication"
+            fi
         fi
+    else
+        echo "  ℹ No credentials file found - container will prompt for authentication"
+        echo "    After authenticating in container, you can copy credentials to host:"
+        echo "    cp ~/.claude/.credentials.json /tmp/host-claude/.credentials.json"
     fi
 
-    # Copy other auth-related files if they exist (statsig, session-env)
-    if [ -d "/tmp/host-claude/statsig" ]; then
-        cp -r /tmp/host-claude/statsig "${USER_HOME}/.claude/" 2>/dev/null || true
-        echo "  ✓ Statsig data copied"
-    fi
-    if [ -d "/tmp/host-claude/session-env" ]; then
-        cp -r /tmp/host-claude/session-env "${USER_HOME}/.claude/" 2>/dev/null || true
-        echo "  ✓ Session environment copied"
-    fi
-
-    # Handle auth.json if it exists in .config location
-    if [ -f "/tmp/host-claude/auth.json" ]; then
-        cp /tmp/host-claude/auth.json "${USER_HOME}/.config/claude-code/auth.json"
-        echo "  ✓ Auth config copied"
-    fi
+    # Report other copied files
+    [ -d "${USER_HOME}/.claude/statsig" ] && echo "  ✓ Statsig data copied"
+    [ -d "${USER_HOME}/.claude/session-env" ] && echo "  ✓ Session environment copied"
+    [ -f "${USER_HOME}/.claude/auth.json" ] && echo "  ✓ Auth config copied"
 else
-    echo "ℹ No host Claude auth mounted - will authenticate with browser on first run"
-    echo "  To fix: Ensure ~/.claude/.credentials.json exists on host"
+    echo "ℹ No host Claude directory mounted"
+    echo "  Container will authenticate independently"
     echo "  Run: claude (and let interactive session start)"
 fi
 

@@ -702,10 +702,18 @@ def setup() -> bool:
 
     # Mount Claude credentials for runtime copy (not build-time baking)
     # This ensures container always uses host's CURRENT credentials
+    # ALWAYS mount ~/.claude so container can access credentials if they exist
+    # or authenticate and potentially share back to host
     print()
     print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
     creds_exist, has_full_scopes = check_claude_credentials()
+    claude_dir = Path.home() / ".claude"
+
+    # Always mount ~/.claude directory (even if credentials don't exist yet)
+    # This allows the container to access any existing credentials,
+    # and enables bidirectional sync if user authenticates in container
+    mounts.append(f"{claude_dir}:/tmp/host-claude:ro,z")
 
     if not creds_exist:
         warn("Claude Code credentials not found on host")
@@ -716,7 +724,7 @@ def setup() -> bool:
         warn("  3. Let the interactive session start (this grants full scopes)")
         warn("  4. Exit with Ctrl+C once authenticated")
         warn("")
-        warn("Container will prompt for authentication on first run")
+        info(f"Mounting: {claude_dir} (empty - container will prompt for auth)")
     elif not has_full_scopes:
         warn("Claude Code credentials exist but are missing required scope")
         warn("")
@@ -729,14 +737,8 @@ def setup() -> bool:
         warn("  3. Exit with Ctrl+C once session starts")
         warn("")
         warn("Container will work with limited functionality (--print mode only)")
-        # Still mount the credentials - they work for --print mode
-        claude_dir = Path.home() / ".claude"
-        mounts.append(f"{claude_dir}:/tmp/host-claude:ro,z")
-        print(f"  Mounting credentials (partial scopes): {claude_dir}")
+        info(f"Mounting: {claude_dir} (partial scopes)")
     else:
-        # All good - mount credentials
-        claude_dir = Path.home() / ".claude"
-        mounts.append(f"{claude_dir}:/tmp/host-claude:ro,z")
         success("Claude Code properly authenticated with full scopes")
         print(f"  Host: {claude_dir}")
         print(f"  Container will copy credentials at startup")
