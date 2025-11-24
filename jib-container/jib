@@ -667,12 +667,67 @@ def setup() -> bool:
     return True
 
 
-def run_claude(exec_command: Optional[List[str]] = None) -> bool:
-    """Run Claude Code CLI in the sandboxed container or execute a command
+def get_running_container() -> Optional[str]:
+    """Get the name of the running JIB container, if any."""
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "--filter", "name=jib-", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Return first running container (there should only be one)
+            containers = result.stdout.strip().split('\n')
+            return containers[0] if containers else None
+    except Exception:
+        pass
+    return None
+
+
+def exec_in_running_container(command: List[str]) -> bool:
+    """Execute a command in the running JIB container.
 
     Args:
-        exec_command: Optional command to execute instead of starting interactive Claude
+        command: Command to execute
+
+    Returns:
+        True if successful, False otherwise
     """
+    container_name = get_running_container()
+
+    if not container_name:
+        error("No running JIB container found")
+        print()
+        print("Start the JIB container first:")
+        print("  bin/jib")
+        print()
+        print("Or run in a new container:")
+        print("  bin/jib --exec-new <command>")
+        return False
+
+    info(f"Executing in running container: {container_name}")
+    print(f"Command: {' '.join(command)}")
+    print()
+
+    try:
+        # Execute command in running container
+        # Use same user as container is running with
+        result = subprocess.run(
+            ["docker", "exec", "-it", container_name] + command,
+            check=False
+        )
+        return result.returncode == 0
+    except KeyboardInterrupt:
+        print()
+        warn("Interrupted by user")
+        return False
+    except Exception as e:
+        error(f"Failed to execute command: {e}")
+        return False
+
+
+def run_claude() -> bool:
+    """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     # Check if image exists
     if not image_exists():
         info("Docker image not found. Running initial setup...")
@@ -693,10 +748,7 @@ def run_claude(exec_command: Optional[List[str]] = None) -> bool:
     # Generate unique container ID
     container_id = generate_container_id()
 
-    if exec_command:
-        info(f"Executing command in container: {' '.join(exec_command)}")
-    else:
-        info("Launching sandboxed Claude Code environment...")
+    info("Launching sandboxed Claude Code environment...")
     print()
 
     info(f"Container ID: {container_id}")
@@ -769,39 +821,28 @@ def run_claude(exec_command: Optional[List[str]] = None) -> bool:
     cmd = [
         "docker", "run",
         "--rm",  # Auto-remove container after exit
-    ]
-
-    # Only add interactive TTY if not executing a command
-    if not exec_command:
-        cmd.extend(["-it"])
-
-    cmd.extend([
+        "-it",   # Interactive with TTY
         "--name", container_id,
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
-    ])
+    ]
 
-    if not exec_command:
-        info("Network mode: Bridge (isolated from host, outbound HTTP only)")
-        print("  Container can: Access Claude API, download packages")
-        print("  Container cannot: Access host services, accept inbound connections")
-        print()
+    info("Network mode: Bridge (isolated from host, outbound HTTP only)")
+    print("  Container can: Access Claude API, download packages")
+    print("  Container cannot: Access host services, accept inbound connections")
+    print()
 
-        info("Claude authentication: Will authenticate with browser on first run")
-        print()
+    info("Claude authentication: Will authenticate with browser on first run")
+    print()
 
     # Add mount arguments
     cmd.extend(mount_args)
 
     # Add image name
     cmd.append(Config.IMAGE_NAME)
-
-    # Add command to execute if provided
-    if exec_command:
-        cmd.extend(exec_command)
 
     # Run container
     try:
@@ -825,8 +866,10 @@ Examples:
   jib                                      # Run Claude Code (setup on first use)
   jib --setup                              # Reconfigure mounts
   jib --reset                              # Reset configuration and remove Docker image
-  jib --exec <command> [args...]          # Execute command in container (non-interactive)
-  jib --exec /home/jwies/tools/analyze-conversations --days 7
+  jib --exec <command> [args...]          # Execute command in running container
+  jib --exec python3 ~/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
+
+Note: --exec requires a container to be running. Start one first with 'jib'
         """
     )
     parser.add_argument(
@@ -842,7 +885,7 @@ Examples:
     parser.add_argument(
         "--exec",
         nargs=argparse.REMAINDER,
-        help="Execute a command in the container (non-interactive)"
+        help="Execute a command in the running container (requires container to be running)"
     )
 
     args = parser.parse_args()
@@ -895,9 +938,9 @@ Examples:
             return 1
         return 0
 
-    # Handle exec
+    # Handle exec - execute in running container
     if args.exec:
-        if not run_claude(exec_command=args.exec):
+        if not exec_in_running_container(args.exec):
             return 1
         return 0
 
