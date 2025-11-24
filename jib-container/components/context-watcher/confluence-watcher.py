@@ -198,14 +198,14 @@ class ConfluenceWatcher:
     def create_beads_task(self, doc: Dict, analysis: Dict) -> Optional[str]:
         """Create Beads task for ADR review"""
         try:
-            result = subprocess.run(['which', 'beads'], capture_output=True)
+            result = subprocess.run(['which', 'bd'], capture_output=True)
             if result.returncode != 0:
                 return None
 
             title = f"Review ADR: {doc['title'][:60]}"
 
             result = subprocess.run(
-                ['beads', 'add', title, '--tags', 'adr', 'confluence', 'documentation'],
+                ['bd', 'add', title, '--tags', 'adr', 'confluence', 'documentation'],
                 cwd=self.beads_dir,
                 capture_output=True,
                 text=True
@@ -223,7 +223,7 @@ class ConfluenceWatcher:
                         notes += f"Related tech: {', '.join(analysis['related_work'])}"
 
                     subprocess.run(
-                        ['beads', 'update', bead_id, '--notes', notes],
+                        ['bd', 'update', bead_id, '--notes', notes],
                         cwd=self.beads_dir,
                         capture_output=True
                     )

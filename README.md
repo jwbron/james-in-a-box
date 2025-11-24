@@ -325,19 +325,19 @@ Reviews are sent as Slack notifications with prioritized findings (high/medium/l
 cd ~/beads
 
 # Create task
-beads add "Implement OAuth2 authentication" --tags feature,security
+bd add "Implement OAuth2 authentication" --tags feature,security
 
 # List tasks ready to work on
-beads ready
+bd ready
 
 # Update status
-beads update bd-a3f8 --status in-progress
+bd update bd-a3f8 --status in-progress
 
 # Add notes
-beads update bd-a3f8 --notes "Using RFC 6749 spec, per ADR-042"
+bd update bd-a3f8 --notes "Using RFC 6749 spec, per ADR-042"
 
 # Mark complete
-beads update bd-a3f8 --status done
+bd update bd-a3f8 --status done
 ```
 
 **Custom commands:**

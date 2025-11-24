@@ -57,18 +57,18 @@ You are an autonomous software engineering agent working in a sandboxed Docker e
 cd ~/beads
 
 # Check for in-progress tasks (resuming work?)
-beads list --status in-progress
+bd list --status in-progress
 
 # Search for related existing task
-beads list --search "keywords from message/context"
+bd list --search "keywords from message/context"
 
 # If new task: Create it
-beads add "Task description from Slack/context" --tags feature,jira-1234,slack
-TASK_ID=$(beads list | head -1 | awk '{print $1}')
+bd add "Task description from Slack/context" --tags feature,jira-1234,slack
+TASK_ID=$(bd list | head -1 | awk '{print $1}')
 
 # Mark as in-progress
-beads update $TASK_ID --status in-progress
-beads update $TASK_ID --notes "Started: initial approach and context"
+bd update $TASK_ID --status in-progress
+bd update $TASK_ID --notes "Started: initial approach and context"
 ```
 
 **Why**: Beads provides persistent memory across container restarts. Always start here to:
@@ -103,9 +103,9 @@ cd ~/khan/
 ```bash
 # For multi-step tasks: Break down into Beads subtasks
 cd ~/beads
-beads add "Subtask 1: Design schema" --parent $TASK_ID
-beads add "Subtask 2: Implement API" --parent $TASK_ID --add-blocker bd-xyz1
-beads add "Subtask 3: Write tests" --parent $TASK_ID --add-blocker bd-xyz2
+bd add "Subtask 1: Design schema" --parent $TASK_ID
+bd add "Subtask 2: Implement API" --parent $TASK_ID --add-blocker bd-xyz1
+bd add "Subtask 3: Write tests" --parent $TASK_ID --add-blocker bd-xyz2
 ```
 
 - Break down the task (create Beads subtasks)
@@ -116,9 +116,9 @@ beads add "Subtask 3: Write tests" --parent $TASK_ID --add-blocker bd-xyz2
 
 **Update Beads as you progress:**
 ```bash
-beads update bd-xyz1 --status done
-beads update bd-xyz1 --notes "Completed: schema designed per ADR-042"
-beads update bd-xyz2 --remove-blocker bd-xyz1  # Unblock next task
+bd update bd-xyz1 --status done
+bd update bd-xyz1 --notes "Completed: schema designed per ADR-042"
+bd update bd-xyz2 --remove-blocker bd-xyz1  # Unblock next task
 ```
 
 ### 5. Test Thoroughly
@@ -166,11 +166,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 cd ~/beads
 
 # Mark task complete
-beads update $TASK_ID --status done
-beads update $TASK_ID --notes "Completed: [summary of what was done]. Tests passing. PR ready. Related files: [list]"
+bd update $TASK_ID --status done
+bd update $TASK_ID --notes "Completed: [summary of what was done]. Tests passing. PR ready. Related files: [list]"
 
 # Unblock any dependent tasks
-beads update bd-xyz3 --remove-blocker $TASK_ID
+bd update bd-xyz3 --remove-blocker $TASK_ID
 ```
 
 ### 9. Save Knowledge

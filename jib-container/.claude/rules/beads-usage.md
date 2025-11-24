@@ -105,86 +105,86 @@ Each task is represented as a "bead" with:
 
 ```bash
 # Add a new task
-beads add "Implement OAuth2 authentication" --tags feature,security
+bd add "Implement OAuth2 authentication" --tags feature,security
 
 # Add with details
-beads add "Fix memory leak in user service" \
+bd add "Fix memory leak in user service" \
   --tags bug,urgent \
   --notes "Affects production, user reports available in JIRA-5678"
 
 # Add subtask to existing task
-beads add "Write OAuth2 unit tests" --parent bd-a3f8
+bd add "Write OAuth2 unit tests" --parent bd-a3f8
 ```
 
 ### Viewing Tasks
 
 ```bash
 # List all open tasks
-beads list
+bd list
 
 # List tasks by tag
-beads list --tags feature
-beads list --tags urgent,bug
+bd list --tags feature
+bd list --tags urgent,bug
 
 # Show task details
-beads show bd-a3f8
+bd show bd-a3f8
 
 # List tasks ready to work on (no blockers)
-beads ready
+bd ready
 
 # List blocked tasks
-beads list --status blocked
+bd list --status blocked
 ```
 
 ### Updating Tasks
 
 ```bash
 # Change status
-beads update bd-a3f8 --status in-progress
-beads update bd-a3f8 --status done
+bd update bd-a3f8 --status in-progress
+bd update bd-a3f8 --status done
 
 # Add tags
-beads update bd-a3f8 --add-tags reviewed,tested
+bd update bd-a3f8 --add-tags reviewed,tested
 
 # Add notes
-beads update bd-a3f8 --notes "Implemented using RFC 6749 OAuth2 spec"
+bd update bd-a3f8 --notes "Implemented using RFC 6749 OAuth2 spec"
 
 # Add blocker
-beads update bd-a3f8 --add-blocker bd-f14c
+bd update bd-a3f8 --add-blocker bd-f14c
 
 # Remove blocker (when dependency complete)
-beads update bd-a3f8 --remove-blocker bd-f14c
+bd update bd-a3f8 --remove-blocker bd-f14c
 ```
 
 ### Task Dependencies
 
 ```bash
 # Create parent-child relationship
-beads add "Write API tests" --parent bd-a3f8
+bd add "Write API tests" --parent bd-a3f8
 
 # Block task until another completes
-beads update bd-a3f8 --add-blocker bd-f14c
+bd update bd-a3f8 --add-blocker bd-f14c
 
 # List what's blocking a task
-beads show bd-a3f8  # Shows blockers section
+bd show bd-a3f8  # Shows blockers section
 
 # Find ready work (no blockers)
-beads ready
+bd ready
 ```
 
 ### Search and Filter
 
 ```bash
 # Search by text
-beads list --search "authentication"
+bd list --search "authentication"
 
 # Filter by status
-beads list --status open
-beads list --status in-progress
-beads list --status blocked
+bd list --status open
+bd list --status in-progress
+bd list --status blocked
 
 # Combine filters
-beads list --tags feature --status open
+bd list --tags feature --status open
 ```
 
 ## Workflow Examples
@@ -193,60 +193,60 @@ beads list --tags feature --status open
 
 ```bash
 # Create parent task
-beads add "Implement user authentication system" --tags feature
+bd add "Implement user authentication system" --tags feature
 # Output: Created bd-a3f8
 
 # Add subtasks
-beads add "Design authentication schema" --parent bd-a3f8
-beads add "Implement OAuth2 flow" --parent bd-a3f8 --add-blocker bd-b7c2
-beads add "Write authentication tests" --parent bd-a3f8 --add-blocker bd-d4e9
+bd add "Design authentication schema" --parent bd-a3f8
+bd add "Implement OAuth2 flow" --parent bd-a3f8 --add-blocker bd-b7c2
+bd add "Write authentication tests" --parent bd-a3f8 --add-blocker bd-d4e9
 
 # Start work on first subtask
-beads update bd-b7c2 --status in-progress
+bd update bd-b7c2 --status in-progress
 
 # Complete it
-beads update bd-b7c2 --status done
+bd update bd-b7c2 --status done
 
 # Remove blocker, start next task
-beads update bd-d4e9 --remove-blocker bd-b7c2
-beads update bd-d4e9 --status in-progress
+bd update bd-d4e9 --remove-blocker bd-b7c2
+bd update bd-d4e9 --status in-progress
 ```
 
 ### Example 2: Resuming Work After Interruption
 
 ```bash
 # Session 1: Start work
-beads add "Refactor payment processing" --tags refactor
-beads update bd-x9y2 --status in-progress
-beads update bd-x9y2 --notes "Started extracting PaymentService class"
+bd add "Refactor payment processing" --tags refactor
+bd update bd-x9y2 --status in-progress
+bd update bd-x9y2 --notes "Started extracting PaymentService class"
 # ... container shuts down
 
 # Session 2: Resume work
-beads list --status in-progress
+bd list --status in-progress
 # Shows: bd-x9y2 "Refactor payment processing"
-beads show bd-x9y2
+bd show bd-x9y2
 # See notes from previous session
 # Continue work...
-beads update bd-x9y2 --notes "Completed PaymentService, moved to tests"
+bd update bd-x9y2 --notes "Completed PaymentService, moved to tests"
 ```
 
 ### Example 3: Multiple Containers Coordinating
 
 ```bash
 # Container A:
-beads add "Implement feature X" --tags feature
-beads update bd-p4q7 --status in-progress
+bd add "Implement feature X" --tags feature
+bd update bd-p4q7 --status in-progress
 
 # Container B (later):
-beads list  # Sees bd-p4q7 in-progress
+bd list  # Sees bd-p4q7 in-progress
 # Avoids duplicate work
-beads add "Add docs for feature X" --add-blocker bd-p4q7
+bd add "Add docs for feature X" --add-blocker bd-p4q7
 
 # Container A (completes):
-beads update bd-p4q7 --status done
+bd update bd-p4q7 --status done
 
 # Container B:
-beads ready  # Now shows docs task is ready
+bd ready  # Now shows docs task is ready
 ```
 
 ## Automatic Task Management Workflow
@@ -258,13 +258,13 @@ beads ready  # Now shows docs task is ready
 ```bash
 # 1. ALWAYS start by checking Beads
 cd ~/beads
-beads list --status in-progress  # Any unfinished work?
-beads list --search "relevant keywords from message"
+bd list --status in-progress  # Any unfinished work?
+bd list --search "relevant keywords from message"
 
 # 2. Create or update task
 if [ task doesn't exist ]; then
     # Create new task with descriptive title
-    beads add "Task title from message/context" --tags feature,jira-1234
+    bd add "Task title from message/context" --tags feature,jira-1234
     TASK_ID=$(beads list | head -1 | awk '{print $1}')  # Get the ID
 else
     # Update existing task
@@ -272,24 +272,24 @@ else
 fi
 
 # 3. Mark as in-progress
-beads update $TASK_ID --status in-progress
-beads update $TASK_ID --notes "Started: [brief context about approach]"
+bd update $TASK_ID --status in-progress
+bd update $TASK_ID --notes "Started: [brief context about approach]"
 
 # 4. Break down into subtasks if multi-step
-beads add "Subtask 1" --parent $TASK_ID
-beads add "Subtask 2" --parent $TASK_ID --add-blocker bd-xyz1
-beads add "Subtask 3" --parent $TASK_ID --add-blocker bd-xyz2
+bd add "Subtask 1" --parent $TASK_ID
+bd add "Subtask 2" --parent $TASK_ID --add-blocker bd-xyz1
+bd add "Subtask 3" --parent $TASK_ID --add-blocker bd-xyz2
 
 # 5. Work on the task...
 
 # 6. Update progress as you go
-beads update bd-xyz1 --status done
-beads update bd-xyz1 --notes "Completed: implemented X using Y approach"
-beads update bd-xyz2 --remove-blocker bd-xyz1  # Unblock next task
+bd update bd-xyz1 --status done
+bd update bd-xyz1 --notes "Completed: implemented X using Y approach"
+bd update bd-xyz2 --remove-blocker bd-xyz1  # Unblock next task
 
 # 7. Mark complete when done
-beads update $TASK_ID --status done
-beads update $TASK_ID --notes "Completed: summary of what was accomplished, tests passing, PR #123"
+bd update $TASK_ID --status done
+bd update $TASK_ID --notes "Completed: summary of what was accomplished, tests passing, PR #123"
 ```
 
 ### Automatic Tagging Conventions
@@ -303,7 +303,7 @@ beads update $TASK_ID --notes "Completed: summary of what was accomplished, test
 **Example:**
 ```bash
 # User message: "Fix the memory leak in user service (JIRA-5678)"
-beads add "Fix memory leak in user service" --tags bug,urgent,jira-5678,backend
+bd add "Fix memory leak in user service" --tags bug,urgent,jira-5678,backend
 ```
 
 ### Automatic Context Preservation
@@ -317,7 +317,7 @@ beads add "Fix memory leak in user service" --tags bug,urgent,jira-5678,backend
 
 **Example:**
 ```bash
-beads update bd-a3f8 --notes "Implementing OAuth2 per RFC 6749. Using httpOnly cookies per ADR-042. Related to JIRA-1234. Blocks JIRA-5678."
+bd update bd-a3f8 --notes "Implementing OAuth2 per RFC 6749. Using httpOnly cookies per ADR-042. Related to JIRA-1234. Blocks JIRA-5678."
 ```
 
 ### Automatic Task Breakdown
@@ -326,14 +326,14 @@ beads update bd-a3f8 --notes "Implementing OAuth2 per RFC 6749. Using httpOnly c
 
 ```bash
 # Parent
-beads add "Implement user authentication" --tags feature,jira-1234
+bd add "Implement user authentication" --tags feature,jira-1234
 PARENT_ID=bd-a3f8
 
 # Subtasks (automatically inferred from your plan)
-beads add "Design database schema" --parent $PARENT_ID --tags schema
-beads add "Implement OAuth2 endpoints" --parent $PARENT_ID --tags api --add-blocker bd-b1
-beads add "Add frontend login form" --parent $PARENT_ID --tags frontend --add-blocker bd-b2
-beads add "Write integration tests" --parent $PARENT_ID --tags test --add-blocker bd-b2,bd-b3
+bd add "Design database schema" --parent $PARENT_ID --tags schema
+bd add "Implement OAuth2 endpoints" --parent $PARENT_ID --tags api --add-blocker bd-b1
+bd add "Add frontend login form" --parent $PARENT_ID --tags frontend --add-blocker bd-b2
+bd add "Write integration tests" --parent $PARENT_ID --tags test --add-blocker bd-b2,bd-b3
 ```
 
 ### Automatic Status Updates
@@ -342,19 +342,19 @@ beads add "Write integration tests" --parent $PARENT_ID --tags test --add-blocke
 
 ```bash
 # Starting work
-beads update bd-a3f8 --status in-progress
+bd update bd-a3f8 --status in-progress
 
 # Hit a blocker
-beads update bd-a3f8 --status blocked
-beads update bd-a3f8 --notes "Blocked: waiting for database migration approval from DBA team"
+bd update bd-a3f8 --status blocked
+bd update bd-a3f8 --notes "Blocked: waiting for database migration approval from DBA team"
 
 # Blocker resolved
-beads update bd-a3f8 --status in-progress
-beads update bd-a3f8 --notes "Unblocked: migration approved, resuming implementation"
+bd update bd-a3f8 --status in-progress
+bd update bd-a3f8 --notes "Unblocked: migration approved, resuming implementation"
 
 # Completed
-beads update bd-a3f8 --status done
-beads update bd-a3f8 --notes "Done: OAuth2 implemented, all tests passing, PR #456 created"
+bd update bd-a3f8 --status done
+bd update bd-a3f8 --notes "Done: OAuth2 implemented, all tests passing, PR #456 created"
 ```
 
 ## Integration with Other Systems
@@ -362,8 +362,8 @@ beads update bd-a3f8 --notes "Done: OAuth2 implemented, all tests passing, PR #4
 ### With @save-context
 ```bash
 # After completing significant work
-beads list --status done  # Review completed tasks
-beads update bd-a3f8 --notes "Summary: Implemented OAuth2, tests passing, PR ready"
+bd list --status done  # Review completed tasks
+bd update bd-a3f8 --notes "Summary: Implemented OAuth2, tests passing, PR ready"
 @save-context oauth2-implementation
 # Context doc can reference Beads IDs for tracking
 ```
@@ -371,7 +371,7 @@ beads update bd-a3f8 --notes "Summary: Implemented OAuth2, tests passing, PR rea
 ### With Notifications
 ```bash
 # When you need human input on blocked task
-beads list --status blocked
+bd list --status blocked
 # Create notification referencing bead ID
 cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-blocked-task.md <<EOF
 # 🔔 Task Blocked: Need Database Schema Approval
@@ -388,10 +388,10 @@ EOF
 ### With JIRA Tickets
 ```bash
 # Reference JIRA in task notes
-beads add "Implement feature X" --notes "JIRA-1234"
+bd add "Implement feature X" --notes "JIRA-1234"
 
 # Or in title if preferred
-beads add "[JIRA-1234] Implement feature X"
+bd add "[JIRA-1234] Implement feature X"
 ```
 
 ## Troubleshooting
@@ -400,7 +400,7 @@ beads add "[JIRA-1234] Implement feature X"
 ```bash
 # Rebuild SQLite cache
 cd ~/beads
-beads build-cache
+bd build-cache
 ```
 
 ### Changes Not Persisting
@@ -441,7 +441,7 @@ Beads uses hash-based IDs to prevent conflicts. If two containers create tasks s
 - **Format**: Human-readable JSONL + SQLite cache
 
 ### Quick Reference
-- `beads --help` - Command help
+- `bd --help` - Command help
 - `@beads-status` - View current tasks and recommendations
 - `@beads-sync` - Force git sync and cache rebuild
 

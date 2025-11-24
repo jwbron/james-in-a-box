@@ -467,9 +467,9 @@ Container N: ~/beads/          # All containers coordinate
 **Automatic Workflow Integration:**
 
 Agent automatically (without being asked):
-1. **On startup:** Check for in-progress tasks (`beads list --status in-progress`)
-2. **On new task:** Create Beads entry (`beads add "Implement OAuth2 for JIRA-1234"`)
-3. **During work:** Update status and notes (`beads update bd-a3f8 --status in-progress`)
+1. **On startup:** Check for in-progress tasks (`bd list --status in-progress`)
+2. **On new task:** Create Beads entry (`bd add "Implement OAuth2 for JIRA-1234"`)
+3. **During work:** Update status and notes (`bd update bd-a3f8 --status in-progress`)
 4. **Multi-step tasks:** Break into subtasks with dependencies
 5. **On completion:** Mark done, unblock dependent tasks
 
@@ -488,26 +488,26 @@ Agent automatically (without being asked):
 # Agent automatically:
 
 cd ~/beads
-beads list --search "OAuth2 JIRA-1234"  # Check if already exists
-beads add "Implement OAuth2 for JIRA-1234" --tags feature,jira-1234,slack
-beads update bd-a3f8 --status in-progress
+bd list --search "OAuth2 JIRA-1234"  # Check if already exists
+bd add "Implement OAuth2 for JIRA-1234" --tags feature,jira-1234,slack
+bd update bd-a3f8 --status in-progress
 
 # Break into subtasks
-beads add "Design auth schema" --parent bd-a3f8
-beads add "Implement OAuth2 endpoints" --parent bd-a3f8 --add-blocker bd-b1
-beads add "Write integration tests" --parent bd-a3f8 --add-blocker bd-b2,bd-b3
+bd add "Design auth schema" --parent bd-a3f8
+bd add "Implement OAuth2 endpoints" --parent bd-a3f8 --add-blocker bd-b1
+bd add "Write integration tests" --parent bd-a3f8 --add-blocker bd-b2,bd-b3
 
 # Work on tasks, update progress
-beads update bd-b1 --status done
-beads update bd-b1 --notes "Schema designed per ADR-042, using httpOnly cookies"
-beads update bd-b2 --remove-blocker bd-b1  # Unblock next task
+bd update bd-b1 --status done
+bd update bd-b1 --notes "Schema designed per ADR-042, using httpOnly cookies"
+bd update bd-b2 --remove-blocker bd-b1  # Unblock next task
 
 # Container crashes/restarts...
 
 # On resume:
-beads list --status in-progress
+bd list --status in-progress
 # Shows: bd-a3f8 "Implement OAuth2..." and remaining subtasks
-beads show bd-a3f8  # Read all previous notes and context
+bd show bd-a3f8  # Read all previous notes and context
 # Continue work seamlessly
 ```
 

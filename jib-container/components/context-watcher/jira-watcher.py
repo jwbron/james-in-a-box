@@ -267,7 +267,7 @@ class JIRAWatcher:
     def create_beads_task(self, ticket: Dict, analysis: Dict) -> Optional[str]:
         """Create Beads task for the ticket"""
         try:
-            result = subprocess.run(['which', 'beads'], capture_output=True)
+            result = subprocess.run(['which', 'bd'], capture_output=True)
             if result.returncode != 0:
                 return None
 
@@ -279,7 +279,7 @@ class JIRAWatcher:
                 title = title[:77] + "..."
 
             result = subprocess.run(
-                ['beads', 'add', title, '--tags', ticket_key.lower(), 'jira', ticket.get('type', 'task').lower()],
+                ['bd', 'add', title, '--tags', ticket_key.lower(), 'jira', ticket.get('type', 'task').lower()],
                 cwd=self.beads_dir,
                 capture_output=True,
                 text=True
@@ -299,7 +299,7 @@ class JIRAWatcher:
                     notes += f"URL: {ticket.get('url', 'N/A')}"
 
                     subprocess.run(
-                        ['beads', 'update', bead_id, '--notes', notes],
+                        ['bd', 'update', bead_id, '--notes', notes],
                         cwd=self.beads_dir,
                         capture_output=True
                     )
@@ -381,7 +381,7 @@ class JIRAWatcher:
             f.write("\n")
 
             if is_new and beads_id:
-                f.write("**Beads Task Created**: Use `beads update` to track progress\n\n")
+                f.write("**Beads Task Created**: Use `bd update` to track progress\n\n")
 
             f.write("---\n")
             f.write(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")

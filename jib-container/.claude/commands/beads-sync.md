@@ -30,7 +30,7 @@ echo "=== Recent Beads History ==="
 git log --oneline -5 2>/dev/null || echo "No git history yet"
 
 # Rebuild cache to ensure consistency
-beads build-cache 2>/dev/null
+bd build-cache 2>/dev/null
 echo "✓ SQLite cache rebuilt"
 ```
 
