@@ -1,6 +1,3 @@
-I see - the user wants me to return only the fixed file content. Here it is:
-
-```
 """
 Configuration for JIRA connector.
 """
@@ -78,4 +75,3 @@ class JIRAConfig:
             errors.append("JIRA_API_TOKEN is required")
 
         return errors
-```
