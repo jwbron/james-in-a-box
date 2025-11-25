@@ -249,7 +249,7 @@ def launch_jib_analyzer(context_file: Path, interactive: bool = False, fix: bool
     )
 
     # Container path for the analyzer script
-    container_analyzer = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/components/pr-analyzer.py"
+    container_analyzer = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/watchers/pr-analyzer.py"
 
     # Build command
     cmd = [str(jib_script), "--exec", "python3", container_analyzer, container_context_path]
