@@ -231,8 +231,12 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
     mkdir -p "${USER_HOME}/.config/gh"
     chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.config/gh"
 
-    # Authenticate gh as the runtime user
-    if echo "${GITHUB_TOKEN}" | gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth login --with-token 2>/dev/null; then
+    # Try to login with token (may fail if GITHUB_TOKEN env var is already set,
+    # but that's OK - gh will use the env var directly)
+    echo "${GITHUB_TOKEN}" | gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth login --with-token 2>/dev/null || true
+
+    # Check if gh is authenticated (either via stored token or GITHUB_TOKEN env var)
+    if gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth status >/dev/null 2>&1; then
         echo "✓ GitHub CLI authenticated (PR creation enabled)"
         echo "  Token provided via GITHUB_TOKEN environment variable"
 
@@ -248,12 +252,7 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
             echo "✓ Git credential helper configured (manual fallback)"
         fi
 
-        # Verify git can authenticate by checking gh auth status
-        if gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth status >/dev/null 2>&1; then
-            echo "✓ GitHub authentication verified"
-        else
-            echo "⚠ GitHub auth verification failed - push may not work"
-        fi
+        echo "✓ GitHub authentication verified"
     else
         echo "⚠ GitHub CLI authentication failed"
         echo "  PR creation features will not be available"
