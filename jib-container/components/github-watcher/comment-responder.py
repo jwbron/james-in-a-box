@@ -37,14 +37,21 @@ class CommentResponder:
         self.processed_comments = self.load_state()
 
     def load_state(self) -> Dict:
-        """Load previously processed comment IDs"""
+        """Load previously processed comment IDs
+
+        Returns dict mapping comment_id -> timestamp of when it was processed
+        """
         if self.state_file.exists():
             try:
                 with self.state_file.open() as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    # Handle old nested format by extracting innermost dict
+                    while isinstance(data.get('processed'), dict) and 'processed' in data.get('processed', {}):
+                        data = data['processed']
+                    return data.get('processed', {})
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Failed to load state file {self.state_file}: {e}")
-        return {'processed': {}}
+        return {}
 
     def save_state(self):
         """Save processed comment IDs"""
@@ -99,26 +106,28 @@ class CommentResponder:
         Determine if a comment needs a response
 
         Note: Only processes comments on PRs you've opened.
-        Skips your own comments and bot comments.
+        Skips jib's own comments (identified by signature) and bot comments.
         """
-        body = comment.get('body', '').lower()
+        body = comment.get('body', '')
         author = comment.get('author', '')
 
         # Skip bot comments
         if 'bot' in author.lower():
             return False
 
-        # Skip your own comments (get current user from gh cli)
-        try:
-            result = subprocess.run(['gh', 'api', 'user', '--jq', '.login'],
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                current_user = result.stdout.strip()
-                if author.lower() == current_user.lower():
-                    return False
-        except:
-            # If we can't determine current user, proceed anyway
-            pass
+        # Skip jib's own comments (identified by signature)
+        # jib signs its comments with "Authored by jib" or similar markers
+        jib_signatures = [
+            'authored by jib',
+            '🤖 jib',
+            '— jib',
+            'generated with [claude code]',
+        ]
+        body_lower = body.lower()
+        for sig in jib_signatures:
+            if sig in body_lower:
+                print(f"  Skipping jib's own comment (signature: {sig})")
+                return False
 
         # Patterns indicating a response is needed
         question_patterns = [
