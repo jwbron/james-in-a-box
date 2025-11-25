@@ -62,20 +62,23 @@ No manual setup required inside the container.
 ## Security
 
 **Isolation**:
-- No SSH keys (can't push to GitHub)
+- No SSH keys
 - No cloud credentials (can't deploy to GCP/AWS)
 - Network: Outbound HTTP only (Claude API, packages)
 - No inbound ports (can't accept connections)
+- Limited GitHub token (scoped to specific repos only)
 
 **What the agent CAN do**:
-- Read/write code in `~/khan/`
-- Commit locally (no push)
+- Read/write code in `~/khan/` (isolated git worktree)
+- Commit and push to temp branches
+- Create PRs via GitHub CLI
 - Run tests and builds
 - Read context docs (Confluence, JIRA)
 - Write notifications for human review
 
 **What the agent CANNOT do**:
-- Push to GitHub (no SSH keys)
+- Merge PRs (human must approve and merge)
 - Deploy to cloud (no credentials)
 - Access host services (network isolated)
 - Modify host filesystem (only mounted directories)
+- Push to protected branches (main/master)

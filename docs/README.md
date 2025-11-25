@@ -2,59 +2,62 @@
 
 Complete documentation for james-in-a-box: Docker sandbox for Claude Code CLI as an autonomous software engineering agent.
 
-> **Note**: Documentation should generally live close to code in component directories (e.g., `host-services/slack-notifier/README.md`). This directory is for general, cross-cutting documentation only.
+> **Note**: Documentation should generally live close to code in service directories (e.g., `host-services/slack-notifier/README.md`). This directory is for general, cross-cutting documentation only.
 
 ## Documentation Structure
 
 ### [Setup](setup/)
 Initial installation and configuration guides.
 
-- **Slack Integration** - Setting up Slack bot and notifications
-- **Context Watcher** - Configuring file monitoring and analysis
-- **Systemd Services** - Installing and managing background services
+- **[Slack Quickstart](setup/slack-quickstart.md)** - Get notifications working in 10 minutes
+- **[Slack App Setup](setup/slack-app-setup.md)** - Detailed Slack app configuration
+- **[Bidirectional Setup](setup/slack-bidirectional.md)** - Two-way Slack communication
 
 ### [User Guide](user-guide/)
 How to use james-in-a-box day-to-day.
 
-- **Quickstart** - Get up and running in 5 minutes
-- **Workflow** - Daily usage patterns and best practices
-- **Slash Commands** - Available Claude commands
+- **[Overview](user-guide/README.md)** - Common tasks and workflow summary
+- **Slash Commands** - See [.claude/commands](../jib-container/.claude/commands/README.md)
 
 ### [Architecture](architecture/)
 System design and technical details.
 
-- **Overview** - High-level system architecture
-- **Security Model** - Isolation and credential management
-- **Slack Integration** - Bidirectional messaging design
-- **Component Interactions** - How pieces work together
+- **[Overview](architecture/README.md)** - High-level system architecture
+- **[Slack Integration](architecture/slack-integration.md)** - Bidirectional messaging design
+- **[Host Notifier](architecture/host-slack-notifier.md)** - Notification system details
 
 ### [Reference](reference/)
 Quick reference guides and troubleshooting.
 
-- **Slack Quick Reference** - Common Slack operations
-- **Codebase Analyzer** - Automated code analysis
-- **CLI Commands** - All available commands
+- **[Slack Quick Reference](reference/slack-quick-reference.md)** - Common Slack operations
+- **[Codebase Analyzer](reference/codebase-analyzer.md)** - Automated code analysis
+- **[Service Failure Notifications](reference/service-failure-notifications.md)** - Alert system
 
 ### [Development](development/)
 For contributors and developers.
 
+- **[Project Structure](development/STRUCTURE.md)** - Directory conventions and guidelines
 - **Contributing Guide** (planned)
-- **Development Setup** (planned)
 - **Testing** (planned)
+
+### [ADRs](adr/)
+Architecture Decision Records.
+
+- **[Autonomous Software Engineer](adr/ADR-Autonomous-Software-Engineer.md)** - Main system architecture
+- **[Message Queue Integration](adr/ADR-Message-Queue-Slack-Integration.md)** - Pub/Sub migration plan
 
 ## Quick Links
 
 **Getting Started:**
-1. [Quickstart Guide](user-guide/quickstart.md)
-2. [Slack Setup](setup/slack-quickstart.md)
-3. [Workflow Guide](user-guide/workflow.md)
+1. Run `./setup.sh` in project root
+2. [Slack Setup](setup/slack-quickstart.md) - Configure Slack integration
+3. Start container: `bin/jib`
 
 **Common Tasks:**
-- [Installing Services](setup/slack-quickstart.md)
 - [Managing Notifications](reference/slack-quick-reference.md)
-- [Viewing Logs](../bin/README.md#view-logs)
+- [Viewing Logs](../bin/README.md)
 
 **Architecture:**
-- [System Overview](architecture/integration-summary.md)
-- [Security Model](architecture/integration-summary.md)
+- [Main README](../README.md) - Project overview
 - [Slack Integration](architecture/slack-integration.md)
+- [ADR](adr/ADR-Autonomous-Software-Engineer.md) - Full architecture details
