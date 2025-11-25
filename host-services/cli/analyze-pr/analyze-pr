@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""
+PR Analyzer - Host-side wrapper for analyzing GitHub PRs
+
+Fetches comprehensive PR context from GitHub and passes it to jib for analysis.
+
+Usage:
+    analyze-pr https://github.com/Khan/buildmaster2/pull/179
+    analyze-pr Khan/buildmaster2#179
+    analyze-pr --help
+
+The script will:
+1. Fetch PR metadata, diff, comments, review comments, and CI status
+2. Write the context to ~/.jib-sharing/pr-analysis/
+3. Launch jib --exec with the container-side analyzer
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Tuple
+
+
+def parse_pr_reference(ref: str) -> Tuple[str, str, int]:
+    """Parse PR URL or shorthand into (owner, repo, number).
+
+    Accepts:
+        - https://github.com/Khan/buildmaster2/pull/179
+        - github.com/Khan/buildmaster2/pull/179
+        - Khan/buildmaster2#179
+        - Khan/buildmaster2/pull/179
+    """
+    # URL pattern: github.com/owner/repo/pull/number
+    url_pattern = r'(?:https?://)?github\.com/([^/]+)/([^/]+)/pull/(\d+)'
+    match = re.match(url_pattern, ref)
+    if match:
+        return match.group(1), match.group(2), int(match.group(3))
+
+    # Shorthand: owner/repo#number
+    shorthand_pattern = r'^([^/]+)/([^#/]+)#(\d+)$'
+    match = re.match(shorthand_pattern, ref)
+    if match:
+        return match.group(1), match.group(2), int(match.group(3))
+
+    # Alternate: owner/repo/pull/number
+    alt_pattern = r'^([^/]+)/([^/]+)/pull/(\d+)$'
+    match = re.match(alt_pattern, ref)
+    if match:
+        return match.group(1), match.group(2), int(match.group(3))
+
+    raise ValueError(f"Cannot parse PR reference: {ref}")
+
+
+def run_gh(args: list, check: bool = True) -> Optional[str]:
+    """Run gh CLI command and return output."""
+    try:
+        result = subprocess.run(
+            ["gh"] + args,
+            capture_output=True,
+            text=True,
+            check=check
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        if check:
+            print(f"Error running gh {' '.join(args)}: {e.stderr}", file=sys.stderr)
+            return None
+        return None
+    except FileNotFoundError:
+        print("Error: gh CLI not found. Install from https://cli.github.com/", file=sys.stderr)
+        sys.exit(1)
+
+
+def fetch_pr_context(owner: str, repo: str, pr_number: int) -> dict:
+    """Fetch comprehensive PR context from GitHub."""
+    repo_ref = f"{owner}/{repo}"
+    pr_ref = str(pr_number)
+
+    print(f"Fetching PR context for {repo_ref}#{pr_number}...")
+
+    context = {
+        "owner": owner,
+        "repo": repo,
+        "pr_number": pr_number,
+        "fetched_at": datetime.now().isoformat(),
+    }
+
+    # 1. PR metadata
+    print("  - PR metadata...")
+    pr_json = run_gh([
+        "pr", "view", pr_ref,
+        "--repo", repo_ref,
+        "--json", "number,title,body,state,author,baseRefName,headRefName,mergeable,isDraft,createdAt,updatedAt,additions,deletions,changedFiles,reviewDecision,labels,milestone"
+    ])
+    if pr_json:
+        context["pr"] = json.loads(pr_json)
+
+    # 2. PR diff
+    print("  - PR diff...")
+    diff = run_gh(["pr", "diff", pr_ref, "--repo", repo_ref], check=False)
+    context["diff"] = diff or "(Unable to fetch diff)"
+
+    # 3. Files changed (list)
+    print("  - Files changed...")
+    files_json = run_gh([
+        "pr", "view", pr_ref,
+        "--repo", repo_ref,
+        "--json", "files"
+    ])
+    if files_json:
+        files_data = json.loads(files_json)
+        context["files"] = files_data.get("files", [])
+
+    # 4. PR comments (conversation)
+    print("  - PR comments...")
+    comments_json = run_gh([
+        "pr", "view", pr_ref,
+        "--repo", repo_ref,
+        "--json", "comments"
+    ])
+    if comments_json:
+        comments_data = json.loads(comments_json)
+        context["comments"] = comments_data.get("comments", [])
+
+    # 5. Review comments (inline code comments)
+    print("  - Review comments...")
+    review_comments = run_gh([
+        "api", f"repos/{repo_ref}/pulls/{pr_number}/comments",
+        "--jq", ".[].body"
+    ], check=False)
+    context["review_comments_raw"] = review_comments or ""
+
+    # Get full review comments with context
+    review_comments_json = run_gh([
+        "api", f"repos/{repo_ref}/pulls/{pr_number}/comments"
+    ], check=False)
+    if review_comments_json:
+        try:
+            context["review_comments"] = json.loads(review_comments_json)
+        except json.JSONDecodeError:
+            context["review_comments"] = []
+
+    # 6. Reviews (approvals, change requests)
+    print("  - Reviews...")
+    reviews_json = run_gh([
+        "pr", "view", pr_ref,
+        "--repo", repo_ref,
+        "--json", "reviews"
+    ])
+    if reviews_json:
+        reviews_data = json.loads(reviews_json)
+        context["reviews"] = reviews_data.get("reviews", [])
+
+    # 7. CI status / checks
+    print("  - CI checks...")
+    checks_json = run_gh([
+        "pr", "checks", pr_ref,
+        "--repo", repo_ref,
+        "--json", "name,state,conclusion,startedAt,completedAt,detailsUrl"
+    ], check=False)
+    if checks_json:
+        try:
+            context["checks"] = json.loads(checks_json)
+        except json.JSONDecodeError:
+            context["checks"] = []
+
+    # 8. Commits in PR
+    print("  - Commits...")
+    commits_json = run_gh([
+        "pr", "view", pr_ref,
+        "--repo", repo_ref,
+        "--json", "commits"
+    ])
+    if commits_json:
+        commits_data = json.loads(commits_json)
+        context["commits"] = commits_data.get("commits", [])
+
+    # 9. For failed checks, try to get logs
+    print("  - Check logs for failures...")
+    context["failed_check_logs"] = {}
+    if context.get("checks"):
+        for check in context["checks"]:
+            if check.get("conclusion") in ["failure", "FAILURE"]:
+                check_name = check.get("name", "unknown")
+                print(f"    - Fetching logs for failed check: {check_name}...")
+
+                # Try to get run ID from details URL
+                details_url = check.get("detailsUrl", "")
+                run_id_match = re.search(r'/runs/(\d+)', details_url)
+                if run_id_match:
+                    run_id = run_id_match.group(1)
+                    # Get failed job logs
+                    logs = run_gh([
+                        "run", "view", run_id,
+                        "--repo", repo_ref,
+                        "--log-failed"
+                    ], check=False)
+                    if logs:
+                        # Truncate very long logs
+                        max_log_len = 50000
+                        if len(logs) > max_log_len:
+                            logs = logs[:max_log_len] + f"\n\n... (truncated, {len(logs)} total chars)"
+                        context["failed_check_logs"][check_name] = logs
+
+    return context
+
+
+def write_context_file(context: dict) -> Path:
+    """Write PR context to a file for the container."""
+    # Create directory if needed
+    sharing_dir = Path.home() / ".jib-sharing" / "pr-analysis"
+    sharing_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"{context['owner']}-{context['repo']}-{context['pr_number']}-{timestamp}.json"
+    filepath = sharing_dir / filename
+
+    # Write JSON
+    with open(filepath, 'w') as f:
+        json.dump(context, f, indent=2, default=str)
+
+    print(f"Context written to: {filepath}")
+    return filepath
+
+
+def launch_jib_analyzer(context_file: Path, interactive: bool = False, fix: bool = False) -> int:
+    """Launch jib --exec with the PR analyzer."""
+    jib_script = Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
+
+    if not jib_script.exists():
+        # Try alternate location
+        jib_script = Path.home() / "khan" / "james-in-a-box" / "jib-container" / "jib"
+
+    if not jib_script.exists():
+        print(f"Error: jib script not found", file=sys.stderr)
+        return 1
+
+    # Container path for the context file
+    # ~/.jib-sharing/ on host maps to ~/sharing/ in container
+    container_context_path = str(context_file).replace(
+        str(Path.home() / ".jib-sharing"),
+        f"/home/{os.environ['USER']}/sharing"
+    )
+
+    # Container path for the analyzer script
+    container_analyzer = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/jib-tasks/github/pr-analyzer.py"
+
+    # Build command
+    cmd = [str(jib_script), "--exec", "python3", container_analyzer, container_context_path]
+
+    if fix:
+        cmd.append("--fix")
+
+    if interactive:
+        cmd.append("--interactive")
+
+    print(f"\nLaunching PR analyzer in jib container...")
+    print(f"Command: {' '.join(cmd)}")
+    print("-" * 60)
+
+    # Run jib --exec (this will block until container exits)
+    result = subprocess.run(cmd)
+    return result.returncode
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Analyze a GitHub PR and suggest fixes",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    analyze-pr https://github.com/Khan/buildmaster2/pull/179
+    analyze-pr Khan/buildmaster2#179
+    analyze-pr --fix Khan/buildmaster2#179  # Attempt to implement fixes
+        """
+    )
+    parser.add_argument(
+        "pr_reference",
+        help="PR URL or shorthand (e.g., Khan/repo#123)"
+    )
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Attempt to implement fixes (not just analyze)"
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Drop into interactive Claude session after analysis"
+    )
+    parser.add_argument(
+        "--context-only",
+        action="store_true",
+        help="Only fetch context, don't launch analyzer"
+    )
+
+    args = parser.parse_args()
+
+    # Parse PR reference
+    try:
+        owner, repo, pr_number = parse_pr_reference(args.pr_reference)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Analyzing PR: {owner}/{repo}#{pr_number}")
+    print("=" * 60)
+
+    # Fetch PR context
+    context = fetch_pr_context(owner, repo, pr_number)
+
+    # Write context file
+    context_file = write_context_file(context)
+
+    if args.context_only:
+        print(f"\nContext file ready: {context_file}")
+        return 0
+
+    # Launch jib analyzer
+    return launch_jib_analyzer(
+        context_file,
+        interactive=args.interactive,
+        fix=args.fix
+    )
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -19,26 +19,48 @@ james-in-a-box/
 
 | Directory | Purpose | Runs On |
 |-----------|---------|---------|
-| `host-services/` | Systemd services that run on the host machine | Host |
-| `jib-container/watchers/` | Event-driven components inside the container | Container |
-| `jib-container/scripts/` | Utility scripts for container tasks | Container |
-| `jib-container/shared/` | Python libraries shared across container components | Container |
+| `host-services/slack/` | Slack communication services | Host |
+| `host-services/sync/` | Data synchronization services | Host |
+| `host-services/analysis/` | Code and conversation analysis | Host |
+| `host-services/utilities/` | Utility services (monitoring, cleanup) | Host |
+| `host-services/cli/` | Command-line tools (not daemons) | Host |
+| `jib-container/jib-tasks/` | Scripts called via `jib --exec` from host services | Container (via jib --exec) |
+| `jib-container/jib-tools/` | Interactive tools used inside the container | Container |
 | `jib-container/.claude/` | Claude Code configuration (rules, commands) | Container |
 
 ## Host Service Structure
 
-Each service in `host-services/` should follow this pattern:
+Services in `host-services/` are organized by category:
 
 ```
 host-services/
-└── <service-name>/
-    ├── README.md              # Required: Purpose, setup, usage
-    ├── setup.sh               # Required: Installation script
-    ├── <service-name>.py      # Main implementation (if Python)
-    ├── <service-name>.sh      # Main implementation (if shell)
-    ├── <service-name>.service # Systemd service unit
-    ├── <service-name>.timer   # Systemd timer (if timer-based)
-    └── requirements.txt       # Python dependencies (even if empty)
+├── slack/                     # Slack communication
+│   ├── slack-notifier/        # Outgoing notifications
+│   └── slack-receiver/        # Incoming messages
+├── sync/                      # Data synchronization
+│   ├── github-sync/           # GitHub PR sync
+│   └── context-sync/          # Confluence/JIRA sync
+├── analysis/                  # Analysis services
+│   ├── codebase-analyzer/     # Code review automation
+│   └── conversation-analyzer/ # Quality analysis
+├── utilities/                 # Utility services
+│   ├── worktree-watcher/      # Git worktree cleanup
+│   └── service-monitor/       # Service failure monitoring
+└── cli/                       # CLI tools (not systemd services)
+    └── analyze-pr/            # PR analysis tool
+```
+
+Each service directory should contain:
+
+```
+<service-name>/
+├── README.md              # Required: Purpose, setup, usage
+├── setup.sh               # Required: Installation script (for systemd services)
+├── <service-name>.py      # Main implementation (if Python)
+├── <service-name>.sh      # Main implementation (if shell)
+├── <service-name>.service # Systemd service unit (if daemon)
+├── <service-name>.timer   # Systemd timer (if timer-based)
+└── requirements.txt       # Python dependencies (even if empty)
 ```
 
 ### When to Use Subdirectories
@@ -64,19 +86,31 @@ context-sync/
 └── context-sync.timer
 ```
 
-## Container Watcher Structure
+## Container Task Structure
 
-Each watcher in `jib-container/watchers/` follows a similar pattern:
+Tasks in `jib-container/jib-tasks/` are organized by product/service:
 
 ```
-jib-container/watchers/
-└── <watcher-name>/
-    ├── README.md              # Required: Purpose, usage
-    ├── <watcher-name>-ctl     # Control script (start/stop)
-    ├── watcher.py             # Main implementation
-    └── config/                # Optional: Watcher-specific config
-        └── <watcher-name>.yaml
+jib-container/jib-tasks/
+├── github/                    # GitHub-related tasks
+│   ├── README.md
+│   ├── check-monitor.py       # Analyzes CI failures
+│   ├── pr-reviewer.py         # Auto-reviews PRs
+│   ├── comment-responder.py   # Responds to PR comments
+│   └── pr-analyzer.py         # Analyzes PR context
+├── jira/                      # JIRA-related tasks
+│   ├── README.md
+│   ├── jira-watcher.py        # Analyzes JIRA tickets
+│   └── analyze-sprint.py      # Sprint analysis
+├── confluence/                # Confluence-related tasks
+│   ├── README.md
+│   └── confluence-watcher.py  # Analyzes docs
+└── slack/                     # Slack-related tasks
+    ├── README.md
+    └── incoming-processor.py  # Processes incoming messages
 ```
+
+These are called via `jib --exec` from host-side systemd services (no background processes).
 
 ## File Naming Conventions
 
@@ -96,7 +130,8 @@ The `bin/` directory contains symlinks for convenient CLI access:
 ```
 bin/
 ├── jib -> ../jib-container/jib
-├── setup-slack-notifier -> ../host-services/slack-notifier/setup.sh
+├── analyze-pr -> ../host-services/cli/analyze-pr/analyze-pr
+├── setup-slack-notifier -> ../host-services/slack/slack-notifier/setup.sh
 └── ...
 ```
 
@@ -153,12 +188,18 @@ host-services/<service>/docs/  # Extended docs (only if needed)
 4. Update main `README.md` architecture section
 5. Add to `setup.sh` components array
 
-## Adding a New Container Watcher
+## Adding a New Container Task
 
-1. Create directory: `jib-container/watchers/<watcher-name>/`
-2. Add required files:
-   - `README.md` - Document purpose and usage
-   - `<watcher-name>-ctl` - Control script
-   - Main implementation (`.py` or `.sh`)
-3. Update `jib-container/docker-setup.py` to start watcher
-4. Update main `README.md` container components section
+1. Identify the product/service category (github, jira, confluence, slack, or new)
+2. Add script to appropriate directory: `jib-container/jib-tasks/<product>/`
+3. Add required files:
+   - `README.md` - Document purpose and usage (one per product directory)
+   - Main implementation (`.py`)
+4. Update the host-side systemd service to call via `jib --exec`
+5. Update main `README.md` container components section
+
+## Adding a New Container Tool
+
+1. Add script to `jib-container/jib-tools/`
+2. Document in the directory's `README.md`
+3. Tools are interactive utilities used inside the container (not called via jib --exec)

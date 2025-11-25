@@ -1,0 +1,27 @@
+[Unit]
+Description=Slack Notifier - Monitor Claude sandbox and send Slack notifications
+Documentation=file://%h/khan/james-in-a-box/host-services/slack/slack-notifier/README.md
+OnFailure=service-failure-notify@%n.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jwies/khan/james-in-a-box
+# Configuration loaded from ~/.config/jib-notifier/config.json
+ExecStart=/usr/bin/python3 /home/jwies/khan/james-in-a-box/host-services/slack/slack-notifier/slack-notifier.py
+
+# Restart on failure
+Restart=on-failure
+RestartSec=30s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=slack-notifier
+
+# Resource limits
+Nice=10
+IOSchedulingClass=2
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=default.target

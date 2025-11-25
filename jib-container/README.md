@@ -5,13 +5,15 @@ Container infrastructure and components that run inside the Docker sandbox.
 ## Overview
 
 The jib container provides a secure, isolated environment for the Claude agent to work in. It includes:
-- Context monitoring for Confluence/JIRA docs
+- Task scripts called via `jib --exec` from host services
+- Interactive tools for agent use
 - Claude Code configuration (rules, commands)
 - Shared directories for communication with host
 
 ## Components
 
-- **[context-watcher](watchers/context-watcher/README.md)** - Monitors `~/context-sync/` for document updates
+- **[jib-tasks/](jib-tasks/)** - Scripts called via `jib --exec` (github, jira, confluence, slack)
+- **[jib-tools/](jib-tools/)** - Interactive tools (PR helpers, test discovery)
 - **[.claude](.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 
 ## Directory Structure
@@ -54,8 +56,9 @@ docker exec -it jib-claude bash
 Container setup is automated via `docker-setup.py`, which runs on container start to:
 - Install dependencies
 - Configure environment
-- Start watchers (context-watcher)
 - Set up Claude Code
+
+Note: Task scripts are not started as background processes. They are called via `jib --exec` from host-side systemd services.
 
 No manual setup required inside the container.
 

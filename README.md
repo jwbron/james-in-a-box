@@ -134,19 +134,19 @@ Container:
 
    ```bash
    # Slack notifier (Claude → You)
-   cd host-services/slack-notifier && ./setup.sh
+   cd host-services/slack/slack-notifier && ./setup.sh
 
    # Slack receiver (You → Claude)
-   cd host-services/slack-receiver && ./setup.sh
+   cd host-services/slack/slack-receiver && ./setup.sh
 
    # Conversation analyzer (optional)
-   cd host-services/conversation-analyzer && ./setup.sh
+   cd host-services/analysis/conversation-analyzer && ./setup.sh
 
    # Codebase analyzer (optional)
-   cd host-services/codebase-analyzer && ./setup.sh
+   cd host-services/analysis/codebase-analyzer && ./setup.sh
 
    # Service monitor (optional)
-   cd host-services/service-monitor && ./setup.sh
+   cd host-services/utilities/service-monitor && ./setup.sh
    ```
    </details>
 
@@ -179,31 +179,46 @@ The agent will receive your task, implement the code, and send you a notificatio
 
 All host components run as systemd user services for reliability and auto-restart:
 
-- **[slack-notifier](host-services/slack-notifier/README.md)** - Sends Claude's notifications to Slack (inotify-based, instant)
-- **[slack-receiver](host-services/slack-receiver/README.md)** - Receives your messages and responses from Slack (Socket Mode)
-- **[context-sync](host-services/context-sync/README.md)** - Syncs Confluence/JIRA to `~/context-sync/` (hourly)
-- **[github-sync](host-services/github-sync/README.md)** - Syncs PR data and check status to `~/context-sync/github/` (every 15 min)
-- **[worktree-watcher](host-services/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
-- **[codebase-analyzer](host-services/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
-- **[conversation-analyzer](host-services/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
-- **[service-monitor](host-services/service-monitor/README.md)** - Notifies on service failures
+**Slack:**
+- **[slack-notifier](host-services/slack/slack-notifier/README.md)** - Sends Claude's notifications to Slack (inotify-based, instant)
+- **[slack-receiver](host-services/slack/slack-receiver/README.md)** - Receives your messages and responses from Slack (Socket Mode)
 
-### Container Components
+**Sync:**
+- **[context-sync](host-services/sync/context-sync/README.md)** - Syncs Confluence/JIRA to `~/context-sync/` (hourly)
+- **[github-sync](host-services/sync/github-sync/README.md)** - Syncs PR data and check status to `~/context-sync/github/` (every 15 min)
 
-- **[context-watcher](jib-container/watchers/context-watcher/README.md)** - Monitors JIRA tickets and Confluence docs, analyzes changes, sends summaries and action items
-- **[github-watcher](jib-container/watchers/github-watcher/README.md)** - Monitors PR check failures, auto-fixes issues, provides on-demand code reviews, and suggests comment responses
+**Analysis:**
+- **[codebase-analyzer](host-services/analysis/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
+- **[conversation-analyzer](host-services/analysis/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
+
+**Utilities:**
+- **[worktree-watcher](host-services/utilities/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
+- **[service-monitor](host-services/utilities/service-monitor/README.md)** - Notifies on service failures
+
+**CLI:**
+- **[analyze-pr](host-services/cli/analyze-pr/README.md)** - Analyze GitHub PRs with Claude
+
+### Container Tasks (`jib-tasks/`)
+
+Scripts called via `jib --exec` from host-side systemd services:
+
+- **[github/](jib-container/jib-tasks/github/README.md)** - PR check monitoring, auto-reviews, comment responses
+- **[jira/](jib-container/jib-tasks/jira/)** - JIRA ticket analysis, sprint analysis
+- **[confluence/](jib-container/jib-tasks/confluence/)** - Confluence doc analysis
+- **[slack/](jib-container/jib-tasks/slack/)** - Incoming message processing
+
+### Container Tools (`jib-tools/`)
+
+Interactive utilities used inside the container:
+
+- `create-pr-helper.py` - Create PRs with auto-generated descriptions
+- `comment-pr-helper.py` - Post PR comments
+- `discover-tests.py` - Discover test frameworks in a codebase
+
+### Container Config
+
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 - **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
-
-### Container Scripts
-
-**[Sprint Analysis](jib-container/scripts/README.md)** - Analyze sprint tickets and suggest next steps:
-```bash
-# From host
-bin/jib --exec /home/jwies/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
-```
-
-Analyzes your assigned JIRA tickets, groups by status, suggests next steps, and recommends backlog tickets to pull in.
 
 ### Shared Directories
 
@@ -505,14 +520,16 @@ docker logs -f jib-claude
 ### Component READMEs
 
 **Host Services:**
-- [slack-notifier](host-services/slack-notifier/README.md) - Outgoing notifications
-- [slack-receiver](host-services/slack-receiver/README.md) - Incoming messages
-- [codebase-analyzer](host-services/codebase-analyzer/README.md) - Code review automation
-- [conversation-analyzer](host-services/conversation-analyzer/README.md) - Quality analysis
-- [service-monitor](host-services/service-monitor/README.md) - Failure monitoring
+- [slack-notifier](host-services/slack/slack-notifier/README.md) - Outgoing notifications
+- [slack-receiver](host-services/slack/slack-receiver/README.md) - Incoming messages
+- [github-sync](host-services/sync/github-sync/README.md) - GitHub PR sync
+- [context-sync](host-services/sync/context-sync/README.md) - Confluence/JIRA sync
+- [codebase-analyzer](host-services/analysis/codebase-analyzer/README.md) - Code review automation
+- [conversation-analyzer](host-services/analysis/conversation-analyzer/README.md) - Quality analysis
+- [service-monitor](host-services/utilities/service-monitor/README.md) - Failure monitoring
 
-**Container Components:**
-- [context-watcher](jib-container/watchers/context-watcher/README.md) - Document monitoring
+**Container Tasks:**
+- [github](jib-container/jib-tasks/github/README.md) - GitHub/PR analysis tasks
 - [.claude rules](jib-container/.claude/rules/README.md) - Agent behavior and standards
 
 ### Guides

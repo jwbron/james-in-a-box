@@ -1,0 +1,29 @@
+[Unit]
+Description=Context Sync - Sync all connectors (Confluence, JIRA, etc.)
+Documentation=file://%h/khan/james-in-a-box/host-services/sync/context-sync/README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/khan/james-in-a-box/host-services/sync/context-sync
+Environment="PATH=%h/khan/james-in-a-box/host-services/sync/context-sync/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+# Configuration is loaded from ~/.config/context-sync/.env by context-sync.py
+ExecStart=%h/khan/james-in-a-box/host-services/sync/context-sync/.venv/bin/python %h/khan/james-in-a-box/host-services/sync/context-sync/context-sync.py
+
+# After syncing context data, run analysis in JIB container (new ephemeral containers)
+# Confluence and JIRA handlers analyze docs and tickets for updates
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/confluence/confluence-watcher.py
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/jira/jira-watcher.py
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=context-sync
+
+# Resource limits
+Nice=10
+IOSchedulingClass=2
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=default.target
+

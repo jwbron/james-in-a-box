@@ -1,1 +1,1 @@
-../jib-container/bin/analyze-pr
+../host-services/cli/analyze-pr/analyze-pr

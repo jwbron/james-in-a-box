@@ -1,0 +1,23 @@
+[Unit]
+Description=JIB Slack Receiver - Bidirectional Slack communication
+Documentation=https://github.com/anthropics/james-in-a-box
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/khan/james-in-a-box/host-services/slack/slack-receiver/slack-receiver.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
