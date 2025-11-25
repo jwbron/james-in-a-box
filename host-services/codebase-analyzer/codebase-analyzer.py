@@ -23,6 +23,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional, Set, Tuple
 from enum import Enum
+from dataclasses import dataclass
 import subprocess
 import fnmatch
 
@@ -37,6 +38,15 @@ class FixResult(Enum):
     TIMEOUT = "timeout"
     CLAUDE_ERROR = "claude_error"
     OTHER_ERROR = "other_error"
+
+
+@dataclass
+class PRResult:
+    """Result of PR creation attempt."""
+    success: bool
+    pr_url: Optional[str] = None
+    branch_name: Optional[str] = None
+    error: Optional[str] = None
 
 
 class CodebaseAnalyzer:
@@ -340,17 +350,21 @@ The output should be similar in length to the input."""
             self.logger.error(f"Error fixing {issue['file']}: {e}")
             return (FixResult.OTHER_ERROR, str(e)[:200])
 
-    def create_pr(self, implemented: List[Dict], skipped: List[Tuple[Dict, FixResult, Optional[str]]] = None) -> Optional[str]:
+    def create_pr(self, implemented: List[Dict], skipped: List[Tuple[Dict, FixResult, Optional[str]]] = None) -> PRResult:
         """Commit changes and create a PR.
 
         Args:
             implemented: List of issues that were successfully fixed
             skipped: List of (issue, result, detail) tuples for issues that couldn't be fixed
+
+        Returns:
+            PRResult with success status, PR URL (if created), branch name, and any error
         """
         if not implemented:
-            return None
+            return PRResult(success=False, error="No issues were successfully fixed")
 
         skipped = skipped or []
+        branch_name = None
 
         try:
             # Check for changes
@@ -363,7 +377,7 @@ The output should be similar in length to the input."""
 
             if not result.stdout.strip():
                 self.logger.warning("No changes to commit")
-                return None
+                return PRResult(success=False, error="No changes to commit (fixes may not have modified files)")
 
             # Create branch
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -410,8 +424,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             )
 
             if result.returncode != 0:
-                self.logger.error(f"Push failed: {result.stderr}")
-                return None
+                error_msg = f"Push failed: {result.stderr.strip()}"
+                self.logger.error(error_msg)
+                return PRResult(success=False, branch_name=branch_name, error=error_msg)
 
             # Create PR body
             pr_body = f"## Auto-fix: {len(implemented)} improvements\n\n"
@@ -446,21 +461,27 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             )
 
             if result.returncode != 0:
-                self.logger.error(f"PR creation failed: {result.stderr}")
-                return None
+                error_msg = f"PR creation failed: {result.stderr.strip()}"
+                self.logger.error(error_msg)
+                return PRResult(success=False, branch_name=branch_name, error=error_msg)
 
             pr_url = result.stdout.strip()
             self.logger.info(f"✓ Created PR: {pr_url}")
-            return pr_url
+            return PRResult(success=True, pr_url=pr_url, branch_name=branch_name)
 
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Git command failed: {e.cmd} returned {e.returncode}"
+            self.logger.error(error_msg)
+            return PRResult(success=False, branch_name=branch_name, error=error_msg)
         except Exception as e:
-            self.logger.error(f"Error creating PR: {e}")
-            return None
+            error_msg = f"Error creating PR: {e}"
+            self.logger.error(error_msg)
+            return PRResult(success=False, branch_name=branch_name, error=str(e))
 
     def create_notification(
         self,
         issues: List[Dict],
-        pr_url: Optional[str] = None,
+        pr_result: Optional[PRResult] = None,
         implemented: List[Dict] = None,
         skipped: List[Tuple[Dict, FixResult, Optional[str]]] = None
     ):
@@ -468,7 +489,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
 
         Args:
             issues: All issues found during analysis
-            pr_url: URL of created PR (if any)
+            pr_result: Result of PR creation attempt (if any)
             implemented: Issues that were successfully fixed
             skipped: Issues that couldn't be auto-fixed (issue, result, detail)
         """
@@ -483,8 +504,17 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
         content = f"# 🔍 Codebase Analysis\n\n"
         content += f"**Found {len(issues)} issues**\n\n"
 
-        if pr_url:
-            content += f"**PR Created**: {pr_url}\n\n"
+        # Show PR result with details
+        if pr_result:
+            if pr_result.success and pr_result.pr_url:
+                content += f"**PR Created**: {pr_result.pr_url}\n\n"
+            else:
+                content += f"**⚠️ PR Creation Failed**\n"
+                if pr_result.error:
+                    content += f"- Error: {pr_result.error}\n"
+                if pr_result.branch_name:
+                    content += f"- Branch: `{pr_result.branch_name}` (changes committed locally)\n"
+                content += "\n"
 
         if implemented or skipped:
             content += f"**Fixed**: {len(implemented)} | **Skipped**: {len(skipped)}\n\n"
@@ -538,7 +568,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             return
 
         # Implement fixes if requested
-        pr_url = None
+        pr_result = None
         implemented = []
         skipped = []
 
@@ -558,10 +588,16 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                 self.logger.info(f"Skipped {len(skipped)} issues (see PR/notification for details)")
 
             if implemented:
-                pr_url = self.create_pr(implemented, skipped)
+                pr_result = self.create_pr(implemented, skipped)
+                if pr_result.success:
+                    self.logger.info(f"PR created: {pr_result.pr_url}")
+                else:
+                    self.logger.error(f"PR creation failed: {pr_result.error}")
+                    if pr_result.branch_name:
+                        self.logger.info(f"Changes are on branch: {pr_result.branch_name}")
 
         # Create notification
-        self.create_notification(issues, pr_url, implemented, skipped)
+        self.create_notification(issues, pr_result, implemented, skipped)
 
         self.logger.info("Done!")
 
