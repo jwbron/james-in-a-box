@@ -1,14 +1,50 @@
 """
-Pytest configuration and shared fixtures.
+Pytest configuration and shared fixtures for james-in-a-box tests.
 """
+
+import os
 import sys
+import tempfile
 from pathlib import Path
 
-# Add project root to path for imports
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+import pytest
 
-# Add shared module to path
-SHARED_PATH = PROJECT_ROOT / "shared"
-if SHARED_PATH.exists():
-    sys.path.insert(0, str(SHARED_PATH))
+# Add project paths to sys.path for imports
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "shared"))
+sys.path.insert(0, str(PROJECT_ROOT / "jib-container"))
+sys.path.insert(0, str(PROJECT_ROOT / "jib-container" / "jib-tools"))
+
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory for test files."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
+
+
+@pytest.fixture
+def mock_home(temp_dir, monkeypatch):
+    """Mock the home directory for tests."""
+    monkeypatch.setenv("HOME", str(temp_dir))
+
+    # Create expected directory structure
+    (temp_dir / "sharing" / "notifications").mkdir(parents=True)
+    (temp_dir / "sharing" / "tracking").mkdir(parents=True)
+    (temp_dir / "sharing" / "incoming").mkdir(parents=True)
+
+    yield temp_dir
+
+
+@pytest.fixture
+def notifications_dir(mock_home):
+    """Return the mocked notifications directory."""
+    return mock_home / "sharing" / "notifications"
+
+
+@pytest.fixture
+def mock_env(monkeypatch):
+    """Set up common environment variables for testing."""
+    monkeypatch.setenv("JIB_TEST_MODE", "1")
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    yield
