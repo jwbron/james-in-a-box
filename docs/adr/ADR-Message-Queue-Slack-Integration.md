@@ -75,7 +75,7 @@ This ADR establishes the architecture for **replacing file-based Slack communica
 
 1. Works both locally and in GCP
 2. Provides delivery guarantees and retry logic
-3. Enables the Cloud Run deployment path (Phase 3)
+3. Enables the Cloud Run deployment path (Phase 2)
 4. Maintains debugging transparency
 
 ## Decision
@@ -439,55 +439,39 @@ resource "google_firestore_database" "default" {
 
 ## Migration Strategy
 
-### Phase 1: Add Pub/Sub Alongside File-Based (Low Risk)
+### Phase 1: Full Local Migration to Pub/Sub
 
-**Goal:** Validate Pub/Sub locally without breaking existing system
+**Goal:** Replace file-based notifications with Pub/Sub locally
 
 1. Add `notifications/pubsub.py` to container
-2. Add feature flag: `NOTIFICATION_BACKEND=file|pubsub`
-3. Run Pub/Sub emulator in docker-compose (optional service)
-4. Test locally with both backends
-
-**Rollback:** Set `NOTIFICATION_BACKEND=file`
-
-### Phase 2: Deploy Slack Worker Service
-
-**Goal:** Run slack-worker as standalone service
-
-1. Create `components/slack-worker/` with Flask app
-2. Deploy locally via docker-compose
-3. Test end-to-end: jib → Pub/Sub → slack-worker → Slack
-4. Validate threading, retries, error handling
+2. Create `components/slack-worker/` with Flask app
+3. Add Pub/Sub and Firestore emulators to docker-compose
+4. Update notification library to use Pub/Sub exclusively
+5. Test end-to-end: jib → Pub/Sub → slack-worker → Slack
+6. Remove file-based notification code
+7. Decommission host-side `host-notify-slack.py`
 
 **Success Criteria:**
 - Messages delivered within 5 seconds
 - Retries work for transient failures
 - Thread continuity maintained
+- All existing notification use cases work
 
-### Phase 3: Switch to Pub/Sub Primary
-
-**Goal:** Make Pub/Sub the default backend
-
-1. Set `NOTIFICATION_BACKEND=pubsub` as default
-2. Keep file-based as fallback (graceful degradation)
-3. Monitor for issues over 1 week
-4. Remove file-based code after validation
-
-### Phase 4: Deploy to GCP
+### Phase 2: Deploy to GCP
 
 **Goal:** Run full system in Cloud Run
 
 1. Deploy Pub/Sub topics via Terraform
 2. Deploy slack-worker to Cloud Run
 3. Deploy jib to Cloud Run
-4. Migrate thread state from JSON to Firestore
-5. Decommission host-side services
+4. Configure Cloud Run push subscriptions
+5. Validate production thread state in Firestore
 
 ## Consequences
 
 ### Positive
 
-1. **Enables GCP Deployment:** Unblocks Cloud Run migration (Phase 3 goal)
+1. **Enables GCP Deployment:** Unblocks Cloud Run migration (Phase 2)
 2. **Improved Reliability:** At-least-once delivery, automatic retries, dead letter handling
 3. **Better Observability:** Pub/Sub metrics, Cloud Monitoring integration
 4. **Reduced Latency:** Sub-second delivery vs 15-second batch window
