@@ -325,28 +325,72 @@ Return ONLY the JSON, no other text."""
             print(f"  Error calling Claude: {e}")
             return None
 
+    def get_pr_info(self, repo: str, pr_num: int) -> Optional[Dict]:
+        """Get PR information from GitHub including branch name and state."""
+        try:
+            result = subprocess.run(
+                ['gh', 'pr', 'view', str(pr_num), '--repo', repo,
+                 '--json', 'state,headRefName,baseRefName,merged'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode == 0:
+                return json.loads(result.stdout)
+            else:
+                print(f"  Failed to get PR info: {result.stderr}")
+                return None
+        except Exception as e:
+            print(f"  Error getting PR info: {e}")
+            return None
+
     def handle_writable_repo(self, pr_num: int, repo_name: str, repo: str, comment: Dict, response: Dict):
         """Handle response for a writable repository - post comment and make changes."""
         response_text = response.get('response_text', '')
         needs_changes = response.get('needs_code_changes', False)
         change_desc = response.get('code_change_description', '')
 
+        # Get PR info from GitHub
+        pr_info = self.get_pr_info(repo, pr_num)
+        if not pr_info:
+            print(f"  Could not get PR info, skipping code changes")
+            # Still post the comment
+            self.post_github_comment(repo, pr_num, response_text)
+            return
+
+        pr_state = pr_info.get('state', 'UNKNOWN')
+        pr_branch = pr_info.get('headRefName', '')
+        base_branch = pr_info.get('baseRefName', 'main')
+
         # Find the repo directory
         repo_dir = self.find_repo_dir(repo_name)
 
-        # If code changes needed, make them first
-        branch_name = None
+        # If code changes needed, make them
+        result_info = None
         if needs_changes and change_desc and repo_dir:
-            branch_name = self.make_code_changes(repo_dir, pr_num, change_desc, response_text)
-            if branch_name:
-                response_text += f"\n\nI've pushed the changes to branch `{branch_name}`."
+            if pr_state == 'OPEN':
+                # PR is still open - push to the PR's branch
+                result_info = self.make_code_changes(repo_dir, repo, pr_num, pr_branch, base_branch, change_desc, response_text)
+            else:
+                # PR is closed/merged - create a new branch and PR
+                print(f"  PR #{pr_num} is {pr_state}, creating new PR for changes")
+                result_info = self.make_code_changes_new_pr(repo_dir, repo, pr_num, base_branch, change_desc, response_text)
 
-        # Post the response to GitHub
+            if result_info:
+                if result_info.get('new_pr_url'):
+                    response_text += f"\n\nI've created a new PR with the changes: {result_info['new_pr_url']}"
+                elif result_info.get('branch'):
+                    response_text += f"\n\nI've pushed the changes to branch `{result_info['branch']}`."
+
+        # Post the response to GitHub (even on closed PRs, comments are fine)
         self.post_github_comment(repo, pr_num, response_text)
 
         print(f"  ✓ Posted response to PR #{pr_num}")
-        if branch_name:
-            print(f"  ✓ Pushed changes to branch: {branch_name}")
+        if result_info:
+            if result_info.get('new_pr_url'):
+                print(f"  ✓ Created new PR: {result_info['new_pr_url']}")
+            elif result_info.get('branch'):
+                print(f"  ✓ Pushed changes to branch: {result_info['branch']}")
 
     def handle_readonly_repo(self, pr_num: int, repo_name: str, repo: str, comment: Dict, response: Dict):
         """Handle response for read-only repository - notify via Slack."""
@@ -374,17 +418,25 @@ Return ONLY the JSON, no other text."""
 
         return None
 
-    def make_code_changes(self, repo_dir: Path, pr_num: int, change_desc: str, context: str) -> Optional[str]:
-        """Use Claude to make code changes and push them."""
+    def make_code_changes(self, repo_dir: Path, repo: str, pr_num: int, pr_branch: str, base_branch: str, change_desc: str, context: str) -> Optional[Dict]:
+        """Use Claude to make code changes and push to the PR's branch."""
         try:
-            # Get current branch
-            result = subprocess.run(
-                ['git', 'branch', '--show-current'],
+            # Fetch and checkout the PR's branch
+            print(f"  Checking out PR branch: {pr_branch}")
+            subprocess.run(['git', 'fetch', 'origin', pr_branch], cwd=repo_dir, capture_output=True)
+            checkout_result = subprocess.run(
+                ['git', 'checkout', pr_branch],
                 cwd=repo_dir,
                 capture_output=True,
                 text=True
             )
-            current_branch = result.stdout.strip()
+            if checkout_result.returncode != 0:
+                # Try to create tracking branch
+                subprocess.run(
+                    ['git', 'checkout', '-b', pr_branch, f'origin/{pr_branch}'],
+                    cwd=repo_dir,
+                    capture_output=True
+                )
 
             # Create prompt for Claude to make changes
             prompt = f"""Make the following code changes in the repository at {repo_dir}:
@@ -398,7 +450,7 @@ CONTEXT:
 Instructions:
 1. Read the relevant files
 2. Make the minimal changes needed
-3. The changes should be committed to the current branch: {current_branch}
+3. The changes should be committed to the current branch: {pr_branch}
 
 After making changes, output a JSON summary:
 {{
@@ -422,7 +474,7 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
                 print(f"  Code change failed: {result.stderr}")
                 return None
 
-            # Check if there are changes to push
+            # Check if there are changes to commit
             status = subprocess.run(
                 ['git', 'status', '--porcelain'],
                 cwd=repo_dir,
@@ -442,9 +494,9 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
                 capture_output=True
             )
 
-            # Push
+            # Push to the PR's branch
             push_result = subprocess.run(
-                ['git', 'push'],
+                ['git', 'push', 'origin', pr_branch],
                 cwd=repo_dir,
                 capture_output=True,
                 text=True
@@ -454,10 +506,129 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
                 print(f"  Push failed: {push_result.stderr}")
                 return None
 
-            return current_branch
+            return {'branch': pr_branch}
 
         except Exception as e:
             print(f"  Error making code changes: {e}")
+            return None
+
+    def make_code_changes_new_pr(self, repo_dir: Path, repo: str, original_pr_num: int, base_branch: str, change_desc: str, context: str) -> Optional[Dict]:
+        """Make code changes and create a new PR (when original PR is closed)."""
+        try:
+            # Fetch latest base branch
+            subprocess.run(['git', 'fetch', 'origin', base_branch], cwd=repo_dir, capture_output=True)
+
+            # Create a new branch from base
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            new_branch = f"jib-followup-pr{original_pr_num}-{timestamp}"
+
+            print(f"  Creating new branch: {new_branch}")
+            subprocess.run(
+                ['git', 'checkout', '-b', new_branch, f'origin/{base_branch}'],
+                cwd=repo_dir,
+                capture_output=True
+            )
+
+            # Create prompt for Claude to make changes
+            prompt = f"""Make the following code changes in the repository at {repo_dir}:
+
+CHANGE REQUEST:
+{change_desc}
+
+CONTEXT (from PR #{original_pr_num} feedback):
+{context[:1000]}
+
+Instructions:
+1. Read the relevant files
+2. Make the minimal changes needed
+3. The changes should be committed to branch: {new_branch}
+
+After making changes, output a JSON summary:
+{{
+    "files_changed": ["list", "of", "files"],
+    "commit_message": "Brief commit message",
+    "success": true/false
+}}
+
+Make the changes now using the available tools (Read, Edit, Write, Bash for git commands)."""
+
+            # Use claude with full tool access for making changes
+            result = subprocess.run(
+                ['claude', '-p', '--dangerously-skip-permissions', prompt],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                timeout=300
+            )
+
+            if result.returncode != 0:
+                print(f"  Code change failed: {result.stderr}")
+                return None
+
+            # Check if there are changes to commit
+            status = subprocess.run(
+                ['git', 'status', '--porcelain'],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True
+            )
+
+            if not status.stdout.strip():
+                print(f"  No changes made")
+                return None
+
+            # Commit any uncommitted changes
+            subprocess.run(['git', 'add', '-A'], cwd=repo_dir, capture_output=True)
+            subprocess.run(
+                ['git', 'commit', '-m', f'Follow-up from PR #{original_pr_num}\n\n{change_desc[:200]}\n\n—\nAuthored by jib'],
+                cwd=repo_dir,
+                capture_output=True
+            )
+
+            # Push the new branch
+            push_result = subprocess.run(
+                ['git', 'push', '-u', 'origin', new_branch],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True
+            )
+
+            if push_result.returncode != 0:
+                print(f"  Push failed: {push_result.stderr}")
+                return None
+
+            # Create the new PR
+            pr_title = f"Follow-up: {change_desc[:50]}..."
+            pr_body = f"""## Follow-up from PR #{original_pr_num}
+
+This PR addresses feedback from the original PR which has been closed/merged.
+
+### Changes
+{change_desc}
+
+---
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+—
+Authored by jib"""
+
+            pr_result = subprocess.run(
+                ['gh', 'pr', 'create', '--repo', repo, '--base', base_branch,
+                 '--head', new_branch, '--title', pr_title, '--body', pr_body],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True
+            )
+
+            if pr_result.returncode != 0:
+                print(f"  PR creation failed: {pr_result.stderr}")
+                return {'branch': new_branch}
+
+            pr_url = pr_result.stdout.strip()
+            return {'branch': new_branch, 'new_pr_url': pr_url}
+
+        except Exception as e:
+            print(f"  Error making code changes for new PR: {e}")
             return None
 
     def post_github_comment(self, repo: str, pr_num: int, comment_text: str):
