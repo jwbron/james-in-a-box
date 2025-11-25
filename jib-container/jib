@@ -408,12 +408,6 @@ def create_worktrees(container_id: str) -> dict:
             continue
 
         repo_name = repo_path.name
-
-        # Skip james-in-a-box - it's mounted directly (not as worktree)
-        # so the container always has access to the latest scripts/tools
-        if repo_name == "james-in-a-box":
-            continue
-
         worktree_path = worktree_dir / repo_name
 
         try:
@@ -870,13 +864,6 @@ def run_claude() -> bool:
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
     print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
-    # Mount james-in-a-box directly (not as worktree) so container has access to latest scripts/tools
-    jib_repo = Config.KHAN_SOURCE / "james-in-a-box"
-    if jib_repo.exists():
-        jib_container_path = f"/home/{os.environ['USER']}/khan/james-in-a-box"
-        mount_args.extend(["-v", f"{jib_repo}:{jib_container_path}:rw,z"])
-        print(f"  • ~/khan/james-in-a-box (direct mount, read-write)")
-
     print()
 
     # Remove old container if exists (cleanup any previous runs)
@@ -1030,13 +1017,6 @@ def exec_in_new_container(command: List[str]) -> bool:
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
-
-    # Mount james-in-a-box directly (not as worktree) so container has access to latest scripts/tools
-    jib_repo = Config.KHAN_SOURCE / "james-in-a-box"
-    if jib_repo.exists():
-        jib_container_path = f"/home/{os.environ['USER']}/khan/james-in-a-box"
-        mount_args.extend(["-v", f"{jib_repo}:{jib_container_path}:rw,z"])
-        print(f"  • ~/khan/james-in-a-box (direct mount)")
 
     print()
 
