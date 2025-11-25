@@ -2,7 +2,8 @@
 # Unified linting and development commands
 
 .PHONY: help lint lint-python lint-shell lint-yaml lint-docker lint-workflows \
-        lint-fix lint-python-fix install-linters check-linters
+        lint-fix lint-python-fix lint-shell-fix lint-yaml-fix \
+        install-linters check-linters
 
 # Default target
 help:
@@ -14,7 +15,9 @@ help:
 	@echo "  make lint-python       - Lint Python files with ruff"
 	@echo "  make lint-python-fix   - Lint and fix Python files"
 	@echo "  make lint-shell        - Lint shell scripts with shellcheck"
+	@echo "  make lint-shell-fix    - Format shell scripts with shfmt"
 	@echo "  make lint-yaml         - Lint YAML files with yamllint"
+	@echo "  make lint-yaml-fix     - Fix common YAML issues (trailing spaces)"
 	@echo "  make lint-docker       - Lint Dockerfiles with hadolint"
 	@echo "  make lint-workflows    - Lint GitHub Actions with actionlint"
 	@echo ""
@@ -32,9 +35,9 @@ lint: lint-python lint-shell lint-yaml lint-docker
 	@echo "All linters passed!"
 
 # Run all linters with auto-fix where possible
-lint-fix: lint-python-fix lint-shell lint-yaml lint-docker
+lint-fix: lint-python-fix lint-shell-fix lint-yaml-fix lint-docker
 	@echo ""
-	@echo "All linters completed!"
+	@echo "All linters completed with auto-fixes applied!"
 
 # ----------------------------------------------------------------------------
 # Python (ruff)
@@ -52,7 +55,7 @@ lint-python-fix:
 	@echo "Python files fixed!"
 
 # ----------------------------------------------------------------------------
-# Shell (shellcheck)
+# Shell (shellcheck + shfmt)
 # ----------------------------------------------------------------------------
 SHELL_FILES := $(shell find . -name "*.sh" -not -path "./.venv/*" -not -path "./venv/*" 2>/dev/null)
 
@@ -65,13 +68,45 @@ lint-shell:
 		echo "No shell scripts found."; \
 	fi
 
+lint-shell-fix:
+	@echo "==> Formatting shell scripts with shfmt..."
+	@if [ -n "$(SHELL_FILES)" ]; then \
+		shfmt -w -i 2 -ci -bn $(SHELL_FILES); \
+		echo "Shell scripts formatted!"; \
+		echo "==> Running shellcheck..."; \
+		shellcheck --severity=warning $(SHELL_FILES) || echo "Some shellcheck issues require manual fixes (see above)."; \
+	else \
+		echo "No shell scripts found."; \
+	fi
+
 # ----------------------------------------------------------------------------
 # YAML (yamllint)
 # ----------------------------------------------------------------------------
+YAML_FILES := $(shell find . \( -name "*.yaml" -o -name "*.yml" \) \
+	-not -path "./.venv/*" -not -path "./venv/*" -not -path "./node_modules/*" 2>/dev/null)
+
 lint-yaml:
 	@echo "==> Linting YAML files with yamllint..."
 	@yamllint -c .yamllint.yaml . || (echo "YAML linting failed!" && exit 1)
 	@echo "YAML linting passed!"
+
+lint-yaml-fix:
+	@echo "==> Fixing YAML files..."
+	@if [ -n "$(YAML_FILES)" ]; then \
+		echo "  Removing trailing whitespace..."; \
+		for f in $(YAML_FILES); do \
+			sed -i 's/[[:space:]]*$$//' "$$f"; \
+		done; \
+		echo "  Ensuring newline at end of files..."; \
+		for f in $(YAML_FILES); do \
+			[ -n "$$(tail -c1 "$$f")" ] && echo "" >> "$$f"; \
+		done; \
+		echo "YAML files fixed!"; \
+		echo "==> Running yamllint..."; \
+		yamllint -c .yamllint.yaml . || echo "Some YAML issues require manual fixes (see above)."; \
+	else \
+		echo "No YAML files found."; \
+	fi
 
 # ----------------------------------------------------------------------------
 # Docker (hadolint)
@@ -116,6 +151,17 @@ install-linters:
 	@echo "==> Installing yamllint (YAML linter)..."
 	pip install yamllint
 	@echo ""
+	@echo "==> Checking for shfmt..."
+	@if ! command -v shfmt >/dev/null 2>&1; then \
+		echo "shfmt not found. Install with:"; \
+		echo "  Ubuntu/Debian: sudo apt-get install shfmt"; \
+		echo "  macOS: brew install shfmt"; \
+		echo "  Go: go install mvdan.cc/sh/v3/cmd/shfmt@latest"; \
+		echo "  Or: https://github.com/mvdan/sh#shfmt"; \
+	else \
+		echo "shfmt is installed: $$(shfmt --version)"; \
+	fi
+	@echo ""
 	@echo "==> Checking for shellcheck..."
 	@if ! command -v shellcheck >/dev/null 2>&1; then \
 		echo "shellcheck not found. Install with:"; \
@@ -154,6 +200,8 @@ check-linters:
 	@echo ""
 	@echo -n "ruff: "
 	@if command -v ruff >/dev/null 2>&1; then ruff --version; else echo "NOT INSTALLED"; fi
+	@echo -n "shfmt: "
+	@if command -v shfmt >/dev/null 2>&1; then shfmt --version; else echo "NOT INSTALLED"; fi
 	@echo -n "shellcheck: "
 	@if command -v shellcheck >/dev/null 2>&1; then shellcheck --version | head -1; else echo "NOT INSTALLED"; fi
 	@echo -n "yamllint: "

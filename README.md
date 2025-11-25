@@ -607,39 +607,35 @@ bin/jib --rebuild
 
 ### Linting
 
-This project uses multiple linters to ensure code quality:
+This project uses multiple linters to maintain code quality:
 
-| Tool | Language/Format | Configuration |
-|------|-----------------|---------------|
-| [ruff](https://docs.astral.sh/ruff/) | Python | `pyproject.toml` |
-| [shellcheck](https://www.shellcheck.net/) | Bash/Shell | CLI defaults |
-| [yamllint](https://yamllint.readthedocs.io/) | YAML | `.yamllint.yaml` |
-| [hadolint](https://github.com/hadolint/hadolint) | Dockerfile | `.hadolint.yaml` |
-| [actionlint](https://github.com/rhysd/actionlint) | GitHub Actions | CLI defaults |
+| Tool | Purpose | Auto-fix |
+|------|---------|----------|
+| [ruff](https://docs.astral.sh/ruff/) | Python linting & formatting | Yes |
+| [shfmt](https://github.com/mvdan/sh) | Shell script formatting | Yes |
+| [shellcheck](https://www.shellcheck.net/) | Shell script analysis | No |
+| [yamllint](https://yamllint.readthedocs.io/) | YAML linting | Partial (trailing spaces) |
+| [hadolint](https://github.com/hadolint/hadolint) | Dockerfile linting | No |
+| [actionlint](https://github.com/rhysd/actionlint) | GitHub Actions linting | No |
 
-**Run all linters:**
+**Quick commands:**
 ```bash
-make lint
+make lint              # Run all linters
+make lint-fix          # Run all linters with auto-fix
+make lint-python-fix   # Fix Python issues
+make lint-shell-fix    # Format shell scripts
+make lint-yaml-fix     # Fix YAML trailing spaces
+make install-linters   # Install linting tools
+make check-linters     # Verify installation
 ```
 
-**Auto-fix where possible:**
+**Individual linters:**
 ```bash
-make lint-fix
-```
-
-**Run individual linters:**
-```bash
-make lint-python      # ruff check + format
-make lint-shell       # shellcheck
-make lint-yaml        # yamllint
-make lint-docker      # hadolint
-make lint-workflows   # actionlint (if .github/workflows exists)
-```
-
-**Install linters:**
-```bash
-make install-linters  # pip install ruff yamllint + instructions for others
-make check-linters    # verify installed tools
+make lint-python       # ruff check + format check
+make lint-shell        # shellcheck
+make lint-yaml         # yamllint
+make lint-docker       # hadolint
+make lint-workflows    # actionlint (GitHub Actions)
 ```
 
 ## Contributing
