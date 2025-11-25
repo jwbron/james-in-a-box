@@ -1,27 +1,52 @@
 #!/usr/bin/env python3
 """
-Comment Responder - Detects new PR comments and generates response suggestions
+Comment Responder - Responds to PR comments using Claude
 
-Monitors PR comments on YOUR OWN PRs (PRs you've opened), detects comments
-that need responses (questions, change requests), and generates suggested
-responses for human approval.
+Monitors PR comments on YOUR OWN PRs, uses Claude to understand the comment
+and formulate an appropriate response, then takes action:
+- For writable repos: posts response to GitHub, makes/pushes code changes if needed
+- For non-writable repos: notifies via Slack with suggested response and branch name
 
 Scope:
 - Only processes PRs you've opened (--author @me)
-- Skips your own comments (no need to respond to yourself)
+- Skips jib's own comments (identified by signature)
 - Skips bot comments
-- Future: Will expand to PRs you're tagged on
 """
 
 import json
 import logging
+import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+import yaml
+
 logger = logging.getLogger(__name__)
+
+
+def load_config() -> Dict:
+    """Load repository configuration."""
+    config_paths = [
+        Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml",
+        Path(__file__).parent.parent.parent.parent / "config" / "repositories.yaml",
+    ]
+
+    for config_path in config_paths:
+        if config_path.exists():
+            with open(config_path) as f:
+                return yaml.safe_load(f)
+
+    return {"writable_repos": []}
+
+
+def is_writable_repo(repo: str, config: Dict) -> bool:
+    """Check if repo has write access."""
+    writable = config.get("writable_repos", [])
+    return repo in writable or repo.split("/")[-1] in [r.split("/")[-1] for r in writable]
 
 
 class CommentResponder:
@@ -30,50 +55,68 @@ class CommentResponder:
         self.comments_dir = self.github_dir / "comments"
         self.prs_dir = self.github_dir / "prs"
         self.notifications_dir = Path.home() / "sharing" / "notifications"
-        self.beads_dir = Path.home() / "beads"
+        self.khan_dir = Path.home() / "khan"
+
+        # Load config
+        self.config = load_config()
 
         # Track which comments have been processed
         self.state_file = Path.home() / "sharing" / "tracking" / "comment-responder-state.json"
         self.processed_comments = self.load_state()
 
-    def load_state(self) -> Dict:
-        """Load previously processed comment IDs
+        # Check for claude CLI
+        if not self._check_claude_cli():
+            raise RuntimeError("claude CLI not found - required for response generation")
 
-        Returns dict mapping comment_id -> timestamp of when it was processed
-        """
+    def _check_claude_cli(self) -> bool:
+        """Check if claude CLI is available."""
+        try:
+            result = subprocess.run(
+                ['claude', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return False
+
+    def load_state(self) -> Dict:
+        """Load previously processed comment IDs."""
         if self.state_file.exists():
             try:
                 with self.state_file.open() as f:
                     data = json.load(f)
-                    # Handle old nested format by extracting innermost dict
+                    # Handle old nested format
                     while isinstance(data.get('processed'), dict) and 'processed' in data.get('processed', {}):
                         data = data['processed']
                     return data.get('processed', {})
             except (json.JSONDecodeError, IOError) as e:
-                logger.error(f"Failed to load state file {self.state_file}: {e}")
+                logger.error(f"Failed to load state file: {e}")
         return {}
 
     def save_state(self):
-        """Save processed comment IDs"""
+        """Save processed comment IDs."""
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         with self.state_file.open('w') as f:
             json.dump({'processed': self.processed_comments}, f, indent=2)
 
     def watch(self):
-        """Main watch loop - check for new comments"""
+        """Main watch loop - check for new comments."""
         if not self.comments_dir.exists():
             print("Comments directory not found - skipping watch")
             return
 
-        # Scan all comment files
         for comment_file in self.comments_dir.glob("*-PR-*-comments.json"):
             try:
                 self.process_comment_file(comment_file)
             except Exception as e:
                 print(f"Error processing {comment_file}: {e}")
+                import traceback
+                traceback.print_exc()
 
     def process_comment_file(self, comment_file: Path):
-        """Process a single PR's comment file"""
+        """Process a single PR's comment file."""
         with comment_file.open() as f:
             data = json.load(f)
 
@@ -85,29 +128,21 @@ class CommentResponder:
         if not comments:
             return
 
-        # Find new comments that need responses
         for comment in comments:
             comment_id = str(comment.get('id'))
             if not comment_id or comment_id in self.processed_comments:
-                continue  # Already processed
+                continue
 
-            # Check if comment needs a response
             if self.needs_response(comment):
                 print(f"New comment needing response: PR #{pr_num}, comment {comment_id}")
-                self.handle_comment(pr_num, repo_name, repo, comment)
+                self.handle_comment(pr_num, repo_name, repo, comment, data)
 
-            # Mark as processed
             self.processed_comments[comment_id] = datetime.utcnow().isoformat() + 'Z'
 
         self.save_state()
 
     def needs_response(self, comment: Dict) -> bool:
-        """
-        Determine if a comment needs a response
-
-        Note: Only processes comments on PRs you've opened.
-        Skips jib's own comments (identified by signature) and bot comments.
-        """
+        """Determine if a comment needs a response."""
         body = comment.get('body', '')
         author = comment.get('author', '')
 
@@ -116,10 +151,8 @@ class CommentResponder:
             return False
 
         # Skip jib's own comments (identified by signature)
-        # jib signs its comments with "Authored by jib" or similar markers
         jib_signatures = [
             'authored by jib',
-            '🤖 jib',
             '— jib',
             'generated with [claude code]',
         ]
@@ -129,59 +162,35 @@ class CommentResponder:
                 print(f"  Skipping jib's own comment (signature: {sig})")
                 return False
 
-        # Patterns indicating a response is needed
-        question_patterns = [
-            r'\?$',  # Ends with question mark
-            r'\bcan you\b',
-            r'\bcould you\b',
-            r'\bwould you\b',
-            r'\bwhat about\b',
-            r'\bwhy\b',
-            r'\bhow\b',
-            r'\bplease\b.*\bchange\b',
-            r'\bplease\b.*\bupdate\b',
-            r'\bplease\b.*\bfix\b',
-            r'\bcould we\b',
-            r'\bshould we\b',
-            r'\bwhat if\b',
-        ]
+        # Any non-jib, non-bot comment on our PR needs a response
+        # Let Claude decide the appropriate action
+        return True
 
-        for pattern in question_patterns:
-            if re.search(pattern, body, re.IGNORECASE):
-                return True
-
-        # Check for change requests
-        change_patterns = [
-            r'\bchange\b.*\bto\b',
-            r'\bupdate\b.*\bto\b',
-            r'\breplace\b.*\bwith\b',
-            r'\bfix\b',
-            r'\bshould be\b',
-            r'\binstead of\b',
-        ]
-
-        for pattern in change_patterns:
-            if re.search(pattern, body, re.IGNORECASE):
-                return True
-
-        return False
-
-    def handle_comment(self, pr_num: int, repo_name: str, repo: str, comment: Dict):
-        """Generate response for a comment and create notification"""
-        # Load PR context
+    def handle_comment(self, pr_num: int, repo_name: str, repo: str, comment: Dict, pr_data: Dict):
+        """Handle a comment by generating and posting a response."""
+        # Load full PR context
         pr_context = self.load_pr_context(repo_name, pr_num)
 
-        # Generate response suggestion
-        response = self.generate_response(comment, pr_context)
+        # Load all comments for context
+        all_comments = pr_data.get('comments', [])
 
-        # Create Beads task
-        beads_id = self.create_beads_task(pr_num, repo_name, comment)
+        # Check if this is a writable repo
+        writable = is_writable_repo(repo, self.config)
 
-        # Create notification
-        self.create_response_notification(pr_num, repo_name, comment, response, beads_id)
+        # Generate response using Claude
+        response = self.generate_response_with_claude(comment, pr_context, all_comments, repo, pr_num, writable)
+
+        if not response:
+            print(f"  Failed to generate response for comment {comment.get('id')}")
+            return
+
+        if writable:
+            self.handle_writable_repo(pr_num, repo_name, repo, comment, response)
+        else:
+            self.handle_readonly_repo(pr_num, repo_name, repo, comment, response)
 
     def load_pr_context(self, repo_name: str, pr_num: int) -> Dict:
-        """Load PR context from synced files"""
+        """Load PR context from synced files."""
         pr_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.md"
         diff_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.diff"
 
@@ -190,239 +199,359 @@ class CommentResponder:
             'title': f"PR #{pr_num}",
             'description': '',
             'url': '',
-            'files_changed': []
+            'diff': '',
         }
 
         if pr_file.exists():
-            with pr_file.open() as f:
-                content = f.read()
-                lines = content.split('\n')
-
-                in_description = False
-                for line in lines:
-                    if line.startswith('# PR #'):
-                        context['title'] = line.replace('# PR #', '').replace(f'{pr_num}: ', '').strip()
-                    elif line.startswith('**URL**:'):
-                        context['url'] = line.replace('**URL**:', '').strip()
-                    elif line.startswith('## Description'):
-                        in_description = True
-                    elif in_description and line.startswith('## '):
-                        in_description = False
-                    elif in_description and line.strip():
-                        context['description'] += line + '\n'
+            context['pr_content'] = pr_file.read_text()
+            # Parse key fields
+            for line in context['pr_content'].split('\n'):
+                if line.startswith('# PR #'):
+                    context['title'] = line.replace('# ', '').strip()
+                elif line.startswith('**URL**:'):
+                    context['url'] = line.replace('**URL**:', '').strip()
 
         if diff_file.exists():
-            context['has_diff'] = True
-            # Could load diff snippets if needed
+            diff_content = diff_file.read_text()
+            # Truncate if too large
+            if len(diff_content) > 10000:
+                diff_content = diff_content[:10000] + "\n... [diff truncated]"
+            context['diff'] = diff_content
 
         return context
 
-    def generate_response(self, comment: Dict, pr_context: Dict) -> Dict:
-        """Generate suggested response based on comment and PR context"""
+    def generate_response_with_claude(
+        self,
+        comment: Dict,
+        pr_context: Dict,
+        all_comments: List[Dict],
+        repo: str,
+        pr_num: int,
+        writable: bool
+    ) -> Optional[Dict]:
+        """Use Claude to generate an appropriate response."""
+
         comment_body = comment.get('body', '')
         comment_author = comment.get('author', '')
 
-        response = {
-            'suggested_text': '',
-            'reasoning': '',
-            'type': 'acknowledgment',
-            'confidence': 'medium'
-        }
+        # Build comment history
+        comment_history = ""
+        for c in all_comments[-10:]:  # Last 10 comments for context
+            author = c.get('author', 'unknown')
+            body = c.get('body', '')[:500]
+            is_current = c.get('id') == comment.get('id')
+            marker = " <-- THIS IS THE COMMENT TO RESPOND TO" if is_current else ""
+            comment_history += f"\n--- {author}{marker} ---\n{body}\n"
 
-        # Classify comment type
-        comment_lower = comment_body.lower()
+        # Build the prompt
+        prompt = f"""You are jib, an AI software engineering agent. You need to respond to a PR comment.
 
-        # Question
-        if '?' in comment_body:
-            response['type'] = 'question'
-            response['confidence'] = 'medium'
+CONTEXT:
+- Repository: {repo}
+- PR: #{pr_num}
+- PR Title: {pr_context.get('title', 'Unknown')}
+- PR URL: {pr_context.get('url', 'Unknown')}
+- You have {"WRITE" if writable else "READ-ONLY"} access to this repository
 
-            # Try to understand what's being asked
-            if 'why' in comment_lower:
-                response['suggested_text'] = f"Good question! The reasoning behind this approach is [EXPLAIN DECISION]. "
-                response['suggested_text'] += "This allows us to [BENEFIT], though I'm open to alternative approaches if you have suggestions."
-                response['reasoning'] = "User asking 'why' - provide rationale and show openness to feedback"
+PR DESCRIPTION:
+{pr_context.get('pr_content', 'No description available')[:2000]}
 
-            elif 'how' in comment_lower:
-                response['suggested_text'] = f"Good question! This works by [EXPLAIN MECHANISM]. "
-                response['suggested_text'] += "I can add more documentation if that would help clarify."
-                response['reasoning'] = "User asking 'how' - explain mechanism and offer to add docs"
+RECENT DIFF (relevant changes):
+{pr_context.get('diff', 'No diff available')[:3000]}
 
-            elif 'what about' in comment_lower or 'what if' in comment_lower:
-                response['suggested_text'] = "That's a good point. [SCENARIO] is definitely worth considering. "
-                response['suggested_text'] += "My current approach handles [CURRENT], but we could extend it to cover [SCENARIO] in a follow-up. What do you think?"
-                response['reasoning'] = "User suggesting alternative scenario - acknowledge and discuss trade-offs"
+COMMENT THREAD:
+{comment_history}
 
-            else:
-                response['suggested_text'] = f"Thanks for the question! [PROVIDE ANSWER]. "
-                response['suggested_text'] += "Let me know if that answers your question or if you'd like me to clarify further."
-                response['reasoning'] = "Generic question - provide answer and offer to clarify"
+THE COMMENT TO RESPOND TO:
+Author: {comment_author}
+Content: {comment_body}
 
-        # Change request
-        elif any(word in comment_lower for word in ['change', 'update', 'fix', 'should be', 'instead of']):
-            response['type'] = 'change_request'
-            response['confidence'] = 'high'
+YOUR TASK:
+1. Understand what the commenter is asking/requesting
+2. Formulate an appropriate response
+3. Determine if code changes are needed
 
-            # Extract what needs to be changed if possible
-            if 'to' in comment_lower:
-                response['suggested_text'] = f"Good catch! I'll update this. "
-                response['suggested_text'] += "Let me make that change and push an update."
-                response['reasoning'] = "Change request with clear direction - acknowledge and commit to action"
-            else:
-                response['suggested_text'] = "Thanks for catching that! "
-                response['suggested_text'] += "I'll fix this and push an update shortly."
-                response['reasoning'] = "Change request - commit to fixing"
+RESPOND WITH JSON:
+{{
+    "response_text": "Your response to post as a GitHub comment. Be helpful, professional, and concise. Sign with '\\n\\n—\\nAuthored by jib'",
+    "needs_code_changes": true/false,
+    "code_change_description": "If needs_code_changes is true, describe what changes to make",
+    "reasoning": "Brief explanation of your response approach"
+}}
 
-            response['action_needed'] = True
+IMPORTANT:
+- If the comment is just positive feedback (LGTM, looks good, etc.), respond with a brief thank you
+- If asking a question, answer it based on the PR context
+- If requesting changes, acknowledge and {"make the changes" if writable else "describe what changes would be needed"}
+- If you disagree with the suggestion, explain your reasoning respectfully
+- Always end response_text with the jib signature: "\\n\\n—\\nAuthored by jib"
 
-        # Concern or suggestion
-        elif any(word in comment_lower for word in ['concern', 'worried', 'might', 'could', 'should']):
-            response['type'] = 'concern'
-            response['confidence'] = 'medium'
+Return ONLY the JSON, no other text."""
 
-            response['suggested_text'] = "That's a valid concern. "
-            response['suggested_text'] += "[EXPLAIN HOW CURRENT APPROACH ADDRESSES THIS OR PROPOSE SOLUTION]. "
-            response['suggested_text'] += "Would that address your concern?"
-            response['reasoning'] = "User expressing concern - address it and check if satisfied"
-
-        # Positive feedback
-        elif any(word in comment_lower for word in ['looks good', 'lgtm', 'nice', 'great']):
-            response['type'] = 'positive'
-            response['confidence'] = 'high'
-
-            response['suggested_text'] = f"Thanks {comment_author}! 🙏"
-            response['reasoning'] = "Positive feedback - simple acknowledgment"
-
-        # Generic/unclear
-        else:
-            response['suggested_text'] = f"Thanks for the feedback, {comment_author}! "
-            response['suggested_text'] += "Let me know if you'd like me to make any changes or if you have additional suggestions."
-            response['reasoning'] = "Generic comment - acknowledge and invite clarification"
-
-        # Add context placeholders
-        if '[' in response['suggested_text']:
-            response['needs_customization'] = True
-            response['customization_note'] = "Replace bracketed placeholders with specific details from the PR context"
-
-        return response
-
-    def create_beads_task(self, pr_num: int, repo_name: str, comment: Dict) -> Optional[str]:
-        """Create Beads task for responding to comment"""
         try:
-            result = subprocess.run(['which', 'beads'], capture_output=True)
+            print(f"  Calling Claude to generate response...")
+            result = subprocess.run(
+                ['claude', '-p', '--output-format', 'text', prompt],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+
             if result.returncode != 0:
+                print(f"  Claude error: {result.stderr}")
                 return None
 
-            author = comment.get('author', 'reviewer')
-            comment_preview = comment.get('body', '')[:50]
-            title = f"Respond to {author}'s comment on PR #{pr_num}"
+            response_text = result.stdout.strip()
 
+            # Parse JSON from response
+            try:
+                # Find JSON in response
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                if start != -1 and end > start:
+                    json_str = response_text[start:end]
+                    return json.loads(json_str)
+                else:
+                    print(f"  No JSON found in response")
+                    return None
+            except json.JSONDecodeError as e:
+                print(f"  Failed to parse response JSON: {e}")
+                return None
+
+        except subprocess.TimeoutExpired:
+            print(f"  Claude call timed out")
+            return None
+        except Exception as e:
+            print(f"  Error calling Claude: {e}")
+            return None
+
+    def handle_writable_repo(self, pr_num: int, repo_name: str, repo: str, comment: Dict, response: Dict):
+        """Handle response for a writable repository - post comment and make changes."""
+        response_text = response.get('response_text', '')
+        needs_changes = response.get('needs_code_changes', False)
+        change_desc = response.get('code_change_description', '')
+
+        # Find the repo directory
+        repo_dir = self.find_repo_dir(repo_name)
+
+        # If code changes needed, make them first
+        branch_name = None
+        if needs_changes and change_desc and repo_dir:
+            branch_name = self.make_code_changes(repo_dir, pr_num, change_desc, response_text)
+            if branch_name:
+                response_text += f"\n\nI've pushed the changes to branch `{branch_name}`."
+
+        # Post the response to GitHub
+        self.post_github_comment(repo, pr_num, response_text)
+
+        print(f"  ✓ Posted response to PR #{pr_num}")
+        if branch_name:
+            print(f"  ✓ Pushed changes to branch: {branch_name}")
+
+    def handle_readonly_repo(self, pr_num: int, repo_name: str, repo: str, comment: Dict, response: Dict):
+        """Handle response for read-only repository - notify via Slack."""
+        response_text = response.get('response_text', '')
+        needs_changes = response.get('needs_code_changes', False)
+        change_desc = response.get('code_change_description', '')
+        reasoning = response.get('reasoning', '')
+
+        # Create notification
+        self.create_notification(pr_num, repo_name, repo, comment, response_text, needs_changes, change_desc, reasoning)
+
+        print(f"  ✓ Created notification for PR #{pr_num} (read-only repo)")
+
+    def find_repo_dir(self, repo_name: str) -> Optional[Path]:
+        """Find the local directory for a repository."""
+        # Check common locations
+        candidates = [
+            self.khan_dir / repo_name,
+            self.khan_dir / repo_name.replace('-', '_'),
+        ]
+
+        for candidate in candidates:
+            if candidate.exists() and (candidate / '.git').exists():
+                return candidate
+
+        return None
+
+    def make_code_changes(self, repo_dir: Path, pr_num: int, change_desc: str, context: str) -> Optional[str]:
+        """Use Claude to make code changes and push them."""
+        try:
+            # Get current branch
             result = subprocess.run(
-                ['beads', 'add', title, '--tags', f'pr-{pr_num}', 'comment-response', repo_name],
-                cwd=self.beads_dir,
+                ['git', 'branch', '--show-current'],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True
+            )
+            current_branch = result.stdout.strip()
+
+            # Create prompt for Claude to make changes
+            prompt = f"""Make the following code changes in the repository at {repo_dir}:
+
+CHANGE REQUEST:
+{change_desc}
+
+CONTEXT:
+{context[:1000]}
+
+Instructions:
+1. Read the relevant files
+2. Make the minimal changes needed
+3. The changes should be committed to the current branch: {current_branch}
+
+After making changes, output a JSON summary:
+{{
+    "files_changed": ["list", "of", "files"],
+    "commit_message": "Brief commit message",
+    "success": true/false
+}}
+
+Make the changes now using the available tools (Read, Edit, Write, Bash for git commands)."""
+
+            # Use claude with full tool access for making changes
+            result = subprocess.run(
+                ['claude', '-p', '--dangerously-skip-permissions', prompt],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                timeout=300
+            )
+
+            if result.returncode != 0:
+                print(f"  Code change failed: {result.stderr}")
+                return None
+
+            # Check if there are changes to push
+            status = subprocess.run(
+                ['git', 'status', '--porcelain'],
+                cwd=repo_dir,
                 capture_output=True,
                 text=True
             )
 
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if 'Created' in output and 'bd-' in output:
-                    bead_id = output.split('bd-')[1].split(':')[0]
-                    bead_id = f"bd-{bead_id.split()[0]}"
+            if not status.stdout.strip():
+                print(f"  No changes made")
+                return None
 
-                    notes = f"PR #{pr_num} in {repo_name}\n"
-                    notes += f"Comment from: {author}\n"
-                    notes += f"Preview: {comment_preview}...\n"
-                    notes += f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            # Commit any uncommitted changes
+            subprocess.run(['git', 'add', '-A'], cwd=repo_dir, capture_output=True)
+            subprocess.run(
+                ['git', 'commit', '-m', f'Address PR #{pr_num} feedback\n\n{change_desc[:200]}\n\n—\nAuthored by jib'],
+                cwd=repo_dir,
+                capture_output=True
+            )
 
-                    subprocess.run(
-                        ['beads', 'update', bead_id, '--notes', notes],
-                        cwd=self.beads_dir,
-                        capture_output=True
-                    )
+            # Push
+            push_result = subprocess.run(
+                ['git', 'push'],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True
+            )
 
-                    print(f"  ✓ Created Beads task: {bead_id}")
-                    return bead_id
+            if push_result.returncode != 0:
+                print(f"  Push failed: {push_result.stderr}")
+                return None
+
+            return current_branch
+
         except Exception as e:
-            print(f"  Could not create Beads task: {e}")
+            print(f"  Error making code changes: {e}")
+            return None
 
-        return None
+    def post_github_comment(self, repo: str, pr_num: int, comment_text: str):
+        """Post a comment to a GitHub PR."""
+        try:
+            result = subprocess.run(
+                ['gh', 'pr', 'comment', str(pr_num), '--repo', repo, '--body', comment_text],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
 
-    def create_response_notification(self, pr_num: int, repo_name: str, comment: Dict,
-                                     response: Dict, beads_id: Optional[str]):
-        """Create notification with suggested response"""
+            if result.returncode != 0:
+                print(f"  Failed to post comment: {result.stderr}")
+        except Exception as e:
+            print(f"  Error posting comment: {e}")
+
+    def create_notification(
+        self,
+        pr_num: int,
+        repo_name: str,
+        repo: str,
+        comment: Dict,
+        response_text: str,
+        needs_changes: bool,
+        change_desc: str,
+        reasoning: str
+    ):
+        """Create notification for read-only repos."""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         notif_file = self.notifications_dir / f"{timestamp}-comment-response-{pr_num}.md"
 
+        self.notifications_dir.mkdir(parents=True, exist_ok=True)
+
         comment_author = comment.get('author', 'Reviewer')
         comment_body = comment.get('body', '')
-        comment_created = comment.get('created_at', '')
 
-        with notif_file.open('w') as f:
-            f.write(f"# 💬 New PR Comment Needs Response: #{pr_num}\n\n")
-            f.write(f"**PR**: #{pr_num} in {repo_name}\n")
-            f.write(f"**Comment Author**: {comment_author}\n")
-            f.write(f"**Posted**: {comment_created}\n")
-            if beads_id:
-                f.write(f"**Beads Task**: {beads_id}\n")
-            f.write("\n")
+        content = f"""# 💬 PR Comment Response Ready: #{pr_num}
 
-            # Original comment
-            f.write("## 💭 Original Comment\n\n")
-            f.write(f"**{comment_author} wrote:**\n\n")
-            f.write("```\n")
-            f.write(comment_body)
-            f.write("\n```\n\n")
+**Repository**: {repo} (read-only - manual action required)
+**PR**: #{pr_num}
+**Comment Author**: {comment_author}
 
-            # Response type and confidence
-            f.write("## 🤖 Suggested Response\n\n")
-            f.write(f"**Type**: {response['type']}\n")
-            f.write(f"**Confidence**: {response['confidence']}\n")
-            f.write(f"**Reasoning**: {response['reasoning']}\n\n")
+## Original Comment
 
-            # Suggested response text
-            f.write("### Suggested Reply:\n\n")
-            f.write("```\n")
-            f.write(response['suggested_text'])
-            f.write("\n```\n\n")
+{comment_body}
 
-            # Customization needed?
-            if response.get('needs_customization'):
-                f.write("⚠️ **Note**: This response contains placeholders that need to be customized:\n")
-                f.write(f"- {response.get('customization_note', 'Replace bracketed sections with specific details')}\n\n")
+## Suggested Response
 
-            # Action needed?
-            if response.get('action_needed'):
-                f.write("⚡ **Action Required**: This comment requests changes to the PR.\n")
-                f.write("Consider making the requested changes before posting the response.\n\n")
+```
+{response_text}
+```
 
-            # Next steps
-            f.write("## 📋 Next Steps\n\n")
-            f.write("1. Review the suggested response above\n")
-            f.write("2. Customize any bracketed placeholders with specific details\n")
-            f.write("3. Reply to this notification with your final response text, OR\n")
-            f.write("4. Post the response directly on GitHub\n")
+## Analysis
 
-            if response.get('action_needed'):
-                f.write("5. Make the requested code changes\n")
-                f.write("6. Push the updates to the PR\n")
+**Reasoning**: {reasoning}
+"""
 
-            f.write("\n")
-            f.write("**Quick Commands:**\n")
-            f.write("- Reply with 'post: [your response text]' to prepare response for posting\n")
-            f.write("- Reply with 'skip' to handle this comment manually\n")
+        if needs_changes:
+            content += f"""
+## Code Changes Needed
 
-            f.write("\n---\n")
-            f.write(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"📂 PR #{pr_num} in {repo_name}\n")
+{change_desc}
 
-        print(f"  ✓ Created response notification: {notif_file.name}")
+**Note**: This is a read-only repository. Please make these changes manually or grant jib write access.
+"""
+
+        content += f"""
+## Actions Required
+
+1. Review the suggested response above
+2. Post the response to the PR manually, or
+3. Grant jib write access to this repository
+
+---
+📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+"""
+
+        notif_file.write_text(content)
+        print(f"  Created notification: {notif_file.name}")
 
 
 def main():
-    """Main entry point"""
-    responder = CommentResponder()
-    responder.watch()
+    """Main entry point."""
+    logging.basicConfig(level=logging.INFO)
+
+    try:
+        responder = CommentResponder()
+        responder.watch()
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == '__main__':
