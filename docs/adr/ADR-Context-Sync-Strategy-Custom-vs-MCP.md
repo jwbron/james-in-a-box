@@ -305,58 +305,44 @@ def analyze_tickets():
 
 ## Migration Strategy
 
-### Phase 1: Add MCP Alongside Custom Sync (Low Risk)
+### Phase 1: Full MCP Migration (Local)
 
-**Goal:** Validate MCP works without breaking existing flows
+**Goal:** Complete migration from custom syncs to MCP servers on local development environment
 
 1. Configure Atlassian MCP server in Claude Code settings
 2. Configure GitHub MCP server
 3. Test MCP queries alongside existing sync
 4. Compare data quality and latency
-
-**Duration:** 1-2 weeks
-**Rollback:** Remove MCP config, existing sync continues working
-
-### Phase 2: Enable Bi-Directional Operations
-
-**Goal:** Let agent update Jira and comment on PRs
-
-1. Enable write scopes in MCP OAuth config
-2. Update CLAUDE.md with new capabilities
-3. Test bi-directional workflows:
+5. Enable write scopes in MCP OAuth config
+6. Update CLAUDE.md with new capabilities
+7. Test bi-directional workflows:
    - Agent comments on PR after review
    - Agent updates ticket status after completing work
    - Agent creates subtasks for complex tickets
+8. Update jira-watcher to query via MCP instead of files
+9. Update GitHub analyzers to use MCP
+10. Keep Confluence sync (bulk docs still valuable)
+11. Disable JIRA connector in sync_all.py
+12. Disable GitHub sync service
+13. Remove associated systemd timers
+14. Archive removed code (don't delete)
 
-**Duration:** 1-2 weeks
-**Success Criteria:** Agent successfully performs 10+ write operations
+**Success Criteria:** System runs locally with MCP for JIRA/GitHub, custom sync removed (~1,000 LOC reduction)
+**Rollback:** Re-enable custom sync services
 
-### Phase 3: Migrate Watchers to MCP-First
+### Phase 2: Bi-Directional Sync
 
-**Goal:** Replace custom sync queries with MCP queries
+**Goal:** Enable bi-directional sync capabilities beyond what custom sync provided
 
-1. Update jira-watcher to query via MCP instead of files
-2. Update GitHub analyzers to use MCP
-3. Keep Confluence sync (bulk docs still valuable)
-4. Monitor for regressions
+1. Validate agent can create/update JIRA tickets in real workflows
+2. Validate agent can comment on PRs and create reviews
+3. Implement event-driven triggers for latency-sensitive workflows
+4. Add MCP-based notifications for real-time updates
+5. Document new capabilities in CLAUDE.md
 
-**Duration:** 2-3 weeks
-**Success Criteria:** Watchers work with MCP, custom JIRA/GitHub sync disabled
+**Success Criteria:** Agent performs 50+ bi-directional operations successfully; latency-sensitive workflows use event-driven triggers
 
-### Phase 4: Deprecate Custom JIRA/GitHub Sync
-
-**Goal:** Remove ~1,000 lines of custom sync code
-
-1. Disable JIRA connector in sync_all.py
-2. Disable GitHub sync service
-3. Remove associated systemd timers
-4. Keep Confluence sync operational
-5. Archive removed code (don't delete)
-
-**Duration:** 1 week
-**Success Criteria:** System runs without custom JIRA/GitHub sync
-
-### Phase 5: GCP Deployment Validation
+### Phase 3: GCP Migration
 
 **Goal:** Ensure MCP works in Cloud Run environment (see [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md))
 
@@ -366,7 +352,7 @@ def analyze_tickets():
 4. Scheduled sync jobs (sync-confluence, sync-jira, sync-github) work via scheduled-job module
 5. Manual sync via `/sync` slash commands (see [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md))
 
-**Duration:** As part of broader Cloud Run migration
+**Success Criteria:** Full MCP functionality in Cloud Run environment
 
 ## Consequences
 
