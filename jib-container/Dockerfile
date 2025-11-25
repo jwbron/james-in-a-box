@@ -53,11 +53,10 @@ RUN pip3 install --no-cache-dir \
     requests
 
 # Install beads llm issue tracker
-# The install script puts bd in ~/.local/bin, so we install as root then move to /usr/local/bin
+# Add Go bin to PATH for beads installation
+ENV PATH="/root/go/bin:${PATH}"
 RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
-    mv /root/.local/bin/bd /usr/local/bin/bd && \
-    chmod 755 /usr/local/bin/bd && \
-    which bd && bd --version || (echo "ERROR: beads (bd) installation failed" && exit 1)
+    which bd || (echo "ERROR: beads (bd) installation failed" && exit 1)
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
