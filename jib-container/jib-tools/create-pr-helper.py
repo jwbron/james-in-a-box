@@ -25,7 +25,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 
 # Add shared directory to path for notifications import
-sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+# Path: jib-container/jib-tools/create-pr-helper.py -> repo-root/shared
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 from notifications import get_slack_service
 
 # Try to load repo config for default reviewer and writable repos check

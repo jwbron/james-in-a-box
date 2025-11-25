@@ -27,7 +27,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 # Add shared directory to path for notifications import
-sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+# Path: jib-container/jib-tools/comment-pr-helper.py -> repo-root/shared
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 from notifications import get_slack_service, NotificationContext
 
 # Try to load repo config for writable repos check

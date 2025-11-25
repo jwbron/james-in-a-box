@@ -15,7 +15,8 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 # Add shared directory to path for notifications import
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+# Path: jib-container/jib-tasks/github/pr-reviewer.py -> repo-root/shared
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 try:
     from notifications import get_slack_service, NotificationContext
 except ImportError as e:
@@ -23,10 +24,10 @@ except ImportError as e:
     print("ERROR: Cannot import notifications library", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
     print(f"  Import error: {e}", file=sys.stderr)
-    print(f"  Expected path: {Path(__file__).parent.parent.parent / 'shared'}", file=sys.stderr)
+    print(f"  Expected path: {Path(__file__).parent.parent.parent.parent / 'shared'}", file=sys.stderr)
     print("", file=sys.stderr)
     print("This usually means the shared/notifications module is missing.", file=sys.stderr)
-    print("Check that jib-container/shared/notifications/ exists.", file=sys.stderr)
+    print("Check that shared/notifications/ exists in the repo root.", file=sys.stderr)
     sys.exit(1)
 
 
