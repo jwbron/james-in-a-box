@@ -359,6 +359,25 @@ bd update bd-a3f8 --notes "Done: OAuth2 implemented, all tests passing, PR #456 
 
 ## Integration with Other Systems
 
+### With Slack Thread Context
+
+**CRITICAL**: When processing Slack messages, use the thread ID to maintain context:
+
+```bash
+# Extract Thread ID from prompt (Task ID in "Thread Context" section)
+THREAD_ID="response-20251125-134311"
+
+# Check for existing context FIRST
+cd ~/beads
+bd list --search "$THREAD_ID"
+
+# If found: load context and resume
+# If not found: create task with thread ID as label
+bd create "Slack thread: $THREAD_ID" --label slack-thread --label "$THREAD_ID"
+```
+
+See `slack-thread-context.md` for complete details.
+
 ### With @save-context
 ```bash
 # After completing significant work
