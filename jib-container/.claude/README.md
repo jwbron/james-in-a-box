@@ -55,6 +55,6 @@ Rules are automatically applied. See individual files for details.
 3. Verify behavior matches intent
 
 ## See Also
-- [User Guide](../docs/user-guide/workflow.md)
+- [User Guide](../../docs/user-guide/README.md)
 - [Commands README](commands/README.md)
 - [Rules README](rules/README.md)

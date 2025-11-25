@@ -2,47 +2,66 @@
 
 Day-to-day usage documentation for james-in-a-box.
 
-## Guides
+## Getting Started
 
-### [Quickstart](quickstart.md)
-Get started with james-in-a-box in 5 minutes.
-
-**Covers:**
-- Running jib for the first time
-- Basic Claude Code usage
-- Common workflows
-- Where things are stored
-
-### [Workflow](workflow.md)
-Best practices and daily usage patterns.
-
-**Covers:**
-- Development workflow
-- Using slash commands
-- Managing context
-- Creating PRs
-- Reviewing agent output
+See the main [README.md](../../README.md) for:
+- Quick start guide
+- Architecture overview
+- Usage patterns
+- Security model
 
 ## Common Tasks
 
 **Start a Session:**
 ```bash
-./jib
+cd ~/khan/james-in-a-box
+bin/jib
 ```
 
-**Use Slash Commands:**
+**Use Slash Commands (inside container):**
 ```
 /load-context project-name
 /save-context project-name
 /create-pr
 ```
 
-**Review Agent Output:**
-- Check `~/.jib-sharing/notifications/` for reports
-- Review commits before pushing
-- Validate PR descriptions
+**Create a PR:**
+```bash
+# Inside container - commit changes then:
+create-pr-helper.py --auto
+```
+
+**Check Task Status:**
+```bash
+bd list --status in-progress    # Current tasks
+bd list                         # All tasks
+```
+
+## Workflow Overview
+
+1. **Start container**: `bin/jib`
+2. **Check for tasks**: `bd list` or check `~/sharing/incoming/`
+3. **Load context**: `/load-context <project-name>`
+4. **Work on task**: Claude works in isolated git worktree
+5. **Commit changes**: Git commit to temp branch
+6. **Create PR**: `create-pr-helper.py --auto`
+7. **Save learnings**: `/save-context <project-name>`
+8. **Complete task**: `bd update <task-id> --status done`
+
+## Key Directories
+
+| Inside Container | Purpose |
+|-----------------|---------|
+| `~/khan/` | Code workspace (git worktree) |
+| `~/context-sync/` | Confluence/JIRA docs (read-only) |
+| `~/sharing/incoming/` | Tasks from Slack |
+| `~/sharing/notifications/` | Outgoing notifications |
+| `~/sharing/context/` | Saved context (persists) |
+| `~/beads/` | Task tracking database |
 
 ## See Also
-- [Setup Guides](../setup/)
-- [Architecture](../architecture/)
-- [CLI Tools](../../bin/)
+
+- [Setup Guides](../setup/) - Initial installation
+- [Architecture](../architecture/) - System design
+- [Reference](../reference/) - Quick reference docs
+- [Slack Quick Reference](../reference/slack-quick-reference.md) - Slack commands

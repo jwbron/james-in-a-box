@@ -41,22 +41,31 @@ Automated pull request creation with smart description generation.
 - Analyzes git branch and commits
 - Generates comprehensive PR description
 - Extracts Jira issue from branch name
-- Saves PR description to `.git/PR_EDITMSG+<branch-name>.save`
-- Human opens PR on GitHub using this description
+- Creates PR via `create-pr-helper.py`
 
 **File**: `create-pr.md`
 
-### /check-staging
-Review and apply staged changes from ~/sharing/staged-changes/
+### /beads-status
+Show current Beads task status.
 
-**Usage**: `/check-staging`
+**Usage**: `/beads-status`
 
 **What it does**:
-- Reviews all staged code changes
-- Archives previous staged changes
-- Prepares changes for human to apply to source
+- Lists in-progress and pending tasks
+- Shows task IDs for reference
 
-**File**: `check-staging.md`
+**File**: `beads-status.md`
+
+### /beads-sync
+Sync Beads repository with git.
+
+**Usage**: `/beads-sync`
+
+**What it does**:
+- Commits any uncommitted Beads changes
+- Syncs with remote if configured
+
+**File**: `beads-sync.md`
 
 ## How Commands Work
 
@@ -95,11 +104,9 @@ cat ~/.claude/commands/load-context.md
 
 These files are installed to `~/.claude/commands/` during Docker image build and are automatically available to Claude Code when running in the sandboxed environment.
 
-**SECURITY FIX**: Previous documentation incorrectly referenced `/usr/local/share/claude-commands/`. The actual location is `~/.claude/commands/`.
-
 ## Adding New Commands
 
-1. Create a new `.md` file in `/home/jwies/khan/james-in-a-box/claude-commands/`
+1. Create a new `.md` file in `jib-container/.claude/commands/`
 2. Follow the format of existing commands
 3. Rebuild the Docker image: `./jib --rebuild`
 4. New command will be available at `~/.claude/commands/<command-name>.md`
@@ -115,16 +122,6 @@ Each command file should include:
 
 Claude Code will follow these instructions when users invoke the slash command syntax.
 
-## Differences from Other AI Assistants
-
-Claude Code uses a slash command system similar to other AI coding assistants:
-
-- **Syntax**: `/command-name args`
-- **Storage**: `~/.claude/commands/`
-- **Format**: Markdown instruction files
-- **Execution**: Claude interprets the markdown and executes the workflow
-
 ---
 
-**Last Updated**: 2025-11-22
-**Security Note**: All paths and syntax have been verified against actual Claude Code behavior
+**Last Updated**: 2025-11-25

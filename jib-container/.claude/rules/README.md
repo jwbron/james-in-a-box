@@ -27,7 +27,7 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 - **environment.md** - Technical constraints
   - What you CAN and CANNOT do in the sandbox
   - File system layout and directory purposes
-  - Git workflow (local commits only)
+  - Git workflow (commit and push to temp branches, create PRs)
   - Testing and validation commands
   - Error handling patterns
 
