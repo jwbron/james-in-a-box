@@ -46,7 +46,9 @@ class SlackNotifier:
         self.config_dir = config_dir
         self.config_file = config_dir / "config.json"
         self.state_file = config_dir / "state.json"
-        self.threads_file = config_dir / "threads.json"
+        # Store threads in shared directory (accessible to both host and container)
+        # Host: ~/.jib-sharing/tracking/ -> Container: ~/sharing/tracking/
+        self.threads_file = Path.home() / ".jib-sharing" / "tracking" / "slack-threads.json"
         self.log_file = config_dir / "notifier.log"
 
         # Ensure config directory exists with secure permissions
@@ -157,6 +159,7 @@ class SlackNotifier:
     def _save_threads(self):
         """Save thread state to file."""
         try:
+            self.threads_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self.threads_file, 'w') as f:
                 json.dump(self.threads, f, indent=2)
             os.chmod(self.threads_file, 0o600)
