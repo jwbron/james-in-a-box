@@ -174,6 +174,21 @@ services:
 
 ### 2. Gateway REST API
 
+**Communication Protocol Decision:**
+- **Primary:** REST over HTTP (synchronous)
+- **Rationale:** Simple, well-understood, easy to debug, good tooling support
+- **Sync vs Async:** Synchronous - jib waits for operation result before proceeding
+
+**Alternative Protocols (for reference):**
+| Protocol | Pros | Cons | When to Consider |
+|----------|------|------|------------------|
+| REST | Simple, debuggable, HTTP tooling | Per-request overhead | Default choice |
+| gRPC | Binary efficiency, streaming, strong typing | More complex setup, protobuf required | High-throughput scenarios |
+| Unix Socket | Lowest latency, no network stack | Docker volume mount complexity | Performance-critical operations |
+| Message Queue | Decoupled, retry semantics | Adds complexity, async-by-default | Batch operations, fire-and-forget |
+
+We start with REST for its simplicity. If performance becomes a concern, gRPC is the natural evolution. Unix sockets could be considered for extremely latency-sensitive operations.
+
 The gateway exposes a controlled API for git/gh operations:
 
 ```python
