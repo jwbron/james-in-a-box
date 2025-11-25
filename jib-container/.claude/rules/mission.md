@@ -83,6 +83,18 @@ For non-writable repos: commit and notify user with branch name.
 3. Push to update the existing PR
 4. Do NOT create a new PR for the same work
 
+**PR approval vs feedback - know the difference:**
+- **Approved**: GitHub shows "Approved" status via `gh pr view --json reviews`
+- **NOT approval**: Positive comments like "Looking good", "Go ahead", "LGTM"
+- Comments with feedback/direction are just that - feedback, not formal approval
+- Check actual approval status: `gh pr view <PR> --json reviewDecision`
+
+To check if a PR is actually approved:
+```bash
+gh pr view 26 --json reviewDecision --jq '.reviewDecision'
+# Returns: APPROVED, CHANGES_REQUESTED, or REVIEW_REQUIRED
+```
+
 **PR ownership rules:**
 - **Continue existing PRs**: If feedback requests changes on PR #X, update PR #X
 - **Separate concerns**: Unrelated changes go to separate PRs
