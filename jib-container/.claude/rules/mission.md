@@ -92,9 +92,10 @@ gh pr view <PR_NUMBER> --json state --jq '.state'
 5. Do NOT create a new PR for the same work
 
 **PR approval vs feedback - know the difference:**
-- **Approved**: GitHub review status, check with `gh pr view <PR> --json reviewDecision`
-- **NOT approval**: Positive comments like "Looking good", "Go ahead", "LGTM"
-- Comments are feedback/direction, not formal approval
+- **Approved**: GitHub review status, OR "LGTM" comment (case-insensitive)
+- **NOT approval**: Other positive comments like "Looking good", "Go ahead"
+- Comments are generally feedback/direction, not formal approval
+- Check formal status: `gh pr view <PR> --json reviewDecision`
 ```bash
 gh pr view 26 --json reviewDecision --jq '.reviewDecision'
 # APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
