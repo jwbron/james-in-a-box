@@ -35,15 +35,16 @@ systemctl --user stop slack-receiver.service
 
 - `slack-receiver.service` - Systemd service file
 - `setup.sh` - Installation script
-- `host-receive-slack.py` - Slack Socket Mode receiver (triggers processing via `jib --exec`)
-- `../../jib-container/jib-tasks/slack/incoming-processor.py` - Message processor (runs in container)
+- `slack-receiver.py` - Slack Socket Mode receiver (triggers processing via `jib --exec`)
+- `remote-control.sh` - Remote control command handler
+- `create-pr.sh` - PR creation helper script
 
 ## How It Works
 
 ```
 Slack DM received
         ↓
-host-receive-slack.py (Socket Mode)
+slack-receiver.py (Socket Mode)
         ↓
 Write message to ~/.jib-sharing/incoming/ or ~/.jib-sharing/responses/
         ↓
