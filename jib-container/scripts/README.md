@@ -58,6 +58,53 @@ Backlog Suggestions: 5 tickets ready to pull in
 - 📝 To Do
 - 💼 Suggested Tickets to Pull In (scored by priority and readiness)
 
+### comment-pr-helper.py
+
+Posts comments on GitHub PRs and sends Slack notifications. Use this instead of raw `gh pr comment` to ensure consistent formatting and Slack notifications.
+
+**Features:**
+- Wraps `gh pr comment` with consistent error handling
+- Automatically adds jib signature to comments
+- Sends Slack notification with comment details
+- Supports task ID for Slack thread correlation
+
+**Usage:**
+
+```bash
+# Basic usage - comment on a PR
+comment-pr-helper.py --pr 123 --body "This looks good!"
+
+# Comment from a file
+comment-pr-helper.py --pr 123 --body-file review-comments.md
+
+# Skip Slack notification (use when output will be captured)
+comment-pr-helper.py --pr 123 --body "Comment" --no-notify
+
+# Don't add jib signature
+comment-pr-helper.py --pr 123 --body "Comment" --no-sign
+
+# With task ID for thread correlation
+comment-pr-helper.py --pr 123 --body "Done!" --task-id my-task-123
+```
+
+**Options:**
+- `--pr, -p`: PR number to comment on (required)
+- `--body, -b`: Comment body (markdown supported)
+- `--body-file, -f`: Read comment body from file
+- `--no-notify`: Skip Slack notification
+- `--no-sign`: Don't add jib signature
+- `--task-id, -t`: Task ID for Slack thread correlation
+
+**Important:** Always use `--no-notify` when your stdout will be captured and sent as a threaded Slack notification automatically (e.g., from task runners).
+
+### create-pr-helper.py
+
+Creates GitHub PRs with proper formatting and Slack notifications. See main CLAUDE.md for detailed usage.
+
+### discover-tests.py
+
+Discovers test frameworks and test commands for a repository.
+
 ## Creating New Scripts
 
 When adding new scripts to this directory:
