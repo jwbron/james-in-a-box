@@ -595,6 +595,13 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                     self.logger.error(f"PR creation failed: {pr_result.error}")
                     if pr_result.branch_name:
                         self.logger.info(f"Changes are on branch: {pr_result.branch_name}")
+            else:
+                self.logger.warning("All fixes were skipped - no PR created")
+                # Create a PRResult to explain what happened
+                pr_result = PRResult(
+                    success=False,
+                    error="All fix attempts were skipped (see skipped issues below)"
+                )
 
         # Create notification
         self.create_notification(issues, pr_result, implemented, skipped)
