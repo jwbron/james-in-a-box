@@ -210,7 +210,90 @@ Take action via MCP (comment, update)
 
 **Recommendation:** Start with Option B (scheduled + MCP query) as it's simpler and preserves current patterns. Evolve to Option A for latency-sensitive workflows.
 
-### 5. Example: Migrated JIRA Watcher
+### 5. Handling Rapid-Fire PR Comments
+
+When reviewers leave multiple comments in quick succession (common during thorough PR reviews), responding to each comment individually creates noise and may lead to context fragmentation. We implement a **debounce strategy** to batch related comments.
+
+**Problem:**
+- Reviewer leaves 5-6 comments within 2 minutes during a review
+- Without batching, jib responds 5-6 times with potentially conflicting or redundant responses
+- Each response uses a separate Claude session without context from sibling comments
+
+**Solution: 60-Second Debounce Window**
+
+```
+PR Comment Received
+    ↓
+Start/Reset 60-second timer
+    ↓
+Collect comments during window
+    ↓
+Timer expires
+    ↓
+Process all collected comments in single Claude session
+    ↓
+Generate unified response addressing all points
+```
+
+**Implementation:**
+
+```python
+# comment-responder.py (debounce logic)
+import time
+from collections import defaultdict
+
+# Buffer: {pr_number: [(timestamp, comment), ...]}
+comment_buffer = defaultdict(list)
+DEBOUNCE_SECONDS = 60
+
+def on_pr_comment_webhook(pr_number: int, comment: dict):
+    """Handle incoming PR comment with debounce."""
+    comment_buffer[pr_number].append((time.time(), comment))
+
+    # Schedule processing after debounce window
+    schedule_delayed_processing(pr_number, delay=DEBOUNCE_SECONDS)
+
+def process_buffered_comments(pr_number: int):
+    """Process all buffered comments for a PR."""
+    comments = comment_buffer.pop(pr_number, [])
+
+    if not comments:
+        return
+
+    # Check if more comments arrived during processing
+    if any(time.time() - ts < DEBOUNCE_SECONDS for ts, _ in comments):
+        # Re-buffer and wait longer
+        comment_buffer[pr_number] = comments
+        schedule_delayed_processing(pr_number, delay=DEBOUNCE_SECONDS)
+        return
+
+    # Build context for Claude
+    context = f"These {len(comments)} comments were left in the past {DEBOUNCE_SECONDS} seconds:\n\n"
+    for i, (ts, comment) in enumerate(comments, 1):
+        context += f"**Comment {i}** (by {comment['author']}):\n{comment['body']}\n\n"
+
+    # Single Claude session addresses all comments
+    response = generate_unified_response(pr_number, context)
+    post_pr_comment(pr_number, response)
+```
+
+**Benefits:**
+- Single cohesive response addressing all reviewer points
+- Full context available in one Claude session
+- Reduces notification noise for reviewers
+- More efficient token usage
+
+**Trade-offs:**
+- 60-second delay before first response (acceptable for non-urgent reviews)
+- If reviewer is waiting for a response before continuing, they'll need to wait
+
+**Alternative Considered: Respond Immediately**
+We considered responding to each comment as it arrives, but rejected this because:
+- Fragmentary responses confuse reviewers
+- Later comments may contradict or supersede earlier ones
+- Higher total token usage across multiple sessions
+
+### 6. Example: Migrated JIRA Watcher
 
 **Before (Custom Sync):**
 ```python
@@ -237,7 +320,7 @@ def analyze_tickets():
     # - Create subtasks
 ```
 
-### 6. Architecture Comparison
+### 7. Architecture Comparison
 
 **Current (Custom Sync):**
 ```
@@ -287,7 +370,7 @@ def analyze_tickets():
     Confluence Cloud
 ```
 
-### 7. Security Model
+### 8. Security Model
 
 **MCP Authentication:**
 - **Atlassian:** OAuth 2.0 with user-scoped tokens (respects Jira/Confluence permissions)
