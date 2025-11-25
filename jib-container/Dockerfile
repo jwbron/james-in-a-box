@@ -53,10 +53,9 @@ RUN pip3 install --no-cache-dir \
     requests
 
 # Install beads llm issue tracker
-# Add Go bin to PATH for beads installation
-ENV PATH="/root/go/bin:${PATH}"
+# When running as root, the install script puts bd directly in /usr/local/bin
 RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
-    which bd || (echo "ERROR: beads (bd) installation failed" && exit 1)
+    which bd
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -299,11 +298,13 @@ cat "${USER_HOME}/.claude/settings.json"
 echo ""
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
-# Also add jib-container/scripts to PATH for create-pr-helper.py and other tools
+# Also add jib-container/scripts to PATH and ensure gh credentials are configured
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
 alias claude='claude --dangerously-skip-permissions'
 export PS1='\[\033[01;32m\]\u@sandboxed\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 export PATH="${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
+# Ensure git credentials are configured (runs silently, belt and suspenders)
+command -v gh &>/dev/null && gh auth setup-git 2>/dev/null
 BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
 echo "✓ Claude alias created (bypasses permissions in sandbox)"
