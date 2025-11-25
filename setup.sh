@@ -456,6 +456,59 @@ else
     cd "$SCRIPT_DIR"
 fi
 
+# Configure GitHub username
+print_info "Configuring GitHub username..."
+
+repo_config_file="$SCRIPT_DIR/config/repositories.yaml"
+current_username=""
+
+# Try to get current username from config
+if [ -f "$repo_config_file" ]; then
+    current_username=$(grep "^github_username:" "$repo_config_file" | sed 's/github_username: *//' | tr -d '"' | tr -d "'")
+fi
+
+# Try to detect from gh CLI if not set
+if [ -z "$current_username" ] && command -v gh &> /dev/null; then
+    detected_username=$(gh api user --jq '.login' 2>/dev/null || true)
+    if [ -n "$detected_username" ]; then
+        current_username="$detected_username"
+        print_info "Detected GitHub username from gh CLI: $current_username"
+    fi
+fi
+
+if [ -n "$current_username" ]; then
+    echo "Current GitHub username: $current_username"
+    read -p "Keep this username? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        current_username=""
+    fi
+fi
+
+if [ -z "$current_username" ]; then
+    echo ""
+    echo "Enter your GitHub username (used for PR creation and review requests):"
+    read -p "GitHub username: " github_username
+    if [ -z "$github_username" ]; then
+        print_error "GitHub username is required"
+        exit 1
+    fi
+    current_username="$github_username"
+fi
+
+# Update repositories.yaml with the username
+if [ -f "$repo_config_file" ]; then
+    # Update github_username
+    sed -i "s/^github_username:.*/github_username: $current_username/" "$repo_config_file"
+    # Update default_reviewer
+    sed -i "s/^default_reviewer:.*/default_reviewer: $current_username/" "$repo_config_file"
+    # Update writable_repos (the james-in-a-box repo)
+    sed -i "s|  - .*/james-in-a-box|  - $current_username/james-in-a-box|" "$repo_config_file"
+    print_success "Updated repositories.yaml with username: $current_username"
+else
+    print_warning "repositories.yaml not found, skipping config update"
+fi
+
 # Check and configure GitHub token for container PR management
 print_info "Checking GitHub token for container..."
 
@@ -481,7 +534,7 @@ else
     echo ""
     echo "Token configuration:"
     echo "  - Name: james-in-a-box-pr-access"
-    echo "  - Repository: jwiesebron/james-in-a-box (only)"
+    echo "  - Repository: $current_username/james-in-a-box (only)"
     echo "  - Permissions:"
     echo "      Contents: Read and write"
     echo "      Pull requests: Read and write"

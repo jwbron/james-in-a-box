@@ -421,7 +421,7 @@ When jib completes a task with code changes, it can automatically create a PR:
 
 ```bash
 # Inside container (automatic after task completion)
-create-pr-helper.py --auto --reviewer jwiesebron
+create-pr-helper.py --auto
 ```
 
 This:

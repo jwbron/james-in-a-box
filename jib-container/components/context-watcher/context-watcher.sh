@@ -128,7 +128,7 @@ EOF
     # Run Claude analysis
     cd "${HOME}/khan/james-in-a-box" || cd "$HOME"
 
-    if claude --prompt-file "$prompt_file" --output-dir "$NOTIFICATIONS_DIR" >> "$LOG_FILE" 2>&1; then
+    if cat "$prompt_file" | claude --dangerously-skip-permissions >> "$LOG_FILE" 2>&1; then
         log "Analysis completed successfully"
     else
         local exit_code=$?

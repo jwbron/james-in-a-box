@@ -8,9 +8,9 @@ Used by jib after completing a task to:
 3. Return PR URL for Slack notification
 
 Usage:
-  create-pr-helper.py --title "PR title" --body "Description" [--reviewer jwiesebron]
+  create-pr-helper.py --title "PR title" --body "Description"
   create-pr-helper.py --from-file pr-details.json
-  create-pr-helper.py --auto  # Auto-generate from git log
+  create-pr-helper.py --auto  # Auto-generate from git log (uses default reviewer from config)
 
 Repository configuration (including default reviewer and writable repos) is loaded
 from config/repositories.yaml - the single source of truth for jib repo access.
@@ -45,13 +45,14 @@ except ImportError:
     HAS_REPO_CONFIG = False
 
     def get_default_reviewer():
-        return "jwbron"
+        # Config not found - require explicit --reviewer flag
+        return None
 
     def is_writable_repo(repo):
         return True  # Allow by default if config unavailable
 
     def get_writable_repos():
-        return ["jwbron/james-in-a-box"]
+        return []  # No repos if config unavailable
 
 
 class PRCreator:

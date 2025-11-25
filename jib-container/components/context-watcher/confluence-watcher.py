@@ -184,7 +184,8 @@ Analyze these documents now and take appropriate action."""
     # Run Claude Code
     try:
         result = subprocess.run(
-            ["claude", "--print", prompt],
+            ["claude", "--dangerously-skip-permissions"],
+            input=prompt,
             capture_output=False,
             text=True,
             timeout=900  # 15 minute timeout
