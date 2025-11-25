@@ -292,14 +292,14 @@ for component_info in "${components[@]}"; do
     echo ""
     print_info "Setting up: $description"
 
-    setup_script="$SCRIPT_DIR/components/$component/setup.sh"
+    setup_script="$SCRIPT_DIR/host-services/$component/setup.sh"
 
     if [ ! -f "$setup_script" ]; then
         print_warning "Setup script not found: $setup_script"
         continue
     fi
 
-    cd "$SCRIPT_DIR/components/$component"
+    cd "$SCRIPT_DIR/host-services/$component"
 
     if bash setup.sh; then
         print_success "$description configured"

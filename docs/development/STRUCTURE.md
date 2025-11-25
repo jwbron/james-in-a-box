@@ -1,0 +1,164 @@
+# Project Structure Guidelines
+
+This document describes the directory structure conventions for james-in-a-box.
+
+## Top-Level Structure
+
+```
+james-in-a-box/
+├── bin/                    # CLI symlinks (points to actual implementations)
+├── config/                 # Central configuration (repos, filters)
+├── docs/                   # Cross-cutting documentation
+├── host-services/          # Host-side systemd services
+├── jib-container/          # Container-side code and config
+├── setup.sh                # Master setup script
+└── README.md               # Main documentation
+```
+
+## Directory Naming Conventions
+
+| Directory | Purpose | Runs On |
+|-----------|---------|---------|
+| `host-services/` | Systemd services that run on the host machine | Host |
+| `jib-container/watchers/` | Event-driven components inside the container | Container |
+| `jib-container/scripts/` | Utility scripts for container tasks | Container |
+| `jib-container/shared/` | Python libraries shared across container components | Container |
+| `jib-container/.claude/` | Claude Code configuration (rules, commands) | Container |
+
+## Host Service Structure
+
+Each service in `host-services/` should follow this pattern:
+
+```
+host-services/
+└── <service-name>/
+    ├── README.md              # Required: Purpose, setup, usage
+    ├── setup.sh               # Required: Installation script
+    ├── <service-name>.py      # Main implementation (if Python)
+    ├── <service-name>.sh      # Main implementation (if shell)
+    ├── <service-name>.service # Systemd service unit
+    ├── <service-name>.timer   # Systemd timer (if timer-based)
+    └── requirements.txt       # Python dependencies (even if empty)
+```
+
+### When to Use Subdirectories
+
+Most services should be **flat** (all files at root level). Use subdirectories only when:
+
+1. **Multiple subsystems**: Service has 2+ distinct functional areas (e.g., Confluence connector + JIRA connector)
+2. **10+ files**: Service complexity warrants organization
+3. **Shared utilities**: Multiple scripts share common code
+
+Example of justified subdirectory usage (`context-sync/`):
+```
+context-sync/
+├── connectors/         # Pluggable data source connectors
+│   ├── confluence/     # Confluence-specific code
+│   └── jira/           # JIRA-specific code
+├── docs/               # Extended documentation (8+ files)
+├── utils/              # Shared utilities
+├── README.md
+├── setup.sh
+├── requirements.txt
+├── context-sync.service
+└── context-sync.timer
+```
+
+## Container Watcher Structure
+
+Each watcher in `jib-container/watchers/` follows a similar pattern:
+
+```
+jib-container/watchers/
+└── <watcher-name>/
+    ├── README.md              # Required: Purpose, usage
+    ├── <watcher-name>-ctl     # Control script (start/stop)
+    ├── watcher.py             # Main implementation
+    └── config/                # Optional: Watcher-specific config
+        └── <watcher-name>.yaml
+```
+
+## File Naming Conventions
+
+| Type | Convention | Example |
+|------|------------|---------|
+| Python scripts | kebab-case | `codebase-analyzer.py` |
+| Shell scripts | kebab-case | `setup.sh`, `manage-scheduler.sh` |
+| Control scripts | `*-ctl` suffix, no extension | `github-watcher-ctl` |
+| Systemd files | `<service-name>.service`, `<service-name>.timer` | `slack-notifier.service` |
+| Config files | `.yaml` (not `.yml`) | `repositories.yaml` |
+| Documentation | UPPERCASE.md for guides, lowercase.md for READMEs | `SCHEDULING.md`, `README.md` |
+
+## Symlink Strategy
+
+The `bin/` directory contains symlinks for convenient CLI access:
+
+```
+bin/
+├── jib -> ../jib-container/jib
+├── setup-slack-notifier -> ../host-services/slack-notifier/setup.sh
+└── ...
+```
+
+**Benefits**:
+- Single location for common commands
+- Actual code stays with its service
+- Easy discovery of available tools
+
+## Configuration Organization
+
+```
+config/                        # Global configuration
+├── repositories.yaml          # GitHub repo permissions (source of truth)
+├── context-filters.yaml       # Content filtering rules
+└── repo_config.py             # Python API for repo access
+
+host-services/<service>/       # Service-specific config
+└── requirements.txt           # Python dependencies
+
+~/.config/jib-notifier/        # Runtime user config (not in repo)
+└── config.json                # Slack tokens, user preferences
+```
+
+## Documentation Organization
+
+```
+docs/
+├── README.md                  # Documentation index
+├── adr/                       # Architecture Decision Records
+├── architecture/              # System design docs
+├── development/               # Developer guides (like this file)
+├── reference/                 # Quick reference guides
+├── setup/                     # Setup instructions
+└── user-guide/                # End-user documentation
+
+host-services/<service>/       # Component-specific docs
+└── README.md                  # Service documentation
+
+host-services/<service>/docs/  # Extended docs (only if needed)
+└── TOPIC.md                   # Detailed topic guides
+```
+
+**Rule**: Documentation should live close to code. Only cross-cutting docs belong in the central `docs/` directory.
+
+## Adding a New Host Service
+
+1. Create directory: `host-services/<service-name>/`
+2. Add required files:
+   - `README.md` - Document purpose and usage
+   - `setup.sh` - Installation script
+   - `<service-name>.service` - Systemd unit
+   - `requirements.txt` - Dependencies (even if empty)
+3. Add symlink to `bin/` if user-facing
+4. Update main `README.md` architecture section
+5. Add to `setup.sh` components array
+
+## Adding a New Container Watcher
+
+1. Create directory: `jib-container/watchers/<watcher-name>/`
+2. Add required files:
+   - `README.md` - Document purpose and usage
+   - `<watcher-name>-ctl` - Control script
+   - Main implementation (`.py` or `.sh`)
+3. Update `jib-container/docker-setup.py` to start watcher
+4. Update main `README.md` container components section

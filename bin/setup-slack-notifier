@@ -1,1 +1,1 @@
-../components/slack-notifier/setup.sh
+../host-services/slack-notifier/setup.sh

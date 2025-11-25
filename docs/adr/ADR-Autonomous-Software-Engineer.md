@@ -365,7 +365,7 @@ Agent should demonstrate L3-L4 behaviors:
 
 **Implemented Sync Systems:**
 
-**Confluence Sync** (`components/context-sync/connectors/confluence/`)
+**Confluence Sync** (`host-services/context-sync/connectors/confluence/`)
 - **Host Service:** `context-sync.timer` - Runs hourly
 - **Source:** Confluence API (ADRs, runbooks, engineering docs)
 - **Output:** `~/context-sync/confluence/` - Markdown files
@@ -373,7 +373,7 @@ Agent should demonstrate L3-L4 behaviors:
 - **Connector:** Python-based with incremental sync
 - **Container Analysis:** Triggered via `jib --exec --worktree` after sync completes
 
-**JIRA Sync** (`components/context-sync/connectors/jira/`)
+**JIRA Sync** (`host-services/context-sync/connectors/jira/`)
 - **Host Service:** `context-sync.timer` - Runs hourly (same timer as Confluence)
 - **Source:** JIRA API - All open INFRA project tickets
 - **JQL Query:** `project = INFRA AND resolution = Unresolved ORDER BY updated DESC`
@@ -383,7 +383,7 @@ Agent should demonstrate L3-L4 behaviors:
 - **Incremental Sync:** Tracks ticket hashes to avoid re-fetching unchanged tickets
 - **Container Analysis:** `jira-watcher.py` triggered via `jib --exec --worktree` after sync
 
-**GitHub Sync** (`components/github-sync/`)
+**GitHub Sync** (`host-services/github-sync/`)
 - **Host Service:** `github-sync.timer` - Runs every 15 minutes
 - **Source:** GitHub API (PR data, checks, comments)
 - **Output:** `~/context-sync/github/` - JSON files
@@ -400,7 +400,7 @@ Agent should demonstrate L3-L4 behaviors:
 
 **Container-Side Active Analysis:**
 
-**Context Watcher** (`jib-container/components/context-watcher/`)
+**Context Watcher** (`jib-container/watchers/context-watcher/`)
 - **Architecture:** Exec-based pattern triggered by `context-sync.service` via `jib --exec --worktree`
 - **JIRA Watcher:** Analyzes new/updated tickets after hourly sync
   - Extracts action items from descriptions
@@ -415,7 +415,7 @@ Agent should demonstrate L3-L4 behaviors:
   - Creates Beads tasks for ADRs
   - Sends Slack notifications
 
-**GitHub Watcher** (`jib-container/components/github-watcher/`)
+**GitHub Watcher** (`jib-container/watchers/github-watcher/`)
 - **Architecture:** Exec-based pattern triggered by `github-sync.service` via `jib --exec`
 - **Check Monitor:** Analyzes PR check failures after sync (every 15 min), suggests/implements automated fixes
 - **PR Reviewer:** Auto-reviews new PRs from others (`--watch` mode), skips self-authored PRs

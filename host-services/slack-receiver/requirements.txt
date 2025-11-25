@@ -1,0 +1,3 @@
+# Slack Receiver dependencies
+# Slack SDK for Socket Mode message reception
+slack-sdk>=3.27.0

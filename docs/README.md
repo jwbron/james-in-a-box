@@ -2,7 +2,7 @@
 
 Complete documentation for james-in-a-box: Docker sandbox for Claude Code CLI as an autonomous software engineering agent.
 
-> **Note**: Documentation should generally live close to code in component directories (e.g., `components/slack-notifier/README.md`). This directory is for general, cross-cutting documentation only.
+> **Note**: Documentation should generally live close to code in component directories (e.g., `host-services/slack-notifier/README.md`). This directory is for general, cross-cutting documentation only.
 
 ## Documentation Structure
 
