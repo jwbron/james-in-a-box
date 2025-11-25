@@ -165,7 +165,7 @@ class CommentResponder:
                 traceback.print_exc()
 
     def process_comment_file(self, comment_file: Path):
-        """Process a single PR's comment file."""
+        """Process a single PR's comment file - batches all unprocessed comments."""
         with comment_file.open() as f:
             data = json.load(f)
 
@@ -177,16 +177,42 @@ class CommentResponder:
         if not comments:
             return
 
+        # Collect all unprocessed comments that need responses
+        pending_comments = []
+        skip_comment_ids = []
+
         for comment in comments:
             comment_id = str(comment.get('id'))
             if not comment_id or comment_id in self.processed_comments:
                 continue
 
             if self.needs_response(comment):
-                print(f"New comment needing response: PR #{pr_num}, comment {comment_id}")
-                self.handle_comment(pr_num, repo_name, repo, comment, data)
+                pending_comments.append(comment)
+            else:
+                # Comment doesn't need a response (bot, jib's own comment, etc.)
+                # Mark as processed to avoid re-checking it every time
+                skip_comment_ids.append(comment_id)
+                self.processed_comments[comment_id] = datetime.utcnow().isoformat() + 'Z'
 
-            self.processed_comments[comment_id] = datetime.utcnow().isoformat() + 'Z'
+        # If no pending comments, just save state and return
+        if not pending_comments:
+            if skip_comment_ids:
+                self.save_state()
+            return
+
+        print(f"Processing {len(pending_comments)} pending comment(s) on PR #{pr_num}")
+
+        # Process all pending comments as a batch
+        success = self.handle_pr_comments_batch(pr_num, repo_name, repo, pending_comments, data)
+
+        if success:
+            # Mark all processed comments as done
+            for comment in pending_comments:
+                comment_id = str(comment.get('id'))
+                self.processed_comments[comment_id] = datetime.utcnow().isoformat() + 'Z'
+            print(f"  ✓ Marked {len(pending_comments)} comment(s) as processed")
+        else:
+            print(f"  ⚠ Failed to process comments - will retry on next run")
 
         self.save_state()
 
@@ -215,8 +241,66 @@ class CommentResponder:
         # Let Claude decide the appropriate action
         return True
 
-    def handle_comment(self, pr_num: int, repo_name: str, repo: str, comment: Dict, pr_data: Dict):
-        """Handle a comment by generating and posting a response."""
+    def handle_pr_comments_batch(self, pr_num: int, repo_name: str, repo: str, pending_comments: List[Dict], pr_data: Dict) -> bool:
+        """Handle all pending comments on a PR as a batch.
+
+        This processes all unprocessed comments chronologically, allowing Claude to:
+        - Respond to each comment appropriately
+        - Make code changes if needed
+        - Post multiple GitHub comments if appropriate
+
+        Returns:
+            True if all comments were successfully handled, False otherwise.
+        """
+        # Load full PR context
+        pr_context = self.load_pr_context(repo_name, pr_num)
+
+        # Load all comments for full thread context
+        all_comments = pr_data.get('comments', [])
+
+        # Check if this is a writable repo
+        writable = is_writable_repo(repo, self.config)
+
+        # Get PR info from GitHub
+        pr_info = self.get_pr_info(repo, pr_num)
+        if not pr_info:
+            print(f"  Could not get PR info for #{pr_num}")
+            return False
+
+        pr_state = pr_info.get('state', 'UNKNOWN')
+        pr_branch = pr_info.get('headRefName', '')
+        base_branch = pr_info.get('baseRefName', 'main')
+
+        # Find the repo directory
+        repo_dir = self.find_repo_dir(repo_name)
+
+        # Build the batch prompt for Claude
+        response = self.generate_batch_response(
+            pending_comments=pending_comments,
+            pr_context=pr_context,
+            all_comments=all_comments,
+            repo=repo,
+            pr_num=pr_num,
+            writable=writable,
+            repo_dir=repo_dir,
+            pr_branch=pr_branch,
+            base_branch=base_branch,
+            pr_state=pr_state
+        )
+
+        if not response:
+            print(f"  Failed to process comments on PR #{pr_num}")
+            return False
+
+        return True
+
+    def handle_comment(self, pr_num: int, repo_name: str, repo: str, comment: Dict, pr_data: Dict) -> bool:
+        """Handle a single comment (legacy method for backwards compatibility).
+
+        Returns:
+            True if the comment was successfully handled, False otherwise.
+            This is used to determine whether to mark the comment as processed.
+        """
         # Load full PR context
         pr_context = self.load_pr_context(repo_name, pr_num)
 
@@ -231,12 +315,184 @@ class CommentResponder:
 
         if not response:
             print(f"  Failed to generate response for comment {comment.get('id')}")
-            return
+            return False  # Don't mark as processed - will retry on next run
 
         if writable:
             self.handle_writable_repo(pr_num, repo_name, repo, comment, response)
         else:
             self.handle_readonly_repo(pr_num, repo_name, repo, comment, response)
+
+        return True
+
+    def generate_batch_response(
+        self,
+        pending_comments: List[Dict],
+        pr_context: Dict,
+        all_comments: List[Dict],
+        repo: str,
+        pr_num: int,
+        writable: bool,
+        repo_dir: Optional[Path],
+        pr_branch: str,
+        base_branch: str,
+        pr_state: str
+    ) -> bool:
+        """Generate batch response using Claude with full context.
+
+        Claude will process all pending comments and:
+        - Make code changes if needed
+        - Post GitHub comments for each response
+        - Handle the conversation naturally
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        # Build full comment history
+        comment_history = ""
+        for c in all_comments:
+            author = c.get('author', 'unknown')
+            body = c.get('body', '')
+            created = c.get('created_at', '')
+            comment_id = str(c.get('id', ''))
+
+            # Mark pending comments that need responses
+            is_pending = any(str(pc.get('id')) == comment_id for pc in pending_comments)
+            marker = " **[NEEDS RESPONSE]**" if is_pending else ""
+
+            comment_history += f"\n### {author} ({created}){marker}\n{body}\n"
+
+        # Build the prompt
+        prompt = f"""You are jib, an AI software engineering agent. You're responding to PR feedback on your own PR.
+
+## Context
+
+- **Repository**: {repo}
+- **PR**: #{pr_num}
+- **PR State**: {pr_state}
+- **PR Title**: {pr_context.get('title', 'Unknown')}
+- **PR URL**: {pr_context.get('url', 'Unknown')}
+- **PR Branch**: {pr_branch} → {base_branch}
+- **Access**: {"WRITE (can make changes and push)" if writable else "READ-ONLY"}
+- **Repo Directory**: {repo_dir if repo_dir else "Not found locally"}
+
+## PR Description
+
+{pr_context.get('pr_content', 'No description available')[:3000]}
+
+## Current Diff
+
+{pr_context.get('diff', 'No diff available')[:5000]}
+
+## Comment Thread (Chronological)
+
+{comment_history}
+
+## Comments Needing Response
+
+There are **{len(pending_comments)} comment(s)** marked with [NEEDS RESPONSE] above that you need to address.
+
+## Your Task
+
+Go through the pending comments **chronologically** and for each one:
+
+1. **Understand the feedback**: What is the reviewer asking for or pointing out?
+2. **Respond appropriately**:
+   - For questions: Answer based on PR context
+   - For requested changes: Implement them if you have write access
+   - For feedback: Acknowledge and update code if needed
+   - For approval (LGTM, etc.): Brief thank you
+3. **Make code changes** if requested (if writable and PR is OPEN):
+   - Read the relevant files
+   - Make the necessary edits
+   - Commit with a clear message: `git add -A && git commit -m "Address feedback: ..."`
+   - Push: `git push origin {pr_branch}`
+4. **Post GitHub comment(s)** for each response:
+   - Use: `gh pr comment {pr_num} --repo {repo} --body "Your response..."`
+   - Sign each comment with: `\\n\\n—\\nAuthored by jib`
+   - You may post one combined response or multiple separate comments as appropriate
+
+## Important Guidelines
+
+- Process comments in order (earliest first)
+- If multiple comments ask for the same thing, address them together
+- If a comment asks for changes you've already made, mention that in your response
+- If you make code changes, mention the commit in your response
+- Be professional, helpful, and concise
+- If you disagree with feedback, explain your reasoning respectfully
+- ALWAYS sign your comments with `\\n\\n—\\nAuthored by jib`
+
+## Example Response Flow
+
+For a comment asking to "add error handling to the function":
+1. Read the relevant file
+2. Edit to add error handling
+3. Commit: `git add -A && git commit -m "Add error handling per review feedback"`
+4. Push: `git push origin {pr_branch}`
+5. Comment: `gh pr comment {pr_num} --repo {repo} --body "Done! Added error handling...\\n\\n—\\nAuthored by jib"`
+
+Now process the pending comments and take the appropriate actions."""
+
+        try:
+            print(f"  Calling Claude to process {len(pending_comments)} comment(s)...")
+
+            # Change to repo directory if available
+            cwd = str(repo_dir) if repo_dir else str(Path.home() / "khan")
+
+            result = subprocess.run(
+                ['claude', '--dangerously-skip-permissions'],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minutes for complex PR work
+                cwd=cwd
+            )
+
+            if result.returncode != 0:
+                print(f"  Claude error (returncode={result.returncode}): {result.stderr}")
+                print(f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}")
+                return False
+
+            print(f"  Claude response length: {len(result.stdout)} chars")
+            print(f"  ✓ Claude processed {len(pending_comments)} comment(s)")
+
+            # Send Slack notification about the processed comments
+            self._notify_batch_processed(repo, pr_num, pending_comments)
+
+            return True
+
+        except subprocess.TimeoutExpired:
+            print(f"  Claude call timed out after 300 seconds")
+            return False
+        except Exception as e:
+            print(f"  Error calling Claude: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _notify_batch_processed(self, repo: str, pr_num: int, pending_comments: List[Dict]):
+        """Send Slack notification about processed PR comments."""
+        try:
+            comment_summary = "\n".join([
+                f"- {c.get('author', 'Unknown')}: {c.get('body', '')[:100]}..."
+                for c in pending_comments[:5]
+            ])
+            if len(pending_comments) > 5:
+                comment_summary += f"\n- ... and {len(pending_comments) - 5} more"
+
+            context = NotificationContext(
+                task_id=f"pr-comments-{repo.split('/')[-1]}-{pr_num}",
+                source="comment-responder",
+                repository=repo,
+                pr_number=pr_num,
+            )
+
+            self.slack.notify_info(
+                title=f"Processed {len(pending_comments)} PR Comment(s): #{pr_num}",
+                body=f"**Repository**: {repo}\n**PR**: #{pr_num}\n\n**Comments addressed:**\n{comment_summary}",
+                context=context,
+            )
+        except Exception as e:
+            print(f"  Warning: Failed to send Slack notification: {e}")
 
     def load_pr_context(self, repo_name: str, pr_num: int) -> Dict:
         """Load PR context from synced files."""
@@ -344,14 +600,16 @@ Return ONLY the JSON, no other text."""
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=300  # 5 minutes for complex PR discussions
             )
 
             if result.returncode != 0:
-                print(f"  Claude error: {result.stderr}")
+                print(f"  Claude error (returncode={result.returncode}): {result.stderr}")
+                print(f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}")
                 return None
 
             response_text = result.stdout.strip()
+            print(f"  Claude response length: {len(response_text)} chars")
 
             # Parse JSON from response
             try:
