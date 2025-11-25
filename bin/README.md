@@ -18,8 +18,8 @@ Convenient symlinks to commonly used commands.
 
 ## Note
 
-These are symlinks to the actual files in `components/` and `jib-container/`.
-The real files live with their components for better organization.
+These are symlinks to the actual files in `host-services/` and `jib-container/`.
+The real files live with their respective services for better organization.
 
 ## Service Management
 

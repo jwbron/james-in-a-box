@@ -11,7 +11,7 @@ The jib container provides a secure, isolated environment for the Claude agent t
 
 ## Components
 
-- **[context-watcher](components/context-watcher/README.md)** - Monitors `~/context-sync/` for document updates
+- **[context-watcher](watchers/context-watcher/README.md)** - Monitors `~/context-sync/` for document updates
 - **[.claude](.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 
 ## Directory Structure

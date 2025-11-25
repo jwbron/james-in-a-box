@@ -2,9 +2,11 @@
 
 For contributors and developers working on james-in-a-box.
 
-## Status
+## Available Guides
 
-This section is under development. Planned documentation:
+- **[Project Structure](STRUCTURE.md)** - Directory conventions, naming, adding new services
+
+## Planned Documentation
 
 - **Contributing Guide** - How to contribute
 - **Development Setup** - Setting up a dev environment

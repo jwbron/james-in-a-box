@@ -121,7 +121,7 @@ if __name__ == "__main__":
 ## Troubleshooting
 
 **"No tickets found"**:
-- Run JIRA sync first: `cd ~/khan/james-in-a-box/components/context-sync && make sync-jira`
+- Run JIRA sync first: `cd ~/khan/james-in-a-box/host-services/context-sync && make sync-jira`
 - Check `~/context-sync/jira/` for ticket files
 
 **"No tickets assigned to you"**:

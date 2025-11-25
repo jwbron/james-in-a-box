@@ -130,23 +130,23 @@ Container:
    - Skip interactive prompts
 
    <details>
-   <summary>Or set up components individually</summary>
+   <summary>Or set up host services individually</summary>
 
    ```bash
    # Slack notifier (Claude → You)
-   cd components/slack-notifier && ./setup.sh
+   cd host-services/slack-notifier && ./setup.sh
 
    # Slack receiver (You → Claude)
-   cd components/slack-receiver && ./setup.sh
+   cd host-services/slack-receiver && ./setup.sh
 
    # Conversation analyzer (optional)
-   cd components/conversation-analyzer && ./setup.sh
+   cd host-services/conversation-analyzer && ./setup.sh
 
    # Codebase analyzer (optional)
-   cd components/codebase-analyzer && ./setup.sh
+   cd host-services/codebase-analyzer && ./setup.sh
 
    # Service monitor (optional)
-   cd components/service-monitor && ./setup.sh
+   cd host-services/service-monitor && ./setup.sh
    ```
    </details>
 
@@ -179,19 +179,19 @@ The agent will receive your task, implement the code, and send you a notificatio
 
 All host components run as systemd user services for reliability and auto-restart:
 
-- **[slack-notifier](components/slack-notifier/README.md)** - Sends Claude's notifications to Slack (inotify-based, instant)
-- **[slack-receiver](components/slack-receiver/README.md)** - Receives your messages and responses from Slack (Socket Mode)
-- **[context-sync](components/context-sync/README.md)** - Syncs Confluence/JIRA to `~/context-sync/` (hourly)
-- **[github-sync](components/github-sync/README.md)** - Syncs PR data and check status to `~/context-sync/github/` (every 15 min)
-- **[worktree-watcher](components/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
-- **[codebase-analyzer](components/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
-- **[conversation-analyzer](components/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
-- **[service-monitor](components/service-monitor/README.md)** - Notifies on service failures
+- **[slack-notifier](host-services/slack-notifier/README.md)** - Sends Claude's notifications to Slack (inotify-based, instant)
+- **[slack-receiver](host-services/slack-receiver/README.md)** - Receives your messages and responses from Slack (Socket Mode)
+- **[context-sync](host-services/context-sync/README.md)** - Syncs Confluence/JIRA to `~/context-sync/` (hourly)
+- **[github-sync](host-services/github-sync/README.md)** - Syncs PR data and check status to `~/context-sync/github/` (every 15 min)
+- **[worktree-watcher](host-services/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
+- **[codebase-analyzer](host-services/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
+- **[conversation-analyzer](host-services/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
+- **[service-monitor](host-services/service-monitor/README.md)** - Notifies on service failures
 
 ### Container Components
 
-- **[context-watcher](jib-container/components/context-watcher/README.md)** - Monitors JIRA tickets and Confluence docs, analyzes changes, sends summaries and action items
-- **[github-watcher](jib-container/components/github-watcher/README.md)** - Monitors PR check failures, auto-fixes issues, provides on-demand code reviews, and suggests comment responses
+- **[context-watcher](jib-container/watchers/context-watcher/README.md)** - Monitors JIRA tickets and Confluence docs, analyzes changes, sends summaries and action items
+- **[github-watcher](jib-container/watchers/github-watcher/README.md)** - Monitors PR check failures, auto-fixes issues, provides on-demand code reviews, and suggests comment responses
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 - **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
 
@@ -505,14 +505,14 @@ docker logs -f jib-claude
 ### Component READMEs
 
 **Host Services:**
-- [slack-notifier](components/slack-notifier/README.md) - Outgoing notifications
-- [slack-receiver](components/slack-receiver/README.md) - Incoming messages
-- [codebase-analyzer](components/codebase-analyzer/README.md) - Code review automation
-- [conversation-analyzer](components/conversation-analyzer/README.md) - Quality analysis
-- [service-monitor](components/service-monitor/README.md) - Failure monitoring
+- [slack-notifier](host-services/slack-notifier/README.md) - Outgoing notifications
+- [slack-receiver](host-services/slack-receiver/README.md) - Incoming messages
+- [codebase-analyzer](host-services/codebase-analyzer/README.md) - Code review automation
+- [conversation-analyzer](host-services/conversation-analyzer/README.md) - Quality analysis
+- [service-monitor](host-services/service-monitor/README.md) - Failure monitoring
 
 **Container Components:**
-- [context-watcher](jib-container/components/context-watcher/README.md) - Document monitoring
+- [context-watcher](jib-container/watchers/context-watcher/README.md) - Document monitoring
 - [.claude rules](jib-container/.claude/rules/README.md) - Agent behavior and standards
 
 ### Guides
