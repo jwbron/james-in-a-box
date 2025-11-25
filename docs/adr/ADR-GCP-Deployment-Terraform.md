@@ -1176,13 +1176,20 @@ The specific configurations can evolve, but the core architecture (Cloud Run + T
 **Cons:** Complex IAM, harder cost tracking, more Terraform
 **Rejected:** Overkill for single-team project
 
+## Related ADRs
+
+This ADR is the culmination of a series defining the jib GCP deployment architecture:
+
+| ADR | Relationship to This ADR |
+|-----|-------------------------|
+| [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) | Defines Pub/Sub topics, slack-worker service, and Firestore collections deployed here |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Defines what jib-sync jobs execute and MCP configuration for Jira/GitHub |
+| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Defines slack-worker and slack-receiver service requirements |
+| [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Defines jib-bot service, Cloud Tasks queues, and slash command interface |
+
 ## References
 
 - [ADR #889: Terraform CI/CD Standards](https://khanacademy.atlassian.net/wiki/pages/viewpage.action?pageId=4385800306)
 - [terraform-modules/scheduled-job](https://github.com/Khan/terraform-modules/tree/main/terraform/modules/scheduled-job)
-- [ADR: Message Queue for Slack Integration](./ADR-Message-Queue-Slack-Integration.md)
-- [ADR: Context Sync Strategy](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md)
-- [ADR: Slack Integration Strategy](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md)
-- [ADR: Slack Bot for GCP](./ADR-Slack-Bot-GCP-Integration.md)
 - [Cloud Run Documentation](https://cloud.google.com/run/docs)
 - [Cloud Run Jobs Documentation](https://cloud.google.com/run/docs/create-jobs)
