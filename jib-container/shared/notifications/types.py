@@ -41,7 +41,7 @@ class NotificationContext:
 
     # Source context
     source: Optional[str] = None            # What component sent this (e.g., "comment-responder")
-    repository: Optional[str] = None        # GitHub repo (e.g., "jwbron/james-in-a-box")
+    repository: Optional[str] = None        # GitHub repo (e.g., "owner/repo-name")
     pr_number: Optional[int] = None         # PR number if applicable
     branch: Optional[str] = None            # Git branch if applicable
 

@@ -12,6 +12,12 @@
 # Access Levels:
 # - writable: jib can respond to comments, push changes, create PRs
 # - readable: jib can sync and analyze but not modify (future)
+#
+# IMPORTANT: Run `setup.sh` to configure these values interactively.
+# The github_username is used to construct repo names and set the default reviewer.
+
+# Your GitHub username (set by setup.sh)
+github_username: jwbron
 
 # Repositories where jib has WRITE access
 # These are repos where jib can:
@@ -22,7 +28,7 @@
 writable_repos:
   - jwbron/james-in-a-box
 
-# Default reviewer for PRs created by jib
+# Default reviewer for PRs created by jib (defaults to github_username)
 default_reviewer: jwbron
 
 # GitHub sync configuration

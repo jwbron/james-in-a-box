@@ -6,13 +6,21 @@ Provides programmatic access to repository configuration defined in repositories
 This is the single source of truth for which repos jib has access to.
 
 Usage:
-    from config.repo_config import get_writable_repos, is_writable_repo, get_default_reviewer
+    from config.repo_config import (
+        get_github_username,
+        get_writable_repos,
+        is_writable_repo,
+        get_default_reviewer
+    )
+
+    # Get configured GitHub username
+    username = get_github_username()
 
     # Get all writable repos
     repos = get_writable_repos()
 
     # Check if a specific repo is writable
-    if is_writable_repo("jwiesebron/james-in-a-box"):
+    if is_writable_repo(f"{username}/james-in-a-box"):
         # Can push changes, create PRs, etc.
         pass
 
@@ -63,6 +71,29 @@ def _load_config() -> dict:
         return yaml.safe_load(f)
 
 
+def get_github_username() -> str:
+    """
+    Get the configured GitHub username.
+
+    This is used to construct repo names and as the default reviewer.
+    Set via setup.sh or directly in repositories.yaml.
+
+    Returns:
+        GitHub username string
+
+    Raises:
+        ValueError: If github_username is not configured
+    """
+    config = _load_config()
+    username = config.get("github_username")
+    if not username:
+        raise ValueError(
+            "github_username not configured in repositories.yaml. "
+            "Run setup.sh to configure, or add 'github_username: your-username' to the config."
+        )
+    return username
+
+
 def get_writable_repos() -> List[str]:
     """
     Get list of repositories where jib has write access.
@@ -100,11 +131,17 @@ def get_default_reviewer() -> str:
     """
     Get the default reviewer for PRs created by jib.
 
+    Falls back to github_username if default_reviewer is not explicitly set.
+
     Returns:
         GitHub username of default reviewer
     """
     config = _load_config()
-    return config.get("default_reviewer", "jwiesebron")
+    reviewer = config.get("default_reviewer")
+    if reviewer:
+        return reviewer
+    # Fall back to github_username
+    return get_github_username()
 
 
 def get_sync_config() -> dict:
@@ -142,6 +179,8 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Query repository configuration")
+    parser.add_argument("--github-username", action="store_true",
+                        help="Print configured GitHub username")
     parser.add_argument("--list-writable", action="store_true",
                         help="List all writable repos (one per line)")
     parser.add_argument("--check-writable", metavar="REPO",
@@ -153,7 +192,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.list_writable:
+    if args.github_username:
+        print(get_github_username())
+    elif args.list_writable:
         for repo in get_writable_repos():
             print(repo)
     elif args.check_writable:
@@ -169,6 +210,7 @@ def main():
         print("Repository Configuration")
         print("=" * 40)
         print(f"Config file: {_get_config_path()}")
+        print(f"\nGitHub username: {get_github_username()}")
         print(f"\nWritable repos ({len(get_writable_repos())}):")
         for repo in get_writable_repos():
             print(f"  - {repo}")
