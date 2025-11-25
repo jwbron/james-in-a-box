@@ -23,11 +23,54 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+# Validate required dependencies at startup with clear error messages
+def _check_dependencies():
+    """Check required dependencies and provide clear error messages if missing."""
+    missing = []
+
+    try:
+        import yaml
+    except ImportError:
+        missing.append(("yaml", "pyyaml", "pip3 install pyyaml"))
+
+    try:
+        import requests
+    except ImportError:
+        missing.append(("requests", "requests", "pip3 install requests"))
+
+    if missing:
+        print("=" * 60, file=sys.stderr)
+        print("ERROR: Missing required Python dependencies", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        for module, package, install_cmd in missing:
+            print(f"  Module '{module}' not found", file=sys.stderr)
+            print(f"    Install with: {install_cmd}", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        print("", file=sys.stderr)
+        print("To fix: Add these to the Dockerfile:", file=sys.stderr)
+        print("  RUN pip3 install --no-cache-dir pyyaml requests", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("Or rebuild the container after fixing.", file=sys.stderr)
+        sys.exit(1)
+
+_check_dependencies()
+
 import yaml
 
 # Add shared directory to path for notifications import
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
-from notifications import get_slack_service, NotificationContext, NotificationType
+try:
+    from notifications import get_slack_service, NotificationContext, NotificationType
+except ImportError as e:
+    print("=" * 60, file=sys.stderr)
+    print("ERROR: Cannot import notifications library", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    print(f"  Import error: {e}", file=sys.stderr)
+    print(f"  Expected path: {Path(__file__).parent.parent.parent / 'shared'}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("This usually means the shared/notifications module is missing.", file=sys.stderr)
+    print("Check that jib-container/shared/notifications/ exists.", file=sys.stderr)
+    sys.exit(1)
 
 logger = logging.getLogger(__name__)
 
@@ -718,15 +761,41 @@ Authored by jib"""
 
 def main():
     """Main entry point."""
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s] %(levelname)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    print("=" * 60)
+    print("Comment Responder - Starting")
+    print("=" * 60)
 
     try:
         responder = CommentResponder()
         responder.watch()
+        print("=" * 60)
+        print("Comment Responder - Completed successfully")
+        print("=" * 60)
+    except RuntimeError as e:
+        # Expected errors (e.g., missing claude CLI)
+        print("=" * 60, file=sys.stderr)
+        print(f"ERROR: {e}", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print(f"Error: {e}")
+        # Unexpected errors
+        print("=" * 60, file=sys.stderr)
+        print(f"UNEXPECTED ERROR: {e}", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
         import traceback
         traceback.print_exc()
+        print("=" * 60, file=sys.stderr)
+        print("If this persists, check:", file=sys.stderr)
+        print("  1. GitHub authentication: gh auth status", file=sys.stderr)
+        print("  2. Context sync directory: ~/context-sync/github/", file=sys.stderr)
+        print("  3. Claude CLI: claude --version", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
         sys.exit(1)
 
 

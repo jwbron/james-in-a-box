@@ -16,7 +16,18 @@ from typing import Dict, List, Optional, Tuple
 
 # Add shared directory to path for notifications import
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
-from notifications import get_slack_service, NotificationContext
+try:
+    from notifications import get_slack_service, NotificationContext
+except ImportError as e:
+    print("=" * 60, file=sys.stderr)
+    print("ERROR: Cannot import notifications library", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    print(f"  Import error: {e}", file=sys.stderr)
+    print(f"  Expected path: {Path(__file__).parent.parent.parent / 'shared'}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("This usually means the shared/notifications module is missing.", file=sys.stderr)
+    print("Check that jib-container/shared/notifications/ exists.", file=sys.stderr)
+    sys.exit(1)
 
 
 class PRReviewer:
@@ -596,7 +607,6 @@ class PRReviewer:
 
 def main():
     """Main entry point for PR review"""
-    import sys
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate code reviews for GitHub PRs")
@@ -607,20 +617,45 @@ def main():
 
     args = parser.parse_args()
 
-    reviewer = PRReviewer()
+    print("=" * 60)
+    print("PR Reviewer - Starting")
+    print("=" * 60)
 
-    if args.watch:
-        # Watch mode: scan for new PRs to review
-        reviewer.watch()
+    try:
+        reviewer = PRReviewer()
+
+        if args.watch:
+            # Watch mode: scan for new PRs to review
+            reviewer.watch()
+        elif args.pr_number:
+            # Direct PR review
+            success = reviewer.review_pr(args.pr_number, args.repo_name)
+            if not success:
+                print("=" * 60, file=sys.stderr)
+                print(f"ERROR: Failed to review PR #{args.pr_number}", file=sys.stderr)
+                print("=" * 60, file=sys.stderr)
+                sys.exit(1)
+        else:
+            # Default: run in watch mode
+            reviewer.watch()
+
+        print("=" * 60)
+        print("PR Reviewer - Completed successfully")
+        print("=" * 60)
         sys.exit(0)
-    elif args.pr_number:
-        # Direct PR review
-        success = reviewer.review_pr(args.pr_number, args.repo_name)
-        sys.exit(0 if success else 1)
-    else:
-        # Default: run in watch mode
-        reviewer.watch()
-        sys.exit(0)
+
+    except Exception as e:
+        print("=" * 60, file=sys.stderr)
+        print(f"ERROR: {e}", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        print("=" * 60, file=sys.stderr)
+        print("If this persists, check:", file=sys.stderr)
+        print("  1. GitHub authentication: gh auth status", file=sys.stderr)
+        print("  2. Context sync directory: ~/context-sync/github/prs/", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
