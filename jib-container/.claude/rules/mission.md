@@ -77,11 +77,28 @@ For non-writable repos: commit and notify user with branch name.
 
 ### 6.5. PR Lifecycle (IMPORTANT)
 
+**BEFORE updating any PR, check its status:**
+```bash
+gh pr view <PR_NUMBER> --json state --jq '.state'
+# OPEN = can push updates
+# MERGED/CLOSED = create NEW PR instead
+```
+
 **When asked to update an existing PR:**
-1. Check out that PR's branch: `gh pr checkout <PR_NUMBER>`
-2. Make changes and commit to that branch
-3. Push to update the existing PR
-4. Do NOT create a new PR for the same work
+1. **First**: Check PR is still OPEN (see above)
+2. Check out that PR's branch: `gh pr checkout <PR_NUMBER>`
+3. Make changes and commit to that branch
+4. Push to update the existing PR
+5. Do NOT create a new PR for the same work
+
+**PR approval vs feedback - know the difference:**
+- **Approved**: GitHub review status, check with `gh pr view <PR> --json reviewDecision`
+- **NOT approval**: Positive comments like "Looking good", "Go ahead", "LGTM"
+- Comments are feedback/direction, not formal approval
+```bash
+gh pr view 26 --json reviewDecision --jq '.reviewDecision'
+# APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
+```
 
 **PR ownership rules:**
 - **Continue existing PRs**: If feedback requests changes on PR #X, update PR #X
@@ -94,10 +111,11 @@ For non-writable repos: commit and notify user with branch name.
 **Example - updating an existing PR:**
 ```bash
 # Human says: "Please add error handling to PR #26"
-gh pr checkout 26                    # Switch to PR's branch
+gh pr view 26 --json state --jq '.state'  # MUST be OPEN!
+gh pr checkout 26                          # Switch to PR's branch
 # Make changes...
 git add -A && git commit -m "Add error handling"
-git push                             # Updates PR #26
+git push                                   # Updates PR #26
 ```
 
 **Example - closing superseded PR:**
