@@ -13,7 +13,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 mkdir -p "$SYSTEMD_DIR"
 
 # Make sync script executable
-chmod +x "$COMPONENT_DIR/sync.py"
+chmod +x "$COMPONENT_DIR/github-sync.py"
 echo "✓ Sync script made executable"
 
 # Symlink service and timer files

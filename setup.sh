@@ -165,6 +165,7 @@ fi
 
 if [ "$UPDATE_MODE" = true ]; then
     echo "This will:"
+    echo "  • Clean up any broken symlinks in systemd user directory"
     echo "  • Re-symlink all service files (pick up changes)"
     echo "  • Reload systemd daemon"
     echo "  • Restart all jib services"
@@ -272,34 +273,116 @@ if [ "$UPDATE_MODE" = false ]; then
     fi
 fi
 
+# Clean up broken symlinks in update mode
+if [ "$UPDATE_MODE" = true ]; then
+    print_info "Cleaning up broken symlinks in systemd user directory..."
+
+    systemd_dir="$HOME/.config/systemd/user"
+    broken_count=0
+
+    # Find and remove broken symlinks
+    while IFS= read -r -d '' symlink; do
+        if [ ! -e "$symlink" ]; then
+            service_name=$(basename "$symlink")
+            # Only remove jib-related services (safety check)
+            if [[ "$service_name" =~ (slack|github|context|codebase|conversation|worktree|service-monitor) ]]; then
+                print_info "Removing broken symlink: $service_name"
+                rm -f "$symlink"
+                ((broken_count++))
+            fi
+        fi
+    done < <(find "$systemd_dir" -maxdepth 1 -type l -print0 2>/dev/null)
+
+    if [ $broken_count -gt 0 ]; then
+        print_success "Removed $broken_count broken symlink(s)"
+    else
+        print_success "No broken symlinks found"
+    fi
+
+    echo ""
+fi
+
 # Setup components
 print_header "Setting Up Components"
 
-components=(
-    "slack-notifier:Slack Notifier (Claude → You)"
-    "slack-receiver:Slack Receiver (You → Claude)"
-    "context-sync:Context Sync (Confluence, JIRA → Local)"
-    "github-sync:GitHub Sync (PR data → Local)"
-    "service-monitor:Service Failure Monitor"
-    "worktree-watcher:Worktree Watcher (cleanup orphaned worktrees)"
-    "codebase-analyzer:Codebase Analyzer (weekly)"
-    "conversation-analyzer:Conversation Analyzer (daily)"
+# Component descriptions for pretty output
+declare -A component_descriptions=(
+    ["slack-notifier"]="Slack Notifier (Claude → You)"
+    ["slack-receiver"]="Slack Receiver (You → Claude)"
+    ["context-sync"]="Context Sync (Confluence, JIRA → Local)"
+    ["github-sync"]="GitHub Sync (PR data → Local)"
+    ["service-monitor"]="Service Failure Monitor"
+    ["worktree-watcher"]="Worktree Watcher (cleanup orphaned worktrees)"
+    ["codebase-analyzer"]="Codebase Analyzer (weekly)"
+    ["conversation-analyzer"]="Conversation Analyzer (daily)"
 )
 
-for component_info in "${components[@]}"; do
-    IFS=: read -r component description <<< "$component_info"
+# Desired installation order (optional components will be skipped if not found)
+component_order=(
+    "slack/slack-notifier"
+    "slack/slack-receiver"
+    "sync/context-sync"
+    "sync/github-sync"
+    "utilities/service-monitor"
+    "utilities/worktree-watcher"
+    "analysis/codebase-analyzer"
+    "analysis/conversation-analyzer"
+)
+
+# Find all setup scripts dynamically as a fallback
+# This ensures we catch any new components even if not in the order list
+mapfile -t all_setup_scripts < <(find "$SCRIPT_DIR/host-services" -name "setup.sh" -type f | sort)
+
+# Process components in preferred order first
+for component_path in "${component_order[@]}"; do
+    component_name=$(basename "$component_path")
+    setup_script="$SCRIPT_DIR/host-services/$component_path/setup.sh"
+
+    if [ ! -f "$setup_script" ]; then
+        print_warning "Setup script not found (skipping): $component_path"
+        continue
+    fi
+
+    description="${component_descriptions[$component_name]:-$component_name}"
 
     echo ""
     print_info "Setting up: $description"
 
-    setup_script="$SCRIPT_DIR/host-services/$component/setup.sh"
+    component_dir=$(dirname "$setup_script")
+    cd "$component_dir"
 
-    if [ ! -f "$setup_script" ]; then
-        print_warning "Setup script not found: $setup_script"
+    if bash setup.sh; then
+        print_success "$description configured"
+    else
+        print_error "$description setup failed"
+        exit 1
+    fi
+done
+
+# Process any components not in the order list (newly added components)
+for setup_script in "${all_setup_scripts[@]}"; do
+    component_dir=$(dirname "$setup_script")
+    component_name=$(basename "$component_dir")
+
+    # Check if this component was already processed
+    already_processed=false
+    for ordered_path in "${component_order[@]}"; do
+        if [[ "$setup_script" == *"$ordered_path/setup.sh" ]]; then
+            already_processed=true
+            break
+        fi
+    done
+
+    if [ "$already_processed" = true ]; then
         continue
     fi
 
-    cd "$SCRIPT_DIR/host-services/$component"
+    description="${component_descriptions[$component_name]:-$component_name}"
+
+    echo ""
+    print_info "Setting up: $description (newly discovered)"
+
+    cd "$component_dir"
 
     if bash setup.sh; then
         print_success "$description configured"
