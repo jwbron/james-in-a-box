@@ -63,8 +63,9 @@ git commit -m "Brief description
 - Details
 - JIRA-1234
 
-🤖 Generated with Claude Code
-Co-Authored-By: jib <jib@khan.org>"
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
 
 create-pr-helper.py --auto
 ```
