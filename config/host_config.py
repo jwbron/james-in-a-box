@@ -5,13 +5,11 @@ Unified Host Configuration Loader for james-in-a-box (jib)
 Consolidates all host-side configuration under ~/.config/jib/
 
 Configuration Locations:
-- ~/.config/jib/config.yaml       - Main settings (non-secret)
-- ~/.config/jib/secrets.env       - All secrets (Slack, GitHub, Confluence, JIRA tokens)
-- ~/.config/jib/github-token      - GitHub token
-- ~/.config/jib/repositories.yaml - Repository access configuration (synced from repo)
+- ~/.config/jib/config.yaml      - Main settings (non-secret)
+- ~/.config/jib/secrets.env      - All secrets (Slack, GitHub, Confluence, JIRA tokens)
+- ~/.config/jib/github-token     - GitHub token (legacy, still supported)
 
-Migration:
-Run `python3 config/host_config.py --migrate` to migrate from legacy locations:
+Legacy Locations (auto-migrated):
 - ~/.config/jib-notifier/config.json  -> ~/.config/jib/config.yaml + secrets.env
 - ~/.config/context-sync/.env         -> ~/.config/jib/secrets.env
 
@@ -23,11 +21,11 @@ Usage:
     slack_channel = config.get('slack_channel')
 """
 
+import os
 import json
 import logging
-import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Optional, Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +33,22 @@ logger = logging.getLogger(__name__)
 class HostConfig:
     """Unified configuration loader for jib host services."""
 
-    # Consolidated configuration location
+    # New consolidated location
     JIB_CONFIG_DIR = Path.home() / '.config' / 'jib'
     CONFIG_FILE = JIB_CONFIG_DIR / 'config.yaml'
     SECRETS_FILE = JIB_CONFIG_DIR / 'secrets.env'
     GITHUB_TOKEN_FILE = JIB_CONFIG_DIR / 'github-token'
-    REPOS_FILE = JIB_CONFIG_DIR / 'repositories.yaml'
 
-    # Legacy locations (for migration only, not runtime fallback)
+    # Legacy locations for backwards compatibility
     LEGACY_NOTIFIER_DIR = Path.home() / '.config' / 'jib-notifier'
     LEGACY_NOTIFIER_CONFIG = LEGACY_NOTIFIER_DIR / 'config.json'
     LEGACY_CONTEXT_SYNC_ENV = Path.home() / '.config' / 'context-sync' / '.env'
 
-    def __init__(self):
+    def __init__(self, auto_migrate: bool = True):
         """Initialize configuration loader.
 
-        Configuration is loaded only from ~/.config/jib/.
-        Run --migrate to migrate from legacy locations.
+        Args:
+            auto_migrate: If True, automatically migrate legacy configs
         """
         self._config: Dict[str, Any] = {}
         self._secrets: Dict[str, str] = {}
@@ -60,12 +57,16 @@ class HostConfig:
         self.JIB_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         os.chmod(self.JIB_CONFIG_DIR, 0o700)
 
+        # Check if migration is needed
+        if auto_migrate and self._needs_migration():
+            self._migrate_legacy_configs()
+
         # Load configuration
         self._load_config()
         self._load_secrets()
 
     def _needs_migration(self) -> bool:
-        """Check if legacy configs exist and could be migrated."""
+        """Check if legacy configs exist and need migration."""
         # If new config files exist, assume already migrated
         if self.SECRETS_FILE.exists():
             return False
@@ -137,7 +138,7 @@ class HostConfig:
             self._write_config_file(config)
             logger.info(f"Created {self.CONFIG_FILE}")
 
-        logger.info("Migration complete. You can now remove legacy config files.")
+        logger.info("Migration complete. Legacy configs preserved for rollback.")
 
     def _write_secrets_file(self, secrets: Dict[str, str]):
         """Write secrets to .env file with secure permissions."""
@@ -196,7 +197,7 @@ class HostConfig:
             logger.warning(f"PyYAML not available, wrote {config_json} instead")
 
     def _load_config(self):
-        """Load non-secret configuration from ~/.config/jib/config.yaml."""
+        """Load non-secret configuration."""
         # Try YAML first
         if self.CONFIG_FILE.exists():
             try:
@@ -207,14 +208,25 @@ class HostConfig:
             except ImportError:
                 pass
 
-        # Fall back to JSON (config.json in same directory)
+        # Fall back to JSON
         config_json = self.JIB_CONFIG_DIR / 'config.json'
         if config_json.exists():
             with open(config_json) as f:
                 self._config = json.load(f)
+            return
+
+        # Fall back to legacy notifier config (read-only)
+        if self.LEGACY_NOTIFIER_CONFIG.exists():
+            with open(self.LEGACY_NOTIFIER_CONFIG) as f:
+                legacy = json.load(f)
+            # Filter out secrets
+            self._config = {
+                k: v for k, v in legacy.items()
+                if k not in ('slack_token', 'slack_app_token')
+            }
 
     def _load_secrets(self):
-        """Load secrets from ~/.config/jib/secrets.env and environment."""
+        """Load secrets from environment and files."""
         # Load from secrets.env
         if self.SECRETS_FILE.exists():
             with open(self.SECRETS_FILE) as f:
@@ -227,7 +239,31 @@ class HostConfig:
                         if value:
                             self._secrets[key] = value
 
-        # Load GitHub token from dedicated file
+        # Legacy: Load from context-sync .env
+        if self.LEGACY_CONTEXT_SYNC_ENV.exists():
+            with open(self.LEGACY_CONTEXT_SYNC_ENV) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip().strip('"\'')
+                        if value and key not in self._secrets:
+                            self._secrets[key] = value
+
+        # Legacy: Load from jib-notifier config.json
+        if self.LEGACY_NOTIFIER_CONFIG.exists():
+            try:
+                with open(self.LEGACY_NOTIFIER_CONFIG) as f:
+                    notifier = json.load(f)
+                if 'slack_token' not in self._secrets and notifier.get('slack_token'):
+                    self._secrets['SLACK_TOKEN'] = notifier['slack_token']
+                if 'slack_app_token' not in self._secrets and notifier.get('slack_app_token'):
+                    self._secrets['SLACK_APP_TOKEN'] = notifier['slack_app_token']
+            except Exception:
+                pass
+
+        # Load GitHub token
         if self.GITHUB_TOKEN_FILE.exists():
             with open(self.GITHUB_TOKEN_FILE) as f:
                 token = f.read().strip()
@@ -294,19 +330,16 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='jib host configuration utility')
-    parser.add_argument('--list', action='store_true',
-                        help='List all config (no secrets)')
-    parser.add_argument('--list-secrets', action='store_true',
-                        help='List secret keys (values hidden)')
-    parser.add_argument('--migrate', action='store_true',
-                        help='Migrate from legacy config locations')
+    parser.add_argument('--list', action='store_true', help='List all config (no secrets)')
+    parser.add_argument('--list-secrets', action='store_true', help='List secret keys (values hidden)')
+    parser.add_argument('--migrate', action='store_true', help='Force migration from legacy configs')
     parser.add_argument('--get', metavar='KEY', help='Get a config value')
     parser.add_argument('--get-secret', metavar='KEY', help='Get a secret value')
 
     args = parser.parse_args()
 
     if args.migrate:
-        config = HostConfig()
+        config = HostConfig(auto_migrate=False)
         config._migrate_legacy_configs()
         print("Migration complete.")
     elif args.list:
@@ -331,12 +364,8 @@ if __name__ == '__main__':
         print("jib Host Configuration")
         print("=" * 40)
         print(f"Config directory: {HostConfig.JIB_CONFIG_DIR}")
-        print(f"Config file: {HostConfig.CONFIG_FILE} "
-              f"{'(exists)' if HostConfig.CONFIG_FILE.exists() else '(not found)'}")
-        print(f"Secrets file: {HostConfig.SECRETS_FILE} "
-              f"{'(exists)' if HostConfig.SECRETS_FILE.exists() else '(not found)'}")
-        print(f"Repos file: {HostConfig.REPOS_FILE} "
-              f"{'(exists)' if HostConfig.REPOS_FILE.exists() else '(not found)'}")
+        print(f"Config file: {HostConfig.CONFIG_FILE} {'(exists)' if HostConfig.CONFIG_FILE.exists() else '(not found)'}")
+        print(f"Secrets file: {HostConfig.SECRETS_FILE} {'(exists)' if HostConfig.SECRETS_FILE.exists() else '(not found)'}")
         print()
         print("Loaded secrets:")
         for k in config.get_all_secrets().keys():
