@@ -25,6 +25,10 @@ from typing import Dict, List, Optional, Tuple
 
 import yaml
 
+# Add shared directory to path for notifications import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+from notifications import get_slack_service, NotificationContext, NotificationType
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,11 +58,13 @@ class CommentResponder:
         self.github_dir = Path.home() / "context-sync" / "github"
         self.comments_dir = self.github_dir / "comments"
         self.prs_dir = self.github_dir / "prs"
-        self.notifications_dir = Path.home() / "sharing" / "notifications"
         self.khan_dir = Path.home() / "khan"
 
         # Load config
         self.config = load_config()
+
+        # Initialize notification service
+        self.slack = get_slack_service()
 
         # Track which comments have been processed
         self.state_file = Path.home() / "sharing" / "tracking" / "comment-responder-state.json"
@@ -395,14 +401,14 @@ Return ONLY the JSON, no other text."""
         # Send Slack notification about actions taken
         pushed_branch = result_info.get('branch') if result_info else None
         new_pr_url = result_info.get('new_pr_url') if result_info else None
-        self.notify_github_action(
-            pr_num=pr_num,
+        self.slack.notify_pr_comment(
+            pr_number=pr_num,
             repo=repo,
             comment_author=comment.get('author', 'Unknown'),
             comment_body=comment.get('body', ''),
             response_text=response_text,
             pushed_branch=pushed_branch,
-            new_pr_url=new_pr_url
+            new_pr_url=new_pr_url,
         )
 
     def handle_readonly_repo(self, pr_num: int, repo_name: str, repo: str, comment: Dict, response: Dict):
@@ -412,8 +418,57 @@ Return ONLY the JSON, no other text."""
         change_desc = response.get('code_change_description', '')
         reasoning = response.get('reasoning', '')
 
-        # Create notification
-        self.create_notification(pr_num, repo_name, repo, comment, response_text, needs_changes, change_desc, reasoning)
+        # Build notification body for read-only repo
+        comment_author = comment.get('author', 'Reviewer')
+        comment_body = comment.get('body', '')
+
+        body = f"""**Repository**: {repo} (read-only - manual action required)
+**PR**: #{pr_num}
+**Comment Author**: {comment_author}
+
+## Original Comment
+
+{comment_body}
+
+## Suggested Response
+
+```
+{response_text}
+```
+
+## Analysis
+
+**Reasoning**: {reasoning}"""
+
+        if needs_changes:
+            body += f"""
+
+## Code Changes Needed
+
+{change_desc}
+
+**Note**: This is a read-only repository. Please make these changes manually or grant jib write access."""
+
+        body += """
+
+## Actions Required
+
+1. Review the suggested response above
+2. Post the response to the PR manually, or
+3. Grant jib write access to this repository"""
+
+        context = NotificationContext(
+            task_id=f"readonly-pr-{repo_name}-{pr_num}",
+            source="comment-responder",
+            repository=repo,
+            pr_number=pr_num,
+        )
+
+        self.slack.notify_action_required(
+            title=f"PR Comment Response Ready: #{pr_num}",
+            body=body,
+            context=context,
+        )
 
         print(f"  ✓ Created notification for PR #{pr_num} (read-only repo)")
 
@@ -659,123 +714,6 @@ Authored by jib"""
         except Exception as e:
             print(f"  Error posting comment: {e}")
 
-    def create_notification(
-        self,
-        pr_num: int,
-        repo_name: str,
-        repo: str,
-        comment: Dict,
-        response_text: str,
-        needs_changes: bool,
-        change_desc: str,
-        reasoning: str
-    ):
-        """Create notification for read-only repos."""
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notif_file = self.notifications_dir / f"{timestamp}-comment-response-{pr_num}.md"
-
-        self.notifications_dir.mkdir(parents=True, exist_ok=True)
-
-        comment_author = comment.get('author', 'Reviewer')
-        comment_body = comment.get('body', '')
-
-        content = f"""# 💬 PR Comment Response Ready: #{pr_num}
-
-**Repository**: {repo} (read-only - manual action required)
-**PR**: #{pr_num}
-**Comment Author**: {comment_author}
-
-## Original Comment
-
-{comment_body}
-
-## Suggested Response
-
-```
-{response_text}
-```
-
-## Analysis
-
-**Reasoning**: {reasoning}
-"""
-
-        if needs_changes:
-            content += f"""
-## Code Changes Needed
-
-{change_desc}
-
-**Note**: This is a read-only repository. Please make these changes manually or grant jib write access.
-"""
-
-        content += f"""
-## Actions Required
-
-1. Review the suggested response above
-2. Post the response to the PR manually, or
-3. Grant jib write access to this repository
-
----
-📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-"""
-
-        notif_file.write_text(content)
-        print(f"  Created notification: {notif_file.name}")
-
-    def notify_github_action(
-        self,
-        pr_num: int,
-        repo: str,
-        comment_author: str,
-        comment_body: str,
-        response_text: str,
-        pushed_branch: Optional[str] = None,
-        new_pr_url: Optional[str] = None
-    ):
-        """Create Slack notification for GitHub actions taken (comment, push, PR creation)."""
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notif_file = self.notifications_dir / f"{timestamp}-github-action-pr{pr_num}.md"
-        self.notifications_dir.mkdir(parents=True, exist_ok=True)
-
-        # Build action summary
-        actions_taken = []
-        if response_text:
-            actions_taken.append("Posted comment on PR")
-        if pushed_branch:
-            actions_taken.append(f"Pushed code changes to branch `{pushed_branch}`")
-        if new_pr_url:
-            actions_taken.append(f"Created new PR: {new_pr_url}")
-
-        actions_summary = "\n".join(f"- {a}" for a in actions_taken) if actions_taken else "- No actions taken"
-
-        # Truncate long text for readability
-        comment_preview = comment_body[:300] + "..." if len(comment_body) > 300 else comment_body
-        response_preview = response_text[:500] + "..." if len(response_text) > 500 else response_text
-
-        content = f"""# GitHub Action Taken: PR #{pr_num}
-
-**Repository**: {repo}
-**Triggered by**: Comment from {comment_author}
-
-## Actions Taken
-
-{actions_summary}
-
-## Original Comment
-
-> {comment_preview}
-
-## Response Posted
-
-{response_preview}
-
----
-Generated by jib comment-responder
-"""
-
-        notif_file.write_text(content)
-        print(f"  Created action notification: {notif_file.name}")
 
 
 def main():

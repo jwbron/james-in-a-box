@@ -9,17 +9,24 @@ covering code quality, security, performance, and best practices.
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+
+# Add shared directory to path for notifications import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+from notifications import get_slack_service, NotificationContext
 
 
 class PRReviewer:
     def __init__(self):
         self.github_dir = Path.home() / "context-sync" / "github"
         self.prs_dir = self.github_dir / "prs"
-        self.notifications_dir = Path.home() / "sharing" / "notifications"
         self.beads_dir = Path.home() / "beads"
+
+        # Initialize notification service
+        self.slack = get_slack_service()
 
         # Track which PRs have been reviewed
         self.state_file = Path.home() / "sharing" / "tracking" / "pr-reviewer-state.json"
@@ -494,112 +501,97 @@ class PRReviewer:
 
     def create_review_notification(self, pr_num: int, repo_name: str, pr_context: Dict,
                                    review: Dict, beads_id: Optional[str]):
-        """Create notification file with review results"""
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        notif_file = self.notifications_dir / f"{timestamp}-pr-review-{pr_num}.md"
+        """Send notification with review results via notifications service."""
+        # Build the review body
+        body_parts = []
 
-        with notif_file.open('w') as f:
-            f.write(f"# 📝 PR Review: #{pr_num}\n\n")
-            f.write(f"**PR**: {pr_context['title']}\n")
-            f.write(f"**Repository**: {repo_name}\n")
-            f.write(f"**URL**: {pr_context.get('url', 'N/A')}\n")
-            f.write(f"**Branch**: {pr_context.get('branch', 'N/A')}\n")
-            f.write(f"**Changes**: +{pr_context.get('additions', 0)} -{pr_context.get('deletions', 0)}\n")
-            if beads_id:
-                f.write(f"**Beads Task**: {beads_id}\n")
-            f.write("\n")
+        # Header info
+        body_parts.append(f"**PR**: {pr_context['title']}")
+        body_parts.append(f"**Repository**: {repo_name}")
+        body_parts.append(f"**URL**: {pr_context.get('url', 'N/A')}")
+        body_parts.append(f"**Branch**: {pr_context.get('branch', 'N/A')}")
+        body_parts.append(f"**Changes**: +{pr_context.get('additions', 0)} -{pr_context.get('deletions', 0)}")
+        if beads_id:
+            body_parts.append(f"**Beads Task**: {beads_id}")
+        body_parts.append("")
 
-            # Overall assessment
-            f.write("## 📊 Overall Assessment\n\n")
-            f.write(f"{review['overall_assessment']}\n\n")
+        # Overall assessment
+        body_parts.append("## Overall Assessment")
+        body_parts.append(f"{review['overall_assessment']}")
+        body_parts.append("")
 
-            # Positive notes
-            if review['positive_notes']:
-                f.write("### ✅ Positive Notes\n\n")
-                for note in review['positive_notes']:
-                    f.write(f"- {note}\n")
-                f.write("\n")
+        # Positive notes
+        if review['positive_notes']:
+            body_parts.append("### Positive Notes")
+            for note in review['positive_notes']:
+                body_parts.append(f"- {note}")
+            body_parts.append("")
 
-            # Security issues
+        # Security issues
+        if review['security_issues']:
+            body_parts.append("## Security Concerns")
+            for issue in review['security_issues']:
+                body_parts.append(f"**{issue['file']}**: {issue['concern']}")
+            body_parts.append("")
+
+        # Performance issues
+        if review['performance_issues']:
+            body_parts.append("## Performance Concerns")
+            for issue in review['performance_issues']:
+                body_parts.append(f"**{issue['file']}**: {issue['concern']}")
+            body_parts.append("")
+
+        # Testing gaps
+        if review['testing_gaps']:
+            body_parts.append("## Testing Gaps")
+            for gap in review['testing_gaps']:
+                body_parts.append(f"- {gap}")
+            body_parts.append("")
+
+        # Summary
+        total_issues = (len(review['security_issues']) +
+                       len(review['performance_issues']) +
+                       len(review['testing_gaps']))
+
+        body_parts.append("## Summary")
+        if total_issues == 0:
+            body_parts.append("No major issues found. Code looks good!")
+        else:
+            body_parts.append(f"Found {total_issues} area(s) that may need attention:")
             if review['security_issues']:
-                f.write("## 🔒 Security Concerns\n\n")
-                for issue in review['security_issues']:
-                    f.write(f"**{issue['file']}**\n")
-                    f.write(f"- ⚠️ {issue['concern']}\n\n")
-
-            # Performance issues
+                body_parts.append(f"- {len(review['security_issues'])} security concern(s)")
             if review['performance_issues']:
-                f.write("## ⚡ Performance Concerns\n\n")
-                for issue in review['performance_issues']:
-                    f.write(f"**{issue['file']}**\n")
-                    f.write(f"- {issue['concern']}\n\n")
-
-            # Testing gaps
+                body_parts.append(f"- {len(review['performance_issues'])} performance concern(s)")
             if review['testing_gaps']:
-                f.write("## 🧪 Testing Gaps\n\n")
-                for gap in review['testing_gaps']:
-                    f.write(f"- {gap}\n")
-                f.write("\n")
+                body_parts.append(f"- {len(review['testing_gaps'])} testing gap(s)")
 
-            # File-by-file review
-            if review['file_reviews']:
-                f.write("## 📁 File-by-File Review\n\n")
-                for file_review in review['file_reviews']:
-                    f.write(f"### `{file_review['path']}`\n\n")
+        body = "\n".join(body_parts)
 
-                    # Group comments by severity
-                    high_comments = [c for c in file_review['comments'] if c['severity'] == 'high']
-                    medium_comments = [c for c in file_review['comments'] if c['severity'] == 'medium']
-                    low_comments = [c for c in file_review['comments'] if c['severity'] == 'low']
+        # Create notification context for threading
+        context = NotificationContext(
+            task_id=f"pr-review-{repo_name}-{pr_num}",
+            source="pr-reviewer",
+            repository=repo_name,
+            pr_number=pr_num,
+        )
 
-                    if high_comments:
-                        f.write("**High Priority:**\n")
-                        for comment in high_comments:
-                            f.write(f"- 🔴 {comment['text']}\n")
-                        f.write("\n")
+        # Send notification via the service
+        if review['security_issues']:
+            # Use warning for security issues
+            self.slack.notify_warning(
+                title=f"PR Review: #{pr_num} (Security Concerns Found)",
+                body=body,
+                context=context,
+            )
+        else:
+            # Use default notify (INFO type) for clean reviews
+            self.slack.notify(
+                title=f"PR Review: #{pr_num}",
+                body=body,
+                context=context,
+            )
 
-                    if medium_comments:
-                        f.write("**Medium Priority:**\n")
-                        for comment in medium_comments:
-                            f.write(f"- 🟡 {comment['text']}\n")
-                        f.write("\n")
-
-                    if low_comments:
-                        f.write("**Low Priority:**\n")
-                        for comment in low_comments:
-                            f.write(f"- 🔵 {comment['text']}\n")
-                        f.write("\n")
-
-            # Summary
-            f.write("## 📋 Review Summary\n\n")
-
-            total_issues = (len(review['security_issues']) +
-                          len(review['performance_issues']) +
-                          len(review['testing_gaps']))
-
-            if total_issues == 0:
-                f.write("✅ No major issues found. Code looks good!\n\n")
-            else:
-                f.write(f"Found {total_issues} area(s) that may need attention:\n")
-                if review['security_issues']:
-                    f.write(f"- {len(review['security_issues'])} security concern(s)\n")
-                if review['performance_issues']:
-                    f.write(f"- {len(review['performance_issues'])} performance concern(s)\n")
-                if review['testing_gaps']:
-                    f.write(f"- {len(review['testing_gaps'])} testing gap(s)\n")
-                f.write("\n")
-
-            f.write("**Next Steps:**\n")
-            f.write("1. Address high-priority issues before merge\n")
-            f.write("2. Consider medium-priority suggestions for code quality\n")
-            f.write("3. Low-priority items can be addressed in follow-up PRs\n")
-            f.write("\n")
-
-            f.write("---\n")
-            f.write(f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"🤖 Generated by jib PR Reviewer\n")
-
-        print(f"  ✓ Created review notification: {notif_file.name}")
+        print(f"  ✓ Sent PR review notification for #{pr_num}")
 
 
 def main():
