@@ -358,11 +358,13 @@ def analyze_tickets():
 
 ### Phase 5: GCP Deployment Validation
 
-**Goal:** Ensure MCP works in Cloud Run environment
+**Goal:** Ensure MCP works in Cloud Run environment (see [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md))
 
 1. MCP servers work over network (no local file dependencies)
 2. OAuth token refresh works in stateless containers
 3. Confluence sync works with Cloud Storage mount
+4. Scheduled sync jobs (sync-confluence, sync-jira, sync-github) work via scheduled-job module
+5. Manual sync via `/sync` slash commands (see [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md))
 
 **Duration:** As part of broader Cloud Run migration
 
@@ -495,6 +497,17 @@ The decision to keep Confluence file-based is **low permanence** - we can migrat
 
 **Rejected because:** Adds significant complexity without enabling bi-directional operations.
 
+## Related ADRs
+
+This ADR is part of a series defining the jib GCP deployment architecture:
+
+| ADR | Relationship to This ADR |
+|-----|-------------------------|
+| [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) | Sync jobs use Pub/Sub to send notifications about sync status and errors |
+| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Parallel decision - MCP for Slack reading, similar hybrid approach |
+| [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Defines `/sync` slash commands that trigger sync operations |
+| [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Defines scheduled sync jobs (sync-confluence, sync-jira, sync-github) using scheduled-job module |
+
 ## References
 
 - [Model Context Protocol](https://modelcontextprotocol.io/)
@@ -502,4 +515,3 @@ The decision to keep Confluence file-based is **low permanence** - we can migrat
 - [GitHub MCP Server](https://github.com/github/github-mcp-server)
 - [Anthropic Reference Servers](https://github.com/modelcontextprotocol/servers)
 - [Atlassian MCP Announcement](https://www.atlassian.com/blog/announcements/remote-mcp-server)
-- [ADR: Message Queue for Slack Integration](./ADR-Message-Queue-Slack-Integration.md)
