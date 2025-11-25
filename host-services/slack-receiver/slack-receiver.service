@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/khan/james-in-a-box/components/slack-receiver/host-receive-slack.py
+ExecStart=%h/khan/james-in-a-box/host-services/slack-receiver/host-receive-slack.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

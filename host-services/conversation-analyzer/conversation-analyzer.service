@@ -9,7 +9,7 @@ OnFailure=service-failure-notify@%n.service
 Type=oneshot
 
 # Execute the conversation analyzer directly from the repo
-ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/components/conversation-analyzer/conversation-analyzer.py --days 7
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/conversation-analyzer/conversation-analyzer.py --days 7
 
 # Logging
 StandardOutput=journal
