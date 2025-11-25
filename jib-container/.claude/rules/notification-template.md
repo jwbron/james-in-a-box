@@ -2,6 +2,33 @@
 
 When you need to send an asynchronous notification to the human, use this template.
 
+## Thread Context (IMPORTANT)
+
+Notifications support YAML frontmatter for Slack threading. When you create a notification
+that should reply in an existing thread, include the `thread_ts` field:
+
+```markdown
+---
+task_id: "task-20251124-111907"
+thread_ts: "1732428847.123456"
+---
+# Your notification content...
+```
+
+**How threading works:**
+1. When you receive a task via Slack, the incoming message file contains `thread_ts` in its frontmatter
+2. When you create a response notification, include that same `thread_ts` in your notification's frontmatter
+3. The host notifier will parse this frontmatter and reply in the correct Slack thread
+
+**When to include thread_ts:**
+- When responding to a Slack task (the task file will have the thread_ts)
+- When creating follow-up messages to an existing conversation
+- When you want your notification to appear as a thread reply, not a new message
+
+**When NOT to include thread_ts:**
+- For new, standalone notifications (guidance requests, reports, etc.)
+- When you want to start a fresh conversation
+
 ## Notification Patterns
 
 There are two patterns for notifications:

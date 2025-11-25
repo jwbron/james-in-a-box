@@ -4,6 +4,10 @@ Host-Side Slack Notifier
 
 Monitors shared directories on the host machine and sends Slack DMs when changes are detected.
 Uses inotify on Linux to watch for file system events.
+
+Threading support:
+- Notification files can include YAML frontmatter with thread_ts to reply in existing threads
+- Thread mappings are stored in threads.json for persistence across restarts
 """
 
 import os
@@ -14,7 +18,7 @@ import logging
 import signal
 from pathlib import Path
 from datetime import datetime
-from typing import List, Set
+from typing import List, Set, Optional, Tuple
 import subprocess
 import re
 
@@ -187,6 +191,55 @@ class SlackNotifier:
         name = re.sub(r'^RESPONSE-', '', name)
         return name
 
+    def _parse_frontmatter(self, content: str) -> Tuple[dict, str]:
+        """Parse YAML frontmatter from notification content.
+
+        Notifications can include thread context in YAML frontmatter:
+        ---
+        thread_ts: "1732428847.123456"
+        task_id: "task-20251124-111907"
+        ---
+        # Notification content...
+
+        Args:
+            content: Full file content
+
+        Returns:
+            Tuple of (metadata dict, content without frontmatter)
+        """
+        metadata = {}
+
+        # Check for YAML frontmatter (starts with ---)
+        if not content.startswith('---'):
+            return metadata, content
+
+        # Find the closing ---
+        lines = content.split('\n')
+        end_idx = -1
+        for i, line in enumerate(lines[1:], start=1):  # Skip first ---
+            if line.strip() == '---':
+                end_idx = i
+                break
+
+        if end_idx == -1:
+            # No closing ---, treat as no frontmatter
+            return metadata, content
+
+        # Parse the frontmatter (simple key: value parsing)
+        frontmatter_lines = lines[1:end_idx]
+        for line in frontmatter_lines:
+            line = line.strip()
+            if ':' in line and not line.startswith('#'):
+                key, value = line.split(':', 1)
+                key = key.strip()
+                value = value.strip().strip('"\'')  # Remove quotes
+                if value:  # Only add non-empty values
+                    metadata[key] = value
+
+        # Return content without frontmatter
+        remaining_content = '\n'.join(lines[end_idx + 1:]).strip()
+        return metadata, remaining_content
+
     def _chunk_message(self, content: str, max_length: int = 3000) -> List[str]:
         """Split long messages into chunks that fit Slack's limits.
 
@@ -255,8 +308,10 @@ class SlackNotifier:
         """Send notification files to Slack with threading support.
 
         Reads each notification file and sends its full content.
-        - If this is a response to an existing task, replies in thread
-        - If this is a new notification, creates a new thread and stores thread_ts
+        Thread context is determined by (in order of priority):
+        1. YAML frontmatter thread_ts in the notification file
+        2. threads.json mapping based on task ID
+        3. New thread (if neither found)
         """
         if not changes:
             return True
@@ -273,9 +328,9 @@ class SlackNotifier:
             # Read file content
             try:
                 with open(path, 'r') as f:
-                    content = f.read().strip()
+                    raw_content = f.read().strip()
 
-                if not content:
+                if not raw_content:
                     self.logger.warning(f"Empty file: {path}")
                     continue
 
@@ -283,19 +338,31 @@ class SlackNotifier:
                 self.logger.error(f"Failed to read {path}: {e}")
                 continue
 
-            # Extract task ID to check for existing thread
-            task_id = self._extract_task_id(path.name)
+            # Parse frontmatter for thread context
+            frontmatter, content = self._parse_frontmatter(raw_content)
+            frontmatter_thread_ts = frontmatter.get('thread_ts')
+            frontmatter_task_id = frontmatter.get('task_id')
+
+            # Extract task ID from filename (fallback)
+            filename_task_id = self._extract_task_id(path.name)
+
+            # Use task_id from frontmatter if provided, otherwise use filename
+            task_id = frontmatter_task_id or filename_task_id
 
             # CRITICAL: Reload threads from disk before lookup
             # The receiver may have saved new thread mappings since we started
             # Without this, responses won't thread correctly with the original message
             self.threads = self._load_threads()
 
-            thread_ts = self.threads.get(task_id)
-            if thread_ts:
+            # Determine thread_ts: frontmatter takes priority, then threads.json
+            thread_ts = frontmatter_thread_ts or self.threads.get(task_id)
+
+            if frontmatter_thread_ts:
+                self.logger.info(f"Using thread_ts from frontmatter: {frontmatter_thread_ts}")
+            elif thread_ts:
                 self.logger.info(f"Found thread mapping: {task_id} → {thread_ts}")
             else:
-                self.logger.info(f"No thread mapping found for: {task_id}")
+                self.logger.info(f"No thread context found for: {task_id} (will create new thread)")
 
             # Split content into chunks if too long
             chunks = self._chunk_message(content)

@@ -352,7 +352,12 @@ class SlackReceiver:
         return chunks
 
     def _write_message(self, msg_type: str, content: str, metadata: Dict[str, Any]):
-        """Write incoming message to appropriate directory."""
+        """Write incoming message to appropriate directory.
+
+        IMPORTANT: Messages include YAML frontmatter with thread_ts for proper
+        threading when Claude responds. This ensures all related messages stay
+        in the same Slack thread.
+        """
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
 
         # Choose directory based on message type
@@ -372,13 +377,33 @@ class SlackReceiver:
         # Extract task ID for thread tracking
         task_id = filename.replace('.md', '')  # e.g., "task-20251124-112705"
 
-        # Build message document
+        # Build message document with YAML frontmatter for thread context
         doc_parts = []
+
+        # YAML frontmatter with thread context (CRITICAL for proper threading)
+        # This frontmatter is parsed by:
+        # 1. incoming-processor.py when creating response notifications
+        # 2. host-notify-slack.py when sending notifications back to Slack
+        thread_ts = metadata.get('thread_ts')
+        referenced_notification = metadata.get('referenced_notification')
+
+        doc_parts.append("---")
+        doc_parts.append(f"task_id: \"{task_id}\"")
+        if thread_ts:
+            doc_parts.append(f"thread_ts: \"{thread_ts}\"")
+        if referenced_notification:
+            doc_parts.append(f"referenced_notification: \"{referenced_notification}\"")
+        doc_parts.append(f"channel: \"{metadata.get('channel', '')}\"")
+        doc_parts.append(f"user_id: \"{metadata.get('user_id', '')}\"")
+        doc_parts.append(f"user_name: \"{metadata.get('user_name', '')}\"")
+        doc_parts.append(f"received: \"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\"")
+        doc_parts.append("---")
+        doc_parts.append("")
 
         if msg_type == 'response':
             doc_parts.append(f"# Response from {metadata.get('user_name', 'User')}")
-            if metadata.get('referenced_notification'):
-                doc_parts.append(f"\n**Re:** Notification `{metadata['referenced_notification']}`")
+            if referenced_notification:
+                doc_parts.append(f"\n**Re:** Notification `{referenced_notification}`")
         else:
             doc_parts.append(f"# New Task from {metadata.get('user_name', 'User')}")
 
@@ -386,9 +411,9 @@ class SlackReceiver:
         doc_parts.append(f"**User ID:** {metadata.get('user_id', 'unknown')}")
         doc_parts.append(f"**Channel:** {metadata.get('channel', 'unknown')}")
 
-        # Include thread_ts if present
-        if metadata.get('thread_ts'):
-            doc_parts.append(f"**Thread:** {metadata['thread_ts']}")
+        # Include thread_ts if present (also in body for visibility)
+        if thread_ts:
+            doc_parts.append(f"**Thread:** {thread_ts}")
 
         # Include full thread context if available
         if metadata.get('thread_context'):
