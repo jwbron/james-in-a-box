@@ -39,11 +39,11 @@ See [Slack App Setup](slack-app-setup.md) for detailed instructions. You'll need
 
 ```bash
 # Slack notifier (Claude → You)
-cd ~/khan/james-in-a-box/host-services/slack-notifier
+cd ~/khan/james-in-a-box/host-services/slack/slack-notifier
 ./setup.sh
 
 # Slack receiver (You → Claude)
-cd ~/khan/james-in-a-box/host-services/slack-receiver
+cd ~/khan/james-in-a-box/host-services/slack/slack-receiver
 ./setup.sh
 ```
 

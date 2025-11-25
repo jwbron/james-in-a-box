@@ -38,7 +38,7 @@ Each container gets a unique ID based on timestamp and process ID.
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/worktree-watcher
+cd ~/khan/james-in-a-box/host-services/utilities/worktree-watcher
 ./setup.sh
 ```
 
@@ -95,7 +95,7 @@ docker stop $(docker ps -q --filter "name=jib-")
 systemctl --user start worktree-watcher.service
 
 # Or run script directly
-~/khan/james-in-a-box/host-services/worktree-watcher/worktree-watcher.sh
+~/khan/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
 ```
 
 ## Troubleshooting
@@ -117,7 +117,7 @@ systemctl --user start worktree-watcher.timer
 
 Ensure script is executable:
 ```bash
-chmod +x ~/khan/james-in-a-box/host-services/worktree-watcher/worktree-watcher.sh
+chmod +x ~/khan/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
 ```
 
 ### View cleanup history

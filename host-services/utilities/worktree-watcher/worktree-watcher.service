@@ -1,11 +1,11 @@
 [Unit]
 Description=JIB Worktree Watcher - Clean up orphaned git worktrees
-Documentation=file:///home/jwies/khan/james-in-a-box/host-services/worktree-watcher/README.md
+Documentation=file://%h/khan/james-in-a-box/host-services/utilities/worktree-watcher/README.md
 After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/khan/james-in-a-box/host-services/worktree-watcher/worktree-watcher.sh
+ExecStart=%h/khan/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
 StandardOutput=journal
 StandardError=journal
 

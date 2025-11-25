@@ -54,7 +54,7 @@ Proactive analysis + Slack notifications
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/github-sync
+cd ~/khan/james-in-a-box/host-services/sync/github-sync
 ./setup.sh
 ```
 

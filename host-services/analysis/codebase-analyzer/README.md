@@ -9,7 +9,7 @@ Runs daily codebase analysis (Monday 11 AM PST) and sends reports via Slack.
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/codebase-analyzer
+cd ~/khan/james-in-a-box/host-services/analysis/codebase-analyzer
 ./setup.sh
 ```
 

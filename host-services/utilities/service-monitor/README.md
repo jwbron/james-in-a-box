@@ -9,7 +9,7 @@ Sends Slack notifications when jib services fail.
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/service-monitor
+cd ~/khan/james-in-a-box/host-services/utilities/service-monitor
 ./setup.sh
 ```
 

@@ -26,7 +26,7 @@ python3 conversation-analyzer.py --force
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/conversation-analyzer
+cd ~/khan/james-in-a-box/host-services/analysis/conversation-analyzer
 ./setup.sh
 ```
 
@@ -46,7 +46,7 @@ systemctl --user status conversation-analyzer.service
 systemctl --user start conversation-analyzer.service
 
 # Force run (ignores deduplication)
-python3 ~/khan/james-in-a-box/host-services/conversation-analyzer/conversation-analyzer.py --force
+python3 ~/khan/james-in-a-box/host-services/analysis/conversation-analyzer/conversation-analyzer.py --force
 
 # View logs
 journalctl --user -u conversation-analyzer.service -f

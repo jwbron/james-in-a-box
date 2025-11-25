@@ -9,12 +9,12 @@ OnFailure=service-failure-notify@%n.service
 Type=oneshot
 
 # Working directory
-WorkingDirectory=/home/jwies/khan/james-in-a-box/host-services/codebase-analyzer
+WorkingDirectory=%h/khan/james-in-a-box/host-services/analysis/codebase-analyzer
 
 # Execute the analyzer via jib --exec (runs in ephemeral container with Claude Code)
 # --implement: automatically fix issues and open a PR
 # --max-fixes 10: limit to top 10 highest-priority fixes
-ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/host-services/codebase-analyzer/codebase-analyzer.py --implement --max-fixes 10
+ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/host-services/analysis/codebase-analyzer/codebase-analyzer.py --implement --max-fixes 10
 
 # Logging
 StandardOutput=journal

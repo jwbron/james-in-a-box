@@ -224,7 +224,7 @@ pr_create() {
     log "Creating PR for repo: ${repo_name:-current}"
 
     # Execute create-pr.sh script
-    local create_pr_script="$SCRIPT_DIR/host-services/slack-receiver/create-pr.sh"
+    local create_pr_script="$SCRIPT_DIR/host-services/slack/slack-receiver/create-pr.sh"
 
     if [ ! -f "$create_pr_script" ]; then
         notify "❌ PR creation script not found: $create_pr_script"

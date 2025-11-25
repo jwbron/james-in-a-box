@@ -1,14 +1,14 @@
 [Unit]
 Description=GitHub PR Sync - Sync open PRs and check status
-Documentation=file://%h/khan/james-in-a-box/host-services/github-sync/README.md
+Documentation=file://%h/khan/james-in-a-box/host-services/sync/github-sync/README.md
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/khan/james-in-a-box/host-services/github-sync
+WorkingDirectory=%h/khan/james-in-a-box/host-services/sync/github-sync
 
 # Sync repos defined in config/repositories.yaml (the single source of truth)
 # Use --use-config to load repo list and sync settings from the config file
-ExecStart=%h/khan/james-in-a-box/host-services/github-sync/sync.py --use-config
+ExecStart=%h/khan/james-in-a-box/host-services/sync/github-sync/github-sync.py --use-config
 
 # After syncing PR data, run analysis in JIB container (new ephemeral container)
 # 1. Check monitor - analyzes failed checks and suggests fixes

@@ -19,7 +19,7 @@ You need **TWO tokens**:
 3. Choose **"From an app manifest"**
 4. Select your workspace
 5. Choose **YAML** tab
-6. Copy and paste contents of `host-services/slack-notifier/slack-app-manifest.yaml`
+6. Copy and paste contents of `host-services/slack/slack-notifier/slack-app-manifest.yaml`
 7. Click **"Next"** → Review → **"Create"**
 8. Skip to Step 3 (Enable Socket Mode)
 

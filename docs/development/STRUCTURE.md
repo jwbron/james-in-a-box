@@ -19,26 +19,48 @@ james-in-a-box/
 
 | Directory | Purpose | Runs On |
 |-----------|---------|---------|
-| `host-services/` | Systemd services that run on the host machine | Host |
+| `host-services/slack/` | Slack communication services | Host |
+| `host-services/sync/` | Data synchronization services | Host |
+| `host-services/analysis/` | Code and conversation analysis | Host |
+| `host-services/utilities/` | Utility services (monitoring, cleanup) | Host |
+| `host-services/cli/` | Command-line tools (not daemons) | Host |
 | `jib-container/jib-tasks/` | Scripts called via `jib --exec` from host services | Container (via jib --exec) |
 | `jib-container/jib-tools/` | Interactive tools used inside the container | Container |
-| `jib-container/shared/` | Python libraries shared across container components | Container |
 | `jib-container/.claude/` | Claude Code configuration (rules, commands) | Container |
 
 ## Host Service Structure
 
-Each service in `host-services/` should follow this pattern:
+Services in `host-services/` are organized by category:
 
 ```
 host-services/
-└── <service-name>/
-    ├── README.md              # Required: Purpose, setup, usage
-    ├── setup.sh               # Required: Installation script
-    ├── <service-name>.py      # Main implementation (if Python)
-    ├── <service-name>.sh      # Main implementation (if shell)
-    ├── <service-name>.service # Systemd service unit
-    ├── <service-name>.timer   # Systemd timer (if timer-based)
-    └── requirements.txt       # Python dependencies (even if empty)
+├── slack/                     # Slack communication
+│   ├── slack-notifier/        # Outgoing notifications
+│   └── slack-receiver/        # Incoming messages
+├── sync/                      # Data synchronization
+│   ├── github-sync/           # GitHub PR sync
+│   └── context-sync/          # Confluence/JIRA sync
+├── analysis/                  # Analysis services
+│   ├── codebase-analyzer/     # Code review automation
+│   └── conversation-analyzer/ # Quality analysis
+├── utilities/                 # Utility services
+│   ├── worktree-watcher/      # Git worktree cleanup
+│   └── service-monitor/       # Service failure monitoring
+└── cli/                       # CLI tools (not systemd services)
+    └── analyze-pr/            # PR analysis tool
+```
+
+Each service directory should contain:
+
+```
+<service-name>/
+├── README.md              # Required: Purpose, setup, usage
+├── setup.sh               # Required: Installation script (for systemd services)
+├── <service-name>.py      # Main implementation (if Python)
+├── <service-name>.sh      # Main implementation (if shell)
+├── <service-name>.service # Systemd service unit (if daemon)
+├── <service-name>.timer   # Systemd timer (if timer-based)
+└── requirements.txt       # Python dependencies (even if empty)
 ```
 
 ### When to Use Subdirectories
@@ -108,7 +130,8 @@ The `bin/` directory contains symlinks for convenient CLI access:
 ```
 bin/
 ├── jib -> ../jib-container/jib
-├── setup-slack-notifier -> ../host-services/slack-notifier/setup.sh
+├── analyze-pr -> ../host-services/cli/analyze-pr/analyze-pr
+├── setup-slack-notifier -> ../host-services/slack/slack-notifier/setup.sh
 └── ...
 ```
 
