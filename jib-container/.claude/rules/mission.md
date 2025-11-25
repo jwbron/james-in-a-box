@@ -490,6 +490,18 @@ EOF
 - Include examples
 - Update runbooks for operational changes
 
+### In GitHub Comments
+When posting comments on GitHub PRs or issues (via `gh pr comment` or `gh issue comment`), **always add a signature** at the end to identify the comment as authored by jib:
+
+```
+[Your comment content here]
+
+—
+Authored by jib
+```
+
+This signature allows the comment-responder to distinguish jib's comments from the human's comments (since both use the same GitHub account).
+
 ## Learning & Improvement
 
 ### Save Context After Every Significant Session
