@@ -443,13 +443,72 @@ def main():
     # Check if this repo is in the writable repos list
     is_writable, repo_name = creator.check_writable()
     if not is_writable:
-        print(f"Warning: Repository '{repo_name}' is not in the writable repos list.", file=sys.stderr)
-        print(f"Writable repos (from config/repositories.yaml):", file=sys.stderr)
-        for repo in get_writable_repos():
-            print(f"  - {repo}", file=sys.stderr)
-        print(f"\nYou can still create the PR, but jib may not have push access.", file=sys.stderr)
-        print(f"If the PR creation fails, notify the user to push manually from host.", file=sys.stderr)
+        print(f"Note: Repository '{repo_name}' is not in the writable repos list.")
+        print(f"Sending Slack notification with PR context instead of creating GitHub PR.")
         print()
+
+        # Generate the PR details for the notification
+        base = args.base or creator.get_base_branch()
+        commits = creator.get_commits_since_base(base)
+        changed_files = creator.get_changed_files(base)
+        branch = creator.get_current_branch()
+
+        if not commits:
+            print("Error: No commits found to summarize", file=sys.stderr)
+            sys.exit(1)
+
+        # Generate title from first commit if not provided
+        pr_title = args.title
+        if not pr_title:
+            first_commit = commits[0]
+            if ' ' in first_commit:
+                pr_title = first_commit.split(' ', 1)[1]
+            else:
+                pr_title = first_commit
+
+        # Generate body
+        pr_body = creator.generate_pr_body(commits, args.body or "")
+
+        # Send Slack notification with full context
+        body_parts = [
+            f"**Repository**: {repo_name} (read-only - manual PR creation required)",
+            f"**Branch**: `{branch}` -> `{base}`",
+            f"**Title**: {pr_title}",
+            f"\n## Summary\n",
+        ]
+
+        # Add commit list
+        if len(commits) <= 5:
+            for commit in commits:
+                body_parts.append(f"- {commit}")
+        else:
+            for commit in commits[:5]:
+                body_parts.append(f"- {commit}")
+            body_parts.append(f"- ... and {len(commits) - 5} more commits")
+
+        # Add changed files
+        body_parts.append(f"\n## Changed Files ({len(changed_files)} files)\n")
+        if len(changed_files) <= 10:
+            for f in changed_files:
+                body_parts.append(f"- `{f}`")
+        else:
+            for f in changed_files[:10]:
+                body_parts.append(f"- `{f}`")
+            body_parts.append(f"- ... and {len(changed_files) - 10} more files")
+
+        if args.context:
+            body_parts.append(f"\n## Context\n\n{args.context}")
+
+        body_parts.append(f"\n---\n*Please create the PR manually from branch `{branch}`*")
+
+        creator.slack.notify_action_required(
+            title=f"PR Ready for Manual Creation: {pr_title}",
+            body="\n".join(body_parts),
+        )
+
+        print(f"\nSlack notification sent!")
+        print(f"Branch '{branch}' is ready for manual PR creation.")
+        sys.exit(0)
 
     # Determine PR details
     title = args.title
