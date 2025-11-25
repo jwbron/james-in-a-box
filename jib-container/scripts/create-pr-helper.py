@@ -153,9 +153,6 @@ class PRCreator:
         body_parts.append("- [ ] Manual verification\n")
         body_parts.append("\n")
 
-        body_parts.append("---\n")
-        body_parts.append("Generated with [Claude Code](https://claude.com/claude-code)\n")
-
         return "".join(body_parts)
 
     def push_branch(self, branch: str) -> bool:

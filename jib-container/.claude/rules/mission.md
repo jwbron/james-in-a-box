@@ -104,10 +104,7 @@ git add <files>
 git commit -m "Brief description
 
 - Details
-- JIRA-1234
-
-🤖 Generated with Claude Code
-Co-Authored-By: jib <jib@khan.org>"
+- JIRA-1234"
 
 # ✅ ALWAYS use the helper - NEVER use `gh pr create` directly
 create-pr-helper.py --auto --no-notify
