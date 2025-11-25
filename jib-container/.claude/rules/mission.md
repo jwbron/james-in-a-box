@@ -111,25 +111,39 @@ If you lose commits: `git reflog` → `git cherry-pick <hash>`
 
 ## Notifications (Async)
 
-When human isn't available, write to `~/sharing/notifications/`:
+When human isn't available, use the **notifications library** (preferred):
+```python
+# Python - use the notifications library
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "jib-container" / "shared"))
+from notifications import slack_notify, NotificationContext
+
+# Simple notification
+slack_notify("Need Guidance: [Topic]", "What you need guidance on")
+
+# With context for threading
+ctx = NotificationContext(task_id="my-task", repository="owner/repo")
+slack_notify("Title", "Body", context=ctx)
+
+# Get full service for specialized notifications
+from notifications import get_slack_service
+slack = get_slack_service()
+slack.notify_warning("Security Issue", "Details here")
+slack.notify_action_required("Review Needed", "Please review...")
+```
+
+Or for quick shell notifications (legacy, still works):
 ```bash
 cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-topic.md <<'EOF'
-# 🔔 Need Guidance: [Topic]
-
+# Need Guidance: [Topic]
 **Priority**: [Low/Medium/High/Urgent]
-
 ## Context
-Working on: [what]
-
-## Issue
 [What you need guidance on]
-
-## Recommendation
-[What you think should be done]
 EOF
 ```
 
-Triggers Slack DM within ~30 seconds.
+Both methods trigger Slack DM within ~30 seconds.
 
 ## Quality Standards
 

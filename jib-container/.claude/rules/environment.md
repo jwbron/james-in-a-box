@@ -35,7 +35,7 @@ You run in a **sandboxed Docker container** with "Bypass Permissions" mode becau
 | `~/context-sync/jira/` | RO | JIRA tickets |
 | `~/sharing/` | RW | Persistent data (survives rebuilds) |
 | `~/sharing/tmp/` | RW | Scratch space (symlinked from `~/tmp/`) |
-| `~/sharing/notifications/` | RW | Async messages to human → Slack DM |
+| `~/sharing/notifications/` | RW | Async messages → Slack DM (use notifications lib) |
 | `~/sharing/context/` | RW | @save-context / @load-context data |
 | `~/beads/` | RW | Persistent task memory |
 
