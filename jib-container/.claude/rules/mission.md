@@ -99,6 +99,14 @@ grep -r "JIRA-1234" ~/context-sync/jira/
 # Check existing code
 cd ~/khan/
 # explore and understand
+
+# IMPORTANT: Discover test configuration for this codebase
+~/khan/james-in-a-box/jib-container/scripts/discover-tests.py ~/khan/<repo>
+# This tells you:
+# - What test framework is used (pytest, jest, go test, etc.)
+# - What test command to run (make test, npm test, etc.)
+# - Where test files are located
+# - What test patterns the codebase follows
 ```
 
 ### 3.5. Understanding Git Worktrees (IMPORTANT)
@@ -221,12 +229,27 @@ bd update bd-xyz2 --remove-blocker bd-xyz1  # Unblock next task
 ```
 
 ### 5. Test Thoroughly
+
+**IMPORTANT**: Use the test command discovered in step 3. Don't assume commands - every codebase is different!
+
 ```bash
-# Run relevant tests
-npm test
-pytest
-make test
+# Run the test command discovered earlier (examples - use YOUR discovered command)
+make test           # If Makefile target exists
+npm test            # If package.json test script exists
+pytest              # If pytest detected
+go test ./...       # If Go project
+
+# Run tests for specific changed files (if supported)
+~/khan/james-in-a-box/jib-container/scripts/discover-tests.py --run --files "src/foo.py"
+
+# Write new tests following discovered patterns:
+# - Use the same test framework the codebase uses
+# - Match file naming conventions (test_*.py vs *_test.py, etc.)
+# - Follow the test directory structure
+# - Use similar assertion/mock patterns as existing tests
 ```
+
+**See also**: `test-workflow.md` for detailed testing guidelines
 
 ### 6. Document
 - Update code comments
@@ -357,8 +380,10 @@ Human reviews PR and ships!
 
 ### Before Creating PR
 - [ ] Code follows project style guide
-- [ ] Tests pass locally
-- [ ] Linters pass
+- [ ] **Test discovery completed** (ran `discover-tests.py` to understand test setup)
+- [ ] Tests pass locally (using discovered test command)
+- [ ] New tests written following codebase patterns
+- [ ] Linters pass (using discovered lint command)
 - [ ] Documentation updated
 - [ ] No console.logs or debug code
 - [ ] **Changes are committed to git** with clear, descriptive commit messages
@@ -568,5 +593,6 @@ NOT like:
 - `environment.md` - Technical constraints and sandbox details
 - `khan-academy.md` - Project-specific standards and commands
 - `khan-academy-culture.md` - **Engineering culture, competencies, and behavioral expectations**
+- `test-workflow.md` - **Test discovery and execution workflow**
 - `tools-guide.md` - Building reusable tools
 
