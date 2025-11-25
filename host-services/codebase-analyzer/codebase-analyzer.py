@@ -272,12 +272,15 @@ ISSUE: {issue['description']}
 LOCATION: {issue.get('line_hint', 'unknown')}
 SUGGESTION: {issue['suggestion']}
 
-CURRENT FILE:
+CURRENT FILE ({len(content)} characters):
 ```
 {content}
 ```
 
-Return ONLY the complete fixed file content. No explanations, no markdown fences."""
+IMPORTANT: Return the COMPLETE fixed file content (all {len(content.splitlines())} lines).
+Do NOT return just the changed portion or a diff.
+Do NOT include explanations or markdown fences.
+The output should be similar in length to the input."""
 
             result = subprocess.run(
                 ['claude', '--dangerously-skip-permissions'],
@@ -301,7 +304,19 @@ Return ONLY the complete fixed file content. No explanations, no markdown fences
                     lines = lines[:-1]
                 fixed_content = '\n'.join(lines)
 
-            # Validate the fix
+            # Detect if Claude returned an explanation instead of code
+            error_patterns = [
+                "I cannot", "I can't", "I apologize", "I'm sorry",
+                "Here's the", "Here is the", "The issue", "The fix",
+                "Unfortunately", "I don't", "I am unable"
+            ]
+            first_line = fixed_content.split('\n')[0] if fixed_content else ""
+            if any(first_line.startswith(p) for p in error_patterns):
+                detail = f"Claude returned explanation: '{first_line[:60]}...'"
+                self.logger.warning(f"Invalid response for {issue['file']}: {detail}")
+                return (FixResult.CONTENT_TOO_SHORT, detail)
+
+            # Validate the fix by size
             if len(fixed_content) < len(content) * 0.3:
                 detail = f"output {len(fixed_content)} chars vs original {len(content)} chars (< 30%)"
                 self.logger.warning(f"Fixed content too short for {issue['file']}: {detail}")
