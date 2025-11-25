@@ -195,7 +195,8 @@ class PRReviewer:
             if line.startswith('# PR #'):
                 metadata['title'] = line.split(': ', 1)[1] if ': ' in line else ''
             elif line.startswith('**URL**:'):
-                metadata['url'] = line.split(':', 1)[1].strip()
+                # URL has colons in it, so split after the label
+                metadata['url'] = line.replace('**URL**: ', '').strip()
             elif line.startswith('**Branch**:'):
                 metadata['branch'] = line.split(':', 1)[1].strip()
             elif line.startswith('**Author**:'):
@@ -303,10 +304,21 @@ class PRReviewer:
             'suggestions': [],
             'security_issues': [],
             'performance_issues': [],
+            'quality_issues': [],
             'file_reviews': [],
+            'files_summary': [],  # Summary of changed files
             'testing_gaps': [],
             'positive_notes': []
         }
+
+        # Build file summary
+        for fc in file_changes:
+            review['files_summary'].append({
+                'path': fc['path'],
+                'additions': fc.get('additions', 0),
+                'deletions': fc.get('deletions', 0),
+                'language': fc.get('language', 'unknown')
+            })
 
         # Overall assessment
         total_additions = pr_context.get('additions', 0)
@@ -339,6 +351,12 @@ class PRReviewer:
                     review['performance_issues'].append({
                         'file': file_change['path'],
                         'concern': comment['text']
+                    })
+                elif comment['type'] == 'quality':
+                    review['quality_issues'].append({
+                        'file': file_change['path'],
+                        'concern': comment['text'],
+                        'severity': comment.get('severity', 'low')
                     })
 
         # Check for testing
@@ -531,6 +549,15 @@ class PRReviewer:
         body_parts.append(f"{review['overall_assessment']}")
         body_parts.append("")
 
+        # Files changed summary
+        if review.get('files_summary'):
+            body_parts.append("## Files Changed")
+            for f in review['files_summary'][:10]:  # Limit to first 10 files
+                body_parts.append(f"- `{f['path']}` (+{f['additions']} -{f['deletions']}) [{f['language']}]")
+            if len(review['files_summary']) > 10:
+                body_parts.append(f"- ... and {len(review['files_summary']) - 10} more files")
+            body_parts.append("")
+
         # Positive notes
         if review['positive_notes']:
             body_parts.append("### Positive Notes")
@@ -552,6 +579,17 @@ class PRReviewer:
                 body_parts.append(f"**{issue['file']}**: {issue['concern']}")
             body_parts.append("")
 
+        # Quality issues (only show medium+ severity)
+        quality_issues = [q for q in review.get('quality_issues', [])
+                         if q.get('severity') in ['medium', 'high']]
+        if quality_issues:
+            body_parts.append("## Code Quality Notes")
+            for issue in quality_issues[:5]:  # Limit to 5 issues
+                body_parts.append(f"- **{issue['file']}**: {issue['concern']}")
+            if len(quality_issues) > 5:
+                body_parts.append(f"- ... and {len(quality_issues) - 5} more quality notes")
+            body_parts.append("")
+
         # Testing gaps
         if review['testing_gaps']:
             body_parts.append("## Testing Gaps")
@@ -562,7 +600,8 @@ class PRReviewer:
         # Summary
         total_issues = (len(review['security_issues']) +
                        len(review['performance_issues']) +
-                       len(review['testing_gaps']))
+                       len(review['testing_gaps']) +
+                       len(quality_issues))
 
         body_parts.append("## Summary")
         if total_issues == 0:
@@ -573,6 +612,8 @@ class PRReviewer:
                 body_parts.append(f"- {len(review['security_issues'])} security concern(s)")
             if review['performance_issues']:
                 body_parts.append(f"- {len(review['performance_issues'])} performance concern(s)")
+            if quality_issues:
+                body_parts.append(f"- {len(quality_issues)} code quality note(s)")
             if review['testing_gaps']:
                 body_parts.append(f"- {len(review['testing_gaps'])} testing gap(s)")
 
