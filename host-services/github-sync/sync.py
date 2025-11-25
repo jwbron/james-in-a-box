@@ -115,6 +115,7 @@ class GitHubSync:
                 pr_full = self.gh_api(
                     f"pr view {pr_num} --repo {repo_with_owner} "
                     f"--json number,title,body,author,url,state,createdAt,updatedAt,"
+                    f"additions,deletions,changedFiles,"
                     f"files,comments,headRefName,baseRefName,headRepository"
                 )
 
@@ -173,6 +174,8 @@ class GitHubSync:
             f.write(f"**State**: {pr['state']}\n")
             f.write(f"**URL**: {pr['url']}\n")
             f.write(f"**Branch**: {pr['headRefName']} → {pr['baseRefName']}\n")
+            f.write(f"**Additions**: {pr.get('additions', 0)}\n")
+            f.write(f"**Deletions**: {pr.get('deletions', 0)}\n")
             f.write(f"**Created**: {pr['createdAt']}\n")
             f.write(f"**Updated**: {pr['updatedAt']}\n\n")
 
