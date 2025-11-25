@@ -603,6 +603,45 @@ bin/jib --rebuild
 3. Verify slack-receiver service is running (`systemctl --user status slack-receiver`)
 4. Check logs: `journalctl --user -u slack-receiver.service -f`
 
+## Development
+
+### Linting
+
+This project uses multiple linters to ensure code quality:
+
+| Tool | Language/Format | Configuration |
+|------|-----------------|---------------|
+| [ruff](https://docs.astral.sh/ruff/) | Python | `pyproject.toml` |
+| [shellcheck](https://www.shellcheck.net/) | Bash/Shell | CLI defaults |
+| [yamllint](https://yamllint.readthedocs.io/) | YAML | `.yamllint.yaml` |
+| [hadolint](https://github.com/hadolint/hadolint) | Dockerfile | `.hadolint.yaml` |
+| [actionlint](https://github.com/rhysd/actionlint) | GitHub Actions | CLI defaults |
+
+**Run all linters:**
+```bash
+make lint
+```
+
+**Auto-fix where possible:**
+```bash
+make lint-fix
+```
+
+**Run individual linters:**
+```bash
+make lint-python      # ruff check + format
+make lint-shell       # shellcheck
+make lint-yaml        # yamllint
+make lint-docker      # hadolint
+make lint-workflows   # actionlint (if .github/workflows exists)
+```
+
+**Install linters:**
+```bash
+make install-linters  # pip install ruff yamllint + instructions for others
+make check-linters    # verify installed tools
+```
+
 ## Contributing
 
 This is an internal Khan Academy tool. For questions or issues:
