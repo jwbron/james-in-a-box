@@ -1,18 +1,18 @@
 [Unit]
 Description=Context Sync - Sync all connectors (Confluence, JIRA, etc.)
-Documentation=file:///home/jwies/khan/james-in-a-box/components/context-sync/README.md
+Documentation=file:///home/jwies/khan/james-in-a-box/host-services/context-sync/README.md
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/khan/james-in-a-box/components/context-sync
-Environment="PATH=%h/khan/james-in-a-box/components/context-sync/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+WorkingDirectory=%h/khan/james-in-a-box/host-services/context-sync
+Environment="PATH=%h/khan/james-in-a-box/host-services/context-sync/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 # Configuration is loaded from ~/.config/context-sync/.env by sync_all.py
-ExecStart=%h/khan/james-in-a-box/components/context-sync/.venv/bin/python %h/khan/james-in-a-box/components/context-sync/sync_all.py
+ExecStart=%h/khan/james-in-a-box/host-services/context-sync/.venv/bin/python %h/khan/james-in-a-box/host-services/context-sync/sync_all.py
 
 # After syncing context data, run analysis in JIB container (new ephemeral containers)
 # Context watchers analyze Confluence docs and JIRA tickets for updates
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/context-watcher/confluence-watcher.py
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/components/context-watcher/jira-watcher.py
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/host-services/context-watcher/confluence-watcher.py
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/host-services/context-watcher/jira-watcher.py
 
 # Logging
 StandardOutput=journal

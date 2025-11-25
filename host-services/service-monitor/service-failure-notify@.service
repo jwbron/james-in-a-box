@@ -4,7 +4,7 @@ Documentation=file:///home/jwies/khan/james-in-a-box/docs/reference/service-fail
 
 [Service]
 Type=oneshot
-ExecStart=/home/jwies/khan/james-in-a-box/components/service-monitor/notify-service-failure.sh %i
+ExecStart=/home/jwies/khan/james-in-a-box/host-services/service-monitor/notify-service-failure.sh %i
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=service-failure-notify
