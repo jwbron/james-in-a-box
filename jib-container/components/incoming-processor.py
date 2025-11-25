@@ -142,6 +142,7 @@ You received a task via Slack. Process it according to the workflow below.
 ## Message Details
 
 **File:** `{message_file.name}`
+**Task ID:** `{original_task_id}`
 **Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ## Task from User
@@ -159,11 +160,11 @@ You received a task via Slack. Process it according to the workflow below.
    - Commit changes with clear messages
 4. **Create PR (if code changes were made)**:
    - Use the PR helper: `~/khan/james-in-a-box/jib-container/scripts/create-pr-helper.py`
-   - Run: `create-pr-helper.py --auto`
-   - Or with custom title: `create-pr-helper.py --title "Your PR title" --body "Description"`
+   - Run: `create-pr-helper.py --auto --reviewer jwiesebron --no-notify`
+   - Or with custom title: `create-pr-helper.py --title "Your PR title" --body "Description" --no-notify`
    - The script will push the branch and create a PR automatically
-   - It also creates a notification with the PR URL
-5. **Create notification**: Write result to `~/sharing/notifications/` with:
+   - IMPORTANT: Always use `--no-notify` flag - your output will be captured and threaded correctly
+5. **Output your response**: Print a clear summary to stdout with:
    - Summary of what was done
    - PR URL (if created)
    - Branch name (if commits were made)
@@ -176,9 +177,9 @@ You received a task via Slack. Process it according to the workflow below.
 - All work should be committed to git
 - **Create a PR after completing code changes** - this lets the user review on GitHub
 - Use beads to track progress across sessions
-- Send notification so user gets Slack DM with results
 - Working directory: You can access all repos in `~/khan/`
-- The PR helper automatically requests review from the configured reviewer
+- The PR helper automatically requests review from @jwiesebron
+- **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack notification automatically
 
 Process this task now."""
 
@@ -298,6 +299,11 @@ def process_response(message_file: Path):
 
 You sent a notification that prompted a response from the user. Process their response and take appropriate action.
 
+## Thread Context
+
+**Task ID:** `{message_file.stem}`
+**Thread:** This is a threaded conversation - your response will be posted in the same thread.
+
 ## Original Notification
 
 {original_notif_content if original_notif_content else "*(Original notification not found)*"}
@@ -316,14 +322,14 @@ You sent a notification that prompted a response from the user. Process their re
    - If they requested changes: Make the changes
    - If they asked a question: Research and respond
 4. **Update Beads**: Update task status as appropriate
-5. **Create notification**: Send result back via `~/sharing/notifications/`
+5. **Output your response**: Print a clear summary to stdout
 
 ## Important Notes
 
 - You're in an ephemeral container (will exit when done)
 - All work should be committed to git
 - Use beads to track progress and maintain context
-- The user is responding in a Slack thread - keep them updated
+- **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack reply automatically
 
 Process this response now."""
 
