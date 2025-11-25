@@ -21,9 +21,32 @@ import logging
 import argparse
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
+from enum import Enum
+from dataclasses import dataclass
 import subprocess
 import fnmatch
+
+
+class FixResult(Enum):
+    """Result of attempting to fix an issue."""
+    SUCCESS = "success"
+    FILE_NOT_FOUND = "file_not_found"
+    FILE_TOO_LARGE = "file_too_large"
+    CONTENT_TOO_SHORT = "content_too_short"
+    CONTENT_TOO_LONG = "content_too_long"
+    TIMEOUT = "timeout"
+    CLAUDE_ERROR = "claude_error"
+    OTHER_ERROR = "other_error"
+
+
+@dataclass
+class PRResult:
+    """Result of PR creation attempt."""
+    success: bool
+    pr_url: Optional[str] = None
+    branch_name: Optional[str] = None
+    error: Optional[str] = None
 
 
 class CodebaseAnalyzer:
@@ -223,16 +246,34 @@ Return ONLY the JSON array, no other text."""
             self.logger.error(f"Error calling Claude: {e}")
             return []
 
-    def implement_fix(self, issue: Dict) -> bool:
-        """Implement a single fix using Claude Code."""
+    def implement_fix(self, issue: Dict) -> Tuple[FixResult, Optional[str]]:
+        """Implement a single fix using Claude Code.
+
+        Returns:
+            Tuple of (FixResult, details_string)
+        """
         file_path = self.codebase_path / issue['file']
 
         if not file_path.exists():
             self.logger.warning(f"File not found: {file_path}")
-            return False
+            return (FixResult.FILE_NOT_FOUND, None)
 
         try:
             content = file_path.read_text(encoding='utf-8')
+            file_size = len(content)
+
+            # Skip files that are too large for the full-rewrite approach
+            # Large files take too long and often timeout
+            max_size_for_fix = 20_000  # 20KB
+            if file_size > max_size_for_fix:
+                detail = f"{file_size // 1000}KB exceeds {max_size_for_fix // 1000}KB limit"
+                self.logger.warning(
+                    f"Skipping {issue['file']} ({file_size // 1000}KB) - too large for auto-fix"
+                )
+                return (FixResult.FILE_TOO_LARGE, detail)
+
+            # Scale timeout based on file size (60s base + 1s per 200 chars)
+            timeout_seconds = max(120, 60 + file_size // 200)
 
             prompt = f"""Fix this issue in the file. Make ONLY the minimal change needed.
 
@@ -241,24 +282,27 @@ ISSUE: {issue['description']}
 LOCATION: {issue.get('line_hint', 'unknown')}
 SUGGESTION: {issue['suggestion']}
 
-CURRENT FILE:
+CURRENT FILE ({len(content)} characters):
 ```
 {content}
 ```
 
-Return ONLY the complete fixed file content. No explanations, no markdown fences."""
+IMPORTANT: Return the COMPLETE fixed file content (all {len(content.splitlines())} lines).
+Do NOT return just the changed portion or a diff.
+Do NOT include explanations or markdown fences.
+The output should be similar in length to the input."""
 
             result = subprocess.run(
                 ['claude', '--dangerously-skip-permissions'],
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=timeout_seconds
             )
 
             if result.returncode != 0:
                 self.logger.error(f"Claude error for {issue['file']}: {result.stderr}")
-                return False
+                return (FixResult.CLAUDE_ERROR, result.stderr[:200] if result.stderr else None)
 
             fixed_content = result.stdout.strip()
 
@@ -270,31 +314,57 @@ Return ONLY the complete fixed file content. No explanations, no markdown fences
                     lines = lines[:-1]
                 fixed_content = '\n'.join(lines)
 
-            # Validate the fix
+            # Detect if Claude returned an explanation instead of code
+            error_patterns = [
+                "I cannot", "I can't", "I apologize", "I'm sorry",
+                "Here's the", "Here is the", "The issue", "The fix",
+                "Unfortunately", "I don't", "I am unable"
+            ]
+            first_line = fixed_content.split('\n')[0] if fixed_content else ""
+            if any(first_line.startswith(p) for p in error_patterns):
+                detail = f"Claude returned explanation: '{first_line[:60]}...'"
+                self.logger.warning(f"Invalid response for {issue['file']}: {detail}")
+                return (FixResult.CONTENT_TOO_SHORT, detail)
+
+            # Validate the fix by size
             if len(fixed_content) < len(content) * 0.3:
-                self.logger.warning(f"Fixed content too short for {issue['file']}, skipping")
-                return False
+                detail = f"output {len(fixed_content)} chars vs original {len(content)} chars (< 30%)"
+                self.logger.warning(f"Fixed content too short for {issue['file']}: {detail}")
+                return (FixResult.CONTENT_TOO_SHORT, detail)
 
             if len(fixed_content) > len(content) * 3:
-                self.logger.warning(f"Fixed content too long for {issue['file']}, skipping")
-                return False
+                detail = f"output {len(fixed_content)} chars vs original {len(content)} chars (> 300%)"
+                self.logger.warning(f"Fixed content too long for {issue['file']}: {detail}")
+                return (FixResult.CONTENT_TOO_LONG, detail)
 
             # Write the fix
             file_path.write_text(fixed_content, encoding='utf-8')
             self.logger.info(f"✓ Fixed: {issue['file']} ({issue['category']})")
-            return True
+            return (FixResult.SUCCESS, None)
 
         except subprocess.TimeoutExpired:
-            self.logger.error(f"Timeout fixing {issue['file']}")
-            return False
+            detail = f"exceeded {timeout_seconds}s timeout"
+            self.logger.error(f"Timeout fixing {issue['file']}: {detail}")
+            return (FixResult.TIMEOUT, detail)
         except Exception as e:
             self.logger.error(f"Error fixing {issue['file']}: {e}")
-            return False
+            return (FixResult.OTHER_ERROR, str(e)[:200])
 
-    def create_pr(self, implemented: List[Dict]) -> Optional[str]:
-        """Commit changes and create a PR."""
+    def create_pr(self, implemented: List[Dict], skipped: List[Tuple[Dict, FixResult, Optional[str]]] = None) -> PRResult:
+        """Commit changes and create a PR.
+
+        Args:
+            implemented: List of issues that were successfully fixed
+            skipped: List of (issue, result, detail) tuples for issues that couldn't be fixed
+
+        Returns:
+            PRResult with success status, PR URL (if created), branch name, and any error
+        """
         if not implemented:
-            return None
+            return PRResult(success=False, error="No issues were successfully fixed")
+
+        skipped = skipped or []
+        branch_name = None
 
         try:
             # Check for changes
@@ -307,7 +377,7 @@ Return ONLY the complete fixed file content. No explanations, no markdown fences
 
             if not result.stdout.strip():
                 self.logger.warning("No changes to commit")
-                return None
+                return PRResult(success=False, error="No changes to commit (fixes may not have modified files)")
 
             # Create branch
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -354,16 +424,29 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             )
 
             if result.returncode != 0:
-                self.logger.error(f"Push failed: {result.stderr}")
-                return None
+                error_msg = f"Push failed: {result.stderr.strip()}"
+                self.logger.error(error_msg)
+                return PRResult(success=False, branch_name=branch_name, error=error_msg)
 
-            # Create PR
+            # Create PR body
             pr_body = f"## Auto-fix: {len(implemented)} improvements\n\n"
             for cat in sorted(categories):
                 cat_issues = [i for i in implemented if i['category'] == cat]
                 pr_body += f"### {cat.title()} ({len(cat_issues)})\n"
                 for i in cat_issues:
                     pr_body += f"- `{i['file']}`: {i['description'][:60]}\n"
+                pr_body += "\n"
+
+            # Add skipped section if any
+            if skipped:
+                pr_body += f"## ⚠️ Skipped Issues ({len(skipped)})\n\n"
+                pr_body += "These issues were identified but couldn't be auto-fixed:\n\n"
+                for issue, fix_result, detail in skipped:
+                    reason = fix_result.value.replace('_', ' ')
+                    pr_body += f"- `{issue['file']}`: {reason}"
+                    if detail:
+                        pr_body += f" ({detail})"
+                    pr_body += f"\n  - Issue: {issue['description'][:80]}\n"
                 pr_body += "\n"
 
             pr_body += "\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
@@ -378,29 +461,63 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             )
 
             if result.returncode != 0:
-                self.logger.error(f"PR creation failed: {result.stderr}")
-                return None
+                error_msg = f"PR creation failed: {result.stderr.strip()}"
+                self.logger.error(error_msg)
+                return PRResult(success=False, branch_name=branch_name, error=error_msg)
 
             pr_url = result.stdout.strip()
             self.logger.info(f"✓ Created PR: {pr_url}")
-            return pr_url
+            return PRResult(success=True, pr_url=pr_url, branch_name=branch_name)
 
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Git command failed: {e.cmd} returned {e.returncode}"
+            self.logger.error(error_msg)
+            return PRResult(success=False, branch_name=branch_name, error=error_msg)
         except Exception as e:
-            self.logger.error(f"Error creating PR: {e}")
-            return None
+            error_msg = f"Error creating PR: {e}"
+            self.logger.error(error_msg)
+            return PRResult(success=False, branch_name=branch_name, error=str(e))
 
-    def create_notification(self, issues: List[Dict], pr_url: Optional[str] = None):
-        """Create a notification with findings."""
+    def create_notification(
+        self,
+        issues: List[Dict],
+        pr_result: Optional[PRResult] = None,
+        implemented: List[Dict] = None,
+        skipped: List[Tuple[Dict, FixResult, Optional[str]]] = None
+    ):
+        """Create a notification with findings.
+
+        Args:
+            issues: All issues found during analysis
+            pr_result: Result of PR creation attempt (if any)
+            implemented: Issues that were successfully fixed
+            skipped: Issues that couldn't be auto-fixed (issue, result, detail)
+        """
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         notif_file = self.notification_dir / f"{timestamp}-codebase-analysis.md"
 
         self.notification_dir.mkdir(parents=True, exist_ok=True)
 
+        implemented = implemented or []
+        skipped = skipped or []
+
         content = f"# 🔍 Codebase Analysis\n\n"
         content += f"**Found {len(issues)} issues**\n\n"
 
-        if pr_url:
-            content += f"**PR Created**: {pr_url}\n\n"
+        # Show PR result with details
+        if pr_result:
+            if pr_result.success and pr_result.pr_url:
+                content += f"**PR Created**: {pr_result.pr_url}\n\n"
+            else:
+                content += f"**⚠️ PR Creation Failed**\n"
+                if pr_result.error:
+                    content += f"- Error: {pr_result.error}\n"
+                if pr_result.branch_name:
+                    content += f"- Branch: `{pr_result.branch_name}` (changes committed locally)\n"
+                content += "\n"
+
+        if implemented or skipped:
+            content += f"**Fixed**: {len(implemented)} | **Skipped**: {len(skipped)}\n\n"
 
         # Group by priority
         high = [i for i in issues if i.get('priority') == 'HIGH']
@@ -416,6 +533,17 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             content += "## 🟡 MEDIUM Priority\n\n"
             for i in medium:
                 content += f"- `{i['file']}`: {i['description']}\n"
+            content += "\n"
+
+        # Skipped issues section
+        if skipped:
+            content += "## ⚠️ Skipped (couldn't auto-fix)\n\n"
+            for issue, fix_result, detail in skipped:
+                reason = fix_result.value.replace('_', ' ')
+                content += f"- `{issue['file']}`: **{reason}**"
+                if detail:
+                    content += f" - {detail}"
+                content += f"\n  - {issue['description'][:100]}\n"
             content += "\n"
 
         content += f"\n---\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
@@ -440,23 +568,43 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             return
 
         # Implement fixes if requested
-        pr_url = None
+        pr_result = None
+        implemented = []
+        skipped = []
+
         if implement:
             self.logger.info(f"\nImplementing top {max_fixes} fixes...")
             to_fix = issues[:max_fixes]
-            implemented = []
 
             for issue in to_fix:
-                if self.implement_fix(issue):
+                result, detail = self.implement_fix(issue)
+                if result == FixResult.SUCCESS:
                     implemented.append(issue)
+                else:
+                    skipped.append((issue, result, detail))
 
             self.logger.info(f"Implemented {len(implemented)}/{len(to_fix)} fixes")
+            if skipped:
+                self.logger.info(f"Skipped {len(skipped)} issues (see PR/notification for details)")
 
             if implemented:
-                pr_url = self.create_pr(implemented)
+                pr_result = self.create_pr(implemented, skipped)
+                if pr_result.success:
+                    self.logger.info(f"PR created: {pr_result.pr_url}")
+                else:
+                    self.logger.error(f"PR creation failed: {pr_result.error}")
+                    if pr_result.branch_name:
+                        self.logger.info(f"Changes are on branch: {pr_result.branch_name}")
+            else:
+                self.logger.warning("All fixes were skipped - no PR created")
+                # Create a PRResult to explain what happened
+                pr_result = PRResult(
+                    success=False,
+                    error="All fix attempts were skipped (see skipped issues below)"
+                )
 
         # Create notification
-        self.create_notification(issues, pr_url)
+        self.create_notification(issues, pr_result, implemented, skipped)
 
         self.logger.info("Done!")
 
