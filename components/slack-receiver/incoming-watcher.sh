@@ -175,7 +175,7 @@ $task_content
     # Claude will use the rules from ~/CLAUDE.md automatically
     # Run from home directory so paths work correctly
     # Use --dangerously-skip-permissions to bypass all permission prompts (safe in sandbox)
-    if cd "${HOME}" && claude --print --dangerously-skip-permissions "$full_prompt" > "$output_dir/output.log" 2>&1; then
+    if cd "${HOME}" && echo "$full_prompt" | claude --dangerously-skip-permissions > "$output_dir/output.log" 2>&1; then
         log "✅ Claude completed task successfully"
 
         # Create completion notification

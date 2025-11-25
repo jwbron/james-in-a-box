@@ -185,7 +185,8 @@ Return ONLY the JSON array, no other text."""
 
         try:
             result = subprocess.run(
-                ['claude', '-p', prompt],
+                ['claude', '--dangerously-skip-permissions'],
+                input=prompt,
                 capture_output=True,
                 text=True,
                 timeout=300  # 5 minute timeout for large analysis
@@ -248,7 +249,8 @@ CURRENT FILE:
 Return ONLY the complete fixed file content. No explanations, no markdown fences."""
 
             result = subprocess.run(
-                ['claude', '-p', prompt],
+                ['claude', '--dangerously-skip-permissions'],
+                input=prompt,
                 capture_output=True,
                 text=True,
                 timeout=120

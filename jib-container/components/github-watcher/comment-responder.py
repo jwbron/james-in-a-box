@@ -340,7 +340,8 @@ Return ONLY the JSON, no other text."""
         try:
             print(f"  Calling Claude to generate response...")
             result = subprocess.run(
-                ['claude', '-p', '--output-format', 'text', prompt],
+                ['claude', '--dangerously-skip-permissions'],
+                input=prompt,
                 capture_output=True,
                 text=True,
                 timeout=120
@@ -574,7 +575,8 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
 
             # Use claude with full tool access for making changes
             result = subprocess.run(
-                ['claude', '-p', '--dangerously-skip-permissions', prompt],
+                ['claude', '--dangerously-skip-permissions'],
+                input=prompt,
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
@@ -665,7 +667,8 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
 
             # Use claude with full tool access for making changes
             result = subprocess.run(
-                ['claude', '-p', '--dangerously-skip-permissions', prompt],
+                ['claude', '--dangerously-skip-permissions'],
+                input=prompt,
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
