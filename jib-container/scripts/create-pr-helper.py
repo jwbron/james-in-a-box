@@ -121,7 +121,7 @@ class PRCreator:
         return "master"
 
     def get_commits_since_base(self, base_branch: str) -> list:
-        """Get commits on current branch not in base"""
+        """Get commits on current branch not in base (oneline format for titles)"""
         try:
             result = subprocess.run(
                 ["git", "log", f"{base_branch}..HEAD", "--oneline"],
@@ -131,31 +131,143 @@ class PRCreator:
         except subprocess.CalledProcessError:
             return []
 
+    def get_full_commit_messages(self, base_branch: str) -> str:
+        """Get full commit messages (including body) for all commits since base."""
+        try:
+            result = subprocess.run(
+                ["git", "log", f"{base_branch}..HEAD", "--format=%B---COMMIT_SEPARATOR---"],
+                capture_output=True, text=True, check=True
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return ""
+
+    def get_changed_files(self, base_branch: str) -> list:
+        """Get list of files changed since base branch."""
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", f"{base_branch}..HEAD"],
+                capture_output=True, text=True, check=True
+            )
+            return result.stdout.strip().split('\n') if result.stdout.strip() else []
+        except subprocess.CalledProcessError:
+            return []
+
     def generate_pr_body(self, commits: list, custom_body: str = "") -> str:
-        """Generate PR body from commits and custom description"""
+        """Generate PR body following Khan Academy standards.
+
+        Format:
+        - Full summary (context, changes, impact)
+        - Issue link
+        - Test plan with specific steps
+
+        Extracts context from commit message bodies when available.
+        """
+        base_branch = self.get_base_branch()
+        full_messages = self.get_full_commit_messages(base_branch)
+        changed_files = self.get_changed_files(base_branch)
+
         body_parts = []
 
-        if custom_body:
-            body_parts.append("## Summary\n")
-            body_parts.append(custom_body)
-            body_parts.append("\n")
+        # Extract useful content from commit messages
+        # Commit messages often have the context we need
+        commit_bodies = []
+        if full_messages:
+            messages = full_messages.split("---COMMIT_SEPARATOR---")
+            for msg in messages:
+                msg = msg.strip()
+                if msg:
+                    # Skip lines that are just the title (first line) or metadata
+                    lines = msg.split('\n')
+                    # Get body (everything after first line, excluding metadata lines)
+                    body_lines = []
+                    for line in lines[1:]:
+                        # Skip metadata lines
+                        if line.startswith('🤖') or line.startswith('Co-Authored-By:'):
+                            continue
+                        body_lines.append(line)
+                    body = '\n'.join(body_lines).strip()
+                    if body:
+                        commit_bodies.append(body)
 
-        if commits:
-            body_parts.append("## Changes\n")
-            for commit in commits[:10]:  # Limit to 10 commits
+        # Build the summary section
+        if custom_body:
+            body_parts.append(custom_body)
+            body_parts.append("\n\n")
+        elif commit_bodies:
+            # Use the commit message body as the summary
+            # Take the most detailed one (usually the main commit)
+            best_body = max(commit_bodies, key=len)
+            body_parts.append(best_body)
+            body_parts.append("\n\n")
+        else:
+            # Fallback: generate basic summary from commits
+            body_parts.append("## Summary\n\n")
+            if len(commits) == 1:
+                body_parts.append(f"This PR includes changes from 1 commit.\n\n")
+            else:
+                body_parts.append(f"This PR includes changes from {len(commits)} commits.\n\n")
+
+        # Add commits section if multiple commits
+        if len(commits) > 1:
+            body_parts.append("## Commits\n\n")
+            for commit in commits[:10]:
                 body_parts.append(f"- {commit}\n")
             if len(commits) > 10:
                 body_parts.append(f"- ... and {len(commits) - 10} more commits\n")
             body_parts.append("\n")
 
-        body_parts.append("## Test Plan\n")
-        body_parts.append("- [ ] Tests pass locally\n")
-        body_parts.append("- [ ] Manual verification\n")
-        body_parts.append("\n")
-        body_parts.append("---\n")
+        # Issue link
+        body_parts.append("Issue: none\n\n")
+
+        # Generate test plan based on changed files
+        body_parts.append("## Test Plan\n\n")
+        test_items = self._generate_test_plan(changed_files)
+        for item in test_items:
+            body_parts.append(f"- {item}\n")
+
+        body_parts.append("\n---\n")
         body_parts.append("*— Authored by jib*\n")
 
         return "".join(body_parts)
+
+    def _generate_test_plan(self, changed_files: list) -> list:
+        """Generate contextual test plan based on changed files."""
+        test_items = []
+
+        # Categorize files
+        python_files = [f for f in changed_files if f.endswith('.py')]
+        js_files = [f for f in changed_files if f.endswith(('.js', '.ts', '.tsx'))]
+        test_files = [f for f in changed_files if 'test' in f.lower()]
+        config_files = [f for f in changed_files if f.endswith(('.yaml', '.yml', '.json', '.toml'))]
+
+        # Add relevant test commands
+        if python_files:
+            if test_files:
+                test_items.append("Run `pytest` - verify tests pass")
+            else:
+                test_items.append("Manual testing of Python changes")
+
+        if js_files:
+            if test_files:
+                test_items.append("Run `npm test` - verify tests pass")
+            else:
+                test_items.append("Manual testing of JavaScript changes")
+
+        if config_files:
+            test_items.append("Verify configuration changes are correct")
+
+        # Always include these basics
+        if not test_items:
+            test_items.append("Manual verification of changes")
+
+        test_items.append("Code review for correctness and edge cases")
+
+        # Add specific file hints for reviewers
+        if len(changed_files) <= 5:
+            test_items.append(f"Files to review: {', '.join(changed_files)}")
+
+        return test_items
 
     def push_branch(self, branch: str) -> bool:
         """Push current branch to remote"""
