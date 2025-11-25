@@ -75,6 +75,36 @@ For non-writable repos: commit and notify user with branch name.
 
 **Troubleshooting**: If push fails, run `gh auth setup-git` first.
 
+### 6.5. PR Lifecycle (IMPORTANT)
+
+**When asked to update an existing PR:**
+1. Check out that PR's branch: `gh pr checkout <PR_NUMBER>`
+2. Make changes and commit to that branch
+3. Push to update the existing PR
+4. Do NOT create a new PR for the same work
+
+**PR ownership rules:**
+- **Continue existing PRs**: If feedback requests changes on PR #X, update PR #X
+- **Separate concerns**: Unrelated changes go to separate PRs
+- **No orphaned PRs**: Every PR must end in one of:
+  - Merged (by human)
+  - Closed with explanation (if abandoned or superseded)
+- **Superseding a PR**: If you must replace a PR, close the old one with a comment linking to the new one
+
+**Example - updating an existing PR:**
+```bash
+# Human says: "Please add error handling to PR #26"
+gh pr checkout 26                    # Switch to PR's branch
+# Make changes...
+git add -A && git commit -m "Add error handling"
+git push                             # Updates PR #26
+```
+
+**Example - closing superseded PR:**
+```bash
+gh pr close 26 --comment "Superseded by #28 which includes this plus additional changes"
+```
+
 ### 7. Complete Task
 ```bash
 bd update $TASK_ID --status done --notes "Summary. Tests passing. PR ready."
