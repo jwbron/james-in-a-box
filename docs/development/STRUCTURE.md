@@ -20,8 +20,8 @@ james-in-a-box/
 | Directory | Purpose | Runs On |
 |-----------|---------|---------|
 | `host-services/` | Systemd services that run on the host machine | Host |
-| `jib-container/watchers/` | Event-driven components inside the container | Container |
-| `jib-container/scripts/` | Utility scripts for container tasks | Container |
+| `jib-container/jib-tasks/` | Scripts called via `jib --exec` from host services | Container (via jib --exec) |
+| `jib-container/jib-tools/` | Interactive tools used inside the container | Container |
 | `jib-container/shared/` | Python libraries shared across container components | Container |
 | `jib-container/.claude/` | Claude Code configuration (rules, commands) | Container |
 
@@ -64,19 +64,31 @@ context-sync/
 └── context-sync.timer
 ```
 
-## Container Watcher Structure
+## Container Task Structure
 
-Each watcher in `jib-container/watchers/` follows a similar pattern:
+Tasks in `jib-container/jib-tasks/` are organized by product/service:
 
 ```
-jib-container/watchers/
-└── <watcher-name>/
-    ├── README.md              # Required: Purpose, usage
-    ├── <watcher-name>-ctl     # Control script (start/stop)
-    ├── watcher.py             # Main implementation
-    └── config/                # Optional: Watcher-specific config
-        └── <watcher-name>.yaml
+jib-container/jib-tasks/
+├── github/                    # GitHub-related tasks
+│   ├── README.md
+│   ├── check-monitor.py       # Analyzes CI failures
+│   ├── pr-reviewer.py         # Auto-reviews PRs
+│   ├── comment-responder.py   # Responds to PR comments
+│   └── pr-analyzer.py         # Analyzes PR context
+├── jira/                      # JIRA-related tasks
+│   ├── README.md
+│   ├── jira-watcher.py        # Analyzes JIRA tickets
+│   └── analyze-sprint.py      # Sprint analysis
+├── confluence/                # Confluence-related tasks
+│   ├── README.md
+│   └── confluence-watcher.py  # Analyzes docs
+└── slack/                     # Slack-related tasks
+    ├── README.md
+    └── incoming-processor.py  # Processes incoming messages
 ```
+
+These are called via `jib --exec` from host-side systemd services (no background processes).
 
 ## File Naming Conventions
 
@@ -153,12 +165,18 @@ host-services/<service>/docs/  # Extended docs (only if needed)
 4. Update main `README.md` architecture section
 5. Add to `setup.sh` components array
 
-## Adding a New Container Watcher
+## Adding a New Container Task
 
-1. Create directory: `jib-container/watchers/<watcher-name>/`
-2. Add required files:
-   - `README.md` - Document purpose and usage
-   - `<watcher-name>-ctl` - Control script
-   - Main implementation (`.py` or `.sh`)
-3. Update `jib-container/docker-setup.py` to start watcher
-4. Update main `README.md` container components section
+1. Identify the product/service category (github, jira, confluence, slack, or new)
+2. Add script to appropriate directory: `jib-container/jib-tasks/<product>/`
+3. Add required files:
+   - `README.md` - Document purpose and usage (one per product directory)
+   - Main implementation (`.py`)
+4. Update the host-side systemd service to call via `jib --exec`
+5. Update main `README.md` container components section
+
+## Adding a New Container Tool
+
+1. Add script to `jib-container/jib-tools/`
+2. Document in the directory's `README.md`
+3. Tools are interactive utilities used inside the container (not called via jib --exec)

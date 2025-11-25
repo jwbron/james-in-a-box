@@ -188,22 +188,27 @@ All host components run as systemd user services for reliability and auto-restar
 - **[conversation-analyzer](host-services/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
 - **[service-monitor](host-services/service-monitor/README.md)** - Notifies on service failures
 
-### Container Components
+### Container Tasks (`jib-tasks/`)
 
-- **[context-watcher](jib-container/watchers/context-watcher/README.md)** - Monitors JIRA tickets and Confluence docs, analyzes changes, sends summaries and action items
-- **[github-watcher](jib-container/watchers/github-watcher/README.md)** - Monitors PR check failures, auto-fixes issues, provides on-demand code reviews, and suggests comment responses
+Scripts called via `jib --exec` from host-side systemd services:
+
+- **[github/](jib-container/jib-tasks/github/README.md)** - PR check monitoring, auto-reviews, comment responses
+- **[jira/](jib-container/jib-tasks/jira/)** - JIRA ticket analysis, sprint analysis
+- **[confluence/](jib-container/jib-tasks/confluence/)** - Confluence doc analysis
+- **[slack/](jib-container/jib-tasks/slack/)** - Incoming message processing
+
+### Container Tools (`jib-tools/`)
+
+Interactive utilities used inside the container:
+
+- `create-pr-helper.py` - Create PRs with auto-generated descriptions
+- `comment-pr-helper.py` - Post PR comments
+- `discover-tests.py` - Discover test frameworks in a codebase
+
+### Container Config
+
 - **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
 - **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
-
-### Container Scripts
-
-**[Sprint Analysis](jib-container/scripts/README.md)** - Analyze sprint tickets and suggest next steps:
-```bash
-# From host
-bin/jib --exec /home/jwies/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
-```
-
-Analyzes your assigned JIRA tickets, groups by status, suggests next steps, and recommends backlog tickets to pull in.
 
 ### Shared Directories
 
@@ -511,8 +516,8 @@ docker logs -f jib-claude
 - [conversation-analyzer](host-services/conversation-analyzer/README.md) - Quality analysis
 - [service-monitor](host-services/service-monitor/README.md) - Failure monitoring
 
-**Container Components:**
-- [context-watcher](jib-container/watchers/context-watcher/README.md) - Document monitoring
+**Container Tasks:**
+- [github](jib-container/jib-tasks/github/README.md) - GitHub/PR analysis tasks
 - [.claude rules](jib-container/.claude/rules/README.md) - Agent behavior and standards
 
 ### Guides

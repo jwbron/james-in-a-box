@@ -494,7 +494,7 @@ class SlackReceiver:
             container_message_path = str(filepath).replace(str(Path.home() / ".jib-sharing"), f"/home/{os.environ['USER']}/sharing")
 
             # Container path to processor script (james-in-a-box mounted at ~/khan/james-in-a-box/)
-            container_processor = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/watchers/incoming-processor.py"
+            container_processor = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/jib-tasks/slack/incoming-processor.py"
 
             self.logger.info(f"Triggering processing for {filepath.name}")
 

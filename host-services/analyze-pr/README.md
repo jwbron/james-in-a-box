@@ -71,7 +71,7 @@ The host-side script uses `gh` CLI to fetch:
 
 Context is written to `~/.jib-sharing/pr-analysis/<repo>-<pr>-<timestamp>.json`
 
-### 2. Container-side: Analysis (`watchers/pr-analyzer.py`)
+### 2. Container-side: Analysis (`jib-tasks/github/pr-analyzer.py`)
 
 The container script:
 1. Loads the JSON context file
@@ -116,7 +116,7 @@ analyze-pr <url>
 └─────────────────────────────┘
      │
      ▼
-jib --exec python3 watchers/pr-analyzer.py <context.json>
+jib --exec python3 jib-tasks/github/pr-analyzer.py <context.json>
      │
      ▼
 ┌─────────────────────────────┐

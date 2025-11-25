@@ -54,7 +54,7 @@ We investigated using token-based authentication for Claude Code in containerize
 ## Related Code
 - `bin/jib` - Setup prompts for token (currently unused)
 - `jib-container/Dockerfile` - Checks for `CLAUDE_CODE_OAUTH_TOKEN` (not functional)
-- `jib-container/watchers/incoming-processor.py` - Uses `claude` with stdin (requires auth)
+- `jib-container/jib-tasks/slack/incoming-processor.py` - Uses `claude` with stdin (requires auth)
 
 ## Future Possibilities
 - Anthropic may add official token-based authentication for CLI

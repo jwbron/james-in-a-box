@@ -36,7 +36,7 @@ systemctl --user stop slack-receiver.service
 - `slack-receiver.service` - Systemd service file
 - `setup.sh` - Installation script
 - `host-receive-slack.py` - Slack Socket Mode receiver (triggers processing via `jib --exec`)
-- `../../jib-container/watchers/incoming-processor.py` - Message processor (runs in container)
+- `../../jib-container/jib-tasks/slack/incoming-processor.py` - Message processor (runs in container)
 
 ## How It Works
 
