@@ -6,7 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/khan/james-in-a-box/host-services/slack/slack-receiver/slack-receiver.py
+# Uses shared virtual environment installed by setup.sh via uv
+ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/slack/slack-receiver/slack-receiver.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

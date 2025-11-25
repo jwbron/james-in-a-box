@@ -197,22 +197,53 @@ if [ $missing_deps -gt 0 ]; then
     exit 1
 fi
 
-# Check Python packages
-print_info "Checking Python packages..."
-if python3 -c "import slack_sdk" 2>/dev/null; then
-    print_success "slack-sdk found"
+# Check for uv package manager
+print_info "Checking for uv package manager..."
+if command -v uv &> /dev/null; then
+    print_success "uv found"
 else
-    print_warning "slack-sdk not found"
-    echo "Install with: pip install slack-sdk"
-    read -p "Install now? (y/n) " -n 1 -r
+    print_warning "uv not found"
+    echo "uv is the modern Python package manager used for host dependencies"
+    echo "Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    read -p "Install uv now? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        pip install slack-sdk || pip install --user slack-sdk
-        print_success "slack-sdk installed"
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        # Source the env to get uv in PATH for current session
+        source "$HOME/.local/bin/env" 2>/dev/null || export PATH="$HOME/.local/bin:$PATH"
+        if command -v uv &> /dev/null; then
+            print_success "uv installed"
+        else
+            print_error "uv installation failed. Please install manually."
+            exit 1
+        fi
     else
-        print_error "slack-sdk required for Slack integration"
+        print_error "uv is required for host service dependencies"
         exit 1
     fi
+fi
+
+# Install Python dependencies using uv
+print_info "Installing Python dependencies with uv..."
+HOST_SERVICES_DIR="$SCRIPT_DIR/host-services"
+VENV_DIR="$HOST_SERVICES_DIR/.venv"
+
+# Create or update virtual environment and sync dependencies
+cd "$HOST_SERVICES_DIR"
+if uv sync; then
+    print_success "Python dependencies installed to $VENV_DIR"
+else
+    print_error "Failed to install Python dependencies"
+    exit 1
+fi
+cd "$SCRIPT_DIR"
+
+# Verify key packages are available
+if "$VENV_DIR/bin/python" -c "import slack_sdk" 2>/dev/null; then
+    print_success "slack-sdk verified"
+else
+    print_error "slack-sdk installation verification failed"
+    exit 1
 fi
 
 # Check and install Beads (bd) - persistent task memory system
