@@ -98,7 +98,7 @@ Use the discovered test command. Don't assume - every codebase is different!
 
 ### 6. Commit & Create PR
 
-**MANDATORY**: For writable repos, always create a PR:
+**MANDATORY**: Always use the PR helpers - they handle both writable and non-writable repos:
 ```bash
 git add <files>
 git commit -m "Brief description
@@ -110,9 +110,16 @@ git commit -m "Brief description
 create-pr-helper.py --auto --no-notify
 ```
 
+**How the helpers handle repo access:**
+- **Writable repos**: Creates PR on GitHub and sends Slack notification
+- **Non-writable repos**: Automatically sends Slack notification with full PR context,
+  prompting manual PR creation (no GitHub operations attempted)
+
 Check writable repos: `create-pr-helper.py --list-writable`
 
-For non-writable repos: commit and notify user with branch name.
+**For PR comments**, use `comment-pr-helper.py`:
+- **Writable repos**: Posts comment to GitHub and notifies via Slack
+- **Non-writable repos**: Sends comment content via Slack for manual posting
 
 **Troubleshooting**: If push fails, run `gh auth setup-git` first.
 
