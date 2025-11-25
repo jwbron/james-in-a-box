@@ -41,13 +41,13 @@ except ImportError:
     HAS_REPO_CONFIG = False
 
     def get_default_reviewer():
-        return "jwiesebron"
+        return "jwbron"
 
     def is_writable_repo(repo):
         return True  # Allow by default if config unavailable
 
     def get_writable_repos():
-        return ["jwiesebron/james-in-a-box"]
+        return ["jwbron/james-in-a-box"]
 
 
 class PRCreator:

@@ -23,7 +23,7 @@ writable_repos:
   - jwbron/james-in-a-box
 
 # Default reviewer for PRs created by jib
-default_reviewer: jwiesebron
+default_reviewer: jwbron
 
 # GitHub sync configuration
 github_sync:
