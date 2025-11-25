@@ -592,6 +592,17 @@ At jib's expected volume (~100-500 notifications/day):
 
 Cost becomes non-trivial only at >10,000 notifications/day (~$5-10/month).
 
+## Related ADRs
+
+This ADR is the foundation for a series defining the jib GCP deployment architecture:
+
+| ADR | Relationship to This ADR |
+|-----|-------------------------|
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Sync jobs use Pub/Sub to send completion notifications |
+| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Defines MCP for reading Slack (complementary to Pub/Sub for sending) |
+| [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Slash commands trigger jobs that publish results via Pub/Sub |
+| [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Terraform definitions for Pub/Sub topics, slack-worker service |
+
 ## References
 
 - [Cloud Pub/Sub Documentation](https://cloud.google.com/pubsub/docs)
