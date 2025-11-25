@@ -1,6 +1,6 @@
 [Unit]
 Description=JIB Worktree Watcher Timer - Periodic cleanup of orphaned worktrees
-Documentation=file:///home/jwies/khan/james-in-a-box/components/worktree-watcher/README.md
+Documentation=file:///home/jwies/khan/james-in-a-box/host-services/worktree-watcher/README.md
 
 [Timer]
 # Run 5 minutes after boot
