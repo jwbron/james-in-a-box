@@ -233,6 +233,19 @@ Return ONLY the JSON array, no other text."""
 
         try:
             content = file_path.read_text(encoding='utf-8')
+            file_size = len(content)
+
+            # Skip files that are too large for the full-rewrite approach
+            # Large files take too long and often timeout
+            max_size_for_fix = 20_000  # 20KB
+            if file_size > max_size_for_fix:
+                self.logger.warning(
+                    f"Skipping {issue['file']} ({file_size // 1000}KB) - too large for auto-fix"
+                )
+                return False
+
+            # Scale timeout based on file size (60s base + 1s per 200 chars)
+            timeout_seconds = max(120, 60 + file_size // 200)
 
             prompt = f"""Fix this issue in the file. Make ONLY the minimal change needed.
 
@@ -253,7 +266,7 @@ Return ONLY the complete fixed file content. No explanations, no markdown fences
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=timeout_seconds
             )
 
             if result.returncode != 0:
