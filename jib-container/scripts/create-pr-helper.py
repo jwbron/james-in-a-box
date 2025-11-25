@@ -152,6 +152,8 @@ class PRCreator:
         body_parts.append("- [ ] Tests pass locally\n")
         body_parts.append("- [ ] Manual verification\n")
         body_parts.append("\n")
+        body_parts.append("---\n")
+        body_parts.append("*— Authored by jib*\n")
 
         return "".join(body_parts)
 
