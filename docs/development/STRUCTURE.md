@@ -21,9 +21,8 @@ james-in-a-box/
 |-----------|---------|---------|
 | `host-services/slack/` | Slack communication services | Host |
 | `host-services/sync/` | Data synchronization services | Host |
-| `host-services/analysis/` | Code and conversation analysis | Host |
+| `host-services/analysis/` | Code/conversation analysis and PR tools | Host |
 | `host-services/utilities/` | Utility services (monitoring, cleanup) | Host |
-| `host-services/cli/` | Command-line tools (not daemons) | Host |
 | `jib-container/jib-tasks/` | Scripts called via `jib --exec` from host services | Container (via jib --exec) |
 | `jib-container/jib-tools/` | Interactive tools used inside the container | Container |
 | `jib-container/.claude/` | Claude Code configuration (rules, commands) | Container |
@@ -40,14 +39,13 @@ host-services/
 ├── sync/                      # Data synchronization
 │   ├── github-sync/           # GitHub PR sync
 │   └── context-sync/          # Confluence/JIRA sync
-├── analysis/                  # Analysis services
+├── analysis/                  # Analysis services and tools
 │   ├── codebase-analyzer/     # Code review automation
-│   └── conversation-analyzer/ # Quality analysis
-├── utilities/                 # Utility services
-│   ├── worktree-watcher/      # Git worktree cleanup
-│   └── service-monitor/       # Service failure monitoring
-└── cli/                       # CLI tools (not systemd services)
-    └── analyze-pr/            # PR analysis tool
+│   ├── conversation-analyzer/ # Quality analysis
+│   └── analyze-pr/            # PR analysis CLI tool
+└── utilities/                 # Utility services
+    ├── worktree-watcher/      # Git worktree cleanup
+    └── service-monitor/       # Service failure monitoring
 ```
 
 Each service directory should contain:
@@ -130,7 +128,7 @@ The `bin/` directory contains symlinks for convenient CLI access:
 ```
 bin/
 ├── jib -> ../jib-container/jib
-├── analyze-pr -> ../host-services/cli/analyze-pr/analyze-pr
+├── analyze-pr -> ../host-services/analysis/analyze-pr/analyze-pr
 ├── setup-slack-notifier -> ../host-services/slack/slack-notifier/setup.sh
 └── ...
 ```

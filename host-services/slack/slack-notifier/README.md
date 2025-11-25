@@ -35,8 +35,8 @@ systemctl --user stop slack-notifier.service
 
 - `slack-notifier.service` - Systemd service file
 - `setup.sh` - Installation script
-- `host-notify-slack.py` - Inotify-based file watcher
-- `manage_notifier.sh` - Helper utilities
+- `slack-notifier.py` - Inotify-based file watcher
+- `slack-app-manifest.yaml` - Slack app configuration manifest
 
 ## Features
 
