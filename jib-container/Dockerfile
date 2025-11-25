@@ -46,6 +46,12 @@ RUN chmod +x /tmp/docker-setup.py && \
     python3 /tmp/docker-setup.py && \
     rm /tmp/docker-setup.py
 
+# Install Python dependencies for jib components
+# These are required by scripts in jib-container/components/ and jib-container/scripts/
+RUN pip3 install --no-cache-dir \
+    pyyaml \
+    requests
+
 # Install beads llm issue tracker
 # Add Go bin to PATH for beads installation
 ENV PATH="/root/go/bin:${PATH}"
