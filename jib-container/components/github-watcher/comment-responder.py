@@ -330,7 +330,7 @@ Return ONLY the JSON, no other text."""
         try:
             result = subprocess.run(
                 ['gh', 'pr', 'view', str(pr_num), '--repo', repo,
-                 '--json', 'state,headRefName,baseRefName,merged'],
+                 '--json', 'state,headRefName,baseRefName'],
                 capture_output=True,
                 text=True,
                 timeout=30
