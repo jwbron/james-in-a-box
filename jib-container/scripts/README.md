@@ -67,6 +67,7 @@ Posts comments on GitHub PRs and sends Slack notifications. Use this instead of 
 - Automatically adds jib signature to comments
 - Sends Slack notification with comment details
 - Supports task ID for Slack thread correlation
+- **Handles non-writable repos gracefully**: For repos without write access, sends comment via Slack notification instead of posting to GitHub
 
 **Usage:**
 
@@ -100,6 +101,11 @@ comment-pr-helper.py --pr 123 --body "Done!" --task-id my-task-123
 ### create-pr-helper.py
 
 Creates GitHub PRs with proper formatting and Slack notifications. See main CLAUDE.md for detailed usage.
+
+**Features:**
+- Creates PRs on GitHub with consistent formatting
+- Sends Slack notifications with PR context
+- **Handles non-writable repos gracefully**: For repos without write access, sends a Slack notification with full PR context (commits, changed files, summary) for manual PR creation instead of attempting GitHub operations
 
 ### discover-tests.py
 

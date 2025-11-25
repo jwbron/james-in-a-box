@@ -6,6 +6,7 @@ Used by jib to:
 1. Post comments on GitHub PRs consistently
 2. Send Slack notifications about comments posted
 3. Maintain threading context for related notifications
+4. For non-writable repos: send Slack notification instead of GitHub comment
 
 Usage:
   comment-pr-helper.py --pr 123 --body "Comment text"
@@ -14,6 +15,9 @@ Usage:
   comment-pr-helper.py --pr 123 --body "Comment" --task-id my-task-123
 
 The comment body is always signed with "-- Authored by jib" unless --no-sign is used.
+
+For repositories without write access, the helper will automatically send a
+Slack notification with the comment content instead of posting to GitHub.
 """
 
 import argparse
@@ -25,6 +29,24 @@ from typing import Optional, Dict, Any
 # Add shared directory to path for notifications import
 sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
 from notifications import get_slack_service, NotificationContext
+
+# Try to load repo config for writable repos check
+try:
+    config_paths = [
+        Path(__file__).parent.parent.parent / "config",  # From scripts dir
+        Path.home() / "khan" / "james-in-a-box" / "config",  # From container
+    ]
+    for config_path in config_paths:
+        if (config_path / "repo_config.py").exists():
+            sys.path.insert(0, str(config_path.parent))
+            break
+    from config.repo_config import is_writable_repo
+    HAS_REPO_CONFIG = True
+except ImportError:
+    HAS_REPO_CONFIG = False
+
+    def is_writable_repo(repo):
+        return True  # Allow by default if config unavailable
 
 
 class PRCommenter:
@@ -62,6 +84,17 @@ class PRCommenter:
             return None
         except subprocess.CalledProcessError:
             return None
+
+    def check_writable(self) -> tuple:
+        """Check if current repo is in the writable repos list.
+
+        Returns:
+            (is_writable, repo_name) - Whether repo is writable and its name
+        """
+        repo_name = self.get_repo_name()
+        if not repo_name:
+            return False, "unknown"
+        return is_writable_repo(repo_name), repo_name
 
     def get_pr_info(self, pr_number: int) -> Optional[Dict[str, Any]]:
         """Get information about a PR."""
@@ -181,6 +214,45 @@ class PRCommenter:
                 ),
             )
 
+    def send_slack_only_notification(
+        self,
+        pr_number: int,
+        body: str,
+        pr_info: Optional[Dict[str, Any]] = None,
+        task_id: Optional[str] = None
+    ):
+        """Send Slack notification for non-writable repos (instead of GitHub comment)."""
+        repo_name = self.get_repo_name() or "unknown"
+
+        # Build notification body
+        body_parts = [
+            f"**Repository**: {repo_name} (read-only - cannot post GitHub comment)",
+            f"**PR**: #{pr_number}",
+        ]
+
+        if pr_info:
+            body_parts.append(f"**PR Title**: {pr_info.get('title', 'Unknown')}")
+            body_parts.append(f"**Branch**: `{pr_info.get('headRefName', '?')}` -> `{pr_info.get('baseRefName', '?')}`")
+            if pr_info.get("url"):
+                body_parts.append(f"**PR URL**: {pr_info['url']}")
+
+        # Add the full comment
+        body_parts.append(f"\n## Comment (not posted to GitHub)\n\n{body}")
+        body_parts.append(f"\n---\n*Please post this comment manually on the PR if needed.*")
+
+        context = NotificationContext(
+            task_id=task_id,
+            source="comment-pr-helper",
+            repository=repo_name,
+            pr_number=pr_number,
+        )
+
+        self.slack.notify_action_required(
+            title=f"Comment Ready for PR #{pr_number}",
+            body="\n".join(body_parts),
+            context=context,
+        )
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -238,10 +310,35 @@ def main():
         print("Error: Not in a git repository", file=sys.stderr)
         sys.exit(1)
 
+    # Check if this repo is in the writable repos list
+    is_writable, repo_name = commenter.check_writable()
+
     # Get PR info for richer notification
     pr_info = commenter.get_pr_info(args.pr)
 
-    # Post the comment
+    # For non-writable repos, send Slack notification instead of posting to GitHub
+    if not is_writable:
+        print(f"Note: Repository '{repo_name}' is not in the writable repos list.")
+        print(f"Sending Slack notification with comment content instead of posting to GitHub.")
+        print()
+
+        # Add signature if requested
+        comment_body = body
+        if not args.no_sign:
+            comment_body = commenter.add_signature(body)
+
+        commenter.send_slack_only_notification(
+            pr_number=args.pr,
+            body=comment_body,
+            pr_info=pr_info,
+            task_id=args.task_id
+        )
+
+        print(f"\nSlack notification sent!")
+        print(f"Comment content ready for manual posting on PR #{args.pr}")
+        sys.exit(0)
+
+    # Post the comment (for writable repos)
     result = commenter.post_comment(
         pr_number=args.pr,
         body=body,
