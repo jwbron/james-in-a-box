@@ -19,6 +19,7 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -151,21 +152,67 @@ class CommentResponder:
             json.dump({'processed': self.processed_comments}, f, indent=2)
 
     def watch(self):
-        """Main watch loop - check for new comments."""
+        """Main watch loop - check for new comments on all PRs in parallel."""
         if not self.comments_dir.exists():
             print("Comments directory not found - skipping watch")
             return
 
-        for comment_file in self.comments_dir.glob("*-PR-*-comments.json"):
-            try:
-                self.process_comment_file(comment_file)
-            except Exception as e:
-                print(f"Error processing {comment_file}: {e}")
-                import traceback
-                traceback.print_exc()
+        comment_files = list(self.comments_dir.glob("*-PR-*-comments.json"))
+        if not comment_files:
+            print("No PR comment files found")
+            return
 
-    def process_comment_file(self, comment_file: Path):
-        """Process a single PR's comment file - batches all unprocessed comments."""
+        print(f"Found {len(comment_files)} PR(s) to check for comments")
+
+        # Process PRs in parallel (max 4 concurrent to avoid overwhelming resources)
+        max_workers = min(4, len(comment_files))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all PR processing tasks
+            future_to_file = {
+                executor.submit(self._process_comment_file_safe, cf): cf
+                for cf in comment_files
+            }
+
+            # Collect results as they complete
+            all_processed_ids = {}
+            for future in as_completed(future_to_file):
+                comment_file = future_to_file[future]
+                try:
+                    processed_ids = future.result()
+                    if processed_ids:
+                        all_processed_ids.update(processed_ids)
+                except Exception as e:
+                    print(f"Error processing {comment_file.name}: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        # Merge all processed IDs into state and save once
+        if all_processed_ids:
+            self.processed_comments.update(all_processed_ids)
+            self.save_state()
+            print(f"✓ Saved state with {len(all_processed_ids)} newly processed comment(s)")
+
+    def _process_comment_file_safe(self, comment_file: Path) -> Dict[str, str]:
+        """Process a comment file and return dict of processed comment IDs.
+
+        This is a thread-safe wrapper that doesn't modify shared state directly.
+        Returns a dict of {comment_id: timestamp} for successfully processed comments.
+        """
+        try:
+            return self.process_comment_file(comment_file)
+        except Exception as e:
+            print(f"Error processing {comment_file.name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
+
+    def process_comment_file(self, comment_file: Path) -> Dict[str, str]:
+        """Process a single PR's comment file - batches all unprocessed comments.
+
+        Returns:
+            Dict of {comment_id: timestamp} for comments that were processed.
+        """
         with comment_file.open() as f:
             data = json.load(f)
 
@@ -175,11 +222,11 @@ class CommentResponder:
 
         comments = data.get('comments', [])
         if not comments:
-            return
+            return {}
 
         # Collect all unprocessed comments that need responses
         pending_comments = []
-        skip_comment_ids = []
+        processed_ids = {}  # Return value: comment_id -> timestamp
 
         for comment in comments:
             comment_id = str(comment.get('id'))
@@ -191,16 +238,13 @@ class CommentResponder:
             else:
                 # Comment doesn't need a response (bot, jib's own comment, etc.)
                 # Mark as processed to avoid re-checking it every time
-                skip_comment_ids.append(comment_id)
-                self.processed_comments[comment_id] = datetime.utcnow().isoformat() + 'Z'
+                processed_ids[comment_id] = datetime.utcnow().isoformat() + 'Z'
 
-        # If no pending comments, just save state and return
+        # If no pending comments, return any skipped comment IDs
         if not pending_comments:
-            if skip_comment_ids:
-                self.save_state()
-            return
+            return processed_ids
 
-        print(f"Processing {len(pending_comments)} pending comment(s) on PR #{pr_num}")
+        print(f"Processing {len(pending_comments)} pending comment(s) on PR #{pr_num} ({repo})")
 
         # Process all pending comments as a batch
         success = self.handle_pr_comments_batch(pr_num, repo_name, repo, pending_comments, data)
@@ -209,12 +253,12 @@ class CommentResponder:
             # Mark all processed comments as done
             for comment in pending_comments:
                 comment_id = str(comment.get('id'))
-                self.processed_comments[comment_id] = datetime.utcnow().isoformat() + 'Z'
-            print(f"  ✓ Marked {len(pending_comments)} comment(s) as processed")
+                processed_ids[comment_id] = datetime.utcnow().isoformat() + 'Z'
+            print(f"  ✓ PR #{pr_num}: Processed {len(pending_comments)} comment(s)")
         else:
-            print(f"  ⚠ Failed to process comments - will retry on next run")
+            print(f"  ⚠ PR #{pr_num}: Failed to process comments - will retry on next run")
 
-        self.save_state()
+        return processed_ids
 
     def needs_response(self, comment: Dict) -> bool:
         """Determine if a comment needs a response."""
@@ -443,7 +487,7 @@ Now process the pending comments and take the appropriate actions."""
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=300,  # 5 minutes for complex PR work
+                timeout=600,  # 10 minutes for complex PR work
                 cwd=cwd
             )
 
@@ -600,7 +644,7 @@ Return ONLY the JSON, no other text."""
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minutes for complex PR discussions
+                timeout=600  # 10 minutes for complex PR discussions
             )
 
             if result.returncode != 0:
@@ -838,7 +882,7 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=600  # 10 minutes for code changes
             )
 
             if result.returncode != 0:
@@ -930,7 +974,7 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=600  # 10 minutes for code changes
             )
 
             if result.returncode != 0:
