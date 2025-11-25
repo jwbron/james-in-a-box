@@ -66,7 +66,7 @@ git commit -m "Brief description
 🤖 Generated with Claude Code
 Co-Authored-By: jib <jib@khan.org>"
 
-create-pr-helper.py --auto --reviewer jwiesebron
+create-pr-helper.py --auto
 ```
 
 Check writable repos: `create-pr-helper.py --list-writable`
