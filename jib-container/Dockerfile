@@ -123,7 +123,8 @@ fi
 # Set up environment
 export HOME="${USER_HOME}"
 export USER="${RUNTIME_USER}"
-export PATH="/usr/local/bin:${PATH}"
+# Add jib scripts to PATH for create-pr-helper.py and other tools
+export PATH="${USER_HOME}/khan/james-in-a-box/jib-container/scripts:/usr/local/bin:${PATH}"
 # Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
 export PYTHONDONTWRITEBYTECODE=1
 
@@ -299,9 +300,11 @@ cat "${USER_HOME}/.claude/settings.json"
 echo ""
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
+# Also add jib-container/scripts to PATH for create-pr-helper.py and other tools
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
 alias claude='claude --dangerously-skip-permissions'
 export PS1='\[\033[01;32m\]\u@sandboxed\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+export PATH="${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
 BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
 echo "✓ Claude alias created (bypasses permissions in sandbox)"
