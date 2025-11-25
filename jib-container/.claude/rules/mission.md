@@ -61,11 +61,7 @@ git add <files>
 git commit -m "Brief description
 
 - Details
-- JIRA-1234
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+- JIRA-1234"
 
 create-pr-helper.py --auto
 ```

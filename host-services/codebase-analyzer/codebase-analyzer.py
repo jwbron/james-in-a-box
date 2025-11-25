@@ -403,10 +403,6 @@ Fixes:
             for issue in implemented:
                 commit_msg += f"- {issue['file']}: {issue['description'][:50]}...\n"
 
-            commit_msg += """
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"""
 
             subprocess.run(
                 ['git', 'commit', '-m', commit_msg],
@@ -449,7 +445,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                     pr_body += f"\n  - Issue: {issue['description'][:80]}\n"
                 pr_body += "\n"
 
-            pr_body += "\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
             result = subprocess.run(
                 ['gh', 'pr', 'create', '--base', 'main', '--head', branch_name,

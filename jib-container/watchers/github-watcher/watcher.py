@@ -346,9 +346,7 @@ class GitHubWatcher:
                 commit_message += "Changes:\n"
                 for desc in changes_description:
                     commit_message += f"- {desc}\n"
-                commit_message += f"\nFixed {len(changed_files)} file(s)\n"
-                commit_message += "\n🤖 Generated with Claude Code (https://claude.com/claude-code)\n"
-                commit_message += "Co-Authored-By: Claude <noreply@anthropic.com>"
+                commit_message += f"\nFixed {len(changed_files)} file(s)"
 
                 result = subprocess.run(
                     ['git', 'commit', '-m', commit_message],

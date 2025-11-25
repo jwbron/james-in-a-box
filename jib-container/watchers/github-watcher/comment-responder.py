@@ -720,9 +720,6 @@ This PR addresses feedback from the original PR which has been closed/merged.
 ### Changes
 {change_desc}
 
----
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
 —
 Authored by jib"""
 
