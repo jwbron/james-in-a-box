@@ -105,7 +105,7 @@ lint-python:
 
 lint-python-fix:
 	@echo "==> Fixing Python files with ruff..."
-	@ruff check --fix .
+	@ruff check --fix --unsafe-fixes .
 	@ruff format .
 	@echo "Python files fixed!"
 
