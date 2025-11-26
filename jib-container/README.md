@@ -73,13 +73,13 @@ No manual setup required inside the container.
 
 **What the agent CAN do**:
 - Read/write code in `~/khan/` (isolated git worktree)
-- Commit and push to temp branches
-- Create PRs via GitHub CLI
+- Git commits locally
+- Create/manage PRs via GitHub MCP
+- Query issues, repos, comments via GitHub MCP
+- Push files/changes via GitHub MCP
 - Run tests and builds
 - Read context docs (Confluence, JIRA)
 - Write notifications for human review
-- Query GitHub/Jira/Confluence in real-time via MCP servers
-- Create/update issues and PRs via MCP
 
 **What the agent CANNOT do**:
 - Merge PRs (human must approve and merge)
@@ -88,13 +88,16 @@ No manual setup required inside the container.
 - Modify host filesystem (only mounted directories)
 - Push to protected branches (main/master)
 
-## MCP Servers
+## GitHub MCP Server
 
-The container is configured with Model Context Protocol (MCP) servers for real-time external access:
+The container uses the GitHub MCP server for all GitHub operations. This provides real-time, bi-directional access:
 
-| Server | Capabilities | Authentication |
-|--------|--------------|----------------|
-| **github** | Repos, issues, PRs, search, file contents | `GITHUB_TOKEN` (auto-configured) |
-| **atlassian** | Jira tickets, Confluence pages, search | OAuth (requires first-use setup) |
+| Category | Tools |
+|----------|-------|
+| **Repositories** | `search_repositories`, `get_file_contents`, `push_files` |
+| **Issues** | `search_issues`, `get_issue`, `create_issue`, `update_issue` |
+| **Pull Requests** | `create_pull_request`, `get_pull_request`, `list_pull_requests` |
+| **Comments** | `add_issue_comment`, `list_issue_comments` |
+| **Branches** | `create_branch`, `list_branches` |
 
-MCP servers are configured in `~/.mcp.json` and provide bi-directional access to external systems. See [ADR-Context-Sync-Strategy-Custom-vs-MCP](../docs/adr/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) for architecture details.
+MCP server is configured in `~/.mcp.json` and authenticated via `GITHUB_TOKEN`.

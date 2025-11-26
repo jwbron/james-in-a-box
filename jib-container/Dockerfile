@@ -223,42 +223,14 @@ else
     echo "  All future containers will automatically use these credentials"
 fi
 
-# Authenticate GitHub CLI if token is provided
+# Note: GitHub operations now go through GitHub MCP server (configured above)
+# The gh CLI is kept as fallback but primary access is via MCP
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-    echo "ℹ Authenticating GitHub CLI..."
-    # Create gh config directory
-    mkdir -p "${USER_HOME}/.config/gh"
-    chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.config/gh"
-
-    # Try to login with token (may fail if GITHUB_TOKEN env var is already set,
-    # but that's OK - gh will use the env var directly)
-    echo "${GITHUB_TOKEN}" | gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth login --with-token 2>/dev/null || true
-
-    # Check if gh is authenticated (either via stored token or GITHUB_TOKEN env var)
-    if gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth status >/dev/null 2>&1; then
-        echo "✓ GitHub CLI authenticated (PR creation enabled)"
-        echo "  Token provided via GITHUB_TOKEN environment variable"
-
-        # Configure git to use gh as credential helper for git push/pull
-        # Note: gh auth setup-git modifies ~/.gitconfig which affects all repos
-        if gosu "${RUNTIME_UID}:${RUNTIME_GID}" gh auth setup-git; then
-            echo "✓ Git credential helper configured (gh)"
-        else
-            echo "⚠ gh auth setup-git failed, setting credential helper manually..."
-            # Fallback: Set credential helper manually
-            gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper '!gh auth git-credential'
-            gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.https://github.com.helper '!gh auth git-credential'
-            echo "✓ Git credential helper configured (manual fallback)"
-        fi
-
-        echo "✓ GitHub authentication verified"
-    else
-        echo "⚠ GitHub CLI authentication failed"
-        echo "  PR creation features will not be available"
-    fi
+    echo "✓ GitHub access configured via MCP server"
+    echo "  All GitHub operations (PRs, issues, comments) go through MCP"
 else
     echo "ℹ No GitHub token provided"
-    echo "  PR creation features not available"
+    echo "  GitHub MCP server not available"
     echo "  Add token with: ./setup.sh --update (on host)"
 fi
 
@@ -297,10 +269,9 @@ echo "✓ Claude settings created: ${USER_HOME}/.claude/settings.json"
 cat "${USER_HOME}/.claude/settings.json"
 echo ""
 
-# Create .mcp.json with MCP server configurations
-# Per ADR-Context-Sync-Strategy-Custom-vs-MCP.md, we use official MCP servers:
-# - GitHub MCP: Remote server at api.githubcopilot.com (uses GITHUB_TOKEN)
-# - Atlassian MCP: Remote server via mcp-remote proxy (uses OAuth flow)
+# Create .mcp.json with GitHub MCP server configuration
+# GitHub MCP provides bi-directional access: repos, issues, PRs, comments, file operations
+# This replaces direct gh CLI usage for all GitHub operations
 if [ -n "${GITHUB_TOKEN:-}" ]; then
     cat > "${USER_HOME}/.mcp.json" << MCPEOF
 {
@@ -311,33 +282,25 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
       "headers": {
         "Authorization": "Bearer ${GITHUB_TOKEN}"
       }
-    },
-    "atlassian": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
     }
   }
 }
 MCPEOF
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.mcp.json"
     chmod 600 "${USER_HOME}/.mcp.json"
-    echo "✓ MCP servers configured:"
-    echo "  - github: Remote server (api.githubcopilot.com)"
-    echo "  - atlassian: Remote server via mcp-remote proxy"
-    echo "  Note: Atlassian requires OAuth setup on first use"
+    echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
+    echo "  All GitHub operations go through MCP: PRs, issues, repos, comments"
 else
-    echo "ℹ GitHub token not provided - MCP servers not configured"
+    echo "ℹ GitHub token not provided - GitHub MCP server not configured"
     echo "  Add GITHUB_TOKEN to enable GitHub MCP server"
 fi
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
-# Also add jib-container/scripts to PATH and ensure gh credentials are configured
+# Also add jib-container/scripts to PATH
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
 alias claude='claude --dangerously-skip-permissions'
 export PS1='\[\033[01;32m\]\u@sandboxed\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 export PATH="${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
-# Ensure git credentials are configured (runs silently, belt and suspenders)
-command -v gh &>/dev/null && gh auth setup-git 2>/dev/null
 BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
 echo "✓ Claude alias created (bypasses permissions in sandbox)"
