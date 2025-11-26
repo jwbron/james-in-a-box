@@ -237,7 +237,43 @@ class SlackReceiver:
 
     def _execute_command(self, command_text: str) -> bool:
         """
-        Execute remote control command.
+        Execute remote control command using the HostCommandHandler.
+
+        Returns True if command was executed, False otherwise.
+        """
+        try:
+            # Import the handler (lazy import to avoid circular dependencies)
+            from host_command_handler import HostCommandHandler
+
+            self.logger.info(f"Executing remote command: {command_text}")
+
+            # Execute in a separate thread to avoid blocking
+            import threading
+
+            def run_command():
+                try:
+                    handler = HostCommandHandler()
+                    handler.execute_from_text(command_text)
+                except Exception as e:
+                    self.logger.error(f"Command execution failed: {e}")
+
+            thread = threading.Thread(target=run_command, daemon=True)
+            thread.start()
+
+            self.logger.info("Command dispatched successfully")
+            return True
+
+        except ImportError:
+            # Fallback to shell script if Python module not available
+            self.logger.warning("HostCommandHandler not found, falling back to shell script")
+            return self._execute_command_shell(command_text)
+        except Exception as e:
+            self.logger.error(f"Failed to execute command: {e}")
+            return False
+
+    def _execute_command_shell(self, command_text: str) -> bool:
+        """
+        Fallback: Execute remote control command via shell script.
 
         Returns True if command was executed, False otherwise.
         """
@@ -266,7 +302,7 @@ class SlackReceiver:
 
         # Execute command in background (async)
         try:
-            self.logger.info(f"Executing remote command: {' '.join(parts)}")
+            self.logger.info(f"Executing remote command (shell fallback): {' '.join(parts)}")
 
             # Run command in background
             subprocess.Popen(
