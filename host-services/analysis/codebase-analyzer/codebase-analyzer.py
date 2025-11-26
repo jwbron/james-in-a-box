@@ -5,6 +5,15 @@ Codebase Improvement Analyzer
 Analyzes the james-in-a-box codebase for potential improvements using a SINGLE
 Claude call, then optionally implements the top fixes and opens a PR.
 
+The analyzer performs comprehensive analysis across multiple dimensions:
+- Code Quality: Bare except clauses, missing error handling, style issues
+- Structural Issues: Directory organization, file placement, naming consistency
+- Unused Code: Dead code, obsolete files, unreferenced modules
+- Duplication: Similar code patterns, repeated implementations
+- Documentation Drift: READMEs out of sync, outdated references
+- Symlink Health: Broken or incorrect symlinks
+- Pattern Consistency: Similar modules should follow similar patterns
+
 Efficiency: Uses one Claude call to analyze all files at once, instead of
 one call per file.
 
@@ -12,6 +21,7 @@ Usage:
   codebase-analyzer.py                    # Analyze and report
   codebase-analyzer.py --implement        # Analyze, fix top 10 issues, open PR
   codebase-analyzer.py --implement --max-fixes 5  # Fix top 5 issues
+  codebase-analyzer.py --focus structural  # Focus on structural analysis
 """
 
 import os
@@ -19,13 +29,28 @@ import sys
 import json
 import logging
 import argparse
+import hashlib
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional, Set, Tuple
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import subprocess
 import fnmatch
+from collections import defaultdict
+
+
+class AnalysisCategory(Enum):
+    """Categories of analysis the tool performs."""
+    CODE_QUALITY = "code_quality"       # Error handling, exceptions, style
+    STRUCTURAL = "structural"           # Directory organization, file placement
+    UNUSED_CODE = "unused_code"         # Dead code, obsolete files
+    DUPLICATION = "duplication"         # Similar patterns, repeated code
+    DOCUMENTATION = "documentation"     # README drift, outdated docs
+    SYMLINKS = "symlinks"               # Broken or incorrect symlinks
+    NAMING = "naming"                   # Naming consistency
+    PATTERNS = "patterns"               # Design pattern consistency
 
 
 class FixResult(Enum):
@@ -37,7 +62,19 @@ class FixResult(Enum):
     CONTENT_TOO_LONG = "content_too_long"
     TIMEOUT = "timeout"
     CLAUDE_ERROR = "claude_error"
+    REQUIRES_RESTRUCTURING = "requires_restructuring"
     OTHER_ERROR = "other_error"
+
+
+@dataclass
+class StructuralInfo:
+    """Information about codebase structure."""
+    directory_tree: Dict[str, List[str]] = field(default_factory=dict)
+    file_types: Dict[str, int] = field(default_factory=dict)
+    symlinks: Dict[str, str] = field(default_factory=dict)  # symlink -> target
+    broken_symlinks: List[str] = field(default_factory=list)
+    readme_files: List[str] = field(default_factory=list)
+    naming_patterns: Dict[str, List[str]] = field(default_factory=dict)  # pattern -> files
 
 
 @dataclass
@@ -52,9 +89,10 @@ class PRResult:
 class CodebaseAnalyzer:
     """Analyzes codebase for improvements using a single Claude Code call."""
 
-    def __init__(self, codebase_path: Path, notification_dir: Path):
+    def __init__(self, codebase_path: Path, notification_dir: Path, focus: Optional[str] = None):
         self.codebase_path = codebase_path
         self.notification_dir = notification_dir
+        self.focus = focus  # Optional focus category
         self.logger = self._setup_logging()
 
         # Check for claude CLI
@@ -65,6 +103,9 @@ class CodebaseAnalyzer:
         # Load gitignore patterns
         self.gitignore_patterns = self._load_gitignore_patterns()
         self.always_ignore = {'.git', '__pycache__', 'node_modules', '.venv'}
+
+        # Structural information (populated during analysis)
+        self.structural_info: Optional[StructuralInfo] = None
 
     def _check_claude_cli(self) -> bool:
         """Check if claude CLI is available."""
@@ -139,6 +180,171 @@ class CodebaseAnalyzer:
         self.logger.info(f"Found {len(files)} files to analyze")
         return files
 
+    def gather_structural_info(self) -> StructuralInfo:
+        """Gather structural information about the codebase for analysis."""
+        info = StructuralInfo()
+
+        # Build directory tree
+        for path in self.codebase_path.rglob('*'):
+            if any(ig in str(path) for ig in self.always_ignore):
+                continue
+
+            rel_path = path.relative_to(self.codebase_path)
+            parent = str(rel_path.parent) if rel_path.parent != Path('.') else '.'
+
+            if path.is_dir():
+                if parent not in info.directory_tree:
+                    info.directory_tree[parent] = []
+                info.directory_tree[parent].append(str(rel_path.name))
+            elif path.is_file():
+                # Track file types
+                ext = path.suffix.lower() or 'no_extension'
+                info.file_types[ext] = info.file_types.get(ext, 0) + 1
+
+                # Track README files
+                if path.name.lower().startswith('readme'):
+                    info.readme_files.append(str(rel_path))
+
+        # Check symlinks
+        for path in self.codebase_path.rglob('*'):
+            if any(ig in str(path) for ig in self.always_ignore):
+                continue
+
+            if path.is_symlink():
+                rel_path = str(path.relative_to(self.codebase_path))
+                target = os.readlink(path)
+                info.symlinks[rel_path] = target
+
+                # Check if target exists
+                resolved = path.parent / target
+                if not resolved.exists():
+                    info.broken_symlinks.append(rel_path)
+
+        # Analyze naming patterns for Python/shell scripts
+        for path in self.codebase_path.rglob('*'):
+            if any(ig in str(path) for ig in self.always_ignore):
+                continue
+
+            if path.suffix in {'.py', '.sh'} and path.is_file():
+                rel_path = str(path.relative_to(self.codebase_path))
+                name = path.stem
+
+                # Categorize naming patterns
+                if '-' in name:
+                    pattern = 'kebab-case'
+                elif '_' in name:
+                    pattern = 'snake_case'
+                elif name[0].isupper():
+                    pattern = 'PascalCase'
+                else:
+                    pattern = 'lowercase'
+
+                if pattern not in info.naming_patterns:
+                    info.naming_patterns[pattern] = []
+                info.naming_patterns[pattern].append(rel_path)
+
+        self.structural_info = info
+        return info
+
+    def detect_potential_duplicates(self, files: List[Path]) -> List[Tuple[str, str, float]]:
+        """Detect potentially duplicated code by comparing file content hashes and structure.
+
+        Returns list of (file1, file2, similarity_score) tuples.
+        """
+        duplicates = []
+
+        # Group files by size (similar size = potential duplicate)
+        size_groups: Dict[int, List[Path]] = defaultdict(list)
+        for f in files:
+            try:
+                size = f.stat().st_size
+                # Group by size bucket (within 20% of each other)
+                bucket = size // 100 * 100
+                size_groups[bucket].append(f)
+            except OSError:
+                continue
+
+        # For groups with multiple files, compare content
+        for bucket, group in size_groups.items():
+            if len(group) < 2:
+                continue
+
+            # Compare files in group
+            for i, f1 in enumerate(group):
+                for f2 in group[i+1:]:
+                    try:
+                        c1 = f1.read_text(encoding='utf-8', errors='ignore')
+                        c2 = f2.read_text(encoding='utf-8', errors='ignore')
+
+                        # Simple similarity: line-based comparison
+                        lines1 = set(c1.strip().split('\n'))
+                        lines2 = set(c2.strip().split('\n'))
+
+                        if not lines1 or not lines2:
+                            continue
+
+                        intersection = len(lines1 & lines2)
+                        union = len(lines1 | lines2)
+                        similarity = intersection / union if union > 0 else 0
+
+                        if similarity > 0.5:  # More than 50% similar
+                            rel1 = str(f1.relative_to(self.codebase_path))
+                            rel2 = str(f2.relative_to(self.codebase_path))
+                            duplicates.append((rel1, rel2, similarity))
+                    except Exception:
+                        continue
+
+        return duplicates
+
+    def check_readme_consistency(self, files: List[Path]) -> List[Dict]:
+        """Check if README files reference files that exist or are missing."""
+        issues = []
+
+        for readme_path in files:
+            if not readme_path.name.lower().startswith('readme'):
+                continue
+
+            try:
+                content = readme_path.read_text(encoding='utf-8', errors='ignore')
+                rel_readme = str(readme_path.relative_to(self.codebase_path))
+                readme_dir = readme_path.parent
+
+                # Find file/path references in README
+                # Look for: `filename`, ./filename, ../filename, path/to/file
+                patterns = [
+                    r'`([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)`',  # `filename.ext`
+                    r'`([a-zA-Z0-9_\-]+\.(py|sh|md|yml|yaml|json))`',  # `script.py`
+                    r'(?:^|\s)(\.{1,2}/[a-zA-Z0-9_\-./]+)',  # ./path or ../path
+                ]
+
+                referenced_files = set()
+                for pattern in patterns:
+                    for match in re.finditer(pattern, content, re.MULTILINE):
+                        referenced_files.add(match.group(1))
+
+                # Check each reference
+                for ref in referenced_files:
+                    # Skip URLs and anchors
+                    if ref.startswith('http') or ref.startswith('#'):
+                        continue
+
+                    # Check if file exists relative to README location
+                    ref_path = readme_dir / ref
+                    if not ref_path.exists() and not (self.codebase_path / ref).exists():
+                        issues.append({
+                            "file": rel_readme,
+                            "line_hint": f"references '{ref}'",
+                            "priority": "MEDIUM",
+                            "category": "documentation",
+                            "description": f"README references non-existent file: {ref}",
+                            "suggestion": f"Update or remove reference to '{ref}' in README"
+                        })
+
+            except Exception as e:
+                self.logger.warning(f"Error checking README {readme_path}: {e}")
+
+        return issues
+
     def build_codebase_summary(self, files: List[Path]) -> str:
         """Build a summary of the codebase for Claude to analyze."""
         summary_parts = []
@@ -159,36 +365,132 @@ class CodebaseAnalyzer:
 
         return "\n".join(summary_parts)
 
+    def build_structural_context(self, structural_info: StructuralInfo, duplicates: List[Tuple[str, str, float]]) -> str:
+        """Build a structural context section for the Claude prompt."""
+        context_parts = []
+
+        # Directory structure overview
+        context_parts.append("=== DIRECTORY STRUCTURE ===")
+        for parent, children in sorted(structural_info.directory_tree.items())[:20]:
+            context_parts.append(f"{parent}/: {', '.join(children[:10])}")
+
+        # Symlinks status
+        if structural_info.symlinks:
+            context_parts.append("\n=== SYMLINKS ===")
+            for link, target in structural_info.symlinks.items():
+                status = "BROKEN" if link in structural_info.broken_symlinks else "OK"
+                context_parts.append(f"{link} -> {target} [{status}]")
+
+        # Naming patterns
+        if structural_info.naming_patterns:
+            context_parts.append("\n=== NAMING PATTERNS ===")
+            for pattern, files in structural_info.naming_patterns.items():
+                context_parts.append(f"{pattern}: {len(files)} files")
+                for f in files[:5]:
+                    context_parts.append(f"  - {f}")
+
+        # Potential duplicates
+        if duplicates:
+            context_parts.append("\n=== POTENTIAL DUPLICATES ===")
+            for f1, f2, sim in duplicates[:10]:
+                context_parts.append(f"{f1} <-> {f2} ({sim:.0%} similar)")
+
+        return "\n".join(context_parts)
+
     def analyze_codebase(self, files: List[Path]) -> List[Dict]:
         """Analyze entire codebase in a single Claude call."""
+        self.logger.info("Gathering structural information...")
+        structural_info = self.gather_structural_info()
+
+        self.logger.info("Checking for potential duplicates...")
+        duplicates = self.detect_potential_duplicates(files)
+        if duplicates:
+            self.logger.info(f"Found {len(duplicates)} potential duplicate pairs")
+
+        self.logger.info("Checking README consistency...")
+        readme_issues = self.check_readme_consistency(files)
+        if readme_issues:
+            self.logger.info(f"Found {len(readme_issues)} README issues")
+
         self.logger.info("Building codebase summary...")
         codebase_summary = self.build_codebase_summary(files)
+        structural_context = self.build_structural_context(structural_info, duplicates)
 
         self.logger.info(f"Codebase summary: {len(codebase_summary)} characters")
 
-        prompt = f"""Analyze this codebase for issues that can be automatically fixed.
+        # Build focus-specific instructions
+        focus_instructions = ""
+        if self.focus:
+            focus_map = {
+                "structural": "Focus primarily on directory organization, file placement, and naming consistency.",
+                "duplication": "Focus primarily on duplicate code, similar implementations, and consolidation opportunities.",
+                "unused": "Focus primarily on dead code, unused files, obsolete implementations.",
+                "documentation": "Focus primarily on README accuracy, outdated documentation, missing docs.",
+                "patterns": "Focus primarily on design pattern consistency, anti-patterns, best practice violations.",
+            }
+            focus_instructions = focus_map.get(self.focus, "")
+
+        prompt = f"""Analyze this codebase for issues that can be automatically fixed or flagged for human review.
 
 CODEBASE: james-in-a-box (Docker sandbox for Claude Code CLI)
 
+{structural_context}
+
 {codebase_summary}
 
-TASK: Identify the top 10-15 HIGH and MEDIUM priority issues that can be automatically fixed.
+TASK: Identify the top 15-20 HIGH and MEDIUM priority issues across ALL categories.
+{focus_instructions}
 
-Focus on:
-1. Bare except clauses (should use specific exceptions)
-2. Missing error handling
-3. Hardcoded paths that should be configurable
-4. Code style issues (unused imports, inline imports)
-5. Security issues (unquoted shell variables, etc.)
-6. Outdated patterns
+ANALYSIS CATEGORIES (check ALL of these):
+
+1. CODE QUALITY (category: "code_quality")
+   - Bare except clauses (should use specific exceptions)
+   - Missing error handling
+   - Code style issues (unused imports, inline imports)
+   - Security issues (unquoted shell variables, etc.)
+
+2. STRUCTURAL ISSUES (category: "structural")
+   - Files in wrong directories (scripts in wrong locations)
+   - Poor directory organization
+   - Inconsistent project structure
+
+3. UNUSED/OBSOLETE CODE (category: "unused_code")
+   - Dead code, unreferenced functions
+   - Obsolete files that should be deleted
+   - Old implementations superseded by newer ones
+
+4. DUPLICATION (category: "duplication")
+   - Similar code in multiple files
+   - Repeated implementations that could be consolidated
+   - Copy-pasted code with minor variations
+
+5. DOCUMENTATION DRIFT (category: "documentation")
+   - READMEs referencing non-existent files
+   - Outdated setup instructions
+   - Documentation not matching actual code
+
+6. SYMLINKS (category: "symlinks")
+   - Broken symlinks
+   - Symlinks pointing to wrong locations
+
+7. NAMING CONSISTENCY (category: "naming")
+   - Inconsistent naming conventions (snake_case vs kebab-case)
+   - Files that don't match their directory naming pattern
+   - Misleading or unclear names
+
+8. PATTERN CONSISTENCY (category: "patterns")
+   - Similar modules following different patterns
+   - Anti-patterns and bad design choices
+   - Inconsistent error handling or logging patterns
 
 For each issue, provide:
-- file: relative path to file
-- line_hint: approximate line number or function name
+- file: relative path to file (or directory for structural issues)
+- line_hint: approximate line number, function name, or description
 - priority: HIGH or MEDIUM
-- category: error_handling, security, maintainability, modern_practices
-- description: what's wrong
-- suggestion: specific fix to apply
+- category: one of the categories above
+- description: clear description of what's wrong
+- suggestion: specific, actionable fix
+- auto_fixable: true if this can be auto-fixed, false if it needs human review
 
 Return as JSON array:
 [
@@ -196,9 +498,19 @@ Return as JSON array:
     "file": "path/to/file.py",
     "line_hint": "in function foo() around line 50",
     "priority": "HIGH",
-    "category": "error_handling",
+    "category": "code_quality",
     "description": "Bare except clause catches all exceptions",
-    "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error"
+    "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+    "auto_fixable": true
+  }},
+  {{
+    "file": "host-services/old-service/",
+    "line_hint": "entire directory",
+    "priority": "MEDIUM",
+    "category": "unused_code",
+    "description": "Directory contains obsolete service replaced by new implementation",
+    "suggestion": "Delete directory after verifying no references exist",
+    "auto_fixable": false
   }}
 ]
 
@@ -229,22 +541,54 @@ Return ONLY the JSON array, no other text."""
                 if start_idx != -1 and end_idx > start_idx:
                     json_str = response[start_idx:end_idx]
                     issues = json.loads(json_str)
-                    self.logger.info(f"Found {len(issues)} issues")
+
+                    # Merge pre-detected README issues (avoid duplicates)
+                    existing_files = {i.get('file') for i in issues}
+                    for readme_issue in readme_issues:
+                        if readme_issue['file'] not in existing_files:
+                            issues.append(readme_issue)
+
+                    # Add broken symlink issues
+                    for broken_link in structural_info.broken_symlinks:
+                        if broken_link not in existing_files:
+                            issues.append({
+                                "file": broken_link,
+                                "line_hint": "symlink",
+                                "priority": "HIGH",
+                                "category": "symlinks",
+                                "description": f"Broken symlink: target does not exist",
+                                "suggestion": f"Fix or remove broken symlink",
+                                "auto_fixable": False
+                            })
+
+                    self.logger.info(f"Found {len(issues)} total issues")
                     return issues
                 else:
                     self.logger.warning("No JSON array found in response")
-                    return []
+                    # Return pre-detected issues even if Claude fails
+                    return readme_issues + [
+                        {
+                            "file": link,
+                            "line_hint": "symlink",
+                            "priority": "HIGH",
+                            "category": "symlinks",
+                            "description": "Broken symlink",
+                            "suggestion": "Fix or remove",
+                            "auto_fixable": False
+                        }
+                        for link in structural_info.broken_symlinks
+                    ]
             except json.JSONDecodeError as e:
                 self.logger.error(f"Failed to parse JSON: {e}")
                 self.logger.debug(f"Response was: {response[:500]}")
-                return []
+                return readme_issues  # Return pre-detected issues on parse failure
 
         except subprocess.TimeoutExpired:
             self.logger.error("Claude call timed out")
-            return []
+            return readme_issues  # Return pre-detected issues on timeout
         except Exception as e:
             self.logger.error(f"Error calling Claude: {e}")
-            return []
+            return readme_issues  # Return pre-detected issues on error
 
     def implement_fix(self, issue: Dict) -> Tuple[FixResult, Optional[str]]:
         """Implement a single fix using Claude Code.
@@ -252,11 +596,27 @@ Return ONLY the JSON array, no other text."""
         Returns:
             Tuple of (FixResult, details_string)
         """
+        # Skip issues marked as not auto-fixable
+        if not issue.get('auto_fixable', True):
+            detail = f"Issue requires human review ({issue.get('category', 'unknown')})"
+            self.logger.info(f"Skipping {issue['file']}: {detail}")
+            return (FixResult.REQUIRES_RESTRUCTURING, detail)
+
+        # Skip structural issues (directory moves, deletions, etc.)
+        if issue.get('category') in ['structural', 'unused_code', 'symlinks']:
+            detail = f"Structural change requires human review"
+            self.logger.info(f"Skipping {issue['file']}: {detail}")
+            return (FixResult.REQUIRES_RESTRUCTURING, detail)
+
         file_path = self.codebase_path / issue['file']
 
         if not file_path.exists():
             self.logger.warning(f"File not found: {file_path}")
             return (FixResult.FILE_NOT_FOUND, None)
+
+        # Skip if path is a directory
+        if file_path.is_dir():
+            return (FixResult.REQUIRES_RESTRUCTURING, "Target is a directory")
 
         try:
             content = file_path.read_text(encoding='utf-8')
@@ -514,23 +874,57 @@ Fixes:
         if implemented or skipped:
             content += f"**Fixed**: {len(implemented)} | **Skipped**: {len(skipped)}\n\n"
 
-        # Group by priority
-        high = [i for i in issues if i.get('priority') == 'HIGH']
-        medium = [i for i in issues if i.get('priority') == 'MEDIUM']
+        # Group by category first, then by priority
+        categories_order = [
+            ("code_quality", "Code Quality"),
+            ("structural", "Structural Issues"),
+            ("unused_code", "Unused/Obsolete Code"),
+            ("duplication", "Duplication"),
+            ("documentation", "Documentation Drift"),
+            ("symlinks", "Symlinks"),
+            ("naming", "Naming Consistency"),
+            ("patterns", "Pattern Consistency"),
+        ]
 
-        if high:
-            content += "## 🔴 HIGH Priority\n\n"
-            for i in high:
-                content += f"- `{i['file']}`: {i['description']}\n"
+        # Build category-priority groups
+        for cat_key, cat_name in categories_order:
+            cat_issues = [i for i in issues if i.get('category') == cat_key]
+            if not cat_issues:
+                continue
+
+            high_cat = [i for i in cat_issues if i.get('priority') == 'HIGH']
+            medium_cat = [i for i in cat_issues if i.get('priority') == 'MEDIUM']
+
+            content += f"## {cat_name}\n\n"
+
+            if high_cat:
+                content += "**🔴 HIGH:**\n"
+                for i in high_cat:
+                    auto = "✅" if i.get('auto_fixable', True) else "👤"
+                    content += f"- {auto} `{i['file']}`: {i['description']}\n"
+                    if i.get('suggestion'):
+                        content += f"  - Fix: {i['suggestion'][:80]}\n"
+
+            if medium_cat:
+                content += "**🟡 MEDIUM:**\n"
+                for i in medium_cat:
+                    auto = "✅" if i.get('auto_fixable', True) else "👤"
+                    content += f"- {auto} `{i['file']}`: {i['description']}\n"
+                    if i.get('suggestion'):
+                        content += f"  - Fix: {i['suggestion'][:80]}\n"
+
             content += "\n"
 
-        if medium:
-            content += "## 🟡 MEDIUM Priority\n\n"
-            for i in medium:
-                content += f"- `{i['file']}`: {i['description']}\n"
+        # Issues without a recognized category
+        other_issues = [i for i in issues if i.get('category') not in dict(categories_order)]
+        if other_issues:
+            content += "## Other Issues\n\n"
+            for i in other_issues:
+                priority_icon = "🔴" if i.get('priority') == 'HIGH' else "🟡"
+                content += f"- {priority_icon} `{i['file']}`: {i['description']}\n"
             content += "\n"
 
-        # Skipped issues section
+        # Skipped issues section (for --implement mode)
         if skipped:
             content += "## ⚠️ Skipped (couldn't auto-fix)\n\n"
             for issue, fix_result, detail in skipped:
@@ -541,7 +935,10 @@ Fixes:
                 content += f"\n  - {issue['description'][:100]}\n"
             content += "\n"
 
-        content += f"\n---\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        # Legend
+        content += "---\n"
+        content += "**Legend**: ✅ Auto-fixable | 👤 Needs human review\n\n"
+        content += f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
 
         notif_file.write_text(content)
         self.logger.info(f"Notification: {notif_file}")
@@ -605,9 +1002,29 @@ Fixes:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze codebase for improvements")
+    parser = argparse.ArgumentParser(
+        description="Analyze codebase for improvements",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Analysis Categories:
+  code_quality   - Error handling, exceptions, code style
+  structural     - Directory organization, file placement
+  unused         - Dead code, obsolete files
+  duplication    - Similar code, repeated implementations
+  documentation  - README accuracy, outdated docs
+  patterns       - Design pattern consistency
+
+Examples:
+  %(prog)s                           # Full analysis report
+  %(prog)s --focus structural        # Focus on structural issues
+  %(prog)s --implement               # Auto-fix top 10 issues, create PR
+  %(prog)s --implement --max-fixes 5 # Auto-fix top 5 issues
+"""
+    )
     parser.add_argument('--implement', action='store_true', help='Implement fixes and create PR')
     parser.add_argument('--max-fixes', type=int, default=10, help='Max fixes to implement')
+    parser.add_argument('--focus', type=str, choices=['structural', 'duplication', 'unused', 'documentation', 'patterns'],
+                        help='Focus analysis on a specific category')
     parser.add_argument('--force', action='store_true', help='Force run (ignored, kept for compatibility)')
 
     args = parser.parse_args()
@@ -620,7 +1037,7 @@ def main():
         sys.exit(1)
 
     try:
-        analyzer = CodebaseAnalyzer(codebase_path, notification_dir)
+        analyzer = CodebaseAnalyzer(codebase_path, notification_dir, focus=args.focus)
         analyzer.run(implement=args.implement, max_fixes=args.max_fixes)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
