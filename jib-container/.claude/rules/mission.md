@@ -18,6 +18,7 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 | JIRA | `~/context-sync/jira/` | Tickets, requirements, sprint info |
 | Slack | `~/sharing/incoming/` | Task requests |
 | Beads | `~/beads/` | Persistent task memory |
+| **GitHub MCP** | Real-time API access | PRs, issues, repos, comments |
 
 ## CRITICAL TOOL REQUIREMENTS
 
@@ -44,22 +45,28 @@ bd update <id> --status done --notes "Summary of what was done"
 
 This is NOT optional. Beads enables persistent memory across container restarts.
 
-### PR Creation - NEVER USE `gh pr create`
+### GitHub Operations - USE GITHUB MCP
 
-**ALWAYS use `create-pr-helper.py`** instead of raw `gh` commands:
+All GitHub operations go through the **GitHub MCP server**. This provides real-time, bi-directional access.
+
+**Available MCP Tools:**
+- **PRs**: `create_pull_request`, `get_pull_request`, `list_pull_requests`
+- **Issues**: `search_issues`, `get_issue`, `create_issue`, `update_issue`
+- **Comments**: `add_issue_comment`, `list_issue_comments`
+- **Repos**: `search_repositories`, `get_file_contents`, `push_files`
+- **Branches**: `create_branch`, `list_branches`
+
+**For PR creation with notifications**, use `create-pr-helper.py`:
 ```bash
-# ✅ CORRECT - use the helper
+# Creates PR via MCP and sends Slack notification
 create-pr-helper.py --auto --no-notify
-
-# ❌ WRONG - never do this
-gh pr create --title "..." --body "..."
 ```
 
 The helper provides:
+- PR creation via GitHub MCP
 - Proper notifications with thread context
 - Automatic reviewer assignment
 - Consistent PR formatting
-- Integration with the notification system
 
 ## Workflow
 
@@ -169,35 +176,31 @@ Check writable repos: `create-pr-helper.py --list-writable`
 - **Writable repos**: Posts comment to GitHub and notifies via Slack
 - **Non-writable repos**: Sends comment content via Slack for manual posting
 
-**Troubleshooting**: If push fails, run `gh auth setup-git` first.
+**Troubleshooting**: If GitHub MCP fails, check `GITHUB_TOKEN` environment variable.
 
-**REMINDER**: Do NOT use `gh pr create` - always use `create-pr-helper.py`.
+**REMINDER**: Use GitHub MCP for all GitHub operations. Use `create-pr-helper.py` for PRs with Slack notifications.
 
 ### 6.5. PR Lifecycle (IMPORTANT)
 
-**BEFORE updating any PR, check its status:**
-```bash
-gh pr view <PR_NUMBER> --json state --jq '.state'
-# OPEN = can push updates
-# MERGED/CLOSED = create NEW PR instead
+**BEFORE updating any PR, check its status** via GitHub MCP:
+```
+Use MCP: get_pull_request(owner, repo, pull_number)
+# Check state field: "open" = can push updates
+# "merged" or "closed" = create NEW PR instead
 ```
 
 **When asked to update an existing PR:**
-1. **First**: Check PR is still OPEN (see above)
-2. Check out that PR's branch: `gh pr checkout <PR_NUMBER>`
+1. **First**: Check PR is still OPEN (use MCP `get_pull_request`)
+2. Check out that PR's branch locally: `git fetch origin && git checkout <branch>`
 3. Make changes and commit to that branch
-4. Push to update the existing PR
+4. Push via MCP `push_files` or local git push
 5. Do NOT create a new PR for the same work
 
 **PR approval vs feedback - know the difference:**
 - **Approved**: GitHub review status, OR "LGTM" comment (case-insensitive)
 - **NOT approval**: Other positive comments like "Looking good", "Go ahead"
 - Comments are generally feedback/direction, not formal approval
-- Check formal status: `gh pr view <PR> --json reviewDecision`
-```bash
-gh pr view 26 --json reviewDecision --jq '.reviewDecision'
-# APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
-```
+- Check formal review status via MCP `get_pull_request` - look at `reviewDecision` field
 
 **PR ownership rules:**
 - **Continue existing PRs**: If feedback requests changes on PR #X, update PR #X
@@ -208,18 +211,20 @@ gh pr view 26 --json reviewDecision --jq '.reviewDecision'
 - **Superseding a PR**: If you must replace a PR, close the old one with a comment linking to the new one
 
 **Example - updating an existing PR:**
-```bash
+```
 # Human says: "Please add error handling to PR #26"
-gh pr view 26 --json state --jq '.state'  # MUST be OPEN!
-gh pr checkout 26                          # Switch to PR's branch
-# Make changes...
+# 1. Check PR state via MCP: get_pull_request(owner, repo, 26)
+# 2. Switch to PR's branch locally:
+git fetch origin && git checkout <pr-branch-name>
+# 3. Make changes...
 git add -A && git commit -m "Add error handling"
-git push                                   # Updates PR #26
+# 4. Push via MCP push_files or git push
 ```
 
 **Example - closing superseded PR:**
-```bash
-gh pr close 26 --comment "Superseded by #28 which includes this plus additional changes"
+```
+# Use MCP add_issue_comment to explain, then request human close it
+# (PRs are closed via GitHub UI by human)
 ```
 
 ### 7. Complete Task

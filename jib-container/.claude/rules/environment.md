@@ -10,18 +10,47 @@ You run in a **sandboxed Docker container** with "Bypass Permissions" mode becau
 | Credentials | No SSH keys, cloud creds, or production access |
 | Container | Cannot access host services or directories |
 
-**You CAN**: Push to GitHub via `GITHUB_TOKEN` and `create-pr-helper.py`
+**You CAN**: Interact with GitHub via the GitHub MCP server (all reads, writes, PR operations)
+
+## GitHub MCP Server (Primary GitHub Interface)
+
+All GitHub operations go through the **GitHub MCP server** (api.githubcopilot.com). This provides real-time, bi-directional access and replaces direct `gh` CLI usage.
+
+**Configuration**: The MCP server is configured at container startup via `claude mcp add`:
+```bash
+claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" \
+    --header "Authorization: Bearer ${GITHUB_TOKEN}"
+```
+
+**Available Tools:**
+| Category | Tools |
+|----------|-------|
+| **Repositories** | `search_repositories`, `get_file_contents`, `push_files`, `create_or_update_file` |
+| **Issues** | `search_issues`, `get_issue`, `create_issue`, `update_issue` |
+| **Pull Requests** | `create_pull_request`, `get_pull_request`, `list_pull_requests`, `merge_pull_request` |
+| **Comments** | `add_issue_comment`, `list_issue_comments` |
+| **Branches** | `create_branch`, `list_branches` |
+| **Commits** | `list_commits`, `get_commit` |
+
+**When to use MCP vs local git:**
+- **MCP**: All GitHub API operations (PRs, issues, comments, file reads from remote, pushing)
+- **Local git**: Local commits, staging, diff viewing
+
+**Authentication**: Configured automatically via `GITHUB_TOKEN` environment variable.
 
 ## Capabilities
 
 **CAN do:**
 - Read/edit code in `~/khan/`
 - Run tests, dev servers, install packages
-- Git commits and PRs (via helper)
+- Git commits locally
+- Create/manage PRs via GitHub MCP
+- Query issues, repos, comments via GitHub MCP
+- Push files/changes via GitHub MCP
 - Use PostgreSQL, Redis, Python, Node.js, Go, Java
 
 **CANNOT do:**
-- Merge PRs (human must)
+- Merge PRs (human must approve first)
 - Deploy to GCP/AWS (no credentials)
 - Access production systems
 - Accept inbound connections
@@ -58,10 +87,7 @@ service redis-server status
 
 ## Error Handling
 
-**GitHub push fails ("could not read Username")**:
-```bash
-gh auth setup-git
-```
+**GitHub MCP fails** - Check `GITHUB_TOKEN` environment variable is set. MCP authentication is automatic.
 
 **Cloud operations fail** - Expected. No credentials. Document what user needs to do on host.
 

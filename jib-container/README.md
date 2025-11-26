@@ -73,8 +73,10 @@ No manual setup required inside the container.
 
 **What the agent CAN do**:
 - Read/write code in `~/khan/` (isolated git worktree)
-- Commit and push to temp branches
-- Create PRs via GitHub CLI
+- Git commits locally
+- Create/manage PRs via GitHub MCP
+- Query issues, repos, comments via GitHub MCP
+- Push files/changes via GitHub MCP
 - Run tests and builds
 - Read context docs (Confluence, JIRA)
 - Write notifications for human review
@@ -85,3 +87,17 @@ No manual setup required inside the container.
 - Access host services (network isolated)
 - Modify host filesystem (only mounted directories)
 - Push to protected branches (main/master)
+
+## GitHub MCP Server
+
+The container uses the GitHub MCP server for all GitHub operations. This provides real-time, bi-directional access:
+
+| Category | Tools |
+|----------|-------|
+| **Repositories** | `search_repositories`, `get_file_contents`, `push_files` |
+| **Issues** | `search_issues`, `get_issue`, `create_issue`, `update_issue` |
+| **Pull Requests** | `create_pull_request`, `get_pull_request`, `list_pull_requests` |
+| **Comments** | `add_issue_comment`, `list_issue_comments` |
+| **Branches** | `create_branch`, `list_branches` |
+
+MCP server is configured in `~/.mcp.json` and authenticated via `GITHUB_TOKEN`.
