@@ -5,19 +5,25 @@ Configuration for james-in-a-box (jib). There are two types of config:
 1. **In-repo configs** (this directory) - Version-controlled, non-secret settings
 2. **Host configs** (`~/.config/jib/`) - User-specific settings and secrets
 
-## Host Configuration (NEW - Consolidated)
+## Host Configuration (Consolidated)
 
-All host-side configuration is now consolidated under `~/.config/jib/`:
+All host-side configuration is consolidated under `~/.config/jib/`:
 
 ```
 ~/.config/jib/
-├── config.yaml      # Non-secret settings (Slack channel, sync intervals, etc.)
-├── secrets.env      # All secrets (Slack, GitHub, Confluence, JIRA tokens)
-└── github-token     # GitHub token (legacy location, still supported)
+├── config.yaml        # Non-secret settings (Slack channel, sync intervals, etc.)
+├── secrets.env        # All secrets (Slack, GitHub, Confluence, JIRA tokens)
+├── github-token       # GitHub token (dedicated file)
+└── repositories.yaml  # Repository access configuration (copied from repo)
 ```
 
 **Migration from legacy locations:**
-The `host_config.py` module automatically migrates from:
+Run manual migration if you have existing configs:
+```bash
+python3 config/host_config.py --migrate
+```
+
+This migrates from:
 - `~/.config/jib-notifier/config.json` → `~/.config/jib/`
 - `~/.config/context-sync/.env` → `~/.config/jib/secrets.env`
 
@@ -32,9 +38,10 @@ slack_channel = config.get('slack_channel')
 
 **CLI:**
 ```bash
-python config/host_config.py --list           # Show non-secret config
-python config/host_config.py --list-secrets   # Show secret keys (values hidden)
-python config/host_config.py --migrate        # Force migration
+python config/host_config.py                   # Show config status
+python config/host_config.py --list            # Show non-secret config
+python config/host_config.py --list-secrets    # Show secret keys (values hidden)
+python config/host_config.py --migrate         # Migrate from legacy locations
 ```
 
 **Templates:**
@@ -44,6 +51,8 @@ python config/host_config.py --migrate        # Force migration
 ## repositories.yaml (Source of Truth for Repo Access)
 
 **Single source of truth** for which GitHub repositories jib has read/write access to.
+
+This file is copied to `~/.config/jib/repositories.yaml` during setup.
 
 This file controls:
 - Which repos jib can respond to comments on

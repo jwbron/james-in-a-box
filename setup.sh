@@ -474,16 +474,25 @@ done
 # Check for Slack configuration
 print_header "Configuration Status"
 
-# NEW: Consolidated config location
 jib_config_dir="$HOME/.config/jib"
 jib_secrets_file="$jib_config_dir/secrets.env"
+jib_repos_file="$jib_config_dir/repositories.yaml"
 
-# Legacy config location
-legacy_config_file="$HOME/.config/jib-notifier/config.json"
+# Check for legacy configs that need migration
+legacy_notifier="$HOME/.config/jib-notifier/config.json"
+legacy_context_sync="$HOME/.config/context-sync/.env"
 
-# Check consolidated config first
+if [ -f "$legacy_notifier" ] || [ -f "$legacy_context_sync" ]; then
+    if [ ! -f "$jib_secrets_file" ]; then
+        print_warning "Legacy configs found - migration required!"
+        echo "   Run: python3 $SCRIPT_DIR/config/host_config.py --migrate"
+        echo ""
+    fi
+fi
+
+# Check consolidated config
 if [ -f "$jib_secrets_file" ]; then
-    print_success "Consolidated config found: $jib_config_dir/"
+    print_success "Config directory: $jib_config_dir/"
 
     # Check if tokens are set
     if grep -q "^SLACK_TOKEN=\"xoxb-" "$jib_secrets_file" 2>/dev/null; then
@@ -497,27 +506,22 @@ if [ -f "$jib_secrets_file" ]; then
     else
         print_warning "Slack app token not configured"
     fi
-elif [ -f "$legacy_config_file" ]; then
-    print_warning "Using legacy config: $legacy_config_file"
-    echo "   Consider migrating to: $jib_config_dir/"
-    echo "   Run: python3 $SCRIPT_DIR/config/host_config.py --migrate"
-
-    # Check if tokens are set in legacy config
-    if grep -q "\"slack_token\": \"xoxb-" "$legacy_config_file" 2>/dev/null; then
-        print_success "Bot token configured (legacy)"
-    else
-        print_warning "Bot token not configured"
-    fi
-
-    if grep -q "\"slack_app_token\": \"xapp-" "$legacy_config_file" 2>/dev/null; then
-        print_success "App token configured (legacy)"
-    else
-        print_warning "App token not configured"
-    fi
 else
     print_warning "No configuration found"
     echo "   Configure secrets in: $jib_secrets_file"
     echo "   Templates available in: $SCRIPT_DIR/config/"
+fi
+
+# Copy repositories.yaml to host config if not present
+if [ ! -f "$jib_repos_file" ]; then
+    if [ -f "$SCRIPT_DIR/config/repositories.yaml" ]; then
+        print_info "Copying repositories.yaml to host config..."
+        mkdir -p "$jib_config_dir"
+        cp "$SCRIPT_DIR/config/repositories.yaml" "$jib_repos_file"
+        print_success "Copied repositories.yaml to $jib_repos_file"
+    fi
+else
+    print_success "repositories.yaml found"
 fi
 
 # Check for shared directories
