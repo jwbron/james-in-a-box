@@ -1,2 +1,0 @@
-# GitHub Sync dependencies
-# Uses only Python standard library (requires gh CLI installed separately)
