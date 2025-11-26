@@ -13,14 +13,13 @@ Usage:
   python3 incoming-processor.py <message-file>
 """
 
-import sys
 import subprocess
-from pathlib import Path
+import sys
 from datetime import datetime
-from typing import Dict, Tuple
+from pathlib import Path
 
 
-def parse_frontmatter(content: str) -> Tuple[Dict[str, str], str]:
+def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
     """Parse YAML frontmatter from file content.
 
     Returns:
@@ -29,14 +28,14 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, str], str]:
     metadata = {}
 
     # Check for YAML frontmatter (starts with ---)
-    if not content.startswith('---'):
+    if not content.startswith("---"):
         return metadata, content
 
     # Find the closing ---
-    lines = content.split('\n')
+    lines = content.split("\n")
     end_idx = -1
     for i, line in enumerate(lines[1:], start=1):  # Skip first ---
-        if line.strip() == '---':
+        if line.strip() == "---":
             end_idx = i
             break
 
@@ -48,23 +47,20 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, str], str]:
     frontmatter_lines = lines[1:end_idx]
     for line in frontmatter_lines:
         line = line.strip()
-        if ':' in line and not line.startswith('#'):
-            key, value = line.split(':', 1)
+        if ":" in line and not line.startswith("#"):
+            key, value = line.split(":", 1)
             key = key.strip()
-            value = value.strip().strip('"\'')  # Remove quotes
+            value = value.strip().strip("\"'")  # Remove quotes
             if value:  # Only add non-empty values
                 metadata[key] = value
 
     # Return content without frontmatter
-    remaining_content = '\n'.join(lines[end_idx + 1:]).strip()
+    remaining_content = "\n".join(lines[end_idx + 1 :]).strip()
     return metadata, remaining_content
 
 
 def create_notification_with_thread(
-    notifications_dir: Path,
-    task_id: str,
-    thread_ts: str,
-    content: str
+    notifications_dir: Path, task_id: str, thread_ts: str, content: str
 ) -> Path:
     """Create a notification file with YAML frontmatter for threading.
 
@@ -91,7 +87,7 @@ def create_notification_with_thread(
     frontmatter_lines.append("---")
     frontmatter_lines.append("")
 
-    frontmatter = '\n'.join(frontmatter_lines)
+    frontmatter = "\n".join(frontmatter_lines)
     full_content = frontmatter + content
 
     notification_file.write_text(full_content)
@@ -107,8 +103,8 @@ def process_task(message_file: Path):
 
     # Parse frontmatter to extract thread context
     frontmatter, content = parse_frontmatter(raw_content)
-    thread_ts = frontmatter.get('thread_ts', '')
-    original_task_id = frontmatter.get('task_id', message_file.stem)
+    thread_ts = frontmatter.get("thread_ts", "")
+    original_task_id = frontmatter.get("task_id", message_file.stem)
 
     if thread_ts:
         print(f"📧 Thread context: {thread_ts}")
@@ -116,17 +112,17 @@ def process_task(message_file: Path):
     # Extract task description (after "## Current Message" header)
     task_lines = []
     in_message_section = False
-    for line in content.split('\n'):
-        if line.startswith('## Current Message'):
+    for line in content.split("\n"):
+        if line.startswith("## Current Message"):
             in_message_section = True
             continue
         if in_message_section:
-            if line.startswith('---'):
+            if line.startswith("---"):
                 break
             if line.strip():
                 task_lines.append(line)
 
-    task_content = '\n'.join(task_lines).strip()
+    task_content = "\n".join(task_lines).strip()
 
     if not task_content:
         print("⚠️ Empty task content")
@@ -136,7 +132,7 @@ def process_task(message_file: Path):
 
     # Build thread context section if available
     thread_context_section = ""
-    if frontmatter.get('thread_ts'):
+    if frontmatter.get("thread_ts"):
         thread_context_section = f"""
 ## Thread Context (CRITICAL)
 
@@ -156,7 +152,7 @@ You received a task via Slack. Process it according to the workflow below.
 
 **File:** `{message_file.name}`
 **Task ID:** `{original_task_id}`
-**Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+**Received:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 {thread_context_section}
 
 ## Task from User
@@ -227,15 +223,16 @@ Process this task now."""
     try:
         result = subprocess.run(
             ["claude", "--dangerously-skip-permissions"],
+            check=False,
             input=prompt,
             text=True,
             capture_output=True,  # Capture output to create notification
             timeout=600,  # 10 minute timeout
-            cwd=str(Path.home() / "khan")  # Start in khan directory
+            cwd=str(Path.home() / "khan"),  # Start in khan directory
         )
 
         if result.returncode == 0:
-            print(f"✅ Task processed successfully")
+            print("✅ Task processed successfully")
 
             # Create notification with Claude's response
             # IMPORTANT: Include thread_ts in frontmatter for proper Slack threading
@@ -244,7 +241,7 @@ Process this task now."""
 
             notification_content = f"""# Task Response - {timestamp}
 
-**Task:** {task_content[:100]}{'...' if len(task_content) > 100 else ''}
+**Task:** {task_content[:100]}{"..." if len(task_content) > 100 else ""}
 
 ## Claude's Response
 
@@ -259,7 +256,7 @@ Process this task now."""
                 notifications_dir=notifications_dir,
                 task_id=original_task_id,
                 thread_ts=thread_ts,
-                content=notification_content
+                content=notification_content,
             )
             print(f"📬 Notification created: {notification_file.name}")
             if thread_ts:
@@ -288,8 +285,8 @@ def process_response(message_file: Path):
 
     # Parse frontmatter to extract thread context
     frontmatter, content = parse_frontmatter(raw_content)
-    thread_ts = frontmatter.get('thread_ts', '')
-    referenced_notif = frontmatter.get('referenced_notification', '')
+    thread_ts = frontmatter.get("thread_ts", "")
+    referenced_notif = frontmatter.get("referenced_notification", "")
 
     if thread_ts:
         print(f"📧 Thread context: {thread_ts}")
@@ -297,10 +294,10 @@ def process_response(message_file: Path):
     # Fallback: Extract referenced notification from content if not in frontmatter
     original_notif_content = None
     if not referenced_notif:
-        for line in content.split('\n'):
-            if 'Re:**' in line and 'Notification' in line:
+        for line in content.split("\n"):
+            if "Re:**" in line and "Notification" in line:
                 # Extract timestamp from line like: **Re:** Notification `20251124-123456`
-                parts = line.split('`')
+                parts = line.split("`")
                 if len(parts) >= 2:
                     referenced_notif = parts[1]
                     break
@@ -316,17 +313,17 @@ def process_response(message_file: Path):
     # Extract response content
     response_lines = []
     in_message_section = False
-    for line in content.split('\n'):
-        if line.startswith('## Current Message'):
+    for line in content.split("\n"):
+        if line.startswith("## Current Message"):
             in_message_section = True
             continue
         if in_message_section:
-            if line.startswith('---'):
+            if line.startswith("---"):
                 break
             if line.strip():
                 response_lines.append(line)
 
-    response_content = '\n'.join(response_lines).strip()
+    response_content = "\n".join(response_lines).strip()
 
     if not response_content:
         print("⚠️ Empty response content")
@@ -401,15 +398,16 @@ Process this response now."""
     try:
         result = subprocess.run(
             ["claude", "--dangerously-skip-permissions"],
+            check=False,
             input=prompt,
             text=True,
             capture_output=True,  # Capture output to create notification
             timeout=600,  # 10 minute timeout
-            cwd=str(Path.home() / "khan")  # Start in khan directory
+            cwd=str(Path.home() / "khan"),  # Start in khan directory
         )
 
         if result.returncode == 0:
-            print(f"✅ Response processed successfully")
+            print("✅ Response processed successfully")
 
             # Create notification with Claude's response
             # IMPORTANT: Include thread_ts in frontmatter for proper Slack threading
@@ -422,7 +420,7 @@ Process this response now."""
 
             notification_content = f"""# Response Processed - {timestamp}
 
-**Referenced Notification:** {referenced_notif if referenced_notif else 'None'}
+**Referenced Notification:** {referenced_notif if referenced_notif else "None"}
 
 ## Claude's Response
 
@@ -437,7 +435,7 @@ Process this response now."""
                 notifications_dir=notifications_dir,
                 task_id=task_id,
                 thread_ts=thread_ts,
-                content=notification_content
+                content=notification_content,
             )
             print(f"📬 Notification created: {notification_file.name}")
             if thread_ts:
@@ -470,9 +468,9 @@ def main():
         return 1
 
     # Determine message type based on parent directory
-    if 'incoming' in str(message_file.parent):
+    if "incoming" in str(message_file.parent):
         success = process_task(message_file)
-    elif 'responses' in str(message_file.parent):
+    elif "responses" in str(message_file.parent):
         success = process_response(message_file)
     else:
         print(f"Error: Unknown message type for {message_file}", file=sys.stderr)
@@ -480,11 +478,11 @@ def main():
 
     # Stop background services before exiting (PostgreSQL, Redis keep container alive)
     # This ensures ephemeral jib --exec containers exit cleanly
-    subprocess.run(["service", "postgresql", "stop"], capture_output=True)
-    subprocess.run(["service", "redis-server", "stop"], capture_output=True)
+    subprocess.run(["service", "postgresql", "stop"], check=False, capture_output=True)
+    subprocess.run(["service", "redis-server", "stop"], check=False, capture_output=True)
 
     return 0 if success else 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

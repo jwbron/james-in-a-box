@@ -13,6 +13,7 @@ Usage:
     ./tests/run_tests.py -v        # Verbose output
     ./tests/run_tests.py --quick   # Quick syntax-only check (no pytest overhead)
 """
+
 import argparse
 import ast
 import py_compile
@@ -20,23 +21,24 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 # Get project root
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
 # Colors for output
-GREEN = '\033[92m'
-RED = '\033[91m'
-YELLOW = '\033[93m'
-RESET = '\033[0m'
-BOLD = '\033[1m'
+GREEN = "\033[92m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
 
 
 def print_header(msg: str):
     """Print a header message."""
-    print(f"\n{BOLD}{'='*60}{RESET}")
+    print(f"\n{BOLD}{'=' * 60}{RESET}")
     print(f"{BOLD}{msg}{RESET}")
-    print(f"{BOLD}{'='*60}{RESET}\n")
+    print(f"{BOLD}{'=' * 60}{RESET}\n")
 
 
 def print_success(msg: str):
@@ -56,9 +58,9 @@ def print_warning(msg: str):
 
 def get_python_files() -> list[Path]:
     """Get all Python files in the project."""
-    exclude_dirs = {'.git', '__pycache__', '.venv', 'venv', 'node_modules'}
+    exclude_dirs = {".git", "__pycache__", ".venv", "venv", "node_modules"}
     files = []
-    for f in PROJECT_ROOT.rglob('*.py'):
+    for f in PROJECT_ROOT.rglob("*.py"):
         if not any(excluded in f.parts for excluded in exclude_dirs):
             files.append(f)
     return files
@@ -66,25 +68,27 @@ def get_python_files() -> list[Path]:
 
 def get_bash_files() -> list[Path]:
     """Get all Bash files in the project."""
-    exclude_dirs = {'.git', 'node_modules', '.venv', 'venv'}
+    exclude_dirs = {".git", "node_modules", ".venv", "venv"}
     files = []
 
     # .sh files
-    for f in PROJECT_ROOT.rglob('*.sh'):
+    for f in PROJECT_ROOT.rglob("*.sh"):
         if not any(excluded in f.parts for excluded in exclude_dirs):
             files.append(f)
 
     # Executable scripts with bash shebang
-    for f in PROJECT_ROOT.rglob('*'):
-        if f.is_file() and f.suffix == '':
+    for f in PROJECT_ROOT.rglob("*"):
+        if f.is_file() and f.suffix == "":
             if any(excluded in f.parts for excluded in exclude_dirs):
                 continue
             try:
-                with open(f, 'rb') as fp:
-                    first_line = fp.readline().decode('utf-8', errors='ignore').strip()
-                    if first_line.startswith('#!') and ('bash' in first_line or '/sh' in first_line):
+                with open(f, "rb") as fp:
+                    first_line = fp.readline().decode("utf-8", errors="ignore").strip()
+                    if first_line.startswith("#!") and (
+                        "bash" in first_line or "/sh" in first_line
+                    ):
                         files.append(f)
-            except (IOError, OSError):
+            except OSError:
                 pass
 
     return files
@@ -100,7 +104,7 @@ def quick_python_check(verbose: bool = False) -> tuple[int, int]:
         rel_path = f.relative_to(PROJECT_ROOT)
         try:
             py_compile.compile(str(f), doraise=True)
-            source = f.read_text(encoding='utf-8')
+            source = f.read_text(encoding="utf-8")
             ast.parse(source, filename=str(f))
             passed += 1
             if verbose:
@@ -120,11 +124,7 @@ def quick_bash_check(verbose: bool = False) -> tuple[int, int]:
 
     for f in files:
         rel_path = f.relative_to(PROJECT_ROOT)
-        result = subprocess.run(
-            ['bash', '-n', str(f)],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["bash", "-n", str(f)], check=False, capture_output=True, text=True)
         if result.returncode == 0:
             passed += 1
             if verbose:
@@ -136,27 +136,28 @@ def quick_bash_check(verbose: bool = False) -> tuple[int, int]:
     return passed, failed
 
 
-def run_pytest(test_file: str = None, verbose: bool = False) -> int:
+def run_pytest(test_file: str | None = None, verbose: bool = False) -> int:
     """Run pytest on tests directory or specific file."""
-    cmd = ['python', '-m', 'pytest']
+    cmd = ["python", "-m", "pytest"]
     if verbose:
-        cmd.append('-v')
+        cmd.append("-v")
     if test_file:
         cmd.append(str(SCRIPT_DIR / test_file))
     else:
         cmd.append(str(SCRIPT_DIR))
 
-    result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+    result = subprocess.run(cmd, check=False, cwd=PROJECT_ROOT)
     return result.returncode
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Run james-in-a-box tests')
-    parser.add_argument('--python', action='store_true', help='Run only Python tests')
-    parser.add_argument('--bash', action='store_true', help='Run only Bash tests')
-    parser.add_argument('--quick', action='store_true',
-                        help='Quick syntax check without pytest overhead')
-    parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
+    parser = argparse.ArgumentParser(description="Run james-in-a-box tests")
+    parser.add_argument("--python", action="store_true", help="Run only Python tests")
+    parser.add_argument("--bash", action="store_true", help="Run only Bash tests")
+    parser.add_argument(
+        "--quick", action="store_true", help="Quick syntax check without pytest overhead"
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
 
@@ -171,7 +172,7 @@ def main():
     if args.quick:
         # Quick mode: direct syntax checking
         if run_python:
-            print_header('Python Syntax Check')
+            print_header("Python Syntax Check")
             passed, failed = quick_python_check(args.verbose)
             total_passed += passed
             total_failed += failed
@@ -180,7 +181,7 @@ def main():
                 exit_code = 1
 
         if run_bash:
-            print_header('Bash Syntax Check')
+            print_header("Bash Syntax Check")
             passed, failed = quick_bash_check(args.verbose)
             total_passed += passed
             total_failed += failed
@@ -188,20 +189,19 @@ def main():
             if failed > 0:
                 exit_code = 1
 
-        print_header('Summary')
+        print_header("Summary")
         print(f"Total: {total_passed} passed, {total_failed} failed")
 
+    # Full mode: use pytest
+    elif run_python and not run_bash:
+        exit_code = run_pytest("test_python_syntax.py", args.verbose)
+    elif run_bash and not run_python:
+        exit_code = run_pytest("test_bash_syntax.py", args.verbose)
     else:
-        # Full mode: use pytest
-        if run_python and not run_bash:
-            exit_code = run_pytest('test_python_syntax.py', args.verbose)
-        elif run_bash and not run_python:
-            exit_code = run_pytest('test_bash_syntax.py', args.verbose)
-        else:
-            exit_code = run_pytest(verbose=args.verbose)
+        exit_code = run_pytest(verbose=args.verbose)
 
     sys.exit(exit_code)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

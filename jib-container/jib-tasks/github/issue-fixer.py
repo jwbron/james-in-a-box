@@ -9,13 +9,14 @@ to determine the appropriate fix strategy.
 Each PR maintains persistent context in Beads for memory across sessions.
 """
 
-import sys
+import contextlib
 import json
 import logging
 import subprocess
-from pathlib import Path
+import sys
 from datetime import datetime
-from typing import Dict, Optional
+from pathlib import Path
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,31 +38,32 @@ class PRContextManager:
 
     def get_context_id(self, repo: str, pr_num: int) -> str:
         """Generate unique context ID for a PR."""
-        repo_name = repo.split('/')[-1]
+        repo_name = repo.split("/")[-1]
         return f"pr-{repo_name}-{pr_num}"
 
-    def search_context(self, repo: str, pr_num: int) -> Optional[str]:
+    def search_context(self, repo: str, pr_num: int) -> str | None:
         """Search for existing beads task for this PR."""
         context_id = self.get_context_id(repo, pr_num)
         try:
             result = subprocess.run(
-                ['bd', 'list', '--search', context_id, '--allow-stale'],
+                ["bd", "list", "--search", context_id, "--allow-stale"],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
-                timeout=10
+                timeout=10,
             )
             if result.returncode == 0 and result.stdout.strip():
-                lines = result.stdout.strip().split('\n')
+                lines = result.stdout.strip().split("\n")
                 for line in lines:
-                    if line.strip() and line.startswith('beads-'):
+                    if line.strip() and line.startswith("beads-"):
                         return line.split()[0]
             return None
         except Exception as e:
             logger.warning(f"Failed to search beads context: {e}")
             return None
 
-    def get_context(self, repo: str, pr_num: int) -> Optional[Dict]:
+    def get_context(self, repo: str, pr_num: int) -> dict | None:
         """Get existing context for a PR."""
         task_id = self.search_context(repo, pr_num)
         if not task_id:
@@ -69,74 +71,77 @@ class PRContextManager:
 
         try:
             result = subprocess.run(
-                ['bd', 'show', task_id, '--allow-stale'],
+                ["bd", "show", task_id, "--allow-stale"],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
-                timeout=10
+                timeout=10,
             )
             if result.returncode == 0:
-                return {
-                    'task_id': task_id,
-                    'content': result.stdout.strip()
-                }
+                return {"task_id": task_id, "content": result.stdout.strip()}
             return None
         except Exception as e:
             logger.warning(f"Failed to get beads context: {e}")
             return None
 
-    def create_context(self, repo: str, pr_num: int, pr_title: str) -> Optional[str]:
+    def create_context(self, repo: str, pr_num: int, pr_title: str) -> str | None:
         """Create new beads task for a PR."""
         context_id = self.get_context_id(repo, pr_num)
-        repo_name = repo.split('/')[-1]
+        repo_name = repo.split("/")[-1]
 
         try:
             result = subprocess.run(
-                ['bd', 'create', f'PR #{pr_num}: {pr_title}',
-                 '--label', 'github-pr',
-                 '--label', context_id,
-                 '--label', repo_name,
-                 '--label', 'issue-fixer',
-                 '--allow-stale'],
+                [
+                    "bd",
+                    "create",
+                    f"PR #{pr_num}: {pr_title}",
+                    "--label",
+                    "github-pr",
+                    "--label",
+                    context_id,
+                    "--label",
+                    repo_name,
+                    "--label",
+                    "issue-fixer",
+                    "--allow-stale",
+                ],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
-                timeout=10
+                timeout=10,
             )
             if result.returncode == 0:
                 output = result.stdout.strip()
-                if 'beads-' in output:
+                if "beads-" in output:
                     for word in output.split():
-                        if word.startswith('beads-'):
-                            return word.rstrip(':')
+                        if word.startswith("beads-"):
+                            return word.rstrip(":")
             return None
         except Exception as e:
             logger.warning(f"Failed to create beads context: {e}")
             return None
 
-    def update_context(self, task_id: str, notes: str, status: Optional[str] = None) -> bool:
+    def update_context(self, task_id: str, notes: str, status: str | None = None) -> bool:
         """Update beads task with new notes."""
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         timestamped_notes = f"=== {timestamp} ===\n{notes}"
 
         try:
-            cmd = ['bd', 'update', task_id, '--notes', timestamped_notes, '--allow-stale']
+            cmd = ["bd", "update", task_id, "--notes", timestamped_notes, "--allow-stale"]
             if status:
-                cmd.extend(['--status', status])
+                cmd.extend(["--status", status])
 
             result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                cwd=self.beads_dir,
-                timeout=10
+                cmd, check=False, capture_output=True, text=True, cwd=self.beads_dir, timeout=10
             )
             return result.returncode == 0
         except Exception as e:
             logger.warning(f"Failed to update beads context: {e}")
             return False
 
-    def get_or_create_context(self, repo: str, pr_num: int, pr_title: str = "") -> Optional[str]:
+    def get_or_create_context(self, repo: str, pr_num: int, pr_title: str = "") -> str | None:
         """Get existing context or create new one."""
         existing = self.search_context(repo, pr_num)
         if existing:
@@ -155,7 +160,7 @@ def detect_merge_conflicts(prs_dir: Path, khan_dir: Path) -> list:
             if not pr_info:
                 continue
 
-            repo_name = pr_info['repository'].split('/')[-1]
+            repo_name = pr_info["repository"].split("/")[-1]
             repo_path = khan_dir / repo_name
 
             if not repo_path.exists():
@@ -163,18 +168,20 @@ def detect_merge_conflicts(prs_dir: Path, khan_dir: Path) -> list:
 
             # Check for conflicts by attempting a dry-run merge
             has_conflict, details = check_conflict(
-                repo_path, pr_info['head_branch'], pr_info['base_branch']
+                repo_path, pr_info["head_branch"], pr_info["base_branch"]
             )
 
             if has_conflict:
-                conflicts.append({
-                    'pr_number': pr_info['pr_number'],
-                    'repository': pr_info['repository'],
-                    'head_branch': pr_info['head_branch'],
-                    'base_branch': pr_info['base_branch'],
-                    'title': pr_info.get('title', 'Unknown'),
-                    'conflict_details': details,
-                })
+                conflicts.append(
+                    {
+                        "pr_number": pr_info["pr_number"],
+                        "repository": pr_info["repository"],
+                        "head_branch": pr_info["head_branch"],
+                        "base_branch": pr_info["base_branch"],
+                        "title": pr_info.get("title", "Unknown"),
+                        "conflict_details": details,
+                    }
+                )
 
         except Exception as e:
             print(f"Error checking {pr_file.name}: {e}")
@@ -196,10 +203,8 @@ def parse_pr_file(content: str) -> dict | None:
         if line.startswith("# PR #"):
             parts = line[6:].split(":", 1)
             if parts:
-                try:
+                with contextlib.suppress(ValueError):
                     info["pr_number"] = int(parts[0].strip())
-                except ValueError:
-                    pass
                 if len(parts) > 1:
                     info["title"] = parts[1].strip()
         elif line.startswith("**Repository**:"):
@@ -281,7 +286,9 @@ def check_conflict(repo_path: Path, head_branch: str, base_branch: str) -> tuple
         return False, str(e)
 
 
-def collect_check_failures(checks_dir: Path, prs_dir: Path, pr_context_mgr: PRContextManager) -> list:
+def collect_check_failures(
+    checks_dir: Path, prs_dir: Path, pr_context_mgr: PRContextManager
+) -> list:
     """Collect all check failures from synced data."""
     failures = []
 
@@ -290,12 +297,12 @@ def collect_check_failures(checks_dir: Path, prs_dir: Path, pr_context_mgr: PRCo
             with check_file.open() as f:
                 data = json.load(f)
 
-            pr_num = data['pr_number']
-            repo = data['repository']
-            failed_checks = [c for c in data['checks'] if c.get('conclusion') == 'failure']
+            pr_num = data["pr_number"]
+            repo = data["repository"]
+            failed_checks = [c for c in data["checks"] if c.get("conclusion") == "failure"]
 
             if failed_checks:
-                repo_name = repo.split('/')[-1]
+                repo_name = repo.split("/")[-1]
                 pr_file = prs_dir / f"{repo_name}-PR-{pr_num}.md"
                 pr_context = pr_file.read_text() if pr_file.exists() else "PR details not available"
 
@@ -307,22 +314,24 @@ def collect_check_failures(checks_dir: Path, prs_dir: Path, pr_context_mgr: PRCo
                 if beads_task_id:
                     beads_context = pr_context_mgr.get_context(repo, pr_num)
                     # Update with check failure info
-                    check_names = [c['name'] for c in failed_checks]
+                    check_names = [c["name"] for c in failed_checks]
                     pr_context_mgr.update_context(
                         beads_task_id,
                         f"CI check failure detected\nFailed checks: {', '.join(check_names)}",
-                        status='in_progress'
+                        status="in_progress",
                     )
                     print(f"  PR #{pr_num}: Beads task {beads_task_id}")
 
-                failures.append({
-                    'pr_number': pr_num,
-                    'repository': repo,
-                    'pr_context': pr_context,
-                    'failed_checks': failed_checks,
-                    'beads_task_id': beads_task_id,
-                    'beads_context': beads_context,
-                })
+                failures.append(
+                    {
+                        "pr_number": pr_num,
+                        "repository": repo,
+                        "pr_context": pr_context,
+                        "failed_checks": failed_checks,
+                        "beads_task_id": beads_task_id,
+                        "beads_context": beads_context,
+                    }
+                )
 
         except Exception as e:
             print(f"Error processing {check_file}: {e}")
@@ -349,13 +358,13 @@ You are analyzing PRs for issues (check failures, merge conflicts). Your goal is
     if conflicts:
         prompt += f"## Merge Conflicts ({len(conflicts)} PR(s))\n\n"
         for c in conflicts:
-            prompt += f"""### PR #{c['pr_number']} - {c['repository']}
-**Title**: {c['title']}
-**Branches**: `{c['head_branch']}` ← `{c['base_branch']}`
+            prompt += f"""### PR #{c["pr_number"]} - {c["repository"]}
+**Title**: {c["title"]}
+**Branches**: `{c["head_branch"]}` ← `{c["base_branch"]}`
 
 Conflict details:
 ```
-{c['conflict_details'][:1000]}
+{c["conflict_details"][:1000]}
 ```
 
 """
@@ -366,28 +375,28 @@ Conflict details:
         for f in failures:
             # Include beads context if available
             beads_section = ""
-            if f.get('beads_task_id'):
+            if f.get("beads_task_id"):
                 beads_section = f"**Beads Task**: {f['beads_task_id']}\n"
-                if f.get('beads_context'):
+                if f.get("beads_context"):
                     beads_section += f"""**Previous Context**:
 ```
-{f['beads_context'].get('content', '')[:1000]}
+{f["beads_context"].get("content", "")[:1000]}
 ```
 """
-            prompt += f"""### PR #{f['pr_number']} - {f['repository']}
+            prompt += f"""### PR #{f["pr_number"]} - {f["repository"]}
 
 {beads_section}
 **PR Context:**
 ```
-{f['pr_context'][:1000]}...
+{f["pr_context"][:1000]}...
 ```
 
 **Failed Checks:**
 """
-            for check in f['failed_checks']:
+            for check in f["failed_checks"]:
                 prompt += f"- **{check['name']}**: {check.get('conclusion', 'failure')}\n"
-                if check.get('full_log'):
-                    log = check['full_log']
+                if check.get("full_log"):
+                    log = check["full_log"]
                     prompt += f"""  Log excerpt:
   ```
   {log[:500]}
@@ -462,6 +471,7 @@ def main():
     try:
         result = subprocess.run(
             ["claude", "--print", prompt],
+            check=False,
             capture_output=False,
             text=True,
             timeout=900,  # 15 minute timeout
@@ -482,5 +492,5 @@ def main():
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

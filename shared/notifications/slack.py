@@ -12,18 +12,15 @@ Threading:
 """
 
 import json
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from .base import NotificationService
 from .types import (
+    NotificationContext,
     NotificationMessage,
     NotificationResult,
-    NotificationContext,
-    NotificationType,
 )
 
 
@@ -58,8 +55,8 @@ class SlackNotificationService(NotificationService):
 
     def __init__(
         self,
-        notifications_dir: Optional[Path] = None,
-        threads_file: Optional[Path] = None,
+        notifications_dir: Path | None = None,
+        threads_file: Path | None = None,
     ):
         """Initialize the Slack notification service.
 
@@ -69,9 +66,7 @@ class SlackNotificationService(NotificationService):
             threads_file: File storing task_id -> thread_ts mappings.
                 Defaults to ~/sharing/tracking/slack-threads.json
         """
-        self.notifications_dir = notifications_dir or (
-            Path.home() / "sharing" / "notifications"
-        )
+        self.notifications_dir = notifications_dir or (Path.home() / "sharing" / "notifications")
         self.threads_file = threads_file or (
             Path.home() / "sharing" / "tracking" / "slack-threads.json"
         )
@@ -86,19 +81,19 @@ class SlackNotificationService(NotificationService):
             try:
                 with self.threads_file.open() as f:
                     return json.load(f)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 return {}
         return {}
 
     def _save_threads(self, threads: dict):
         """Save thread mappings to file."""
         try:
-            with self.threads_file.open('w') as f:
+            with self.threads_file.open("w") as f:
                 json.dump(threads, f, indent=2)
-        except IOError as e:
+        except OSError as e:
             print(f"Warning: Could not save thread mappings: {e}")
 
-    def _get_thread_ts(self, task_id: str) -> Optional[str]:
+    def _get_thread_ts(self, task_id: str) -> str | None:
         """Look up thread_ts for a task_id."""
         threads = self._load_threads()
         return threads.get(task_id)
@@ -128,11 +123,7 @@ class SlackNotificationService(NotificationService):
             short_uuid = uuid.uuid4().hex[:8]
             return f"task-{timestamp}-{short_uuid}"
 
-    def _build_frontmatter(
-        self,
-        task_id: str,
-        thread_ts: Optional[str] = None
-    ) -> str:
+    def _build_frontmatter(self, task_id: str, thread_ts: str | None = None) -> str:
         """Build YAML frontmatter for the notification file."""
         lines = ["---"]
         lines.append(f'task_id: "{task_id}"')
@@ -145,7 +136,7 @@ class SlackNotificationService(NotificationService):
         self,
         task_id: str,
         content: str,
-        thread_ts: Optional[str] = None,
+        thread_ts: str | None = None,
         suffix: str = "",
     ) -> Path:
         """Write a notification file.
@@ -275,9 +266,9 @@ class SlackNotificationService(NotificationService):
         comment_author: str,
         comment_body: str,
         response_text: str,
-        pushed_branch: Optional[str] = None,
-        new_pr_url: Optional[str] = None,
-        task_id: Optional[str] = None,
+        pushed_branch: str | None = None,
+        new_pr_url: str | None = None,
+        task_id: str | None = None,
     ) -> NotificationResult:
         """Notify about a PR comment response.
 
@@ -304,9 +295,7 @@ class SlackNotificationService(NotificationService):
         actions_text = "\n".join(f"- {a}" for a in actions)
 
         # Truncate for readability
-        comment_preview = (
-            comment_body[:300] + "..." if len(comment_body) > 300 else comment_body
-        )
+        comment_preview = comment_body[:300] + "..." if len(comment_body) > 300 else comment_body
         response_preview = (
             response_text[:500] + "..." if len(response_text) > 500 else response_text
         )
@@ -347,7 +336,7 @@ class SlackNotificationService(NotificationService):
         branch: str,
         base_branch: str,
         repo: str,
-        reviewer: Optional[str] = None,
+        reviewer: str | None = None,
     ) -> NotificationResult:
         """Notify about a new PR being created.
 
@@ -387,7 +376,7 @@ class SlackNotificationService(NotificationService):
         branch: str,
         repo: str,
         commit_message: str,
-        pr_number: Optional[int] = None,
+        pr_number: int | None = None,
     ) -> NotificationResult:
         """Notify about code being pushed to a branch.
 
@@ -425,7 +414,7 @@ class SlackNotificationService(NotificationService):
 
 
 # Singleton instance for easy import
-_default_instance: Optional[SlackNotificationService] = None
+_default_instance: SlackNotificationService | None = None
 
 
 def get_slack_service() -> SlackNotificationService:

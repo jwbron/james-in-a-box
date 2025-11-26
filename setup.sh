@@ -98,7 +98,7 @@ check_installation_status() {
 
     for service in "${services[@]}"; do
         if is_service_installed "$service"; then
-            ((installed_count++))
+            installed_count=$((installed_count + 1))
         fi
     done
 
@@ -188,7 +188,7 @@ for dep in "${dependencies[@]}"; do
     if check_dependency "$dep"; then
         print_success "$dep found"
     else
-        ((missing_deps++))
+        missing_deps=$((missing_deps + 1))
     fi
 done
 
@@ -288,7 +288,7 @@ if [ "$UPDATE_MODE" = true ]; then
             if [[ "$service_name" =~ (slack|github|context|codebase|conversation|worktree|service-monitor) ]]; then
                 print_info "Removing broken symlink: $service_name"
                 rm -f "$symlink"
-                ((broken_count++))
+                broken_count=$((broken_count + 1))
             fi
         fi
     done < <(find "$systemd_dir" -maxdepth 1 -type l -print0 2>/dev/null)

@@ -6,9 +6,8 @@ and implement its abstract methods.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
-from .types import NotificationMessage, NotificationResult, NotificationContext
+from .types import NotificationContext, NotificationMessage, NotificationResult
 
 
 class NotificationService(ABC):
@@ -44,7 +43,6 @@ class NotificationService(ABC):
         Returns:
             NotificationResult with success status and any identifiers.
         """
-        pass
 
     @abstractmethod
     def reply(self, thread_id: str, message: NotificationMessage) -> NotificationResult:
@@ -57,16 +55,11 @@ class NotificationService(ABC):
         Returns:
             NotificationResult with success status.
         """
-        pass
 
     # Convenience methods with default implementations
 
     def notify(
-        self,
-        title: str,
-        body: str,
-        context: Optional[NotificationContext] = None,
-        **kwargs
+        self, title: str, body: str, context: NotificationContext | None = None, **kwargs
     ) -> NotificationResult:
         """Convenience method to send a notification.
 
@@ -85,46 +78,38 @@ class NotificationService(ABC):
             title=title,
             body=body,
             context=context or NotificationContext(),
-            notification_type=kwargs.get('notification_type', NotificationType.INFO),
+            notification_type=kwargs.get("notification_type", NotificationType.INFO),
         )
         return self.send(message)
 
     def notify_success(
-        self,
-        title: str,
-        body: str,
-        context: Optional[NotificationContext] = None
+        self, title: str, body: str, context: NotificationContext | None = None
     ) -> NotificationResult:
         """Send a success notification."""
         from .types import NotificationType
+
         return self.notify(title, body, context, notification_type=NotificationType.SUCCESS)
 
     def notify_error(
-        self,
-        title: str,
-        body: str,
-        context: Optional[NotificationContext] = None
+        self, title: str, body: str, context: NotificationContext | None = None
     ) -> NotificationResult:
         """Send an error notification."""
         from .types import NotificationType
+
         return self.notify(title, body, context, notification_type=NotificationType.ERROR)
 
     def notify_warning(
-        self,
-        title: str,
-        body: str,
-        context: Optional[NotificationContext] = None
+        self, title: str, body: str, context: NotificationContext | None = None
     ) -> NotificationResult:
         """Send a warning notification."""
         from .types import NotificationType
+
         return self.notify(title, body, context, notification_type=NotificationType.WARNING)
 
     def notify_action_required(
-        self,
-        title: str,
-        body: str,
-        context: Optional[NotificationContext] = None
+        self, title: str, body: str, context: NotificationContext | None = None
     ) -> NotificationResult:
         """Send a notification requiring user action."""
         from .types import NotificationType
+
         return self.notify(title, body, context, notification_type=NotificationType.ACTION_REQUIRED)

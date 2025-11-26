@@ -11,10 +11,9 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List, Optional
 
 
-def run(cmd: List[str], check: bool = True, **kwargs) -> subprocess.CompletedProcess:
+def run(cmd: list[str], check: bool = True, **kwargs) -> subprocess.CompletedProcess:
     """Run a command and return the result"""
     print(f"Running: {' '.join(cmd)}")
     return subprocess.run(cmd, check=check, **kwargs)
@@ -50,24 +49,24 @@ def install_java(distro: str) -> None:
         run_shell(
             "update-alternatives --set java /usr/lib/jvm/java-11-openjdk-*/bin/java || "
             "update-alternatives --auto java",
-            check=False
+            check=False,
         )
         run_shell(
             "update-alternatives --set javac /usr/lib/jvm/java-11-openjdk-*/bin/javac || "
             "update-alternatives --auto javac",
-            check=False
+            check=False,
         )
     elif distro == "fedora":
         run(["dnf", "install", "-y", "java-11-openjdk", "java-11-openjdk-devel"])
         run_shell(
             "alternatives --set java /usr/lib/jvm/java-11-openjdk/bin/java || "
             "alternatives --auto java",
-            check=False
+            check=False,
         )
         run_shell(
             "alternatives --set javac /usr/lib/jvm/java-11-openjdk/bin/javac || "
             "alternatives --auto javac",
-            check=False
+            check=False,
         )
 
 
@@ -91,7 +90,7 @@ def install_go(distro: str) -> None:
         run_shell(
             "add-apt-repository -y ppa:longsleep/golang-backports && apt-get update -qq -y || "
             "add-apt-repository -y -r ppa:longsleep/golang-backports",
-            check=False
+            check=False,
         )
         run(["apt-get", "install", "-y", "golang-go"])
     elif distro == "fedora":
@@ -105,7 +104,9 @@ def install_nodejs(distro: str) -> None:
     if distro == "ubuntu":
         # Setup NodeSource repository for Node 20
         run(["mkdir", "-p", "/usr/share/keyrings"])
-        run_shell("rm -f /usr/share/keyrings/nodesource.gpg /etc/apt/sources.list.d/nodesource.list")
+        run_shell(
+            "rm -f /usr/share/keyrings/nodesource.gpg /etc/apt/sources.list.d/nodesource.list"
+        )
 
         run_shell(
             "curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | "
@@ -113,8 +114,10 @@ def install_nodejs(distro: str) -> None:
         )
 
         with open("/etc/apt/sources.list.d/nodesource.list", "w") as f:
-            f.write("deb [signed-by=/usr/share/keyrings/nodesource.gpg] "
-                   "https://deb.nodesource.com/node_20.x nodistro main\n")
+            f.write(
+                "deb [signed-by=/usr/share/keyrings/nodesource.gpg] "
+                "https://deb.nodesource.com/node_20.x nodistro main\n"
+            )
 
         run(["chmod", "a+rX", "/etc/apt/sources.list.d/nodesource.list"])
 
@@ -141,14 +144,34 @@ def install_python(distro: str) -> None:
     if distro == "ubuntu":
         # Add deadsnakes PPA for recent Python
         run_shell("add-apt-repository -y ppa:deadsnakes/ppa && apt-get update -qq -y", check=False)
-        run(["apt-get", "install", "-y",
-             "python3.11", "python3.11-venv", "python3.11-dev",
-             "python3-dev", "python3-setuptools", "python3-pip", "python3-venv",
-             "python-is-python3"])
+        run(
+            [
+                "apt-get",
+                "install",
+                "-y",
+                "python3.11",
+                "python3.11-venv",
+                "python3.11-dev",
+                "python3-dev",
+                "python3-setuptools",
+                "python3-pip",
+                "python3-venv",
+                "python-is-python3",
+            ]
+        )
     elif distro == "fedora":
-        run(["dnf", "install", "-y",
-             "python3.11", "python3.11-devel",
-             "python3-devel", "python3-setuptools", "python3-pip"])
+        run(
+            [
+                "dnf",
+                "install",
+                "-y",
+                "python3.11",
+                "python3.11-devel",
+                "python3-devel",
+                "python3-setuptools",
+                "python3-pip",
+            ]
+        )
 
 
 def install_dev_packages(distro: str) -> None:
@@ -159,25 +182,38 @@ def install_dev_packages(distro: str) -> None:
         packages = [
             "git",
             # Image processing
-            "libfreetype6", "libfreetype6-dev", "libpng-dev", "libjpeg-dev",
+            "libfreetype6",
+            "libfreetype6-dev",
+            "libpng-dev",
+            "libjpeg-dev",
             "imagemagick",
             # XML/YAML
-            "libxslt1-dev", "libyaml-dev",
+            "libxslt1-dev",
+            "libyaml-dev",
             # Terminal
-            "libncurses-dev", "libreadline-dev",
+            "libncurses-dev",
+            "libreadline-dev",
             # Redis
             "redis-server",
             # Utils
-            "unzip", "jq", "curl", "wget",
+            "unzip",
+            "jq",
+            "curl",
+            "wget",
             # Build tools
-            "build-essential", "pkg-config",
+            "build-essential",
+            "pkg-config",
             # Rust
-            "cargo", "cargo-doc",
+            "cargo",
+            "cargo-doc",
             # Other tools
-            "lsof", "uuid-runtime",
-            "unrar", "ack-grep",
+            "lsof",
+            "uuid-runtime",
+            "unrar",
+            "ack-grep",
             # Editors
-            "vim", "emacs",
+            "vim",
+            "emacs",
         ]
         run(["apt-get", "install", "-y"] + packages)
 
@@ -185,32 +221,48 @@ def install_dev_packages(distro: str) -> None:
         run_shell(
             "dpkg-divert --local --divert /usr/bin/ack --rename --add /usr/bin/ack-grep || "
             "echo 'ack already configured'",
-            check=False
+            check=False,
         )
 
     elif distro == "fedora":
         packages = [
             "git",
             # Image processing
-            "freetype", "freetype-devel", "libpng-devel", "libjpeg-turbo-devel",
+            "freetype",
+            "freetype-devel",
+            "libpng-devel",
+            "libjpeg-turbo-devel",
             "ImageMagick",
             # XML/YAML
-            "libxslt-devel", "libyaml-devel",
+            "libxslt-devel",
+            "libyaml-devel",
             # Terminal
-            "ncurses-devel", "readline-devel",
+            "ncurses-devel",
+            "readline-devel",
             # Redis
             "redis",
             # Utils
-            "unzip", "jq", "curl", "wget",
+            "unzip",
+            "jq",
+            "curl",
+            "wget",
             # Build tools
-            "gcc", "gcc-c++", "make", "pkgconf", "pkg-config",
+            "gcc",
+            "gcc-c++",
+            "make",
+            "pkgconf",
+            "pkg-config",
             # Rust
-            "cargo", "rust-doc",
+            "cargo",
+            "rust-doc",
             # Other tools
-            "lsof", "util-linux",
-            "unrar", "ack",
+            "lsof",
+            "util-linux",
+            "unrar",
+            "ack",
             # Editors
-            "vim", "emacs",
+            "vim",
+            "emacs",
         ]
         run(["dnf", "install", "-y", "--skip-unavailable"] + packages)
 
@@ -252,8 +304,9 @@ def install_mkcert() -> None:
         try:
             os.chdir(tmpdir)
             run(["go", "mod", "download"])
-            version = run(["git", "describe", "--tags"],
-                         capture_output=True, text=True).stdout.strip()
+            version = run(
+                ["git", "describe", "--tags"], capture_output=True, text=True
+            ).stdout.strip()
             run(["go", "build", "-ldflags", f"-X main.Version={version}"])
             run(["install", "-m", "755", "mkcert", "/usr/local/bin"])
         finally:
@@ -283,11 +336,33 @@ def install_watchman(distro: str) -> None:
 
     # Install build dependencies
     if distro == "ubuntu":
-        run(["apt-get", "install", "-y",
-             "autoconf", "automake", "build-essential", "libtool", "libssl-dev"])
+        run(
+            [
+                "apt-get",
+                "install",
+                "-y",
+                "autoconf",
+                "automake",
+                "build-essential",
+                "libtool",
+                "libssl-dev",
+            ]
+        )
     elif distro == "fedora":
-        run(["dnf", "install", "-y",
-             "autoconf", "automake", "gcc", "gcc-c++", "make", "libtool", "openssl-devel"])
+        run(
+            [
+                "dnf",
+                "install",
+                "-y",
+                "autoconf",
+                "automake",
+                "gcc",
+                "gcc-c++",
+                "make",
+                "libtool",
+                "openssl-devel",
+            ]
+        )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         try:
@@ -319,8 +394,9 @@ def install_postgresql(distro: str) -> None:
             "gpg --dearmor | tee /etc/apt/trusted.gpg.d/apt.postgresql.org.gpg >/dev/null"
         )
 
-        lsb_release = run(["lsb_release", "-c", "-s"],
-                         capture_output=True, text=True).stdout.strip()
+        lsb_release = run(
+            ["lsb_release", "-c", "-s"], capture_output=True, text=True
+        ).stdout.strip()
 
         run_shell(
             f'add-apt-repository -y "deb http://apt.postgresql.org/pub/repos/apt/ {lsb_release}-pgdg main"'
@@ -457,10 +533,10 @@ def main():
     except Exception as e:
         print(f"\nError during setup: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-

@@ -132,7 +132,7 @@ case "${1:-}" in
         systemctl --user disable context-sync.timer
         echo "✓ Timer disabled and stopped"
         ;;
-    
+
     start)
         echo "Running context-sync now..."
         systemctl --user start context-sync.service
@@ -140,7 +140,7 @@ case "${1:-}" in
         echo ""
         echo "View progress with: $0 logs-follow"
         ;;
-    
+
     status)
         echo "=== Timer Status ==="
         systemctl --user status context-sync.timer --no-pager || true
@@ -151,17 +151,17 @@ case "${1:-}" in
         echo "=== Upcoming Syncs ==="
         systemctl --user list-timers context-sync.timer --no-pager
         ;;
-    
+
     logs)
         echo "=== Recent Sync Logs ==="
         journalctl --user -u context-sync.service -n 100 --no-pager
         ;;
-    
+
     logs-follow)
         echo "=== Following Sync Logs (Ctrl+C to stop) ==="
         journalctl --user -u context-sync.service -f
         ;;
-    
+
     *)
         show_usage
         exit 1

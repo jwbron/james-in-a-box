@@ -17,17 +17,14 @@ This script:
 """
 
 import json
-import os
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 
 def load_context(context_file: Path) -> dict:
     """Load PR context from JSON file."""
-    with open(context_file, 'r') as f:
+    with open(context_file) as f:
         return json.load(f)
 
 
@@ -36,23 +33,23 @@ def format_pr_summary(ctx: dict) -> str:
     pr = ctx.get("pr", {})
     return f"""## PR Summary
 
-**Title:** {pr.get('title', 'N/A')}
-**Author:** {pr.get('author', {}).get('login', 'N/A')}
-**State:** {pr.get('state', 'N/A')}
-**Review Decision:** {pr.get('reviewDecision', 'PENDING')}
-**Draft:** {pr.get('isDraft', False)}
-**Mergeable:** {pr.get('mergeable', 'N/A')}
+**Title:** {pr.get("title", "N/A")}
+**Author:** {pr.get("author", {}).get("login", "N/A")}
+**State:** {pr.get("state", "N/A")}
+**Review Decision:** {pr.get("reviewDecision", "PENDING")}
+**Draft:** {pr.get("isDraft", False)}
+**Mergeable:** {pr.get("mergeable", "N/A")}
 
-**Base:** `{pr.get('baseRefName', 'N/A')}` <- **Head:** `{pr.get('headRefName', 'N/A')}`
+**Base:** `{pr.get("baseRefName", "N/A")}` <- **Head:** `{pr.get("headRefName", "N/A")}`
 
-**Changes:** +{pr.get('additions', 0)} / -{pr.get('deletions', 0)} across {pr.get('changedFiles', 0)} files
+**Changes:** +{pr.get("additions", 0)} / -{pr.get("deletions", 0)} across {pr.get("changedFiles", 0)} files
 
-**Created:** {pr.get('createdAt', 'N/A')}
-**Updated:** {pr.get('updatedAt', 'N/A')}
+**Created:** {pr.get("createdAt", "N/A")}
+**Updated:** {pr.get("updatedAt", "N/A")}
 
 ### Description
 
-{pr.get('body', '*No description provided*')}
+{pr.get("body", "*No description provided*")}
 """
 
 
@@ -82,15 +79,17 @@ def format_checks(ctx: dict) -> str:
 
     # Group by status
     failed = [c for c in checks if c.get("conclusion") in ["failure", "FAILURE"]]
-    pending = [c for c in checks if c.get("state") in ["pending", "PENDING", "in_progress", "IN_PROGRESS"]]
+    pending = [
+        c for c in checks if c.get("state") in ["pending", "PENDING", "in_progress", "IN_PROGRESS"]
+    ]
     passed = [c for c in checks if c.get("conclusion") in ["success", "SUCCESS"]]
-    other = [c for c in checks if c not in failed and c not in pending and c not in passed]
+    [c for c in checks if c not in failed and c not in pending and c not in passed]
 
     if failed:
         lines.append("### Failed")
         for c in failed:
             lines.append(f"- **{c.get('name')}** - {c.get('conclusion')}")
-            if c.get('detailsUrl'):
+            if c.get("detailsUrl"):
                 lines.append(f"  - Details: {c.get('detailsUrl')}")
 
     if pending:
@@ -101,7 +100,7 @@ def format_checks(ctx: dict) -> str:
     if passed:
         lines.append(f"\n### Passed ({len(passed)} checks)")
         # Just list names, don't clutter
-        names = [c.get('name') for c in passed]
+        names = [c.get("name") for c in passed]
         lines.append(f"  {', '.join(names[:10])}" + ("..." if len(names) > 10 else ""))
 
     return "\n".join(lines)
@@ -336,20 +335,22 @@ def run_claude(prompt: str, interactive: bool = False) -> bool:
             # Interactive mode - show output in real-time
             result = subprocess.run(
                 ["claude", "--dangerously-skip-permissions"],
+                check=False,
                 input=prompt,
                 text=True,
-                cwd=str(Path.home() / "khan")
+                cwd=str(Path.home() / "khan"),
             )
             return result.returncode == 0
         else:
             # Non-interactive - capture output
             result = subprocess.run(
                 ["claude", "--dangerously-skip-permissions"],
+                check=False,
                 input=prompt,
                 text=True,
                 capture_output=True,
                 timeout=900,  # 15 minute timeout
-                cwd=str(Path.home() / "khan")
+                cwd=str(Path.home() / "khan"),
             )
 
             if result.returncode == 0:
@@ -373,8 +374,8 @@ def run_claude(prompt: str, interactive: bool = False) -> bool:
 
 def stop_background_services():
     """Stop services that would keep the container alive."""
-    subprocess.run(["service", "postgresql", "stop"], capture_output=True)
-    subprocess.run(["service", "redis-server", "stop"], capture_output=True)
+    subprocess.run(["service", "postgresql", "stop"], check=False, capture_output=True)
+    subprocess.run(["service", "redis-server", "stop"], check=False, capture_output=True)
 
 
 def main():
