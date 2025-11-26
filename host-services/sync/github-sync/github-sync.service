@@ -11,8 +11,8 @@ WorkingDirectory=%h/khan/james-in-a-box/host-services/sync/github-sync
 ExecStart=%h/khan/james-in-a-box/host-services/sync/github-sync/github-sync.py --use-config
 
 # After syncing PR data, run analysis in JIB container (new ephemeral container)
-# 1. Check monitor - analyzes failed checks and suggests fixes
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/github/check-monitor.py
+# 1. Issue fixer - detects check failures and merge conflicts, lets Claude determine fixes
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/github/issue-fixer.py
 
 # 2. PR reviewer - auto-reviews new PRs from others (skips your own)
 ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py --watch
