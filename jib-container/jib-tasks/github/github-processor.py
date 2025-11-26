@@ -4,15 +4,15 @@ GitHub Processor - Container-side dispatcher for GitHub-related tasks.
 
 This script is invoked by the host-side github-watcher.py via `jib --exec`.
 It receives context via command-line arguments and dispatches to the
-appropriate handler (issue-fixer, comment-responder, pr-reviewer).
+appropriate handler based on task type.
 
 Usage:
     jib --exec python3 github-processor.py --task <task_type> --context <json>
 
 Task types:
-    - check_failure: PR check failures -> delegates to issue-fixer logic
-    - comment: New PR comments -> delegates to comment-responder logic
-    - review_request: New PR needing review -> delegates to pr-reviewer logic
+    - check_failure: PR check failures -> analyzes and fixes CI issues
+    - comment: New PR comments -> generates appropriate responses
+    - review_request: New PR needing review -> performs code review
 
 Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B":
     - Host-side watcher queries GitHub and triggers container
