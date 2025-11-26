@@ -378,6 +378,36 @@ bd create "Slack thread: $THREAD_ID" --label slack-thread --label "$THREAD_ID"
 
 See `slack-thread-context.md` for complete details.
 
+### With GitHub PR Context
+
+**CRITICAL**: When processing GitHub PR events (comments, reviews, check failures), use the PR number and repository to maintain context:
+
+```bash
+# Extract PR context from event data
+REPO_NAME="james-in-a-box"
+PR_NUM="75"
+PR_CONTEXT_ID="pr-${REPO_NAME}-${PR_NUM}"
+
+# Check for existing context FIRST
+cd ~/beads
+bd list --search "$PR_CONTEXT_ID"
+
+# If found: load context and resume
+# If not found: create task with PR context as label
+bd create "PR #$PR_NUM: [title]" \
+  --label github-pr \
+  --label "$PR_CONTEXT_ID" \
+  --label "$REPO_NAME"
+```
+
+Each PR should have ONE task that tracks:
+- All comments and responses
+- CI check failures and fixes
+- Review feedback and changes
+- The entire PR lifecycle until merged/closed
+
+See `github-pr-context.md` for complete details.
+
 ### With @save-context
 ```bash
 # After completing significant work
