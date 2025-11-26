@@ -36,6 +36,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+
 try:
     import requests
 except ImportError:
@@ -53,6 +54,7 @@ JIB_CONFIG_DIR = Path.home() / ".config" / "jib"
 @dataclass
 class SlackThread:
     """Represents a Slack thread where jib participated."""
+
     thread_ts: str
     channel: str
     start_time: datetime
@@ -68,6 +70,7 @@ class SlackThread:
 @dataclass
 class GitHubPR:
     """Represents a GitHub PR where jib contributed."""
+
     number: int
     repo: str
     title: str
@@ -143,9 +146,7 @@ class SlackThreadFetcher:
             return True
         # Check for jib signature in text
         text = message.get("text", "")
-        if "Authored by jib" in text or "Generated with Claude" in text:
-            return True
-        return False
+        return "Authored by jib" in text or "Generated with Claude" in text
 
     def fetch_threads(self, days: int = 7) -> list[SlackThread]:
         """Fetch all threads from the channel where jib participated in the last N days."""
@@ -252,9 +253,15 @@ class SlackThreadFetcher:
         recent_lower = recent_texts.lower()
 
         # Check for resolution indicators
-        if any(word in recent_lower for word in ["thanks", "thank you", "perfect", "done", "merged", "lgtm", "approved"]):
+        if any(
+            word in recent_lower
+            for word in ["thanks", "thank you", "perfect", "done", "merged", "lgtm", "approved"]
+        ):
             return "resolved"
-        if any(word in recent_lower for word in ["blocked", "stuck", "help", "issue", "error", "failed"]):
+        if any(
+            word in recent_lower
+            for word in ["blocked", "stuck", "help", "issue", "error", "failed"]
+        ):
             return "escalated"
 
         return "pending"
@@ -275,7 +282,9 @@ class GitHubPRFetcher:
         # Repos to search - can be configured
         self.repos = config.get("github_repos", ["jwbron/james-in-a-box"])
 
-    def _make_request(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any] | list:
+    def _make_request(
+        self, endpoint: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any] | list:
         """Make a request to GitHub API."""
         url = f"https://api.github.com/{endpoint}"
         response = requests.get(url, headers=self.headers, params=params, timeout=30)
@@ -305,7 +314,7 @@ class GitHubPRFetcher:
                 owner, repo_name = repo.split("/")
                 recent_prs = self._make_request(
                     f"repos/{owner}/{repo_name}/pulls",
-                    {"state": "all", "sort": "updated", "direction": "desc", "per_page": 50}
+                    {"state": "all", "sort": "updated", "direction": "desc", "per_page": 50},
                 )
 
                 for pr in recent_prs:
@@ -338,38 +347,34 @@ class GitHubPRFetcher:
 
             # Get commits
             commits = self._make_request(f"{base}/commits", {"per_page": 100})
-            jib_commits = sum(
-                1 for c in commits
-                if self._is_jib_commit(c)
-            )
+            jib_commits = sum(1 for c in commits if self._is_jib_commit(c))
 
             # Get review comments
             review_comments = self._make_request(f"{base}/comments", {"per_page": 100})
-            jib_review_comments = sum(
-                1 for c in review_comments
-                if self._is_jib_comment(c)
-            )
+            jib_review_comments = sum(1 for c in review_comments if self._is_jib_comment(c))
             human_review_comments = len(review_comments) - jib_review_comments
 
             # Get issue comments
             issue_comments = self._make_request(
-                f"repos/{owner}/{repo_name}/issues/{pr_number}/comments",
-                {"per_page": 100}
+                f"repos/{owner}/{repo_name}/issues/{pr_number}/comments", {"per_page": 100}
             )
-            jib_issue_comments = sum(
-                1 for c in issue_comments
-                if self._is_jib_comment(c)
-            )
+            jib_issue_comments = sum(1 for c in issue_comments if self._is_jib_comment(c))
 
             # Count iterations (review cycles) - simplified as number of reviews
             reviews = self._make_request(f"{base}/reviews", {"per_page": 100})
-            iterations = max(1, len([r for r in reviews if r.get("state") in ["CHANGES_REQUESTED", "APPROVED"]]))
+            iterations = max(
+                1, len([r for r in reviews if r.get("state") in ["CHANGES_REQUESTED", "APPROVED"]])
+            )
 
             # Parse dates
-            created_at = datetime.fromisoformat(pr["created_at"].replace("Z", "+00:00")).replace(tzinfo=None)
+            created_at = datetime.fromisoformat(pr["created_at"].replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
             closed_at = None
             if pr.get("closed_at"):
-                closed_at = datetime.fromisoformat(pr["closed_at"].replace("Z", "+00:00")).replace(tzinfo=None)
+                closed_at = datetime.fromisoformat(pr["closed_at"].replace("Z", "+00:00")).replace(
+                    tzinfo=None
+                )
 
             # Determine state
             state = pr["state"]
@@ -406,9 +411,7 @@ class GitHubPRFetcher:
             return True
         # Check author
         author = commit.get("commit", {}).get("author", {}).get("name", "")
-        if "jib" in author.lower() or "claude" in author.lower():
-            return True
-        return False
+        return "jib" in author.lower() or "claude" in author.lower()
 
     def _is_jib_comment(self, comment: dict[str, Any]) -> bool:
         """Check if a comment was made by jib."""
@@ -418,9 +421,7 @@ class GitHubPRFetcher:
             return True
         # Check user login
         user = comment.get("user", {}).get("login", "")
-        if "jib" in user.lower() or "bot" in user.lower():
-            return True
-        return False
+        return "jib" in user.lower() or "bot" in user.lower()
 
 
 class ConversationAnalyzer:
@@ -477,6 +478,7 @@ class ConversationAnalyzer:
         if config_file.exists():
             try:
                 import yaml
+
                 with open(config_file) as f:
                     yaml_config = yaml.safe_load(f) or {}
                 config.update(yaml_config)
@@ -636,7 +638,7 @@ class ConversationAnalyzer:
             topic_words = defaultdict(int)
             for thread in threads:
                 if thread.topic:
-                    words = re.findall(r'\b\w{4,}\b', thread.topic.lower())
+                    words = re.findall(r"\b\w{4,}\b", thread.topic.lower())
                     for word in words:
                         topic_words[word] += 1
 
@@ -687,54 +689,66 @@ class ConversationAnalyzer:
         # Slack-based recommendations
         if slack_metrics["total_threads"] > 0:
             if slack_metrics["resolution_rate"] < 60:
-                recommendations.append({
-                    "priority": "HIGH",
-                    "category": "Thread Resolution",
-                    "issue": f"Only {slack_metrics['resolution_rate']:.1f}% of threads resolved",
-                    "recommendation": "Review unresolved threads for common blockers. Add proactive clarification questions.",
-                })
+                recommendations.append(
+                    {
+                        "priority": "HIGH",
+                        "category": "Thread Resolution",
+                        "issue": f"Only {slack_metrics['resolution_rate']:.1f}% of threads resolved",
+                        "recommendation": "Review unresolved threads for common blockers. Add proactive clarification questions.",
+                    }
+                )
 
             if slack_metrics["avg_thread_duration_minutes"] > 60:
-                recommendations.append({
-                    "priority": "MEDIUM",
-                    "category": "Response Efficiency",
-                    "issue": f"Average thread duration is {slack_metrics['avg_thread_duration_minutes']:.1f} minutes",
-                    "recommendation": "Provide more comprehensive initial responses to reduce back-and-forth.",
-                })
+                recommendations.append(
+                    {
+                        "priority": "MEDIUM",
+                        "category": "Response Efficiency",
+                        "issue": f"Average thread duration is {slack_metrics['avg_thread_duration_minutes']:.1f} minutes",
+                        "recommendation": "Provide more comprehensive initial responses to reduce back-and-forth.",
+                    }
+                )
 
             if slack_metrics["escalated_threads"] > slack_metrics["total_threads"] * 0.2:
-                recommendations.append({
-                    "priority": "HIGH",
-                    "category": "Escalation Rate",
-                    "issue": f"{slack_metrics['escalated_threads']} threads escalated ({slack_metrics['escalated_threads']/slack_metrics['total_threads']*100:.1f}%)",
-                    "recommendation": "Analyze escalated threads for common failure patterns. Improve error handling and communication.",
-                })
+                recommendations.append(
+                    {
+                        "priority": "HIGH",
+                        "category": "Escalation Rate",
+                        "issue": f"{slack_metrics['escalated_threads']} threads escalated ({slack_metrics['escalated_threads'] / slack_metrics['total_threads'] * 100:.1f}%)",
+                        "recommendation": "Analyze escalated threads for common failure patterns. Improve error handling and communication.",
+                    }
+                )
 
         # GitHub-based recommendations
         if github_metrics["total_prs"] > 0:
             if github_metrics["first_try_success_rate"] < 50:
-                recommendations.append({
-                    "priority": "HIGH",
-                    "category": "PR Quality",
-                    "issue": f"Only {github_metrics['first_try_success_rate']:.1f}% PRs merged on first try",
-                    "recommendation": "Run tests before creating PRs. Review code for common issues. Add self-review checklist.",
-                })
+                recommendations.append(
+                    {
+                        "priority": "HIGH",
+                        "category": "PR Quality",
+                        "issue": f"Only {github_metrics['first_try_success_rate']:.1f}% PRs merged on first try",
+                        "recommendation": "Run tests before creating PRs. Review code for common issues. Add self-review checklist.",
+                    }
+                )
 
             if github_metrics["avg_iterations"] > 2:
-                recommendations.append({
-                    "priority": "MEDIUM",
-                    "category": "Review Cycles",
-                    "issue": f"Average {github_metrics['avg_iterations']:.1f} iterations per PR",
-                    "recommendation": "Address all review comments in single iteration. Ask clarifying questions upfront.",
-                })
+                recommendations.append(
+                    {
+                        "priority": "MEDIUM",
+                        "category": "Review Cycles",
+                        "issue": f"Average {github_metrics['avg_iterations']:.1f} iterations per PR",
+                        "recommendation": "Address all review comments in single iteration. Ask clarifying questions upfront.",
+                    }
+                )
 
             if github_metrics["avg_lines_changed"] > 500:
-                recommendations.append({
-                    "priority": "LOW",
-                    "category": "PR Scope",
-                    "issue": f"Average {github_metrics['avg_lines_changed']:.0f} lines per PR",
-                    "recommendation": "Break large changes into smaller, focused PRs for easier review.",
-                })
+                recommendations.append(
+                    {
+                        "priority": "LOW",
+                        "category": "PR Scope",
+                        "issue": f"Average {github_metrics['avg_lines_changed']:.0f} lines per PR",
+                        "recommendation": "Break large changes into smaller, focused PRs for easier review.",
+                    }
+                )
 
         return recommendations
 
@@ -756,39 +770,45 @@ Period: Last {self.days} days
 
 | Source | Total | Success Rate |
 |--------|-------|--------------|
-| Slack Threads | {slack_metrics['total_threads']} | {slack_metrics['resolution_rate']:.1f}% resolved |
-| GitHub PRs | {github_metrics['total_prs']} | {github_metrics['merge_rate']:.1f}% merged |
+| Slack Threads | {slack_metrics["total_threads"]} | {slack_metrics["resolution_rate"]:.1f}% resolved |
+| GitHub PRs | {github_metrics["total_prs"]} | {github_metrics["merge_rate"]:.1f}% merged |
 
 ## Slack Thread Analysis
 
 ### Metrics
-- **Total Threads**: {slack_metrics['total_threads']}
-- **Resolved**: {slack_metrics['resolved_threads']} | **Pending**: {slack_metrics['pending_threads']} | **Escalated**: {slack_metrics['escalated_threads']}
-- **Resolution Rate**: {slack_metrics['resolution_rate']:.1f}%
-- **Avg Messages/Thread**: {slack_metrics['avg_messages_per_thread']:.1f}
-- **Avg jib Messages/Thread**: {slack_metrics['avg_jib_messages_per_thread']:.1f}
-- **Avg Thread Duration**: {slack_metrics['avg_thread_duration_minutes']:.1f} minutes
+- **Total Threads**: {slack_metrics["total_threads"]}
+- **Resolved**: {slack_metrics["resolved_threads"]} | **Pending**: {slack_metrics["pending_threads"]} | **Escalated**: {slack_metrics["escalated_threads"]}
+- **Resolution Rate**: {slack_metrics["resolution_rate"]:.1f}%
+- **Avg Messages/Thread**: {slack_metrics["avg_messages_per_thread"]:.1f}
+- **Avg jib Messages/Thread**: {slack_metrics["avg_jib_messages_per_thread"]:.1f}
+- **Avg Thread Duration**: {slack_metrics["avg_thread_duration_minutes"]:.1f} minutes
 
 ### Thread Summary
 """
         # Add thread summaries
         for thread in sorted(threads, key=lambda t: t.start_time, reverse=True)[:10]:
-            outcome_emoji = {"resolved": "✅", "pending": "⏳", "escalated": "⚠️"}.get(thread.outcome, "❓")
-            topic_preview = (thread.topic or "No topic")[:50] + "..." if thread.topic and len(thread.topic) > 50 else (thread.topic or "No topic")
+            outcome_emoji = {"resolved": "✅", "pending": "⏳", "escalated": "⚠️"}.get(
+                thread.outcome, "❓"
+            )
+            topic_preview = (
+                (thread.topic or "No topic")[:50] + "..."
+                if thread.topic and len(thread.topic) > 50
+                else (thread.topic or "No topic")
+            )
             report += f"- {outcome_emoji} {thread.start_time.strftime('%m/%d')}: {topic_preview} ({thread.total_messages} msgs)\n"
 
         report += f"""
 ## GitHub PR Analysis
 
 ### Metrics
-- **Total PRs**: {github_metrics['total_prs']}
-- **Merged**: {github_metrics['merged_prs']} | **Closed**: {github_metrics['closed_prs']} | **Open**: {github_metrics['open_prs']}
-- **Merge Rate**: {github_metrics['merge_rate']:.1f}%
-- **First-Try Success Rate**: {github_metrics['first_try_success_rate']:.1f}%
-- **Avg Iterations**: {github_metrics['avg_iterations']:.1f}
-- **Avg Files Changed**: {github_metrics['avg_files_changed']:.1f}
-- **Avg Lines Changed**: {github_metrics['avg_lines_changed']:.0f}
-- **Avg PR Duration**: {github_metrics['avg_pr_duration_hours']:.1f} hours
+- **Total PRs**: {github_metrics["total_prs"]}
+- **Merged**: {github_metrics["merged_prs"]} | **Closed**: {github_metrics["closed_prs"]} | **Open**: {github_metrics["open_prs"]}
+- **Merge Rate**: {github_metrics["merge_rate"]:.1f}%
+- **First-Try Success Rate**: {github_metrics["first_try_success_rate"]:.1f}%
+- **Avg Iterations**: {github_metrics["avg_iterations"]:.1f}
+- **Avg Files Changed**: {github_metrics["avg_files_changed"]:.1f}
+- **Avg Lines Changed**: {github_metrics["avg_lines_changed"]:.0f}
+- **Avg PR Duration**: {github_metrics["avg_pr_duration_hours"]:.1f} hours
 
 ### PR Summary
 """
@@ -841,7 +861,7 @@ Period: Last {self.days} days
         report += f"""
 ---
 
-*Analysis based on {slack_metrics['total_threads']} Slack threads and {github_metrics['total_prs']} GitHub PRs*
+*Analysis based on {slack_metrics["total_threads"]} Slack threads and {github_metrics["total_prs"]} GitHub PRs*
 *Report saved to: ~/sharing/analysis/*
 """
         return report
@@ -933,7 +953,9 @@ Period: Last {self.days} days
 
         # Send notification if there are recommendations
         if recommendations:
-            self.send_notification(slack_metrics, github_metrics, recommendations, report_file, report)
+            self.send_notification(
+                slack_metrics, github_metrics, recommendations, report_file, report
+            )
 
         return report
 
@@ -968,9 +990,9 @@ Period: Last {self.days} days
 **Priority**: {priority} | {len(recommendations)} recommendations
 
 **Quick Stats:**
-- 💬 Slack: {slack_metrics['total_threads']} threads ({slack_metrics['resolution_rate']:.0f}% resolved)
-- 🔀 GitHub: {github_metrics['total_prs']} PRs ({github_metrics['merge_rate']:.0f}% merged)
-- 🎯 First-try success: {github_metrics['first_try_success_rate']:.0f}%
+- 💬 Slack: {slack_metrics["total_threads"]} threads ({slack_metrics["resolution_rate"]:.0f}% resolved)
+- 🔀 GitHub: {github_metrics["total_prs"]} PRs ({github_metrics["merge_rate"]:.0f}% merged)
+- 🎯 First-try success: {github_metrics["first_try_success_rate"]:.0f}%
 
 📄 Full report in thread below
 """
