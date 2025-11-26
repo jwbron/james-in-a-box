@@ -689,7 +689,6 @@ class PRReviewer:
             print("  ⚠ Could not create/find Beads task")
             return None
 
-
     def create_review_notification(
         self, pr_num: int, repo_name: str, pr_context: dict, review: dict, beads_id: str | None
     ):

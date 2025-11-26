@@ -7,9 +7,6 @@ Tests the confluence-watcher.py which monitors Confluence documentation changes.
 import json
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestConfluenceWatcherInit:
@@ -48,9 +45,9 @@ class TestStateManagement:
         state_file.parent.mkdir(parents=True, exist_ok=True)
 
         state_data = {
-            'processed': {
-                '/path/to/doc1.md': '2024-01-01T00:00:00',
-                '/path/to/doc2.md': '2024-01-02T00:00:00'
+            "processed": {
+                "/path/to/doc1.md": "2024-01-01T00:00:00",
+                "/path/to/doc2.md": "2024-01-02T00:00:00",
             }
         }
         state_file.write_text(json.dumps(state_data))
@@ -58,7 +55,7 @@ class TestStateManagement:
         with state_file.open() as f:
             loaded = json.load(f)
 
-        assert len(loaded['processed']) == 2
+        assert len(loaded["processed"]) == 2
 
     def test_handles_missing_state_file(self, temp_dir, monkeypatch):
         """Test handling when state file doesn't exist."""
@@ -70,7 +67,7 @@ class TestStateManagement:
         if state_file.exists():
             with state_file.open() as f:
                 data = json.load(f)
-                processed_docs = data.get('processed', {})
+                processed_docs = data.get("processed", {})
 
         assert processed_docs == {}
 
@@ -86,7 +83,7 @@ class TestStateManagement:
         try:
             with state_file.open() as f:
                 data = json.load(f)
-                processed_docs = data.get('processed', {})
+                processed_docs = data.get("processed", {})
         except (OSError, json.JSONDecodeError):
             processed_docs = {}
 
@@ -99,19 +96,17 @@ class TestStateManagement:
         state_file = temp_dir / "sharing" / "tracking" / "confluence-watcher-state.json"
         state_file.parent.mkdir(parents=True, exist_ok=True)
 
-        processed_docs = {
-            '/path/to/new-doc.md': '2024-01-03T00:00:00'
-        }
+        processed_docs = {"/path/to/new-doc.md": "2024-01-03T00:00:00"}
 
-        with state_file.open('w') as f:
-            json.dump({'processed': processed_docs}, f, indent=2)
+        with state_file.open("w") as f:
+            json.dump({"processed": processed_docs}, f, indent=2)
 
         assert state_file.exists()
 
         with state_file.open() as f:
             saved = json.load(f)
 
-        assert len(saved['processed']) == 1
+        assert len(saved["processed"]) == 1
 
 
 class TestDocumentDiscovery:
@@ -173,7 +168,7 @@ class TestChangeDetection:
         doc_file = temp_dir / "doc.md"
         doc_file.write_text("content")
 
-        old_mtime = '2024-01-01T00:00:00'
+        old_mtime = "2024-01-01T00:00:00"
         new_mtime = datetime.fromtimestamp(doc_file.stat().st_mtime).isoformat()
 
         processed_docs = {str(doc_file): old_mtime}
@@ -201,16 +196,16 @@ class TestChangeDetection:
         mtime_str = datetime.fromtimestamp(mtime).isoformat()
 
         doc_info = {
-            'file': doc_file,
-            'path': str(doc_file),
-            'mtime': mtime_str,
-            'is_new': True,
-            'doc_type': 'ADR',
-            'content': doc_file.read_text()
+            "file": doc_file,
+            "path": str(doc_file),
+            "mtime": mtime_str,
+            "is_new": True,
+            "doc_type": "ADR",
+            "content": doc_file.read_text(),
         }
 
-        assert doc_info['doc_type'] == 'ADR'
-        assert 'ADR 001' in doc_info['content']
+        assert doc_info["doc_type"] == "ADR"
+        assert "ADR 001" in doc_info["content"]
 
 
 class TestPromptConstruction:
@@ -219,13 +214,13 @@ class TestPromptConstruction:
     def test_constructs_document_summary(self):
         """Test constructing document summary for prompt."""
         docs = [
-            {'file': Path('ADR-001.md'), 'is_new': True, 'doc_type': 'ADR'},
-            {'file': Path('Runbook-Deploy.md'), 'is_new': False, 'doc_type': 'Runbook'}
+            {"file": Path("ADR-001.md"), "is_new": True, "doc_type": "ADR"},
+            {"file": Path("Runbook-Deploy.md"), "is_new": False, "doc_type": "Runbook"},
         ]
 
         summary = []
         for d in docs:
-            status = "New" if d['is_new'] else "Updated"
+            status = "New" if d["is_new"] else "Updated"
             summary.append(f"**{status} {d['doc_type']}**: {d['file'].name}")
 
         assert len(summary) == 2
@@ -249,7 +244,7 @@ class TestPromptConstruction:
             "Analyze the document",
             "Track in Beads",
             "Create notification",
-            "Update state file"
+            "Update state file",
         ]
 
         prompt_template = """
@@ -302,15 +297,15 @@ class TestStateUpdate:
         """Test updating processed docs after analysis."""
         processed_docs = {}
         new_docs = [
-            {'path': '/path/to/doc1.md', 'mtime': '2024-01-01T00:00:00'},
-            {'path': '/path/to/doc2.md', 'mtime': '2024-01-02T00:00:00'}
+            {"path": "/path/to/doc1.md", "mtime": "2024-01-01T00:00:00"},
+            {"path": "/path/to/doc2.md", "mtime": "2024-01-02T00:00:00"},
         ]
 
         for d in new_docs:
-            processed_docs[d['path']] = d['mtime']
+            processed_docs[d["path"]] = d["mtime"]
 
         assert len(processed_docs) == 2
-        assert '/path/to/doc1.md' in processed_docs
+        assert "/path/to/doc1.md" in processed_docs
 
     def test_creates_state_directory_if_missing(self, temp_dir):
         """Test creating state directory if it doesn't exist."""

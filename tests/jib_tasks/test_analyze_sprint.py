@@ -4,12 +4,8 @@ Tests for the Sprint Ticket Analyzer module.
 Tests the analyze-sprint.py which analyzes tickets in the active sprint.
 """
 
-import json
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestSprintAnalyzerInit:
@@ -48,6 +44,7 @@ class TestParseTicketFile:
         ticket_file.write_text("# PROJ-123: Fix Important Bug\n\nDescription")
 
         import re
+
         content = ticket_file.read_text()
         lines = content.split("\n")
         first_line = lines[0]
@@ -264,8 +261,7 @@ class TestCategorizeTickets:
 
         priority_order = {"high": 0, "medium": 1, "low": 2}
         sorted_tickets = sorted(
-            tickets,
-            key=lambda t: priority_order.get(t["priority"].lower(), 99)
+            tickets, key=lambda t: priority_order.get(t["priority"].lower(), 99)
         )
 
         assert sorted_tickets[0]["key"] == "PROJ-2"  # High priority first
@@ -298,11 +294,13 @@ class TestGenerateRecommendations:
         recommendations = []
 
         if in_progress:
-            recommendations.append({
-                "action": "continue",
-                "ticket": in_progress[0],
-                "reason": "Ticket already in progress"
-            })
+            recommendations.append(
+                {
+                    "action": "continue",
+                    "ticket": in_progress[0],
+                    "reason": "Ticket already in progress",
+                }
+            )
 
         assert len(recommendations) == 1
         assert recommendations[0]["action"] == "continue"

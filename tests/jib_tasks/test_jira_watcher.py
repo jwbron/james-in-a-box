@@ -7,9 +7,6 @@ Tests the jira-watcher.py which monitors JIRA tickets and sends notifications.
 import json
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestJiraWatcherInit:
@@ -48,9 +45,9 @@ class TestTicketStateManagement:
         state_file.parent.mkdir(parents=True, exist_ok=True)
 
         state_data = {
-            'processed': {
-                '/path/to/PROJ-123.md': '2024-01-01T00:00:00',
-                '/path/to/PROJ-456.md': '2024-01-02T00:00:00'
+            "processed": {
+                "/path/to/PROJ-123.md": "2024-01-01T00:00:00",
+                "/path/to/PROJ-456.md": "2024-01-02T00:00:00",
             }
         }
         state_file.write_text(json.dumps(state_data))
@@ -58,7 +55,7 @@ class TestTicketStateManagement:
         with state_file.open() as f:
             loaded = json.load(f)
 
-        assert len(loaded['processed']) == 2
+        assert len(loaded["processed"]) == 2
 
     def test_handles_missing_state_file(self, temp_dir, monkeypatch):
         """Test handling when state file doesn't exist."""
@@ -70,7 +67,7 @@ class TestTicketStateManagement:
         if state_file.exists():
             with state_file.open() as f:
                 data = json.load(f)
-                processed_tickets = data.get('processed', {})
+                processed_tickets = data.get("processed", {})
 
         assert processed_tickets == {}
 
@@ -86,7 +83,7 @@ class TestTicketStateManagement:
         try:
             with state_file.open() as f:
                 data = json.load(f)
-                processed_tickets = data.get('processed', {})
+                processed_tickets = data.get("processed", {})
         except (OSError, json.JSONDecodeError):
             processed_tickets = {}
 
@@ -99,12 +96,10 @@ class TestTicketStateManagement:
         state_file = temp_dir / "sharing" / "tracking" / "jira-watcher-state.json"
         state_file.parent.mkdir(parents=True, exist_ok=True)
 
-        processed_tickets = {
-            '/path/to/PROJ-789.md': '2024-01-03T00:00:00'
-        }
+        processed_tickets = {"/path/to/PROJ-789.md": "2024-01-03T00:00:00"}
 
-        with state_file.open('w') as f:
-            json.dump({'processed': processed_tickets}, f, indent=2)
+        with state_file.open("w") as f:
+            json.dump({"processed": processed_tickets}, f, indent=2)
 
         assert state_file.exists()
 
@@ -153,7 +148,7 @@ class TestTicketChangeDetection:
         ticket_file = temp_dir / "PROJ-123.md"
         ticket_file.write_text("# PROJ-123\n\nUpdated content")
 
-        old_mtime = '2024-01-01T00:00:00'
+        old_mtime = "2024-01-01T00:00:00"
         new_mtime = datetime.fromtimestamp(ticket_file.stat().st_mtime).isoformat()
 
         processed_tickets = {str(ticket_file): old_mtime}
@@ -181,15 +176,15 @@ class TestTicketChangeDetection:
         mtime_str = datetime.fromtimestamp(mtime).isoformat()
 
         ticket_info = {
-            'file': ticket_file,
-            'path': str(ticket_file),
-            'mtime': mtime_str,
-            'is_new': True,
-            'content': ticket_file.read_text()
+            "file": ticket_file,
+            "path": str(ticket_file),
+            "mtime": mtime_str,
+            "is_new": True,
+            "content": ticket_file.read_text(),
         }
 
-        assert 'PROJ-123' in str(ticket_info['file'])
-        assert 'Fix Bug' in ticket_info['content']
+        assert "PROJ-123" in str(ticket_info["file"])
+        assert "Fix Bug" in ticket_info["content"]
 
 
 class TestTicketPromptConstruction:
@@ -198,13 +193,13 @@ class TestTicketPromptConstruction:
     def test_constructs_ticket_summary(self):
         """Test constructing ticket summary for prompt."""
         tickets = [
-            {'file': Path('PROJ-123.md'), 'is_new': True},
-            {'file': Path('PROJ-456.md'), 'is_new': False}
+            {"file": Path("PROJ-123.md"), "is_new": True},
+            {"file": Path("PROJ-456.md"), "is_new": False},
         ]
 
         summary = []
         for t in tickets:
-            status = "New" if t['is_new'] else "Updated"
+            status = "New" if t["is_new"] else "Updated"
             summary.append(f"**{status}**: {t['file'].name}")
 
         assert len(summary) == 2
@@ -228,7 +223,7 @@ class TestTicketPromptConstruction:
             "Analyze the ticket",
             "Track in Beads",
             "Create notification",
-            "Update state file"
+            "Update state file",
         ]
 
         prompt_template = """
@@ -246,20 +241,20 @@ class TestTicketPromptConstruction:
     def test_includes_ticket_metadata_in_prompt(self):
         """Test including ticket metadata in prompt."""
         ticket = {
-            'file': Path('PROJ-123.md'),
-            'is_new': True,
-            'content': '# PROJ-123: Implement Feature'
+            "file": Path("PROJ-123.md"),
+            "is_new": True,
+            "content": "# PROJ-123: Implement Feature",
         }
 
-        status = "NEW TICKET" if ticket['is_new'] else "UPDATED TICKET"
+        status = "NEW TICKET" if ticket["is_new"] else "UPDATED TICKET"
         prompt_section = f"""
-### {status}: {ticket['file'].name}
+### {status}: {ticket["file"].name}
 
-**File:** `{ticket['file']}`
+**File:** `{ticket["file"]}`
 
 **Content:**
 ```markdown
-{ticket['content']}
+{ticket["content"]}
 ```
 """
 
@@ -303,15 +298,15 @@ class TestTicketStateUpdate:
         """Test updating processed tickets after analysis."""
         processed_tickets = {}
         new_tickets = [
-            {'path': '/path/to/PROJ-123.md', 'mtime': '2024-01-01T00:00:00'},
-            {'path': '/path/to/PROJ-456.md', 'mtime': '2024-01-02T00:00:00'}
+            {"path": "/path/to/PROJ-123.md", "mtime": "2024-01-01T00:00:00"},
+            {"path": "/path/to/PROJ-456.md", "mtime": "2024-01-02T00:00:00"},
         ]
 
         for t in new_tickets:
-            processed_tickets[t['path']] = t['mtime']
+            processed_tickets[t["path"]] = t["mtime"]
 
         assert len(processed_tickets) == 2
-        assert '/path/to/PROJ-123.md' in processed_tickets
+        assert "/path/to/PROJ-123.md" in processed_tickets
 
     def test_creates_state_directory_if_missing(self, temp_dir):
         """Test creating state directory if it doesn't exist."""
@@ -379,23 +374,18 @@ class TestTicketParsing:
     def test_extracts_title_from_content(self):
         """Test extracting title from ticket content."""
         content = "# PROJ-123: Implement Feature\n\nDescription..."
-        lines = content.split('\n')
-        title = lines[0].replace('#', '').strip()
+        lines = content.split("\n")
+        title = lines[0].replace("#", "").strip()
 
         assert "Implement Feature" in title
 
     def test_handles_various_ticket_formats(self):
         """Test handling various ticket key formats."""
-        ticket_keys = [
-            "PROJ-123",
-            "ABC-1",
-            "TEAM-9999",
-            "XX-1234567"
-        ]
+        ticket_keys = ["PROJ-123", "ABC-1", "TEAM-9999", "XX-1234567"]
 
         for key in ticket_keys:
             # Ticket key format: LETTERS-NUMBERS
-            parts = key.split('-')
+            parts = key.split("-")
             assert len(parts) == 2
             assert parts[0].isalpha()
             assert parts[1].isdigit()
