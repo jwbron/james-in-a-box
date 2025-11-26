@@ -19,7 +19,7 @@ This service runs periodically to detect and remove orphaned worktrees.
 3. **Checks** if corresponding Docker container still exists
 4. **Removes** worktrees and directories for non-existent containers
 5. **Prunes** stale worktree references from git metadata
-6. **Deletes** orphaned `jib-temp-*` branches for non-existent containers
+6. **Deletes** orphaned `jib-temp-*` and `jib-exec-*` branches (only if safe - see below)
 7. **Logs** all cleanup operations to systemd journal
 
 ## Worktree Layout
@@ -85,11 +85,15 @@ systemctl --user disable worktree-watcher.timer
 
 The watcher only removes worktrees and branches for containers that no longer exist. If a container is running or stopped (but not removed), its worktrees and branches are preserved.
 
-Branch deletion is conservative:
-- Only deletes branches matching the `jib-temp-*` pattern
-- Verifies no Docker container exists with the matching ID
-- Verifies no worktree directory exists (worktrees are cleaned up first)
-- Uses `git branch -D` (force delete) since these are temporary branches
+Branch deletion is conservative - a branch is only deleted if ALL of these conditions are met:
+1. Matches the `jib-temp-*` or `jib-exec-*` pattern
+2. No Docker container exists with the matching ID
+3. No worktree directory exists (worktrees are cleaned up first)
+4. **One of these is true:**
+   - Branch has no commits that aren't already in `main` (nothing to lose), OR
+   - Branch has an open PR in GitHub (work is tracked and visible)
+
+This ensures that branches with unmerged work that hasn't been captured in a PR are preserved for manual review.
 
 ## Manual Cleanup
 

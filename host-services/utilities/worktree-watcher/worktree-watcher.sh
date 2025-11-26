@@ -112,9 +112,10 @@ prune_stale_worktree_references() {
 }
 
 cleanup_orphaned_branches() {
-    log "Checking for orphaned jib-temp branches..."
+    log "Checking for orphaned jib-temp/jib-exec branches..."
 
     local total_branches_deleted=0
+    local total_branches_skipped=0
 
     # Iterate through all repos in ~/khan/
     for repo in "$HOME/khan"/*; do
@@ -125,9 +126,19 @@ cleanup_orphaned_branches() {
         repo_name=$(basename "$repo")
         cd "$repo"
 
-        # Find all jib-temp branches
+        # Get GitHub remote owner/repo for PR checks
+        local remote_url
+        remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+        local github_repo=""
+        if [[ "$remote_url" =~ github\.com[:/]([^/]+/[^/.]+) ]]; then
+            github_repo="${BASH_REMATCH[1]}"
+            # Remove .git suffix if present
+            github_repo="${github_repo%.git}"
+        fi
+
+        # Find all jib-temp-* and jib-exec-* branches
         local branches
-        branches=$(git branch --list 'jib-temp-*' 2>/dev/null | sed 's/^[* ]*//')
+        branches=$(git branch --list 'jib-temp-*' 'jib-exec-*' 2>/dev/null | sed 's/^[* ]*//')
 
         if [ -z "$branches" ]; then
             continue
@@ -141,11 +152,16 @@ cleanup_orphaned_branches() {
                 continue
             fi
 
-            # Extract container ID from branch name (jib-temp-jib-YYYYMMDD-HHMMSS-PID)
-            # Branch format: jib-temp-{container_id}
+            # Extract container ID from branch name
+            # Branch format: jib-temp-{container_id} or jib-exec-{container_id}
             # Container ID format: jib-YYYYMMDD-HHMMSS-PID or jib-exec-YYYYMMDD-HHMMSS-PID
             local container_id
-            container_id=$(echo "$branch" | sed 's/^jib-temp-//')
+            if [[ "$branch" == jib-temp-* ]]; then
+                container_id=$(echo "$branch" | sed 's/^jib-temp-//')
+            elif [[ "$branch" == jib-exec-* ]]; then
+                # jib-exec branches use the branch name as container ID
+                container_id="$branch"
+            fi
 
             # Check if container still exists
             if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${container_id}$"; then
@@ -160,8 +176,37 @@ cleanup_orphaned_branches() {
                 continue
             fi
 
-            # Container and worktree don't exist - safe to delete the branch
-            log "  Deleting orphaned branch in $repo_name: $branch"
+            # Check if branch has unmerged changes (commits not in main)
+            local unmerged_commits
+            unmerged_commits=$(git log main.."$branch" --oneline 2>/dev/null | wc -l)
+
+            # Check if branch has an open PR in GitHub
+            local has_open_pr=false
+            if [ -n "$github_repo" ] && command -v gh &>/dev/null; then
+                local pr_count
+                pr_count=$(gh pr list --repo "$github_repo" --head "$branch" --state open --json number 2>/dev/null | grep -c '"number"' || echo "0")
+                if [ "$pr_count" -gt 0 ]; then
+                    has_open_pr=true
+                fi
+            fi
+
+            # Only delete if: (no unmerged changes) OR (has an open PR)
+            # - No unmerged changes: nothing to lose, all work is in main
+            # - Has open PR: work is tracked and visible in GitHub
+            if [ "$unmerged_commits" -gt 0 ] && [ "$has_open_pr" = false ]; then
+                log "  Keeping branch $branch in $repo_name: has $unmerged_commits unmerged commit(s) and no open PR"
+                total_branches_skipped=$((total_branches_skipped + 1))
+                continue
+            fi
+
+            # Safe to delete: either no unique changes or has an open PR tracking them
+            local reason=""
+            if [ "$unmerged_commits" -eq 0 ]; then
+                reason="no unmerged changes"
+            else
+                reason="has open PR"
+            fi
+            log "  Deleting orphaned branch in $repo_name: $branch ($reason)"
             if git branch -D "$branch" 2>/dev/null; then
                 repo_branches_deleted=$((repo_branches_deleted + 1))
                 total_branches_deleted=$((total_branches_deleted + 1))
@@ -175,8 +220,8 @@ cleanup_orphaned_branches() {
         fi
     done
 
-    if [ $total_branches_deleted -gt 0 ]; then
-        log "Branch cleanup complete: deleted $total_branches_deleted orphaned branch(es)"
+    if [ $total_branches_deleted -gt 0 ] || [ $total_branches_skipped -gt 0 ]; then
+        log "Branch cleanup complete: deleted $total_branches_deleted, skipped $total_branches_skipped (have unmerged changes without PR)"
     else
         log "No orphaned branches found"
     fi
