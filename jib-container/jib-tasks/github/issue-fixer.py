@@ -299,7 +299,11 @@ def collect_check_failures(
 
             pr_num = data["pr_number"]
             repo = data["repository"]
-            failed_checks = [c for c in data["checks"] if c.get("conclusion") == "failure"]
+            # Note: gh pr checks uses 'state' (e.g., 'FAILURE') not 'conclusion'
+            failed_checks = [
+                c for c in data["checks"]
+                if c.get("state", "").upper() in ("FAILURE", "FAILED")
+            ]
 
             if failed_checks:
                 repo_name = repo.split("/")[-1]
@@ -394,7 +398,7 @@ Conflict details:
 **Failed Checks:**
 """
             for check in f["failed_checks"]:
-                prompt += f"- **{check['name']}**: {check.get('conclusion', 'failure')}\n"
+                prompt += f"- **{check['name']}**: {check.get('state', 'FAILURE')}\n"
                 if check.get("full_log"):
                     log = check["full_log"]
                     prompt += f"""  Log excerpt:

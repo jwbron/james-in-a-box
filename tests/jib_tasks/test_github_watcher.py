@@ -239,8 +239,8 @@ class TestProcessCheckFile:
                     "pr_number": 123,
                     "repository": "owner/repo",
                     "checks": [
-                        {"name": "test", "conclusion": "success"},
-                        {"name": "lint", "conclusion": "success"},
+                        {"name": "test", "state": "SUCCESS"},
+                        {"name": "lint", "state": "SUCCESS"},
                     ],
                 }
             )
@@ -268,7 +268,7 @@ class TestProcessCheckFile:
                 {
                     "pr_number": 123,
                     "repository": "owner/repo",
-                    "checks": [{"name": "test", "conclusion": "failure", "status": "completed"}],
+                    "checks": [{"name": "test", "state": "FAILURE"}],
                 }
             )
         )
@@ -296,7 +296,7 @@ class TestProcessCheckFile:
                 {
                     "pr_number": 123,
                     "repository": "owner/repo",
-                    "checks": [{"name": "test", "conclusion": "failure", "status": "completed"}],
+                    "checks": [{"name": "test", "state": "FAILURE"}],
                 }
             )
         )
@@ -339,7 +339,7 @@ class TestWatch:
                     {
                         "pr_number": i,
                         "repository": "owner/repo",
-                        "checks": [{"name": "test", "conclusion": "success"}],
+                        "checks": [{"name": "test", "state": "SUCCESS"}],
                     }
                 )
             )

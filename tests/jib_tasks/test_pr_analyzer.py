@@ -145,8 +145,8 @@ class TestFormatChecks:
         """Test formatting failed checks."""
         ctx = {
             "checks": [
-                {"name": "pytest", "conclusion": "failure", "state": "completed"},
-                {"name": "lint", "conclusion": "failure", "state": "completed"},
+                {"name": "pytest", "state": "FAILURE"},
+                {"name": "lint", "state": "FAILURE"},
             ]
         }
 
@@ -158,7 +158,7 @@ class TestFormatChecks:
 
     def test_format_pending_checks(self):
         """Test formatting in-progress checks."""
-        ctx = {"checks": [{"name": "build", "state": "in_progress", "conclusion": None}]}
+        ctx = {"checks": [{"name": "build", "state": "IN_PROGRESS"}]}
 
         result = format_checks(ctx)
         assert "In Progress" in result
@@ -168,8 +168,8 @@ class TestFormatChecks:
         """Test formatting passed checks."""
         ctx = {
             "checks": [
-                {"name": "test1", "conclusion": "success", "state": "completed"},
-                {"name": "test2", "conclusion": "success", "state": "completed"},
+                {"name": "test1", "state": "SUCCESS"},
+                {"name": "test2", "state": "SUCCESS"},
             ]
         }
 
@@ -404,7 +404,7 @@ class TestBuildAnalysisPrompt:
             "pr_number": 1,
             "pr": {"title": "PR", "body": "Description"},
             "files": [{"path": "file.py", "additions": 1, "deletions": 1}],
-            "checks": [{"name": "test", "conclusion": "failure"}],
+            "checks": [{"name": "test", "state": "FAILURE"}],
             "reviews": [{"author": {"login": "user"}, "state": "CHANGES_REQUESTED"}],
             "comments": [{"author": {"login": "user"}, "body": "Comment"}],
             "commits": [{"oid": "abc", "messageHeadline": "Commit"}],
