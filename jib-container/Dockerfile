@@ -296,7 +296,7 @@ BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
 echo "✓ Claude alias created (bypasses permissions in sandbox)"
 
-# Ensure tracking directory exists for watcher logs
+# Ensure tracking directory exists for processor state
 if [ -d "${USER_HOME}/sharing" ]; then
     mkdir -p "${USER_HOME}/sharing/tracking"
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/tracking"
@@ -341,8 +341,8 @@ echo "✓ Beads memory system ready"
 echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
 echo "  Usage: bd add 'task description' --tags feature,important"
 
-# NOTE: Background watchers have been removed in favor of exec-based pattern
-# Analysis scripts are now triggered by host-side systemd services via `jib --exec`
+# NOTE: All analysis uses exec-based pattern (no background processes)
+# Analysis scripts are triggered by host-side systemd services via `jib --exec`
 #
 # Pattern:
 #   Host systemd service → Syncs data → Calls `jib --exec <analysis-script>`
@@ -354,11 +354,11 @@ echo "  Usage: bd add 'task description' --tags feature,important"
 #   - Simpler architecture, easier to debug
 #   - Lower resource usage
 #
-# Analysis scripts location: ~/khan/james-in-a-box/jib-container/components/
-#   - context-watcher/jira-watcher.py (triggered by context-sync)
-#   - context-watcher/confluence-watcher.py (triggered by context-sync)
-#   - github-watcher/check-monitor.py (triggered by github-sync)
-#   - incoming-processor.py (triggered by slack-receiver)
+# Analysis scripts location: ~/khan/james-in-a-box/jib-container/jib-tasks/
+#   - jira/jira-processor.py (triggered by context-sync)
+#   - confluence/confluence-processor.py (triggered by context-sync)
+#   - github/github-processor.py (triggered by github-sync)
+#   - slack/incoming-processor.py (triggered by slack-receiver)
 
 echo ""
 echo "📊 Analysis Pattern: Exec-based (triggered by host services)"

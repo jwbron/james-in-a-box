@@ -33,9 +33,9 @@
 - GitHub: Every 15 minutes
 
 **Post-Sync Analysis:**
-- confluence-watcher.py: Analyzes new/updated ADRs
-- jira-watcher.py: Analyzes assigned tickets, creates Beads tasks
-- check-monitor.py: Analyzes CI/CD failures
+- confluence-processor.py: Analyzes new/updated ADRs
+- jira-processor.py: Analyzes assigned tickets, creates Beads tasks
+- github-processor.py: Analyzes CI/CD failures
 - pr-reviewer.py: Auto-reviews PRs from others
 - comment-responder.py: Suggests responses to PR comments
 
@@ -297,7 +297,7 @@ We considered responding to each comment as it arrives, but rejected this becaus
 
 **Before (Custom Sync):**
 ```python
-# jira-watcher.py
+# jira-processor.py
 def analyze_tickets():
     # Read from pre-synced files
     tickets = glob.glob("~/context-sync/jira/ASSIGNED/*.md")
@@ -308,7 +308,7 @@ def analyze_tickets():
 
 **After (MCP):**
 ```python
-# jira-watcher.py (MCP version)
+# jira-processor.py (MCP version)
 def analyze_tickets():
     # Query Jira directly via MCP
     # Claude Code handles this natively - no custom code needed

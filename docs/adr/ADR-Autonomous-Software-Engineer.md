@@ -381,7 +381,7 @@ Agent should demonstrate L3-L4 behaviors:
 - **Format:** `{KEY}_{SUMMARY}.md` with metadata, description, comments
 - **Includes:** All issue types (stories, tasks, bugs, epics)
 - **Incremental Sync:** Tracks ticket hashes to avoid re-fetching unchanged tickets
-- **Container Analysis:** `jira-watcher.py` triggered via `jib --exec --worktree` after sync
+- **Container Analysis:** `jira-processor.py` triggered via `jib --exec` after sync
 
 **GitHub Sync** (`host-services/github-sync/`)
 - **Host Service:** `github-sync.timer` - Runs every 15 minutes
@@ -597,7 +597,7 @@ Each watcher constructs a comprehensive prompt including:
   - Collects all PR check failures with logs
   - Calls `claude --print` with analysis workflow
   - Claude analyzes logs, identifies root causes, attempts automatic fixes
-- **context-sync.service:** `ExecStartPost` triggers `jira-watcher.py` and `confluence-watcher.py`
+- **context-sync.service:** `ExecStartPost` triggers `jira-processor.py` and `confluence-processor.py`
   - JIRA: Collects new/updated tickets, calls Claude to analyze requirements and scope
   - Confluence: Collects new/updated ADRs/runbooks, calls Claude to identify impacts
 - **slack-receiver:** Triggers `incoming-processor.py` when message arrives

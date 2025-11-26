@@ -11,9 +11,9 @@ Environment="PATH=%h/khan/james-in-a-box/host-services/.venv/bin:/usr/local/bin:
 ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/sync/context-sync/context-sync.py
 
 # After syncing context data, run analysis in JIB container (new ephemeral containers)
-# Confluence and JIRA handlers analyze docs and tickets for updates
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/confluence/confluence-watcher.py
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/jira/jira-watcher.py
+# Confluence and JIRA processors analyze docs and tickets for updates
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/confluence/confluence-processor.py
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/jira/jira-processor.py
 
 # Logging
 StandardOutput=journal
