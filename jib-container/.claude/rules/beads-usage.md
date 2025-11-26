@@ -19,16 +19,16 @@ Beads is a git-backed persistent memory system that **YOU MUST USE AUTOMATICALLY
 1. **Every incoming Slack message**
    - **First step**: Check if task already exists in Beads
    - **If not exists**: Create new Beads task with message content
-   - **If exists**: Update task status to `in-progress` and add notes
+   - **If exists**: Update task status to `in_progress` and add notes
    - **Example**:
      ```bash
      # User sends: "Implement OAuth2 for JIRA-1234"
      cd ~/beads
      # Check for existing task
-     beads list --search "OAuth2 JIRA-1234"
+     bd --allow-stale search "OAuth2 JIRA-1234"
      # If not found, create it
-     beads add "Implement OAuth2 authentication for JIRA-1234" --tags feature,jira-1234
-     beads update <id> --status in-progress
+     bd --allow-stale create "Implement OAuth2 authentication for JIRA-1234" --labels feature,jira-1234
+     bd --allow-stale update <id> --status in_progress
      ```
 
 2. **Any multi-step task or feature**
@@ -39,11 +39,11 @@ Beads is a git-backed persistent memory system that **YOU MUST USE AUTOMATICALLY
    - **Example**:
      ```bash
      # Parent task
-     beads add "Implement user authentication system" --tags feature
+     bd --allow-stale create "Implement user authentication system" --labels feature
      # Subtasks with dependencies
-     beads add "Design auth schema" --parent bd-a3f8
-     beads add "Implement OAuth2 flow" --parent bd-a3f8 --add-blocker bd-b7c2
-     beads add "Write tests" --parent bd-a3f8 --add-blocker bd-d4e9
+     bd --allow-stale create "Design auth schema" --parent bd-a3f8
+     bd --allow-stale create "Implement OAuth2 flow" --parent bd-a3f8 --deps blocks:bd-b7c2
+     bd --allow-stale create "Write tests" --parent bd-a3f8 --deps blocks:bd-d4e9
      ```
 
 3. **Container startup/resumption**
@@ -53,28 +53,25 @@ Beads is a git-backed persistent memory system that **YOU MUST USE AUTOMATICALLY
    - **Example**:
      ```bash
      cd ~/beads
-     beads list --status in-progress
+     bd --allow-stale list --status in_progress
      # If tasks found, review and continue
-     beads show bd-x9y2  # See previous notes
-     beads update bd-x9y2 --notes "Resumed: continuing from step 3..."
+     bd --allow-stale show bd-x9y2  # See previous notes
+     bd --allow-stale update bd-x9y2 --notes "Resumed: continuing from step 3..."
      ```
 
 4. **Progress tracking**
-   - Update status as you work: `open` → `in-progress` → `done`
+   - Update status as you work: `open` → `in_progress` → `closed`
    - Add notes about decisions, blockers, findings
    - Mark tasks as `blocked` when waiting on something
    - **Do this automatically**, don't wait to be asked
 
 5. **Task completion**
-   - Mark tasks `done` when complete
-   - Remove blockers from dependent tasks
+   - Mark tasks `closed` when complete
    - Add summary notes about what was accomplished
    - **Example**:
      ```bash
-     beads update bd-a3f8 --status done
-     beads update bd-a3f8 --notes "Completed: OAuth2 implemented per RFC 6749, tests passing"
-     # Unblock dependent tasks
-     beads update bd-d4e9 --remove-blocker bd-a3f8
+     bd --allow-stale update bd-a3f8 --status closed
+     bd --allow-stale update bd-a3f8 --notes "Completed: OAuth2 implemented per RFC 6749, tests passing"
      ```
 
 ### ⚠️ OPTIONAL: Manual Task Creation Supported
@@ -87,9 +84,9 @@ Users can manually create Beads tasks, but this is secondary. Your primary mode 
 Each task is represented as a "bead" with:
 - **ID**: Hash-based collision-resistant ID (e.g., `bd-a3f8`)
 - **Title**: Brief description of the task
-- **Status**: `open`, `in-progress`, `blocked`, `done`, `cancelled`
-- **Tags**: Labels for categorization (e.g., `feature`, `bug`, `urgent`)
-- **Blockers**: Dependencies that must complete first
+- **Status**: `open`, `in_progress`, `blocked`, `closed`
+- **Labels**: Labels for categorization (e.g., `feature`, `bug`, `urgent`)
+- **Dependencies**: Dependencies that must complete first
 - **Parent/Child**: Hierarchical task relationships
 - **Notes**: Additional context, decisions, links
 
@@ -101,90 +98,83 @@ Each task is represented as a "bead" with:
 
 ## Common Commands
 
+**IMPORTANT**: Always use `--allow-stale` flag in ephemeral containers to avoid database sync issues.
+
 ### Creating Tasks
 
 ```bash
-# Add a new task
-bd add "Implement OAuth2 authentication" --tags feature,security
+# Create a new task
+bd --allow-stale create "Implement OAuth2 authentication" --labels feature,security
 
-# Add with details
-bd add "Fix memory leak in user service" \
-  --tags bug,urgent \
-  --notes "Affects production, user reports available in JIRA-5678"
+# Create with description
+bd --allow-stale create "Fix memory leak in user service" \
+  --labels bug,urgent \
+  --description "Affects production, user reports available in JIRA-5678"
 
-# Add subtask to existing task
-bd add "Write OAuth2 unit tests" --parent bd-a3f8
+# Create subtask of existing task
+bd --allow-stale create "Write OAuth2 unit tests" --parent bd-a3f8
 ```
 
 ### Viewing Tasks
 
 ```bash
 # List all open tasks
-bd list
+bd --allow-stale list
 
-# List tasks by tag
-bd list --tags feature
-bd list --tags urgent,bug
+# List tasks by label
+bd --allow-stale list --label feature
+bd --allow-stale list --label urgent --label bug
 
 # Show task details
-bd show bd-a3f8
+bd --allow-stale show bd-a3f8
 
 # List tasks ready to work on (no blockers)
-bd ready
+bd --allow-stale ready
 
 # List blocked tasks
-bd list --status blocked
+bd --allow-stale list --status blocked
 ```
 
 ### Updating Tasks
 
 ```bash
 # Change status
-bd update bd-a3f8 --status in-progress
-bd update bd-a3f8 --status done
-
-# Add tags
-bd update bd-a3f8 --add-tags reviewed,tested
+bd --allow-stale update bd-a3f8 --status in_progress
+bd --allow-stale update bd-a3f8 --status closed
 
 # Add notes
-bd update bd-a3f8 --notes "Implemented using RFC 6749 OAuth2 spec"
-
-# Add blocker
-bd update bd-a3f8 --add-blocker bd-f14c
-
-# Remove blocker (when dependency complete)
-bd update bd-a3f8 --remove-blocker bd-f14c
+bd --allow-stale update bd-a3f8 --notes "Implemented using RFC 6749 OAuth2 spec"
 ```
 
 ### Task Dependencies
 
 ```bash
 # Create parent-child relationship
-bd add "Write API tests" --parent bd-a3f8
+bd --allow-stale create "Write API tests" --parent bd-a3f8
 
-# Block task until another completes
-bd update bd-a3f8 --add-blocker bd-f14c
+# Create task with dependency
+bd --allow-stale create "Deploy feature" --deps blocks:bd-f14c
 
 # List what's blocking a task
-bd show bd-a3f8  # Shows blockers section
+bd --allow-stale show bd-a3f8  # Shows dependencies section
 
 # Find ready work (no blockers)
-bd ready
+bd --allow-stale ready
 ```
 
 ### Search and Filter
 
 ```bash
 # Search by text
-bd list --search "authentication"
+bd --allow-stale search "authentication"
 
 # Filter by status
-bd list --status open
-bd list --status in-progress
-bd list --status blocked
+bd --allow-stale list --status open
+bd --allow-stale list --status in_progress
+bd --allow-stale list --status blocked
 
 # Combine filters
-bd list --tags feature --status open
+bd --allow-stale list --label feature --status open
 ```
 
 ## Workflow Examples
@@ -193,60 +183,59 @@ bd list --tags feature --status open
 
 ```bash
 # Create parent task
-bd add "Implement user authentication system" --tags feature
+bd --allow-stale create "Implement user authentication system" --labels feature
 # Output: Created bd-a3f8
 
-# Add subtasks
-bd add "Design authentication schema" --parent bd-a3f8
-bd add "Implement OAuth2 flow" --parent bd-a3f8 --add-blocker bd-b7c2
-bd add "Write authentication tests" --parent bd-a3f8 --add-blocker bd-d4e9
+# Create subtasks
+bd --allow-stale create "Design authentication schema" --parent bd-a3f8
+bd --allow-stale create "Implement OAuth2 flow" --parent bd-a3f8 --deps blocks:bd-b7c2
+bd --allow-stale create "Write authentication tests" --parent bd-a3f8 --deps blocks:bd-d4e9
 
 # Start work on first subtask
-bd update bd-b7c2 --status in-progress
+bd --allow-stale update bd-b7c2 --status in_progress
 
 # Complete it
-bd update bd-b7c2 --status done
+bd --allow-stale update bd-b7c2 --status closed
 
-# Remove blocker, start next task
-bd update bd-d4e9 --remove-blocker bd-b7c2
-bd update bd-d4e9 --status in-progress
+# Start next task
+bd --allow-stale update bd-d4e9 --status in_progress
 ```
 
 ### Example 2: Resuming Work After Interruption
 
 ```bash
 # Session 1: Start work
-bd add "Refactor payment processing" --tags refactor
-bd update bd-x9y2 --status in-progress
-bd update bd-x9y2 --notes "Started extracting PaymentService class"
+bd --allow-stale create "Refactor payment processing" --labels refactor
+bd --allow-stale update bd-x9y2 --status in_progress
+bd --allow-stale update bd-x9y2 --notes "Started extracting PaymentService class"
 # ... container shuts down
 
 # Session 2: Resume work
-bd list --status in-progress
+bd --allow-stale list --status in_progress
 # Shows: bd-x9y2 "Refactor payment processing"
-bd show bd-x9y2
+bd --allow-stale show bd-x9y2
 # See notes from previous session
 # Continue work...
-bd update bd-x9y2 --notes "Completed PaymentService, moved to tests"
+bd --allow-stale update bd-x9y2 --notes "Completed PaymentService, moved to tests"
 ```
 
 ### Example 3: Multiple Containers Coordinating
 
 ```bash
 # Container A:
-bd add "Implement feature X" --tags feature
-bd update bd-p4q7 --status in-progress
+bd --allow-stale create "Implement feature X" --labels feature
+bd --allow-stale update bd-p4q7 --status in_progress
 
 # Container B (later):
-bd list  # Sees bd-p4q7 in-progress
+bd --allow-stale list  # Sees bd-p4q7 in_progress
 # Avoids duplicate work
-bd add "Add docs for feature X" --add-blocker bd-p4q7
+bd --allow-stale create "Add docs for feature X" --deps blocks:bd-p4q7
 
 # Container A (completes):
-bd update bd-p4q7 --status done
+bd --allow-stale update bd-p4q7 --status closed
 
 # Container B:
-bd ready  # Now shows docs task is ready
+bd --allow-stale ready  # Now shows docs task is ready
 ```
 
 ## Automatic Task Management Workflow
@@ -258,43 +247,42 @@ bd ready  # Now shows docs task is ready
 ```bash
 # 1. ALWAYS start by checking Beads
 cd ~/beads
-bd list --status in-progress  # Any unfinished work?
-bd list --search "relevant keywords from message"
+bd --allow-stale list --status in_progress  # Any unfinished work?
+bd --allow-stale search "relevant keywords from message"
 
 # 2. Create or update task
 if [ task doesn't exist ]; then
     # Create new task with descriptive title
-    bd add "Task title from message/context" --tags feature,jira-1234
-    TASK_ID=$(beads list | head -1 | awk '{print $1}')  # Get the ID
+    bd --allow-stale create "Task title from message/context" --labels feature,jira-1234
+    TASK_ID=<the created id>
 else
     # Update existing task
     TASK_ID=bd-a3f8  # The found task
 fi
 
-# 3. Mark as in-progress
-bd update $TASK_ID --status in-progress
-bd update $TASK_ID --notes "Started: [brief context about approach]"
+# 3. Mark as in_progress
+bd --allow-stale update $TASK_ID --status in_progress
+bd --allow-stale update $TASK_ID --notes "Started: [brief context about approach]"
 
 # 4. Break down into subtasks if multi-step
-bd add "Subtask 1" --parent $TASK_ID
-bd add "Subtask 2" --parent $TASK_ID --add-blocker bd-xyz1
-bd add "Subtask 3" --parent $TASK_ID --add-blocker bd-xyz2
+bd --allow-stale create "Subtask 1" --parent $TASK_ID
+bd --allow-stale create "Subtask 2" --parent $TASK_ID --deps blocks:bd-xyz1
+bd --allow-stale create "Subtask 3" --parent $TASK_ID --deps blocks:bd-xyz2
 
 # 5. Work on the task...
 
 # 6. Update progress as you go
-bd update bd-xyz1 --status done
-bd update bd-xyz1 --notes "Completed: implemented X using Y approach"
-bd update bd-xyz2 --remove-blocker bd-xyz1  # Unblock next task
+bd --allow-stale update bd-xyz1 --status closed
+bd --allow-stale update bd-xyz1 --notes "Completed: implemented X using Y approach"
 
 # 7. Mark complete when done
-bd update $TASK_ID --status done
-bd update $TASK_ID --notes "Completed: summary of what was accomplished, tests passing, PR #123"
+bd --allow-stale update $TASK_ID --status closed
+bd --allow-stale update $TASK_ID --notes "Completed: summary of what was accomplished, tests passing, PR #123"
 ```
 
-### Automatic Tagging Conventions
+### Automatic Labeling Conventions
 
-**Always tag appropriately:**
+**Always use appropriate labels:**
 - **Type**: `feature`, `bug`, `refactor`, `docs`, `test`
 - **Source**: `slack`, `jira-1234`, `github-pr-567`
 - **Priority**: `urgent`, `important` (if mentioned)
@@ -303,7 +291,7 @@ bd update $TASK_ID --notes "Completed: summary of what was accomplished, tests p
 **Example:**
 ```bash
 # User message: "Fix the memory leak in user service (JIRA-5678)"
-bd add "Fix memory leak in user service" --tags bug,urgent,jira-5678,backend
+bd --allow-stale create "Fix memory leak in user service" --labels bug,urgent,jira-5678,backend
 ```
 
 ### Automatic Context Preservation
@@ -317,7 +305,7 @@ bd add "Fix memory leak in user service" --tags bug,urgent,jira-5678,backend
 
 **Example:**
 ```bash
-bd update bd-a3f8 --notes "Implementing OAuth2 per RFC 6749. Using httpOnly cookies per ADR-042. Related to JIRA-1234. Blocks JIRA-5678."
+bd --allow-stale update bd-a3f8 --notes "Implementing OAuth2 per RFC 6749. Using httpOnly cookies per ADR-042. Related to JIRA-1234."
 ```
 
 ### Automatic Task Breakdown
@@ -326,14 +314,14 @@ bd update bd-a3f8 --notes "Implementing OAuth2 per RFC 6749. Using httpOnly cook
 
 ```bash
 # Parent
-bd add "Implement user authentication" --tags feature,jira-1234
+bd --allow-stale create "Implement user authentication" --labels feature,jira-1234
 PARENT_ID=bd-a3f8
 
 # Subtasks (automatically inferred from your plan)
-bd add "Design database schema" --parent $PARENT_ID --tags schema
-bd add "Implement OAuth2 endpoints" --parent $PARENT_ID --tags api --add-blocker bd-b1
-bd add "Add frontend login form" --parent $PARENT_ID --tags frontend --add-blocker bd-b2
-bd add "Write integration tests" --parent $PARENT_ID --tags test --add-blocker bd-b2,bd-b3
+bd --allow-stale create "Design database schema" --parent $PARENT_ID --labels schema
+bd --allow-stale create "Implement OAuth2 endpoints" --parent $PARENT_ID --labels api --deps blocks:bd-b1
+bd --allow-stale create "Add frontend login form" --parent $PARENT_ID --labels frontend --deps blocks:bd-b2
+bd --allow-stale create "Write integration tests" --parent $PARENT_ID --labels test --deps "blocks:bd-b2,blocks:bd-b3"
 ```
 
 ### Automatic Status Updates
@@ -342,38 +330,38 @@ bd add "Write integration tests" --parent $PARENT_ID --tags test --add-blocker b
 
 ```bash
 # Starting work
-bd update bd-a3f8 --status in-progress
+bd --allow-stale update bd-a3f8 --status in_progress
 
 # Hit a blocker
-bd update bd-a3f8 --status blocked
-bd update bd-a3f8 --notes "Blocked: waiting for database migration approval from DBA team"
+bd --allow-stale update bd-a3f8 --status blocked
+bd --allow-stale update bd-a3f8 --notes "Blocked: waiting for database migration approval from DBA team"
 
 # Blocker resolved
-bd update bd-a3f8 --status in-progress
-bd update bd-a3f8 --notes "Unblocked: migration approved, resuming implementation"
+bd --allow-stale update bd-a3f8 --status in_progress
+bd --allow-stale update bd-a3f8 --notes "Unblocked: migration approved, resuming implementation"
 
 # Completed
-bd update bd-a3f8 --status done
-bd update bd-a3f8 --notes "Done: OAuth2 implemented, all tests passing, PR #456 created"
+bd --allow-stale update bd-a3f8 --status closed
+bd --allow-stale update bd-a3f8 --notes "Done: OAuth2 implemented, all tests passing, PR #456 created"
 ```
 
 ## Integration with Other Systems
 
 ### With Slack Thread Context
 
-**CRITICAL**: When processing Slack messages, use the thread ID to maintain context:
+**CRITICAL**: When processing Slack messages, use the task ID to maintain context:
 
 ```bash
-# Extract Thread ID from prompt (Task ID in "Thread Context" section)
-THREAD_ID="response-20251125-134311"
+# Extract Task ID from prompt's Message Details section
+TASK_ID="task-20251125-134311"
 
 # Check for existing context FIRST
 cd ~/beads
-bd list --search "$THREAD_ID"
+bd --allow-stale search "$TASK_ID"
 
 # If found: load context and resume
-# If not found: create task with thread ID as label
-bd create "Slack thread: $THREAD_ID" --label slack-thread --label "$THREAD_ID"
+# If not found: create task with task ID as label
+bd --allow-stale create "Slack: $TASK_ID" --labels slack-thread,"$TASK_ID"
 ```
 
 See `slack-thread-context.md` for complete details.
@@ -381,8 +369,8 @@ See `slack-thread-context.md` for complete details.
 ### With @save-context
 ```bash
 # After completing significant work
-bd list --status done  # Review completed tasks
-bd update bd-a3f8 --notes "Summary: Implemented OAuth2, tests passing, PR ready"
+bd --allow-stale list --status closed  # Review completed tasks
+bd --allow-stale update bd-a3f8 --notes "Summary: Implemented OAuth2, tests passing, PR ready"
 @save-context oauth2-implementation
 # Context doc can reference Beads IDs for tracking
 ```
@@ -390,7 +378,7 @@ bd update bd-a3f8 --notes "Summary: Implemented OAuth2, tests passing, PR ready"
 ### With Notifications
 ```bash
 # When you need human input on blocked task
-bd list --status blocked
+bd --allow-stale list --status blocked
 # Create notification referencing bead ID
 cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-blocked-task.md <<EOF
 # 🔔 Task Blocked: Need Database Schema Approval
@@ -398,7 +386,7 @@ cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-blocked-task.md <<EOF
 **Bead ID**: bd-a3f8
 **Priority**: High
 
-See: beads show bd-a3f8
+See: bd show bd-a3f8
 
 [Details...]
 EOF
@@ -406,20 +394,20 @@ EOF
 
 ### With JIRA Tickets
 ```bash
-# Reference JIRA in task notes
-bd add "Implement feature X" --notes "JIRA-1234"
+# Reference JIRA in task description
+bd --allow-stale create "Implement feature X" --description "JIRA-1234"
 
 # Or in title if preferred
-bd add "[JIRA-1234] Implement feature X"
+bd --allow-stale create "[JIRA-1234] Implement feature X"
 ```
 
 ## Troubleshooting
 
-### "No issues found"
+### "Database out of sync" Error
 ```bash
-# Rebuild SQLite cache
-cd ~/beads
-bd build-cache
+# Use --allow-stale flag to bypass sync issues in ephemeral containers
+bd --allow-stale list
+bd --allow-stale search "query"
 ```
 
 ### Changes Not Persisting
@@ -443,16 +431,16 @@ Beads uses hash-based IDs to prevent conflicts. If two containers create tasks s
 
 ### Required Behavior
 1. **Every Slack message**: First step is check/create Beads task
-2. **Container startup**: Check for in-progress tasks, resume if found
-3. **Multi-step work**: Automatically break down into subtasks with blockers
+2. **Container startup**: Check for in_progress tasks, resume if found
+3. **Multi-step work**: Automatically break down into subtasks with dependencies
 4. **Progress updates**: Continuously update status and notes as you work
-5. **Completion**: Mark done, add summary, unblock dependent tasks
+5. **Completion**: Mark closed with summary
 
 ### Key Benefits
 - **Persistent memory** across container restarts and rebuilds
 - **Multi-container coordination** - avoid duplicate work, share state
 - **Automatic resumption** - pick up where you left off
-- **Context preservation** - all decisions, blockers, notes persist
+- **Context preservation** - all decisions, dependencies, notes persist
 
 ### Storage
 - **Git-backed**: Persists in `~/.jib-sharing/beads/` on host
@@ -461,7 +449,10 @@ Beads uses hash-based IDs to prevent conflicts. If two containers create tasks s
 
 ### Quick Reference
 - `bd --help` - Command help
-- `@beads-status` - View current tasks and recommendations
-- `@beads-sync` - Force git sync and cache rebuild
+- `bd --allow-stale list` - List tasks (ephemeral containers)
+- `bd --allow-stale search "query"` - Search tasks
+- `bd --allow-stale create "title" --labels tag1,tag2` - Create task
+- `bd --allow-stale update <id> --status in_progress` - Update status
+- `bd --allow-stale update <id> --notes "..."` - Add notes
 
-**Remember**: You manage Beads automatically based on context and inputs. The user doesn't need to tell you to create/update tasks - you do it proactively.
+**Remember**: You manage Beads automatically based on context and inputs. The user doesn't need to tell you to create/update tasks - you do it proactively. Always use `--allow-stale` in ephemeral containers.
