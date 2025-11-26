@@ -1,12 +1,12 @@
 # Claude Command: Create Pull Request
 
-**Command**: `@create-pr [audit] [draft]`
+**Command**: `/create-pr [audit] [draft]`
 
-**Examples**: 
-- `@create-pr`
-- `@create-pr audit`
-- `@create-pr draft`
-- `@create-pr audit draft`
+**Examples**:
+- `/create-pr`
+- `/create-pr audit`
+- `/create-pr draft`
+- `/create-pr audit draft`
 
 ## Purpose
 Automated workflow to create a pull request by analyzing git history and generating a comprehensive PR description.
@@ -149,10 +149,10 @@ Issue: <Jira issue if found, otherwise omit this line>
 - If "draft" mentioned: add `--draft`
 
 **Examples**:
-- `@create-pr` → `git pr --verbatim`
-- `@create-pr audit` → `git pr --verbatim --audit`
-- `@create-pr draft` → `git pr --verbatim --draft`
-- `@create-pr audit draft` → `git pr --verbatim --audit --draft`
+- `/create-pr` → `git pr --verbatim`
+- `/create-pr audit` → `git pr --verbatim --audit`
+- `/create-pr draft` → `git pr --verbatim --draft`
+- `/create-pr audit draft` → `git pr --verbatim --audit --draft`
 
 ## Error Handling
 
@@ -182,7 +182,7 @@ Issue: <Jira issue if found, otherwise omit this line>
 ## Example Flow
 
 ```
-User: @create-pr audit
+User: /create-pr audit
 
 Claude: 
 1. Checking current branch... [runs git branch -vv]
