@@ -12,6 +12,29 @@ You run in a **sandboxed Docker container** with "Bypass Permissions" mode becau
 
 **You CAN**: Push to GitHub via `GITHUB_TOKEN` and `create-pr-helper.py`
 
+## MCP Servers (Real-Time External Access)
+
+You have access to Model Context Protocol (MCP) servers for real-time external data:
+
+| Server | Capabilities | Authentication |
+|--------|--------------|----------------|
+| **github** | Repos, issues, PRs, search, file contents | `GITHUB_TOKEN` (auto-configured) |
+| **atlassian** | Jira tickets, Confluence pages, search | OAuth (requires first-use setup) |
+
+**GitHub MCP Tools:**
+- `search_repositories`, `get_file_contents`, `push_files`
+- `search_issues`, `get_issue`, `create_issue`
+- `create_pull_request`, `add_issue_comment`
+
+**Atlassian MCP Tools:**
+- `jira_search`, `jira_get_issue`, `jira_create_issue`, `jira_update_issue`
+- `jira_add_comment`, `jira_transition_issue`
+- `confluence_search`, `confluence_get_page`
+
+**When to use MCP vs file-based context:**
+- **MCP**: Real-time data, bi-directional operations (comment, update, create)
+- **File-based (~context-sync/)**: Bulk documentation, stable reference content
+
 ## Capabilities
 
 **CAN do:**
@@ -19,6 +42,8 @@ You run in a **sandboxed Docker container** with "Bypass Permissions" mode becau
 - Run tests, dev servers, install packages
 - Git commits and PRs (via helper)
 - Use PostgreSQL, Redis, Python, Node.js, Go, Java
+- Query GitHub/Jira/Confluence in real-time via MCP
+- Create/update issues and PRs via MCP
 
 **CANNOT do:**
 - Merge PRs (human must)

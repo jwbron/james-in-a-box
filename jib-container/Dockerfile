@@ -297,6 +297,39 @@ echo "✓ Claude settings created: ${USER_HOME}/.claude/settings.json"
 cat "${USER_HOME}/.claude/settings.json"
 echo ""
 
+# Create .mcp.json with MCP server configurations
+# Per ADR-Context-Sync-Strategy-Custom-vs-MCP.md, we use official MCP servers:
+# - GitHub MCP: Remote server at api.githubcopilot.com (uses GITHUB_TOKEN)
+# - Atlassian MCP: Remote server via mcp-remote proxy (uses OAuth flow)
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    cat > "${USER_HOME}/.mcp.json" << MCPEOF
+{
+  "mcpServers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_TOKEN}"
+      }
+    },
+    "atlassian": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.atlassian.com/v1/sse"]
+    }
+  }
+}
+MCPEOF
+    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.mcp.json"
+    chmod 600 "${USER_HOME}/.mcp.json"
+    echo "✓ MCP servers configured:"
+    echo "  - github: Remote server (api.githubcopilot.com)"
+    echo "  - atlassian: Remote server via mcp-remote proxy"
+    echo "  Note: Atlassian requires OAuth setup on first use"
+else
+    echo "ℹ GitHub token not provided - MCP servers not configured"
+    echo "  Add GITHUB_TOKEN to enable GitHub MCP server"
+fi
+
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
 # Also add jib-container/scripts to PATH and ensure gh credentials are configured
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'

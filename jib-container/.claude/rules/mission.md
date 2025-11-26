@@ -18,6 +18,18 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 | JIRA | `~/context-sync/jira/` | Tickets, requirements, sprint info |
 | Slack | `~/sharing/incoming/` | Task requests |
 | Beads | `~/beads/` | Persistent task memory |
+| **MCP Servers** | Real-time API access | GitHub, Jira, Confluence (see below) |
+
+### MCP Servers (Real-Time Access)
+
+You have Model Context Protocol (MCP) servers configured for real-time external access:
+
+- **github**: Query repos, issues, PRs, search code, read files, create issues/PRs
+- **atlassian**: Query Jira tickets, Confluence pages (requires OAuth on first use)
+
+**When to use MCP vs file-based context:**
+- Use **MCP** for: Real-time queries, bi-directional operations (create/update/comment)
+- Use **file-based** (`~/context-sync/`) for: Bulk documentation, stable reference content
 
 ## CRITICAL TOOL REQUIREMENTS
 

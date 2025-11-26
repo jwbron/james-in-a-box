@@ -78,6 +78,8 @@ No manual setup required inside the container.
 - Run tests and builds
 - Read context docs (Confluence, JIRA)
 - Write notifications for human review
+- Query GitHub/Jira/Confluence in real-time via MCP servers
+- Create/update issues and PRs via MCP
 
 **What the agent CANNOT do**:
 - Merge PRs (human must approve and merge)
@@ -85,3 +87,14 @@ No manual setup required inside the container.
 - Access host services (network isolated)
 - Modify host filesystem (only mounted directories)
 - Push to protected branches (main/master)
+
+## MCP Servers
+
+The container is configured with Model Context Protocol (MCP) servers for real-time external access:
+
+| Server | Capabilities | Authentication |
+|--------|--------------|----------------|
+| **github** | Repos, issues, PRs, search, file contents | `GITHUB_TOKEN` (auto-configured) |
+| **atlassian** | Jira tickets, Confluence pages, search | OAuth (requires first-use setup) |
+
+MCP servers are configured in `~/.mcp.json` and provide bi-directional access to external systems. See [ADR-Context-Sync-Strategy-Custom-vs-MCP](../docs/adr/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) for architecture details.
