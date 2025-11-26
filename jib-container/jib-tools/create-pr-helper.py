@@ -132,25 +132,6 @@ class PRCreator:
         except subprocess.CalledProcessError:
             return []
 
-    def warn_if_many_commits(self, base_branch: str, threshold: int = 5) -> None:
-        """Warn if there are many commits - could indicate cross-contamination.
-
-        When a branch has more commits than expected, it might contain commits
-        from other PRs that were accidentally included.
-        """
-        commits = self.get_commits_since_base(base_branch)
-        if len(commits) > threshold:
-            print(f"\n⚠️  WARNING: Branch has {len(commits)} commits (threshold: {threshold})")
-            print("This might indicate cross-contamination from other PRs.")
-            print("Commits to be included in this PR:")
-            for commit in commits[:10]:
-                print(f"  - {commit}")
-            if len(commits) > 10:
-                print(f"  ... and {len(commits) - 10} more")
-            print("\nPlease verify these commits belong to this PR before proceeding.")
-            print("If unexpected commits are present, reset your branch first:\n")
-            print(f"  git fetch origin && git reset --hard origin/{base_branch}\n")
-
     def get_full_commit_messages(self, base_branch: str) -> str:
         """Get full commit messages (including body) for all commits since base."""
         try:
@@ -479,9 +460,6 @@ def main():
             print("Error: No commits found to summarize", file=sys.stderr)
             sys.exit(1)
 
-        # Warn about potential cross-contamination
-        creator.warn_if_many_commits(base)
-
         # Generate title from first commit if not provided
         pr_title = args.title
         if not pr_title:
@@ -554,9 +532,6 @@ def main():
         if not commits:
             print("Error: No commits found to create PR from", file=sys.stderr)
             sys.exit(1)
-
-        # Warn about potential cross-contamination
-        creator.warn_if_many_commits(base)
 
         if not title:
             # Use first commit message as title

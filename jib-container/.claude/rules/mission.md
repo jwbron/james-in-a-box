@@ -84,38 +84,6 @@ You work in an **isolated git worktree**:
 - DO NOT create new branches - you're already on one
 - Just commit directly, then create a PR
 
-### 3.5. Branch Hygiene (CRITICAL - Prevent PR Cross-Contamination)
-
-**BEFORE starting ANY new work**, verify your branch is clean:
-```bash
-# Check you're starting from the base branch (no extra commits)
-git log --oneline origin/main..HEAD  # Should be EMPTY for new work
-```
-
-**If commits exist that shouldn't be there:**
-```bash
-# Reset to clean state BEFORE making changes
-git fetch origin
-git reset --hard origin/main
-```
-
-**When updating an EXISTING PR:**
-```bash
-# 1. First check PR is open
-gh pr view <PR_NUMBER> --json state --jq '.state'
-
-# 2. Checkout the PR branch
-gh pr checkout <PR_NUMBER>
-
-# 3. VERIFY the branch only has expected commits
-git log --oneline origin/main..HEAD
-# Review this output! Only commits related to this PR should appear.
-
-# 4. If unexpected commits exist, do NOT proceed - notify human
-```
-
-**Why this matters:** Each container session may inherit git state from previous work. Without verification, commits from unrelated tasks can accidentally be pushed to the wrong PR.
-
 ### 4. Plan & Implement
 
 Break complex tasks into Beads subtasks:
@@ -169,15 +137,9 @@ gh pr view <PR_NUMBER> --json state --jq '.state'
 **When asked to update an existing PR:**
 1. **First**: Check PR is still OPEN (see above)
 2. Check out that PR's branch: `gh pr checkout <PR_NUMBER>`
-3. **CRITICAL**: Verify branch state before making changes:
-   ```bash
-   git log --oneline origin/main..HEAD
-   # Only commits belonging to THIS PR should appear!
-   # If unexpected commits exist: STOP and notify human
-   ```
-4. Make changes and commit to that branch
-5. Push to update the existing PR
-6. Do NOT create a new PR for the same work
+3. Make changes and commit to that branch
+4. Push to update the existing PR
+5. Do NOT create a new PR for the same work
 
 **PR approval vs feedback - know the difference:**
 - **Approved**: GitHub review status, OR "LGTM" comment (case-insensitive)
