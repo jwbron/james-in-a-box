@@ -4,7 +4,7 @@ Runs daily codebase analysis (Monday 11 AM PST) and sends reports via Slack.
 
 **Status**: Operational
 **Type**: Host-side systemd timer
-**Purpose**: Automated code quality and pattern analysis
+**Purpose**: Comprehensive code quality, structure, and pattern analysis
 
 ## Setup
 
@@ -43,15 +43,47 @@ systemctl --user disable codebase-analyzer.timer
 - `setup.sh` - Installation script
 - `codebase-analyzer.py` - Analysis script
 
+## Analysis Categories
+
+The analyzer performs comprehensive analysis across eight categories:
+
+| Category | Description | Auto-fixable |
+|----------|-------------|--------------|
+| **Code Quality** | Bare except clauses, missing error handling, style issues | Yes |
+| **Structural** | Directory organization, file placement, project structure | No (human review) |
+| **Unused Code** | Dead code, obsolete files, unreferenced modules | No (human review) |
+| **Duplication** | Similar code patterns, repeated implementations | Partial |
+| **Documentation** | README drift, outdated references, missing docs | Yes |
+| **Symlinks** | Broken symlinks, incorrect targets | No (human review) |
+| **Naming** | Inconsistent naming conventions (snake_case vs kebab-case) | Yes |
+| **Patterns** | Design pattern consistency, anti-patterns | Partial |
+
+## Usage
+
+```bash
+# Full analysis report (no changes)
+./codebase-analyzer.py
+
+# Focus on specific category
+./codebase-analyzer.py --focus structural
+./codebase-analyzer.py --focus duplication
+./codebase-analyzer.py --focus unused
+
+# Auto-fix top 10 issues and create PR
+./codebase-analyzer.py --implement
+
+# Auto-fix top 5 issues
+./codebase-analyzer.py --implement --max-fixes 5
+```
+
 ## Features
 
-- **Weekly codebase analysis** - File-by-file code review and architectural analysis
+- **Comprehensive analysis** - Checks code quality, structure, duplication, and more
+- **Pre-flight checks** - Detects broken symlinks and README issues before Claude analysis
+- **Duplicate detection** - Finds similar files based on content similarity
 - **Pattern detection** - Identifies anti-patterns and best practice violations
-- **Web research** - Searches for new technologies and improvements
-- **Self-improvement analysis** - Tracks its own performance and suggests improvements to itself
-  - Monitors run duration, Claude API success rates, issue detection patterns
-  - Analyzes historical logs to identify optimization opportunities
-  - Recommends performance, reliability, and effectiveness improvements
+- **Auto-fix capability** - Can automatically fix code quality issues
+- **Human review flagging** - Structural changes flagged for human review
 - **Slack notifications** - Summary + threaded detail for mobile-first experience
 - **Systemd timer integration** - Automated scheduling (Monday 11 AM PST)
 
