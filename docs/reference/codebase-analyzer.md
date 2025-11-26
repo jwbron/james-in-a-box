@@ -70,10 +70,7 @@ Searches for:
 
 ### Prerequisites
 
-1. **Python packages**:
-   ```bash
-   pip install anthropic requests
-   ```
+1. **Python 3.x** (uses only standard library - no external packages required)
 
 2. **Anthropic API Key**:
    Set in environment:

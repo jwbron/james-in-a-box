@@ -275,11 +275,9 @@ Claude picks up task when you start conversation
 ### Step 2: Install Dependencies (Host Machine)
 
 ```bash
-# Install Python Slack SDK
-pip install slack-sdk
-
-# Or with user install
-pip install --user slack-sdk
+# Install dependencies using uv (recommended - run setup.sh to install uv first)
+cd ~/khan/james-in-a-box/host-services
+uv sync
 ```
 
 ### Step 3: Configure Receiver
@@ -532,7 +530,7 @@ systemctl --user status slack-receiver  # Incoming messages
 **Check dependencies**:
 ```bash
 python3 -c "import slack_sdk"
-# If error: pip install slack-sdk
+# If error: cd ~/khan/james-in-a-box/host-services && uv sync
 ```
 
 **Check config**:

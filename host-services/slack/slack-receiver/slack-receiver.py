@@ -29,7 +29,7 @@ try:
     from slack_sdk.socket_mode.response import SocketModeResponse
 except ImportError:
     print("Error: slack_sdk module not found.", file=sys.stderr)
-    print("Install with: pip install slack-sdk", file=sys.stderr)
+    print("Run 'uv sync' from host-services/ or run setup.sh", file=sys.stderr)
     sys.exit(1)
 
 
