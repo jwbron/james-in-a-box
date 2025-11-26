@@ -4,20 +4,18 @@ Syncs GitHub PR data to `~/context-sync/github/` for jib consumption.
 
 **Status**: Operational
 **Type**: Host-side systemd timer service
-**Purpose**: Enable jib to monitor PR check failures and provide automated assistance
+**Purpose**: Enable jib to monitor PR issues and provide automated assistance
 
 **Scope**: Configurable via command-line flags.
-- ✅ Your open PRs (default: `--author @me`)
-- ✅ All PRs in a specific repo (`--repo <owner/repo> --all-prs`)
-- ✅ PRs from others for auto-review
+- Your open PRs (default: `--author @me`)
+- All PRs in a specific repo (`--repo <owner/repo> --all-prs`)
+- PRs from others for auto-review
 
 ## Overview
 
 GitHub Sync fetches PR data and stores it locally as markdown and JSON. This enables jib to:
-- **Automatically resolve merge conflicts** when possible
-- **Auto-fix common check failures** (linting, formatting, snapshots)
-- Monitor CI/CD check failures proactively
-- Analyze failed test logs and suggest fixes
+- Detect and fix PR issues (check failures, merge conflicts)
+- Let Claude analyze issues and determine appropriate fixes
 - Track PR comments and discussions
 - **Auto-review PRs from others** (when using `--all-prs`)
 - **Respond to comments on your PRs**
@@ -42,11 +40,9 @@ GitHub Sync (host systemd timer, runs every 15 min)
     └── webapp-PR-123-comments.json  # PR comments for response tracking
         ↓
 github-sync.service completes → Triggers analysis via `jib --exec`:
-  1. conflict-resolver.py - Auto-resolve merge conflicts
-  2. check-fixer.py       - Auto-fix lint/format/snapshot failures
-  3. check-monitor.py     - Analyze remaining failures, suggest fixes
-  4. pr-reviewer.py       - Auto-review new PRs from others
-  5. comment-responder.py - Detect comments needing responses
+  1. issue-fixer.py      - Detect issues, let Claude determine and apply fixes
+  2. pr-reviewer.py      - Auto-review new PRs from others
+  3. comment-responder.py - Detect comments needing responses
         ↓
 jib Container (one-time analysis per script)
 ~/context-sync/github/ → Script analyzes data → Creates notifications → exits
@@ -173,38 +169,26 @@ Why 15 minutes:
 
 ## jib Integration
 
-After each sync, the github-sync service automatically triggers five analysis scripts via `jib --exec`:
+After each sync, the github-sync service automatically triggers three analysis scripts via `jib --exec`:
 
-### 1. Conflict Resolver (`conflict-resolver.py`)
-- **Detects** PRs with merge conflicts against their base branch
-- **Attempts** automatic resolution using multiple git strategies
-- **Pushes** resolved changes and comments on the PR
-- **Notifies** via Slack when manual resolution is needed
-- **Tracks** state to avoid re-processing already-handled conflicts
-
-### 2. Check Fixer (`check-fixer.py`)
-- **Categorizes** check failures (lint, format, test, build, security)
-- **Auto-fixes** linting issues (ESLint, Prettier, Ruff, Black)
-- **Auto-fixes** formatting issues (Prettier, Black, gofmt)
-- **Updates** snapshots when outdated (Jest, pytest)
-- **Installs** missing dependencies when detected
-- **Commits** and pushes fixes directly to the PR branch
-- **Comments** on PR with details of applied fixes
-
-### 3. Check Monitor (`check-monitor.py`)
-- **Analyzes** remaining failures that couldn't be auto-fixed
-- **Provides** root cause analysis using failure logs
-- **Suggests** manual fix strategies
+### 1. Issue Fixer (`issue-fixer.py`)
+- **Detects** check failures and merge conflicts
+- **Delegates** to Claude to analyze and determine the fix strategy
+- **Implements** appropriate fixes based on Claude's judgment
 - **Sends** Slack notification with analysis and next steps
 
-### 4. PR Reviewer (`pr-reviewer.py --watch`)
+This approach is intentionally simple: the script detects issues and provides
+context, then Claude decides how to fix them based on the specific situation
+rather than using hardcoded fix strategies.
+
+### 2. PR Reviewer (`pr-reviewer.py --watch`)
 - **Scans** for new PRs that haven't been reviewed
 - **Skips** your own PRs (no self-review)
 - **Analyzes** code quality, security, performance patterns
 - **Creates** review notification with findings
 - **Tracks** reviewed PRs to avoid duplicate reviews
 
-### 5. Comment Responder (`comment-responder.py`)
+### 3. Comment Responder (`comment-responder.py`)
 - **Detects** new comments on your PRs
 - **Classifies** comment type (question, change request, concern, etc.)
 - **Generates** contextual response suggestions
@@ -281,9 +265,7 @@ GitHub has API rate limits (5000 requests/hour for authenticated users). With 15
 
 ## Future Enhancements
 
-- ~~Support for PRs you're reviewing (not just authored)~~ ✅ Done (`--all-prs` flag)
-- ~~Filter by repository~~ ✅ Done (`--repo` flag)
-- ~~Automatic merge conflict resolution~~ ✅ Done (`conflict-resolver.py`)
-- ~~Auto-fix common check failures~~ ✅ Done (`check-fixer.py`)
+- ~~Support for PRs you're reviewing (not just authored)~~ Done (`--all-prs` flag)
+- ~~Filter by repository~~ Done (`--repo` flag)
 - Webhook-based real-time updates
 - GitHub Actions log streaming
