@@ -10,6 +10,15 @@ The Codebase Analyzer:
 - **Sends Slack notifications** with findings via the existing notification system
 - **Runs automatically** daily at 11am PST and 5 minutes after system startup
 
+## Efficiency Features
+
+The analyzer includes several optimizations for faster execution:
+
+- **Git-based change detection**: Only analyzes files that changed since the last run (incremental mode)
+- **Single directory walk**: Consolidated file iteration instead of multiple rglob calls
+- **Linter config discovery**: Automatically detects and includes pyproject.toml, ruff.toml, etc. to help Claude understand lint rules
+- **State persistence**: Tracks last analyzed commit to enable incremental analysis
+
 ## Architecture
 
 ```
@@ -65,6 +74,25 @@ Searches for:
 - Skips large files (>100KB)
 - Limits analysis to avoid excessive API costs (~20 files per run)
 - Reports only HIGH and MEDIUM priority findings
+
+### Linter Config Discovery
+
+The analyzer automatically detects and includes linter/formatter configuration files:
+
+| Config File | Tool |
+|-------------|------|
+| `pyproject.toml` | ruff |
+| `ruff.toml`, `.ruff.toml` | ruff |
+| `.flake8`, `setup.cfg` | flake8 |
+| `.pylintrc`, `pylintrc` | pylint |
+| `.eslintrc*` | eslint |
+| `.prettierrc*` | prettier |
+| `biome.json` | biome |
+
+When these files are found, Claude receives:
+- The full configuration content
+- Parsed enabled/ignored rules (for ruff and flake8)
+- This helps Claude give lint-aware suggestions that respect project rules
 
 ## Installation
 
@@ -141,7 +169,18 @@ cd ~/khan/james-in-a-box
 
 ```bash
 cd ~/khan/james-in-a-box
-python3 ./internal/codebase-analyzer.py
+
+# Incremental analysis (only changed files since last run)
+python3 ./host-services/analysis/codebase-analyzer/codebase-analyzer.py
+
+# Full analysis (all files, bypassing change detection)
+python3 ./host-services/analysis/codebase-analyzer/codebase-analyzer.py --full-analysis
+
+# Focus on specific category
+python3 ./host-services/analysis/codebase-analyzer/codebase-analyzer.py --focus structural
+
+# Auto-fix and create PR
+python3 ./host-services/analysis/codebase-analyzer/codebase-analyzer.py --implement --max-fixes 5
 ```
 
 ### Check Scheduled Runs

@@ -14,11 +14,15 @@ The analyzer performs comprehensive analysis across multiple dimensions:
 - Symlink Health: Broken or incorrect symlinks
 - Pattern Consistency: Similar modules should follow similar patterns
 
-Efficiency: Uses one Claude call to analyze all files at once, instead of
-one call per file.
+Efficiency Features:
+- Uses ONE Claude call to analyze all files at once (not one per file)
+- Git-based change detection: Only analyzes files changed since last run
+- Single directory walk: Consolidated file iteration (not multiple rglobs)
+- Linter config discovery: Detects and includes pyproject.toml, ruff.toml, etc.
 
 Usage:
-  codebase-analyzer.py                    # Analyze and report
+  codebase-analyzer.py                    # Incremental analysis (changed files only)
+  codebase-analyzer.py --full-analysis    # Full analysis of all files
   codebase-analyzer.py --implement        # Analyze, fix top 10 issues, open PR
   codebase-analyzer.py --implement --max-fixes 5  # Fix top 5 issues
   codebase-analyzer.py --focus structural  # Focus on structural analysis
@@ -67,6 +71,17 @@ class FixResult(Enum):
 
 
 @dataclass
+class LinterConfig:
+    """Information about linter/formatter configuration."""
+
+    config_file: str  # e.g., "pyproject.toml", "ruff.toml"
+    tool: str  # e.g., "ruff", "flake8", "eslint"
+    content: str  # Full content of the config file
+    rules_enabled: list[str] = field(default_factory=list)  # e.g., ["E", "W", "F"]
+    rules_ignored: list[str] = field(default_factory=list)  # e.g., ["E501", "PLR0913"]
+
+
+@dataclass
 class StructuralInfo:
     """Information about codebase structure."""
 
@@ -76,6 +91,7 @@ class StructuralInfo:
     broken_symlinks: list[str] = field(default_factory=list)
     readme_files: list[str] = field(default_factory=list)
     naming_patterns: dict[str, list[str]] = field(default_factory=dict)  # pattern -> files
+    linter_configs: list[LinterConfig] = field(default_factory=list)  # Linter configurations
 
 
 @dataclass
@@ -91,10 +107,20 @@ class PRResult:
 class CodebaseAnalyzer:
     """Analyzes codebase for improvements using a single Claude Code call."""
 
-    def __init__(self, codebase_path: Path, notification_dir: Path, focus: str | None = None):
+    # State file to track last run timestamp
+    STATE_FILE_NAME = ".codebase-analyzer-state.json"
+
+    def __init__(
+        self,
+        codebase_path: Path,
+        notification_dir: Path,
+        focus: str | None = None,
+        full_analysis: bool = False,
+    ):
         self.codebase_path = codebase_path
         self.notification_dir = notification_dir
         self.focus = focus  # Optional focus category
+        self.full_analysis = full_analysis  # If True, skip change detection
         self.logger = self._setup_logging()
 
         # Check for claude CLI
@@ -108,6 +134,11 @@ class CodebaseAnalyzer:
 
         # Structural information (populated during analysis)
         self.structural_info: StructuralInfo | None = None
+
+        # State tracking
+        self.state_file = notification_dir / self.STATE_FILE_NAME
+        self.last_run_commit: str | None = None
+        self._load_state()
 
     def _check_claude_cli(self) -> bool:
         """Check if claude CLI is available."""
@@ -148,6 +179,76 @@ class CodebaseAnalyzer:
 
         return patterns
 
+    def _load_state(self):
+        """Load state from previous run."""
+        if self.state_file.exists():
+            try:
+                with open(self.state_file, encoding="utf-8") as f:
+                    state = json.load(f)
+                    self.last_run_commit = state.get("last_commit")
+                    self.logger.info(f"Loaded state: last commit {self.last_run_commit[:8] if self.last_run_commit else 'None'}")
+            except Exception as e:
+                self.logger.warning(f"Error loading state: {e}")
+
+    def _save_state(self, current_commit: str):
+        """Save state for next run."""
+        try:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.state_file, "w", encoding="utf-8") as f:
+                json.dump({"last_commit": current_commit, "timestamp": datetime.now().isoformat()}, f)
+            self.logger.info(f"Saved state: commit {current_commit[:8]}")
+        except Exception as e:
+            self.logger.warning(f"Error saving state: {e}")
+
+    def _get_current_commit(self) -> str | None:
+        """Get the current HEAD commit SHA."""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.codebase_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception as e:
+            self.logger.warning(f"Error getting current commit: {e}")
+        return None
+
+    def _get_changed_files_since(self, since_commit: str) -> set[str]:
+        """Get list of files changed since the given commit.
+
+        Returns relative paths of changed files.
+        """
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--name-only", since_commit, "HEAD"],
+                cwd=self.codebase_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                files = set(result.stdout.strip().split("\n")) if result.stdout.strip() else set()
+                # Also include untracked files
+                result2 = subprocess.run(
+                    ["git", "ls-files", "--others", "--exclude-standard"],
+                    cwd=self.codebase_path,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+                if result2.returncode == 0 and result2.stdout.strip():
+                    files.update(result2.stdout.strip().split("\n"))
+                return files
+        except Exception as e:
+            self.logger.warning(f"Error getting changed files: {e}")
+        return set()
+
     def _should_analyze(self, file_path: Path) -> bool:
         """Determine if file should be analyzed."""
         # Check always-ignore patterns
@@ -170,80 +271,212 @@ class CodebaseAnalyzer:
         return True
 
     def get_files_to_analyze(self) -> list[Path]:
-        """Get list of files to analyze from codebase."""
+        """Get list of files to analyze from codebase.
+
+        Uses git-based change detection when possible:
+        - If --full-analysis: analyze all files
+        - If last_run_commit exists: only analyze changed files
+        - Otherwise: analyze all files (first run)
+
+        Uses a single directory walk instead of multiple rglob calls.
+        """
+        # Determine if we should use incremental analysis
+        current_commit = self._get_current_commit()
+        changed_files: set[str] | None = None
+
+        if not self.full_analysis and self.last_run_commit and current_commit:
+            # Check if last_run_commit still exists
+            try:
+                result = subprocess.run(
+                    ["git", "cat-file", "-t", self.last_run_commit],
+                    cwd=self.codebase_path,
+                    capture_output=True,
+                    check=False,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    changed_files = self._get_changed_files_since(self.last_run_commit)
+                    if changed_files:
+                        self.logger.info(f"Incremental analysis: {len(changed_files)} files changed since {self.last_run_commit[:8]}")
+                    else:
+                        self.logger.info(f"No files changed since {self.last_run_commit[:8]} - nothing to analyze")
+                        return []
+                else:
+                    self.logger.warning(f"Last commit {self.last_run_commit[:8]} no longer exists, running full analysis")
+            except Exception as e:
+                self.logger.warning(f"Error checking commit: {e}, running full analysis")
+
+        if self.full_analysis:
+            self.logger.info("Running full analysis (--full-analysis flag)")
+
+        # Single directory walk - collect all data in one pass
         files = []
         for file_path in self.codebase_path.rglob("*"):
-            if file_path.is_file() and self._should_analyze(file_path):
+            if not file_path.is_file():
+                continue
+
+            # Apply change detection filter if available
+            if changed_files is not None:
+                rel_path = str(file_path.relative_to(self.codebase_path))
+                if rel_path not in changed_files:
+                    continue
+
+            if self._should_analyze(file_path):
                 files.append(file_path)
 
         self.logger.info(f"Found {len(files)} files to analyze")
         return files
 
     def gather_structural_info(self) -> StructuralInfo:
-        """Gather structural information about the codebase for analysis."""
+        """Gather structural information about the codebase for analysis.
+
+        OPTIMIZED: Uses a single directory walk instead of multiple rglob calls.
+        Also detects linter/formatter configurations for Claude to use.
+        """
         info = StructuralInfo()
 
-        # Build directory tree
+        # Linter config file patterns
+        linter_config_files = {
+            "pyproject.toml": "ruff",
+            "ruff.toml": "ruff",
+            ".ruff.toml": "ruff",
+            ".flake8": "flake8",
+            "setup.cfg": "flake8",
+            ".pylintrc": "pylint",
+            "pylintrc": "pylint",
+            ".eslintrc": "eslint",
+            ".eslintrc.js": "eslint",
+            ".eslintrc.json": "eslint",
+            ".prettierrc": "prettier",
+            ".prettierrc.json": "prettier",
+            "biome.json": "biome",
+        }
+
+        # SINGLE directory walk - collect all data in one pass
         for path in self.codebase_path.rglob("*"):
+            # Skip ignored patterns
             if any(ig in str(path) for ig in self.always_ignore):
                 continue
 
             rel_path = path.relative_to(self.codebase_path)
+            rel_path_str = str(rel_path)
             parent = str(rel_path.parent) if rel_path.parent != Path(".") else "."
 
+            # Handle symlinks (check before is_file/is_dir as symlinks can be both)
+            if path.is_symlink():
+                target = os.readlink(path)
+                info.symlinks[rel_path_str] = target
+                # Check if target exists
+                resolved = path.parent / target
+                if not resolved.exists():
+                    info.broken_symlinks.append(rel_path_str)
+                continue  # Don't process symlinks further
+
+            # Handle directories
             if path.is_dir():
                 if parent not in info.directory_tree:
                     info.directory_tree[parent] = []
                 info.directory_tree[parent].append(str(rel_path.name))
-            elif path.is_file():
+                continue
+
+            # Handle files
+            if path.is_file():
                 # Track file types
                 ext = path.suffix.lower() or "no_extension"
                 info.file_types[ext] = info.file_types.get(ext, 0) + 1
 
                 # Track README files
                 if path.name.lower().startswith("readme"):
-                    info.readme_files.append(str(rel_path))
+                    info.readme_files.append(rel_path_str)
 
-        # Check symlinks
-        for path in self.codebase_path.rglob("*"):
-            if any(ig in str(path) for ig in self.always_ignore):
-                continue
+                # Track naming patterns for Python/shell scripts
+                if path.suffix in {".py", ".sh"}:
+                    name = path.stem
+                    # Categorize naming patterns
+                    if "-" in name:
+                        pattern = "kebab-case"
+                    elif "_" in name:
+                        pattern = "snake_case"
+                    elif name and name[0].isupper():
+                        pattern = "PascalCase"
+                    else:
+                        pattern = "lowercase"
 
-            if path.is_symlink():
-                rel_path = str(path.relative_to(self.codebase_path))
-                target = os.readlink(path)
-                info.symlinks[rel_path] = target
+                    if pattern not in info.naming_patterns:
+                        info.naming_patterns[pattern] = []
+                    info.naming_patterns[pattern].append(rel_path_str)
 
-                # Check if target exists
-                resolved = path.parent / target
-                if not resolved.exists():
-                    info.broken_symlinks.append(rel_path)
-
-        # Analyze naming patterns for Python/shell scripts
-        for path in self.codebase_path.rglob("*"):
-            if any(ig in str(path) for ig in self.always_ignore):
-                continue
-
-            if path.suffix in {".py", ".sh"} and path.is_file():
-                rel_path = str(path.relative_to(self.codebase_path))
-                name = path.stem
-
-                # Categorize naming patterns
-                if "-" in name:
-                    pattern = "kebab-case"
-                elif "_" in name:
-                    pattern = "snake_case"
-                elif name[0].isupper():
-                    pattern = "PascalCase"
-                else:
-                    pattern = "lowercase"
-
-                if pattern not in info.naming_patterns:
-                    info.naming_patterns[pattern] = []
-                info.naming_patterns[pattern].append(rel_path)
+                # Detect linter configuration files
+                if path.name in linter_config_files:
+                    linter_tool = linter_config_files[path.name]
+                    try:
+                        content = path.read_text(encoding="utf-8", errors="ignore")
+                        linter_config = self._parse_linter_config(rel_path_str, linter_tool, content)
+                        if linter_config:
+                            info.linter_configs.append(linter_config)
+                            self.logger.info(f"Found {linter_tool} config: {rel_path_str}")
+                    except Exception as e:
+                        self.logger.warning(f"Error reading linter config {path}: {e}")
 
         self.structural_info = info
         return info
+
+    def _parse_linter_config(self, config_file: str, tool: str, content: str) -> LinterConfig | None:
+        """Parse a linter configuration file to extract rules.
+
+        This helps Claude understand what lint rules are enabled/disabled.
+        """
+        rules_enabled = []
+        rules_ignored = []
+
+        try:
+            if tool == "ruff" and config_file.endswith(".toml"):
+                # Parse TOML for ruff configuration
+                # Look for [tool.ruff.lint] section
+                import re
+
+                # Find select = [...] pattern
+                select_match = re.search(r'select\s*=\s*\[(.*?)\]', content, re.DOTALL)
+                if select_match:
+                    # Extract rule codes
+                    rules_text = select_match.group(1)
+                    rules_enabled = re.findall(r'"([A-Z0-9]+)"', rules_text)
+
+                # Find ignore = [...] pattern
+                ignore_match = re.search(r'ignore\s*=\s*\[(.*?)\]', content, re.DOTALL)
+                if ignore_match:
+                    rules_text = ignore_match.group(1)
+                    rules_ignored = re.findall(r'"([A-Z0-9]+)"', rules_text)
+
+            elif tool == "flake8":
+                # Parse flake8 config (ini-style)
+                # Look for select = and ignore = lines
+                for line in content.split("\n"):
+                    line = line.strip()
+                    if line.startswith("select"):
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            rules_enabled = [r.strip() for r in parts[1].split(",") if r.strip()]
+                    elif line.startswith("ignore"):
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            rules_ignored = [r.strip() for r in parts[1].split(",") if r.strip()]
+
+            elif tool == "eslint":
+                # For ESLint, just include the full content (JSON or JS)
+                # Parsing is complex, let Claude interpret it
+                pass
+
+        except Exception as e:
+            self.logger.debug(f"Error parsing {config_file}: {e}")
+
+        return LinterConfig(
+            config_file=config_file,
+            tool=tool,
+            content=content,
+            rules_enabled=rules_enabled,
+            rules_ignored=rules_ignored,
+        )
 
     def detect_potential_duplicates(self, files: list[Path]) -> list[tuple[str, str, float]]:
         """Detect potentially duplicated code by comparing file content hashes and structure.
@@ -397,6 +630,22 @@ class CodebaseAnalyzer:
             context_parts.append("\n=== POTENTIAL DUPLICATES ===")
             for f1, f2, sim in duplicates[:10]:
                 context_parts.append(f"{f1} <-> {f2} ({sim:.0%} similar)")
+
+        # Linter/formatter configurations - IMPORTANT for Claude to understand lint rules
+        if structural_info.linter_configs:
+            context_parts.append("\n=== LINTER/FORMATTER CONFIGURATION ===")
+            context_parts.append("Use these rules when analyzing code for style/lint issues:")
+            for config in structural_info.linter_configs:
+                context_parts.append(f"\n--- {config.tool.upper()} ({config.config_file}) ---")
+                if config.rules_enabled:
+                    context_parts.append(f"Enabled rules: {', '.join(config.rules_enabled)}")
+                if config.rules_ignored:
+                    context_parts.append(f"Ignored rules: {', '.join(config.rules_ignored)}")
+                # Include full config content (truncated if too long)
+                config_content = config.content
+                if len(config_content) > 2000:
+                    config_content = config_content[:2000] + "\n... [truncated]"
+                context_parts.append(f"\nFull config:\n{config_content}")
 
         return "\n".join(context_parts)
 
@@ -1066,16 +1315,33 @@ Fixes:
         """Main analysis workflow."""
         self.logger.info("=" * 60)
         self.logger.info("Codebase Analyzer")
+        if self.full_analysis:
+            self.logger.info("Mode: Full Analysis")
+        else:
+            self.logger.info("Mode: Incremental (git-based change detection)")
         self.logger.info("=" * 60)
+
+        # Get current commit for state tracking
+        current_commit = self._get_current_commit()
 
         # Get files
         files = self.get_files_to_analyze()
+
+        # If no files to analyze (no changes), still save state and exit early
+        if not files:
+            if current_commit:
+                self._save_state(current_commit)
+            self.logger.info("No files to analyze - exiting")
+            return
 
         # Analyze (single Claude call)
         issues = self.analyze_codebase(files)
 
         if not issues:
             self.logger.info("No issues found")
+            # Save state even if no issues found
+            if current_commit:
+                self._save_state(current_commit)
             return
 
         # Implement fixes if requested
@@ -1116,6 +1382,10 @@ Fixes:
         # Create notification
         self.create_notification(issues, pr_result, implemented, skipped)
 
+        # Save state after successful run
+        if current_commit:
+            self._save_state(current_commit)
+
         self.logger.info("Done!")
 
 
@@ -1132,8 +1402,14 @@ Analysis Categories:
   documentation  - README accuracy, outdated docs
   patterns       - Design pattern consistency
 
+Efficiency Features:
+  - Git-based change detection: Only analyzes files changed since last run
+  - Single directory walk: Consolidated file iteration
+  - Linter config discovery: Detects pyproject.toml, ruff.toml, etc.
+
 Examples:
-  %(prog)s                           # Full analysis report
+  %(prog)s                           # Incremental analysis (changed files only)
+  %(prog)s --full-analysis           # Analyze ALL files (ignore change detection)
   %(prog)s --focus structural        # Focus on structural issues
   %(prog)s --implement               # Auto-fix top 10 issues, create PR
   %(prog)s --implement --max-fixes 5 # Auto-fix top 5 issues
@@ -1146,6 +1422,11 @@ Examples:
         type=str,
         choices=["structural", "duplication", "unused", "documentation", "patterns"],
         help="Focus analysis on a specific category",
+    )
+    parser.add_argument(
+        "--full-analysis",
+        action="store_true",
+        help="Analyze ALL files, bypassing git-based change detection",
     )
     parser.add_argument(
         "--force", action="store_true", help="Force run (ignored, kept for compatibility)"
@@ -1161,7 +1442,9 @@ Examples:
         sys.exit(1)
 
     try:
-        analyzer = CodebaseAnalyzer(codebase_path, notification_dir, focus=args.focus)
+        analyzer = CodebaseAnalyzer(
+            codebase_path, notification_dir, focus=args.focus, full_analysis=args.full_analysis
+        )
         analyzer.run(implement=args.implement, max_fixes=args.max_fixes)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
