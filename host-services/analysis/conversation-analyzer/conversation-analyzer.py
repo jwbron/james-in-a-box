@@ -2,13 +2,14 @@
 """
 Conversation Analysis Job for jib (James-in-a-Box)
 
-Analyzes conversation logs to generate prompt tuning recommendations and
-communication improvement suggestions.
+Analyzes Slack threads and GitHub PRs where jib has contributed to generate
+insights about communication quality, response patterns, and areas for improvement.
 
-Data Locations:
-- Logs: ~/sharing/logs/conversations/*.json
-- Reports: ~/sharing/analysis/
-- Notifications: ~/sharing/notifications/
+Data Sources:
+- Slack: Threads in configured channel where jib has participated
+- GitHub: PRs and comments from jib
+
+Reports: ~/sharing/analysis/
 
 Runs on host (not in container) via systemd timer:
 - Weekly (checks if last run was within 7 days)
@@ -26,25 +27,408 @@ Example:
 import argparse
 import json
 import logging
+import os
+import re
 import sys
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 
+try:
+    import requests
+except ImportError:
+    print("Error: requests module not found.", file=sys.stderr)
+    print("Run 'uv sync' from host-services/ or run setup.sh", file=sys.stderr)
+    sys.exit(1)
+
+
 # Constants
-# Use ~/sharing for host paths (script runs on host, not in container)
-# This maps to ~/.jib-sharing on older setups, but ~/sharing is the canonical path
-LOGS_DIR = Path.home() / "sharing" / "logs" / "conversations"
 ANALYSIS_DIR = Path.home() / "sharing" / "analysis"
 PROMPTS_DIR = Path.home() / "sharing" / "prompts"
+JIB_CONFIG_DIR = Path.home() / ".config" / "jib"
+
+
+@dataclass
+class SlackThread:
+    """Represents a Slack thread where jib participated."""
+
+    thread_ts: str
+    channel: str
+    start_time: datetime
+    messages: list[dict[str, Any]]
+    jib_message_count: int
+    human_message_count: int
+    total_messages: int
+    duration_seconds: float
+    topic: str | None = None
+    outcome: str | None = None  # 'resolved', 'pending', 'escalated'
+
+
+@dataclass
+class GitHubPR:
+    """Represents a GitHub PR where jib contributed."""
+
+    number: int
+    repo: str
+    title: str
+    state: str  # 'open', 'closed', 'merged'
+    created_at: datetime
+    closed_at: datetime | None
+    jib_commits: int
+    jib_comments: int
+    review_comments: int
+    human_comments: int
+    iterations: int  # Number of review cycles
+    files_changed: int
+    lines_added: int
+    lines_deleted: int
+    url: str
+
+
+class SlackThreadFetcher:
+    """Fetches Slack threads where jib has participated."""
+
+    def __init__(self, config: dict[str, Any]):
+        self.slack_token = config.get("slack_token")
+        self.channel = config.get("slack_channel")
+        self.bot_user_id = config.get("bot_user_id")
+
+        if not self.slack_token:
+            raise ValueError("SLACK_TOKEN not configured")
+        if not self.channel:
+            raise ValueError("SLACK_CHANNEL not configured")
+
+    def _make_request(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Make a request to Slack API."""
+        response = requests.get(
+            f"https://slack.com/api/{endpoint}",
+            headers={"Authorization": f"Bearer {self.slack_token}"},
+            params=params,
+            timeout=30,
+        )
+        result = response.json()
+        if not result.get("ok"):
+            raise RuntimeError(f"Slack API error: {result.get('error', 'unknown')}")
+        return result
+
+    def _get_bot_user_id(self) -> str:
+        """Get the bot's user ID."""
+        if self.bot_user_id:
+            return self.bot_user_id
+
+        result = self._make_request("auth.test", {})
+        return result.get("user_id", "")
+
+    def _get_user_name(self, user_id: str, user_cache: dict[str, str]) -> str:
+        """Get user display name, with caching."""
+        if user_id in user_cache:
+            return user_cache[user_id]
+
+        try:
+            result = self._make_request("users.info", {"user": user_id})
+            name = result.get("user", {}).get("real_name", user_id)
+            user_cache[user_id] = name
+            return name
+        except Exception:
+            user_cache[user_id] = user_id
+            return user_id
+
+    def _is_jib_message(self, message: dict[str, Any], bot_user_id: str) -> bool:
+        """Check if a message was sent by jib."""
+        # Check user ID
+        if message.get("user") == bot_user_id:
+            return True
+        # Check bot_id (for bot messages)
+        if message.get("bot_id"):
+            return True
+        # Check for jib signature in text
+        text = message.get("text", "")
+        return "Authored by jib" in text or "Generated with Claude" in text
+
+    def fetch_threads(self, days: int = 7) -> list[SlackThread]:
+        """Fetch all threads from the channel where jib participated in the last N days."""
+        bot_user_id = self._get_bot_user_id()
+        cutoff = datetime.now() - timedelta(days=days)
+        cutoff_ts = str(cutoff.timestamp())
+
+        threads = []
+        user_cache: dict[str, str] = {}
+
+        # Get channel history
+        cursor = None
+        while True:
+            params = {
+                "channel": self.channel,
+                "oldest": cutoff_ts,
+                "limit": 200,
+            }
+            if cursor:
+                params["cursor"] = cursor
+
+            result = self._make_request("conversations.history", params)
+            messages = result.get("messages", [])
+
+            for msg in messages:
+                # Check if this message has a thread
+                thread_ts = msg.get("thread_ts") or msg.get("ts")
+                reply_count = msg.get("reply_count", 0)
+
+                # Skip messages without replies (not a thread)
+                if reply_count == 0:
+                    continue
+
+                # Fetch thread replies
+                thread_result = self._make_request(
+                    "conversations.replies",
+                    {
+                        "channel": self.channel,
+                        "ts": thread_ts,
+                        "limit": 1000,
+                    },
+                )
+                thread_messages = thread_result.get("messages", [])
+
+                # Check if jib participated in this thread
+                jib_messages = [m for m in thread_messages if self._is_jib_message(m, bot_user_id)]
+                if not jib_messages:
+                    continue
+
+                # Count messages
+                jib_count = len(jib_messages)
+                human_count = len(thread_messages) - jib_count
+
+                # Calculate duration
+                timestamps = [float(m.get("ts", "0")) for m in thread_messages]
+                if timestamps:
+                    start_ts = min(timestamps)
+                    end_ts = max(timestamps)
+                    duration = end_ts - start_ts
+                    start_time = datetime.fromtimestamp(start_ts)
+                else:
+                    duration = 0
+                    start_time = datetime.now()
+
+                # Extract topic from first message
+                topic = thread_messages[0].get("text", "")[:100] if thread_messages else None
+
+                # Determine outcome based on last message content
+                outcome = self._determine_outcome(thread_messages)
+
+                # Add user names to messages
+                for m in thread_messages:
+                    m["user_name"] = self._get_user_name(m.get("user", "unknown"), user_cache)
+                    m["is_jib"] = self._is_jib_message(m, bot_user_id)
+
+                thread = SlackThread(
+                    thread_ts=thread_ts,
+                    channel=self.channel,
+                    start_time=start_time,
+                    messages=thread_messages,
+                    jib_message_count=jib_count,
+                    human_message_count=human_count,
+                    total_messages=len(thread_messages),
+                    duration_seconds=duration,
+                    topic=topic,
+                    outcome=outcome,
+                )
+                threads.append(thread)
+
+            # Check for more pages
+            cursor = result.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
+
+        return threads
+
+    def _determine_outcome(self, messages: list[dict[str, Any]]) -> str:
+        """Determine the outcome of a thread based on message content."""
+        if not messages:
+            return "unknown"
+
+        # Look for common patterns in recent messages
+        recent_texts = " ".join([m.get("text", "") for m in messages[-3:]])
+        recent_lower = recent_texts.lower()
+
+        # Check for resolution indicators
+        if any(
+            word in recent_lower
+            for word in ["thanks", "thank you", "perfect", "done", "merged", "lgtm", "approved"]
+        ):
+            return "resolved"
+        if any(
+            word in recent_lower
+            for word in ["blocked", "stuck", "help", "issue", "error", "failed"]
+        ):
+            return "escalated"
+
+        return "pending"
+
+
+class GitHubPRFetcher:
+    """Fetches GitHub PRs where jib has contributed."""
+
+    def __init__(self, config: dict[str, Any]):
+        self.github_token = config.get("github_token")
+        if not self.github_token:
+            raise ValueError("GITHUB_TOKEN not configured")
+
+        self.headers = {
+            "Authorization": f"Bearer {self.github_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        # Repos to search - can be configured
+        self.repos = config.get("github_repos", ["jwbron/james-in-a-box"])
+
+    def _make_request(
+        self, endpoint: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any] | list:
+        """Make a request to GitHub API."""
+        url = f"https://api.github.com/{endpoint}"
+        response = requests.get(url, headers=self.headers, params=params, timeout=30)
+        response.raise_for_status()
+        return response.json()
+
+    def fetch_prs(self, days: int = 7) -> list[GitHubPR]:
+        """Fetch PRs where jib contributed in the last N days."""
+        cutoff = datetime.now() - timedelta(days=days)
+        prs = []
+
+        for repo in self.repos:
+            # Search for PRs created or updated by jib
+            # Using search API to find PRs involving jib
+            try:
+                # Get PRs where jib is the author
+                search_query = f"repo:{repo} is:pr author:app/github-actions created:>{cutoff.strftime('%Y-%m-%d')}"
+                result = self._make_request("search/issues", {"q": search_query, "per_page": 100})
+
+                for item in result.get("items", []):
+                    pr_data = self._get_pr_details(repo, item["number"])
+                    if pr_data:
+                        prs.append(pr_data)
+
+                # Also get PRs where jib has commented
+                # Get recent PRs and check for jib comments
+                owner, repo_name = repo.split("/")
+                recent_prs = self._make_request(
+                    f"repos/{owner}/{repo_name}/pulls",
+                    {"state": "all", "sort": "updated", "direction": "desc", "per_page": 50},
+                )
+
+                for pr in recent_prs:
+                    updated = datetime.fromisoformat(pr["updated_at"].replace("Z", "+00:00"))
+                    if updated.replace(tzinfo=None) < cutoff:
+                        continue
+
+                    # Check if this PR was already added
+                    if any(p.number == pr["number"] and p.repo == repo for p in prs):
+                        continue
+
+                    pr_data = self._get_pr_details(repo, pr["number"])
+                    if pr_data and (pr_data.jib_commits > 0 or pr_data.jib_comments > 0):
+                        prs.append(pr_data)
+
+            except Exception as e:
+                print(f"WARNING: Failed to fetch PRs from {repo}: {e}", file=sys.stderr)
+                continue
+
+        return prs
+
+    def _get_pr_details(self, repo: str, pr_number: int) -> GitHubPR | None:
+        """Get detailed information about a specific PR."""
+        try:
+            owner, repo_name = repo.split("/")
+            base = f"repos/{owner}/{repo_name}/pulls/{pr_number}"
+
+            # Get PR details
+            pr = self._make_request(base)
+
+            # Get commits
+            commits = self._make_request(f"{base}/commits", {"per_page": 100})
+            jib_commits = sum(1 for c in commits if self._is_jib_commit(c))
+
+            # Get review comments
+            review_comments = self._make_request(f"{base}/comments", {"per_page": 100})
+            jib_review_comments = sum(1 for c in review_comments if self._is_jib_comment(c))
+            human_review_comments = len(review_comments) - jib_review_comments
+
+            # Get issue comments
+            issue_comments = self._make_request(
+                f"repos/{owner}/{repo_name}/issues/{pr_number}/comments", {"per_page": 100}
+            )
+            jib_issue_comments = sum(1 for c in issue_comments if self._is_jib_comment(c))
+
+            # Count iterations (review cycles) - simplified as number of reviews
+            reviews = self._make_request(f"{base}/reviews", {"per_page": 100})
+            iterations = max(
+                1, len([r for r in reviews if r.get("state") in ["CHANGES_REQUESTED", "APPROVED"]])
+            )
+
+            # Parse dates
+            created_at = datetime.fromisoformat(pr["created_at"].replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+            closed_at = None
+            if pr.get("closed_at"):
+                closed_at = datetime.fromisoformat(pr["closed_at"].replace("Z", "+00:00")).replace(
+                    tzinfo=None
+                )
+
+            # Determine state
+            state = pr["state"]
+            if pr.get("merged"):
+                state = "merged"
+
+            return GitHubPR(
+                number=pr_number,
+                repo=repo,
+                title=pr["title"],
+                state=state,
+                created_at=created_at,
+                closed_at=closed_at,
+                jib_commits=jib_commits,
+                jib_comments=jib_review_comments + jib_issue_comments,
+                review_comments=len(review_comments),
+                human_comments=human_review_comments + len(issue_comments) - jib_issue_comments,
+                iterations=iterations,
+                files_changed=pr.get("changed_files", 0),
+                lines_added=pr.get("additions", 0),
+                lines_deleted=pr.get("deletions", 0),
+                url=pr["html_url"],
+            )
+
+        except Exception as e:
+            print(f"WARNING: Failed to get PR details for {repo}#{pr_number}: {e}", file=sys.stderr)
+            return None
+
+    def _is_jib_commit(self, commit: dict[str, Any]) -> bool:
+        """Check if a commit was made by jib."""
+        # Check commit message for jib signature
+        message = commit.get("commit", {}).get("message", "")
+        if "Generated with Claude" in message or "Co-Authored-By: Claude" in message:
+            return True
+        # Check author
+        author = commit.get("commit", {}).get("author", {}).get("name", "")
+        return "jib" in author.lower() or "claude" in author.lower()
+
+    def _is_jib_comment(self, comment: dict[str, Any]) -> bool:
+        """Check if a comment was made by jib."""
+        body = comment.get("body", "")
+        # Check for jib signature
+        if "Authored by jib" in body or "Generated with Claude" in body:
+            return True
+        # Check user login
+        user = comment.get("user", {}).get("login", "")
+        return "jib" in user.lower() or "bot" in user.lower()
 
 
 class ConversationAnalyzer:
+    """Analyzes jib's Slack threads and GitHub PRs."""
+
     def __init__(self, days: int = 7):
         self.days = days
-        self.logs_dir = LOGS_DIR
         self.analysis_dir = ANALYSIS_DIR
         self.prompts_dir = PROMPTS_DIR
 
@@ -52,452 +436,482 @@ class ConversationAnalyzer:
         self.analysis_dir.mkdir(parents=True, exist_ok=True)
         self.prompts_dir.mkdir(parents=True, exist_ok=True)
 
-    def load_logs(self) -> list[dict[str, Any]]:
-        """Load conversation logs from the last N days"""
-        cutoff = datetime.now() - timedelta(days=self.days)
-        logs = []
+        # Load configuration
+        self.config = self._load_config()
 
-        if not self.logs_dir.exists():
-            print(f"WARNING: Logs directory does not exist: {self.logs_dir}", file=sys.stderr)
-            return logs
+        # Initialize fetchers (may be None if credentials not available)
+        self.slack_fetcher = None
+        self.github_fetcher = None
 
-        for log_file in sorted(self.logs_dir.glob("*.json")):
+        try:
+            self.slack_fetcher = SlackThreadFetcher(self.config)
+        except ValueError as e:
+            print(f"WARNING: Slack fetcher disabled: {e}", file=sys.stderr)
+
+        try:
+            self.github_fetcher = GitHubPRFetcher(self.config)
+        except ValueError as e:
+            print(f"WARNING: GitHub fetcher disabled: {e}", file=sys.stderr)
+
+    def _load_config(self) -> dict[str, Any]:
+        """Load configuration from ~/.config/jib/."""
+        config = {}
+
+        secrets_file = JIB_CONFIG_DIR / "secrets.env"
+        config_file = JIB_CONFIG_DIR / "config.yaml"
+
+        # Load secrets
+        if secrets_file.exists():
+            with open(secrets_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        key = key.strip()
+                        value = value.strip().strip("\"'")
+                        if key == "SLACK_TOKEN" and value:
+                            config["slack_token"] = value
+                        elif key == "GITHUB_TOKEN" and value:
+                            config["github_token"] = value
+
+        # Load YAML config
+        if config_file.exists():
             try:
-                with open(log_file) as f:
-                    log = json.load(f)
+                import yaml
 
-                    # Check if within date range
-                    log_date = datetime.fromisoformat(log["start_time"])
-                    if log_date >= cutoff:
-                        logs.append(log)
-            except Exception as e:
-                print(f"ERROR: Failed to load {log_file}: {e}", file=sys.stderr)
+                with open(config_file) as f:
+                    yaml_config = yaml.safe_load(f) or {}
+                config.update(yaml_config)
+            except ImportError:
+                pass
 
-        return logs
+        # Environment overrides
+        for key in ["SLACK_TOKEN", "GITHUB_TOKEN", "SLACK_CHANNEL"]:
+            if os.environ.get(key):
+                config[key.lower()] = os.environ[key]
 
-    def calculate_metrics(self, logs: list[dict[str, Any]]) -> dict[str, Any]:
-        """Calculate aggregate metrics from logs"""
+        return config
+
+    def calculate_slack_metrics(self, threads: list[SlackThread]) -> dict[str, Any]:
+        """Calculate metrics from Slack threads."""
         metrics = {
-            "total_sessions": len(logs),
-            "successful_sessions": 0,
-            "failed_sessions": 0,
-            "blocked_sessions": 0,
-            "partial_sessions": 0,
-            "avg_iterations": 0,
-            "avg_quality_score": 0,
-            "avg_duration_minutes": 0,
-            "avg_messages_per_session": 0,
-            "avg_tool_calls_per_session": 0,
-            "single_iteration_success_rate": 0,
-            "quality_by_iteration": defaultdict(list),
-            "duration_by_outcome": defaultdict(list),
-            "messages_by_outcome": defaultdict(list),
+            "total_threads": len(threads),
+            "resolved_threads": 0,
+            "pending_threads": 0,
+            "escalated_threads": 0,
+            "avg_messages_per_thread": 0,
+            "avg_jib_messages_per_thread": 0,
+            "avg_response_time_minutes": 0,
+            "avg_thread_duration_minutes": 0,
+            "total_jib_messages": 0,
+            "total_human_messages": 0,
+            "resolution_rate": 0,
         }
 
-        if not logs:
+        if not threads:
             return metrics
 
-        total_iterations = 0
-        total_quality = 0
-        quality_count = 0
-        total_duration = 0
         total_messages = 0
-        total_tools = 0
-        single_iteration_success = 0
+        total_jib_messages = 0
+        total_human_messages = 0
+        total_duration = 0
 
-        for log in logs:
-            outcome = log.get("outcome", {})
-            status = outcome.get("status", "unknown")
-            iterations = outcome.get("iterations", 0)
-            quality = outcome.get("quality_score")
-            duration = log["metrics"].get("duration_seconds", 0)
-            messages = log["metrics"].get("message_count", 0)
-            tools = log["metrics"].get("tool_calls", 0)
-
+        for thread in threads:
             # Count by outcome
-            if status == "success":
-                metrics["successful_sessions"] += 1
-                if iterations == 1:
-                    single_iteration_success += 1
-            elif status == "failed":
-                metrics["failed_sessions"] += 1
-            elif status == "blocked":
-                metrics["blocked_sessions"] += 1
-            elif status == "partial":
-                metrics["partial_sessions"] += 1
+            if thread.outcome == "resolved":
+                metrics["resolved_threads"] += 1
+            elif thread.outcome == "escalated":
+                metrics["escalated_threads"] += 1
+            else:
+                metrics["pending_threads"] += 1
 
-            # Accumulate for averages
-            total_iterations += iterations
-            total_duration += duration
-            total_messages += messages
-            total_tools += tools
-
-            if quality is not None:
-                total_quality += quality
-                quality_count += 1
-                metrics["quality_by_iteration"][iterations].append(quality)
-
-            # Track duration and messages by outcome
-            metrics["duration_by_outcome"][status].append(duration / 60)  # Convert to minutes
-            metrics["messages_by_outcome"][status].append(messages)
+            # Accumulate totals
+            total_messages += thread.total_messages
+            total_jib_messages += thread.jib_message_count
+            total_human_messages += thread.human_message_count
+            total_duration += thread.duration_seconds
 
         # Calculate averages
-        metrics["avg_iterations"] = total_iterations / len(logs) if logs else 0
-        metrics["avg_quality_score"] = total_quality / quality_count if quality_count else 0
-        metrics["avg_duration_minutes"] = (total_duration / 60) / len(logs) if logs else 0
-        metrics["avg_messages_per_session"] = total_messages / len(logs) if logs else 0
-        metrics["avg_tool_calls_per_session"] = total_tools / len(logs) if logs else 0
-        metrics["single_iteration_success_rate"] = (
-            (single_iteration_success / metrics["successful_sessions"] * 100)
-            if metrics["successful_sessions"]
-            else 0
+        metrics["avg_messages_per_thread"] = total_messages / len(threads)
+        metrics["avg_jib_messages_per_thread"] = total_jib_messages / len(threads)
+        metrics["avg_thread_duration_minutes"] = (total_duration / 60) / len(threads)
+        metrics["total_jib_messages"] = total_jib_messages
+        metrics["total_human_messages"] = total_human_messages
+        metrics["resolution_rate"] = (
+            (metrics["resolved_threads"] / len(threads) * 100) if threads else 0
         )
 
         return metrics
 
-    def identify_patterns(self, logs: list[dict[str, Any]]) -> dict[str, Any]:
-        """Identify patterns in successful vs unsuccessful conversations"""
-        patterns = {
-            "high_quality_patterns": [],
-            "low_quality_patterns": [],
-            "efficient_patterns": [],
-            "inefficient_patterns": [],
+    def calculate_github_metrics(self, prs: list[GitHubPR]) -> dict[str, Any]:
+        """Calculate metrics from GitHub PRs."""
+        metrics = {
+            "total_prs": len(prs),
+            "merged_prs": 0,
+            "closed_prs": 0,
+            "open_prs": 0,
+            "avg_iterations": 0,
+            "avg_files_changed": 0,
+            "avg_lines_changed": 0,
+            "total_jib_commits": 0,
+            "total_jib_comments": 0,
+            "avg_pr_duration_hours": 0,
+            "merge_rate": 0,
+            "first_try_success_rate": 0,  # PRs merged on first iteration
         }
 
-        # Separate by quality (filter out None quality scores)
-        high_quality = [l for l in logs if (l.get("outcome", {}).get("quality_score") or 0) >= 8]
-        low_quality = [
-            l
-            for l in logs
-            if l.get("outcome", {}).get("quality_score") is not None
-            and l.get("outcome", {}).get("quality_score") <= 5
-        ]
+        if not prs:
+            return metrics
 
-        # Separate by efficiency (iterations)
-        efficient = [l for l in logs if l.get("outcome", {}).get("iterations", 99) == 1]
-        inefficient = [l for l in logs if l.get("outcome", {}).get("iterations", 0) >= 3]
+        total_iterations = 0
+        total_files = 0
+        total_lines = 0
+        total_duration = 0
+        first_try_merges = 0
+        duration_count = 0
 
-        # Analyze high quality sessions
-        if high_quality:
-            avg_messages = sum(l["metrics"]["message_count"] for l in high_quality) / len(
-                high_quality
-            )
-            avg_tools = sum(l["metrics"]["tool_calls"] for l in high_quality) / len(high_quality)
-            patterns["high_quality_patterns"].append(
-                f"Average {avg_messages:.1f} messages and {avg_tools:.1f} tool calls"
-            )
+        for pr in prs:
+            # Count by state
+            if pr.state == "merged":
+                metrics["merged_prs"] += 1
+                if pr.iterations == 1:
+                    first_try_merges += 1
+            elif pr.state == "closed":
+                metrics["closed_prs"] += 1
+            else:
+                metrics["open_prs"] += 1
 
-        # Analyze low quality sessions
-        if low_quality:
-            avg_messages = sum(l["metrics"]["message_count"] for l in low_quality) / len(
-                low_quality
-            )
-            avg_tools = sum(l["metrics"]["tool_calls"] for l in low_quality) / len(low_quality)
-            patterns["low_quality_patterns"].append(
-                f"Average {avg_messages:.1f} messages and {avg_tools:.1f} tool calls"
-            )
+            # Accumulate totals
+            total_iterations += pr.iterations
+            total_files += pr.files_changed
+            total_lines += pr.lines_added + pr.lines_deleted
+            metrics["total_jib_commits"] += pr.jib_commits
+            metrics["total_jib_comments"] += pr.jib_comments
 
-        # Analyze efficient sessions
-        if efficient:
-            avg_duration = (
-                sum(l["metrics"]["duration_seconds"] for l in efficient) / len(efficient) / 60
-            )
-            patterns["efficient_patterns"].append(
-                f"Single iteration sessions average {avg_duration:.1f} minutes"
-            )
+            # Calculate duration for closed/merged PRs
+            if pr.closed_at:
+                duration = (pr.closed_at - pr.created_at).total_seconds() / 3600
+                total_duration += duration
+                duration_count += 1
 
-        # Analyze inefficient sessions
-        if inefficient:
-            avg_duration = (
-                sum(l["metrics"]["duration_seconds"] for l in inefficient) / len(inefficient) / 60
-            )
-            common_tasks = [l["task_description"][:50] for l in inefficient[:5]]
-            patterns["inefficient_patterns"].append(
-                f"Multi-iteration sessions average {avg_duration:.1f} minutes"
-            )
-            patterns["inefficient_patterns"].append(
-                f"Common multi-iteration tasks: {', '.join(common_tasks)}"
-            )
+        # Calculate averages
+        metrics["avg_iterations"] = total_iterations / len(prs)
+        metrics["avg_files_changed"] = total_files / len(prs)
+        metrics["avg_lines_changed"] = total_lines / len(prs)
+        if duration_count > 0:
+            metrics["avg_pr_duration_hours"] = total_duration / duration_count
+        metrics["merge_rate"] = (metrics["merged_prs"] / len(prs) * 100) if prs else 0
+        metrics["first_try_success_rate"] = (
+            (first_try_merges / metrics["merged_prs"] * 100) if metrics["merged_prs"] else 0
+        )
+
+        return metrics
+
+    def identify_patterns(
+        self, threads: list[SlackThread], prs: list[GitHubPR]
+    ) -> dict[str, list[str]]:
+        """Identify patterns in jib's communications."""
+        patterns = {
+            "strengths": [],
+            "areas_for_improvement": [],
+            "common_topics": [],
+            "efficiency_patterns": [],
+        }
+
+        # Analyze Slack patterns
+        if threads:
+            resolved = [t for t in threads if t.outcome == "resolved"]
+            escalated = [t for t in threads if t.outcome == "escalated"]
+
+            if len(resolved) > len(threads) * 0.7:
+                patterns["strengths"].append(
+                    f"High thread resolution rate: {len(resolved)}/{len(threads)} threads resolved"
+                )
+
+            if escalated:
+                avg_escalated_messages = sum(t.total_messages for t in escalated) / len(escalated)
+                patterns["areas_for_improvement"].append(
+                    f"{len(escalated)} threads escalated, avg {avg_escalated_messages:.1f} messages before escalation"
+                )
+
+            # Analyze topics
+            topic_words = defaultdict(int)
+            for thread in threads:
+                if thread.topic:
+                    words = re.findall(r"\b\w{4,}\b", thread.topic.lower())
+                    for word in words:
+                        topic_words[word] += 1
+
+            common_words = sorted(topic_words.items(), key=lambda x: -x[1])[:5]
+            if common_words:
+                patterns["common_topics"].append(
+                    f"Common discussion topics: {', '.join(w[0] for w in common_words)}"
+                )
+
+        # Analyze GitHub patterns
+        if prs:
+            merged = [p for p in prs if p.state == "merged"]
+            first_try = [p for p in merged if p.iterations == 1]
+
+            if first_try and len(first_try) > len(merged) * 0.5:
+                patterns["strengths"].append(
+                    f"Good first-try success: {len(first_try)}/{len(merged)} PRs merged on first iteration"
+                )
+
+            multi_iteration = [p for p in merged if p.iterations > 2]
+            if multi_iteration:
+                patterns["areas_for_improvement"].append(
+                    f"{len(multi_iteration)} PRs required 3+ iterations - review feedback patterns"
+                )
+
+            # Efficiency patterns
+            avg_lines = sum(p.lines_added + p.lines_deleted for p in prs) / len(prs) if prs else 0
+            if avg_lines < 200:
+                patterns["efficiency_patterns"].append(
+                    f"PRs are well-scoped: avg {avg_lines:.0f} lines changed"
+                )
+            elif avg_lines > 500:
+                patterns["efficiency_patterns"].append(
+                    f"Consider smaller PRs: avg {avg_lines:.0f} lines changed"
+                )
 
         return patterns
 
-    def generate_prompt_recommendations(
-        self, logs: list[dict[str, Any]], metrics: dict[str, Any], patterns: dict[str, Any]
-    ) -> list[str]:
-        """Generate recommendations for tuning Claude prompts"""
+    def generate_recommendations(
+        self,
+        slack_metrics: dict[str, Any],
+        github_metrics: dict[str, Any],
+        patterns: dict[str, list[str]],
+    ) -> list[dict[str, Any]]:
+        """Generate actionable recommendations."""
         recommendations = []
 
-        # Low single-iteration success rate
-        if metrics["single_iteration_success_rate"] < 60 and metrics["successful_sessions"] > 5:
-            recommendations.append(
-                {
-                    "priority": "HIGH",
-                    "category": "Iteration Efficiency",
-                    "issue": f"Only {metrics['single_iteration_success_rate']:.1f}% of successful sessions complete in one iteration",
-                    "recommendation": "Add to prompts: 'Before responding, gather ALL necessary context in parallel tool calls. Avoid back-and-forth for information gathering.'",
-                    "prompt_section": "Tool usage policy",
-                }
-            )
-
-        # High message count
-        if metrics["avg_messages_per_session"] > 10:
-            recommendations.append(
-                {
-                    "priority": "MEDIUM",
-                    "category": "Verbosity",
-                    "issue": f"Average {metrics['avg_messages_per_session']:.1f} messages per session",
-                    "recommendation": "Add to prompts: 'Be concise. Combine status updates with action. Minimize conversational messages.'",
-                    "prompt_section": "Tone and style",
-                }
-            )
-
-        # Low quality scores
-        if metrics["avg_quality_score"] < 7 and metrics["avg_quality_score"] > 0:
-            recommendations.append(
-                {
-                    "priority": "HIGH",
-                    "category": "Quality",
-                    "issue": f"Average quality score is {metrics['avg_quality_score']:.1f}/10",
-                    "recommendation": "Review quality issues in logs and add specific anti-patterns to prompts. Consider adding pre-submission checklist.",
-                    "prompt_section": "Quality Standards",
-                }
-            )
-
-        # Too many tool calls might indicate inefficiency
-        if metrics["avg_tool_calls_per_session"] > 20:
-            recommendations.append(
-                {
-                    "priority": "MEDIUM",
-                    "category": "Tool Efficiency",
-                    "issue": f"Average {metrics['avg_tool_calls_per_session']:.1f} tool calls per session",
-                    "recommendation": "Add to prompts: 'Plan tool usage. Use parallel calls. Avoid redundant reads. Use Task agent for exploration.'",
-                    "prompt_section": "Tool usage policy",
-                }
-            )
-
-        # Failed sessions
-        if metrics["failed_sessions"] > metrics["successful_sessions"] * 0.2:
-            recommendations.append(
-                {
-                    "priority": "HIGH",
-                    "category": "Success Rate",
-                    "issue": f"{metrics['failed_sessions']} failed sessions out of {metrics['total_sessions']} total",
-                    "recommendation": "Analyze failure modes and add preventive guidance to prompts. Consider adding error recovery patterns.",
-                    "prompt_section": "Error Handling",
-                }
-            )
-
-        return recommendations
-
-    def generate_communication_recommendations(
-        self, logs: list[dict[str, Any]], metrics: dict[str, Any]
-    ) -> list[str]:
-        """Generate recommendations for human to improve communication with jib"""
-        recommendations = []
-
-        # High iteration sessions might indicate unclear requirements
-        if metrics["avg_iterations"] > 2:
-            recommendations.append(
-                {
-                    "priority": "MEDIUM",
-                    "category": "Requirement Clarity",
-                    "issue": f"Average {metrics['avg_iterations']:.1f} iterations per task",
-                    "recommendation": "When assigning tasks, include: (1) Clear success criteria, (2) Examples of expected output, (3) Constraints and preferences upfront",
-                    "example": "Instead of: 'Add OAuth2'\nTry: 'Add OAuth2 using the pattern in auth_service.py, support Google and GitHub providers, include tests similar to test_auth_basic.py'",
-                }
-            )
-
-        # Analyze blocked sessions
-        if metrics["blocked_sessions"] > 0:
-            blocked_logs = [l for l in logs if l.get("outcome", {}).get("status") == "blocked"]
-            if blocked_logs:
+        # Slack-based recommendations
+        if slack_metrics["total_threads"] > 0:
+            if slack_metrics["resolution_rate"] < 60:
                 recommendations.append(
                     {
                         "priority": "HIGH",
-                        "category": "Blocked Sessions",
-                        "issue": f"{metrics['blocked_sessions']} sessions were blocked",
-                        "recommendation": "Review blocked session notes to identify common blockers. Consider providing more context upfront or setting up additional access/tools.",
-                        "details": f"Review logs: {', '.join([l['session_id'] for l in blocked_logs[:3]])}",
+                        "category": "Thread Resolution",
+                        "issue": f"Only {slack_metrics['resolution_rate']:.1f}% of threads resolved",
+                        "recommendation": "Review unresolved threads for common blockers. Add proactive clarification questions.",
                     }
                 )
 
-        # Long duration might indicate complex tasks that need breaking down
-        if metrics["avg_duration_minutes"] > 30:
-            recommendations.append(
-                {
-                    "priority": "LOW",
-                    "category": "Task Scoping",
-                    "issue": f"Average session duration is {metrics['avg_duration_minutes']:.1f} minutes",
-                    "recommendation": "Consider breaking larger tasks into smaller, focused sub-tasks. This allows for incremental progress and easier review.",
-                    "example": "Instead of: 'Refactor the entire authentication system'\nTry: 'Step 1: Extract OAuth logic into separate module' (then review), 'Step 2: Add tests for extracted module', etc.",
-                }
-            )
+            if slack_metrics["avg_thread_duration_minutes"] > 60:
+                recommendations.append(
+                    {
+                        "priority": "MEDIUM",
+                        "category": "Response Efficiency",
+                        "issue": f"Average thread duration is {slack_metrics['avg_thread_duration_minutes']:.1f} minutes",
+                        "recommendation": "Provide more comprehensive initial responses to reduce back-and-forth.",
+                    }
+                )
+
+            if slack_metrics["escalated_threads"] > slack_metrics["total_threads"] * 0.2:
+                recommendations.append(
+                    {
+                        "priority": "HIGH",
+                        "category": "Escalation Rate",
+                        "issue": f"{slack_metrics['escalated_threads']} threads escalated ({slack_metrics['escalated_threads'] / slack_metrics['total_threads'] * 100:.1f}%)",
+                        "recommendation": "Analyze escalated threads for common failure patterns. Improve error handling and communication.",
+                    }
+                )
+
+        # GitHub-based recommendations
+        if github_metrics["total_prs"] > 0:
+            if github_metrics["first_try_success_rate"] < 50:
+                recommendations.append(
+                    {
+                        "priority": "HIGH",
+                        "category": "PR Quality",
+                        "issue": f"Only {github_metrics['first_try_success_rate']:.1f}% PRs merged on first try",
+                        "recommendation": "Run tests before creating PRs. Review code for common issues. Add self-review checklist.",
+                    }
+                )
+
+            if github_metrics["avg_iterations"] > 2:
+                recommendations.append(
+                    {
+                        "priority": "MEDIUM",
+                        "category": "Review Cycles",
+                        "issue": f"Average {github_metrics['avg_iterations']:.1f} iterations per PR",
+                        "recommendation": "Address all review comments in single iteration. Ask clarifying questions upfront.",
+                    }
+                )
+
+            if github_metrics["avg_lines_changed"] > 500:
+                recommendations.append(
+                    {
+                        "priority": "LOW",
+                        "category": "PR Scope",
+                        "issue": f"Average {github_metrics['avg_lines_changed']:.0f} lines per PR",
+                        "recommendation": "Break large changes into smaller, focused PRs for easier review.",
+                    }
+                )
 
         return recommendations
 
     def generate_report(
         self,
-        logs: list[dict[str, Any]],
-        metrics: dict[str, Any],
-        patterns: dict[str, Any],
-        prompt_recs: list[dict],
-        comm_recs: list[dict],
+        threads: list[SlackThread],
+        prs: list[GitHubPR],
+        slack_metrics: dict[str, Any],
+        github_metrics: dict[str, Any],
+        patterns: dict[str, list[str]],
+        recommendations: list[dict[str, Any]],
     ) -> str:
-        """Generate markdown report"""
-        # Pre-format pattern lists to avoid f-string complexity
-        high_quality_text = (
-            "\n".join("- " + p for p in patterns["high_quality_patterns"])
-            if patterns["high_quality_patterns"]
-            else "- No high quality sessions in this period"
-        )
-        low_quality_text = (
-            "\n".join("- " + p for p in patterns["low_quality_patterns"])
-            if patterns["low_quality_patterns"]
-            else "- No low quality sessions in this period"
-        )
-        efficient_text = (
-            "\n".join("- " + p for p in patterns["efficient_patterns"])
-            if patterns["efficient_patterns"]
-            else "- No single-iteration sessions in this period"
-        )
-        inefficient_text = (
-            "\n".join("- " + p for p in patterns["inefficient_patterns"])
-            if patterns["inefficient_patterns"]
-            else "- No multi-iteration sessions in this period"
-        )
-
-        report = f"""# jib Conversation Analysis Report
+        """Generate markdown report."""
+        report = f"""# jib Communication Analysis Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Period: Last {self.days} days
 
-## Summary Metrics
+## Executive Summary
 
-- **Total Sessions**: {metrics["total_sessions"]}
-- **Success Rate**: {metrics["successful_sessions"] / metrics["total_sessions"] * 100:.1f}% ({metrics["successful_sessions"]}/{metrics["total_sessions"]})
-- **Single-Iteration Success Rate**: {metrics["single_iteration_success_rate"]:.1f}%
-- **Average Quality Score**: {metrics["avg_quality_score"]:.1f}/10
-- **Average Iterations**: {metrics["avg_iterations"]:.1f}
-- **Average Duration**: {metrics["avg_duration_minutes"]:.1f} minutes
-- **Average Messages**: {metrics["avg_messages_per_session"]:.1f} per session
-- **Average Tool Calls**: {metrics["avg_tool_calls_per_session"]:.1f} per session
+| Source | Total | Success Rate |
+|--------|-------|--------------|
+| Slack Threads | {slack_metrics["total_threads"]} | {slack_metrics["resolution_rate"]:.1f}% resolved |
+| GitHub PRs | {github_metrics["total_prs"]} | {github_metrics["merge_rate"]:.1f}% merged |
 
-### Outcome Distribution
-- ✓ Successful: {metrics["successful_sessions"]}
-- ⚠ Partial: {metrics["partial_sessions"]}
-- ✗ Failed: {metrics["failed_sessions"]}
-- ⊗ Blocked: {metrics["blocked_sessions"]}
+## Slack Thread Analysis
 
+### Metrics
+- **Total Threads**: {slack_metrics["total_threads"]}
+- **Resolved**: {slack_metrics["resolved_threads"]} | **Pending**: {slack_metrics["pending_threads"]} | **Escalated**: {slack_metrics["escalated_threads"]}
+- **Resolution Rate**: {slack_metrics["resolution_rate"]:.1f}%
+- **Avg Messages/Thread**: {slack_metrics["avg_messages_per_thread"]:.1f}
+- **Avg jib Messages/Thread**: {slack_metrics["avg_jib_messages_per_thread"]:.1f}
+- **Avg Thread Duration**: {slack_metrics["avg_thread_duration_minutes"]:.1f} minutes
+
+### Thread Summary
+"""
+        # Add thread summaries
+        for thread in sorted(threads, key=lambda t: t.start_time, reverse=True)[:10]:
+            outcome_emoji = {"resolved": "✅", "pending": "⏳", "escalated": "⚠️"}.get(
+                thread.outcome, "❓"
+            )
+            topic_preview = (
+                (thread.topic or "No topic")[:50] + "..."
+                if thread.topic and len(thread.topic) > 50
+                else (thread.topic or "No topic")
+            )
+            report += f"- {outcome_emoji} {thread.start_time.strftime('%m/%d')}: {topic_preview} ({thread.total_messages} msgs)\n"
+
+        report += f"""
+## GitHub PR Analysis
+
+### Metrics
+- **Total PRs**: {github_metrics["total_prs"]}
+- **Merged**: {github_metrics["merged_prs"]} | **Closed**: {github_metrics["closed_prs"]} | **Open**: {github_metrics["open_prs"]}
+- **Merge Rate**: {github_metrics["merge_rate"]:.1f}%
+- **First-Try Success Rate**: {github_metrics["first_try_success_rate"]:.1f}%
+- **Avg Iterations**: {github_metrics["avg_iterations"]:.1f}
+- **Avg Files Changed**: {github_metrics["avg_files_changed"]:.1f}
+- **Avg Lines Changed**: {github_metrics["avg_lines_changed"]:.0f}
+- **Avg PR Duration**: {github_metrics["avg_pr_duration_hours"]:.1f} hours
+
+### PR Summary
+"""
+        # Add PR summaries
+        for pr in sorted(prs, key=lambda p: p.created_at, reverse=True)[:10]:
+            state_emoji = {"merged": "✅", "closed": "❌", "open": "🔵"}.get(pr.state, "❓")
+            report += f"- {state_emoji} [{pr.repo}#{pr.number}]({pr.url}): {pr.title[:50]}{'...' if len(pr.title) > 50 else ''}\n"
+
+        report += """
 ## Identified Patterns
 
-### High Quality Sessions (8-10)
-{high_quality_text}
-
-### Low Quality Sessions (1-5)
-{low_quality_text}
-
-### Efficient Sessions (1 iteration)
-{efficient_text}
-
-### Inefficient Sessions (3+ iterations)
-{inefficient_text}
-
-## Prompt Tuning Recommendations
-
-{self._format_recommendations(prompt_recs) if prompt_recs else "*No recommendations at this time*"}
-
-## Communication Improvement Suggestions
-
-{self._format_recommendations(comm_recs) if comm_recs else "*No suggestions at this time*"}
-
-## Next Steps
-
-1. **Review HIGH priority recommendations** and update Claude prompts accordingly
-2. **Apply communication improvements** in next task assignment
-3. **Re-run analysis** after {self.days} days to measure impact
-4. **Review individual logs** for specific patterns:
-   - Highest quality: {self._get_top_sessions(logs, "quality_score", 3)}
-   - Most efficient: {self._get_top_sessions(logs, "iterations", 3, reverse=True)}
-
----
-
-*Logs analyzed: {len(logs)} sessions*
-*Report saved to: ~/sharing/analysis/*
+### Strengths
 """
-        return report
+        for pattern in patterns["strengths"]:
+            report += f"- ✨ {pattern}\n"
+        if not patterns["strengths"]:
+            report += "- No specific strengths identified in this period\n"
 
-    def _format_recommendations(self, recommendations: list[dict]) -> str:
-        """Format recommendations as markdown"""
-        if not recommendations:
-            return "*No recommendations*"
+        report += """
+### Areas for Improvement
+"""
+        for pattern in patterns["areas_for_improvement"]:
+            report += f"- 🎯 {pattern}\n"
+        if not patterns["areas_for_improvement"]:
+            report += "- No specific areas identified in this period\n"
 
-        formatted = []
-        for i, rec in enumerate(recommendations, 1):
-            # Build optional sections
-            prompt_section = (
-                f"**Prompt Section**: `{rec['prompt_section']}`" if "prompt_section" in rec else ""
-            )
-            example_section = (
-                f"**Example**:\n```\n{rec['example']}\n```" if "example" in rec else ""
-            )
-            details_section = f"**Details**: {rec['details']}" if "details" in rec else ""
+        report += """
+### Efficiency Patterns
+"""
+        for pattern in patterns["efficiency_patterns"]:
+            report += f"- 📊 {pattern}\n"
+        if not patterns["efficiency_patterns"]:
+            report += "- No efficiency patterns identified\n"
 
-            formatted.append(f"""### {i}. [{rec["priority"]}] {rec["category"]}
+        report += """
+## Recommendations
+"""
+        if recommendations:
+            for i, rec in enumerate(recommendations, 1):
+                report += f"""
+### {i}. [{rec["priority"]}] {rec["category"]}
 
 **Issue**: {rec["issue"]}
 
 **Recommendation**: {rec["recommendation"]}
+"""
+        else:
+            report += "\n*No specific recommendations at this time*\n"
 
-{prompt_section}
-{example_section}
-{details_section}
-""")
-        return "\n".join(formatted)
+        report += f"""
+---
 
-    def _get_top_sessions(
-        self, logs: list[dict[str, Any]], metric: str, n: int = 3, reverse: bool = False
-    ) -> str:
-        """Get top N sessions by a metric"""
+*Analysis based on {slack_metrics["total_threads"]} Slack threads and {github_metrics["total_prs"]} GitHub PRs*
+*Report saved to: ~/sharing/analysis/*
+"""
+        return report
 
-        def get_metric_value(log):
-            if metric == "quality_score":
-                return log.get("outcome", {}).get("quality_score", 0) or 0
-            elif metric == "iterations":
-                return log.get("outcome", {}).get("iterations", 999) or 999
-            return 0
+    def run_analysis(self) -> str | None:
+        """Run full analysis and generate report."""
+        print(f"Analyzing jib communications from last {self.days} days...")
 
-        sorted_logs = sorted(logs, key=get_metric_value, reverse=not reverse)
-        top = sorted_logs[:n]
+        # Fetch Slack threads
+        threads = []
+        if self.slack_fetcher:
+            print("Fetching Slack threads...")
+            try:
+                threads = self.slack_fetcher.fetch_threads(self.days)
+                print(f"  Found {len(threads)} threads with jib participation")
+            except Exception as e:
+                print(f"  WARNING: Failed to fetch Slack threads: {e}", file=sys.stderr)
 
-        if not top:
-            return "None"
+        # Fetch GitHub PRs
+        prs = []
+        if self.github_fetcher:
+            print("Fetching GitHub PRs...")
+            try:
+                prs = self.github_fetcher.fetch_prs(self.days)
+                print(f"  Found {len(prs)} PRs with jib contribution")
+            except Exception as e:
+                print(f"  WARNING: Failed to fetch GitHub PRs: {e}", file=sys.stderr)
 
-        return ", ".join([f"{l['session_id']} ({l['task_description'][:30]}...)" for l in top])
-
-    def run_analysis(self) -> str:
-        """Run full analysis and generate report"""
-        print(f"Loading conversation logs from last {self.days} days...")
-        logs = self.load_logs()
-
-        if not logs:
-            print("WARNING: No logs found for analysis", file=sys.stderr)
+        if not threads and not prs:
+            print("WARNING: No data found for analysis", file=sys.stderr)
             return None
 
-        print(f"Loaded {len(logs)} conversation logs")
-
+        # Calculate metrics
         print("Calculating metrics...")
-        metrics = self.calculate_metrics(logs)
+        slack_metrics = self.calculate_slack_metrics(threads)
+        github_metrics = self.calculate_github_metrics(prs)
 
+        # Identify patterns
         print("Identifying patterns...")
-        patterns = self.identify_patterns(logs)
+        patterns = self.identify_patterns(threads, prs)
 
-        print("Generating prompt recommendations...")
-        prompt_recs = self.generate_prompt_recommendations(logs, metrics, patterns)
+        # Generate recommendations
+        print("Generating recommendations...")
+        recommendations = self.generate_recommendations(slack_metrics, github_metrics, patterns)
 
-        print("Generating communication recommendations...")
-        comm_recs = self.generate_communication_recommendations(logs, metrics)
-
+        # Generate report
         print("Generating report...")
-        report = self.generate_report(logs, metrics, patterns, prompt_recs, comm_recs)
+        report = self.generate_report(
+            threads, prs, slack_metrics, github_metrics, patterns, recommendations
+        )
 
         # Save report
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -505,16 +919,16 @@ Period: Last {self.days} days
         with open(report_file, "w") as f:
             f.write(report)
 
-        # Save recommendations as JSON for programmatic access
-        recs_file = self.analysis_dir / f"recommendations-{timestamp}.json"
-        with open(recs_file, "w") as f:
+        # Save metrics as JSON
+        metrics_file = self.analysis_dir / f"metrics-{timestamp}.json"
+        with open(metrics_file, "w") as f:
             json.dump(
                 {
                     "timestamp": timestamp,
-                    "metrics": metrics,
+                    "slack_metrics": slack_metrics,
+                    "github_metrics": github_metrics,
                     "patterns": patterns,
-                    "prompt_recommendations": prompt_recs,
-                    "communication_recommendations": comm_recs,
+                    "recommendations": recommendations,
                 },
                 f,
                 indent=2,
@@ -522,61 +936,63 @@ Period: Last {self.days} days
 
         # Create latest symlinks
         latest_report = self.analysis_dir / "latest-report.md"
-        latest_recs = self.analysis_dir / "latest-recommendations.json"
+        latest_metrics = self.analysis_dir / "latest-metrics.json"
 
         if latest_report.exists():
             latest_report.unlink()
-        if latest_recs.exists():
-            latest_recs.unlink()
+        if latest_metrics.exists():
+            latest_metrics.unlink()
 
         latest_report.symlink_to(report_file.name)
-        latest_recs.symlink_to(recs_file.name)
+        latest_metrics.symlink_to(metrics_file.name)
 
         print("\n✓ Analysis complete!")
         print(f"  Report: {report_file}")
-        print(f"  Recommendations: {recs_file}")
+        print(f"  Metrics: {metrics_file}")
         print(f"  Latest: {latest_report}")
 
-        # Send notification to Slack if there are recommendations
-        if prompt_recs or comm_recs:
-            self.send_notification(metrics, len(prompt_recs), len(comm_recs), report_file, report)
+        # Send notification if there are recommendations
+        if recommendations:
+            self.send_notification(
+                slack_metrics, github_metrics, recommendations, report_file, report
+            )
 
         return report
 
     def send_notification(
         self,
-        metrics: dict[str, Any],
-        prompt_rec_count: int,
-        comm_rec_count: int,
+        slack_metrics: dict[str, Any],
+        github_metrics: dict[str, Any],
+        recommendations: list[dict[str, Any]],
         report_file: Path,
         full_report: str,
     ):
-        """Send notification about analysis results via Slack with threading"""
+        """Send notification about analysis results."""
         notification_dir = Path.home() / "sharing" / "notifications"
         notification_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         task_id = f"{timestamp}-conversation-analysis"
 
-        # Determine priority based on recommendations
-        total_recs = prompt_rec_count + comm_rec_count
-        if total_recs >= 5:
+        # Determine priority
+        high_priority_count = sum(1 for r in recommendations if r["priority"] == "HIGH")
+        if high_priority_count >= 2:
             priority = "HIGH"
-        elif total_recs >= 2:
+        elif high_priority_count >= 1 or len(recommendations) >= 3:
             priority = "MEDIUM"
         else:
             priority = "LOW"
 
-        # Create short summary notification (top-level message)
+        # Create summary notification
         summary_file = notification_dir / f"{task_id}.md"
-        summary = f"""# 📊 Conversation Analysis Complete
+        summary = f"""# 📊 Communication Analysis Complete
 
-**Priority**: {priority} | {metrics["total_sessions"]} conversations analyzed | {total_recs} recommendations
+**Priority**: {priority} | {len(recommendations)} recommendations
 
 **Quick Stats:**
-- ✅ Success: {metrics["successful_sessions"]} | ❌ Failed: {metrics["failed_sessions"]} | 🚫 Blocked: {metrics["blocked_sessions"]}
-- Quality: {metrics["avg_quality_score"]:.1f}/10 | Single-iteration success: {metrics["single_iteration_success_rate"]:.1f}%
-- 🎯 Prompt improvements: {prompt_rec_count} | 💬 Communication improvements: {comm_rec_count}
+- 💬 Slack: {slack_metrics["total_threads"]} threads ({slack_metrics["resolution_rate"]:.0f}% resolved)
+- 🔀 GitHub: {github_metrics["total_prs"]} PRs ({github_metrics["merge_rate"]:.0f}% merged)
+- 🎯 First-try success: {github_metrics["first_try_success_rate"]:.0f}%
 
 📄 Full report in thread below
 """
@@ -588,56 +1004,22 @@ Period: Last {self.days} days
 
         # Create detailed report (thread reply)
         detail_file = notification_dir / f"RESPONSE-{task_id}.md"
-        detail = f"""# Full Conversation Analysis Report
-
-## Session Outcomes
-- ✅ Successful: {metrics["successful_sessions"]}
-- ❌ Failed: {metrics["failed_sessions"]}
-- 🚫 Blocked: {metrics["blocked_sessions"]}
-- ⚠️ Partial: {metrics["partial_sessions"]}
-
-## Performance Metrics
-- Average iterations: {metrics["avg_iterations"]:.1f}
-- Average quality score: {metrics["avg_quality_score"]:.1f}/10
-- Single-iteration success rate: {metrics["single_iteration_success_rate"]:.1f}%
-- Average duration: {metrics["avg_duration_minutes"]:.1f} minutes
-- Average messages: {metrics["avg_messages_per_session"]:.1f} per session
-
-## Recommendations
-- 🎯 Prompt improvements: {prompt_rec_count}
-- 💬 Communication improvements: {comm_rec_count}
-
----
-
-{full_report}
-
----
-
-**Report Location**: `{report_file}`
-"""
-
         with open(detail_file, "w") as f:
-            f.write(detail)
+            f.write(full_report)
 
         print(f"  Detailed report (thread): {detail_file}")
 
 
 def check_last_run(analysis_dir: Path) -> datetime | None:
-    """Check when the analyzer was last run by finding the most recent report."""
+    """Check when the analyzer was last run."""
     try:
-        # Find all conversation analysis reports
         reports = list(analysis_dir.glob("analysis-*.md"))
-
         if not reports:
             return None
 
-        # Sort by modification time, get most recent
         reports.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         most_recent = reports[0]
-
-        # Get modification time
-        mtime = datetime.fromtimestamp(most_recent.stat().st_mtime)
-        return mtime
+        return datetime.fromtimestamp(most_recent.stat().st_mtime)
     except Exception as e:
         logging.error(f"Error checking last run: {e}")
         return None
@@ -668,13 +1050,13 @@ def should_run_analysis(analysis_dir: Path, force: bool = False) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyze jib conversation logs",
+        description="Analyze jib's Slack threads and GitHub PRs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s                    # Run if last analysis was >7 days ago
   %(prog)s --force            # Force run regardless of schedule
-  %(prog)s --days 30          # Analyze last 30 days of logs
+  %(prog)s --days 30          # Analyze last 30 days
         """,
     )
     parser.add_argument(
@@ -691,7 +1073,7 @@ Examples:
     # Determine analysis directory
     analysis_dir = args.output if args.output else ANALYSIS_DIR
 
-    # Check if we should run based on weekly schedule
+    # Check if we should run
     if not should_run_analysis(analysis_dir, force=args.force):
         sys.exit(0)
 
