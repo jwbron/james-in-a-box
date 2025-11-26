@@ -108,6 +108,7 @@ class PRContextManager:
         try:
             result = subprocess.run(
                 ["bd", "list", "--search", context_id, "--allow-stale"],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
@@ -137,6 +138,7 @@ class PRContextManager:
         try:
             result = subprocess.run(
                 ["bd", "show", task_id, "--allow-stale"],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
@@ -172,6 +174,7 @@ class PRContextManager:
                     repo_name,
                     "--allow-stale",
                 ],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
@@ -211,6 +214,7 @@ class PRContextManager:
 
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
@@ -464,7 +468,7 @@ class CommentResponder:
         pr_file_context = self.load_pr_context(repo_name, pr_num)
 
         # Get or create beads context for this PR
-        pr_title = pr_file_context.get('title', f'PR #{pr_num}')
+        pr_title = pr_file_context.get("title", f"PR #{pr_num}")
         beads_task_id = self.pr_context.get_or_create_context(repo, pr_num, pr_title)
 
         # Load existing beads context (previous interactions history)
@@ -513,9 +517,11 @@ class CommentResponder:
 
         # Update beads context with processed comments
         if beads_task_id:
-            comment_authors = list(set(c.get('author', 'unknown') for c in pending_comments))
-            notes = f"Processed {len(pending_comments)} comment(s) from: {', '.join(comment_authors)}"
-            self.pr_context.update_context(beads_task_id, notes, status='in_progress')
+            comment_authors = list({c.get("author", "unknown") for c in pending_comments})
+            notes = (
+                f"Processed {len(pending_comments)} comment(s) from: {', '.join(comment_authors)}"
+            )
+            self.pr_context.update_context(beads_task_id, notes, status="in_progress")
 
         return True
 
@@ -596,14 +602,14 @@ class CommentResponder:
 
         # Build previous interactions section from beads
         previous_interactions = ""
-        if beads_context and beads_context.get('content'):
+        if beads_context and beads_context.get("content"):
             previous_interactions = f"""
 ## Previous Interactions (from Beads)
 
 This PR has been worked on before. Here's the history of previous interactions:
 
 ```
-{beads_context.get('content', '')[:2000]}
+{beads_context.get("content", "")[:2000]}
 ```
 
 Use this context to understand what has already been done and avoid repeating work.
@@ -623,7 +629,7 @@ Use this context to understand what has already been done and avoid repeating wo
 - **PR Branch**: {pr_branch} → {base_branch}
 - **Access**: {"WRITE (can make changes and push)" if writable else "READ-ONLY"}
 - **Repo Directory**: {repo_dir if repo_dir else "Not found locally"}
-- **Beads Task**: {beads_context.get('task_id', 'None') if beads_context else 'None'}
+- **Beads Task**: {beads_context.get("task_id", "None") if beads_context else "None"}
 {previous_interactions}
 ## PR Description
 

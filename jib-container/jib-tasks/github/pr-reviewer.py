@@ -65,6 +65,7 @@ class PRContextManager:
         try:
             result = subprocess.run(
                 ["bd", "list", "--search", context_id, "--allow-stale"],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
@@ -94,6 +95,7 @@ class PRContextManager:
         try:
             result = subprocess.run(
                 ["bd", "show", task_id, "--allow-stale"],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
@@ -129,6 +131,7 @@ class PRContextManager:
                     repo_name,
                     "--allow-stale",
                 ],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
@@ -168,6 +171,7 @@ class PRContextManager:
 
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
