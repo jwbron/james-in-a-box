@@ -1,13 +1,13 @@
 [Unit]
-Description=Weekly Codebase Improvement Analysis Timer
-Documentation=https://github.com/jwiesebron/james-in-a-box
+Description=Daily Codebase Improvement Analysis Timer
+Documentation=https://github.com/jwbron/james-in-a-box
 Requires=codebase-analyzer.service
 
 [Timer]
-# Run weekly on Monday at 11:00 AM (assumes system timezone is set to America/Los_Angeles)
-OnCalendar=Mon *-*-* 11:00:00
+# Run daily at 11:00 AM (assumes system timezone is set to America/Los_Angeles)
+OnCalendar=*-*-* 11:00:00
 
-# Run 5 minutes after system boot (script checks if already run this week)
+# Run 5 minutes after system boot (script checks if already run today)
 OnBootSec=5min
 
 # If system was off when timer should have run, run it on next boot
