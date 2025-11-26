@@ -182,7 +182,7 @@ def list_projects_with_symlinks():
                         try:
                             if item.resolve() == source_path:
                                 found_links.append((project, item))
-                        except:
+                        except Exception as e:
                             pass
 
     if found_links:

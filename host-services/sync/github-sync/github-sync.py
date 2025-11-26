@@ -282,7 +282,8 @@ class GitHubSync:
             # List jobs for the check
             # This is a best-effort attempt
             return None
-        except:
+        except Exception as e:
+            print(f"      Error in fallback log fetch: {e}", file=sys.stderr)
             return None
 
     def write_comments(self, pr_num: int, repo: str, comments: list[dict]):

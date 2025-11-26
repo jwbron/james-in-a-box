@@ -3,11 +3,14 @@
 Automatically create symlinks to Confluence documentation in all Khan Academy git projects.
 """
 
+import logging
 import sys
 from pathlib import Path
 
 from connectors.confluence.config import ConfluenceConfig
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 
 def find_git_projects(base_path: str) -> list[Path]:
@@ -219,8 +222,8 @@ def list_khan_projects_with_links():
                 try:
                     if item.resolve() == source_path:
                         found_links.append((project, item))
-                except:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to resolve symlink %s: %s", item, e)
 
     if found_links:
         for project, symlink in found_links:
