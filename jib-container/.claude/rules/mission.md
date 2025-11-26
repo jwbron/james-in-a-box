@@ -47,14 +47,7 @@ This is NOT optional. Beads enables persistent memory across container restarts.
 
 ### GitHub Operations - USE GITHUB MCP
 
-All GitHub operations go through the **GitHub MCP server**. This provides real-time, bi-directional access.
-
-**Available MCP Tools:**
-- **PRs**: `create_pull_request`, `get_pull_request`, `list_pull_requests`
-- **Issues**: `search_issues`, `get_issue`, `create_issue`, `update_issue`
-- **Comments**: `add_issue_comment`, `list_issue_comments`
-- **Repos**: `search_repositories`, `get_file_contents`, `push_files`
-- **Branches**: `create_branch`, `list_branches`
+All GitHub operations go through the **GitHub MCP server**. See `environment.md` for available tools and configuration.
 
 **For PR creation with notifications**, use `create-pr-helper.py`:
 ```bash

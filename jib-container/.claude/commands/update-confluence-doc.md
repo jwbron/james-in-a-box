@@ -1,10 +1,10 @@
 # Claude Command: Update Confluence Document
 
-**Command**: `@update-confluence-doc <path-to-document>`
+**Command**: `/update-confluence-doc <path-to-document>`
 
 **Examples**:
-- `@update-confluence-doc ~/context-sync/confluence/ENG/ADRs/ADR-123.md`
-- `@update-confluence-doc ADR #895`
+- `/update-confluence-doc ~/context-sync/confluence/ENG/ADRs/ADR-123.md`
+- `/update-confluence-doc ADR #895`
 
 ## Purpose
 

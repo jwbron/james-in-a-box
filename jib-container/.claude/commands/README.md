@@ -67,6 +67,30 @@ Sync Beads repository with git.
 
 **File**: `beads-sync.md`
 
+### /update-confluence-doc <path>
+Prepare updates for a Confluence document based on inline comments.
+
+**Usage**: `/update-confluence-doc ~/context-sync/confluence/ENG/ADRs/ADR-123.md`
+
+**What it does**:
+- Reads document and synced comments
+- Generates "Changed Sections Only" document
+- Formats output for copy-paste into Confluence
+
+**File**: `update-confluence-doc.md`
+
+### /show-metrics
+Generate a monitoring report showing recent agent activity.
+
+**Usage**: `/show-metrics`
+
+**What it does**:
+- Shows API usage metrics
+- Task completion statistics
+- Context source usage
+
+**File**: `show-metrics.md`
+
 ## How Commands Work
 
 These commands are **slash commands** for Claude Code. They are markdown files that provide instructions to Claude on how to respond when you use the command syntax.
@@ -124,4 +148,4 @@ Claude Code will follow these instructions when users invoke the slash command s
 
 ---
 
-**Last Updated**: 2025-11-25
+**Last Updated**: 2025-11-26
