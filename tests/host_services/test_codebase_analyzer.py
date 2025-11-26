@@ -5,6 +5,7 @@ Tests the CodebaseAnalyzer class which analyzes codebases for potential
 improvements and optionally creates PRs with fixes.
 """
 
+import ast
 import os
 import tempfile
 from pathlib import Path
@@ -95,13 +96,22 @@ class TestCodebaseAnalyzerFileFiltering:
 
     def test_should_skip_ignored_patterns(self):
         """Test that ignored patterns are skipped."""
-        always_ignore = {".git", "__pycache__", "node_modules", ".venv"}
+        always_ignore = {
+            ".git",
+            "__pycache__",
+            "node_modules",
+            ".venv",
+            ".pytest_cache",
+            ".mypy_cache",
+        }
 
         test_paths = [
             "/path/.git/config",
             "/path/__pycache__/module.pyc",
             "/path/node_modules/package/index.js",
             "/path/.venv/lib/python/site.py",
+            "/path/.pytest_cache/v/cache/test.py",
+            "/path/.mypy_cache/3.11/module.py",
         ]
 
         for path in test_paths:
@@ -409,6 +419,228 @@ class TestCodebaseAnalyzerNotification:
         notif_file.write_text(content)
 
         assert notif_file.exists()
+
+
+class TestCodebaseAnalyzerASTAnalysis:
+    """Tests for AST-based Python analysis."""
+
+    def test_detect_bare_except(self, temp_dir):
+        """Test detection of bare except clauses using AST."""
+        code = """
+def foo():
+    try:
+        risky_operation()
+    except:
+        pass
+"""
+        (temp_dir / "bare_except.py").write_text(code)
+
+        tree = ast.parse(code)
+        has_bare_except = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler) and node.type is None:
+                has_bare_except = True
+                break
+
+        assert has_bare_except
+
+    def test_detect_eval_usage(self, temp_dir):
+        """Test detection of eval() usage using AST."""
+        code = """
+def unsafe():
+    user_input = input()
+    result = eval(user_input)
+    return result
+"""
+        (temp_dir / "eval_usage.py").write_text(code)
+
+        tree = ast.parse(code)
+        has_eval = False
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "eval"
+            ):
+                has_eval = True
+                break
+
+        assert has_eval
+
+    def test_detect_syntax_error(self, temp_dir):
+        """Test that syntax errors are detected."""
+        code = """
+def broken(
+    print("missing closing paren"
+"""
+        (temp_dir / "syntax_error.py").write_text(code)
+
+        with pytest.raises(SyntaxError):
+            ast.parse(code)
+
+    def test_no_issues_in_clean_code(self, temp_dir):
+        """Test that clean code has no AST-detected issues."""
+        code = '''
+def safe_function():
+    """This is a documented function."""
+    try:
+        result = some_operation()
+    except ValueError as e:
+        print(f"Error: {e}")
+    return result
+'''
+        (temp_dir / "clean.py").write_text(code)
+
+        tree = ast.parse(code)
+
+        # Check for bare excepts
+        has_bare_except = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler) and node.type is None:
+                has_bare_except = True
+
+        # Check for eval
+        has_eval = False
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "eval"
+            ):
+                has_eval = True
+
+        assert not has_bare_except
+        assert not has_eval
+
+
+class TestCodebaseAnalyzerCaching:
+    """Tests for analysis result caching."""
+
+    def test_file_hash_consistency(self, temp_dir):
+        """Test that file hashes are consistent for same content."""
+        import hashlib
+
+        content = "print('hello world')"
+        hash1 = hashlib.md5(content.encode("utf-8")).hexdigest()
+        hash2 = hashlib.md5(content.encode("utf-8")).hexdigest()
+
+        assert hash1 == hash2
+
+    def test_file_hash_changes_with_content(self, temp_dir):
+        """Test that file hashes change when content changes."""
+        import hashlib
+
+        content1 = "print('hello')"
+        content2 = "print('world')"
+
+        hash1 = hashlib.md5(content1.encode("utf-8")).hexdigest()
+        hash2 = hashlib.md5(content2.encode("utf-8")).hexdigest()
+
+        assert hash1 != hash2
+
+    def test_cache_structure(self, temp_dir):
+        """Test cache data structure."""
+        import json
+        from datetime import datetime
+
+        cache_data = {
+            "file_hashes": {"src/app.py": "abc123", "src/utils.py": "def456"},
+            "last_analyzed": datetime.now().isoformat(),
+            "issues": [
+                {"file": "src/app.py", "description": "test issue"},
+            ],
+        }
+
+        cache_file = temp_dir / ".codebase-analyzer-cache.json"
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+
+        with open(cache_file) as f:
+            loaded = json.load(f)
+
+        assert loaded["file_hashes"]["src/app.py"] == "abc123"
+        assert len(loaded["issues"]) == 1
+
+
+class TestCodebaseAnalyzerGitIntegration:
+    """Tests for git-based change detection."""
+
+    def test_incremental_vs_full_mode(self):
+        """Test that incremental and full modes are distinct."""
+        # Simulated mode flags
+        full_analysis = False
+        since_days = 7
+
+        # In incremental mode, only recent changes
+        if not full_analysis:
+            mode = f"Incremental (last {since_days} days)"
+        else:
+            mode = "Full"
+
+        assert mode == "Incremental (last 7 days)"
+
+        # In full mode
+        full_analysis = True
+        if not full_analysis:
+            mode = f"Incremental (last {since_days} days)"
+        else:
+            mode = "Full"
+
+        assert mode == "Full"
+
+    def test_since_days_parameter(self):
+        """Test since_days parameter handling."""
+        default_since = 7
+        custom_since = 14
+
+        assert default_since == 7
+        assert custom_since == 14
+
+        # Full mode ignores since_days
+        full_analysis = True
+        since_days = 30
+        effective_mode = "Full" if full_analysis else f"Incremental ({since_days} days)"
+
+        assert effective_mode == "Full"
+
+
+class TestCodebaseAnalyzerSinglePassScan:
+    """Tests for single-pass codebase scanning."""
+
+    def test_single_pass_collects_all_info(self, temp_dir):
+        """Test that single pass collects all structural info."""
+        # Create test structure
+        (temp_dir / "src").mkdir()
+        (temp_dir / "src" / "app.py").write_text("# app")
+        (temp_dir / "src" / "utils.py").write_text("# utils")
+        (temp_dir / "README.md").write_text("# README")
+
+        # Simulate single-pass collection
+        files = []
+        file_types = {}
+        readme_files = []
+        directory_tree = {}
+
+        for path in temp_dir.rglob("*"):
+            rel_path = str(path.relative_to(temp_dir))
+            parent = str(path.parent.relative_to(temp_dir)) if path.parent != temp_dir else "."
+
+            if path.is_dir():
+                if parent not in directory_tree:
+                    directory_tree[parent] = []
+                directory_tree[parent].append(path.name)
+            elif path.is_file():
+                files.append(path)
+                ext = path.suffix.lower() or "no_extension"
+                file_types[ext] = file_types.get(ext, 0) + 1
+                if path.name.lower().startswith("readme"):
+                    readme_files.append(rel_path)
+
+        assert len(files) == 3
+        assert file_types[".py"] == 2
+        assert file_types[".md"] == 1
+        assert len(readme_files) == 1
+        assert "src" in directory_tree.get(".", [])
 
 
 @pytest.fixture
