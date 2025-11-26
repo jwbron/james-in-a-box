@@ -157,11 +157,12 @@ def fetch_pr_context(owner: str, repo: str, pr_number: int) -> dict:
         context["reviews"] = reviews_data.get("reviews", [])
 
     # 7. CI status / checks
+    # Note: gh pr checks uses 'state' not 'conclusion', and 'link' not 'detailsUrl'
     print("  - CI checks...")
     checks_json = run_gh([
         "pr", "checks", pr_ref,
         "--repo", repo_ref,
-        "--json", "name,state,conclusion,startedAt,completedAt,detailsUrl"
+        "--json", "name,state,startedAt,completedAt,link,workflow"
     ], check=False)
     if checks_json:
         try:
@@ -185,12 +186,12 @@ def fetch_pr_context(owner: str, repo: str, pr_number: int) -> dict:
     context["failed_check_logs"] = {}
     if context.get("checks"):
         for check in context["checks"]:
-            if check.get("conclusion") in ["failure", "FAILURE"]:
+            if check.get("state", "").upper() in ("FAILURE", "FAILED"):
                 check_name = check.get("name", "unknown")
                 print(f"    - Fetching logs for failed check: {check_name}...")
 
-                # Try to get run ID from details URL
-                details_url = check.get("detailsUrl", "")
+                # Try to get run ID from link URL (gh pr checks uses 'link' not 'detailsUrl')
+                details_url = check.get("link", "")
                 run_id_match = re.search(r'/runs/(\d+)', details_url)
                 if run_id_match:
                     run_id = run_id_match.group(1)

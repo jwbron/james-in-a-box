@@ -78,19 +78,20 @@ def format_checks(ctx: dict) -> str:
     lines = ["## CI Checks\n"]
 
     # Group by status
-    failed = [c for c in checks if c.get("conclusion") in ["failure", "FAILURE"]]
+    # Note: gh pr checks uses 'state' (e.g., 'FAILURE', 'SUCCESS') not 'conclusion'
+    failed = [c for c in checks if c.get("state", "").upper() in ("FAILURE", "FAILED")]
     pending = [
-        c for c in checks if c.get("state") in ["pending", "PENDING", "in_progress", "IN_PROGRESS"]
+        c for c in checks if c.get("state", "").upper() in ("PENDING", "IN_PROGRESS", "QUEUED")
     ]
-    passed = [c for c in checks if c.get("conclusion") in ["success", "SUCCESS"]]
+    passed = [c for c in checks if c.get("state", "").upper() == "SUCCESS"]
     [c for c in checks if c not in failed and c not in pending and c not in passed]
 
     if failed:
         lines.append("### Failed")
         for c in failed:
-            lines.append(f"- **{c.get('name')}** - {c.get('conclusion')}")
-            if c.get("detailsUrl"):
-                lines.append(f"  - Details: {c.get('detailsUrl')}")
+            lines.append(f"- **{c.get('name')}** - {c.get('state')}")
+            if c.get("link"):
+                lines.append(f"  - Details: {c.get('link')}")
 
     if pending:
         lines.append("\n### In Progress")

@@ -63,7 +63,10 @@ class GitHubWatcher:
         repo_name = repo.split("/")[-1]
 
         # Find failed checks
-        failed_checks = [c for c in data["checks"] if c.get("conclusion") == "failure"]
+        # Note: gh pr checks uses 'state' (e.g., 'FAILURE') not 'conclusion'
+        failed_checks = [
+            c for c in data["checks"] if c.get("state", "").upper() in ("FAILURE", "FAILED")
+        ]
 
         if not failed_checks:
             return  # All passing
@@ -163,8 +166,7 @@ class GitHubWatcher:
             # List failed checks with logs
             for check in failed_checks:
                 f.write(f"## ❌ {check['name']}\n\n")
-                f.write(f"**Status**: {check['status']}\n")
-                f.write(f"**Conclusion**: {check['conclusion']}\n")
+                f.write(f"**State**: {check.get('state', 'FAILURE')}\n")
                 if check.get("completedAt"):
                     f.write(f"**Completed**: {check['completedAt']}\n")
                 f.write("\n")
