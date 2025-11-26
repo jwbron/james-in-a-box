@@ -196,7 +196,7 @@ All host components run as systemd user services for reliability and auto-restar
 - **[service-monitor](host-services/utilities/service-monitor/README.md)** - Notifies on service failures
 
 **CLI:**
-- **[analyze-pr](host-services/cli/analyze-pr/README.md)** - Analyze GitHub PRs with Claude
+- **[analyze-pr](host-services/analysis/analyze-pr/README.md)** - Analyze GitHub PRs with Claude
 
 ### Container Tasks (`jib-tasks/`)
 
