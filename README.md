@@ -603,6 +603,48 @@ bin/jib --rebuild
 3. Verify slack-receiver service is running (`systemctl --user status slack-receiver`)
 4. Check logs: `journalctl --user -u slack-receiver.service -f`
 
+## Development
+
+### Linting
+
+This project uses multiple linters to maintain code quality:
+
+| Tool | Purpose | Auto-fix |
+|------|---------|----------|
+| [ruff](https://docs.astral.sh/ruff/) | Python linting & formatting | Yes |
+| [shfmt](https://github.com/mvdan/sh) | Shell script formatting | Yes |
+| [shellcheck](https://www.shellcheck.net/) | Shell script analysis | No |
+| [yamllint](https://yamllint.readthedocs.io/) | YAML linting | Partial (trailing spaces) |
+| [hadolint](https://github.com/hadolint/hadolint) | Dockerfile linting | No |
+| [actionlint](https://github.com/rhysd/actionlint) | GitHub Actions linting | No |
+
+**Quick commands:**
+```bash
+make lint              # Run all linters
+make lint-fix          # Run all linters with auto-fix
+make lint-fix-jib      # Fix remaining issues with jib
+make lint-python-fix   # Fix Python issues
+make lint-shell-fix    # Format shell scripts
+make lint-yaml-fix     # Fix YAML trailing spaces
+make install-linters   # Install linting tools
+make check-linters     # Verify installation
+```
+
+**Workflow for fixing all lint issues:**
+```bash
+make lint-fix          # First, auto-fix what we can
+make lint-fix-jib      # Then, let jib fix the rest
+```
+
+**Individual linters:**
+```bash
+make lint-python       # ruff check + format check
+make lint-shell        # shellcheck
+make lint-yaml         # yamllint
+make lint-docker       # hadolint
+make lint-workflows    # actionlint (GitHub Actions)
+```
+
 ## Contributing
 
 This is an internal Khan Academy tool. For questions or issues:

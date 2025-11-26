@@ -1,0 +1,55 @@
+# Yamllint configuration
+# See: https://yamllint.readthedocs.io/en/stable/configuration.html
+
+extends: default
+
+rules:
+  # Line length - be generous for configs
+  line-length:
+    max: 120
+    level: warning
+    allow-non-breakable-inline-mappings: true
+
+  # Allow document start without ---
+  document-start: disable
+
+  # Allow multiple spaces for alignment
+  indentation:
+    spaces: 2
+    indent-sequences: true
+    check-multi-line-strings: false
+
+  # Trailing spaces
+  trailing-spaces: enable
+
+  # Comments
+  comments:
+    require-starting-space: true
+    min-spaces-from-content: 1
+
+  # Brackets and braces
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 0
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+
+  # Truthy values - allow 'yes', 'no', 'on', 'off' in addition to true/false
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no', 'on', 'off']
+    check-keys: false
+
+  # Empty lines
+  empty-lines:
+    max: 2
+    max-start: 0
+    max-end: 1
+
+  # New line at end of file
+  new-line-at-end-of-file: enable
+
+ignore: |
+  .venv/
+  venv/
+  node_modules/
