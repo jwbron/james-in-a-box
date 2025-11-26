@@ -16,14 +16,12 @@ Can be used standalone (CLI) or imported by slack-receiver.py.
 
 import argparse
 import logging
-import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable
 
 
 class CommandType(Enum):
@@ -59,9 +57,7 @@ class HostCommandHandler:
             log_file: Path to log file.
                      Defaults to ~/.config/jib-notifier/remote-control.log
         """
-        self.notification_dir = notification_dir or (
-            Path.home() / ".jib-sharing" / "notifications"
-        )
+        self.notification_dir = notification_dir or (Path.home() / ".jib-sharing" / "notifications")
         self.log_file = log_file or (
             Path.home() / ".config" / "jib-notifier" / "remote-control.log"
         )
@@ -157,6 +153,7 @@ Executed at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         try:
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=capture_output,
                 text=True,
                 timeout=timeout,
@@ -194,7 +191,14 @@ Executed at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
             # Get uptime
             code, uptime, _ = self._run_command(
-                ["docker", "ps", "--filter", f"name={self.CONTAINER_NAME}", "--format", "{{.Status}}"]
+                [
+                    "docker",
+                    "ps",
+                    "--filter",
+                    f"name={self.CONTAINER_NAME}",
+                    "--format",
+                    "{{.Status}}",
+                ]
             )
             uptime = uptime.strip() if code == 0 else "N/A"
         else:
@@ -238,6 +242,7 @@ Uptime: {uptime}"""
         )
 
         import time
+
         time.sleep(3)
 
         if self._docker_ps_contains(self.CONTAINER_NAME):
@@ -278,6 +283,7 @@ Uptime: {uptime}"""
         )
 
         import time
+
         time.sleep(5)
 
         if self._docker_ps_contains(self.CONTAINER_NAME):
@@ -344,7 +350,7 @@ Uptime: {uptime}"""
         active = "✅ Active" if self._is_service_active(service_name) else "❌ Inactive"
         enabled = "✅ Enabled" if self._is_service_enabled(service_name) else "❌ Disabled"
 
-        code, status, stderr = self._systemctl_user("status", service_name, "--no-pager")
+        _code, status, stderr = self._systemctl_user("status", service_name, "--no-pager")
         # Get last 10 lines of status
         status_lines = (status or stderr).strip().split("\n")[-10:]
         status_output = "\n".join(status_lines)
@@ -368,9 +374,10 @@ Recent Status:
         """
         self.log(f"Restarting service: {service_name}")
 
-        code, stdout, stderr = self._systemctl_user("restart", service_name)
+        self._systemctl_user("restart", service_name)
 
         import time
+
         time.sleep(2)
 
         if self._is_service_active(service_name):
@@ -408,6 +415,7 @@ Recent Status:
         self._systemctl_user("start", service_name)
 
         import time
+
         time.sleep(2)
 
         if self._is_service_active(service_name):
@@ -446,9 +454,7 @@ Recent Status:
         self.log("Listing jib services")
 
         # List services
-        code, services_raw, _ = self._systemctl_user(
-            "list-units", "--type=service,timer", "--all"
-        )
+        code, services_raw, _ = self._systemctl_user("list-units", "--type=service,timer", "--all")
 
         # Filter for jib-related services
         services_lines = []
@@ -456,7 +462,10 @@ Recent Status:
 
         if code == 0:
             for line in services_raw.split("\n"):
-                if any(pattern in line for pattern in ["slack-", "codebase-", "conversation-", "service-failure"]):
+                if any(
+                    pattern in line
+                    for pattern in ["slack-", "codebase-", "conversation-", "service-failure"]
+                ):
                     if ".timer" in line:
                         timers_lines.append(line)
                     else:
