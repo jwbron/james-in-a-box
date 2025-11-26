@@ -4,32 +4,33 @@ Test that all Python files have valid syntax and can be parsed.
 This is a baseline "does it compile" test suite. It ensures all Python
 files in the repository have valid syntax before running more specific tests.
 """
+
 import ast
 import py_compile
-import sys
 from pathlib import Path
 
 import pytest
+
 
 # Get project root
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # Directories to exclude from testing
 EXCLUDE_DIRS = {
-    '.git',
-    '__pycache__',
-    '.venv',
-    'venv',
-    'node_modules',
-    '.mypy_cache',
-    '.pytest_cache',
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+    ".mypy_cache",
+    ".pytest_cache",
 }
 
 
 def get_python_files():
     """Discover all Python files in the repository."""
     python_files = []
-    for py_file in PROJECT_ROOT.rglob('*.py'):
+    for py_file in PROJECT_ROOT.rglob("*.py"):
         # Skip excluded directories
         if any(excluded in py_file.parts for excluded in EXCLUDE_DIRS):
             continue
@@ -57,7 +58,7 @@ class TestPythonSyntax:
     def test_ast_parse(self, py_file: Path):
         """Test that Python file can be parsed as an AST."""
         try:
-            source = py_file.read_text(encoding='utf-8')
+            source = py_file.read_text(encoding="utf-8")
             ast.parse(source, filename=str(py_file))
         except SyntaxError as e:
             pytest.fail(f"AST parse error in {py_file}:{e.lineno}: {e.msg}")
@@ -75,14 +76,13 @@ class TestPythonImports:
         execute imports (which could have side effects or missing deps).
         """
         try:
-            source = py_file.read_text(encoding='utf-8')
+            source = py_file.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(py_file))
 
             # Just verify we can find import statements - actual import
             # testing would require installing all dependencies
             import_count = sum(
-                1 for node in ast.walk(tree)
-                if isinstance(node, (ast.Import, ast.ImportFrom))
+                1 for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))
             )
             # This assertion always passes; the test is really about
             # whether parsing succeeds

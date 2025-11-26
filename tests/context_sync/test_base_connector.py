@@ -4,11 +4,9 @@ Tests for the BaseConnector abstract class.
 Tests the abstract base class that all context-sync connectors inherit from.
 """
 
-import pickle
 import logging
+import pickle
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -65,11 +63,11 @@ class TestSetupLogger:
     def test_logger_format_contains_connector_name(self):
         """Test that log format includes connector name."""
         connector_name = "confluence"
-        format_str = f'[{connector_name}] %(levelname)s: %(message)s'
+        format_str = f"[{connector_name}] %(levelname)s: %(message)s"
 
         assert connector_name in format_str
-        assert '%(levelname)s' in format_str
-        assert '%(message)s' in format_str
+        assert "%(levelname)s" in format_str
+        assert "%(message)s" in format_str
 
 
 class TestLoadSyncState:
@@ -78,12 +76,12 @@ class TestLoadSyncState:
     def test_load_state_from_valid_file(self, temp_dir):
         """Test loading sync state from valid pickle file."""
         state_file = temp_dir / ".sync_state"
-        test_state = {'last_sync': '2024-01-01', 'pages': [1, 2, 3]}
+        test_state = {"last_sync": "2024-01-01", "pages": [1, 2, 3]}
 
-        with open(state_file, 'wb') as f:
+        with open(state_file, "wb") as f:
             pickle.dump(test_state, f)
 
-        with open(state_file, 'rb') as f:
+        with open(state_file, "rb") as f:
             loaded_state = pickle.load(f)
 
         assert loaded_state == test_state
@@ -94,7 +92,11 @@ class TestLoadSyncState:
         assert not state_file.exists()
 
         # Should return empty dict
-        default_state = {} if not state_file.exists() else pickle.load(open(state_file, 'rb'))
+        if state_file.exists():
+            with open(state_file, "rb") as f:
+                default_state = pickle.load(f)
+        else:
+            default_state = {}
         assert default_state == {}
 
     def test_load_state_corrupted_file(self, temp_dir):
@@ -102,8 +104,8 @@ class TestLoadSyncState:
         state_file = temp_dir / ".sync_state"
         state_file.write_text("not a valid pickle")
 
-        with pytest.raises(Exception):
-            with open(state_file, 'rb') as f:
+        with pytest.raises((pickle.UnpicklingError, EOFError, ValueError)):
+            with open(state_file, "rb") as f:
                 pickle.load(f)
 
     def test_load_state_returns_empty_on_error(self, temp_dir):
@@ -112,7 +114,7 @@ class TestLoadSyncState:
         state_file.write_text("corrupted")
 
         try:
-            with open(state_file, 'rb') as f:
+            with open(state_file, "rb") as f:
                 state = pickle.load(f)
         except Exception:
             state = {}
@@ -126,9 +128,9 @@ class TestSaveSyncState:
     def test_save_state_creates_file(self, temp_dir):
         """Test that save creates the state file."""
         state_file = temp_dir / ".sync_state"
-        test_state = {'last_sync': '2024-01-01'}
+        test_state = {"last_sync": "2024-01-01"}
 
-        with open(state_file, 'wb') as f:
+        with open(state_file, "wb") as f:
             pickle.dump(test_state, f)
 
         assert state_file.exists()
@@ -138,40 +140,40 @@ class TestSaveSyncState:
         state_file = temp_dir / ".sync_state"
 
         # Save initial state
-        initial_state = {'version': 1}
-        with open(state_file, 'wb') as f:
+        initial_state = {"version": 1}
+        with open(state_file, "wb") as f:
             pickle.dump(initial_state, f)
 
         # Save new state
-        new_state = {'version': 2}
-        with open(state_file, 'wb') as f:
+        new_state = {"version": 2}
+        with open(state_file, "wb") as f:
             pickle.dump(new_state, f)
 
         # Verify new state was saved
-        with open(state_file, 'rb') as f:
+        with open(state_file, "rb") as f:
             loaded = pickle.load(f)
 
-        assert loaded['version'] == 2
+        assert loaded["version"] == 2
 
     def test_save_state_preserves_complex_types(self, temp_dir):
         """Test that save preserves complex Python types."""
         state_file = temp_dir / ".sync_state"
         complex_state = {
-            'pages': [1, 2, 3],
-            'metadata': {'key': 'value'},
-            'timestamp': datetime.now(),
-            'enabled': True
+            "pages": [1, 2, 3],
+            "metadata": {"key": "value"},
+            "timestamp": datetime.now(),
+            "enabled": True,
         }
 
-        with open(state_file, 'wb') as f:
+        with open(state_file, "wb") as f:
             pickle.dump(complex_state, f)
 
-        with open(state_file, 'rb') as f:
+        with open(state_file, "rb") as f:
             loaded = pickle.load(f)
 
-        assert loaded['pages'] == [1, 2, 3]
-        assert loaded['metadata'] == {'key': 'value'}
-        assert loaded['enabled'] is True
+        assert loaded["pages"] == [1, 2, 3]
+        assert loaded["metadata"] == {"key": "value"}
+        assert loaded["enabled"] is True
 
 
 class TestGetSyncMetadata:
@@ -183,18 +185,18 @@ class TestGetSyncMetadata:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         metadata = {
-            'connector': 'test',
-            'output_dir': str(output_dir),
-            'last_sync': None,
-            'file_count': 0,
-            'total_size': 0
+            "connector": "test",
+            "output_dir": str(output_dir),
+            "last_sync": None,
+            "file_count": 0,
+            "total_size": 0,
         }
 
-        assert 'connector' in metadata
-        assert 'output_dir' in metadata
-        assert 'last_sync' in metadata
-        assert 'file_count' in metadata
-        assert 'total_size' in metadata
+        assert "connector" in metadata
+        assert "output_dir" in metadata
+        assert "last_sync" in metadata
+        assert "file_count" in metadata
+        assert "total_size" in metadata
 
     def test_metadata_counts_files(self, temp_dir):
         """Test that metadata correctly counts files."""
@@ -207,7 +209,7 @@ class TestGetSyncMetadata:
         (output_dir / "subdir").mkdir()
         (output_dir / "subdir" / "file3.md").write_text("content3")
 
-        files = list(output_dir.rglob('*'))
+        files = list(output_dir.rglob("*"))
         file_count = len([f for f in files if f.is_file()])
 
         assert file_count == 3
@@ -221,7 +223,7 @@ class TestGetSyncMetadata:
         (output_dir / "file1.txt").write_text("a" * 100)
         (output_dir / "file2.txt").write_text("b" * 200)
 
-        files = list(output_dir.rglob('*'))
+        files = list(output_dir.rglob("*"))
         total_size = sum(f.stat().st_size for f in files if f.is_file())
 
         assert total_size == 300
@@ -242,7 +244,7 @@ class TestGetSyncMetadata:
         output_dir = temp_dir / "nonexistent"
 
         if output_dir.exists():
-            file_count = len(list(output_dir.rglob('*')))
+            file_count = len(list(output_dir.rglob("*")))
         else:
             file_count = 0
 
@@ -254,16 +256,12 @@ class TestCleanup:
 
     def test_cleanup_returns_dict(self, temp_dir):
         """Test that cleanup returns a dictionary."""
-        results = {
-            'files_to_remove': [],
-            'bytes_to_free': 0,
-            'dry_run': True
-        }
+        results = {"files_to_remove": [], "bytes_to_free": 0, "dry_run": True}
 
         assert isinstance(results, dict)
-        assert 'files_to_remove' in results
-        assert 'bytes_to_free' in results
-        assert 'dry_run' in results
+        assert "files_to_remove" in results
+        assert "bytes_to_free" in results
+        assert "dry_run" in results
 
     def test_cleanup_dry_run_mode(self, temp_dir):
         """Test that dry run doesn't delete files."""
@@ -276,10 +274,9 @@ class TestCleanup:
         # Simulate dry run (file should still exist)
         dry_run = True
         if dry_run:
-            files_to_remove = [test_file]
+            pass
         else:
             test_file.unlink()
-            files_to_remove = []
 
         assert test_file.exists()
 
@@ -338,6 +335,7 @@ class TestSyncMethod:
 
     def test_sync_accepts_incremental_param(self):
         """Test that sync accepts incremental parameter."""
+
         def mock_sync(incremental: bool = True) -> bool:
             return True
 

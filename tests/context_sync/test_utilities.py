@@ -4,11 +4,7 @@ Tests for context-sync utility modules.
 Tests config_loader, maintenance, search, and other utilities.
 """
 
-import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+import contextlib
 
 
 class TestConfigLoader:
@@ -36,11 +32,8 @@ class TestConfigLoader:
     def test_load_env_handles_missing_dotenv(self):
         """Test handling when dotenv module is not available."""
         # Should not raise even if dotenv is missing
-        try:
-            from dotenv import load_dotenv
-            dotenv_available = True
-        except ImportError:
-            dotenv_available = False
+        with contextlib.suppress(ImportError):
+            pass
 
         # Either way, should not crash
         assert True
@@ -121,7 +114,7 @@ class TestMaintenance:
 
         orphaned = []
         for f in space_dir.iterdir():
-            if f.is_file() and f.suffix == '.md' and f.name != 'README.md':
+            if f.is_file() and f.suffix == ".md" and f.name != "README.md":
                 orphaned.append(f)
 
         assert len(orphaned) == 2
@@ -165,7 +158,7 @@ class TestMaintenance:
     def test_maintenance_unknown_command(self, capsys):
         """Test handling of unknown command."""
         command = "--invalid"
-        if command not in ['--status', '--cleanup']:
+        if command not in ["--status", "--cleanup"]:
             print("Unknown command. Use --status or --cleanup")
 
         captured = capsys.readouterr()
@@ -253,8 +246,8 @@ class TestSearch:
     def test_search_extracts_title(self, temp_dir):
         """Test that search extracts title from first line."""
         content = "# Page Title\n\nContent here"
-        lines = content.split('\n')
-        title = lines[0].replace('# ', '').strip()
+        lines = content.split("\n")
+        title = lines[0].replace("# ", "").strip()
 
         assert title == "Page Title"
 
@@ -272,16 +265,16 @@ class TestSearch:
     def test_search_sorts_by_relevance(self):
         """Test that results are sorted by match position."""
         results = [
-            {'title': 'A', 'match_position': 100},
-            {'title': 'B', 'match_position': 10},
-            {'title': 'C', 'match_position': 50}
+            {"title": "A", "match_position": 100},
+            {"title": "B", "match_position": 10},
+            {"title": "C", "match_position": 50},
         ]
 
-        sorted_results = sorted(results, key=lambda x: x['match_position'])
+        sorted_results = sorted(results, key=lambda x: x["match_position"])
 
-        assert sorted_results[0]['title'] == 'B'
-        assert sorted_results[1]['title'] == 'C'
-        assert sorted_results[2]['title'] == 'A'
+        assert sorted_results[0]["title"] == "B"
+        assert sorted_results[1]["title"] == "C"
+        assert sorted_results[2]["title"] == "A"
 
     def test_list_spaces(self, temp_dir, capsys):
         """Test list_spaces function."""
@@ -314,7 +307,7 @@ class TestSearch:
     def test_search_main_with_results(self, capsys):
         """Test main output with results."""
         results = [
-            {'title': 'Page 1', 'space': 'TECH', 'file': '/path/page1.md', 'context': 'Context...'}
+            {"title": "Page 1", "space": "TECH", "file": "/path/page1.md", "context": "Context..."}
         ]
 
         print(f"Found {len(results)} results:")
@@ -331,12 +324,12 @@ class TestSearchArgumentParsing:
 
     def test_parse_space_argument(self):
         """Test parsing --space argument."""
-        args = ['query', '--space', 'TECH']
+        args = ["query", "--space", "TECH"]
         space = None
 
         i = 1
         while i < len(args):
-            if args[i] == '--space' and i + 1 < len(args):
+            if args[i] == "--space" and i + 1 < len(args):
                 space = args[i + 1]
                 break
             i += 1
@@ -345,12 +338,12 @@ class TestSearchArgumentParsing:
 
     def test_parse_max_results_argument(self):
         """Test parsing --max-results argument."""
-        args = ['query', '--max-results', '10']
+        args = ["query", "--max-results", "10"]
         max_results = 50  # default
 
         i = 1
         while i < len(args):
-            if args[i] == '--max-results' and i + 1 < len(args):
+            if args[i] == "--max-results" and i + 1 < len(args):
                 max_results = int(args[i + 1])
                 break
             i += 1
@@ -376,7 +369,7 @@ class TestSymlinkUtilities:
             existing = gitignore.read_text()
 
         if pattern not in existing:
-            with open(gitignore, 'a') as f:
+            with open(gitignore, "a") as f:
                 f.write(f"\n{pattern}\n")
 
         assert pattern in gitignore.read_text()

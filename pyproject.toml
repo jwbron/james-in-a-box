@@ -49,6 +49,18 @@ ignore = [
     "PLR2004", # Magic value comparison - too noisy
     "B008",    # Function call in default argument - needed for argparse
     "SIM108",  # Ternary operator - readability preference
+    # The following are common patterns in this CLI-heavy codebase:
+    "E741",    # Ambiguous variable name - `l` used for log, list, etc.
+    "E402",    # Module import not at top - needed for path setup in scripts
+    "E722",    # Bare except - used for broad error handling in CLI tools
+    "PLR0912", # Too many branches - complex main functions in CLI tools
+    "PLR0915", # Too many statements - complex main functions in CLI tools
+    "PLR0911", # Too many return statements - complex logic functions
+    "PLC0415", # Import outside top-level - lazy/conditional imports
+    "PLW2901", # Redefined loop variable - intentional in some cases
+    "PLW0603", # Global statement - used for singletons
+    "RUF005",  # Collection literal concatenation - readability preference
+    "RUF012",  # Mutable class default - acceptable in this codebase
 ]
 
 # Allow autofix for all enabled rules
@@ -57,7 +69,7 @@ unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
 # Tests can use assert and have more relaxed style
-"**/tests/**/*.py" = ["S101", "PLR2004"]
+"**/tests/**/*.py" = ["S101", "PLR2004", "SIM117"]
 # Scripts can have print statements
 "**/jib-tools/*.py" = ["T201"]
 "**/jib-tasks/**/*.py" = ["T201"]

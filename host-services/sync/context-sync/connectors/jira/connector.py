@@ -8,13 +8,15 @@ Wraps the JIRASync class to conform to the BaseConnector interface.
 import sys
 from pathlib import Path
 
+
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from utils.config_loader import load_env_file
+
+
 load_env_file()
 
-from typing import Dict
 
 from connectors.base import BaseConnector
 from connectors.jira.config import JIRAConfig
@@ -24,7 +26,7 @@ from connectors.jira.sync import JIRASync
 class JIRAConnector(BaseConnector):
     """JIRA connector that syncs tickets and comments."""
 
-    def __init__(self, output_dir: Path = None):
+    def __init__(self, output_dir: Path | None = None):
         """Initialize the JIRA connector.
 
         Args:
@@ -86,16 +88,16 @@ class JIRAConnector(BaseConnector):
             self.logger.error(f"JIRA sync failed: {e}")
             return False
 
-    def get_sync_metadata(self) -> Dict:
+    def get_sync_metadata(self) -> dict:
         """Get metadata about the last JIRA sync."""
         metadata = super().get_sync_metadata()
 
         # Add JIRA-specific metadata
         if JIRAConfig.validate():
-            metadata['jql_query'] = JIRAConfig.JQL_QUERY
-            metadata['base_url'] = JIRAConfig.BASE_URL
-            metadata['include_comments'] = JIRAConfig.INCLUDE_COMMENTS
-            metadata['include_attachments'] = JIRAConfig.INCLUDE_ATTACHMENTS
+            metadata["jql_query"] = JIRAConfig.JQL_QUERY
+            metadata["base_url"] = JIRAConfig.BASE_URL
+            metadata["include_comments"] = JIRAConfig.INCLUDE_COMMENTS
+            metadata["include_attachments"] = JIRAConfig.INCLUDE_ATTACHMENTS
 
         return metadata
 
@@ -104,11 +106,9 @@ def main():
     """Main entry point for running JIRA connector standalone."""
     import argparse
 
-    parser = argparse.ArgumentParser(description='Sync JIRA tickets')
-    parser.add_argument('--full', action='store_true',
-                       help='Full sync (not incremental)')
-    parser.add_argument('--output-dir', type=str,
-                       help='Override output directory')
+    parser = argparse.ArgumentParser(description="Sync JIRA tickets")
+    parser.add_argument("--full", action="store_true", help="Full sync (not incremental)")
+    parser.add_argument("--output-dir", type=str, help="Override output directory")
 
     args = parser.parse_args()
 
@@ -121,14 +121,14 @@ def main():
 
     # Print metadata
     metadata = connector.get_sync_metadata()
-    print(f"\nSync Summary:")
+    print("\nSync Summary:")
     print(f"  JQL Query: {metadata.get('jql_query', 'N/A')}")
     print(f"  Files: {metadata['file_count']}")
-    print(f"  Size: {metadata['total_size'] / (1024*1024):.2f} MB")
+    print(f"  Size: {metadata['total_size'] / (1024 * 1024):.2f} MB")
     print(f"  Last sync: {metadata['last_sync']}")
 
     return 0 if success else 1
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

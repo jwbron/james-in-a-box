@@ -7,12 +7,11 @@ Tests the Slack incoming message processor:
 - Task/response routing
 """
 
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-import subprocess
 import sys
 from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 
 # Load incoming-processor module (hyphenated filename)
 incoming_processor_path = (
@@ -77,7 +76,7 @@ thread_ts: "1234567890.123456"
 
 Content"""
 
-        metadata, remaining = parse_frontmatter(content)
+        metadata, _remaining = parse_frontmatter(content)
 
         assert metadata["task_id"] == "test-123"
         assert metadata["thread_ts"] == "1234567890.123456"
@@ -93,7 +92,7 @@ valid_key: "value"
 
 Content"""
 
-        metadata, remaining = parse_frontmatter(content)
+        metadata, _remaining = parse_frontmatter(content)
 
         assert metadata["task_id"] == "test-123"
         assert metadata["valid_key"] == "value"
@@ -109,7 +108,7 @@ unquoted: value3
 
 Content"""
 
-        metadata, remaining = parse_frontmatter(content)
+        metadata, _remaining = parse_frontmatter(content)
 
         assert metadata["double_quoted"] == "value1"
         assert metadata["single_quoted"] == "value2"
@@ -127,7 +126,7 @@ class TestCreateNotificationWithThread:
             notifications_dir=notifications_dir,
             task_id="test-task",
             thread_ts="1234567890.123456",
-            content="Test notification content"
+            content="Test notification content",
         )
 
         assert result.exists()
@@ -141,7 +140,7 @@ class TestCreateNotificationWithThread:
             notifications_dir=notifications_dir,
             task_id="test-task",
             thread_ts="1234567890.123456",
-            content="Test content"
+            content="Test content",
         )
 
         content = result.read_text()
@@ -156,7 +155,7 @@ class TestCreateNotificationWithThread:
             notifications_dir=notifications_dir,
             task_id="my-task-id",
             thread_ts="",
-            content="Test content"
+            content="Test content",
         )
 
         content = result.read_text()
@@ -171,7 +170,7 @@ class TestCreateNotificationWithThread:
             notifications_dir=notifications_dir,
             task_id="test-task",
             thread_ts="",
-            content="Test content"
+            content="Test content",
         )
 
         assert result.exists()
@@ -185,7 +184,7 @@ class TestCreateNotificationWithThread:
             notifications_dir=notifications_dir,
             task_id="test-task",
             thread_ts="",
-            content="Test content"
+            content="Test content",
         )
 
         content = result.read_text()
@@ -201,7 +200,7 @@ class TestCreateNotificationWithThread:
             notifications_dir=notifications_dir,
             task_id="test-task",
             thread_ts="12345",
-            content=test_content
+            content=test_content,
         )
 
         file_content = result.read_text()
@@ -213,7 +212,7 @@ class TestMain:
 
     def test_missing_argument(self, capsys):
         """Test error when no file argument provided."""
-        with patch.object(sys, 'argv', ['incoming-processor.py']):
+        with patch.object(sys, "argv", ["incoming-processor.py"]):
             exit_code = incoming_processor.main()
 
         captured = capsys.readouterr()
@@ -224,7 +223,7 @@ class TestMain:
         """Test error when file doesn't exist."""
         nonexistent = temp_dir / "nonexistent.md"
 
-        with patch.object(sys, 'argv', ['incoming-processor.py', str(nonexistent)]):
+        with patch.object(sys, "argv", ["incoming-processor.py", str(nonexistent)]):
             exit_code = incoming_processor.main()
 
         captured = capsys.readouterr()
@@ -238,8 +237,8 @@ class TestMain:
         task_file = incoming_dir / "task.md"
         task_file.write_text("## Current Message\n\nTest task")
 
-        with patch.object(incoming_processor, 'process_task', return_value=True) as mock_task:
-            with patch.object(sys, 'argv', ['incoming-processor.py', str(task_file)]):
+        with patch.object(incoming_processor, "process_task", return_value=True) as mock_task:
+            with patch.object(sys, "argv", ["incoming-processor.py", str(task_file)]):
                 incoming_processor.main()
 
             mock_task.assert_called_once_with(task_file)
@@ -251,8 +250,10 @@ class TestMain:
         response_file = responses_dir / "response.md"
         response_file.write_text("## Current Message\n\nTest response")
 
-        with patch.object(incoming_processor, 'process_response', return_value=True) as mock_response:
-            with patch.object(sys, 'argv', ['incoming-processor.py', str(response_file)]):
+        with patch.object(
+            incoming_processor, "process_response", return_value=True
+        ) as mock_response:
+            with patch.object(sys, "argv", ["incoming-processor.py", str(response_file)]):
                 incoming_processor.main()
 
             mock_response.assert_called_once_with(response_file)
@@ -264,7 +265,7 @@ class TestMain:
         unknown_file = unknown_dir / "file.md"
         unknown_file.write_text("content")
 
-        with patch.object(sys, 'argv', ['incoming-processor.py', str(unknown_file)]):
+        with patch.object(sys, "argv", ["incoming-processor.py", str(unknown_file)]):
             exit_code = incoming_processor.main()
 
         captured = capsys.readouterr()
@@ -294,9 +295,7 @@ Please help with this task.
 
         # Mock Claude command success
         mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="Task completed successfully!",
-            stderr=""
+            returncode=0, stdout="Task completed successfully!", stderr=""
         )
 
         # Mock home directory
@@ -308,7 +307,7 @@ Please help with this task.
         notifications_dir.mkdir(parents=True)
 
         # Need to reload to pick up HOME change for Path.home()
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             result = incoming_processor.process_task(task_file)
 
         # Should complete successfully
@@ -345,17 +344,13 @@ Here is my response to your question.
         original.write_text("# Original Notification\n\nOriginal content.")
 
         # Mock Claude command
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="Response processed!",
-            stderr=""
-        )
+        mock_run.return_value = MagicMock(returncode=0, stdout="Response processed!", stderr="")
 
         # Mock home
         (temp_dir / "khan").mkdir()
         monkeypatch.setenv("HOME", str(temp_dir))
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             result = incoming_processor.process_response(response_file)
 
         assert result is True

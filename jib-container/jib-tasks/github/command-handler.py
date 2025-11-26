@@ -11,7 +11,6 @@ Monitors ~/sharing/incoming/ and ~/sharing/responses/ for commands like:
 import re
 import subprocess
 from pathlib import Path
-from datetime import datetime
 
 
 class CommandHandler:
@@ -83,11 +82,10 @@ class CommandHandler:
         patterns = [
             # "review PR 123"
             # "review PR 123 in webapp"
-            r'review\s+PR\s+#?(\d+)(?:\s+in\s+(\w+))?',
-
+            r"review\s+PR\s+#?(\d+)(?:\s+in\s+(\w+))?",
             # "/pr review 123"
             # "/pr review 123 webapp"
-            r'/pr\s+review\s+#?(\d+)(?:\s+(\w+))?',
+            r"/pr\s+review\s+#?(\d+)(?:\s+(\w+))?",
         ]
 
         for pattern in patterns:
@@ -96,33 +94,30 @@ class CommandHandler:
                 pr_num = int(match.group(1))
                 repo = match.group(2) if match.lastindex >= 2 else None
 
-                commands.append({
-                    'type': 'review_pr',
-                    'pr_number': pr_num,
-                    'repo': repo
-                })
+                commands.append({"type": "review_pr", "pr_number": pr_num, "repo": repo})
 
         return commands
 
     def execute_command(self, command: dict):
         """Execute a parsed command"""
-        if command['type'] == 'review_pr':
-            self.review_pr(command['pr_number'], command.get('repo'))
+        if command["type"] == "review_pr":
+            self.review_pr(command["pr_number"], command.get("repo"))
 
-    def review_pr(self, pr_num: int, repo: str = None):
+    def review_pr(self, pr_num: int, repo: str | None = None):
         """Trigger PR review"""
         print(f"Triggering review for PR #{pr_num}" + (f" in {repo}" if repo else ""))
 
         try:
-            cmd = ['python3', str(self.reviewer_script), str(pr_num)]
+            cmd = ["python3", str(self.reviewer_script), str(pr_num)]
             if repo:
                 cmd.append(repo)
 
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=300,  # 5 minute timeout
             )
 
             if result.returncode == 0:
@@ -144,5 +139,5 @@ def main():
     handler.process_messages()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

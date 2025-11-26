@@ -10,17 +10,20 @@ Git/subprocess operations are mocked since they require a real git repo.
 """
 
 import json
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 import subprocess
-import sys
 
 # Load modules with hyphenated filenames
 from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-create_pr_helper_path = Path(__file__).parent.parent.parent / "jib-container" / "jib-tools" / "create-pr-helper.py"
-comment_pr_helper_path = Path(__file__).parent.parent.parent / "jib-container" / "jib-tools" / "comment-pr-helper.py"
+
+create_pr_helper_path = (
+    Path(__file__).parent.parent.parent / "jib-container" / "jib-tools" / "create-pr-helper.py"
+)
+comment_pr_helper_path = (
+    Path(__file__).parent.parent.parent / "jib-container" / "jib-tools" / "comment-pr-helper.py"
+)
 
 loader = SourceFileLoader("create_pr_helper", str(create_pr_helper_path))
 create_pr_helper = loader.load_module()
@@ -72,10 +75,12 @@ class TestPRCreatorTestPlan:
         mock_run.return_value = MagicMock(returncode=0, stdout="/test/repo\n")
 
         creator = create_pr_helper.PRCreator()
-        test_items = creator._generate_test_plan([
-            "src/main.py",
-            "tests/test_main.py",
-        ])
+        test_items = creator._generate_test_plan(
+            [
+                "src/main.py",
+                "tests/test_main.py",
+            ]
+        )
 
         assert any("pytest" in item.lower() for item in test_items)
         assert any("review" in item.lower() for item in test_items)
@@ -86,10 +91,12 @@ class TestPRCreatorTestPlan:
         mock_run.return_value = MagicMock(returncode=0, stdout="/test/repo\n")
 
         creator = create_pr_helper.PRCreator()
-        test_items = creator._generate_test_plan([
-            "src/app.ts",
-            "src/app.test.ts",
-        ])
+        test_items = creator._generate_test_plan(
+            [
+                "src/app.ts",
+                "src/app.test.ts",
+            ]
+        )
 
         assert any("npm test" in item.lower() for item in test_items)
 
@@ -99,10 +106,12 @@ class TestPRCreatorTestPlan:
         mock_run.return_value = MagicMock(returncode=0, stdout="/test/repo\n")
 
         creator = create_pr_helper.PRCreator()
-        test_items = creator._generate_test_plan([
-            "config/settings.yaml",
-            "package.json",
-        ])
+        test_items = creator._generate_test_plan(
+            [
+                "config/settings.yaml",
+                "package.json",
+            ]
+        )
 
         assert any("configuration" in item.lower() for item in test_items)
 
@@ -184,7 +193,9 @@ class TestPRCreatorBodyGeneration:
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="/test/repo\n"),  # find_repo_root
             MagicMock(returncode=0, stdout="main\n"),  # remote show origin
-            MagicMock(returncode=0, stdout="Add feature\n\nDetails here.---COMMIT_SEPARATOR---"),  # full commit messages
+            MagicMock(
+                returncode=0, stdout="Add feature\n\nDetails here.---COMMIT_SEPARATOR---"
+            ),  # full commit messages
             MagicMock(returncode=0, stdout="src/main.py\n"),  # changed files
         ]
 
@@ -201,7 +212,9 @@ class TestPRCreatorBodyGeneration:
         mock_run.side_effect = [
             MagicMock(returncode=0, stdout="/test/repo\n"),  # find_repo_root
             MagicMock(returncode=0, stdout="main\n"),  # remote show origin
-            MagicMock(returncode=0, stdout="First\n---COMMIT_SEPARATOR---Second\n---COMMIT_SEPARATOR---"),
+            MagicMock(
+                returncode=0, stdout="First\n---COMMIT_SEPARATOR---Second\n---COMMIT_SEPARATOR---"
+            ),
             MagicMock(returncode=0, stdout="a.py\nb.py\n"),
         ]
 

@@ -6,11 +6,11 @@ Tests shell script functionality including:
 - notify-service-failure.sh: Notifies about systemd service failures
 """
 
-import os
 import subprocess
 import tempfile
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
 import pytest
 
 
@@ -30,9 +30,7 @@ class TestWorktreeWatcherSyntax:
         assert script_path.exists(), f"Script not found: {script_path}"
 
         result = subprocess.run(
-            ["bash", "-n", str(script_path)],
-            capture_output=True,
-            text=True
+            ["bash", "-n", str(script_path)], check=False, capture_output=True, text=True
         )
 
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
@@ -80,9 +78,7 @@ class TestNotifyServiceFailureSyntax:
         assert script_path.exists(), f"Script not found: {script_path}"
 
         result = subprocess.run(
-            ["bash", "-n", str(script_path)],
-            capture_output=True,
-            text=True
+            ["bash", "-n", str(script_path)], check=False, capture_output=True, text=True
         )
 
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
@@ -120,7 +116,7 @@ class TestWorktreeWatcherFunctionality:
     def test_log_function_format(self):
         """Test that log messages follow expected format."""
         # The script uses LOG_PREFIX with timestamp
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_prefix = f"[{timestamp}]"
 
         assert log_prefix.startswith("[")
@@ -288,9 +284,7 @@ class TestSetupScripts:
         for script in setup_scripts:
             if script.exists():
                 result = subprocess.run(
-                    ["bash", "-n", str(script)],
-                    capture_output=True,
-                    text=True
+                    ["bash", "-n", str(script)], check=False, capture_output=True, text=True
                 )
                 assert result.returncode == 0, f"Syntax error in {script.name}: {result.stderr}"
 
@@ -349,7 +343,7 @@ class TestNotificationFileFormat:
     def test_notification_content_structure(self, temp_dir):
         """Test the expected structure of notification content."""
         service_name = "test-service"
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         content = f"""# 🚨 Service Failure: {service_name}
 

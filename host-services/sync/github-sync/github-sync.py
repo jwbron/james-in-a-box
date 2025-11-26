@@ -17,21 +17,23 @@ which is the single source of truth for repos jib has access to.
 import json
 import subprocess
 import sys
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from pathlib import Path
+from typing import Any
+
 
 # Add config to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 try:
     from config.repo_config import get_repos_for_sync, get_sync_config
+
     HAS_REPO_CONFIG = True
 except ImportError:
     HAS_REPO_CONFIG = False
 
 
 class GitHubSync:
-    def __init__(self, sync_dir: Path, repo: str = None, all_prs: bool = False):
+    def __init__(self, sync_dir: Path, repo: str | None = None, all_prs: bool = False):
         self.sync_dir = sync_dir
         self.prs_dir = sync_dir / "prs"
         self.checks_dir = sync_dir / "checks"
@@ -48,17 +50,14 @@ class GitHubSync:
         """Run gh CLI command and return JSON output"""
         try:
             result = subprocess.run(
-                ["gh"] + cmd.split(),
-                capture_output=True,
-                text=True,
-                check=True
+                ["gh"] + cmd.split(), capture_output=True, text=True, check=True
             )
             return json.loads(result.stdout)
         except subprocess.CalledProcessError as e:
             print(f"Error running gh command: {cmd}", file=sys.stderr)
             print(f"stderr: {e.stderr}", file=sys.stderr)
             raise
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             print(f"Error parsing JSON from: {cmd}", file=sys.stderr)
             print(f"stdout: {result.stdout}", file=sys.stderr)
             raise
@@ -67,10 +66,7 @@ class GitHubSync:
         """Run gh CLI command and return text output"""
         try:
             result = subprocess.run(
-                ["gh"] + cmd.split(),
-                capture_output=True,
-                text=True,
-                check=True
+                ["gh"] + cmd.split(), capture_output=True, text=True, check=True
             )
             return result.stdout
         except subprocess.CalledProcessError as e:
@@ -83,8 +79,14 @@ class GitHubSync:
         print("Fetching open PRs...")
 
         # Build command based on options
-        cmd_parts = ["pr", "list", "--state", "open",
-                     "--json", "number,title,url,updatedAt,headRefName,baseRefName,headRepository"]
+        cmd_parts = [
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--json",
+            "number,title,url,updatedAt,headRefName,baseRefName,headRepository",
+        ]
 
         if self.repo:
             cmd_parts.extend(["--repo", self.repo])
@@ -100,11 +102,11 @@ class GitHubSync:
 
         pr_numbers = []
         for pr in prs:
-            pr_num = pr['number']
-            repo = pr['headRepository']['name']
+            pr_num = pr["number"]
+            repo = pr["headRepository"]["name"]
             # Extract owner/repo from URL since headRepository.nameWithOwner can be empty
             # URL format: https://github.com/owner/repo/pull/123
-            url_parts = pr['url'].split('/')
+            url_parts = pr["url"].split("/")
             repo_with_owner = f"{url_parts[3]}/{url_parts[4]}"
             pr_numbers.append(pr_num)
 
@@ -120,9 +122,7 @@ class GitHubSync:
                 )
 
                 # Get diff
-                diff = self.gh_text(
-                    f"pr diff {pr_num} --repo {repo_with_owner}"
-                )
+                diff = self.gh_text(f"pr diff {pr_num} --repo {repo_with_owner}")
 
                 # Get check status
                 # Note: gh pr checks uses different field names than gh api
@@ -136,7 +136,7 @@ class GitHubSync:
                 except subprocess.CalledProcessError as e:
                     if "no checks reported" in e.stderr.lower():
                         checks = []
-                        print(f"    (no CI checks configured)")
+                        print("    (no CI checks configured)")
                     else:
                         raise
 
@@ -147,7 +147,7 @@ class GitHubSync:
                 self.write_checks(pr_num, repo_with_owner, checks)
 
                 # Write comments JSON for tracking
-                self.write_comments(pr_num, repo_with_owner, pr_full.get('comments', []))
+                self.write_comments(pr_num, repo_with_owner, pr_full.get("comments", []))
 
             except Exception as e:
                 print(f"    Error syncing PR #{pr_num}: {e}", file=sys.stderr)
@@ -159,15 +159,15 @@ class GitHubSync:
         # Cleanup old PRs that are no longer open
         self.cleanup_closed_prs(pr_numbers)
 
-    def write_pr_markdown(self, pr: Dict, diff: str, repo_with_owner: str):
+    def write_pr_markdown(self, pr: dict, diff: str, repo_with_owner: str):
         """Write PR as markdown file"""
-        pr_num = pr['number']
-        repo_name = repo_with_owner.split('/')[-1]
+        pr_num = pr["number"]
+        repo_name = repo_with_owner.split("/")[-1]
         pr_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.md"
         diff_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.diff"
 
         # Write markdown
-        with pr_file.open('w') as f:
+        with pr_file.open("w") as f:
             f.write(f"# PR #{pr_num}: {pr['title']}\n\n")
             f.write(f"**Repository**: {repo_with_owner}\n")
             f.write(f"**Author**: {pr['author']['login']}\n")
@@ -180,15 +180,15 @@ class GitHubSync:
             f.write(f"**Updated**: {pr['updatedAt']}\n\n")
 
             f.write("## Description\n\n")
-            f.write(pr.get('body', '(No description)') + "\n\n")
+            f.write(pr.get("body", "(No description)") + "\n\n")
 
             f.write(f"## Files Changed ({len(pr.get('files', []))})\n\n")
-            for file in pr.get('files', []):
+            for file in pr.get("files", []):
                 f.write(f"- `{file['path']}` (+{file['additions']}, -{file['deletions']})\n")
 
-            if pr.get('comments'):
+            if pr.get("comments"):
                 f.write(f"\n## Comments ({len(pr['comments'])})\n\n")
-                for comment in pr['comments']:
+                for comment in pr["comments"]:
                     f.write(f"### {comment['author']['login']} ({comment['createdAt']})\n\n")
                     f.write(f"{comment['body']}\n\n")
                     f.write("---\n\n")
@@ -198,11 +198,11 @@ class GitHubSync:
 
         # Write diff
         diff_file.write_text(diff)
-        print(f"    ✓ Wrote PR markdown and diff")
+        print("    ✓ Wrote PR markdown and diff")
 
-    def write_checks(self, pr_num: int, repo: str, checks: List[Dict]):
+    def write_checks(self, pr_num: int, repo: str, checks: list[dict]):
         """Write check status and fetch failed logs"""
-        repo_name = repo.split('/')[-1]
+        repo_name = repo.split("/")[-1]
         checks_file = self.checks_dir / f"{repo_name}-PR-{pr_num}-checks.json"
 
         enriched_checks = []
@@ -213,47 +213,60 @@ class GitHubSync:
 
             # If failed, fetch full logs
             # Note: gh pr checks uses 'state' not 'conclusion', and values are like 'FAILURE' not 'failure'
-            if check.get('state', '').upper() in ('FAILURE', 'FAILED'):
+            if check.get("state", "").upper() in ("FAILURE", "FAILED"):
                 failed_count += 1
                 print(f"    ⚠ Check failed: {check['name']}, fetching logs...")
                 log = self.get_check_logs(pr_num, repo, check)
                 if log:
-                    check_data['full_log'] = log
+                    check_data["full_log"] = log
                     print(f"      ✓ Fetched {len(log)} bytes of logs")
                 else:
-                    print(f"      ✗ Could not fetch logs")
+                    print("      ✗ Could not fetch logs")
 
             enriched_checks.append(check_data)
 
-        with checks_file.open('w') as f:
-            json.dump({
-                'pr_number': pr_num,
-                'repository': repo,
-                'last_updated': datetime.now().isoformat() + 'Z',
-                'checks': enriched_checks,
-                'summary': {
-                    'total': len(checks),
-                    'failed': failed_count,
-                    'passed': len([c for c in checks if c.get('state', '').upper() == 'SUCCESS']),
-                    'pending': len([c for c in checks if c.get('state', '').upper() in ('PENDING', 'QUEUED', 'IN_PROGRESS', '')])
-                }
-            }, f, indent=2)
+        with checks_file.open("w") as f:
+            json.dump(
+                {
+                    "pr_number": pr_num,
+                    "repository": repo,
+                    "last_updated": datetime.now().isoformat() + "Z",
+                    "checks": enriched_checks,
+                    "summary": {
+                        "total": len(checks),
+                        "failed": failed_count,
+                        "passed": len(
+                            [c for c in checks if c.get("state", "").upper() == "SUCCESS"]
+                        ),
+                        "pending": len(
+                            [
+                                c
+                                for c in checks
+                                if c.get("state", "").upper()
+                                in ("PENDING", "QUEUED", "IN_PROGRESS", "")
+                            ]
+                        ),
+                    },
+                },
+                f,
+                indent=2,
+            )
 
         if failed_count > 0:
             print(f"    ✓ Wrote checks ({failed_count} failed)")
         else:
-            print(f"    ✓ Wrote checks (all passing)")
+            print("    ✓ Wrote checks (all passing)")
 
-    def get_check_logs(self, pr_num: int, repo: str, check: Dict) -> Optional[str]:
+    def get_check_logs(self, pr_num: int, repo: str, check: dict) -> str | None:
         """Fetch full logs for a failed check"""
         # Try to extract run ID from details URL
         # GitHub Actions URL format: https://github.com/org/repo/actions/runs/12345
         # Note: gh pr checks uses 'link' not 'detailsUrl'
-        details_url = check.get('link', '') or check.get('detailsUrl', '')
+        details_url = check.get("link", "") or check.get("detailsUrl", "")
 
-        if '/actions/runs/' in details_url:
+        if "/actions/runs/" in details_url:
             try:
-                run_id = details_url.split('/runs/')[-1].split('/')[0].split('?')[0]
+                run_id = details_url.split("/runs/")[-1].split("/")[0].split("?")[0]
 
                 # Fetch logs using gh CLI
                 logs = self.gh_text(f"run view {run_id} --repo {repo} --log-failed")
@@ -272,69 +285,72 @@ class GitHubSync:
         except:
             return None
 
-    def write_comments(self, pr_num: int, repo: str, comments: List[Dict]):
+    def write_comments(self, pr_num: int, repo: str, comments: list[dict]):
         """Write PR comments to JSON file for tracking"""
-        repo_name = repo.split('/')[-1]
+        repo_name = repo.split("/")[-1]
         comments_file = self.comments_dir / f"{repo_name}-PR-{pr_num}-comments.json"
 
         # Structure comments for easy tracking
         comments_data = {
-            'pr_number': pr_num,
-            'repository': repo,
-            'last_updated': datetime.utcnow().isoformat() + 'Z',
-            'comment_count': len(comments),
-            'comments': []
+            "pr_number": pr_num,
+            "repository": repo,
+            "last_updated": datetime.utcnow().isoformat() + "Z",
+            "comment_count": len(comments),
+            "comments": [],
         }
 
         for comment in comments:
             comment_data = {
-                'id': comment.get('id'),
-                'author': comment.get('author', {}).get('login', 'unknown'),
-                'body': comment.get('body', ''),
-                'created_at': comment.get('createdAt', ''),
-                'updated_at': comment.get('updatedAt', ''),
-                'author_association': comment.get('authorAssociation', ''),
+                "id": comment.get("id"),
+                "author": comment.get("author", {}).get("login", "unknown"),
+                "body": comment.get("body", ""),
+                "created_at": comment.get("createdAt", ""),
+                "updated_at": comment.get("updatedAt", ""),
+                "author_association": comment.get("authorAssociation", ""),
                 # Check if comment is from PR author or reviewer
-                'is_author': comment.get('author', {}).get('login') == comment.get('authorAssociation') == 'OWNER'
+                "is_author": comment.get("author", {}).get("login")
+                == comment.get("authorAssociation")
+                == "OWNER",
             }
-            comments_data['comments'].append(comment_data)
+            comments_data["comments"].append(comment_data)
 
-        with comments_file.open('w') as f:
+        with comments_file.open("w") as f:
             json.dump(comments_data, f, indent=2)
 
         if len(comments) > 0:
             print(f"    ✓ Wrote {len(comments)} comment(s)")
 
-    def write_index(self, prs: List[Dict]):
+    def write_index(self, prs: list[dict]):
         """Write quick index of all PRs"""
+
         def extract_repo_from_url(url: str) -> str:
             """Extract owner/repo from PR URL"""
-            parts = url.split('/')
+            parts = url.split("/")
             return f"{parts[3]}/{parts[4]}"
 
         index = {
-            'last_sync': datetime.now().isoformat() + 'Z',
-            'pr_count': len(prs),
-            'prs': [
+            "last_sync": datetime.now().isoformat() + "Z",
+            "pr_count": len(prs),
+            "prs": [
                 {
-                    'number': pr['number'],
-                    'repository': extract_repo_from_url(pr['url']),
-                    'title': pr['title'],
-                    'url': pr['url'],
-                    'head_branch': pr['headRefName'],
-                    'base_branch': pr['baseRefName'],
-                    'updated': pr['updatedAt']
+                    "number": pr["number"],
+                    "repository": extract_repo_from_url(pr["url"]),
+                    "title": pr["title"],
+                    "url": pr["url"],
+                    "head_branch": pr["headRefName"],
+                    "base_branch": pr["baseRefName"],
+                    "updated": pr["updatedAt"],
                 }
                 for pr in prs
-            ]
+            ],
         }
 
-        with (self.sync_dir / 'index.json').open('w') as f:
+        with (self.sync_dir / "index.json").open("w") as f:
             json.dump(index, f, indent=2)
 
         print(f"✓ Updated index with {len(prs)} PR(s)")
 
-    def cleanup_closed_prs(self, current_pr_numbers: List[int]):
+    def cleanup_closed_prs(self, current_pr_numbers: list[int]):
         """Remove files for PRs that are no longer open"""
         # Find all PR files
         all_pr_files = list(self.prs_dir.glob("*-PR-*.md"))
@@ -343,7 +359,7 @@ class GitHubSync:
         for pr_file in all_pr_files:
             # Extract PR number from filename: repo-PR-123.md
             try:
-                pr_num = int(pr_file.stem.split('-PR-')[-1])
+                pr_num = int(pr_file.stem.split("-PR-")[-1])
                 if pr_num not in current_pr_numbers:
                     # This PR is no longer open, remove it
                     pr_file.unlink()
@@ -356,7 +372,7 @@ class GitHubSync:
 
         for check_file in all_check_files:
             try:
-                pr_num = int(check_file.stem.split('-PR-')[-1].split('-checks')[0])
+                pr_num = int(check_file.stem.split("-PR-")[-1].split("-checks")[0])
                 if pr_num not in current_pr_numbers:
                     check_file.unlink()
             except (ValueError, IndexError):
@@ -368,12 +384,18 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Sync GitHub PRs to local filesystem")
-    parser.add_argument("--repo", "-r", help="Specific repo to sync (e.g., jwiesebron/james-in-a-box)")
-    parser.add_argument("--all-prs", "-a", action="store_true",
-                        help="Sync ALL open PRs in repo, not just your own")
+    parser.add_argument(
+        "--repo", "-r", help="Specific repo to sync (e.g., jwiesebron/james-in-a-box)"
+    )
+    parser.add_argument(
+        "--all-prs", "-a", action="store_true", help="Sync ALL open PRs in repo, not just your own"
+    )
     parser.add_argument("--output", "-o", help="Output directory (default: ~/context-sync/github)")
-    parser.add_argument("--use-config", action="store_true",
-                        help="Use repositories.yaml config for repo list (syncs all configured repos)")
+    parser.add_argument(
+        "--use-config",
+        action="store_true",
+        help="Use repositories.yaml config for repo list (syncs all configured repos)",
+    )
 
     args = parser.parse_args()
 
@@ -398,22 +420,21 @@ def main():
         print("=" * 60)
         print("GitHub PR Sync")
         print(f"Repository: {args.repo}")
+    # No repo specified, try to use config as default
+    elif HAS_REPO_CONFIG:
+        repos_to_sync = get_repos_for_sync()
+        sync_config = get_sync_config()
+        all_prs = sync_config.get("sync_all_prs", True)
+        print("=" * 60)
+        print("GitHub PR Sync (using repositories.yaml config)")
+        print(f"Repositories: {len(repos_to_sync)}")
+        for repo in repos_to_sync:
+            print(f"  - {repo}")
     else:
-        # No repo specified, try to use config as default
-        if HAS_REPO_CONFIG:
-            repos_to_sync = get_repos_for_sync()
-            sync_config = get_sync_config()
-            all_prs = sync_config.get("sync_all_prs", True)
-            print("=" * 60)
-            print("GitHub PR Sync (using repositories.yaml config)")
-            print(f"Repositories: {len(repos_to_sync)}")
-            for repo in repos_to_sync:
-                print(f"  - {repo}")
-        else:
-            print("=" * 60)
-            print("GitHub PR Sync")
-            print("No --repo specified and config not available")
-            print("Will sync all PRs authored by you across all repos")
+        print("=" * 60)
+        print("GitHub PR Sync")
+        print("No --repo specified and config not available")
+        print("Will sync all PRs authored by you across all repos")
 
     if all_prs:
         print("Mode: All PRs in repository")
@@ -446,5 +467,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

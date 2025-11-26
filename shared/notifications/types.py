@@ -7,11 +7,12 @@ This module defines the core data types used throughout the notifications system
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 
 class NotificationType(Enum):
     """Type/priority of notification for display styling."""
+
     INFO = "info"
     SUCCESS = "success"
     WARNING = "warning"
@@ -21,8 +22,9 @@ class NotificationType(Enum):
 
 class NotificationChannel(Enum):
     """Where the notification should be sent."""
-    SLACK_DM = "slack_dm"           # Direct message to user
-    SLACK_THREAD = "slack_thread"   # Reply in existing thread
+
+    SLACK_DM = "slack_dm"  # Direct message to user
+    SLACK_THREAD = "slack_thread"  # Reply in existing thread
     # Future channels:
     # EMAIL = "email"
     # WEBHOOK = "webhook"
@@ -35,18 +37,19 @@ class NotificationContext:
 
     This helps maintain conversation/task continuity across notifications.
     """
+
     # Task correlation
-    task_id: Optional[str] = None           # Beads task ID or auto-generated
-    thread_id: Optional[str] = None         # Slack thread_ts for threading
+    task_id: str | None = None  # Beads task ID or auto-generated
+    thread_id: str | None = None  # Slack thread_ts for threading
 
     # Source context
-    source: Optional[str] = None            # What component sent this (e.g., "comment-responder")
-    repository: Optional[str] = None        # GitHub repo (e.g., "owner/repo-name")
-    pr_number: Optional[int] = None         # PR number if applicable
-    branch: Optional[str] = None            # Git branch if applicable
+    source: str | None = None  # What component sent this (e.g., "comment-responder")
+    repository: str | None = None  # GitHub repo (e.g., "owner/repo-name")
+    pr_number: int | None = None  # PR number if applicable
+    branch: str | None = None  # Git branch if applicable
 
     # Additional metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -55,9 +58,10 @@ class NotificationMessage:
 
     This is the primary data structure for all notifications.
     """
+
     # Required fields
-    title: str                              # Short title/subject
-    body: str                               # Main message content (markdown supported)
+    title: str  # Short title/subject
+    body: str  # Main message content (markdown supported)
 
     # Classification
     notification_type: NotificationType = NotificationType.INFO
@@ -108,12 +112,13 @@ class NotificationResult:
 
     Contains status and any identifiers needed for follow-up (threading, etc).
     """
+
     success: bool
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     # Identifiers for follow-up
-    thread_id: Optional[str] = None         # Thread ID for replies
-    message_id: Optional[str] = None        # Unique message identifier
+    thread_id: str | None = None  # Thread ID for replies
+    message_id: str | None = None  # Unique message identifier
 
     # Additional response data
-    data: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)

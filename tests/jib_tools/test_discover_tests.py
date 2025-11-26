@@ -3,18 +3,21 @@ Tests for the discover-tests.py tool.
 """
 
 import json
-import pytest
-from pathlib import Path
-from dataclasses import asdict
 
 # Import the module directly for testing
 import sys
+from pathlib import Path
+
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "jib-container" / "jib-tools"))
 
 from importlib.machinery import SourceFileLoader
 
+
 # Load discover-tests module (hyphenated filename requires special handling)
-discover_tests_path = Path(__file__).parent.parent.parent / "jib-container" / "jib-tools" / "discover-tests.py"
+discover_tests_path = (
+    Path(__file__).parent.parent.parent / "jib-container" / "jib-tools" / "discover-tests.py"
+)
 loader = SourceFileLoader("discover_tests", str(discover_tests_path))
 discover_tests = loader.load_module()
 
@@ -127,12 +130,8 @@ class TestTestDiscoveryJavaScript:
         """Test detecting Jest from package.json."""
         package_json = {
             "name": "test-project",
-            "devDependencies": {
-                "jest": "^29.0.0"
-            },
-            "scripts": {
-                "test": "jest"
-            }
+            "devDependencies": {"jest": "^29.0.0"},
+            "scripts": {"test": "jest"},
         }
         (temp_dir / "package.json").write_text(json.dumps(package_json))
 
@@ -160,12 +159,8 @@ class TestTestDiscoveryJavaScript:
         """Test detecting Vitest."""
         package_json = {
             "name": "test-project",
-            "devDependencies": {
-                "vitest": "^1.0.0"
-            },
-            "scripts": {
-                "test": "vitest"
-            }
+            "devDependencies": {"vitest": "^1.0.0"},
+            "scripts": {"test": "vitest"},
         }
         (temp_dir / "package.json").write_text(json.dumps(package_json))
 
@@ -178,12 +173,7 @@ class TestTestDiscoveryJavaScript:
 
     def test_detect_mocha(self, temp_dir):
         """Test detecting Mocha."""
-        package_json = {
-            "name": "test-project",
-            "devDependencies": {
-                "mocha": "^10.0.0"
-            }
-        }
+        package_json = {"name": "test-project", "devDependencies": {"mocha": "^10.0.0"}}
         (temp_dir / "package.json").write_text(json.dumps(package_json))
 
         discovery = TestDiscovery(str(temp_dir))
@@ -194,12 +184,7 @@ class TestTestDiscoveryJavaScript:
 
     def test_detect_playwright(self, temp_dir):
         """Test detecting Playwright."""
-        package_json = {
-            "name": "test-project",
-            "devDependencies": {
-                "@playwright/test": "^1.40.0"
-            }
-        }
+        package_json = {"name": "test-project", "devDependencies": {"@playwright/test": "^1.40.0"}}
         (temp_dir / "package.json").write_text(json.dumps(package_json))
         (temp_dir / "playwright.config.ts").write_text("export default {}")
 

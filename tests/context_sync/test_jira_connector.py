@@ -5,9 +5,6 @@ Tests the JIRAConnector class which syncs tickets and comments from JIRA.
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestJIRAConnectorInit:
@@ -47,12 +44,7 @@ class TestJIRAValidateConfig:
 
     def test_validate_config_checks_required_fields(self):
         """Test that validation checks all required config fields."""
-        required_fields = [
-            'JIRA_API_TOKEN',
-            'JIRA_BASE_URL',
-            'JIRA_USER_EMAIL',
-            'JIRA_JQL_QUERY'
-        ]
+        required_fields = ["JIRA_API_TOKEN", "JIRA_BASE_URL", "JIRA_USER_EMAIL", "JIRA_JQL_QUERY"]
 
         for field in required_fields:
             assert field is not None
@@ -74,13 +66,13 @@ class TestJIRASync:
     def test_sync_returns_false_when_syncer_not_initialized(self):
         """Test that sync returns False when syncer is None."""
         syncer = None
-        result = False if syncer is None else True
+        result = syncer is not None
         assert not result
 
     def test_sync_returns_false_when_config_invalid(self):
         """Test that sync returns False when config is invalid."""
         config_valid = False
-        result = False if not config_valid else True
+        result = bool(config_valid)
         assert not result
 
     def test_sync_logs_jql_query(self):
@@ -104,40 +96,37 @@ class TestJIRAGetSyncMetadata:
     def test_metadata_includes_jql_query(self):
         """Test that metadata includes JQL query."""
         jql_query = "project = PROJ"
-        metadata = {'jql_query': jql_query}
+        metadata = {"jql_query": jql_query}
 
-        assert 'jql_query' in metadata
+        assert "jql_query" in metadata
 
     def test_metadata_includes_base_url(self):
         """Test that metadata includes JIRA base URL."""
         base_url = "https://example.atlassian.net"
-        metadata = {'base_url': base_url}
+        metadata = {"base_url": base_url}
 
-        assert 'base_url' in metadata
-        assert 'atlassian.net' in metadata['base_url']
+        assert "base_url" in metadata
+        assert "atlassian.net" in metadata["base_url"]
 
     def test_metadata_includes_comment_settings(self):
         """Test that metadata includes comment sync settings."""
-        metadata = {
-            'include_comments': True,
-            'include_attachments': False
-        }
+        metadata = {"include_comments": True, "include_attachments": False}
 
-        assert 'include_comments' in metadata
-        assert 'include_attachments' in metadata
+        assert "include_comments" in metadata
+        assert "include_attachments" in metadata
 
     def test_metadata_inherits_base_fields(self):
         """Test that metadata includes base connector fields."""
         metadata = {
-            'connector': 'jira',
-            'output_dir': '/path/to/output',
-            'last_sync': '2024-01-01T00:00:00',
-            'file_count': 50,
-            'total_size': 512 * 1024
+            "connector": "jira",
+            "output_dir": "/path/to/output",
+            "last_sync": "2024-01-01T00:00:00",
+            "file_count": 50,
+            "total_size": 512 * 1024,
         }
 
-        assert 'connector' in metadata
-        assert 'file_count' in metadata
+        assert "connector" in metadata
+        assert "file_count" in metadata
 
 
 class TestJIRAMain:
@@ -145,14 +134,14 @@ class TestJIRAMain:
 
     def test_main_parses_full_flag(self):
         """Test that main parses --full flag."""
-        args = type('Args', (), {'full': True, 'output_dir': None})()
+        args = type("Args", (), {"full": True, "output_dir": None})()
         incremental = not args.full
         assert not incremental
 
     def test_main_parses_output_dir(self, temp_dir):
         """Test that main parses --output-dir argument."""
         output_dir = str(temp_dir / "jira")
-        args = type('Args', (), {'full': False, 'output_dir': output_dir})()
+        args = type("Args", (), {"full": False, "output_dir": output_dir})()
 
         actual_dir = Path(args.output_dir) if args.output_dir else None
         assert actual_dir is not None
@@ -160,13 +149,13 @@ class TestJIRAMain:
     def test_main_prints_summary(self, capsys):
         """Test that main prints sync summary."""
         metadata = {
-            'jql_query': 'project = PROJ',
-            'file_count': 25,
-            'total_size': 256 * 1024,
-            'last_sync': '2024-01-01T00:00:00'
+            "jql_query": "project = PROJ",
+            "file_count": 25,
+            "total_size": 256 * 1024,
+            "last_sync": "2024-01-01T00:00:00",
         }
 
-        print(f"\nSync Summary:")
+        print("\nSync Summary:")
         print(f"  JQL Query: {metadata.get('jql_query', 'N/A')}")
         print(f"  Files: {metadata['file_count']}")
 
@@ -267,7 +256,6 @@ class TestJIRAErrorHandling:
 
     def test_handles_api_connection_error(self):
         """Test handling of API connection errors."""
-        error_message = "Connection timeout"
         exception_raised = True
 
         assert exception_raised
@@ -322,11 +310,11 @@ class TestJIRAAttachments:
     def test_attachment_metadata_tracked(self):
         """Test that attachment metadata is tracked."""
         attachment = {
-            'filename': 'document.pdf',
-            'size': 1024 * 100,
-            'mimeType': 'application/pdf',
-            'created': '2024-01-01'
+            "filename": "document.pdf",
+            "size": 1024 * 100,
+            "mimeType": "application/pdf",
+            "created": "2024-01-01",
         }
 
-        assert 'filename' in attachment
-        assert 'size' in attachment
+        assert "filename" in attachment
+        assert "size" in attachment

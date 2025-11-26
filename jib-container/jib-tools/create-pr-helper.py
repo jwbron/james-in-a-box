@@ -21,13 +21,14 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Any
+
 
 # Add shared directory to path for notifications import
 # Path: jib-container/jib-tools/create-pr-helper.py -> repo-root/shared
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 from notifications import get_slack_service
+
 
 # Try to load repo config for default reviewer and writable repos check
 try:
@@ -40,7 +41,8 @@ try:
         if (config_path / "repo_config.py").exists():
             sys.path.insert(0, str(config_path.parent))
             break
-    from config.repo_config import get_default_reviewer, is_writable_repo, get_writable_repos
+    from config.repo_config import get_default_reviewer, get_writable_repos, is_writable_repo
+
     HAS_REPO_CONFIG = True
 except ImportError:
     HAS_REPO_CONFIG = False
@@ -61,12 +63,11 @@ class PRCreator:
         self.repo_root = self.find_repo_root()
         self.slack = get_slack_service()
 
-    def get_repo_name(self) -> Optional[str]:
+    def get_repo_name(self) -> str | None:
         """Get the owner/repo name from git remote origin."""
         try:
             result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                capture_output=True, text=True, check=True
+                ["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True
             )
             url = result.stdout.strip()
             # Handle SSH URLs: git@github.com:owner/repo.git
@@ -92,12 +93,11 @@ class PRCreator:
             return False, "unknown"
         return is_writable_repo(repo_name), repo_name
 
-    def find_repo_root(self) -> Optional[Path]:
+    def find_repo_root(self) -> Path | None:
         """Find the git repository root"""
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                capture_output=True, text=True, check=True
+                ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
             )
             return Path(result.stdout.strip())
         except subprocess.CalledProcessError:
@@ -106,16 +106,14 @@ class PRCreator:
     def get_current_branch(self) -> str:
         """Get current git branch name"""
         result = subprocess.run(
-            ["git", "branch", "--show-current"],
-            capture_output=True, text=True, check=True
+            ["git", "branch", "--show-current"], capture_output=True, text=True, check=True
         )
         return result.stdout.strip()
 
     def get_base_branch(self) -> str:
         """Determine the base branch (main or master)"""
         result = subprocess.run(
-            ["git", "remote", "show", "origin"],
-            capture_output=True, text=True
+            ["git", "remote", "show", "origin"], check=False, capture_output=True, text=True
         )
         if "HEAD branch: main" in result.stdout:
             return "main"
@@ -126,9 +124,11 @@ class PRCreator:
         try:
             result = subprocess.run(
                 ["git", "log", f"{base_branch}..HEAD", "--oneline"],
-                capture_output=True, text=True, check=True
+                capture_output=True,
+                text=True,
+                check=True,
             )
-            return result.stdout.strip().split('\n') if result.stdout.strip() else []
+            return result.stdout.strip().split("\n") if result.stdout.strip() else []
         except subprocess.CalledProcessError:
             return []
 
@@ -137,7 +137,9 @@ class PRCreator:
         try:
             result = subprocess.run(
                 ["git", "log", f"{base_branch}..HEAD", "--format=%B---COMMIT_SEPARATOR---"],
-                capture_output=True, text=True, check=True
+                capture_output=True,
+                text=True,
+                check=True,
             )
             return result.stdout.strip()
         except subprocess.CalledProcessError:
@@ -148,9 +150,11 @@ class PRCreator:
         try:
             result = subprocess.run(
                 ["git", "diff", "--name-only", f"{base_branch}..HEAD"],
-                capture_output=True, text=True, check=True
+                capture_output=True,
+                text=True,
+                check=True,
             )
-            return result.stdout.strip().split('\n') if result.stdout.strip() else []
+            return result.stdout.strip().split("\n") if result.stdout.strip() else []
         except subprocess.CalledProcessError:
             return []
 
@@ -179,15 +183,15 @@ class PRCreator:
                 msg = msg.strip()
                 if msg:
                     # Skip lines that are just the title (first line) or metadata
-                    lines = msg.split('\n')
+                    lines = msg.split("\n")
                     # Get body (everything after first line, excluding metadata lines)
                     body_lines = []
                     for line in lines[1:]:
                         # Skip metadata lines
-                        if line.startswith('🤖') or line.startswith('Co-Authored-By:'):
+                        if line.startswith(("🤖", "Co-Authored-By:")):
                             continue
                         body_lines.append(line)
-                    body = '\n'.join(body_lines).strip()
+                    body = "\n".join(body_lines).strip()
                     if body:
                         commit_bodies.append(body)
 
@@ -205,7 +209,7 @@ class PRCreator:
             # Fallback: generate basic summary from commits
             body_parts.append("## Summary\n\n")
             if len(commits) == 1:
-                body_parts.append(f"This PR includes changes from 1 commit.\n\n")
+                body_parts.append("This PR includes changes from 1 commit.\n\n")
             else:
                 body_parts.append(f"This PR includes changes from {len(commits)} commits.\n\n")
 
@@ -237,10 +241,10 @@ class PRCreator:
         test_items = []
 
         # Categorize files
-        python_files = [f for f in changed_files if f.endswith('.py')]
-        js_files = [f for f in changed_files if f.endswith(('.js', '.ts', '.tsx'))]
-        test_files = [f for f in changed_files if 'test' in f.lower()]
-        config_files = [f for f in changed_files if f.endswith(('.yaml', '.yml', '.json', '.toml'))]
+        python_files = [f for f in changed_files if f.endswith(".py")]
+        js_files = [f for f in changed_files if f.endswith((".js", ".ts", ".tsx"))]
+        test_files = [f for f in changed_files if "test" in f.lower()]
+        config_files = [f for f in changed_files if f.endswith((".yaml", ".yml", ".json", ".toml"))]
 
         # Add relevant test commands
         if python_files:
@@ -274,8 +278,7 @@ class PRCreator:
         """Push current branch to remote"""
         print(f"Pushing branch {branch} to remote...")
         result = subprocess.run(
-            ["git", "push", "-u", "origin", branch],
-            capture_output=True, text=True
+            ["git", "push", "-u", "origin", branch], check=False, capture_output=True, text=True
         )
         if result.returncode != 0:
             print(f"Error pushing branch: {result.stderr}", file=sys.stderr)
@@ -287,10 +290,10 @@ class PRCreator:
         self,
         title: str,
         body: str,
-        base: Optional[str] = None,
-        reviewer: Optional[str] = None,
-        draft: bool = False
-    ) -> Dict[str, Any]:
+        base: str | None = None,
+        reviewer: str | None = None,
+        draft: bool = False,
+    ) -> dict[str, Any]:
         """Create a PR using gh CLI"""
         branch = self.get_current_branch()
         base_branch = base or self.get_base_branch()
@@ -298,23 +301,16 @@ class PRCreator:
         # Check if branch has been pushed
         result = subprocess.run(
             ["git", "ls-remote", "--heads", "origin", branch],
-            capture_output=True, text=True
+            check=False,
+            capture_output=True,
+            text=True,
         )
-        if not result.stdout.strip():
+        if not result.stdout.strip() and not self.push_branch(branch):
             # Branch not on remote, push it
-            if not self.push_branch(branch):
-                return {
-                    "success": False,
-                    "error": "Failed to push branch to remote"
-                }
+            return {"success": False, "error": "Failed to push branch to remote"}
 
         # Build gh pr create command
-        cmd = [
-            "gh", "pr", "create",
-            "--title", title,
-            "--body", body,
-            "--base", base_branch
-        ]
+        cmd = ["gh", "pr", "create", "--title", title, "--body", body, "--base", base_branch]
 
         if reviewer:
             cmd.extend(["--reviewer", reviewer])
@@ -325,7 +321,7 @@ class PRCreator:
         print(f"Creating PR: {title}")
         print(f"  Branch: {branch} -> {base_branch}")
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
 
         if result.returncode != 0:
             error_msg = result.stderr.strip()
@@ -339,12 +335,9 @@ class PRCreator:
                         "url": pr_url,
                         "already_existed": True,
                         "branch": branch,
-                        "base": base_branch
+                        "base": base_branch,
                     }
-            return {
-                "success": False,
-                "error": error_msg
-            }
+            return {"success": False, "error": error_msg}
 
         # Extract PR URL from output
         pr_url = result.stdout.strip()
@@ -355,22 +348,24 @@ class PRCreator:
             "branch": branch,
             "base": base_branch,
             "title": title,
-            "reviewer": reviewer
+            "reviewer": reviewer,
         }
 
-    def get_existing_pr_url(self, branch: str) -> Optional[str]:
+    def get_existing_pr_url(self, branch: str) -> str | None:
         """Get URL of existing PR for branch"""
         result = subprocess.run(
             ["gh", "pr", "view", branch, "--json", "url", "--jq", ".url"],
-            capture_output=True, text=True
+            check=False,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             return result.stdout.strip()
         return None
 
-    def create_notification(self, pr_result: Dict[str, Any], task_context: str = ""):
+    def create_notification(self, pr_result: dict[str, Any], task_context: str = ""):
         """Create notification about PR creation using the notifications service."""
-        repo_name = self.get_repo_name() or "unknown"
+        self.get_repo_name() or "unknown"
 
         if pr_result["success"]:
             # Include task context in the body if provided
@@ -380,10 +375,10 @@ class PRCreator:
                 f"**Title**: {pr_result.get('title', 'New PR')}",
             ]
 
-            if pr_result.get('reviewer'):
+            if pr_result.get("reviewer"):
                 body_parts.append(f"**Reviewer**: @{pr_result['reviewer']}")
 
-            if pr_result.get('already_existed'):
+            if pr_result.get("already_existed"):
                 body_parts.append("\n*Note: PR already existed for this branch*")
 
             if task_context:
@@ -411,16 +406,23 @@ def main():
     parser = argparse.ArgumentParser(description="Create GitHub PR for completed task")
     parser.add_argument("--title", "-t", help="PR title")
     parser.add_argument("--body", "-b", help="PR description body")
-    parser.add_argument("--reviewer", "-r", default=default_reviewer,
-                        help=f"Reviewer to request (default: {default_reviewer}, from config)")
+    parser.add_argument(
+        "--reviewer",
+        "-r",
+        default=default_reviewer,
+        help=f"Reviewer to request (default: {default_reviewer}, from config)",
+    )
     parser.add_argument("--base", help="Base branch (default: auto-detect main/master)")
     parser.add_argument("--draft", action="store_true", help="Create as draft PR")
     parser.add_argument("--from-file", "-f", help="Read PR details from JSON file")
-    parser.add_argument("--auto", "-a", action="store_true", help="Auto-generate title/body from git log")
+    parser.add_argument(
+        "--auto", "-a", action="store_true", help="Auto-generate title/body from git log"
+    )
     parser.add_argument("--no-notify", action="store_true", help="Skip creating notification")
     parser.add_argument("--context", "-c", help="Task context for notification")
-    parser.add_argument("--list-writable", action="store_true",
-                        help="List repositories where jib has write access")
+    parser.add_argument(
+        "--list-writable", action="store_true", help="List repositories where jib has write access"
+    )
 
     args = parser.parse_args()
 
@@ -445,7 +447,7 @@ def main():
     is_writable, repo_name = creator.check_writable()
     if not is_writable:
         print(f"Note: Repository '{repo_name}' is not in the writable repos list.")
-        print(f"Sending Slack notification with PR context instead of creating GitHub PR.")
+        print("Sending Slack notification with PR context instead of creating GitHub PR.")
         print()
 
         # Generate the PR details for the notification
@@ -462,20 +464,20 @@ def main():
         pr_title = args.title
         if not pr_title:
             first_commit = commits[0]
-            if ' ' in first_commit:
-                pr_title = first_commit.split(' ', 1)[1]
+            if " " in first_commit:
+                pr_title = first_commit.split(" ", 1)[1]
             else:
                 pr_title = first_commit
 
         # Generate body
-        pr_body = creator.generate_pr_body(commits, args.body or "")
+        creator.generate_pr_body(commits, args.body or "")
 
         # Send Slack notification with full context
         body_parts = [
             f"**Repository**: {repo_name} (read-only - manual PR creation required)",
             f"**Branch**: `{branch}` -> `{base}`",
             f"**Title**: {pr_title}",
-            f"\n## Summary\n",
+            "\n## Summary\n",
         ]
 
         # Add commit list
@@ -507,7 +509,7 @@ def main():
             body="\n".join(body_parts),
         )
 
-        print(f"\nSlack notification sent!")
+        print("\nSlack notification sent!")
         print(f"Branch '{branch}' is ready for manual PR creation.")
         sys.exit(0)
 
@@ -535,8 +537,8 @@ def main():
             # Use first commit message as title
             first_commit = commits[0]
             # Remove commit hash prefix if present
-            if ' ' in first_commit:
-                title = first_commit.split(' ', 1)[1]
+            if " " in first_commit:
+                title = first_commit.split(" ", 1)[1]
             else:
                 title = first_commit
 
@@ -548,11 +550,7 @@ def main():
 
     # Create the PR
     result = creator.create_pr(
-        title=title,
-        body=body,
-        base=args.base,
-        reviewer=args.reviewer,
-        draft=args.draft
+        title=title, body=body, base=args.base, reviewer=args.reviewer, draft=args.draft
     )
 
     # Create notification
@@ -561,7 +559,7 @@ def main():
 
     # Output result
     if result["success"]:
-        print(f"\nPR created successfully!")
+        print("\nPR created successfully!")
         print(f"URL: {result['url']}")
         sys.exit(0)
     else:

@@ -30,7 +30,6 @@ Usage:
 
 import os
 from pathlib import Path
-from typing import List, Optional
 
 import yaml
 
@@ -94,7 +93,7 @@ def get_github_username() -> str:
     return username
 
 
-def get_writable_repos() -> List[str]:
+def get_writable_repos() -> list[str]:
     """
     Get list of repositories where jib has write access.
 
@@ -154,13 +153,10 @@ def get_sync_config() -> dict:
         - sync_interval_minutes: int - sync interval in minutes
     """
     config = _load_config()
-    return config.get("github_sync", {
-        "sync_all_prs": True,
-        "sync_interval_minutes": 5
-    })
+    return config.get("github_sync", {"sync_all_prs": True, "sync_interval_minutes": 5})
 
 
-def get_repos_for_sync() -> List[str]:
+def get_repos_for_sync() -> list[str]:
     """
     Get list of repositories to sync from GitHub.
 
@@ -179,16 +175,23 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Query repository configuration")
-    parser.add_argument("--github-username", action="store_true",
-                        help="Print configured GitHub username")
-    parser.add_argument("--list-writable", action="store_true",
-                        help="List all writable repos (one per line)")
-    parser.add_argument("--check-writable", metavar="REPO",
-                        help="Check if REPO is writable (exit 0 if yes, 1 if no)")
-    parser.add_argument("--default-reviewer", action="store_true",
-                        help="Print default reviewer username")
-    parser.add_argument("--sync-all-prs", action="store_true",
-                        help="Print 'true' if sync_all_prs is enabled")
+    parser.add_argument(
+        "--github-username", action="store_true", help="Print configured GitHub username"
+    )
+    parser.add_argument(
+        "--list-writable", action="store_true", help="List all writable repos (one per line)"
+    )
+    parser.add_argument(
+        "--check-writable",
+        metavar="REPO",
+        help="Check if REPO is writable (exit 0 if yes, 1 if no)",
+    )
+    parser.add_argument(
+        "--default-reviewer", action="store_true", help="Print default reviewer username"
+    )
+    parser.add_argument(
+        "--sync-all-prs", action="store_true", help="Print 'true' if sync_all_prs is enabled"
+    )
 
     args = parser.parse_args()
 
@@ -199,6 +202,7 @@ def main():
             print(repo)
     elif args.check_writable:
         import sys
+
         sys.exit(0 if is_writable_repo(args.check_writable) else 1)
     elif args.default_reviewer:
         print(get_default_reviewer())

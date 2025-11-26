@@ -4,13 +4,9 @@ Tests for the context-sync main module.
 Tests the main orchestrator that runs all configured connectors.
 """
 
-import io
 import sys
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 
 class TestGetAllConnectors:
@@ -19,7 +15,7 @@ class TestGetAllConnectors:
     def test_get_all_connectors_returns_list(self):
         """Test that get_all_connectors returns a list."""
         # Since connectors need API credentials, we mock them
-        with patch('sys.path', sys.path):
+        with patch("sys.path", sys.path):
             # Simulate empty connector list when configs are invalid
             connectors = []
             assert isinstance(connectors, list)
@@ -33,7 +29,7 @@ class TestGetAllConnectors:
     def test_connector_initialization_error_handling(self):
         """Test that errors during connector init are handled gracefully."""
         # Simulate a connector that raises during initialization
-        with patch('logging.Logger.error') as mock_error:
+        with patch("logging.Logger.error"):
             # No crash should occur
             assert True
 
@@ -44,35 +40,35 @@ class TestSyncAllConnectors:
     def test_sync_results_structure(self):
         """Test that sync results have the expected structure."""
         results = {
-            'started_at': datetime.now().isoformat(),
-            'connectors': {},
-            'total_files': 0,
-            'total_size': 0,
-            'success_count': 0,
-            'failure_count': 0
+            "started_at": datetime.now().isoformat(),
+            "connectors": {},
+            "total_files": 0,
+            "total_size": 0,
+            "success_count": 0,
+            "failure_count": 0,
         }
 
-        assert 'started_at' in results
-        assert 'connectors' in results
-        assert 'total_files' in results
-        assert 'total_size' in results
-        assert 'success_count' in results
-        assert 'failure_count' in results
+        assert "started_at" in results
+        assert "connectors" in results
+        assert "total_files" in results
+        assert "total_size" in results
+        assert "success_count" in results
+        assert "failure_count" in results
 
     def test_sync_with_no_connectors(self):
         """Test sync behavior when no connectors are available."""
         results = {
-            'started_at': datetime.now().isoformat(),
-            'connectors': {},
-            'total_files': 0,
-            'total_size': 0,
-            'success_count': 0,
-            'failure_count': 0
+            "started_at": datetime.now().isoformat(),
+            "connectors": {},
+            "total_files": 0,
+            "total_size": 0,
+            "success_count": 0,
+            "failure_count": 0,
         }
 
         # No connectors means no success/failures
-        assert results['success_count'] == 0
-        assert results['failure_count'] == 0
+        assert results["success_count"] == 0
+        assert results["failure_count"] == 0
 
     def test_sync_incremental_vs_full(self):
         """Test that incremental flag is properly handled."""
@@ -86,32 +82,26 @@ class TestSyncAllConnectors:
 
     def test_sync_tracks_connector_metadata(self):
         """Test that sync results include connector metadata."""
-        connector_result = {
-            'success': True,
-            'metadata': {
-                'file_count': 10,
-                'total_size': 1024
-            }
-        }
+        connector_result = {"success": True, "metadata": {"file_count": 10, "total_size": 1024}}
 
-        assert 'success' in connector_result
-        assert 'metadata' in connector_result
-        assert connector_result['metadata']['file_count'] == 10
+        assert "success" in connector_result
+        assert "metadata" in connector_result
+        assert connector_result["metadata"]["file_count"] == 10
 
     def test_sync_handles_connector_failure(self):
         """Test that sync continues when a connector fails."""
         results = {
-            'connectors': {
-                'confluence': {'success': True, 'metadata': {}},
-                'jira': {'success': False, 'error': 'Connection failed'}
+            "connectors": {
+                "confluence": {"success": True, "metadata": {}},
+                "jira": {"success": False, "error": "Connection failed"},
             },
-            'success_count': 1,
-            'failure_count': 1
+            "success_count": 1,
+            "failure_count": 1,
         }
 
-        assert results['success_count'] == 1
-        assert results['failure_count'] == 1
-        assert not results['connectors']['jira']['success']
+        assert results["success_count"] == 1
+        assert results["failure_count"] == 1
+        assert not results["connectors"]["jira"]["success"]
 
 
 class TestPrintSummary:
@@ -120,13 +110,13 @@ class TestPrintSummary:
     def test_print_summary_basic_output(self, capsys):
         """Test that print_summary produces expected output."""
         results = {
-            'started_at': '2024-01-01T00:00:00',
-            'completed_at': '2024-01-01T00:05:00',
-            'connectors': {},
-            'total_files': 0,
-            'total_size': 0,
-            'success_count': 0,
-            'failure_count': 0
+            "started_at": "2024-01-01T00:00:00",
+            "completed_at": "2024-01-01T00:05:00",
+            "connectors": {},
+            "total_files": 0,
+            "total_size": 0,
+            "success_count": 0,
+            "failure_count": 0,
         }
 
         # Simulate print_summary output
@@ -144,28 +134,28 @@ class TestPrintSummary:
     def test_print_summary_with_connectors(self, capsys):
         """Test summary output with connector results."""
         results = {
-            'started_at': '2024-01-01T00:00:00',
-            'connectors': {
-                'confluence': {
-                    'success': True,
-                    'metadata': {
-                        'file_count': 100,
-                        'total_size': 1024 * 1024,
-                        'output_dir': '/tmp/confluence',
-                        'last_sync': '2024-01-01T00:00:00'
-                    }
+            "started_at": "2024-01-01T00:00:00",
+            "connectors": {
+                "confluence": {
+                    "success": True,
+                    "metadata": {
+                        "file_count": 100,
+                        "total_size": 1024 * 1024,
+                        "output_dir": "/tmp/confluence",
+                        "last_sync": "2024-01-01T00:00:00",
+                    },
                 }
             },
-            'total_files': 100,
-            'total_size': 1024 * 1024,
-            'success_count': 1,
-            'failure_count': 0
+            "total_files": 100,
+            "total_size": 1024 * 1024,
+            "success_count": 1,
+            "failure_count": 0,
         }
 
         # Simulate printing connector result
-        status = "✓" if results['connectors']['confluence']['success'] else "✗"
+        status = "✓" if results["connectors"]["confluence"]["success"] else "✗"
         print(f"{status} confluence")
-        print(f"    Files: 100")
+        print("    Files: 100")
 
         captured = capsys.readouterr()
         assert "✓ confluence" in captured.out
@@ -179,17 +169,17 @@ class TestPrintSummary:
     def test_print_summary_handles_missing_completed_at(self, capsys):
         """Test summary when completed_at is missing."""
         results = {
-            'started_at': '2024-01-01T00:00:00',
-            'connectors': {},
-            'total_files': 0,
-            'total_size': 0,
-            'success_count': 0,
-            'failure_count': 0
+            "started_at": "2024-01-01T00:00:00",
+            "connectors": {},
+            "total_files": 0,
+            "total_size": 0,
+            "success_count": 0,
+            "failure_count": 0,
         }
 
         # Should not crash if completed_at is missing
         print(f"Started:  {results.get('started_at', 'Unknown')}")
-        if 'completed_at' in results:
+        if "completed_at" in results:
             print(f"Completed: {results['completed_at']}")
 
         captured = capsys.readouterr()
@@ -214,14 +204,14 @@ class TestMainFunction:
 
     def test_main_returns_nonzero_on_failure(self):
         """Test that main returns non-zero when connectors fail."""
-        results = {'failure_count': 1}
-        exit_code = 1 if results['failure_count'] > 0 else 0
+        results = {"failure_count": 1}
+        exit_code = 1 if results["failure_count"] > 0 else 0
         assert exit_code == 1
 
     def test_main_returns_zero_on_success(self):
         """Test that main returns 0 when all connectors succeed."""
-        results = {'failure_count': 0}
-        exit_code = 1 if results['failure_count'] > 0 else 0
+        results = {"failure_count": 0}
+        exit_code = 1 if results["failure_count"] > 0 else 0
         assert exit_code == 0
 
     def test_main_quiet_mode_suppresses_summary(self):
@@ -244,19 +234,19 @@ class TestArgumentParsing:
     def test_default_arguments(self):
         """Test default argument values."""
         # Simulating argparse defaults
-        args = type('Args', (), {'full': False, 'quiet': False})()
+        args = type("Args", (), {"full": False, "quiet": False})()
 
         assert not args.full
         assert not args.quiet
 
     def test_full_flag(self):
         """Test --full flag is properly parsed."""
-        args = type('Args', (), {'full': True, 'quiet': False})()
+        args = type("Args", (), {"full": True, "quiet": False})()
         assert args.full
 
     def test_quiet_flag(self):
         """Test --quiet flag is properly parsed."""
-        args = type('Args', (), {'full': False, 'quiet': True})()
+        args = type("Args", (), {"full": False, "quiet": True})()
         assert args.quiet
 
 
@@ -267,7 +257,7 @@ class TestLogging:
         """Test that logger is configured with correct format."""
         import logging
 
-        logger = logging.getLogger('context-sync')
+        logger = logging.getLogger("context-sync")
         assert logger is not None
 
     def test_log_file_path(self, temp_dir):

@@ -5,9 +5,6 @@ Tests the ConfluenceConnector class which syncs documentation from Confluence.
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestConfluenceConnectorInit:
@@ -46,10 +43,10 @@ class TestConfluenceValidateConfig:
     def test_validate_config_checks_required_fields(self):
         """Test that validation checks all required config fields."""
         required_fields = [
-            'CONFLUENCE_API_TOKEN',
-            'CONFLUENCE_BASE_URL',
-            'CONFLUENCE_USER_EMAIL',
-            'CONFLUENCE_SPACE_KEYS'
+            "CONFLUENCE_API_TOKEN",
+            "CONFLUENCE_BASE_URL",
+            "CONFLUENCE_USER_EMAIL",
+            "CONFLUENCE_SPACE_KEYS",
         ]
 
         for field in required_fields:
@@ -76,34 +73,34 @@ class TestConfluenceSync:
     def test_sync_returns_false_when_syncer_not_initialized(self):
         """Test that sync returns False when syncer is None."""
         syncer = None
-        result = False if syncer is None else True
+        result = syncer is not None
         assert not result
 
     def test_sync_returns_false_when_config_invalid(self):
         """Test that sync returns False when config is invalid."""
         config_valid = False
-        result = False if not config_valid else True
+        result = bool(config_valid)
         assert not result
 
     def test_sync_iterates_over_space_keys(self):
         """Test that sync processes each configured space."""
-        space_keys = ['TECH', 'DOCS', 'TEAM']
+        space_keys = ["TECH", "DOCS", "TEAM"]
 
         synced = []
         for space_key in space_keys:
             synced.append(space_key)
 
         assert len(synced) == 3
-        assert 'TECH' in synced
+        assert "TECH" in synced
 
     def test_sync_continues_on_space_error(self):
         """Test that sync continues when individual space fails."""
-        space_keys = ['SPACE1', 'SPACE2', 'SPACE3']
+        space_keys = ["SPACE1", "SPACE2", "SPACE3"]
         failed_spaces = []
         synced_spaces = []
 
         for space in space_keys:
-            if space == 'SPACE2':
+            if space == "SPACE2":
                 # Simulate error for SPACE2
                 failed_spaces.append(space)
             else:
@@ -127,39 +124,35 @@ class TestConfluenceGetSyncMetadata:
 
     def test_metadata_includes_spaces(self):
         """Test that metadata includes space list."""
-        spaces = ['TECH', 'DOCS']
-        metadata = {
-            'spaces': spaces
-        }
+        spaces = ["TECH", "DOCS"]
+        metadata = {"spaces": spaces}
 
-        assert 'spaces' in metadata
-        assert len(metadata['spaces']) == 2
+        assert "spaces" in metadata
+        assert len(metadata["spaces"]) == 2
 
     def test_metadata_includes_base_url(self):
         """Test that metadata includes Confluence base URL."""
         base_url = "https://example.atlassian.net/wiki"
-        metadata = {
-            'base_url': base_url
-        }
+        metadata = {"base_url": base_url}
 
-        assert 'base_url' in metadata
-        assert 'atlassian.net' in metadata['base_url']
+        assert "base_url" in metadata
+        assert "atlassian.net" in metadata["base_url"]
 
     def test_metadata_inherits_base_fields(self):
         """Test that metadata includes base connector fields."""
         metadata = {
-            'connector': 'confluence',
-            'output_dir': '/path/to/output',
-            'last_sync': '2024-01-01T00:00:00',
-            'file_count': 100,
-            'total_size': 1024 * 1024
+            "connector": "confluence",
+            "output_dir": "/path/to/output",
+            "last_sync": "2024-01-01T00:00:00",
+            "file_count": 100,
+            "total_size": 1024 * 1024,
         }
 
-        assert 'connector' in metadata
-        assert 'output_dir' in metadata
-        assert 'last_sync' in metadata
-        assert 'file_count' in metadata
-        assert 'total_size' in metadata
+        assert "connector" in metadata
+        assert "output_dir" in metadata
+        assert "last_sync" in metadata
+        assert "file_count" in metadata
+        assert "total_size" in metadata
 
 
 class TestConfluenceMain:
@@ -167,14 +160,14 @@ class TestConfluenceMain:
 
     def test_main_parses_full_flag(self):
         """Test that main parses --full flag."""
-        args = type('Args', (), {'full': True, 'output_dir': None})()
+        args = type("Args", (), {"full": True, "output_dir": None})()
         incremental = not args.full
         assert not incremental
 
     def test_main_parses_output_dir(self, temp_dir):
         """Test that main parses --output-dir argument."""
         output_dir = str(temp_dir / "confluence")
-        args = type('Args', (), {'full': False, 'output_dir': output_dir})()
+        args = type("Args", (), {"full": False, "output_dir": output_dir})()
 
         actual_dir = Path(args.output_dir) if args.output_dir else None
         assert actual_dir is not None
@@ -183,16 +176,16 @@ class TestConfluenceMain:
     def test_main_prints_summary(self, capsys):
         """Test that main prints sync summary."""
         metadata = {
-            'spaces': ['TECH'],
-            'file_count': 50,
-            'total_size': 1024 * 1024,
-            'last_sync': '2024-01-01T00:00:00'
+            "spaces": ["TECH"],
+            "file_count": 50,
+            "total_size": 1024 * 1024,
+            "last_sync": "2024-01-01T00:00:00",
         }
 
-        print(f"\nSync Summary:")
+        print("\nSync Summary:")
         print(f"  Spaces: {', '.join(metadata.get('spaces', []))}")
         print(f"  Files: {metadata['file_count']}")
-        print(f"  Size: {metadata['total_size'] / (1024*1024):.2f} MB")
+        print(f"  Size: {metadata['total_size'] / (1024 * 1024):.2f} MB")
         print(f"  Last sync: {metadata['last_sync']}")
 
         captured = capsys.readouterr()
@@ -244,7 +237,6 @@ class TestConfluenceSpaceSync:
 
     def test_sync_space_converts_html_to_markdown(self):
         """Test that HTML content is converted to markdown."""
-        html = "<h1>Title</h1><p>Paragraph</p>"
         # Simplified conversion simulation
         markdown = "# Title\n\nParagraph\n"
 

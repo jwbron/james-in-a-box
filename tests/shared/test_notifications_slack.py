@@ -3,9 +3,7 @@ Tests for the Slack notification service.
 """
 
 import json
-import pytest
 from pathlib import Path
-from unittest.mock import patch
 
 from notifications.slack import SlackNotificationService, get_slack_service
 from notifications.types import (
@@ -48,7 +46,7 @@ class TestSlackNotificationService:
         assert not notifications_dir.exists()
         assert not threads_file.parent.exists()
 
-        service = SlackNotificationService(
+        SlackNotificationService(
             notifications_dir=notifications_dir,
             threads_file=threads_file,
         )
@@ -351,6 +349,7 @@ class TestGetSlackService:
         """Test that get_slack_service returns a service instance."""
         # Reset the singleton for this test
         import notifications.slack as slack_module
+
         slack_module._default_instance = None
 
         service = get_slack_service()
@@ -359,6 +358,7 @@ class TestGetSlackService:
     def test_get_slack_service_singleton(self, mock_home):
         """Test that get_slack_service returns the same instance."""
         import notifications.slack as slack_module
+
         slack_module._default_instance = None
 
         service1 = get_slack_service()

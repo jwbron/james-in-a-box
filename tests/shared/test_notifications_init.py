@@ -5,14 +5,14 @@ Tests for the notifications module init and convenience functions.
 import pytest
 
 from notifications import (
-    # Types
-    NotificationType,
     NotificationChannel,
     NotificationContext,
     NotificationMessage,
     NotificationResult,
     # Base class
     NotificationService,
+    # Types
+    NotificationType,
     # Slack implementation
     SlackNotificationService,
     get_slack_service,
@@ -67,6 +67,7 @@ class TestSlackNotifyConvenience:
     def reset_singleton(self):
         """Reset the singleton before each test."""
         import notifications.slack as slack_module
+
         slack_module._default_instance = None
         yield
         slack_module._default_instance = None

@@ -2,15 +2,14 @@
 Tests for the notifications types module.
 """
 
-import pytest
 from datetime import datetime
 
 from notifications.types import (
-    NotificationType,
     NotificationChannel,
     NotificationContext,
     NotificationMessage,
     NotificationResult,
+    NotificationType,
 )
 
 

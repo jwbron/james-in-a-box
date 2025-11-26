@@ -7,12 +7,9 @@ automatically analyzes failures and creates notifications with suggested fixes.
 """
 
 import json
-import time
 import subprocess
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional
-from subprocess import TimeoutExpired
+from pathlib import Path
 
 
 class GitHubWatcher:
@@ -27,7 +24,7 @@ class GitHubWatcher:
         self.state_file = Path.home() / "sharing" / "tracking" / "github-watcher-state.json"
         self.notified_failures = self.load_state()
 
-    def load_state(self) -> Dict:
+    def load_state(self) -> dict:
         """Load previous notification state"""
         if self.state_file.exists():
             try:
@@ -35,13 +32,13 @@ class GitHubWatcher:
                     return json.load(f)
             except:
                 pass
-        return {'notified': {}}
+        return {"notified": {}}
 
     def save_state(self):
         """Save notification state"""
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        with self.state_file.open('w') as f:
-            json.dump({'notified': self.notified_failures}, f, indent=2)
+        with self.state_file.open("w") as f:
+            json.dump({"notified": self.notified_failures}, f, indent=2)
 
     def watch(self):
         """Main watch loop - check for failures once"""
@@ -61,19 +58,19 @@ class GitHubWatcher:
         with check_file.open() as f:
             data = json.load(f)
 
-        pr_num = data['pr_number']
-        repo = data['repository']
-        repo_name = repo.split('/')[-1]
+        pr_num = data["pr_number"]
+        repo = data["repository"]
+        repo_name = repo.split("/")[-1]
 
         # Find failed checks
-        failed_checks = [c for c in data['checks'] if c.get('conclusion') == 'failure']
+        failed_checks = [c for c in data["checks"] if c.get("conclusion") == "failure"]
 
         if not failed_checks:
             return  # All passing
 
         # Check if we've already notified about these specific failures
         check_key = f"{repo}-{pr_num}"
-        failed_names = sorted([c['name'] for c in failed_checks])
+        failed_names = sorted([c["name"] for c in failed_checks])
         failed_signature = f"{check_key}:" + ",".join(failed_names)
 
         if failed_signature in self.notified_failures:
@@ -90,48 +87,52 @@ class GitHubWatcher:
         self.analyze_and_notify(pr_num, repo, pr_context, failed_checks)
 
         # Mark as notified
-        self.notified_failures[failed_signature] = datetime.utcnow().isoformat() + 'Z'
+        self.notified_failures[failed_signature] = datetime.utcnow().isoformat() + "Z"
         self.save_state()
 
-    def get_pr_context(self, repo_name: str, pr_num: int) -> Dict:
+    def get_pr_context(self, repo_name: str, pr_num: int) -> dict:
         """Get PR context from synced files"""
         pr_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.md"
         diff_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.diff"
 
         context = {
-            'pr_number': pr_num,
-            'title': f"PR #{pr_num}",
-            'url': '',
-            'branch': '',
-            'files_changed': []
+            "pr_number": pr_num,
+            "title": f"PR #{pr_num}",
+            "url": "",
+            "branch": "",
+            "files_changed": [],
         }
 
         if pr_file.exists():
             # Parse PR markdown for key info
             with pr_file.open() as f:
                 content = f.read()
-                lines = content.split('\n')
+                lines = content.split("\n")
 
                 for line in lines:
-                    if line.startswith('# PR #'):
-                        context['title'] = line.replace('# PR #', '').replace(f'{pr_num}: ', '').strip()
-                    elif line.startswith('**URL**:'):
-                        context['url'] = line.replace('**URL**:', '').strip()
-                    elif line.startswith('**Branch**:'):
-                        context['branch'] = line.replace('**Branch**:', '').strip()
-                    elif line.strip().startswith('- `') and '(+' in line:
+                    if line.startswith("# PR #"):
+                        context["title"] = (
+                            line.replace("# PR #", "").replace(f"{pr_num}: ", "").strip()
+                        )
+                    elif line.startswith("**URL**:"):
+                        context["url"] = line.replace("**URL**:", "").strip()
+                    elif line.startswith("**Branch**:"):
+                        context["branch"] = line.replace("**Branch**:", "").strip()
+                    elif line.strip().startswith("- `") and "(+" in line:
                         # File change line
-                        context['files_changed'].append(line.strip())
+                        context["files_changed"].append(line.strip())
 
         if diff_file.exists():
-            context['diff_available'] = True
-            context['diff_size'] = diff_file.stat().st_size
+            context["diff_available"] = True
+            context["diff_size"] = diff_file.stat().st_size
 
         return context
 
-    def analyze_and_notify(self, pr_num: int, repo: str, pr_context: Dict, failed_checks: List[Dict]):
+    def analyze_and_notify(
+        self, pr_num: int, repo: str, pr_context: dict, failed_checks: list[dict]
+    ):
         """Analyze failures and create notification with suggested actions"""
-        repo_name = repo.split('/')[-1]
+        repo_name = repo.split("/")[-1]
 
         # Create Beads task for the failure
         beads_id = self.create_beads_task(pr_num, repo_name, pr_context, failed_checks)
@@ -141,14 +142,14 @@ class GitHubWatcher:
 
         # If auto-fix is possible, implement it immediately
         fix_result = None
-        if analysis.get('can_auto_fix'):
+        if analysis.get("can_auto_fix"):
             fix_result = self.implement_auto_fix(pr_num, repo_name, pr_context, analysis, beads_id)
 
         # Create notification
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         notif_file = self.notifications_dir / f"{timestamp}-pr-check-failed-{pr_num}.md"
 
-        with notif_file.open('w') as f:
+        with notif_file.open("w") as f:
             f.write(f"# 🔴 PR Check Failed: #{pr_num}\n\n")
             f.write(f"**PR**: {pr_context['title']}\n")
             f.write(f"**Repository**: {repo}\n")
@@ -164,13 +165,13 @@ class GitHubWatcher:
                 f.write(f"## ❌ {check['name']}\n\n")
                 f.write(f"**Status**: {check['status']}\n")
                 f.write(f"**Conclusion**: {check['conclusion']}\n")
-                if check.get('completedAt'):
+                if check.get("completedAt"):
                     f.write(f"**Completed**: {check['completedAt']}\n")
                 f.write("\n")
 
-                if check.get('full_log'):
+                if check.get("full_log"):
                     # Include excerpt of log (first 1000 chars + last 1000 chars)
-                    log = check['full_log']
+                    log = check["full_log"]
                     if len(log) > 2500:
                         f.write("### Log Excerpt (First 1000 chars)\n\n")
                         f.write("```\n")
@@ -191,11 +192,11 @@ class GitHubWatcher:
             f.write("## 🔍 Analysis\n\n")
             f.write(f"{analysis['summary']}\n\n")
 
-            if analysis.get('root_cause'):
+            if analysis.get("root_cause"):
                 f.write(f"**Root Cause**: {analysis['root_cause']}\n\n")
 
             f.write("## 🛠️ Suggested Actions\n\n")
-            for i, action in enumerate(analysis['actions'], 1):
+            for i, action in enumerate(analysis["actions"], 1):
                 f.write(f"{i}. {action}\n")
             f.write("\n")
 
@@ -203,18 +204,18 @@ class GitHubWatcher:
                 f.write("## ✅ Automatic Fix Implemented\n\n")
                 f.write(f"**Branch**: `{fix_result['branch']}`\n")
                 f.write(f"**Changes**: {fix_result['changes']}\n\n")
-                if fix_result.get('commit'):
+                if fix_result.get("commit"):
                     f.write(f"**Commit**: {fix_result['commit']}\n\n")
                 f.write("**Next Steps**:\n")
                 f.write(f"1. Review the changes in branch `{fix_result['branch']}`\n")
                 f.write("2. Test locally if needed\n")
                 f.write("3. Push the branch and update the PR or create a new one\n")
                 f.write("\n")
-                if fix_result.get('notes'):
+                if fix_result.get("notes"):
                     f.write(f"**Notes**: {fix_result['notes']}\n\n")
-            elif analysis.get('can_auto_fix'):
+            elif analysis.get("can_auto_fix"):
                 f.write("## ⚠️ Auto-Fix Failed\n\n")
-                f.write(f"An automatic fix was attempted but failed.\n\n")
+                f.write("An automatic fix was attempted but failed.\n\n")
                 f.write(f"**Intended Fix**: {analysis['auto_fix_description']}\n\n")
                 f.write("**Next Steps**:\n")
                 f.write("- Review the failure manually\n")
@@ -234,7 +235,9 @@ class GitHubWatcher:
 
         print(f"  ✓ Created notification: {notif_file.name}")
 
-    def implement_auto_fix(self, pr_num: int, repo_name: str, pr_context: Dict, analysis: Dict, beads_id: Optional[str]) -> Optional[Dict]:
+    def implement_auto_fix(
+        self, pr_num: int, repo_name: str, pr_context: dict, analysis: dict, beads_id: str | None
+    ) -> dict | None:
         """
         Implement automatic fix for obvious issues (e.g., linting)
 
@@ -254,9 +257,9 @@ class GitHubWatcher:
                 return None
 
             # Get current branch from PR context
-            pr_branch = pr_context.get('branch', '').split(' → ')[0].strip()
+            pr_branch = pr_context.get("branch", "").split(" → ")[0].strip()
             if not pr_branch:
-                print(f"  ⚠️ Could not determine PR branch")
+                print("  ⚠️ Could not determine PR branch")
                 return None
 
             # Create fix branch name
@@ -271,26 +274,26 @@ class GitHubWatcher:
 
             try:
                 import os
+
                 os.chdir(repo_path)
 
                 # Ensure we're on the PR branch
                 result = subprocess.run(
-                    ['git', 'checkout', pr_branch],
-                    capture_output=True,
-                    text=True
+                    ["git", "checkout", pr_branch], check=False, capture_output=True, text=True
                 )
                 if result.returncode != 0:
                     print(f"  ⚠️ Could not checkout branch {pr_branch}: {result.stderr}")
                     return None
 
                 # Pull latest changes
-                subprocess.run(['git', 'pull'], capture_output=True)
+                subprocess.run(["git", "pull"], check=False, capture_output=True)
 
                 # Create new fix branch
                 result = subprocess.run(
-                    ['git', 'checkout', '-b', fix_branch],
+                    ["git", "checkout", "-b", fix_branch],
+                    check=False,
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
                 if result.returncode != 0:
                     print(f"  ⚠️ Could not create branch {fix_branch}: {result.stderr}")
@@ -300,58 +303,64 @@ class GitHubWatcher:
                 fix_commands = []
                 changes_description = []
 
-                if 'eslint' in analysis['auto_fix_description'].lower():
-                    fix_commands.append(['npx', 'eslint', '.', '--fix'])
+                if "eslint" in analysis["auto_fix_description"].lower():
+                    fix_commands.append(["npx", "eslint", ".", "--fix"])
                     changes_description.append("Ran eslint --fix")
-                elif 'pylint' in analysis['auto_fix_description'].lower() or 'black' in analysis['auto_fix_description'].lower():
+                elif (
+                    "pylint" in analysis["auto_fix_description"].lower()
+                    or "black" in analysis["auto_fix_description"].lower()
+                ):
                     # Run black for Python formatting
-                    fix_commands.append(['black', '.'])
+                    fix_commands.append(["black", "."])
                     changes_description.append("Ran black formatter")
                 else:
                     # Generic linting fix - try both
-                    fix_commands.append(['npx', 'eslint', '.', '--fix'])
-                    fix_commands.append(['black', '.'])
+                    fix_commands.append(["npx", "eslint", ".", "--fix"])
+                    fix_commands.append(["black", "."])
                     changes_description.append("Ran available linters")
 
                 # Run fix commands
                 fix_output = []
                 for cmd in fix_commands:
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                    result = subprocess.run(
+                        cmd, check=False, capture_output=True, text=True, timeout=120
+                    )
                     if result.returncode == 0 or result.stdout:
                         fix_output.append(f"{' '.join(cmd)}: {result.stdout[:200]}")
 
                 # Check if there are changes
                 result = subprocess.run(
-                    ['git', 'diff', '--name-only'],
-                    capture_output=True,
-                    text=True
+                    ["git", "diff", "--name-only"], check=False, capture_output=True, text=True
                 )
 
-                changed_files = result.stdout.strip().split('\n')
+                changed_files = result.stdout.strip().split("\n")
                 changed_files = [f for f in changed_files if f]
 
                 if not changed_files:
-                    print(f"  ℹ️ No changes after running fix commands")
+                    print("  [info] No changes after running fix commands")
                     # Clean up branch
-                    subprocess.run(['git', 'checkout', pr_branch], capture_output=True)
-                    subprocess.run(['git', 'branch', '-D', fix_branch], capture_output=True)
+                    subprocess.run(["git", "checkout", pr_branch], check=False, capture_output=True)
+                    subprocess.run(
+                        ["git", "branch", "-D", fix_branch], check=False, capture_output=True
+                    )
                     return None
 
                 # Stage all changes
-                subprocess.run(['git', 'add', '-A'], capture_output=True)
+                subprocess.run(["git", "add", "-A"], check=False, capture_output=True)
 
                 # Commit changes
                 commit_message = f"Auto-fix linting issues for PR #{pr_num}\n\n"
-                commit_message += f"Automatically fixed linting failures detected in PR checks.\n\n"
+                commit_message += "Automatically fixed linting failures detected in PR checks.\n\n"
                 commit_message += "Changes:\n"
                 for desc in changes_description:
                     commit_message += f"- {desc}\n"
                 commit_message += f"\nFixed {len(changed_files)} file(s)"
 
                 result = subprocess.run(
-                    ['git', 'commit', '-m', commit_message],
+                    ["git", "commit", "-m", commit_message],
+                    check=False,
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
 
                 if result.returncode != 0:
@@ -360,9 +369,10 @@ class GitHubWatcher:
 
                 # Get commit hash
                 result = subprocess.run(
-                    ['git', 'rev-parse', '--short', 'HEAD'],
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    check=False,
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
                 commit_hash = result.stdout.strip()
 
@@ -376,16 +386,19 @@ class GitHubWatcher:
                     notes += f"Files changed: {len(changed_files)}"
 
                     subprocess.run(
-                        ['beads', 'update', beads_id, '--notes', notes],
+                        ["beads", "update", beads_id, "--notes", notes],
+                        check=False,
                         cwd=self.beads_dir,
-                        capture_output=True
+                        capture_output=True,
                     )
 
                 return {
-                    'branch': fix_branch,
-                    'changes': f"Fixed {len(changed_files)} file(s): " + ", ".join(changed_files[:5]) + ("..." if len(changed_files) > 5 else ""),
-                    'commit': commit_hash,
-                    'notes': f"Auto-fix applied using: {', '.join(changes_description)}"
+                    "branch": fix_branch,
+                    "changes": f"Fixed {len(changed_files)} file(s): "
+                    + ", ".join(changed_files[:5])
+                    + ("..." if len(changed_files) > 5 else ""),
+                    "commit": commit_hash,
+                    "notes": f"Auto-fix applied using: {', '.join(changes_description)}",
                 }
 
             finally:
@@ -393,39 +406,52 @@ class GitHubWatcher:
                 os.chdir(original_dir)
 
         except subprocess.TimeoutExpired:
-            print(f"  ⚠️ Fix command timed out")
+            print("  ⚠️ Fix command timed out")
             return None
         except Exception as e:
             print(f"  ⚠️ Auto-fix failed: {e}")
             import traceback
+
             traceback.print_exc()
             return None
 
-    def create_beads_task(self, pr_num: int, repo_name: str, pr_context: Dict, failed_checks: List[Dict]) -> Optional[str]:
+    def create_beads_task(
+        self, pr_num: int, repo_name: str, pr_context: dict, failed_checks: list[dict]
+    ) -> str | None:
         """Create Beads task for the PR failure"""
         try:
             # Check if beads is available
-            result = subprocess.run(['which', 'beads'], capture_output=True)
+            result = subprocess.run(["which", "beads"], check=False, capture_output=True)
             if result.returncode != 0:
                 return None
 
             # Create task
-            check_names = ', '.join([c['name'] for c in failed_checks])
+            check_names = ", ".join([c["name"] for c in failed_checks])
             title = f"Fix PR #{pr_num} check failures: {check_names}"
 
             result = subprocess.run(
-                ['beads', 'add', title, '--tags', f'pr-{pr_num}', 'ci-failure', repo_name, 'urgent'],
+                [
+                    "beads",
+                    "add",
+                    title,
+                    "--tags",
+                    f"pr-{pr_num}",
+                    "ci-failure",
+                    repo_name,
+                    "urgent",
+                ],
+                check=False,
                 cwd=self.beads_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if result.returncode == 0:
                 # Extract bead ID from output (usually first line)
                 output = result.stdout.strip()
                 # Output format: "Created bd-a3f8: Fix PR #123..."
-                if 'Created' in output and 'bd-' in output:
-                    bead_id = output.split('bd-')[1].split(':')[0]
+                if "Created" in output and "bd-" in output:
+                    bead_id = output.split("bd-")[1].split(":")[0]
                     bead_id = f"bd-{bead_id.split()[0]}"
 
                     # Add notes
@@ -434,9 +460,10 @@ class GitHubWatcher:
                     notes += f"URL: {pr_context.get('url', 'N/A')}\n"
 
                     subprocess.run(
-                        ['beads', 'update', bead_id, '--notes', notes],
+                        ["beads", "update", bead_id, "--notes", notes],
+                        check=False,
                         cwd=self.beads_dir,
-                        capture_output=True
+                        capture_output=True,
                     )
 
                     print(f"  ✓ Created Beads task: {bead_id}")
@@ -446,78 +473,78 @@ class GitHubWatcher:
 
         return None
 
-    def analyze_failure(self, pr_context: Dict, failed_checks: List[Dict]) -> Dict:
+    def analyze_failure(self, pr_context: dict, failed_checks: list[dict]) -> dict:
         """Analyze failure and determine if auto-fix is possible"""
         analysis = {
-            'summary': '',
-            'root_cause': None,
-            'actions': [],
-            'can_auto_fix': False,
-            'auto_fix_description': None
+            "summary": "",
+            "root_cause": None,
+            "actions": [],
+            "can_auto_fix": False,
+            "auto_fix_description": None,
         }
 
         # Simple heuristic analysis
-        check_names = [c['name'].lower() for c in failed_checks]
-        logs = [c.get('full_log', '') for c in failed_checks]
-        combined_log = '\n'.join(logs).lower()
+        check_names = [c["name"].lower() for c in failed_checks]
+        logs = [c.get("full_log", "") for c in failed_checks]
+        combined_log = "\n".join(logs).lower()
 
         # Detect common failure patterns
-        if any('pytest' in name or 'test' in name for name in check_names):
-            analysis['summary'] = "Test failures detected in PR checks."
+        if any("pytest" in name or "test" in name for name in check_names):
+            analysis["summary"] = "Test failures detected in PR checks."
 
             # Check for common test failure patterns
-            if 'importerror' in combined_log or 'modulenotfounderror' in combined_log:
-                analysis['root_cause'] = "Missing dependency or import error"
-                analysis['actions'] = [
+            if "importerror" in combined_log or "modulenotfounderror" in combined_log:
+                analysis["root_cause"] = "Missing dependency or import error"
+                analysis["actions"] = [
                     "Check requirements.txt or package.json for missing dependencies",
                     "Verify all imports are correct",
-                    "Run tests locally to reproduce"
+                    "Run tests locally to reproduce",
                 ]
-                analysis['can_auto_fix'] = False  # Need human judgment
+                analysis["can_auto_fix"] = False  # Need human judgment
 
-            elif 'assertion' in combined_log or 'expected' in combined_log:
-                analysis['root_cause'] = "Test assertion failure"
-                analysis['actions'] = [
+            elif "assertion" in combined_log or "expected" in combined_log:
+                analysis["root_cause"] = "Test assertion failure"
+                analysis["actions"] = [
                     "Review the failing test to understand expectations",
                     "Check if PR changes broke test assumptions",
-                    "Update test if expectations changed"
+                    "Update test if expectations changed",
                 ]
-                analysis['can_auto_fix'] = False
+                analysis["can_auto_fix"] = False
 
             else:
-                analysis['root_cause'] = "Test failure (cause unclear from logs)"
-                analysis['actions'] = [
+                analysis["root_cause"] = "Test failure (cause unclear from logs)"
+                analysis["actions"] = [
                     "Review full test output",
                     "Run tests locally",
-                    "Check for recent changes that might affect tests"
+                    "Check for recent changes that might affect tests",
                 ]
 
-        elif any('lint' in name or 'eslint' in name or 'pylint' in name for name in check_names):
-            analysis['summary'] = "Code quality/linting failures detected."
-            analysis['root_cause'] = "Code style or linting violations"
-            analysis['actions'] = [
+        elif any("lint" in name or "eslint" in name or "pylint" in name for name in check_names):
+            analysis["summary"] = "Code quality/linting failures detected."
+            analysis["root_cause"] = "Code style or linting violations"
+            analysis["actions"] = [
                 "Run linter locally: eslint or pylint",
                 "Auto-fix with: eslint --fix or black/autopep8",
-                "Review and commit fixes"
+                "Review and commit fixes",
             ]
-            analysis['can_auto_fix'] = True
-            analysis['auto_fix_description'] = "Run linter with --fix flag and commit changes"
+            analysis["can_auto_fix"] = True
+            analysis["auto_fix_description"] = "Run linter with --fix flag and commit changes"
 
-        elif any('build' in name or 'compile' in name for name in check_names):
-            analysis['summary'] = "Build/compilation failures detected."
-            analysis['root_cause'] = "Build errors"
-            analysis['actions'] = [
+        elif any("build" in name or "compile" in name for name in check_names):
+            analysis["summary"] = "Build/compilation failures detected."
+            analysis["root_cause"] = "Build errors"
+            analysis["actions"] = [
                 "Check build logs for specific errors",
                 "Verify all dependencies are available",
-                "Run build locally to reproduce"
+                "Run build locally to reproduce",
             ]
 
         else:
-            analysis['summary'] = f"{len(failed_checks)} check(s) failed in PR."
-            analysis['actions'] = [
+            analysis["summary"] = f"{len(failed_checks)} check(s) failed in PR."
+            analysis["actions"] = [
                 "Review check logs for details",
                 "Investigate each failed check individually",
-                "Determine if failures are related to PR changes"
+                "Determine if failures are related to PR changes",
             ]
 
         return analysis
@@ -529,5 +556,5 @@ def main():
     watcher.watch()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

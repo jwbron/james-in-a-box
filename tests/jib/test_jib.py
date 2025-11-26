@@ -11,15 +11,12 @@ These tests focus on utility functions and non-Docker operations:
 Docker and subprocess operations are mocked since they require Docker daemon.
 """
 
-import json
 import os
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock, PropertyMock
 import subprocess
-import sys
-import tempfile
 from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 
 # Load jib module (filename without .py extension)
 jib_path = Path(__file__).parent.parent.parent / "jib-container" / "jib"
@@ -35,17 +32,17 @@ class TestColors:
 
     def test_colors_defined(self):
         """Test that all color codes are defined."""
-        assert hasattr(Colors, 'BLUE')
-        assert hasattr(Colors, 'GREEN')
-        assert hasattr(Colors, 'YELLOW')
-        assert hasattr(Colors, 'RED')
-        assert hasattr(Colors, 'BOLD')
-        assert hasattr(Colors, 'NC')
+        assert hasattr(Colors, "BLUE")
+        assert hasattr(Colors, "GREEN")
+        assert hasattr(Colors, "YELLOW")
+        assert hasattr(Colors, "RED")
+        assert hasattr(Colors, "BOLD")
+        assert hasattr(Colors, "NC")
 
     def test_colors_are_escape_codes(self):
         """Test that colors are ANSI escape codes."""
-        assert Colors.BLUE.startswith('\033[')
-        assert Colors.NC == '\033[0m'
+        assert Colors.BLUE.startswith("\033[")
+        assert Colors.NC == "\033[0m"
 
 
 class TestOutputFunctions:
@@ -85,16 +82,16 @@ class TestConfig:
 
     def test_config_dir(self):
         """Test config directory path."""
-        assert Config.CONFIG_DIR == Path.home() / ".jib"
+        assert Path.home() / ".jib" == Config.CONFIG_DIR
 
     def test_user_config_dir(self):
         """Test user config directory path."""
-        assert Config.USER_CONFIG_DIR == Path.home() / ".config" / "jib"
+        assert Path.home() / ".config" / "jib" == Config.USER_CONFIG_DIR
 
     def test_github_token_file_path(self):
         """Test GitHub token file path."""
         expected = Path.home() / ".config" / "jib" / "github-token"
-        assert Config.GITHUB_TOKEN_FILE == expected
+        assert expected == Config.GITHUB_TOKEN_FILE
 
     def test_image_name(self):
         """Test Docker image name."""
@@ -106,19 +103,19 @@ class TestConfig:
 
     def test_khan_source_path(self):
         """Test Khan source directory path."""
-        assert Config.KHAN_SOURCE == Path.home() / "khan"
+        assert Path.home() / "khan" == Config.KHAN_SOURCE
 
     def test_sharing_dir_path(self):
         """Test sharing directory path."""
-        assert Config.SHARING_DIR == Path.home() / ".jib-sharing"
+        assert Path.home() / ".jib-sharing" == Config.SHARING_DIR
 
     def test_tmp_dir_path(self):
         """Test tmp directory path."""
-        assert Config.TMP_DIR == Path.home() / ".jib-sharing" / "tmp"
+        assert Path.home() / ".jib-sharing" / "tmp" == Config.TMP_DIR
 
     def test_worktree_base_path(self):
         """Test worktree base directory path."""
-        assert Config.WORKTREE_BASE == Path.home() / ".jib-worktrees"
+        assert Path.home() / ".jib-worktrees" == Config.WORKTREE_BASE
 
     def test_dangerous_dirs_defined(self):
         """Test that dangerous directories are defined."""
@@ -131,19 +128,19 @@ class TestConfig:
 class TestGetPlatform:
     """Tests for platform detection."""
 
-    @patch('platform.system')
+    @patch("platform.system")
     def test_detect_linux(self, mock_system):
         """Test detecting Linux platform."""
         mock_system.return_value = "Linux"
         assert jib.get_platform() == "linux"
 
-    @patch('platform.system')
+    @patch("platform.system")
     def test_detect_macos(self, mock_system):
         """Test detecting macOS platform."""
         mock_system.return_value = "Darwin"
         assert jib.get_platform() == "macos"
 
-    @patch('platform.system')
+    @patch("platform.system")
     def test_detect_unknown(self, mock_system):
         """Test detecting unknown platform."""
         mock_system.return_value = "Windows"
@@ -156,14 +153,14 @@ class TestGetGithubToken:
     def test_no_token_file(self, temp_dir, monkeypatch):
         """Test when token file doesn't exist."""
         # Point to non-existent token file
-        monkeypatch.setattr(Config, 'GITHUB_TOKEN_FILE', temp_dir / "nonexistent")
+        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", temp_dir / "nonexistent")
         assert jib.get_github_token() is None
 
     def test_valid_ghp_token(self, temp_dir, monkeypatch):
         """Test reading valid ghp_ prefixed token."""
         token_file = temp_dir / "github-token"
         token_file.write_text("ghp_test1234567890abcdef")
-        monkeypatch.setattr(Config, 'GITHUB_TOKEN_FILE', token_file)
+        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
 
         assert jib.get_github_token() == "ghp_test1234567890abcdef"
 
@@ -171,7 +168,7 @@ class TestGetGithubToken:
         """Test reading valid github_pat_ prefixed token."""
         token_file = temp_dir / "github-token"
         token_file.write_text("github_pat_test1234567890")
-        monkeypatch.setattr(Config, 'GITHUB_TOKEN_FILE', token_file)
+        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
 
         assert jib.get_github_token() == "github_pat_test1234567890"
 
@@ -179,7 +176,7 @@ class TestGetGithubToken:
         """Test rejecting token with invalid prefix."""
         token_file = temp_dir / "github-token"
         token_file.write_text("invalid_token_1234567890")
-        monkeypatch.setattr(Config, 'GITHUB_TOKEN_FILE', token_file)
+        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
 
         assert jib.get_github_token() is None
 
@@ -187,7 +184,7 @@ class TestGetGithubToken:
         """Test empty token file."""
         token_file = temp_dir / "github-token"
         token_file.write_text("")
-        monkeypatch.setattr(Config, 'GITHUB_TOKEN_FILE', token_file)
+        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
 
         assert jib.get_github_token() is None
 
@@ -195,7 +192,7 @@ class TestGetGithubToken:
         """Test whitespace is stripped from token."""
         token_file = temp_dir / "github-token"
         token_file.write_text("  ghp_test1234567890abcdef  \n")
-        monkeypatch.setattr(Config, 'GITHUB_TOKEN_FILE', token_file)
+        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
 
         assert jib.get_github_token() == "ghp_test1234567890abcdef"
 
@@ -237,7 +234,7 @@ class TestCheckClaudeCredentials:
     def test_no_claude_dir(self, temp_dir, monkeypatch):
         """Test when .claude directory doesn't exist."""
         # Use patch.object to mock Path.home() without reloading module
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             result = jib.check_claude_credentials()
             assert result is False
 
@@ -246,7 +243,7 @@ class TestCheckClaudeCredentials:
         claude_dir = temp_dir / ".claude"
         claude_dir.mkdir()
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             result = jib.check_claude_credentials()
             assert result is False
 
@@ -257,7 +254,7 @@ class TestCheckClaudeCredentials:
         creds_file = claude_dir / ".credentials.json"
         creds_file.write_text('{"test": true}')
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             result = jib.check_claude_credentials()
             assert result is True
 
@@ -308,8 +305,7 @@ class TestCheckDockerPermissions:
     def test_docker_permission_denied(self, mock_run, capsys):
         """Test when Docker permission is denied."""
         mock_run.return_value = MagicMock(
-            returncode=1,
-            stderr="permission denied while trying to connect"
+            returncode=1, stderr="permission denied while trying to connect"
         )
 
         result = jib.check_docker_permissions()
@@ -345,8 +341,8 @@ class TestWorktreeHelpers:
 
     def test_cleanup_worktrees_no_dir(self, temp_dir, monkeypatch):
         """Test cleanup when worktree directory doesn't exist."""
-        monkeypatch.setattr(Config, 'WORKTREE_BASE', temp_dir / "worktrees")
-        monkeypatch.setattr(Config, 'KHAN_SOURCE', temp_dir / "khan")
+        monkeypatch.setattr(Config, "WORKTREE_BASE", temp_dir / "worktrees")
+        monkeypatch.setattr(Config, "KHAN_SOURCE", temp_dir / "khan")
 
         # Should not raise
         jib.cleanup_worktrees("test-container-id")
@@ -367,8 +363,8 @@ class TestWorktreeHelpers:
         khan_repo = khan_source / "test-repo"
         khan_repo.mkdir(parents=True)
 
-        monkeypatch.setattr(Config, 'WORKTREE_BASE', worktree_base)
-        monkeypatch.setattr(Config, 'KHAN_SOURCE', khan_source)
+        monkeypatch.setattr(Config, "WORKTREE_BASE", worktree_base)
+        monkeypatch.setattr(Config, "KHAN_SOURCE", khan_source)
 
         # Mock git worktree prune
         mock_run.return_value = MagicMock(returncode=0)
