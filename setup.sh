@@ -474,25 +474,50 @@ done
 # Check for Slack configuration
 print_header "Configuration Status"
 
-config_file="$HOME/.config/jib-notifier/config.json"
-if [ -f "$config_file" ]; then
-    print_success "Slack configuration found: $config_file"
+# NEW: Consolidated config location
+jib_config_dir="$HOME/.config/jib"
+jib_secrets_file="$jib_config_dir/secrets.env"
+
+# Legacy config location
+legacy_config_file="$HOME/.config/jib-notifier/config.json"
+
+# Check consolidated config first
+if [ -f "$jib_secrets_file" ]; then
+    print_success "Consolidated config found: $jib_config_dir/"
 
     # Check if tokens are set
-    if grep -q "\"slack_token\": \"xoxb-" "$config_file" 2>/dev/null; then
-        print_success "Bot token configured"
+    if grep -q "^SLACK_TOKEN=\"xoxb-" "$jib_secrets_file" 2>/dev/null; then
+        print_success "Slack bot token configured"
+    else
+        print_warning "Slack bot token not configured"
+    fi
+
+    if grep -q "^SLACK_APP_TOKEN=\"xapp-" "$jib_secrets_file" 2>/dev/null; then
+        print_success "Slack app token configured"
+    else
+        print_warning "Slack app token not configured"
+    fi
+elif [ -f "$legacy_config_file" ]; then
+    print_warning "Using legacy config: $legacy_config_file"
+    echo "   Consider migrating to: $jib_config_dir/"
+    echo "   Run: python3 $SCRIPT_DIR/config/host_config.py --migrate"
+
+    # Check if tokens are set in legacy config
+    if grep -q "\"slack_token\": \"xoxb-" "$legacy_config_file" 2>/dev/null; then
+        print_success "Bot token configured (legacy)"
     else
         print_warning "Bot token not configured"
     fi
 
-    if grep -q "\"slack_app_token\": \"xapp-" "$config_file" 2>/dev/null; then
-        print_success "App token configured"
+    if grep -q "\"slack_app_token\": \"xapp-" "$legacy_config_file" 2>/dev/null; then
+        print_success "App token configured (legacy)"
     else
         print_warning "App token not configured"
     fi
 else
-    print_warning "Slack configuration not found"
-    echo "   Configure with your Slack tokens in: $config_file"
+    print_warning "No configuration found"
+    echo "   Configure secrets in: $jib_secrets_file"
+    echo "   Templates available in: $SCRIPT_DIR/config/"
 fi
 
 # Check for shared directories
@@ -671,9 +696,13 @@ if [ "$UPDATE_MODE" = true ]; then
 else
     echo "Host setup complete! Next steps:"
     echo ""
-    echo "1. Configure Slack tokens (if not done):"
-    echo "   Edit: ~/.config/jib-notifier/config.json"
+    echo "1. Configure secrets (if not done):"
+    echo "   Copy template:  cp $SCRIPT_DIR/config/secrets.template.env ~/.config/jib/secrets.env"
+    echo "   Edit secrets:   ~/.config/jib/secrets.env"
     echo "   Add your Slack bot token (xoxb-...) and app token (xapp-...)"
+    echo ""
+    echo "   Or migrate from legacy config:"
+    echo "   python3 $SCRIPT_DIR/config/host_config.py --migrate"
     echo ""
     echo "2. Start the jib container:"
     echo "   cd $SCRIPT_DIR"

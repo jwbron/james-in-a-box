@@ -622,11 +622,18 @@ This project uses multiple linters to maintain code quality:
 ```bash
 make lint              # Run all linters
 make lint-fix          # Run all linters with auto-fix
+make lint-fix-jib      # Fix remaining issues with jib
 make lint-python-fix   # Fix Python issues
 make lint-shell-fix    # Format shell scripts
 make lint-yaml-fix     # Fix YAML trailing spaces
 make install-linters   # Install linting tools
 make check-linters     # Verify installation
+```
+
+**Workflow for fixing all lint issues:**
+```bash
+make lint-fix          # First, auto-fix what we can
+make lint-fix-jib      # Then, let jib fix the rest
 ```
 
 **Individual linters:**

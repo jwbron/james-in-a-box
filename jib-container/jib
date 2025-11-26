@@ -1045,10 +1045,18 @@ def exec_in_new_container(command: List[str]) -> bool:
     # Add the command to execute
     cmd.extend(command)
 
-    # Run container
+    # Run container with 20-minute timeout (configurable via timeout_seconds parameter)
     try:
-        result = subprocess.run(cmd)
+        result = subprocess.run(cmd, timeout=1200)  # 20 minutes
         return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        print()
+        error("Container execution timed out after 20 minutes")
+        # Kill the container if it's still running
+        subprocess.run(["docker", "kill", container_id],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL)
+        return False
     except KeyboardInterrupt:
         print()
         warn("Interrupted by user")

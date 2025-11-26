@@ -111,26 +111,64 @@ class SlackNotifier:
         self.logger.addHandler(ch)
 
     def _load_config(self) -> dict:
-        """Load configuration from file or environment."""
+        """Load configuration from file or environment.
+
+        Search order for config:
+        1. ~/.config/jib/config.yaml + secrets.env (NEW consolidated)
+        2. ~/.config/jib-notifier/config.json (legacy)
+        3. Environment variables
+        """
+        config = {}
+
+        # NEW: Try consolidated jib config first
+        jib_config_dir = Path.home() / '.config' / 'jib'
+        jib_secrets = jib_config_dir / 'secrets.env'
+        jib_config = jib_config_dir / 'config.yaml'
+
+        if jib_secrets.exists():
+            # Load secrets from .env file
+            with open(jib_secrets, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip().strip('"\'')
+                        if key == 'SLACK_TOKEN' and value:
+                            config['slack_token'] = value
+                        elif key == 'SLACK_APP_TOKEN' and value:
+                            config['slack_app_token'] = value
+
+        if jib_config.exists():
+            # Load non-secret config from YAML
+            try:
+                import yaml
+                with open(jib_config, 'r') as f:
+                    yaml_config = yaml.safe_load(f) or {}
+                config.update(yaml_config)
+            except ImportError:
+                pass  # YAML not available, try JSON fallback
+
+        # Legacy: Load from jib-notifier config.json
         if self.config_file.exists():
             with open(self.config_file, 'r') as f:
-                config = json.load(f)
-        else:
-            # Create default config
-            # SECURITY FIX: Do not hardcode channel ID - use environment variable
-            config = {
-                'slack_token': os.environ.get('SLACK_TOKEN', ''),
-                'slack_channel': os.environ.get('SLACK_CHANNEL', ''),
-                # How many seconds to wait before sending notifications
-                # 15 = send every 15 seconds, 30 = send every 30 seconds
-                'batch_window_seconds': 15,
-                'watch_directories': [
-                    '~/.jib-sharing'
-                ]
-            }
-            self._save_config(config)
+                legacy_config = json.load(f)
+            # Only use legacy values if not already set from consolidated config
+            for key, value in legacy_config.items():
+                if key not in config or not config[key]:
+                    config[key] = value
 
-        # Override with environment variables if present
+        # Set defaults for missing values
+        if 'slack_token' not in config:
+            config['slack_token'] = ''
+        if 'slack_channel' not in config:
+            config['slack_channel'] = ''
+        if 'batch_window_seconds' not in config:
+            config['batch_window_seconds'] = 15
+        if 'watch_directories' not in config:
+            config['watch_directories'] = ['~/.jib-sharing']
+
+        # Environment variables override everything
         if os.environ.get('SLACK_TOKEN'):
             config['slack_token'] = os.environ['SLACK_TOKEN']
         if os.environ.get('SLACK_CHANNEL'):

@@ -5,9 +5,10 @@ OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/jwies/khan/james-in-a-box
+WorkingDirectory=%h/khan/james-in-a-box
 # Configuration loaded from ~/.config/jib-notifier/config.json
-ExecStart=/usr/bin/python3 /home/jwies/khan/james-in-a-box/host-services/slack/slack-notifier/slack-notifier.py
+# Uses shared virtual environment installed by setup.sh via uv
+ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/slack/slack-notifier/slack-notifier.py
 
 # Restart on failure
 Restart=on-failure

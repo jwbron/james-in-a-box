@@ -1,0 +1,36 @@
+[project]
+name = "jib-host-services"
+version = "1.0.0"
+description = "Host service dependencies for james-in-a-box"
+requires-python = ">=3.10"
+readme = "README.md"
+
+dependencies = [
+    # Slack integration (slack-notifier, slack-receiver)
+    "slack-sdk>=3.27.0",
+
+    # HTTP requests (slack-notifier, context-sync)
+    "requests>=2.31.0",
+
+    # File system monitoring (slack-notifier)
+    "inotify>=0.2.10",
+
+    # Environment configuration (context-sync)
+    "python-dotenv>=0.19.0",
+
+    # HTML to markdown conversion (context-sync)
+    "html2text>=2020.1.16",
+
+    # YAML parsing (repo_config.py)
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+# Use system Python by default
+python-preference = "system"

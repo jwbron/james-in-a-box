@@ -4,7 +4,8 @@ set -e
 
 COMPONENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
-VENV_DIR="$COMPONENT_DIR/.venv"
+# Shared virtual environment is now managed by main setup.sh using uv
+# Dependencies are defined in host-services/pyproject.toml
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Setting up Context Sync..."
@@ -13,20 +14,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # Create systemd user directory
 mkdir -p "$SYSTEMD_DIR"
 
-# Check if virtual environment exists
-if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating Python virtual environment..."
-    python3 -m venv "$VENV_DIR"
-    echo "✓ Virtual environment created"
-else
-    echo "✓ Virtual environment already exists"
-fi
-
-# Install/update requirements
-echo "Installing Python dependencies..."
-"$VENV_DIR/bin/pip" install --quiet --upgrade pip
-"$VENV_DIR/bin/pip" install --quiet -r "$COMPONENT_DIR/requirements.txt"
-echo "✓ Dependencies installed"
+# Dependencies are now managed centrally via uv in host-services/pyproject.toml
+echo "✓ Dependencies managed by uv (host-services/pyproject.toml)"
 
 # Symlink service and timer files
 echo "Installing systemd service and timer..."
