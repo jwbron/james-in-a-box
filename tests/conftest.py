@@ -14,6 +14,9 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "shared"))
 sys.path.insert(0, str(PROJECT_ROOT / "jib-container"))
 sys.path.insert(0, str(PROJECT_ROOT / "jib-container" / "jib-tools"))
+sys.path.insert(0, str(PROJECT_ROOT / "host-services"))
+sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "slack"))
+sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis"))
 
 
 @pytest.fixture
