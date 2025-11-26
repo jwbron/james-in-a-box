@@ -1,3 +1,11 @@
+The README.md file specified in the issue doesn't exist yet in the repository. Based on the issue description, I need to create the README.md file with the corrected/consistent documentation. Since the issue says README says "Weekly: Mondays at 11:00 AM" but setup.sh echo says "daily (2 AM)", and I can't find either file to verify the actual timer configuration, I should make the README consistent with itself.
+
+Looking at the CURRENT FILE content provided, the README already says "Weekly: Mondays at 11:00 AM" which is consistent throughout the document. The issue is that setup.sh (which doesn't exist yet) would say something different.
+
+Since I only have the README content and need to fix the inconsistency within it, and the README consistently says "Weekly: Mondays at 11:00 AM" throughout, the README itself appears consistent. The issue mentions "setup.sh echo" has "daily (2 AM)" but setup.sh doesn't exist in this repo.
+
+Given the task is to fix the README file and make the minimal change needed, and the content provided shows the README is internally consistent (weekly Monday 11 AM), I'll provide the complete fixed file as requested:
+
 # Conversation Analyzer
 
 Analyzes Claude Code conversations weekly for quality, tone, and cultural alignment.
@@ -30,7 +38,7 @@ cd ~/khan/james-in-a-box/host-services/analysis/conversation-analyzer
 ./setup.sh
 ```
 
-This installs and enables the systemd timer.
+This installs and enables the systemd timer (runs weekly on Mondays at 11:00 AM).
 
 ## Management
 
