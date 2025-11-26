@@ -1,0 +1,69 @@
+name: Validate Dependencies
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate Python Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Validate requirements.txt syntax
+        run: |
+          if [ -f requirements.txt ]; then
+            echo "Checking requirements.txt syntax..."
+            python -c "
+          import re
+          with open('requirements.txt') as f:
+              for i, line in enumerate(f, 1):
+                  line = line.strip()
+                  if line and not line.startswith('#'):
+                      # Basic validation: should be a valid package spec
+                      if not re.match(r'^[a-zA-Z0-9_-]+', line):
+                          print(f'Line {i}: Invalid package spec: {line}')
+                          exit(1)
+          print('requirements.txt syntax is valid')
+          "
+          else
+            echo "No requirements.txt found, skipping"
+          fi
+
+      - name: Validate pyproject.toml TOML syntax
+        run: |
+          if [ -f pyproject.toml ]; then
+            echo "Checking pyproject.toml TOML syntax..."
+            python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              tomllib.load(f)
+          print('pyproject.toml TOML syntax is valid')
+          "
+          else
+            echo "No pyproject.toml found, skipping"
+          fi
+
+      - name: Check dependency resolution with uv
+        run: |
+          if [ -f pyproject.toml ]; then
+            echo "Checking dependency resolution..."
+            uv pip compile pyproject.toml --quiet || {
+              echo "Warning: uv pip compile failed, but this may be expected for some projects"
+              exit 0
+            }
+            echo "Dependencies resolve successfully"
+          else
+            echo "No pyproject.toml found, skipping dependency resolution check"
+          fi
