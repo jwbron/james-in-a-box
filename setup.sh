@@ -98,7 +98,7 @@ check_installation_status() {
 
     for service in "${services[@]}"; do
         if is_service_installed "$service"; then
-            ((installed_count++))
+            installed_count=$((installed_count + 1))
         fi
     done
 
@@ -188,7 +188,7 @@ for dep in "${dependencies[@]}"; do
     if check_dependency "$dep"; then
         print_success "$dep found"
     else
-        ((missing_deps++))
+        missing_deps=$((missing_deps + 1))
     fi
 done
 
@@ -197,23 +197,66 @@ if [ $missing_deps -gt 0 ]; then
     exit 1
 fi
 
-# Check Python packages
-print_info "Checking Python packages..."
-if python3 -c "import slack_sdk" 2>/dev/null; then
-    print_success "slack-sdk found"
+# Check and install uv - Python package manager
+print_info "Checking for uv..."
+if command -v uv &> /dev/null; then
+    print_success "uv found"
 else
-    print_warning "slack-sdk not found"
-    echo "Install with: pip install slack-sdk"
+    print_warning "uv not found"
+    echo "Install from: https://docs.astral.sh/uv/"
     read -p "Install now? (y/n) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        pip install slack-sdk || pip install --user slack-sdk
-        print_success "slack-sdk installed"
+        print_info "Installing uv..."
+        if curl -LsSf https://astral.sh/uv/install.sh | sh; then
+            # Add uv to PATH for current session
+            export PATH="$HOME/.local/bin:$PATH"
+            if command -v uv &> /dev/null; then
+                print_success "uv installed successfully"
+            else
+                print_error "uv installation failed - uv command not found"
+                echo "You may need to add ~/.local/bin to your PATH"
+                exit 1
+            fi
+        else
+            print_error "uv installation failed"
+            exit 1
+        fi
     else
-        print_error "slack-sdk required for Slack integration"
+        print_error "uv is required for Python dependency management"
         exit 1
     fi
 fi
+
+# Set up host-services Python virtual environment
+print_info "Setting up host-services Python environment..."
+host_services_dir="$SCRIPT_DIR/host-services"
+if [ -f "$host_services_dir/.venv/bin/python" ]; then
+    print_success "host-services venv exists"
+    # Sync dependencies in case pyproject.toml changed
+    print_info "Syncing dependencies..."
+    cd "$host_services_dir"
+    if uv sync; then
+        print_success "Dependencies synced"
+    else
+        print_warning "uv sync failed, trying fresh install..."
+        rm -rf .venv
+        uv sync
+        print_success "Fresh venv created and synced"
+    fi
+    cd "$SCRIPT_DIR"
+else
+    print_info "Creating host-services venv with uv..."
+    cd "$host_services_dir"
+    if uv sync; then
+        print_success "host-services venv created and dependencies installed"
+    else
+        print_error "Failed to create host-services venv"
+        exit 1
+    fi
+    cd "$SCRIPT_DIR"
+fi
+
 
 # Check and install Beads (bd) - persistent task memory system
 print_info "Checking for Beads (bd)..."
@@ -288,7 +331,7 @@ if [ "$UPDATE_MODE" = true ]; then
             if [[ "$service_name" =~ (slack|github|context|codebase|conversation|worktree|service-monitor) ]]; then
                 print_info "Removing broken symlink: $service_name"
                 rm -f "$symlink"
-                ((broken_count++))
+                broken_count=$((broken_count + 1))
             fi
         fi
     done < <(find "$systemd_dir" -maxdepth 1 -type l -print0 2>/dev/null)

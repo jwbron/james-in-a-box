@@ -4,11 +4,6 @@ Tests for context-sync symlink utilities.
 Tests the create_symlink.py and link_to_khan_projects.py modules.
 """
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
-
 
 class TestEnsureGitignorePattern:
     """Tests for ensure_gitignore_pattern function."""
@@ -53,7 +48,7 @@ class TestEnsureGitignorePattern:
         gitignore = temp_dir / ".gitignore"
 
         link_name = "confluence-docs"
-        gitignore.write_text(f"confluence-docs\n")
+        gitignore.write_text("confluence-docs\n")
 
         existing = gitignore.read_text()
         pattern_exists = link_name in existing
@@ -409,8 +404,6 @@ class TestMainFunction:
 
     def test_main_shows_usage_with_no_args(self, capsys):
         """Test that main shows usage when no args provided."""
-        import sys
-
         args = []
         if len(args) < 1:
             print("Usage:")
@@ -422,8 +415,6 @@ class TestMainFunction:
 
     def test_main_parses_project_path(self, temp_dir):
         """Test parsing project path argument."""
-        import sys
-
         args = [str(temp_dir / "my-project")]
         target_project = args[0]
 

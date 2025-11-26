@@ -7,6 +7,7 @@ covering code quality, security, performance, and best practices.
 """
 
 import json
+import logging
 import re
 import subprocess
 import sys
@@ -32,6 +33,166 @@ except ImportError as e:
     print("Check that shared/notifications/ exists in the repo root.", file=sys.stderr)
     sys.exit(1)
 
+logger = logging.getLogger(__name__)
+
+
+class PRContextManager:
+    """Manages persistent PR context in Beads.
+
+    Each PR gets a unique task that tracks its entire lifecycle:
+    - Comments and responses
+    - CI check failures and fixes
+    - Review feedback and changes
+
+    Context ID format: pr-<repo>-<number> (e.g., pr-james-in-a-box-75)
+    """
+
+    def __init__(self):
+        self.beads_dir = Path.home() / "beads"
+
+    def get_context_id(self, repo: str, pr_num: int) -> str:
+        """Generate unique context ID for a PR."""
+        repo_name = repo.split("/")[-1]
+        return f"pr-{repo_name}-{pr_num}"
+
+    def search_context(self, repo: str, pr_num: int) -> str | None:
+        """Search for existing beads task for this PR.
+
+        Returns:
+            Beads task ID if found, None otherwise.
+        """
+        context_id = self.get_context_id(repo, pr_num)
+        try:
+            result = subprocess.run(
+                ["bd", "list", "--search", context_id, "--allow-stale"],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse output to get task ID (first word of first line)
+                lines = result.stdout.strip().split("\n")
+                for line in lines:
+                    if line.strip() and line.startswith("beads-"):
+                        return line.split()[0]
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to search beads context: {e}")
+            return None
+
+    def get_context(self, repo: str, pr_num: int) -> dict | None:
+        """Get existing context for a PR.
+
+        Returns:
+            Dict with task info and notes, or None if not found.
+        """
+        task_id = self.search_context(repo, pr_num)
+        if not task_id:
+            return None
+
+        try:
+            result = subprocess.run(
+                ["bd", "show", task_id, "--allow-stale"],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return {"task_id": task_id, "content": result.stdout.strip()}
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get beads context: {e}")
+            return None
+
+    def create_context(self, repo: str, pr_num: int, pr_title: str) -> str | None:
+        """Create new beads task for a PR.
+
+        Returns:
+            Beads task ID if created, None otherwise.
+        """
+        context_id = self.get_context_id(repo, pr_num)
+        repo_name = repo.split("/")[-1]
+
+        try:
+            result = subprocess.run(
+                [
+                    "bd",
+                    "create",
+                    f"PR #{pr_num}: {pr_title}",
+                    "--label",
+                    "github-pr",
+                    "--label",
+                    context_id,
+                    "--label",
+                    repo_name,
+                    "--allow-stale",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                # Parse output to get task ID
+                output = result.stdout.strip()
+                if "beads-" in output:
+                    # Extract task ID from output like "Created beads-abc123"
+                    for word in output.split():
+                        if word.startswith("beads-"):
+                            return word.rstrip(":")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to create beads context: {e}")
+            return None
+
+    def update_context(self, task_id: str, notes: str, status: str | None = None) -> bool:
+        """Update beads task with new notes.
+
+        Args:
+            task_id: Beads task ID
+            notes: Notes to append (will be timestamped)
+            status: Optional status update (in_progress, closed, etc.)
+
+        Returns:
+            True if update succeeded, False otherwise.
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        timestamped_notes = f"=== {timestamp} ===\n{notes}"
+
+        try:
+            cmd = ["bd", "update", task_id, "--notes", timestamped_notes, "--allow-stale"]
+            if status:
+                cmd.extend(["--status", status])
+
+            result = subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.warning(f"Failed to update beads context: {e}")
+            return False
+
+    def get_or_create_context(self, repo: str, pr_num: int, pr_title: str = "") -> str | None:
+        """Get existing context or create new one.
+
+        Returns:
+            Beads task ID
+        """
+        existing = self.search_context(repo, pr_num)
+        if existing:
+            return existing
+        return self.create_context(repo, pr_num, pr_title or f"PR #{pr_num}")
+
 
 class PRReviewer:
     def __init__(self):
@@ -41,6 +202,9 @@ class PRReviewer:
 
         # Initialize notification service
         self.slack = get_slack_service()
+
+        # Initialize PR context manager for beads integration
+        self.pr_context = PRContextManager()
 
         # Track which PRs have been reviewed
         self.state_file = Path.home() / "sharing" / "tracking" / "pr-reviewer-state.json"
@@ -505,45 +669,26 @@ class PRReviewer:
             return common_patterns
 
     def create_beads_task(self, pr_num: int, repo_name: str, pr_context: dict) -> str | None:
-        """Create Beads task for PR review"""
-        try:
-            result = subprocess.run(["which", "beads"], check=False, capture_output=True)
-            if result.returncode != 0:
-                return None
+        """Create or update Beads task for PR review.
 
-            title = f"Review PR #{pr_num}: {pr_context.get('title', 'PR Review')}"
+        Uses PRContextManager to maintain persistent PR context across sessions.
+        Each PR gets ONE task that tracks its entire lifecycle.
+        """
+        pr_title = pr_context.get("title", f"PR #{pr_num}")
 
-            result = subprocess.run(
-                ["beads", "add", title, "--tags", f"pr-{pr_num}", "review", repo_name],
-                check=False,
-                cwd=self.beads_dir,
-                capture_output=True,
-                text=True,
-            )
+        # Get or create PR context (reuses existing if found)
+        beads_id = self.pr_context.get_or_create_context(repo_name, pr_num, pr_title)
 
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                if "Created" in output and "bd-" in output:
-                    bead_id = output.split("bd-")[1].split(":")[0]
-                    bead_id = f"bd-{bead_id.split()[0]}"
+        if beads_id:
+            # Update with review information
+            notes = f"Review generated\nURL: {pr_context.get('url', 'N/A')}\nAuthor: {pr_context.get('author', 'N/A')}"
+            self.pr_context.update_context(beads_id, notes, status="in_progress")
+            print(f"  ✓ Beads task: {beads_id}")
+            return beads_id
+        else:
+            print("  ⚠ Could not create/find Beads task")
+            return None
 
-                    notes = f"PR #{pr_num} in {repo_name}\n"
-                    notes += f"Review generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-                    notes += f"URL: {pr_context.get('url', 'N/A')}"
-
-                    subprocess.run(
-                        ["beads", "update", bead_id, "--notes", notes],
-                        check=False,
-                        cwd=self.beads_dir,
-                        capture_output=True,
-                    )
-
-                    print(f"  ✓ Created Beads task: {bead_id}")
-                    return bead_id
-        except Exception as e:
-            print(f"  Could not create Beads task: {e}")
-
-        return None
 
     def create_review_notification(
         self, pr_num: int, repo_name: str, pr_context: dict, review: dict, beads_id: str | None

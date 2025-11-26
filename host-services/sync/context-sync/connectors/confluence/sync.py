@@ -372,7 +372,7 @@ class ConfluenceSync:
         try:
             import html2text
         except ImportError:
-            print("Warning: html2text not installed. Install with: pip install html2text")
+            print("Warning: html2text not installed. Run 'uv sync' from host-services/")
             return html_content
 
         # Configure html2text for Confluence content

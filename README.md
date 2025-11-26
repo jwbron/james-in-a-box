@@ -576,7 +576,7 @@ journalctl --user -u slack-notifier.service --no-pager
 
 **Common issues**:
 - Missing Slack tokens in `~/.config/jib-notifier/config.json`
-- Python dependencies not installed (`pip install slack-sdk`)
+- Python dependencies not installed (run `uv sync` in `host-services/` or re-run `setup.sh`)
 - Notification directory doesn't exist (create `~/.jib-sharing/notifications/`)
 
 ### Container Issues

@@ -79,6 +79,164 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
+class PRContextManager:
+    """Manages persistent PR context in Beads.
+
+    Each PR gets a unique task that tracks its entire lifecycle:
+    - Comments and responses
+    - CI check failures and fixes
+    - Review feedback and changes
+
+    Context ID format: pr-<repo>-<number> (e.g., pr-james-in-a-box-75)
+    """
+
+    def __init__(self):
+        self.beads_dir = Path.home() / "beads"
+
+    def get_context_id(self, repo: str, pr_num: int) -> str:
+        """Generate unique context ID for a PR."""
+        repo_name = repo.split("/")[-1]
+        return f"pr-{repo_name}-{pr_num}"
+
+    def search_context(self, repo: str, pr_num: int) -> str | None:
+        """Search for existing beads task for this PR.
+
+        Returns:
+            Beads task ID if found, None otherwise.
+        """
+        context_id = self.get_context_id(repo, pr_num)
+        try:
+            result = subprocess.run(
+                ["bd", "list", "--search", context_id, "--allow-stale"],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse output to get task ID (first word of first line)
+                lines = result.stdout.strip().split("\n")
+                for line in lines:
+                    if line.strip() and line.startswith("beads-"):
+                        return line.split()[0]
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to search beads context: {e}")
+            return None
+
+    def get_context(self, repo: str, pr_num: int) -> dict | None:
+        """Get existing context for a PR.
+
+        Returns:
+            Dict with task info and notes, or None if not found.
+        """
+        task_id = self.search_context(repo, pr_num)
+        if not task_id:
+            return None
+
+        try:
+            result = subprocess.run(
+                ["bd", "show", task_id, "--allow-stale"],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return {"task_id": task_id, "content": result.stdout.strip()}
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get beads context: {e}")
+            return None
+
+    def create_context(self, repo: str, pr_num: int, pr_title: str) -> str | None:
+        """Create new beads task for a PR.
+
+        Returns:
+            Beads task ID if created, None otherwise.
+        """
+        context_id = self.get_context_id(repo, pr_num)
+        repo_name = repo.split("/")[-1]
+
+        try:
+            result = subprocess.run(
+                [
+                    "bd",
+                    "create",
+                    f"PR #{pr_num}: {pr_title}",
+                    "--label",
+                    "github-pr",
+                    "--label",
+                    context_id,
+                    "--label",
+                    repo_name,
+                    "--allow-stale",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                # Parse output to get task ID
+                output = result.stdout.strip()
+                if "beads-" in output:
+                    # Extract task ID from output like "Created beads-abc123"
+                    for word in output.split():
+                        if word.startswith("beads-"):
+                            return word.rstrip(":")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to create beads context: {e}")
+            return None
+
+    def update_context(self, task_id: str, notes: str, status: str | None = None) -> bool:
+        """Update beads task with new notes.
+
+        Args:
+            task_id: Beads task ID
+            notes: Notes to append (will be timestamped)
+            status: Optional status update (in_progress, closed, etc.)
+
+        Returns:
+            True if update succeeded, False otherwise.
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        timestamped_notes = f"=== {timestamp} ===\n{notes}"
+
+        try:
+            cmd = ["bd", "update", task_id, "--notes", timestamped_notes, "--allow-stale"]
+            if status:
+                cmd.extend(["--status", status])
+
+            result = subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.warning(f"Failed to update beads context: {e}")
+            return False
+
+    def get_or_create_context(self, repo: str, pr_num: int, pr_title: str = "") -> str | None:
+        """Get existing context or create new one.
+
+        Returns:
+            Beads task ID
+        """
+        existing = self.search_context(repo, pr_num)
+        if existing:
+            return existing
+        return self.create_context(repo, pr_num, pr_title or f"PR #{pr_num}")
+
+
 def load_config() -> dict:
     """Load repository configuration."""
     config_paths = [
@@ -112,6 +270,9 @@ class CommentResponder:
 
         # Initialize notification service
         self.slack = get_slack_service()
+
+        # Initialize PR context manager for beads integration
+        self.pr_context = PRContextManager()
 
         # Track which comments have been processed
         self.state_file = Path.home() / "sharing" / "tracking" / "comment-responder-state.json"
@@ -298,11 +459,23 @@ class CommentResponder:
         - Make code changes if needed
         - Post multiple GitHub comments if appropriate
 
+        Each PR maintains persistent context in Beads for memory across sessions.
+
         Returns:
             True if all comments were successfully handled, False otherwise.
         """
-        # Load full PR context
-        pr_context = self.load_pr_context(repo_name, pr_num)
+        # Load full PR context from synced files
+        pr_file_context = self.load_pr_context(repo_name, pr_num)
+
+        # Get or create beads context for this PR
+        pr_title = pr_file_context.get("title", f"PR #{pr_num}")
+        beads_task_id = self.pr_context.get_or_create_context(repo, pr_num, pr_title)
+
+        # Load existing beads context (previous interactions history)
+        beads_context = None
+        if beads_task_id:
+            beads_context = self.pr_context.get_context(repo, pr_num)
+            print(f"  Beads context: {beads_task_id}")
 
         # Load all comments for full thread context
         all_comments = pr_data.get("comments", [])
@@ -326,7 +499,7 @@ class CommentResponder:
         # Build the batch prompt for Claude
         response = self.generate_batch_response(
             pending_comments=pending_comments,
-            pr_context=pr_context,
+            pr_context=pr_file_context,
             all_comments=all_comments,
             repo=repo,
             pr_num=pr_num,
@@ -335,11 +508,20 @@ class CommentResponder:
             pr_branch=pr_branch,
             base_branch=base_branch,
             pr_state=pr_state,
+            beads_context=beads_context,
         )
 
         if not response:
             print(f"  Failed to process comments on PR #{pr_num}")
             return False
+
+        # Update beads context with processed comments
+        if beads_task_id:
+            comment_authors = list({c.get("author", "unknown") for c in pending_comments})
+            notes = (
+                f"Processed {len(pending_comments)} comment(s) from: {', '.join(comment_authors)}"
+            )
+            self.pr_context.update_context(beads_task_id, notes, status="in_progress")
 
         return True
 
@@ -389,6 +571,7 @@ class CommentResponder:
         pr_branch: str,
         base_branch: str,
         pr_state: str,
+        beads_context: dict | None = None,
     ) -> bool:
         """Generate batch response using Claude with full context.
 
@@ -396,6 +579,9 @@ class CommentResponder:
         - Make code changes if needed
         - Post GitHub comments for each response
         - Handle the conversation naturally
+
+        Args:
+            beads_context: Optional dict with 'task_id' and 'content' from previous interactions
 
         Returns:
             True if successful, False otherwise.
@@ -414,6 +600,22 @@ class CommentResponder:
 
             comment_history += f"\n### {author} ({created}){marker}\n{body}\n"
 
+        # Build previous interactions section from beads
+        previous_interactions = ""
+        if beads_context and beads_context.get("content"):
+            previous_interactions = f"""
+## Previous Interactions (from Beads)
+
+This PR has been worked on before. Here's the history of previous interactions:
+
+```
+{beads_context.get("content", "")[:2000]}
+```
+
+Use this context to understand what has already been done and avoid repeating work.
+
+"""
+
         # Build the prompt
         prompt = f"""You are jib, an AI software engineering agent. You're responding to PR feedback on your own PR.
 
@@ -427,7 +629,8 @@ class CommentResponder:
 - **PR Branch**: {pr_branch} → {base_branch}
 - **Access**: {"WRITE (can make changes and push)" if writable else "READ-ONLY"}
 - **Repo Directory**: {repo_dir if repo_dir else "Not found locally"}
-
+- **Beads Task**: {beads_context.get("task_id", "None") if beads_context else "None"}
+{previous_interactions}
 ## PR Description
 
 {pr_context.get("pr_content", "No description available")[:3000]}

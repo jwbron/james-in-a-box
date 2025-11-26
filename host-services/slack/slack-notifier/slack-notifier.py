@@ -26,14 +26,14 @@ try:
     import inotify.constants
 except ImportError:
     print("Error: inotify module not found.", file=sys.stderr)
-    print("Install with: pip install inotify", file=sys.stderr)
+    print("Run 'uv sync' from host-services/ or run setup.sh", file=sys.stderr)
     sys.exit(1)
 
 try:
     import requests
 except ImportError:
     print("Error: requests module not found.", file=sys.stderr)
-    print("Install with: pip install requests", file=sys.stderr)
+    print("Run 'uv sync' from host-services/ or run setup.sh", file=sys.stderr)
     sys.exit(1)
 
 
