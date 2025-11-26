@@ -342,10 +342,62 @@ def collect_check_failures(
     return failures
 
 
-def build_prompt(failures: list, conflicts: list) -> str:
+def detect_make_targets(repo_path: Path) -> dict[str, list[str]]:
+    """Detect available make targets from Makefile.
+
+    Returns dict with categories like 'lint', 'test', 'fix' mapped to target names.
+    """
+    makefile = repo_path / "Makefile"
+    if not makefile.exists():
+        return {}
+
+    targets = {"lint": [], "test": [], "fix": [], "all": []}
+    try:
+        content = makefile.read_text()
+        for line in content.split("\n"):
+            # Match target definitions like "target:" or "target: deps"
+            # Skip empty lines, indented lines (recipes), comments, and special targets
+            is_valid_line = (
+                line
+                and not line.startswith("\t")
+                and not line.startswith("#")
+                and ":" in line
+                and not line.startswith(".")
+            )
+            if is_valid_line:
+                target = line.split(":")[0].strip()
+                if target and not target.startswith("$"):
+                    targets["all"].append(target)
+                    if "lint" in target.lower():
+                        targets["lint"].append(target)
+                    if "test" in target.lower():
+                        targets["test"].append(target)
+                    if "fix" in target.lower():
+                        targets["fix"].append(target)
+    except Exception:
+        pass
+    return targets
+
+
+def build_prompt(failures: list, conflicts: list, khan_dir: Path | None = None) -> str:
     """Build the prompt for Claude to analyze and fix issues."""
     if not failures and not conflicts:
         return ""
+
+    # Detect make targets for each unique repository
+    repo_make_targets = {}
+    if khan_dir:
+        repos = set()
+        for f in failures:
+            repos.add(f["repository"].split("/")[-1])
+        for c in conflicts:
+            repos.add(c["repository"].split("/")[-1])
+        for repo_name in repos:
+            repo_path = khan_dir / repo_name
+            if repo_path.exists():
+                targets = detect_make_targets(repo_path)
+                if targets.get("all"):
+                    repo_make_targets[repo_name] = targets
 
     prompt = """# GitHub PR Issue Analysis and Fixes
 
@@ -356,6 +408,27 @@ You are analyzing PRs for issues (check failures, merge conflicts). Your goal is
 4. Report on what you did
 
 """
+
+    # Add make targets info if available
+    if repo_make_targets:
+        prompt += "## Available Make Targets\n\n"
+        prompt += "**IMPORTANT**: Use these make targets to fix issues. Many lint errors can be auto-fixed!\n\n"
+        for repo_name, targets in repo_make_targets.items():
+            prompt += f"### {repo_name}\n"
+            if targets.get("fix"):
+                prompt += "**Auto-fix targets** (run these first!):\n"
+                for t in targets["fix"]:
+                    prompt += f"- `make {t}`\n"
+            if targets.get("lint"):
+                prompt += "**Lint targets**:\n"
+                for t in targets["lint"]:
+                    if t not in targets.get("fix", []):
+                        prompt += f"- `make {t}`\n"
+            if targets.get("test"):
+                prompt += "**Test targets**:\n"
+                for t in targets["test"]:
+                    prompt += f"- `make {t}`\n"
+            prompt += "\n"
 
     # Merge conflicts section
     if conflicts:
@@ -419,18 +492,29 @@ For each issue:
    - Avoid repeating failed approaches
 
 2. **Analyze** - Understand what's wrong
+
 3. **Fix** - Checkout the PR branch and implement appropriate fixes:
+   - **IMPORTANT**: Check if the repository has a Makefile with fix targets!
+   - **For lint errors**: First try running `make lint-fix` or similar auto-fix targets
+     - Many lint errors (formatting, import ordering, trailing whitespace) are auto-fixable
+     - Always check the Makefile for available targets before manually editing files
    - Merge conflicts: Resolve conflicts intelligently based on the code context
-   - Lint/format errors: Run appropriate linters/formatters
    - Test failures: Examine and fix tests if the fix is clear
    - Build errors: Check dependencies, imports, etc.
-4. **Commit** - Commit your fixes with clear messages
-5. **Push** - Push to the PR branch
-6. **Comment** - Add a PR comment explaining what you fixed
-7. **Update Beads Context**:
+
+4. **Verify** - After running auto-fix, run `make lint` or `make test` to verify fixes worked
+
+5. **Commit** - Commit your fixes with clear messages
+
+6. **Push** - Push to the PR branch
+
+7. **Comment** - Add a PR comment explaining what you fixed
+
+8. **Update Beads Context**:
    - Use `bd update <task-id> --notes "your update"` to record what was done
    - Include: analysis results, fix attempts, current status
-8. **Notify** - Create a notification summarizing your work
+
+9. **Notify** - Create a notification summarizing your work
 
 Use your judgment to determine the best approach for each issue. You have full access
 to the codebase and can make any changes needed.
@@ -468,8 +552,8 @@ def main():
         print("No issues found - all PRs are healthy")
         return 0
 
-    # Build prompt and run Claude
-    prompt = build_prompt(failures, conflicts)
+    # Build prompt and run Claude (pass khan_dir for make target detection)
+    prompt = build_prompt(failures, conflicts, khan_dir)
 
     try:
         result = subprocess.run(
