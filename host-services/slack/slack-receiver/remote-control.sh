@@ -17,7 +17,8 @@ notify() {
     local notification_dir="$HOME/.jib-sharing/notifications"
     mkdir -p "$notification_dir"
 
-    local timestamp=$(date +%Y%m%d-%H%M%S)
+    local timestamp
+    timestamp=$(date +%Y%m%d-%H%M%S)
     local notification_file="$notification_dir/${timestamp}-remote-command.md"
 
     cat > "$notification_file" <<EOF

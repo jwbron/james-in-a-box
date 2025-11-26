@@ -17,7 +17,8 @@ notify() {
     local notification_dir="$HOME/.jib-sharing/notifications"
     mkdir -p "$notification_dir"
 
-    local timestamp=$(date +%Y%m%d-%H%M%S)
+    local timestamp
+    timestamp=$(date +%Y%m%d-%H%M%S)
     local notification_file="$notification_dir/${timestamp}-pr-result.md"
 
     cat > "$notification_file" <<EOF
@@ -35,7 +36,8 @@ EOF
 # Get default branch for a repo
 get_default_branch() {
     local repo_path=$1
-    local repo_name=$(basename "$repo_path")
+    local repo_name
+    repo_name=$(basename "$repo_path")
 
     # Special cases: webapp and frontend use development branches
     case "$repo_name" in
@@ -48,7 +50,8 @@ get_default_branch() {
         *)
             # Try to detect default branch from origin
             cd "$repo_path"
-            local default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+            local default
+            default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
             if [ -z "$default" ]; then
                 # Fallback: check if main or master exists
                 if git rev-parse --verify main >/dev/null 2>&1; then
@@ -98,14 +101,16 @@ $(ls -1 ~/khan/ | grep -v '^\.' | head -10)"
     fi
 
     # Get current branch
-    local current_branch=$(git branch --show-current)
+    local current_branch
+    current_branch=$(git branch --show-current)
     if [ -z "$current_branch" ]; then
         notify "❌ Not on a branch (detached HEAD state)"
         return 1
     fi
 
     # Get default branch
-    local base_branch=$(get_default_branch "$repo_path")
+    local base_branch
+    base_branch=$(get_default_branch "$repo_path")
     log "Current branch: $current_branch"
     log "Base branch: $base_branch"
 
@@ -122,7 +127,8 @@ git checkout -b feature/your-feature-name
     fi
 
     # Check if there are commits ahead of base
-    local commits_ahead=$(git rev-list --count $base_branch..$current_branch 2>/dev/null || echo "0")
+    local commits_ahead
+    commits_ahead=$(git rev-list --count "$base_branch..$current_branch" 2>/dev/null || echo "0")
     if [ "$commits_ahead" = "0" ]; then
         notify "❌ No commits to create PR from
 
@@ -285,7 +291,8 @@ Check that you have push permissions and the remote is configured correctly."
         log "PR created successfully: $pr_url"
 
         # Get PR description for notification
-        local pr_desc=$(cat "$pr_desc_file" | head -20)
+        local pr_desc
+        pr_desc=$(head -20 "$pr_desc_file")
 
         notify "✅ Pull Request Created
 
