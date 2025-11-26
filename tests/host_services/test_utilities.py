@@ -3,7 +3,6 @@ Tests for host-services/utilities shell scripts.
 
 Tests shell script functionality including:
 - worktree-watcher.sh: Cleans up orphaned git worktrees
-- notify-service-failure.sh: Notifies about systemd service failures
 """
 
 import subprocess
@@ -62,54 +61,6 @@ class TestWorktreeWatcherSyntax:
         assert "set -u" in content, "Script should use 'set -u' for undefined variable checking"
 
 
-class TestNotifyServiceFailureSyntax:
-    """Tests for notify-service-failure.sh bash syntax."""
-
-    def test_notify_service_failure_syntax_valid(self):
-        """Test that notify-service-failure.sh has valid bash syntax."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh"
-        )
-
-        assert script_path.exists(), f"Script not found: {script_path}"
-
-        result = subprocess.run(
-            ["bash", "-n", str(script_path)], check=False, capture_output=True, text=True
-        )
-
-        assert result.returncode == 0, f"Syntax error: {result.stderr}"
-
-    def test_notify_service_failure_has_shebang(self):
-        """Test that script has proper shebang."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh"
-        )
-
-        content = script_path.read_text()
-        assert content.startswith("#!/bin/bash"), "Script should start with #!/bin/bash"
-
-    def test_notify_service_failure_uses_strict_mode(self):
-        """Test that script uses strict mode."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh"
-        )
-
-        content = script_path.read_text()
-        assert "set -euo pipefail" in content, "Script should use strict error handling"
-
-
 class TestWorktreeWatcherFunctionality:
     """Tests for worktree-watcher.sh functionality."""
 
@@ -164,81 +115,6 @@ class TestWorktreeWatcherFunctionality:
         assert content.strip().endswith("exit 0")
 
 
-class TestNotifyServiceFailureFunctionality:
-    """Tests for notify-service-failure.sh functionality."""
-
-    def test_accepts_service_name_argument(self):
-        """Test that script expects SERVICE_NAME argument."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh"
-        )
-
-        content = script_path.read_text()
-        assert 'SERVICE_NAME="$1"' in content
-
-    def test_creates_notification_file(self):
-        """Test that script creates notification file."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh"
-        )
-
-        content = script_path.read_text()
-        assert "NOTIFICATION_FILE=" in content
-        assert ".jib-sharing/notifications/" in content
-
-    def test_notification_includes_service_status(self):
-        """Test that notification includes systemctl status."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh"
-        )
-
-        content = script_path.read_text()
-        assert "systemctl --user status" in content
-
-    def test_notification_includes_journal_logs(self):
-        """Test that notification includes journalctl logs."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh"
-        )
-
-        content = script_path.read_text()
-        assert "journalctl --user -u" in content
-        assert "-n 50" in content  # Last 50 lines
-
-    def test_notification_format(self):
-        """Test that notification uses markdown format."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh"
-        )
-
-        content = script_path.read_text()
-        # Check for markdown headers
-        assert "# 🚨 Service Failure:" in content
-        assert "## Service Status" in content
-        assert "## Recent Logs" in content
-        assert "## Recommended Actions" in content
-
-
 class TestSetupScripts:
     """Tests for setup.sh scripts."""
 
@@ -254,18 +130,6 @@ class TestSetupScripts:
 
         assert script_path.exists()
 
-    def test_service_monitor_setup_exists(self):
-        """Test that service-monitor setup.sh exists."""
-        script_path = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "setup.sh"
-        )
-
-        assert script_path.exists()
-
     def test_setup_scripts_syntax_valid(self):
         """Test that all setup.sh scripts have valid syntax."""
         setup_scripts = [
@@ -273,11 +137,6 @@ class TestSetupScripts:
             / "host-services"
             / "utilities"
             / "worktree-watcher"
-            / "setup.sh",
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
             / "setup.sh",
         ]
 
@@ -300,11 +159,6 @@ class TestShellScriptBestPractices:
             / "utilities"
             / "worktree-watcher"
             / "worktree-watcher.sh",
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "service-monitor"
-            / "notify-service-failure.sh",
         ]
 
         for script in script_paths:
