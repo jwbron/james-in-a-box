@@ -174,7 +174,7 @@ else
     echo "This script will:"
     echo "  • Install and configure Slack integration (notifier and receiver)"
     echo "  • Set up automated analyzers (codebase and conversation)"
-    echo "  • Configure service failure monitoring and worktree cleanup"
+    echo "  • Configure worktree cleanup"
     echo "  • Enable and start all systemd services"
     echo ""
 fi
@@ -328,7 +328,7 @@ if [ "$UPDATE_MODE" = true ]; then
         if [ ! -e "$symlink" ]; then
             service_name=$(basename "$symlink")
             # Only remove jib-related services (safety check)
-            if [[ "$service_name" =~ (slack|github|context|codebase|conversation|worktree|service-monitor) ]]; then
+            if [[ "$service_name" =~ (slack|github|context|codebase|conversation|worktree) ]]; then
                 print_info "Removing broken symlink: $service_name"
                 rm -f "$symlink"
                 broken_count=$((broken_count + 1))
@@ -354,7 +354,6 @@ declare -A component_descriptions=(
     ["slack-receiver"]="Slack Receiver (You → Claude)"
     ["context-sync"]="Context Sync (Confluence, JIRA → Local)"
     ["github-sync"]="GitHub Sync (PR data → Local)"
-    ["service-monitor"]="Service Failure Monitor"
     ["worktree-watcher"]="Worktree Watcher (cleanup orphaned worktrees)"
     ["codebase-analyzer"]="Codebase Analyzer (weekly)"
     ["conversation-analyzer"]="Conversation Analyzer (daily)"
@@ -366,7 +365,6 @@ component_order=(
     "slack/slack-receiver"
     "sync/context-sync"
     "sync/github-sync"
-    "utilities/service-monitor"
     "utilities/worktree-watcher"
     "analysis/codebase-analyzer"
     "analysis/conversation-analyzer"

@@ -22,7 +22,7 @@ james-in-a-box/
 | `host-services/slack/` | Slack communication services | Host |
 | `host-services/sync/` | Data synchronization services | Host |
 | `host-services/analysis/` | Code/conversation analysis and PR tools | Host |
-| `host-services/utilities/` | Utility services (monitoring, cleanup) | Host |
+| `host-services/utilities/` | Utility services (cleanup) | Host |
 | `jib-container/jib-tasks/` | Scripts called via `jib --exec` from host services | Container (via jib --exec) |
 | `jib-container/jib-tools/` | Interactive tools used inside the container | Container |
 | `jib-container/.claude/` | Claude Code configuration (rules, commands) | Container |
@@ -44,8 +44,7 @@ host-services/
 │   ├── conversation-analyzer/ # Quality analysis
 │   └── analyze-pr/            # PR analysis CLI tool
 └── utilities/                 # Utility services
-    ├── worktree-watcher/      # Git worktree cleanup
-    └── service-monitor/       # Service failure monitoring
+    └── worktree-watcher/      # Git worktree cleanup
 ```
 
 Each service directory should contain:

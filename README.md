@@ -43,7 +43,7 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 │  • Slack notifier/receiver (systemd services)       │
 │  • Context sync (Confluence, JIRA → markdown)       │
 │  • Automated analyzers (code quality, conversations)│
-│  • Service monitoring and failure notifications     │
+│  • Git worktree management and cleanup              │
 └─────────────────────────────────────────────────────┘
                       ↕
 ┌─────────────────────────────────────────────────────┐
@@ -145,8 +145,6 @@ Container:
    # Codebase analyzer (optional)
    cd host-services/analysis/codebase-analyzer && ./setup.sh
 
-   # Service monitor (optional)
-   cd host-services/utilities/service-monitor && ./setup.sh
    ```
    </details>
 
@@ -193,7 +191,6 @@ All host components run as systemd user services for reliability and auto-restar
 
 **Utilities:**
 - **[worktree-watcher](host-services/utilities/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
-- **[service-monitor](host-services/utilities/service-monitor/README.md)** - Notifies on service failures
 
 **CLI:**
 - **[analyze-pr](host-services/analysis/analyze-pr/README.md)** - Analyze GitHub PRs with Claude
@@ -515,7 +512,6 @@ docker logs -f jib-claude
 
 - **[ADR: Autonomous Software Engineer](docs/adr/adr-autonomous-engineer-session.md)** - Complete architectural decisions
 - **[Slack Integration Architecture](docs/architecture/slack-integration.md)** - Bidirectional Slack communication
-- **[Service Failure Notifications](docs/reference/service-failure-notifications.md)** - Monitoring and alerting
 
 ### Component READMEs
 
@@ -526,7 +522,6 @@ docker logs -f jib-claude
 - [context-sync](host-services/sync/context-sync/README.md) - Confluence/JIRA sync
 - [codebase-analyzer](host-services/analysis/codebase-analyzer/README.md) - Code review automation
 - [conversation-analyzer](host-services/analysis/conversation-analyzer/README.md) - Quality analysis
-- [service-monitor](host-services/utilities/service-monitor/README.md) - Failure monitoring
 
 **Container Tasks:**
 - [github](jib-container/jib-tasks/github/README.md) - GitHub/PR analysis tasks
@@ -544,7 +539,6 @@ docker logs -f jib-claude
 - ✅ File-based context sync (Confluence, JIRA)
 - ✅ Mobile-first notification system
 - ✅ Automated analyzers (code, conversations)
-- ✅ Service monitoring and failure alerts
 - ✅ **GitHub PR integration**:
   - ✅ Automated PR creation after task completion
   - ✅ Auto-review of others' PRs
