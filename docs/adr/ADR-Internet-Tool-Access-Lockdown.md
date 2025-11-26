@@ -371,7 +371,220 @@ The analyzer could:
 
 This is marked as "future consideration" to avoid over-engineering the initial implementation.
 
-### 5. gh CLI Wrapper
+### 5. git CLI Wrapper
+
+Similar to the gh wrapper, provide a **`git` CLI wrapper** that:
+1. Forwards most git commands directly to the real binary (clone, checkout, commit, branch, log, diff, status, etc.)
+2. Intercepts `git push` to route through the gateway and send Slack notifications
+3. Blocks force pushes (`--force`, `-f`, `--force-with-lease`, `--force-if-includes`) entirely
+4. Blocks pushes to protected branches (main, master)
+
+This approach provides the same interface jib is accustomed to while enforcing policies at the wrapper level.
+
+#### Wrapper Design
+
+The wrapper is placed in PATH before the real `git` binary:
+
+```python
+#!/usr/bin/env python3
+# /jib/wrappers/git
+"""
+git wrapper - provides same interface as git CLI with added features:
+- Policy enforcement (no force push, no push to protected branches)
+- Slack notifications on push
+- Gateway routing for authenticated operations
+"""
+import sys
+import subprocess
+import os
+from pathlib import Path
+
+# Add shared directory for notifications
+sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+from notifications import get_slack_service
+
+REAL_GIT = "/usr/bin/git"
+GATEWAY_URL = os.environ.get("GATEWAY_API_URL", "http://gateway:8080")
+PROTECTED_BRANCHES = {"main", "master"}
+
+
+class GitWrapper:
+    def __init__(self):
+        self.slack = get_slack_service()
+        self.repo_name = self._get_repo_name()
+
+    def _get_repo_name(self) -> str:
+        """Get owner/repo from git remote."""
+        try:
+            result = subprocess.run(
+                [REAL_GIT, "remote", "get-url", "origin"],
+                capture_output=True, text=True, check=True
+            )
+            url = result.stdout.strip()
+            if "github.com" in url:
+                if ":" in url and "@" in url:
+                    return url.split(":")[-1].replace(".git", "")
+                return url.split("github.com/")[-1].replace(".git", "")
+        except subprocess.CalledProcessError:
+            pass
+        return ""
+
+    def run(self, args: list[str]) -> int:
+        """Main entry point - parse and dispatch commands."""
+        if not args:
+            return self._passthrough([])
+
+        cmd = args[0]
+        if cmd == "push":
+            return self._handle_push(args[1:])
+        else:
+            # All other commands pass through unchanged
+            return self._passthrough(args)
+
+    def _passthrough(self, args: list[str]) -> int:
+        """Pass command through to real git."""
+        return subprocess.run([REAL_GIT] + args).returncode
+
+    def _handle_push(self, args: list[str]) -> int:
+        """Handle git push with policy enforcement and notifications."""
+        # Check for force push flags
+        force_flags = {"-f", "--force", "--force-with-lease", "--force-if-includes"}
+        if any(arg in force_flags for arg in args):
+            print("ERROR: Force push is not allowed.", file=sys.stderr)
+            print("This policy protects against accidental history overwrites.",
+                  file=sys.stderr)
+            return 1
+
+        # Parse remote and branch
+        remote, branch = self._parse_push_args(args)
+
+        # Check for protected branches
+        if branch in PROTECTED_BRANCHES:
+            print(f"ERROR: Push to protected branch '{branch}' is not allowed.",
+                  file=sys.stderr)
+            return 1
+
+        # Route through gateway if available, otherwise passthrough with notification
+        if os.environ.get("USE_GATEWAY"):
+            return self._push_via_gateway(remote, branch, args)
+        else:
+            return self._push_direct_with_notification(remote, branch, args)
+
+    def _parse_push_args(self, args: list[str]) -> tuple[str, str]:
+        """Parse remote and branch from push args."""
+        remote = "origin"
+        branch = self._get_current_branch()
+
+        # Simple parsing: git push [remote] [branch]
+        positional = [a for a in args if not a.startswith("-")]
+        if len(positional) >= 1:
+            remote = positional[0]
+        if len(positional) >= 2:
+            branch = positional[1].split(":")[-1]  # Handle refspec
+
+        return remote, branch
+
+    def _get_current_branch(self) -> str:
+        """Get current branch name."""
+        result = subprocess.run(
+            [REAL_GIT, "branch", "--show-current"],
+            capture_output=True, text=True
+        )
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+    def _push_direct_with_notification(self, remote: str, branch: str,
+                                       args: list[str]) -> int:
+        """Push directly (Phase 1) with Slack notification."""
+        result = subprocess.run(
+            [REAL_GIT, "push"] + args,
+            capture_output=True, text=True
+        )
+
+        if result.returncode == 0:
+            self.slack.notify_info(
+                title="Branch Pushed",
+                body=f"**Repository**: {self.repo_name}\n"
+                     f"**Branch**: {branch}\n"
+                     f"**Remote**: {remote}"
+            )
+            print(result.stdout)
+            if result.stderr:
+                print(result.stderr, file=sys.stderr)
+        else:
+            print(result.stderr, file=sys.stderr)
+
+        return result.returncode
+
+    def _push_via_gateway(self, remote: str, branch: str, args: list[str]) -> int:
+        """Push via gateway sidecar (Phase 2)."""
+        import requests
+
+        try:
+            response = requests.post(
+                f"{GATEWAY_URL}/api/git/push",
+                json={
+                    "repo_path": os.getcwd(),
+                    "remote": remote,
+                    "branch": branch,
+                    "force": False  # Never allow force
+                },
+                timeout=60
+            )
+
+            result = response.json()
+            if result.get("success"):
+                self.slack.notify_info(
+                    title="Branch Pushed",
+                    body=f"**Repository**: {self.repo_name}\n"
+                         f"**Branch**: {branch}\n"
+                         f"**Remote**: {remote}"
+                )
+                print(result.get("stdout", ""))
+                return 0
+            else:
+                print(f"Error: {result.get('error')}", file=sys.stderr)
+                return 1
+
+        except requests.exceptions.RequestException as e:
+            print(f"Gateway error: {e}", file=sys.stderr)
+            return 1
+
+
+if __name__ == "__main__":
+    wrapper = GitWrapper()
+    sys.exit(wrapper.run(sys.argv[1:]))
+```
+
+#### Command Behaviors
+
+| Command | Behavior |
+|---------|----------|
+| `git push` | Routes through gateway (or direct with notification), sends Slack notification on success |
+| `git push --force` | **BLOCKED** - Force push not allowed |
+| `git push -f` | **BLOCKED** - Force push not allowed |
+| `git push --force-with-lease` | **BLOCKED** - Force push not allowed |
+| `git push origin main` | **BLOCKED** - Protected branch |
+| `git push origin master` | **BLOCKED** - Protected branch |
+| `git push -u origin feature-branch` | Allowed, sends Slack notification |
+| All other git commands | Pass-through to real git (clone, checkout, commit, branch, log, diff, status, fetch, pull, merge, rebase, stash, etc.) |
+
+#### Slack Notification on Push
+
+```
+📤 Branch Pushed
+
+Repository: owner/repo
+Branch: jib-temp-feature-xyz
+Remote: origin
+```
+
+#### Integration with Gateway
+
+Same phased approach as gh wrapper:
+1. **Phase 1**: Wrapper enforces policies locally, sends notifications, uses real git for push (with existing auth)
+2. **Phase 2**: Wrapper routes push through gateway for full credential isolation
+
+### 6. gh CLI Wrapper
 
 Rather than a Python client library, provide a **`gh` CLI wrapper** that:
 1. Maintains the same interface as the real `gh` CLI (existing commands work unchanged)
@@ -669,7 +882,7 @@ This allows a phased rollout:
 1. **Phase 1**: Wrapper with direct `gh` calls + Slack notifications (no gateway yet)
 2. **Phase 2**: Wrapper routes through gateway for full credential isolation
 
-### 6. Network Rules for GitHub Blocking
+### 7. Network Rules for GitHub Blocking
 
 Ensure jib cannot reach GitHub directly (must use gateway proxy):
 
@@ -847,9 +1060,10 @@ The gateway architecture works well in GCP as a multi-container Cloud Run servic
 ### Phase 2: Integration
 
 1. Update docker-compose with network isolation
-2. Install gh wrapper in jib container (in PATH before /usr/bin/gh)
-3. Migrate from create-pr-helper.py / comment-pr-helper.py to gh wrapper
-4. Test full workflow with wrapper
+2. Install git wrapper in jib container (in PATH before /usr/bin/git)
+3. Install gh wrapper in jib container (in PATH before /usr/bin/gh)
+4. Migrate from create-pr-helper.py / comment-pr-helper.py to gh wrapper
+5. Test full workflow with both wrappers
 
 ### Phase 3: Deployment
 
