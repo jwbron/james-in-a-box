@@ -16,7 +16,11 @@ from unittest.mock import patch
 
 # Load github processor module
 processor_path = (
-    Path(__file__).parent.parent.parent / "jib-container" / "jib-tasks" / "github" / "github-processor.py"
+    Path(__file__).parent.parent.parent
+    / "jib-container"
+    / "jib-tasks"
+    / "github"
+    / "github-processor.py"
 )
 loader = SourceFileLoader("github_processor", str(processor_path))
 github_processor = loader.load_module()
