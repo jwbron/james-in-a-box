@@ -371,49 +371,303 @@ The analyzer could:
 
 This is marked as "future consideration" to avoid over-engineering the initial implementation.
 
-### 5. jib-Side Client Library
+### 5. gh CLI Wrapper
 
-Provide a simple client for jib to call gateway APIs:
+Rather than a Python client library, provide a **`gh` CLI wrapper** that:
+1. Maintains the same interface as the real `gh` CLI (existing commands work unchanged)
+2. Enforces security policies (no merge, ownership checks)
+3. Sends Slack notifications for key operations (PR create, PR comment)
+4. Handles writable vs non-writable repos appropriately
+
+This approach is preferred because:
+- Agent and existing scripts can continue using familiar `gh` syntax
+- No code changes needed for basic operations
+- Wrapper intercepts and enhances behavior transparently
+- Consolidates behavior currently split across `create-pr-helper.py` and `comment-pr-helper.py`
+
+#### Wrapper Design
+
+The wrapper is placed in PATH before the real `gh` binary:
 
 ```python
-# jib-container/shared/gateway_client.py
+#!/usr/bin/env python3
+# /jib/wrappers/gh
+"""
+gh wrapper - provides same interface as gh CLI with added features:
+- Policy enforcement (no merge, ownership checks)
+- Slack notifications (PR create, comments)
+- Write-only vs read-write repo handling
+"""
+import sys
+import subprocess
 import os
-import requests
+from pathlib import Path
 
-GATEWAY_URL = os.environ.get('GATEWAY_API_URL', 'http://gateway:8080')
+# Add shared directory for notifications
+sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+from notifications import get_slack_service
+from config.repo_config import is_writable_repo, get_writable_repos
 
-class GatewayClient:
+REAL_GH = "/usr/bin/gh"
+GATEWAY_URL = os.environ.get("GATEWAY_API_URL", "http://gateway:8080")
+
+class GhWrapper:
     def __init__(self):
-        self.base_url = GATEWAY_URL
+        self.slack = get_slack_service()
+        self.repo_name = self._get_repo_name()
+        self.is_writable = is_writable_repo(self.repo_name) if self.repo_name else False
 
-    def git_push(self, repo_path, branch, remote='origin'):
-        """Push via gateway (no force push, no main/master)"""
-        response = requests.post(f'{self.base_url}/api/git/push', json={
-            'repo_path': repo_path,
-            'branch': branch,
-            'remote': remote
-        })
-        return response.json()
+    def _get_repo_name(self) -> str:
+        """Get owner/repo from git remote."""
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                capture_output=True, text=True, check=True
+            )
+            url = result.stdout.strip()
+            if "github.com" in url:
+                if ":" in url and "@" in url:
+                    return url.split(":")[-1].replace(".git", "")
+                return url.split("github.com/")[-1].replace(".git", "")
+        except subprocess.CalledProcessError:
+            pass
+        return ""
 
-    def pr_create(self, repo_path, title, body, base='main'):
-        """Create a PR via gateway"""
-        response = requests.post(f'{self.base_url}/api/gh/pr/create', json={
-            'repo_path': repo_path,
-            'title': title,
-            'body': body,
-            'base': base
-        })
-        return response.json()
+    def run(self, args: list[str]) -> int:
+        """Main entry point - parse and dispatch commands."""
+        if not args:
+            return self._passthrough([])
 
-    def pr_comment(self, repo_path, pr_number, body):
-        """Add a comment to a PR via gateway"""
-        response = requests.post(f'{self.base_url}/api/gh/pr/comment', json={
-            'repo_path': repo_path,
-            'pr_number': pr_number,
-            'body': body
-        })
-        return response.json()
+        cmd = args[0]
+        if cmd == "pr":
+            return self._handle_pr(args[1:])
+        else:
+            return self._passthrough(args)
+
+    def _passthrough(self, args: list[str]) -> int:
+        """Pass command through to real gh."""
+        return subprocess.run([REAL_GH] + args).returncode
+
+    def _handle_pr(self, args: list[str]) -> int:
+        """Handle pr subcommands with policy enforcement."""
+        if not args:
+            return self._passthrough(["pr"])
+
+        subcmd = args[0]
+        rest = args[1:]
+
+        if subcmd == "merge":
+            # BLOCKED: Never allow merge
+            print("ERROR: PR merge is not allowed. Human must merge via GitHub UI.",
+                  file=sys.stderr)
+            return 1
+
+        elif subcmd == "create":
+            return self._pr_create(rest)
+
+        elif subcmd == "comment":
+            return self._pr_comment(rest)
+
+        elif subcmd in ("close", "edit"):
+            return self._pr_modify(subcmd, rest)
+
+        else:
+            # Pass through: view, list, checkout, etc.
+            return self._passthrough(["pr", subcmd] + rest)
+
+    def _pr_create(self, args: list[str]) -> int:
+        """Create PR with Slack notification."""
+        if not self.is_writable:
+            return self._notify_manual_pr_needed(args)
+
+        result = subprocess.run(
+            [REAL_GH, "pr", "create"] + args,
+            capture_output=True, text=True
+        )
+
+        if result.returncode == 0:
+            pr_url = result.stdout.strip()
+            title = self._extract_arg(args, "--title", "-t") or "New PR"
+            self.slack.notify_success(
+                title="Pull Request Created",
+                body=f"**URL**: {pr_url}\n**Repository**: {self.repo_name}\n**Title**: {title}"
+            )
+            print(pr_url)
+        else:
+            print(result.stderr, file=sys.stderr)
+
+        return result.returncode
+
+    def _pr_comment(self, args: list[str]) -> int:
+        """Add PR comment with Slack notification."""
+        pr_num = self._extract_pr_number(args)
+        body = self._extract_arg(args, "--body", "-b")
+
+        if not self.is_writable:
+            self.slack.notify_action_required(
+                title=f"PR Comment Needed (#{pr_num})",
+                body=f"**Repository**: {self.repo_name}\n**PR**: #{pr_num}\n\n"
+                     f"**Comment to post:**\n\n{body}"
+            )
+            print(f"Comment sent via Slack for manual posting to PR #{pr_num}")
+            return 0
+
+        result = subprocess.run(
+            [REAL_GH, "pr", "comment"] + args,
+            capture_output=True, text=True
+        )
+
+        if result.returncode == 0:
+            self.slack.notify_info(
+                title=f"PR Comment Added (#{pr_num})",
+                body=f"**Repository**: {self.repo_name}\n**PR**: #{pr_num}\n\n"
+                     f"{body[:200]}..."
+            )
+            print(result.stdout)
+        else:
+            print(result.stderr, file=sys.stderr)
+
+        return result.returncode
+
+    def _pr_modify(self, subcmd: str, args: list[str]) -> int:
+        """Handle close/edit with ownership check."""
+        pr_num = self._extract_pr_number(args)
+        owner = self._get_pr_owner(pr_num)
+        jib_user = os.environ.get("JIB_GITHUB_USERNAME", "jwbron")
+
+        if owner != jib_user:
+            print(f"ERROR: Cannot {subcmd} PR #{pr_num} - owned by {owner}, not {jib_user}",
+                  file=sys.stderr)
+            return 1
+
+        return self._passthrough(["pr", subcmd] + args)
+
+    def _notify_manual_pr_needed(self, args: list[str]) -> int:
+        """Send Slack notification for non-writable repos."""
+        title = self._extract_arg(args, "--title", "-t") or "New PR"
+        body = self._extract_arg(args, "--body", "-b") or ""
+        branch = self._get_current_branch()
+
+        self.slack.notify_action_required(
+            title="PR Creation Needed (Non-Writable Repo)",
+            body=f"**Repository**: {self.repo_name}\n**Branch**: {branch}\n"
+                 f"**Title**: {title}\n\n**Description:**\n{body[:500]}...\n\n"
+                 "Please create this PR manually from the host machine."
+        )
+        print(f"PR details sent via Slack. Please create manually for {self.repo_name}")
+        return 0
+
+    # Helper methods for arg parsing
+    def _extract_arg(self, args: list[str], *flags) -> str:
+        for i, arg in enumerate(args):
+            for flag in flags:
+                if arg == flag and i + 1 < len(args):
+                    return args[i + 1]
+                if arg.startswith(f"{flag}="):
+                    return arg.split("=", 1)[1]
+        return ""
+
+    def _extract_pr_number(self, args: list[str]) -> str:
+        for arg in args:
+            if arg.isdigit():
+                return arg
+        return "unknown"
+
+    def _get_current_branch(self) -> str:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"], capture_output=True, text=True
+        )
+        return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+    def _get_pr_owner(self, pr_num: str) -> str:
+        result = subprocess.run(
+            [REAL_GH, "pr", "view", pr_num, "--json", "author", "--jq", ".author.login"],
+            capture_output=True, text=True
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+
+
+if __name__ == "__main__":
+    wrapper = GhWrapper()
+    sys.exit(wrapper.run(sys.argv[1:]))
 ```
+
+#### Command Behaviors by Repo Type
+
+| Command | Writable Repo | Non-Writable Repo |
+|---------|---------------|-------------------|
+| `gh pr create` | Creates PR + Slack notification | Sends Slack notification for manual creation |
+| `gh pr comment` | Posts comment + Slack notification | Sends comment via Slack for manual posting |
+| `gh pr close` | Closes (jib's PRs only) | Sends Slack notification for manual close |
+| `gh pr edit` | Edits (jib's PRs only) | Sends Slack notification for manual edit |
+| `gh pr merge` | **BLOCKED** | **BLOCKED** |
+| `gh pr view/list/checkout` | Pass-through | Pass-through |
+| Other `gh` commands | Pass-through | Pass-through |
+
+#### Slack Notification Examples
+
+**PR Created (writable repo):**
+```
+🎉 Pull Request Created
+
+URL: https://github.com/owner/repo/pull/123
+Repository: owner/repo
+Title: Add new feature
+```
+
+**PR Comment Added:**
+```
+💬 PR Comment Added (#123)
+
+Repository: owner/repo
+PR: #123
+
+First 200 chars of comment...
+```
+
+**Non-Writable Repo - Manual Action Required:**
+```
+⚠️ PR Creation Needed (Non-Writable Repo)
+
+Repository: owner/external-repo
+Branch: jib-temp-feature-xyz
+Title: Fix critical bug
+
+Description:
+[First 500 chars of body]
+
+Please create this PR manually from the host machine.
+```
+
+#### Integration with Gateway
+
+When the gateway-sidecar architecture is fully deployed, the wrapper routes authenticated operations through the gateway API instead of calling the real `gh` directly:
+
+```python
+def _pr_create_via_gateway(self, args):
+    """Route PR creation through gateway sidecar."""
+    import requests
+
+    response = requests.post(f"{GATEWAY_URL}/api/gh/pr/create", json={
+        "repo_path": os.getcwd(),
+        "title": self._extract_arg(args, "--title"),
+        "body": self._extract_arg(args, "--body"),
+        "base": self._extract_arg(args, "--base") or "main"
+    })
+
+    result = response.json()
+    if result.get("success"):
+        self._send_slack_notification("PR Created", result)
+        print(result.get("url"))
+        return 0
+    else:
+        print(f"Error: {result.get('error')}", file=sys.stderr)
+        return 1
+```
+
+This allows a phased rollout:
+1. **Phase 1**: Wrapper with direct `gh` calls + Slack notifications (no gateway yet)
+2. **Phase 2**: Wrapper routes through gateway for full credential isolation
 
 ### 6. Network Rules for GitHub Blocking
 
@@ -593,9 +847,9 @@ The gateway architecture works well in GCP as a multi-container Cloud Run servic
 ### Phase 2: Integration
 
 1. Update docker-compose with network isolation
-2. Modify jib startup to use gateway client
-3. Update create-pr-helper.py to use gateway
-4. Test full workflow
+2. Install gh wrapper in jib container (in PATH before /usr/bin/gh)
+3. Migrate from create-pr-helper.py / comment-pr-helper.py to gh wrapper
+4. Test full workflow with wrapper
 
 ### Phase 3: Deployment
 
