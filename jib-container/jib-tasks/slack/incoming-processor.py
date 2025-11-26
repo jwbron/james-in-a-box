@@ -13,6 +13,7 @@ Usage:
   python3 incoming-processor.py <message-file>
 """
 
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -276,6 +277,62 @@ Process this task now."""
         return False
 
 
+def extract_thread_context(content: str) -> tuple[str, list[str]]:
+    """Extract thread context and PR/repo references from message content.
+
+    Returns:
+        Tuple of (thread_context_text, list of PR/repo references found)
+    """
+    thread_context = ""
+    pr_refs = []
+
+    # Extract the Thread Context section
+    in_thread_context = False
+    thread_lines = []
+    for line in content.split("\n"):
+        if line.startswith("## Thread Context"):
+            in_thread_context = True
+            continue
+        if in_thread_context:
+            if line.startswith("## ") and not line.startswith("## Thread"):
+                break
+            thread_lines.append(line)
+
+    thread_context = "\n".join(thread_lines).strip()
+
+    # Extract PR references from the full content
+    # Patterns to match:
+    # - "PR Analysis: Khan/terraform-modules#29"
+    # - "https://github.com/owner/repo/pull/123"
+    # - "owner/repo#123"
+    pr_analysis_pattern = r"PR Analysis:\s*([^#\s]+)#(\d+)"
+    github_url_pattern = r"github\.com/([^/]+)/([^/]+)/pull/(\d+)"
+    shorthand_pattern = r"([A-Za-z0-9_-]+/[A-Za-z0-9_-]+)#(\d+)"
+
+    # Search in thread context and full content
+    for text in [thread_context, content]:
+        # PR Analysis format
+        for match in re.finditer(pr_analysis_pattern, text):
+            ref = f"{match.group(1)}#{match.group(2)}"
+            if ref not in pr_refs:
+                pr_refs.append(ref)
+
+        # GitHub URLs
+        for match in re.finditer(github_url_pattern, text):
+            ref = f"{match.group(1)}/{match.group(2)}#{match.group(3)}"
+            if ref not in pr_refs:
+                pr_refs.append(ref)
+
+        # Shorthand owner/repo#number (but exclude file paths)
+        for match in re.finditer(shorthand_pattern, text):
+            # Exclude common false positives like issue/comment patterns
+            ref = f"{match.group(1)}#{match.group(2)}"
+            if ref not in pr_refs and "/" in match.group(1):
+                pr_refs.append(ref)
+
+    return thread_context, pr_refs
+
+
 def process_response(message_file: Path):
     """Process a user's response to a previous notification using Claude Code."""
     print(f"💬 Processing response: {message_file.name}")
@@ -290,6 +347,11 @@ def process_response(message_file: Path):
 
     if thread_ts:
         print(f"📧 Thread context: {thread_ts}")
+
+    # Extract thread context and PR references from the message
+    thread_context_text, pr_refs = extract_thread_context(content)
+    if pr_refs:
+        print(f"📌 PR references found: {', '.join(pr_refs)}")
 
     # Fallback: Extract referenced notification from content if not in frontmatter
     original_notif_content = None
@@ -331,6 +393,32 @@ def process_response(message_file: Path):
 
     # Construct prompt for Claude with full context
     task_id_for_search = referenced_notif if referenced_notif else message_file.stem
+
+    # Build PR context warning if we found PR references
+    pr_context_warning = ""
+    if pr_refs:
+        pr_list = ", ".join(pr_refs)
+        pr_context_warning = f"""
+## ⚠️ CRITICAL: PR/Repo Context
+
+**This conversation is about: {pr_list}**
+
+The user is responding in a thread that discusses the PR(s) listed above.
+**You MUST work on the PR(s) mentioned above**, NOT on any other recent work.
+If you cannot find or access this specific PR, say so explicitly.
+"""
+
+    # Build thread context section
+    thread_section = ""
+    if thread_context_text:
+        thread_section = f"""
+## Full Thread History
+
+The following is the complete conversation history from this Slack thread:
+
+{thread_context_text}
+"""
+
     prompt = f"""# Slack Response Processing
 
 You sent a notification that prompted a response from the user. Process their response and take appropriate action.
@@ -339,7 +427,7 @@ You sent a notification that prompted a response from the user. Process their re
 
 **Task ID:** `{task_id_for_search}`
 **Thread:** This is a threaded conversation - your response will be posted in the same thread.
-
+{pr_context_warning}
 **FIRST ACTION REQUIRED:** Search beads for existing context from this thread:
 ```bash
 cd ~/beads
@@ -349,8 +437,8 @@ bd --allow-stale search "{task_id_for_search}"
 
 ## Original Notification
 
-{original_notif_content if original_notif_content else "*(Original notification not found)*"}
-
+{original_notif_content if original_notif_content else "*(Original notification not found - see Full Thread History below)*"}
+{thread_section}
 ## User's Response
 
 {response_content}
@@ -370,6 +458,8 @@ What is the user asking or telling you? Common patterns:
 - Gave feedback → Incorporate it
 - Requested changes → Make the changes
 - Asked a question → Research and respond
+
+**IMPORTANT:** Work on the specific PR/task mentioned in the thread, not on any other recent work.
 
 ### 3. Take appropriate action
 Execute what's needed based on the response.
