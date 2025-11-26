@@ -59,6 +59,7 @@ class FixResult(Enum):
     FILE_TOO_LARGE = "file_too_large"
     CONTENT_TOO_SHORT = "content_too_short"
     CONTENT_TOO_LONG = "content_too_long"
+    META_COMMENTARY = "meta_commentary"  # AI included explanations in output
     TIMEOUT = "timeout"
     CLAUDE_ERROR = "claude_error"
     REQUIRES_RESTRUCTURING = "requires_restructuring"
@@ -595,6 +596,67 @@ Return ONLY the JSON array, no other text."""
             self.logger.error(f"Error calling Claude: {e}")
             return readme_issues  # Return pre-detected issues on error
 
+    def _detect_meta_commentary(self, content: str, file_ext: str) -> tuple[bool, str | None]:
+        """Detect if output contains AI meta-commentary mixed into the file content.
+
+        Returns:
+            Tuple of (has_meta_commentary, detail_string)
+        """
+        # Patterns that indicate AI explanation/reasoning mixed into output
+        meta_patterns = [
+            # Reasoning/explanation phrases
+            r"^(?:Here(?:'s| is) (?:the|my|your)|I(?:'ve| have) (?:made|fixed|updated))",
+            r"^(?:The (?:issue|problem|fix|change|solution)|This (?:fixes|resolves|addresses))",
+            r"^(?:I (?:will|can|cannot|can't|am|have|don't)|Let me)",
+            r"^(?:Note:|Summary:|Explanation:|Changes made:|What I changed:)",
+            r"^(?:Unfortunately|Apologies|I apologize|I'm sorry)",
+            # Common AI response starters that shouldn't be in code
+            r"^(?:Sure|Certainly|Of course|Absolutely)[,!.]",
+            r"^(?:Great|Perfect|Excellent)[,!.]",
+            # Markdown-style headers that shouldn't be in code files
+            r"^#{1,3} (?:Changes|Summary|Fix|Solution|Updated)",
+        ]
+
+        # Check first 5 lines for meta-commentary patterns
+        lines = content.split("\n")[:5]
+        for i, line in enumerate(lines):
+            line = line.strip()
+            for pattern in meta_patterns:
+                if re.match(pattern, line, re.IGNORECASE):
+                    return (True, f"Line {i + 1} contains meta-commentary: '{line[:50]}...'")
+
+        # For Python/shell files, check if first non-comment line looks like prose
+        if file_ext in {".py", ".sh"}:
+            for i, line in enumerate(lines[:3]):
+                stripped = line.strip()
+                # Skip empty lines, shebangs, and comments
+                if not stripped or stripped.startswith("#"):
+                    continue
+                # Check if line looks like prose (starts with capital, ends with period)
+                if (
+                    stripped[0].isupper()
+                    and stripped.endswith(".")
+                    and " " in stripped
+                    and not stripped.startswith(("class ", "def ", "import ", "from "))
+                ):
+                    # Looks like prose, not code
+                    return (True, f"Line {i + 1} appears to be prose: '{stripped[:50]}...'")
+                break  # Stop at first actual code line
+
+        # Check for explanation blocks that might be mixed in
+        explanation_markers = [
+            "```",  # Nested markdown fences
+            "---",  # Markdown horizontal rules (multiple occurrences)
+            "**Changes:**",
+            "**Summary:**",
+            "**Note:**",
+        ]
+        marker_count = sum(1 for m in explanation_markers if m in content)
+        if marker_count >= 2:
+            return (True, f"Found {marker_count} explanation markers in content")
+
+        return (False, None)
+
     def implement_fix(self, issue: dict) -> tuple[FixResult, str | None]:
         """Implement a single fix using Claude Code.
 
@@ -640,22 +702,48 @@ Return ONLY the JSON array, no other text."""
             # Scale timeout based on file size (60s base + 1s per 200 chars)
             timeout_seconds = max(120, 60 + file_size // 200)
 
-            prompt = f"""Fix this issue in the file. Make ONLY the minimal change needed.
+            # Determine expected file structure for validation hint
+            file_ext = Path(issue["file"]).suffix.lower()
+            structure_hint = ""
+            if file_ext == ".py":
+                first_line = content.split("\n")[0] if content else ""
+                if first_line.startswith("#!"):
+                    structure_hint = f"The file MUST start with: {first_line}"
+                elif first_line.startswith(('"""', "'''")):
+                    structure_hint = "The file MUST start with a docstring"
+                else:
+                    structure_hint = "The file should start with imports or code, not prose"
+            elif file_ext == ".sh":
+                structure_hint = "The file MUST start with #!/bin/bash or similar shebang"
+            elif file_ext == ".md":
+                structure_hint = "The file should start with a markdown heading or content"
+
+            prompt = f"""You are a code-only output generator. Your task is to output ONLY the fixed file content.
+
+CRITICAL RULES:
+1. Output ONLY the file content - no explanations, no commentary, no markdown fences
+2. Do NOT start with "Here is", "I've fixed", "The issue", or any other prose
+3. The first character of your output must be the first character of the fixed file
+4. Make ONLY the minimal change needed to fix the issue
 
 FILE: {issue["file"]}
 ISSUE: {issue["description"]}
 LOCATION: {issue.get("line_hint", "unknown")}
-SUGGESTION: {issue["suggestion"]}
+SUGGESTED FIX: {issue["suggestion"]}
 
-CURRENT FILE ({len(content)} characters):
-```
+{structure_hint}
+
+CURRENT FILE CONTENT ({len(content)} chars, {len(content.splitlines())} lines):
 {content}
-```
 
-IMPORTANT: Return the COMPLETE fixed file content (all {len(content.splitlines())} lines).
-Do NOT return just the changed portion or a diff.
-Do NOT include explanations or markdown fences.
-The output should be similar in length to the input."""
+OUTPUT REQUIREMENTS:
+- Return the COMPLETE fixed file (all {len(content.splitlines())} lines)
+- Output length should be similar to input ({len(content)} chars)
+- NO markdown fences (```), NO explanations, NO summaries
+- First line of output = first line of the fixed file
+- Last line of output = last line of the fixed file
+
+Output the fixed file content now:"""
 
             result = subprocess.run(
                 ["claude", "--dangerously-skip-permissions"],
@@ -675,30 +763,24 @@ The output should be similar in length to the input."""
             # Remove markdown fences if present
             if fixed_content.startswith("```"):
                 lines = fixed_content.split("\n")
-                lines = lines[1:]  # Remove first line
+                # Remove language identifier line (e.g., ```python)
+                lines = lines[1:]
                 if lines and lines[-1].strip() == "```":
                     lines = lines[:-1]
                 fixed_content = "\n".join(lines)
 
-            # Detect if Claude returned an explanation instead of code
-            error_patterns = [
-                "I cannot",
-                "I can't",
-                "I apologize",
-                "I'm sorry",
-                "Here's the",
-                "Here is the",
-                "The issue",
-                "The fix",
-                "Unfortunately",
-                "I don't",
-                "I am unable",
-            ]
-            first_line = fixed_content.split("\n")[0] if fixed_content else ""
-            if any(first_line.startswith(p) for p in error_patterns):
-                detail = f"Claude returned explanation: '{first_line[:60]}...'"
-                self.logger.warning(f"Invalid response for {issue['file']}: {detail}")
-                return (FixResult.CONTENT_TOO_SHORT, detail)
+            # Also remove trailing fence if content doesn't start with fence
+            if fixed_content.rstrip().endswith("```"):
+                lines = fixed_content.split("\n")
+                while lines and lines[-1].strip() in ("```", ""):
+                    lines = lines[:-1]
+                fixed_content = "\n".join(lines)
+
+            # Comprehensive meta-commentary detection
+            has_meta, meta_detail = self._detect_meta_commentary(fixed_content, file_ext)
+            if has_meta:
+                self.logger.warning(f"Meta-commentary detected in {issue['file']}: {meta_detail}")
+                return (FixResult.META_COMMENTARY, meta_detail)
 
             # Validate the fix by size
             if len(fixed_content) < len(content) * 0.3:
