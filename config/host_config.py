@@ -5,14 +5,14 @@ Unified Host Configuration Loader for james-in-a-box (jib)
 Consolidates all host-side configuration under ~/.config/jib/
 
 Configuration Locations:
-- ~/.config/jib/config.yaml       - Main settings (non-secret)
-- ~/.config/jib/secrets.env       - All secrets (Slack, GitHub, Confluence, JIRA tokens)
-- ~/.config/jib/github-token      - GitHub token
-- ~/.config/jib/repositories.yaml - Repository access configuration (synced from repo)
+- ~/.config/jib/config.yaml        - Main settings (non-secret)
+- ~/.config/jib/secrets.env        - All secrets (Slack, GitHub, Confluence, JIRA tokens)
+- ~/.config/jib/github-token       - GitHub token (dedicated file)
+- ~/.config/jib/repositories.yaml  - Repository access configuration
 
 Migration:
 Run `python3 config/host_config.py --migrate` to migrate from legacy locations:
-- ~/.config/jib-notifier/config.json  -> ~/.config/jib/config.yaml + secrets.env
+- ~/.config/jib-notifier/config.json  -> ~/.config/jib/
 - ~/.config/context-sync/.env         -> ~/.config/jib/secrets.env
 
 Usage:
@@ -23,9 +23,9 @@ Usage:
     slack_channel = config.get('slack_channel')
 """
 
+import os
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -33,16 +33,20 @@ logger = logging.getLogger(__name__)
 
 
 class HostConfig:
-    """Unified configuration loader for jib host services."""
+    """Unified configuration loader for jib host services.
 
-    # Consolidated configuration location
+    All configuration is expected to be in ~/.config/jib/.
+    Run `python3 config/host_config.py --migrate` to migrate from legacy locations.
+    """
+
+    # Consolidated config location
     JIB_CONFIG_DIR = Path.home() / '.config' / 'jib'
     CONFIG_FILE = JIB_CONFIG_DIR / 'config.yaml'
     SECRETS_FILE = JIB_CONFIG_DIR / 'secrets.env'
     GITHUB_TOKEN_FILE = JIB_CONFIG_DIR / 'github-token'
     REPOS_FILE = JIB_CONFIG_DIR / 'repositories.yaml'
 
-    # Legacy locations (for migration only, not runtime fallback)
+    # Legacy locations (for migration only, not used at runtime)
     LEGACY_NOTIFIER_DIR = Path.home() / '.config' / 'jib-notifier'
     LEGACY_NOTIFIER_CONFIG = LEGACY_NOTIFIER_DIR / 'config.json'
     LEGACY_CONTEXT_SYNC_ENV = Path.home() / '.config' / 'context-sync' / '.env'
@@ -50,8 +54,8 @@ class HostConfig:
     def __init__(self):
         """Initialize configuration loader.
 
-        Configuration is loaded only from ~/.config/jib/.
-        Run --migrate to migrate from legacy locations.
+        Loads config from ~/.config/jib/ only. No automatic migration.
+        Run `python3 config/host_config.py --migrate` to migrate from legacy locations.
         """
         self._config: Dict[str, Any] = {}
         self._secrets: Dict[str, str] = {}
@@ -60,21 +64,9 @@ class HostConfig:
         self.JIB_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         os.chmod(self.JIB_CONFIG_DIR, 0o700)
 
-        # Load configuration
+        # Load configuration (no legacy fallback)
         self._load_config()
         self._load_secrets()
-
-    def _needs_migration(self) -> bool:
-        """Check if legacy configs exist and could be migrated."""
-        # If new config files exist, assume already migrated
-        if self.SECRETS_FILE.exists():
-            return False
-
-        # Check for legacy configs
-        return (
-            self.LEGACY_NOTIFIER_CONFIG.exists() or
-            self.LEGACY_CONTEXT_SYNC_ENV.exists()
-        )
 
     def _migrate_legacy_configs(self):
         """Migrate legacy configuration files to new consolidated location."""
@@ -137,7 +129,7 @@ class HostConfig:
             self._write_config_file(config)
             logger.info(f"Created {self.CONFIG_FILE}")
 
-        logger.info("Migration complete. You can now remove legacy config files.")
+        logger.info("Migration complete. Legacy configs preserved for rollback.")
 
     def _write_secrets_file(self, secrets: Dict[str, str]):
         """Write secrets to .env file with secure permissions."""
@@ -196,7 +188,7 @@ class HostConfig:
             logger.warning(f"PyYAML not available, wrote {config_json} instead")
 
     def _load_config(self):
-        """Load non-secret configuration from ~/.config/jib/config.yaml."""
+        """Load non-secret configuration from ~/.config/jib/."""
         # Try YAML first
         if self.CONFIG_FILE.exists():
             try:
@@ -207,7 +199,7 @@ class HostConfig:
             except ImportError:
                 pass
 
-        # Fall back to JSON (config.json in same directory)
+        # Fall back to JSON
         config_json = self.JIB_CONFIG_DIR / 'config.json'
         if config_json.exists():
             with open(config_json) as f:
@@ -289,26 +281,42 @@ def get_config() -> HostConfig:
     return get_config._instance
 
 
+def migrate_legacy_configs():
+    """Run migration from legacy config locations to ~/.config/jib/.
+
+    This is a standalone function for manual migration.
+    """
+    config = HostConfig.__new__(HostConfig)
+    config._config = {}
+    config._secrets = {}
+    config.JIB_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(config.JIB_CONFIG_DIR, 0o700)
+    config._migrate_legacy_configs()
+
+
 # CLI for testing
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='jib host configuration utility')
-    parser.add_argument('--list', action='store_true',
-                        help='List all config (no secrets)')
-    parser.add_argument('--list-secrets', action='store_true',
-                        help='List secret keys (values hidden)')
-    parser.add_argument('--migrate', action='store_true',
-                        help='Migrate from legacy config locations')
+    parser.add_argument('--list', action='store_true', help='List all config (no secrets)')
+    parser.add_argument('--list-secrets', action='store_true', help='List secret keys (values hidden)')
+    parser.add_argument('--migrate', action='store_true', help='Migrate from legacy config locations')
     parser.add_argument('--get', metavar='KEY', help='Get a config value')
     parser.add_argument('--get-secret', metavar='KEY', help='Get a secret value')
 
     args = parser.parse_args()
 
     if args.migrate:
-        config = HostConfig()
-        config._migrate_legacy_configs()
+        print("Migrating legacy configurations to ~/.config/jib/...")
+        migrate_legacy_configs()
         print("Migration complete.")
+        print()
+        print("Legacy locations checked:")
+        print(f"  - {HostConfig.LEGACY_NOTIFIER_CONFIG}")
+        print(f"  - {HostConfig.LEGACY_CONTEXT_SYNC_ENV}")
+        print()
+        print("New config location: ~/.config/jib/")
     elif args.list:
         config = HostConfig()
         print("Configuration values:")
@@ -327,21 +335,36 @@ if __name__ == '__main__':
         print(config.get_secret(args.get_secret, ''))
     else:
         # Show status
-        config = HostConfig()
         print("jib Host Configuration")
         print("=" * 40)
         print(f"Config directory: {HostConfig.JIB_CONFIG_DIR}")
-        print(f"Config file: {HostConfig.CONFIG_FILE} "
-              f"{'(exists)' if HostConfig.CONFIG_FILE.exists() else '(not found)'}")
-        print(f"Secrets file: {HostConfig.SECRETS_FILE} "
-              f"{'(exists)' if HostConfig.SECRETS_FILE.exists() else '(not found)'}")
-        print(f"Repos file: {HostConfig.REPOS_FILE} "
-              f"{'(exists)' if HostConfig.REPOS_FILE.exists() else '(not found)'}")
+        print(f"Config file: {HostConfig.CONFIG_FILE} {'(exists)' if HostConfig.CONFIG_FILE.exists() else '(not found)'}")
+        print(f"Secrets file: {HostConfig.SECRETS_FILE} {'(exists)' if HostConfig.SECRETS_FILE.exists() else '(not found)'}")
+        print(f"Repos file: {HostConfig.REPOS_FILE} {'(exists)' if HostConfig.REPOS_FILE.exists() else '(not found)'}")
         print()
-        print("Loaded secrets:")
-        for k in config.get_all_secrets().keys():
-            print(f"  - {k}")
-        print()
-        print("Loaded config:")
-        for k, v in config.get_all_config().items():
-            print(f"  - {k}: {v}")
+
+        # Check for legacy configs that need migration
+        legacy_exists = (
+            HostConfig.LEGACY_NOTIFIER_CONFIG.exists() or
+            HostConfig.LEGACY_CONTEXT_SYNC_ENV.exists()
+        )
+        if legacy_exists and not HostConfig.SECRETS_FILE.exists():
+            print("WARNING: Legacy configs found but not migrated!")
+            print("Run: python3 config/host_config.py --migrate")
+            print()
+
+        try:
+            config = HostConfig()
+            print("Loaded secrets:")
+            for k in config.get_all_secrets().keys():
+                print(f"  - {k}")
+            print()
+            print("Loaded config:")
+            for k, v in config.get_all_config().items():
+                print(f"  - {k}: {v}")
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            print()
+            print("To set up configuration:")
+            print("  1. Copy templates to ~/.config/jib/")
+            print("  2. Or run --migrate to migrate from legacy locations")

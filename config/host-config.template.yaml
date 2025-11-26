@@ -1,0 +1,26 @@
+# jib Host Configuration Template
+# Copy this to ~/.config/jib/config.yaml and customize
+#
+# This file contains NON-SECRET settings only.
+# Secrets go in ~/.config/jib/secrets.env
+
+# Slack notification settings
+slack_channel: ""  # Your DM channel ID (e.g., D0123456789)
+self_dm_channel: ""  # Same as above, used by receiver
+batch_window_seconds: 15  # How long to wait before sending batched notifications
+
+# Allowed Slack users (who can send commands to jib)
+allowed_users:
+  - ""  # Your Slack user ID (e.g., U0123456789)
+
+# Directories to watch for notifications (host paths)
+watch_directories:
+  - "~/.jib-sharing"
+
+# Context sync settings (where to write synced data)
+confluence_output_dir: "~/.jib-sharing/context-sync/confluence"
+jira_output_dir: "~/.jib-sharing/context-sync/jira"
+
+# Sync intervals (in minutes)
+context_sync_interval: 30
+github_sync_interval: 5
