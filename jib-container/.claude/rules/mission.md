@@ -110,6 +110,54 @@ git commit -m "Brief description
 create-pr-helper.py --auto --no-notify
 ```
 
+### 6.1. Preventing PR Cross-Contamination (CRITICAL)
+
+**NEVER mix commits from different tasks/PRs.** Each PR must contain ONLY commits related to its original intent.
+
+**Before ANY commit, verify you're on the correct branch:**
+```bash
+git branch --show-current    # What branch am I on?
+git log --oneline -5         # What commits are here?
+git status                   # What changes am I about to commit?
+```
+
+**Root cause of cross-contamination:**
+- Switching between tasks without checking current branch
+- Committing changes while on wrong branch (e.g., still on PR #26's branch when working on task #27)
+- Not resetting to main before starting new work
+
+**Prevention checklist - BEFORE starting any new task:**
+```bash
+# 1. Verify current state
+git branch --show-current
+git status
+
+# 2. If uncommitted changes exist for CURRENT task, commit them first
+# 3. If starting NEW task, ensure you're on main or correct temp branch:
+git checkout main            # Go to main
+git pull origin main         # Get latest
+# (Container worktree branch will be created automatically)
+```
+
+**If you realize you committed to the wrong branch:**
+```bash
+# Save the commit hash
+git log --oneline -1         # e.g., abc1234
+
+# Switch to main and start fresh
+git checkout main
+git checkout -b correct-branch
+
+# Cherry-pick the commit
+git cherry-pick abc1234
+
+# Go back and remove from wrong branch
+git checkout wrong-branch
+git reset --hard HEAD~1      # Only if you backed up!
+```
+
+**Rule of thumb**: When in doubt, run `git branch --show-current` and `git log --oneline -5` to verify you're working in the right context.
+
 **How the helpers handle repo access:**
 - **Writable repos**: Creates PR on GitHub and sends Slack notification
 - **Non-writable repos**: Automatically sends Slack notification with full PR context,
