@@ -1,10 +1,10 @@
 # Worktree Watcher
 
-Automatically cleans up orphaned git worktrees from stopped or crashed jib containers.
+Automatically cleans up orphaned git worktrees and temporary branches from stopped or crashed jib containers.
 
 **Status**: Operational
 **Type**: Host-side systemd timer service
-**Purpose**: Prevent worktree accumulation and disk space waste
+**Purpose**: Prevent worktree and branch accumulation, save disk space
 
 ## Overview
 
@@ -18,7 +18,9 @@ This service runs periodically to detect and remove orphaned worktrees.
 2. **Scans** `~/.jib-worktrees/` for container worktree directories
 3. **Checks** if corresponding Docker container still exists
 4. **Removes** worktrees and directories for non-existent containers
-5. **Logs** all cleanup operations to systemd journal
+5. **Prunes** stale worktree references from git metadata
+6. **Deletes** orphaned `jib-temp-*` branches for non-existent containers
+7. **Logs** all cleanup operations to systemd journal
 
 ## Worktree Layout
 
@@ -81,7 +83,13 @@ systemctl --user disable worktree-watcher.timer
 
 ## Safety
 
-The watcher only removes worktrees for containers that no longer exist. If a container is running or stopped (but not removed), its worktrees are preserved.
+The watcher only removes worktrees and branches for containers that no longer exist. If a container is running or stopped (but not removed), its worktrees and branches are preserved.
+
+Branch deletion is conservative:
+- Only deletes branches matching the `jib-temp-*` pattern
+- Verifies no Docker container exists with the matching ID
+- Verifies no worktree directory exists (worktrees are cleaned up first)
+- Uses `git branch -D` (force delete) since these are temporary branches
 
 ## Manual Cleanup
 

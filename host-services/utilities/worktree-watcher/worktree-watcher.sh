@@ -111,10 +111,84 @@ prune_stale_worktree_references() {
     fi
 }
 
+cleanup_orphaned_branches() {
+    log "Checking for orphaned jib-temp branches..."
+
+    local total_branches_deleted=0
+
+    # Iterate through all repos in ~/khan/
+    for repo in "$HOME/khan"/*; do
+        if [ ! -d "$repo/.git" ]; then
+            continue
+        fi
+
+        repo_name=$(basename "$repo")
+        cd "$repo"
+
+        # Find all jib-temp branches
+        local branches
+        branches=$(git branch --list 'jib-temp-*' 2>/dev/null | sed 's/^[* ]*//')
+
+        if [ -z "$branches" ]; then
+            continue
+        fi
+
+        local repo_branches_deleted=0
+
+        # Check each branch
+        while IFS= read -r branch; do
+            if [ -z "$branch" ]; then
+                continue
+            fi
+
+            # Extract container ID from branch name (jib-temp-jib-YYYYMMDD-HHMMSS-PID)
+            # Branch format: jib-temp-{container_id}
+            # Container ID format: jib-YYYYMMDD-HHMMSS-PID or jib-exec-YYYYMMDD-HHMMSS-PID
+            local container_id
+            container_id=$(echo "$branch" | sed 's/^jib-temp-//')
+
+            # Check if container still exists
+            if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${container_id}$"; then
+                # Container exists, keep the branch
+                continue
+            fi
+
+            # Check if worktree directory still exists (means container may still be active)
+            local worktree_dir="$HOME/.jib-worktrees/$container_id"
+            if [ -d "$worktree_dir" ]; then
+                # Worktree exists, keep the branch (worktree cleanup will happen first)
+                continue
+            fi
+
+            # Container and worktree don't exist - safe to delete the branch
+            log "  Deleting orphaned branch in $repo_name: $branch"
+            if git branch -D "$branch" 2>/dev/null; then
+                repo_branches_deleted=$((repo_branches_deleted + 1))
+                total_branches_deleted=$((total_branches_deleted + 1))
+            else
+                log "  Warning: Could not delete branch $branch"
+            fi
+        done <<< "$branches"
+
+        if [ $repo_branches_deleted -gt 0 ]; then
+            log "  Deleted $repo_branches_deleted branch(es) in $repo_name"
+        fi
+    done
+
+    if [ $total_branches_deleted -gt 0 ]; then
+        log "Branch cleanup complete: deleted $total_branches_deleted orphaned branch(es)"
+    else
+        log "No orphaned branches found"
+    fi
+}
+
 # Run cleanup
 cleanup_orphaned_worktrees
 
 # Prune stale references
 prune_stale_worktree_references
+
+# Clean up orphaned branches
+cleanup_orphaned_branches
 
 exit 0
