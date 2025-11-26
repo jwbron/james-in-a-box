@@ -96,7 +96,14 @@ class TestCodebaseAnalyzerFileFiltering:
 
     def test_should_skip_ignored_patterns(self):
         """Test that ignored patterns are skipped."""
-        always_ignore = {".git", "__pycache__", "node_modules", ".venv", ".pytest_cache", ".mypy_cache"}
+        always_ignore = {
+            ".git",
+            "__pycache__",
+            "node_modules",
+            ".venv",
+            ".pytest_cache",
+            ".mypy_cache",
+        }
 
         test_paths = [
             "/path/.git/config",
@@ -419,13 +426,13 @@ class TestCodebaseAnalyzerASTAnalysis:
 
     def test_detect_bare_except(self, temp_dir):
         """Test detection of bare except clauses using AST."""
-        code = '''
+        code = """
 def foo():
     try:
         risky_operation()
     except:
         pass
-'''
+"""
         (temp_dir / "bare_except.py").write_text(code)
 
         tree = ast.parse(code)
@@ -439,30 +446,33 @@ def foo():
 
     def test_detect_eval_usage(self, temp_dir):
         """Test detection of eval() usage using AST."""
-        code = '''
+        code = """
 def unsafe():
     user_input = input()
     result = eval(user_input)
     return result
-'''
+"""
         (temp_dir / "eval_usage.py").write_text(code)
 
         tree = ast.parse(code)
         has_eval = False
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id == "eval":
-                    has_eval = True
-                    break
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "eval"
+            ):
+                has_eval = True
+                break
 
         assert has_eval
 
     def test_detect_syntax_error(self, temp_dir):
         """Test that syntax errors are detected."""
-        code = '''
+        code = """
 def broken(
     print("missing closing paren"
-'''
+"""
         (temp_dir / "syntax_error.py").write_text(code)
 
         with pytest.raises(SyntaxError):
@@ -492,9 +502,12 @@ def safe_function():
         # Check for eval
         has_eval = False
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id == "eval":
-                    has_eval = True
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "eval"
+            ):
+                has_eval = True
 
         assert not has_bare_except
         assert not has_eval

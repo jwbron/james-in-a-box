@@ -150,28 +150,31 @@ class ASTIssueDetector(ast.NodeVisitor):
         self._in_function = True
 
         # Check for functions without docstrings (only for public functions)
-        if (
+        # Skip small functions (less than 5 lines), private functions, and functions with docstrings
+        has_docstring = (
+            len(node.body) > 0
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+        )
+        is_large_public_function = (
             not node.name.startswith("_")
             and len(node.body) > 0
-            and not (
-                isinstance(node.body[0], ast.Expr)
-                and isinstance(node.body[0].value, ast.Constant)
-                and isinstance(node.body[0].value.value, str)
+            and hasattr(node, "end_lineno")
+            and node.end_lineno - node.lineno > 5
+        )
+        if is_large_public_function and not has_docstring:
+            self.issues.append(
+                {
+                    "file": self.file_path,
+                    "line_hint": f"function {node.name}() at line {node.lineno}",
+                    "priority": "MEDIUM",
+                    "category": "documentation",
+                    "description": f"Public function '{node.name}' lacks a docstring",
+                    "suggestion": "Add a docstring describing what the function does",
+                    "auto_fixable": False,
+                }
             )
-        ):
-            # Skip small functions (less than 5 lines)
-            if hasattr(node, "end_lineno") and node.end_lineno - node.lineno > 5:
-                self.issues.append(
-                    {
-                        "file": self.file_path,
-                        "line_hint": f"function {node.name}() at line {node.lineno}",
-                        "priority": "MEDIUM",
-                        "category": "documentation",
-                        "description": f"Public function '{node.name}' lacks a docstring",
-                        "suggestion": "Add a docstring describing what the function does",
-                        "auto_fixable": False,
-                    }
-                )
 
         self.generic_visit(node)
         self._current_function = old_function
@@ -332,7 +335,7 @@ class CodebaseAnalyzer:
                 check=False,
             )
             if result.returncode == 0:
-                files = set(f.strip() for f in result.stdout.strip().split("\n") if f.strip())
+                files = {f.strip() for f in result.stdout.strip().split("\n") if f.strip()}
                 self.logger.info(f"Found {len(files)} files changed in last {self.since_days} days")
                 return files
         except Exception as e:
@@ -400,7 +403,11 @@ class CodebaseAnalyzer:
             except ValueError:
                 continue
 
-            parent = str(path.parent.relative_to(self.codebase_path)) if path.parent != self.codebase_path else "."
+            parent = (
+                str(path.parent.relative_to(self.codebase_path))
+                if path.parent != self.codebase_path
+                else "."
+            )
 
             # Handle directories
             if path.is_dir():
@@ -484,7 +491,10 @@ class CodebaseAnalyzer:
                     file_info.content_hash = self._get_file_hash(content)
 
                     # Check if file has changed since last analysis
-                    if not self.full_analysis and self._cache.file_hashes.get(rel_path) == file_info.content_hash:
+                    if (
+                        not self.full_analysis
+                        and self._cache.file_hashes.get(rel_path) == file_info.content_hash
+                    ):
                         self.logger.debug(f"Skipping unchanged file: {rel_path}")
                     else:
                         files_to_analyze.append(path)
@@ -1062,12 +1072,16 @@ Output the fixed file content now:"""
                 return (FixResult.META_COMMENTARY, meta_detail)
 
             if len(fixed_content) < len(content) * 0.3:
-                detail = f"output {len(fixed_content)} chars vs original {len(content)} chars (< 30%)"
+                detail = (
+                    f"output {len(fixed_content)} chars vs original {len(content)} chars (< 30%)"
+                )
                 self.logger.warning(f"Fixed content too short for {issue['file']}: {detail}")
                 return (FixResult.CONTENT_TOO_SHORT, detail)
 
             if len(fixed_content) > len(content) * 3:
-                detail = f"output {len(fixed_content)} chars vs original {len(content)} chars (> 300%)"
+                detail = (
+                    f"output {len(fixed_content)} chars vs original {len(content)} chars (> 300%)"
+                )
                 self.logger.warning(f"Fixed content too long for {issue['file']}: {detail}")
                 return (FixResult.CONTENT_TOO_LONG, detail)
 
@@ -1313,11 +1327,13 @@ Fixes:
         """Main analysis workflow."""
         self.logger.info("=" * 60)
         self.logger.info("Codebase Analyzer")
-        self.logger.info(f"Mode: {'Full' if self.full_analysis else f'Incremental ({self.since_days} days)'}")
+        self.logger.info(
+            f"Mode: {'Full' if self.full_analysis else f'Incremental ({self.since_days} days)'}"
+        )
         self.logger.info("=" * 60)
 
         # Single-pass scan
-        files, structural_info = self.scan_codebase_single_pass()
+        files, _structural_info = self.scan_codebase_single_pass()
 
         if not files:
             self.logger.info("No files to analyze")
