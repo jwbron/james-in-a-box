@@ -14,19 +14,12 @@ You run in a **sandboxed Docker container** with "Bypass Permissions" mode becau
 
 ## GitHub MCP Server (Primary GitHub Interface)
 
-All GitHub operations go through the **GitHub MCP server** (`ghcr.io/github/github-mcp-server`). This provides real-time, bi-directional access and replaces direct `gh` CLI usage.
+All GitHub operations go through the **GitHub MCP server** (api.githubcopilot.com). This provides real-time, bi-directional access and replaces direct `gh` CLI usage.
 
-**Configuration**: The MCP server runs via Docker when Claude Code starts, configured in `~/.mcp.json`:
-```json
-{
-  "mcpServers": {
-    "github": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"],
-      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "<your-token>" }
-    }
-  }
-}
+**Configuration**: The MCP server is configured at container startup via `claude mcp add`:
+```bash
+claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" \
+    --header "Authorization: Bearer ${GITHUB_TOKEN}"
 ```
 
 **Available Tools:**
@@ -43,7 +36,7 @@ All GitHub operations go through the **GitHub MCP server** (`ghcr.io/github/gith
 - **MCP**: All GitHub API operations (PRs, issues, comments, file reads from remote, pushing)
 - **Local git**: Local commits, staging, diff viewing
 
-**Authentication**: Configured automatically via `GITHUB_TOKEN` environment variable (passed to Docker as `GITHUB_PERSONAL_ACCESS_TOKEN`).
+**Authentication**: Configured automatically via `GITHUB_TOKEN` environment variable.
 
 ## Capabilities
 

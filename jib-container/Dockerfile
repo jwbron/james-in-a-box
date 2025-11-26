@@ -269,34 +269,17 @@ echo "✓ Claude settings created: ${USER_HOME}/.claude/settings.json"
 cat "${USER_HOME}/.claude/settings.json"
 echo ""
 
-# Create .mcp.json with GitHub MCP server configuration
+# Add the GitHub MCP server using the claude mcp add command
 # GitHub MCP provides bi-directional access: repos, issues, PRs, comments, file operations
 # This replaces direct gh CLI usage for all GitHub operations
-# Reference: https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-claude.md
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-    cat > "${USER_HOME}/.mcp.json" << MCPEOF
-{
-  "mcpServers": {
-    "github": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "-e",
-        "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "ghcr.io/github/github-mcp-server"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-      }
-    }
-  }
-}
-MCPEOF
-    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.mcp.json"
-    chmod 600 "${USER_HOME}/.mcp.json"
-    echo "✓ GitHub MCP server configured (ghcr.io/github/github-mcp-server)"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
+        --transport http \
+        github \
+        "https://api.githubcopilot.com/mcp/" \
+        --header "Authorization: Bearer ${GITHUB_TOKEN}" \
+        2>/dev/null || true
+    echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
     echo "  All GitHub operations go through MCP: PRs, issues, repos, comments"
 else
     echo "ℹ GitHub token not provided - GitHub MCP server not configured"
