@@ -6,8 +6,6 @@ repositories.yaml configuration.
 """
 
 import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
 
 import pytest
 import yaml
@@ -74,8 +72,8 @@ default_reviewer: reviewer
 
         config = yaml.safe_load(config_file.read_text())
 
-        assert config['github_username'] == 'testuser'
-        assert len(config['writable_repos']) == 2
+        assert config["github_username"] == "testuser"
+        assert len(config["writable_repos"]) == 2
 
     def test_handles_empty_config(self, temp_dir):
         """Test handling of empty config file."""
@@ -91,7 +89,7 @@ default_reviewer: reviewer
         config_file.write_text("github_username: testuser")
 
         config = yaml.safe_load(config_file.read_text())
-        assert config['github_username'] == 'testuser'
+        assert config["github_username"] == "testuser"
 
 
 class TestGetGithubUsername:
@@ -99,18 +97,18 @@ class TestGetGithubUsername:
 
     def test_returns_username(self, temp_dir):
         """Test returning configured username."""
-        config = {'github_username': 'testuser'}
-        username = config.get('github_username')
+        config = {"github_username": "testuser"}
+        username = config.get("github_username")
 
-        assert username == 'testuser'
+        assert username == "testuser"
 
     def test_raises_when_not_configured(self):
         """Test raising ValueError when username not configured."""
         config = {}
-        username = config.get('github_username')
+        username = config.get("github_username")
 
         if not username:
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="github_username not configured"):
                 raise ValueError("github_username not configured")
 
 
@@ -119,31 +117,26 @@ class TestGetWritableRepos:
 
     def test_returns_list_of_repos(self):
         """Test returning list of writable repos."""
-        config = {
-            'writable_repos': [
-                'user/repo1',
-                'user/repo2'
-            ]
-        }
+        config = {"writable_repos": ["user/repo1", "user/repo2"]}
 
-        repos = config.get('writable_repos', [])
+        repos = config.get("writable_repos", [])
         assert len(repos) == 2
-        assert 'user/repo1' in repos
+        assert "user/repo1" in repos
 
     def test_returns_empty_list_when_not_configured(self):
         """Test returning empty list when writable_repos not configured."""
         config = {}
-        repos = config.get('writable_repos', [])
+        repos = config.get("writable_repos", [])
 
         assert repos == []
 
     def test_repo_format(self):
         """Test that repos are in owner/repo format."""
-        repos = ['owner/repo1', 'org/repo2']
+        repos = ["owner/repo1", "org/repo2"]
 
         for repo in repos:
-            assert '/' in repo
-            parts = repo.split('/')
+            assert "/" in repo
+            parts = repo.split("/")
             assert len(parts) == 2
 
 
@@ -152,24 +145,24 @@ class TestIsWritableRepo:
 
     def test_returns_true_for_writable_repo(self):
         """Test returning True for writable repo."""
-        writable = ['user/repo1', 'user/repo2']
-        repo = 'user/repo1'
+        writable = ["user/repo1", "user/repo2"]
+        repo = "user/repo1"
 
         is_writable = any(r.lower() == repo.lower() for r in writable)
         assert is_writable
 
     def test_returns_false_for_non_writable_repo(self):
         """Test returning False for non-writable repo."""
-        writable = ['user/repo1']
-        repo = 'user/other-repo'
+        writable = ["user/repo1"]
+        repo = "user/other-repo"
 
         is_writable = any(r.lower() == repo.lower() for r in writable)
         assert not is_writable
 
     def test_case_insensitive_comparison(self):
         """Test that comparison is case insensitive."""
-        writable = ['User/Repo1']
-        repo = 'user/repo1'
+        writable = ["User/Repo1"]
+        repo = "user/repo1"
 
         is_writable = any(r.lower() == repo.lower() for r in writable)
         assert is_writable
@@ -177,7 +170,7 @@ class TestIsWritableRepo:
     def test_handles_empty_writable_list(self):
         """Test handling of empty writable repos list."""
         writable = []
-        repo = 'user/repo1'
+        repo = "user/repo1"
 
         is_writable = any(r.lower() == repo.lower() for r in writable)
         assert not is_writable
@@ -188,28 +181,23 @@ class TestGetDefaultReviewer:
 
     def test_returns_explicit_reviewer(self):
         """Test returning explicitly configured reviewer."""
-        config = {
-            'github_username': 'user',
-            'default_reviewer': 'reviewer'
-        }
+        config = {"github_username": "user", "default_reviewer": "reviewer"}
 
-        reviewer = config.get('default_reviewer')
+        reviewer = config.get("default_reviewer")
         if not reviewer:
-            reviewer = config.get('github_username')
+            reviewer = config.get("github_username")
 
-        assert reviewer == 'reviewer'
+        assert reviewer == "reviewer"
 
     def test_falls_back_to_username(self):
         """Test falling back to github_username when reviewer not set."""
-        config = {
-            'github_username': 'user'
-        }
+        config = {"github_username": "user"}
 
-        reviewer = config.get('default_reviewer')
+        reviewer = config.get("default_reviewer")
         if not reviewer:
-            reviewer = config.get('github_username')
+            reviewer = config.get("github_username")
 
-        assert reviewer == 'user'
+        assert reviewer == "user"
 
 
 class TestGetSyncConfig:
@@ -217,28 +205,20 @@ class TestGetSyncConfig:
 
     def test_returns_sync_settings(self):
         """Test returning GitHub sync configuration."""
-        config = {
-            'github_sync': {
-                'sync_all_prs': True,
-                'sync_interval_minutes': 10
-            }
-        }
+        config = {"github_sync": {"sync_all_prs": True, "sync_interval_minutes": 10}}
 
-        sync_config = config.get('github_sync', {})
-        assert sync_config['sync_all_prs'] is True
-        assert sync_config['sync_interval_minutes'] == 10
+        sync_config = config.get("github_sync", {})
+        assert sync_config["sync_all_prs"] is True
+        assert sync_config["sync_interval_minutes"] == 10
 
     def test_returns_defaults_when_not_configured(self):
         """Test returning defaults when github_sync not configured."""
         config = {}
-        defaults = {
-            'sync_all_prs': True,
-            'sync_interval_minutes': 5
-        }
+        defaults = {"sync_all_prs": True, "sync_interval_minutes": 5}
 
-        sync_config = config.get('github_sync', defaults)
-        assert sync_config['sync_all_prs'] is True
-        assert sync_config['sync_interval_minutes'] == 5
+        sync_config = config.get("github_sync", defaults)
+        assert sync_config["sync_all_prs"] is True
+        assert sync_config["sync_interval_minutes"] == 5
 
 
 class TestGetReposForSync:
@@ -246,11 +226,9 @@ class TestGetReposForSync:
 
     def test_returns_writable_repos(self):
         """Test that repos for sync are writable repos."""
-        config = {
-            'writable_repos': ['user/repo1', 'user/repo2']
-        }
+        config = {"writable_repos": ["user/repo1", "user/repo2"]}
 
-        repos = config.get('writable_repos', [])
+        repos = config.get("writable_repos", [])
         assert len(repos) == 2
 
 
@@ -267,7 +245,7 @@ class TestMain:
 
     def test_list_writable_flag(self, capsys):
         """Test --list-writable flag output."""
-        repos = ['user/repo1', 'user/repo2']
+        repos = ["user/repo1", "user/repo2"]
 
         for repo in repos:
             print(repo)
@@ -278,15 +256,15 @@ class TestMain:
 
     def test_check_writable_returns_exit_code(self):
         """Test --check-writable returns correct exit code."""
-        writable = ['user/repo1']
+        writable = ["user/repo1"]
 
         # Writable repo
-        repo = 'user/repo1'
+        repo = "user/repo1"
         exit_code = 0 if any(r.lower() == repo.lower() for r in writable) else 1
         assert exit_code == 0
 
         # Non-writable repo
-        repo = 'user/other'
+        repo = "user/other"
         exit_code = 0 if any(r.lower() == repo.lower() for r in writable) else 1
         assert exit_code == 1
 
@@ -309,16 +287,16 @@ class TestMain:
     def test_default_output_summary(self, capsys):
         """Test default output shows summary."""
         config = {
-            'github_username': 'testuser',
-            'writable_repos': ['testuser/repo1'],
-            'default_reviewer': 'reviewer'
+            "github_username": "testuser",
+            "writable_repos": ["testuser/repo1"],
+            "default_reviewer": "reviewer",
         }
 
         print("Repository Configuration")
         print("=" * 40)
         print(f"\nGitHub username: {config['github_username']}")
         print(f"\nWritable repos ({len(config['writable_repos'])}):")
-        for repo in config['writable_repos']:
+        for repo in config["writable_repos"]:
             print(f"  - {repo}")
         print(f"\nDefault reviewer: {config['default_reviewer']}")
 
@@ -354,9 +332,9 @@ github_sync:
 
         config = yaml.safe_load(config_file.read_text())
 
-        assert 'github_username' in config
-        assert 'writable_repos' in config
-        assert isinstance(config['writable_repos'], list)
+        assert "github_username" in config
+        assert "writable_repos" in config
+        assert isinstance(config["writable_repos"], list)
 
     def test_comments_are_preserved(self, temp_dir):
         """Test that YAML comments are valid."""
@@ -369,7 +347,7 @@ github_username: testuser  # inline comment
 
         # Should parse without error
         config = yaml.safe_load(config_file.read_text())
-        assert config['github_username'] == 'testuser'
+        assert config["github_username"] == "testuser"
 
     def test_handles_unicode(self, temp_dir):
         """Test handling of unicode in config."""
@@ -380,4 +358,4 @@ github_username: user_émoji_🎉
         config_file.write_text(config_content)
 
         config = yaml.safe_load(config_file.read_text())
-        assert 'user_' in config['github_username']
+        assert "user_" in config["github_username"]

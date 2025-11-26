@@ -2,12 +2,12 @@
 Pytest configuration and shared fixtures for james-in-a-box tests.
 """
 
-import os
 import sys
 import tempfile
 from pathlib import Path
 
 import pytest
+
 
 # Add project paths to sys.path for imports
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -39,7 +39,7 @@ def mock_home(temp_dir, monkeypatch):
     (temp_dir / "sharing" / "tracking").mkdir(parents=True)
     (temp_dir / "sharing" / "incoming").mkdir(parents=True)
 
-    yield temp_dir
+    return temp_dir
 
 
 @pytest.fixture
@@ -53,4 +53,3 @@ def mock_env(monkeypatch):
     """Set up common environment variables for testing."""
     monkeypatch.setenv("JIB_TEST_MODE", "1")
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-    yield

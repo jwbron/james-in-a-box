@@ -10,17 +10,15 @@ Threading support:
 - Thread mappings are stored in threads.json for persistence across restarts
 """
 
-import os
-import sys
-import time
 import json
 import logging
-import signal
-from pathlib import Path
-from datetime import datetime
-from typing import List, Set, Optional, Tuple
-import subprocess
+import os
 import re
+import signal
+import sys
+import time
+from pathlib import Path
+
 
 # Check for required dependencies
 try:
@@ -62,24 +60,26 @@ class SlackNotifier:
         self.config = self._load_config()
 
         # Validate Slack token
-        self.slack_token = self.config.get('slack_token')
+        self.slack_token = self.config.get("slack_token")
         if not self.slack_token:
             self.logger.error("SLACK_TOKEN not configured")
             raise ValueError("SLACK_TOKEN not found in config")
 
         # Configuration
         # SECURITY FIX: Do not hardcode channel ID - require it to be configured
-        self.slack_channel = self.config.get('slack_channel')
+        self.slack_channel = self.config.get("slack_channel")
         if not self.slack_channel:
             self.logger.error("SLACK_CHANNEL not configured")
-            raise ValueError("SLACK_CHANNEL not found in config. Set it in config.json or environment.")
+            raise ValueError(
+                "SLACK_CHANNEL not found in config. Set it in config.json or environment."
+            )
         # How long to wait before sending batched notifications (seconds)
         # Lower = faster notifications, Higher = fewer Slack messages
-        self.batch_window = self.config.get('batch_window_seconds', 15)
-        self.watch_dirs = [Path(d).expanduser() for d in self.config.get('watch_directories', [])]
+        self.batch_window = self.config.get("batch_window_seconds", 15)
+        self.watch_dirs = [Path(d).expanduser() for d in self.config.get("watch_directories", [])]
 
         # State
-        self.pending_changes: Set[str] = set()
+        self.pending_changes: set[str] = set()
         self.last_batch_time = time.time()
         self.running = True
         self.threads = self._load_threads()
@@ -90,7 +90,7 @@ class SlackNotifier:
 
     def _setup_logging(self):
         """Configure logging to file and console."""
-        self.logger = logging.getLogger('jib-notifier')
+        self.logger = logging.getLogger("jib-notifier")
         self.logger.setLevel(logging.INFO)
 
         # File handler
@@ -102,8 +102,9 @@ class SlackNotifier:
         ch.setLevel(logging.INFO)
 
         # Formatter
-        formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s',
-                                     datefmt='%Y-%m-%d %H:%M:%S')
+        formatter = logging.Formatter(
+            "[%(asctime)s] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        )
         fh.setFormatter(formatter)
         ch.setFormatter(formatter)
 
@@ -121,55 +122,56 @@ class SlackNotifier:
         """
         config = {}
 
-        jib_config_dir = Path.home() / '.config' / 'jib'
-        jib_secrets = jib_config_dir / 'secrets.env'
-        jib_config = jib_config_dir / 'config.yaml'
+        jib_config_dir = Path.home() / ".config" / "jib"
+        jib_secrets = jib_config_dir / "secrets.env"
+        jib_config = jib_config_dir / "config.yaml"
 
         # Load secrets from .env file
         if jib_secrets.exists():
-            with open(jib_secrets, 'r') as f:
+            with open(jib_secrets) as f:
                 for line in f:
                     line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
                         key = key.strip()
-                        value = value.strip().strip('"\'')
-                        if key == 'SLACK_TOKEN' and value:
-                            config['slack_token'] = value
-                        elif key == 'SLACK_APP_TOKEN' and value:
-                            config['slack_app_token'] = value
+                        value = value.strip().strip("\"'")
+                        if key == "SLACK_TOKEN" and value:
+                            config["slack_token"] = value
+                        elif key == "SLACK_APP_TOKEN" and value:
+                            config["slack_app_token"] = value
 
         # Load non-secret config from YAML
         if jib_config.exists():
             try:
                 import yaml
-                with open(jib_config, 'r') as f:
+
+                with open(jib_config) as f:
                     yaml_config = yaml.safe_load(f) or {}
                 config.update(yaml_config)
             except ImportError:
                 self.logger.warning("PyYAML not available, config.yaml not loaded")
 
         # Set defaults for missing values
-        if 'slack_token' not in config:
-            config['slack_token'] = ''
-        if 'slack_channel' not in config:
-            config['slack_channel'] = ''
-        if 'batch_window_seconds' not in config:
-            config['batch_window_seconds'] = 15
-        if 'watch_directories' not in config:
-            config['watch_directories'] = ['~/.jib-sharing']
+        if "slack_token" not in config:
+            config["slack_token"] = ""
+        if "slack_channel" not in config:
+            config["slack_channel"] = ""
+        if "batch_window_seconds" not in config:
+            config["batch_window_seconds"] = 15
+        if "watch_directories" not in config:
+            config["watch_directories"] = ["~/.jib-sharing"]
 
         # Environment variables override everything
-        if os.environ.get('SLACK_TOKEN'):
-            config['slack_token'] = os.environ['SLACK_TOKEN']
-        if os.environ.get('SLACK_CHANNEL'):
-            config['slack_channel'] = os.environ['SLACK_CHANNEL']
+        if os.environ.get("SLACK_TOKEN"):
+            config["slack_token"] = os.environ["SLACK_TOKEN"]
+        if os.environ.get("SLACK_CHANNEL"):
+            config["slack_channel"] = os.environ["SLACK_CHANNEL"]
 
         return config
 
     def _save_config(self, config: dict):
         """Save configuration to file with secure permissions."""
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             json.dump(config, f, indent=2)
         os.chmod(self.config_file, 0o600)
         self.logger.info(f"Configuration saved to {self.config_file}")
@@ -178,7 +180,7 @@ class SlackNotifier:
         """Load thread state mapping task IDs to Slack thread_ts."""
         if self.threads_file.exists():
             try:
-                with open(self.threads_file, 'r') as f:
+                with open(self.threads_file) as f:
                     return json.load(f)
             except Exception as e:
                 self.logger.error(f"Failed to load threads file: {e}")
@@ -189,7 +191,7 @@ class SlackNotifier:
         """Save thread state to file."""
         try:
             self.threads_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.threads_file, 'w') as f:
+            with open(self.threads_file, "w") as f:
                 json.dump(self.threads, f, indent=2)
             os.chmod(self.threads_file, 0o600)
         except Exception as e:
@@ -203,9 +205,14 @@ class SlackNotifier:
     def _should_ignore(self, path: str) -> bool:
         """Check if a path should be ignored."""
         ignore_patterns = [
-            '.swp', '.tmp', '.lock', '~',
-            '.git/', '__pycache__/',
-            'node_modules/', '.venv/'
+            ".swp",
+            ".tmp",
+            ".lock",
+            "~",
+            ".git/",
+            "__pycache__/",
+            "node_modules/",
+            ".venv/",
         ]
         return any(pattern in path for pattern in ignore_patterns)
 
@@ -218,12 +225,12 @@ class SlackNotifier:
           - notification-20251123-143022.md → notification-20251123-143022
         """
         # Remove .md extension
-        name = filename.replace('.md', '')
+        name = filename.replace(".md", "")
         # Remove RESPONSE- prefix if present
-        name = re.sub(r'^RESPONSE-', '', name)
+        name = re.sub(r"^RESPONSE-", "", name)
         return name
 
-    def _parse_frontmatter(self, content: str) -> Tuple[dict, str]:
+    def _parse_frontmatter(self, content: str) -> tuple[dict, str]:
         """Parse YAML frontmatter from notification content.
 
         Notifications can include thread context in YAML frontmatter:
@@ -242,14 +249,14 @@ class SlackNotifier:
         metadata = {}
 
         # Check for YAML frontmatter (starts with ---)
-        if not content.startswith('---'):
+        if not content.startswith("---"):
             return metadata, content
 
         # Find the closing ---
-        lines = content.split('\n')
+        lines = content.split("\n")
         end_idx = -1
         for i, line in enumerate(lines[1:], start=1):  # Skip first ---
-            if line.strip() == '---':
+            if line.strip() == "---":
                 end_idx = i
                 break
 
@@ -261,18 +268,18 @@ class SlackNotifier:
         frontmatter_lines = lines[1:end_idx]
         for line in frontmatter_lines:
             line = line.strip()
-            if ':' in line and not line.startswith('#'):
-                key, value = line.split(':', 1)
+            if ":" in line and not line.startswith("#"):
+                key, value = line.split(":", 1)
                 key = key.strip()
-                value = value.strip().strip('"\'')  # Remove quotes
+                value = value.strip().strip("\"'")  # Remove quotes
                 if value:  # Only add non-empty values
                     metadata[key] = value
 
         # Return content without frontmatter
-        remaining_content = '\n'.join(lines[end_idx + 1:]).strip()
+        remaining_content = "\n".join(lines[end_idx + 1 :]).strip()
         return metadata, remaining_content
 
-    def _chunk_message(self, content: str, max_length: int = 3000) -> List[str]:
+    def _chunk_message(self, content: str, max_length: int = 3000) -> list[str]:
         """Split long messages into chunks that fit Slack's limits.
 
         Slack's message limit is ~4000 chars, but we chunk at 3000 for safety.
@@ -301,25 +308,21 @@ class SlackNotifier:
             chunk = remaining[:max_length]
 
             # Try to split on paragraph boundary (double newline)
-            split_idx = chunk.rfind('\n\n')
+            split_idx = chunk.rfind("\n\n")
 
             # If no paragraph boundary, try single newline
             if split_idx == -1:
-                split_idx = chunk.rfind('\n')
+                split_idx = chunk.rfind("\n")
 
             # If no newline, try sentence boundary
             if split_idx == -1:
-                split_idx = max(
-                    chunk.rfind('. '),
-                    chunk.rfind('! '),
-                    chunk.rfind('? ')
-                )
+                split_idx = max(chunk.rfind(". "), chunk.rfind("! "), chunk.rfind("? "))
                 if split_idx != -1:
                     split_idx += 1  # Include the punctuation
 
             # If no natural boundary, split at word boundary
             if split_idx == -1:
-                split_idx = chunk.rfind(' ')
+                split_idx = chunk.rfind(" ")
 
             # If still no good split point, just cut at max_length
             if split_idx == -1:
@@ -332,11 +335,11 @@ class SlackNotifier:
         # Add chunk indicators if we split the message
         if len(chunks) > 1:
             for i, chunk in enumerate(chunks):
-                chunks[i] = f"**(Part {i+1}/{len(chunks)})**\n\n{chunk}"
+                chunks[i] = f"**(Part {i + 1}/{len(chunks)})**\n\n{chunk}"
 
         return chunks
 
-    def _send_slack_message(self, changes: List[str]) -> bool:
+    def _send_slack_message(self, changes: list[str]) -> bool:
         """Send notification files to Slack with threading support.
 
         Reads each notification file and sends its full content.
@@ -354,12 +357,12 @@ class SlackNotifier:
             path = Path(change_path)
 
             # Only process .md files
-            if not path.suffix == '.md':
+            if path.suffix != ".md":
                 continue
 
             # Read file content
             try:
-                with open(path, 'r') as f:
+                with open(path) as f:
                     raw_content = f.read().strip()
 
                 if not raw_content:
@@ -372,8 +375,8 @@ class SlackNotifier:
 
             # Parse frontmatter for thread context
             frontmatter, content = self._parse_frontmatter(raw_content)
-            frontmatter_thread_ts = frontmatter.get('thread_ts')
-            frontmatter_task_id = frontmatter.get('task_id')
+            frontmatter_thread_ts = frontmatter.get("thread_ts")
+            frontmatter_task_id = frontmatter.get("task_id")
 
             # Extract task ID from filename (fallback)
             filename_task_id = self._extract_task_id(path.name)
@@ -404,46 +407,46 @@ class SlackNotifier:
             first_chunk = True
             for chunk_idx, chunk in enumerate(chunks):
                 # Prepare message payload
-                payload = {
-                    'channel': self.slack_channel,
-                    'text': chunk,
-                    'mrkdwn': True
-                }
+                payload = {"channel": self.slack_channel, "text": chunk, "mrkdwn": True}
 
                 # If we have an existing thread, reply in that thread
                 # For multi-chunk messages, subsequent chunks reply to first chunk
                 if thread_ts:
-                    payload['thread_ts'] = thread_ts
+                    payload["thread_ts"] = thread_ts
                     if first_chunk:
                         self.logger.info(f"Replying in thread {thread_ts} for task {task_id}")
 
                 # Send to Slack
                 try:
                     response = requests.post(
-                        'https://slack.com/api/chat.postMessage',
+                        "https://slack.com/api/chat.postMessage",
                         headers={
-                            'Authorization': f'Bearer {self.slack_token}',
-                            'Content-Type': 'application/json'
+                            "Authorization": f"Bearer {self.slack_token}",
+                            "Content-Type": "application/json",
                         },
                         json=payload,
-                        timeout=10
+                        timeout=10,
                     )
 
                     result = response.json()
 
-                    if result.get('ok'):
+                    if result.get("ok"):
                         if first_chunk:
                             self.logger.info(f"Sent notification: {path.name}")
                             success_count += 1
 
                             # Store thread_ts for future replies if this is a new thread
-                            if not thread_ts and result.get('ts'):
-                                thread_ts = result['ts']  # Update for subsequent chunks
-                                self.threads[task_id] = result['ts']
+                            if not thread_ts and result.get("ts"):
+                                thread_ts = result["ts"]  # Update for subsequent chunks
+                                self.threads[task_id] = result["ts"]
                                 self._save_threads()
-                                self.logger.info(f"Created new thread for task {task_id}: {result['ts']}")
+                                self.logger.info(
+                                    f"Created new thread for task {task_id}: {result['ts']}"
+                                )
                         else:
-                            self.logger.info(f"Sent chunk {chunk_idx + 1}/{len(chunks)} for {path.name}")
+                            self.logger.info(
+                                f"Sent chunk {chunk_idx + 1}/{len(chunks)} for {path.name}"
+                            )
 
                         first_chunk = False
 
@@ -452,8 +455,10 @@ class SlackNotifier:
                             time.sleep(0.5)
 
                     else:
-                        error = result.get('error', 'unknown error')
-                        self.logger.error(f"Failed to send {path.name} chunk {chunk_idx + 1}: {error}")
+                        error = result.get("error", "unknown error")
+                        self.logger.error(
+                            f"Failed to send {path.name} chunk {chunk_idx + 1}: {error}"
+                        )
                         break  # Don't send remaining chunks if one fails
 
                 except Exception as e:
@@ -468,7 +473,7 @@ class SlackNotifier:
         if not self.pending_changes:
             return
 
-        changes = sorted(list(self.pending_changes))
+        changes = sorted(self.pending_changes)
         self.logger.info(f"Processing batch of {len(changes)} change(s)")
 
         self._send_slack_message(changes)
@@ -500,18 +505,22 @@ class SlackNotifier:
         watches_added = 0
         for watch_dir in self.watch_dirs:
             try:
-                i.add_watch(str(watch_dir), mask=inotify.constants.IN_CREATE |
-                                                 inotify.constants.IN_MOVED_TO)
+                i.add_watch(
+                    str(watch_dir), mask=inotify.constants.IN_CREATE | inotify.constants.IN_MOVED_TO
+                )
                 watches_added += 1
                 self.logger.info(f"Added watch for: {watch_dir}")
                 # Also watch subdirectories
-                for root, dirs, files in os.walk(watch_dir):
+                for root, dirs, _files in os.walk(watch_dir):
                     for d in dirs:
                         subdir = os.path.join(root, d)
                         if not self._should_ignore(subdir):
                             try:
-                                i.add_watch(subdir, mask=inotify.constants.IN_CREATE |
-                                                         inotify.constants.IN_MOVED_TO)
+                                i.add_watch(
+                                    subdir,
+                                    mask=inotify.constants.IN_CREATE
+                                    | inotify.constants.IN_MOVED_TO,
+                                )
                             except Exception as e:
                                 self.logger.debug(f"Could not watch {subdir}: {e}")
             except Exception as e:
@@ -578,7 +587,7 @@ class SlackNotifier:
 
 def main():
     """Main entry point."""
-    config_dir = Path.home() / '.config' / 'jib-notifier'
+    config_dir = Path.home() / ".config" / "jib-notifier"
 
     try:
         notifier = SlackNotifier(config_dir)
@@ -592,5 +601,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

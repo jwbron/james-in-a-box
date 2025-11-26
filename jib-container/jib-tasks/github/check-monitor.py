@@ -6,11 +6,10 @@ Triggered by github-sync.service after syncing PR data.
 Uses Claude Code to intelligently analyze failures and suggest fixes.
 """
 
-import sys
 import json
 import subprocess
+import sys
 from pathlib import Path
-from datetime import datetime
 
 
 def main():
@@ -32,23 +31,25 @@ def main():
             with check_file.open() as f:
                 data = json.load(f)
 
-            pr_num = data['pr_number']
-            repo = data['repository']
-            failed_checks = [c for c in data['checks'] if c.get('conclusion') == 'failure']
+            pr_num = data["pr_number"]
+            repo = data["repository"]
+            failed_checks = [c for c in data["checks"] if c.get("conclusion") == "failure"]
 
             if failed_checks:
                 # Load PR context
-                repo_name = repo.split('/')[-1]
+                repo_name = repo.split("/")[-1]
                 pr_file = prs_dir / f"{repo_name}-PR-{pr_num}.md"
                 pr_context = pr_file.read_text() if pr_file.exists() else "PR details not available"
 
-                failures.append({
-                    'pr_number': pr_num,
-                    'repository': repo,
-                    'pr_context': pr_context,
-                    'failed_checks': failed_checks,
-                    'check_file': str(check_file)
-                })
+                failures.append(
+                    {
+                        "pr_number": pr_num,
+                        "repository": repo,
+                        "pr_context": pr_context,
+                        "failed_checks": failed_checks,
+                        "check_file": str(check_file),
+                    }
+                )
 
         except Exception as e:
             print(f"Error processing {check_file}: {e}")
@@ -62,7 +63,9 @@ def main():
     # Construct prompt for Claude
     failures_summary = []
     for f in failures:
-        failures_summary.append(f"**PR #{f['pr_number']}** ({f['repository']}): {len(f['failed_checks'])} failed checks")
+        failures_summary.append(
+            f"**PR #{f['pr_number']}** ({f['repository']}): {len(f['failed_checks'])} failed checks"
+        )
 
     prompt = f"""# GitHub PR Check Failure Analysis
 
@@ -71,7 +74,7 @@ You are analyzing PR check failures. Your goal is to understand failures, sugges
 ## Summary
 
 {len(failures)} PR(s) with failing checks detected:
-{chr(10).join('- ' + s for s in failures_summary)}
+{chr(10).join("- " + s for s in failures_summary)}
 
 ## Full Details
 
@@ -79,21 +82,21 @@ You are analyzing PR check failures. Your goal is to understand failures, sugges
 
     for f in failures:
         prompt += f"""
-### PR #{f['pr_number']} - {f['repository']}
+### PR #{f["pr_number"]} - {f["repository"]}
 
 **PR Context:**
 ```
-{f['pr_context'][:1000]}...
+{f["pr_context"][:1000]}...
 ```
 
 **Failed Checks:**
 """
-        for check in f['failed_checks']:
+        for check in f["failed_checks"]:
             prompt += f"""
-- **{check['name']}**: {check.get('conclusion', 'failure')}
+- **{check["name"]}**: {check.get("conclusion", "failure")}
 """
-            if check.get('full_log'):
-                log = check['full_log']
+            if check.get("full_log"):
+                log = check["full_log"]
                 prompt += f"""
   Log excerpt (first 500 + last 500 chars):
   ```
@@ -147,9 +150,10 @@ Analyze these failures now and take appropriate action."""
     try:
         result = subprocess.run(
             ["claude", "--print", prompt],
+            check=False,
             capture_output=False,
             text=True,
-            timeout=900  # 15 minute timeout
+            timeout=900,  # 15 minute timeout
         )
 
         if result.returncode == 0:
@@ -167,5 +171,5 @@ Analyze these failures now and take appropriate action."""
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

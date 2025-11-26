@@ -5,14 +5,12 @@ Tests the CodebaseAnalyzer class which analyzes codebases for potential
 improvements and optionally creates PRs with fixes.
 """
 
-import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+
 import pytest
-import sys
-from enum import Enum
+
 
 # Add project paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -25,8 +23,14 @@ class TestAnalysisCategoryEnum:
         """Test that all expected analysis categories exist."""
         # Simulate the enum
         categories = [
-            "code_quality", "structural", "unused_code", "duplication",
-            "documentation", "symlinks", "naming", "patterns"
+            "code_quality",
+            "structural",
+            "unused_code",
+            "duplication",
+            "documentation",
+            "symlinks",
+            "naming",
+            "patterns",
         ]
 
         assert "code_quality" in categories
@@ -41,9 +45,15 @@ class TestFixResultEnum:
     def test_fix_result_values(self):
         """Test that all expected fix results exist."""
         results = [
-            "success", "file_not_found", "file_too_large", "content_too_short",
-            "content_too_long", "timeout", "claude_error", "requires_restructuring",
-            "other_error"
+            "success",
+            "file_not_found",
+            "file_too_large",
+            "content_too_short",
+            "content_too_long",
+            "timeout",
+            "claude_error",
+            "requires_restructuring",
+            "other_error",
         ]
 
         assert "success" in results
@@ -57,7 +67,7 @@ class TestCodebaseAnalyzerFileFiltering:
 
     def test_should_analyze_valid_extensions(self, temp_dir):
         """Test that valid file extensions are analyzed."""
-        valid_extensions = {'.py', '.sh', '.md', '.yml', '.yaml', '.json'}
+        valid_extensions = {".py", ".sh", ".md", ".yml", ".yaml", ".json"}
 
         for ext in valid_extensions:
             test_file = temp_dir / f"test{ext}"
@@ -85,13 +95,13 @@ class TestCodebaseAnalyzerFileFiltering:
 
     def test_should_skip_ignored_patterns(self):
         """Test that ignored patterns are skipped."""
-        always_ignore = {'.git', '__pycache__', 'node_modules', '.venv'}
+        always_ignore = {".git", "__pycache__", "node_modules", ".venv"}
 
         test_paths = [
-            '/path/.git/config',
-            '/path/__pycache__/module.pyc',
-            '/path/node_modules/package/index.js',
-            '/path/.venv/lib/python/site.py'
+            "/path/.git/config",
+            "/path/__pycache__/module.pyc",
+            "/path/node_modules/package/index.js",
+            "/path/.venv/lib/python/site.py",
         ]
 
         for path in test_paths:
@@ -111,12 +121,12 @@ class TestCodebaseAnalyzerStructuralInfo:
         file_types = {}
         for f in temp_dir.iterdir():
             if f.is_file():
-                ext = f.suffix.lower() or 'no_extension'
+                ext = f.suffix.lower() or "no_extension"
                 file_types[ext] = file_types.get(ext, 0) + 1
 
-        assert file_types['.py'] == 1
-        assert file_types['.yml'] == 1
-        assert file_types['.md'] == 1
+        assert file_types[".py"] == 1
+        assert file_types[".yml"] == 1
+        assert file_types[".md"] == 1
 
     def test_detect_readme_files(self, temp_dir):
         """Test detecting README files."""
@@ -128,8 +138,8 @@ class TestCodebaseAnalyzerStructuralInfo:
         (subdir / "README.md").write_text("# Sub README")
 
         readme_files = []
-        for f in temp_dir.rglob('*'):
-            if f.is_file() and f.name.lower().startswith('readme'):
+        for f in temp_dir.rglob("*"):
+            if f.is_file() and f.name.lower().startswith("readme"):
                 readme_files.append(f.name)
 
         assert len(readme_files) == 3
@@ -173,25 +183,25 @@ class TestCodebaseAnalyzerStructuralInfo:
 
         patterns = {}
         for f in temp_dir.iterdir():
-            if f.suffix == '.py':
+            if f.suffix == ".py":
                 name = f.stem
-                if '-' in name:
-                    pattern = 'kebab-case'
-                elif '_' in name:
-                    pattern = 'snake_case'
+                if "-" in name:
+                    pattern = "kebab-case"
+                elif "_" in name:
+                    pattern = "snake_case"
                 elif name[0].isupper():
-                    pattern = 'PascalCase'
+                    pattern = "PascalCase"
                 else:
-                    pattern = 'lowercase'
+                    pattern = "lowercase"
 
                 if pattern not in patterns:
                     patterns[pattern] = []
                 patterns[pattern].append(f.name)
 
-        assert 'kebab-case' in patterns
-        assert 'snake_case' in patterns
-        assert 'PascalCase' in patterns
-        assert 'lowercase' in patterns
+        assert "kebab-case" in patterns
+        assert "snake_case" in patterns
+        assert "PascalCase" in patterns
+        assert "lowercase" in patterns
 
 
 class TestCodebaseAnalyzerDuplicateDetection:
@@ -207,7 +217,7 @@ class TestCodebaseAnalyzerDuplicateDetection:
 
         # Group by size first
         size_groups = {}
-        for f in temp_dir.glob('*.py'):
+        for f in temp_dir.glob("*.py"):
             size = f.stat().st_size
             bucket = size // 100 * 100
             if bucket not in size_groups:
@@ -231,17 +241,17 @@ class TestCodebaseAnalyzerReadmeConsistency:
         import re
 
         readme = temp_dir / "README.md"
-        readme.write_text('''# Project
+        readme.write_text("""# Project
 
 See `missing_file.py` for details.
 Also check `./nonexistent.sh`.
-''')
+""")
 
         # Find file references
         content = readme.read_text()
         patterns = [
-            r'`([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)`',
-            r'(?:^|\s)(\.{1,2}/[a-zA-Z0-9_\-./]+)',
+            r"`([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)`",
+            r"(?:^|\s)(\.{1,2}/[a-zA-Z0-9_\-./]+)",
         ]
 
         references = set()
@@ -269,7 +279,7 @@ class TestCodebaseAnalyzerCodebaseSummary:
 
         # Simulate truncation
         max_length = 3000
-        for f in temp_dir.glob('*.py'):
+        for f in temp_dir.glob("*.py"):
             content = f.read_text()
             if len(content) > max_length:
                 content = content[:max_length] + "\n... [truncated]"
@@ -282,21 +292,17 @@ class TestCodebaseAnalyzerImplementFix:
 
     def test_skip_non_autofixable_issues(self):
         """Test that non-autofixable issues are skipped."""
-        issue = {
-            'file': 'old-service/',
-            'auto_fixable': False,
-            'category': 'unused_code'
-        }
+        issue = {"file": "old-service/", "auto_fixable": False, "category": "unused_code"}
 
-        should_skip = not issue.get('auto_fixable', True)
+        should_skip = not issue.get("auto_fixable", True)
         assert should_skip
 
     def test_skip_structural_categories(self):
         """Test that structural categories are skipped."""
-        structural_categories = ['structural', 'unused_code', 'symlinks']
+        structural_categories = ["structural", "unused_code", "symlinks"]
 
-        issue = {'file': 'some_dir/', 'category': 'structural'}
-        assert issue['category'] in structural_categories
+        issue = {"file": "some_dir/", "category": "structural"}
+        assert issue["category"] in structural_categories
 
     def test_validate_fix_content_length(self):
         """Test validation of fix content length."""
@@ -322,11 +328,19 @@ class TestCodebaseAnalyzerPRCreation:
     def test_commit_message_format(self):
         """Test that commit message is properly formatted."""
         implemented = [
-            {'file': 'src/app.py', 'category': 'code_quality', 'description': 'Fixed bare except clause'},
-            {'file': 'src/utils.py', 'category': 'code_quality', 'description': 'Added error handling'}
+            {
+                "file": "src/app.py",
+                "category": "code_quality",
+                "description": "Fixed bare except clause",
+            },
+            {
+                "file": "src/utils.py",
+                "category": "code_quality",
+                "description": "Added error handling",
+            },
         ]
 
-        categories = set(i['category'] for i in implemented)
+        categories = {i["category"] for i in implemented}
         commit_msg = f"Auto-fix: {len(implemented)} codebase improvements\n\n"
         commit_msg += f"Categories: {', '.join(categories)}\n\n"
         commit_msg += "Fixes:\n"
@@ -339,13 +353,17 @@ class TestCodebaseAnalyzerPRCreation:
     def test_pr_body_format(self):
         """Test that PR body is properly formatted."""
         implemented = [
-            {'file': 'src/app.py', 'category': 'code_quality', 'description': 'Fixed exception handling'},
+            {
+                "file": "src/app.py",
+                "category": "code_quality",
+                "description": "Fixed exception handling",
+            },
         ]
-        categories = {'code_quality'}
+        categories = {"code_quality"}
 
         pr_body = f"## Auto-fix: {len(implemented)} improvements\n\n"
         for cat in sorted(categories):
-            cat_issues = [i for i in implemented if i['category'] == cat]
+            cat_issues = [i for i in implemented if i["category"] == cat]
             pr_body += f"### {cat.title()} ({len(cat_issues)})\n"
             for i in cat_issues:
                 pr_body += f"- `{i['file']}`: {i['description'][:60]}\n"
@@ -361,18 +379,28 @@ class TestCodebaseAnalyzerNotification:
     def test_notification_format(self, temp_dir):
         """Test that notification is properly formatted."""
         issues = [
-            {'file': 'src/app.py', 'priority': 'HIGH', 'category': 'code_quality',
-             'description': 'Bare except clause', 'auto_fixable': True},
-            {'file': 'docs/README.md', 'priority': 'MEDIUM', 'category': 'documentation',
-             'description': 'Outdated reference', 'auto_fixable': False}
+            {
+                "file": "src/app.py",
+                "priority": "HIGH",
+                "category": "code_quality",
+                "description": "Bare except clause",
+                "auto_fixable": True,
+            },
+            {
+                "file": "docs/README.md",
+                "priority": "MEDIUM",
+                "category": "documentation",
+                "description": "Outdated reference",
+                "auto_fixable": False,
+            },
         ]
 
         content = "# 🔍 Codebase Analysis\n\n"
         content += f"**Found {len(issues)} issues**\n\n"
 
         # Group by priority
-        high = [i for i in issues if i['priority'] == 'HIGH']
-        medium = [i for i in issues if i['priority'] == 'MEDIUM']
+        high = [i for i in issues if i["priority"] == "HIGH"]
+        medium = [i for i in issues if i["priority"] == "MEDIUM"]
 
         assert len(high) == 1
         assert len(medium) == 1

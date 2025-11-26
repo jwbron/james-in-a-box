@@ -24,12 +24,14 @@ import argparse
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
+
 
 # Add shared directory to path for notifications import
 # Path: jib-container/jib-tools/comment-pr-helper.py -> repo-root/shared
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
-from notifications import get_slack_service, NotificationContext
+from notifications import NotificationContext, get_slack_service
+
 
 # Try to load repo config for writable repos check
 try:
@@ -42,6 +44,7 @@ try:
             sys.path.insert(0, str(config_path.parent))
             break
     from config.repo_config import is_writable_repo
+
     HAS_REPO_CONFIG = True
 except ImportError:
     HAS_REPO_CONFIG = False
@@ -55,23 +58,21 @@ class PRCommenter:
         self.repo_root = self.find_repo_root()
         self.slack = get_slack_service()
 
-    def find_repo_root(self) -> Optional[Path]:
+    def find_repo_root(self) -> Path | None:
         """Find the git repository root."""
         try:
             result = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                capture_output=True, text=True, check=True
+                ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
             )
             return Path(result.stdout.strip())
         except subprocess.CalledProcessError:
             return None
 
-    def get_repo_name(self) -> Optional[str]:
+    def get_repo_name(self) -> str | None:
         """Get the owner/repo name from git remote origin."""
         try:
             result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                capture_output=True, text=True, check=True
+                ["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True
             )
             url = result.stdout.strip()
             # Handle SSH URLs: git@github.com:owner/repo.git
@@ -97,17 +98,24 @@ class PRCommenter:
             return False, "unknown"
         return is_writable_repo(repo_name), repo_name
 
-    def get_pr_info(self, pr_number: int) -> Optional[Dict[str, Any]]:
+    def get_pr_info(self, pr_number: int) -> dict[str, Any] | None:
         """Get information about a PR."""
         try:
             result = subprocess.run(
                 [
-                    "gh", "pr", "view", str(pr_number),
-                    "--json", "number,title,url,author,headRefName,baseRefName"
+                    "gh",
+                    "pr",
+                    "view",
+                    str(pr_number),
+                    "--json",
+                    "number,title,url,author,headRefName,baseRefName",
                 ],
-                capture_output=True, text=True, check=True
+                capture_output=True,
+                text=True,
+                check=True,
             )
             import json
+
             return json.loads(result.stdout)
         except subprocess.CalledProcessError:
             return None
@@ -119,12 +127,7 @@ class PRCommenter:
             return body
         return body + signature
 
-    def post_comment(
-        self,
-        pr_number: int,
-        body: str,
-        sign: bool = True
-    ) -> Dict[str, Any]:
+    def post_comment(self, pr_number: int, body: str, sign: bool = True) -> dict[str, Any]:
         """Post a comment on a PR using gh CLI.
 
         Args:
@@ -142,31 +145,25 @@ class PRCommenter:
 
         result = subprocess.run(
             ["gh", "pr", "comment", str(pr_number), "--body", body],
-            capture_output=True, text=True
+            check=False,
+            capture_output=True,
+            text=True,
         )
 
         if result.returncode != 0:
             error_msg = result.stderr.strip()
-            return {
-                "success": False,
-                "error": error_msg
-            }
+            return {"success": False, "error": error_msg}
 
         # gh pr comment outputs the comment URL on success
         comment_url = result.stdout.strip()
 
-        return {
-            "success": True,
-            "pr_number": pr_number,
-            "comment_url": comment_url,
-            "body": body
-        }
+        return {"success": True, "pr_number": pr_number, "comment_url": comment_url, "body": body}
 
     def create_notification(
         self,
-        result: Dict[str, Any],
-        pr_info: Optional[Dict[str, Any]] = None,
-        task_id: Optional[str] = None
+        result: dict[str, Any],
+        pr_info: dict[str, Any] | None = None,
+        task_id: str | None = None,
     ):
         """Create Slack notification about the comment."""
         repo_name = self.get_repo_name() or "unknown"
@@ -181,7 +178,9 @@ class PRCommenter:
 
             if pr_info:
                 body_parts.append(f"**PR Title**: {pr_info.get('title', 'Unknown')}")
-                body_parts.append(f"**Branch**: `{pr_info.get('headRefName', '?')}` -> `{pr_info.get('baseRefName', '?')}`")
+                body_parts.append(
+                    f"**Branch**: `{pr_info.get('headRefName', '?')}` -> `{pr_info.get('baseRefName', '?')}`"
+                )
 
             if result.get("comment_url"):
                 body_parts.append(f"**Comment URL**: {result['comment_url']}")
@@ -219,8 +218,8 @@ class PRCommenter:
         self,
         pr_number: int,
         body: str,
-        pr_info: Optional[Dict[str, Any]] = None,
-        task_id: Optional[str] = None
+        pr_info: dict[str, Any] | None = None,
+        task_id: str | None = None,
     ):
         """Send Slack notification for non-writable repos (instead of GitHub comment)."""
         repo_name = self.get_repo_name() or "unknown"
@@ -233,13 +232,15 @@ class PRCommenter:
 
         if pr_info:
             body_parts.append(f"**PR Title**: {pr_info.get('title', 'Unknown')}")
-            body_parts.append(f"**Branch**: `{pr_info.get('headRefName', '?')}` -> `{pr_info.get('baseRefName', '?')}`")
+            body_parts.append(
+                f"**Branch**: `{pr_info.get('headRefName', '?')}` -> `{pr_info.get('baseRefName', '?')}`"
+            )
             if pr_info.get("url"):
                 body_parts.append(f"**PR URL**: {pr_info['url']}")
 
         # Add the full comment
         body_parts.append(f"\n## Comment (not posted to GitHub)\n\n{body}")
-        body_parts.append(f"\n---\n*Please post this comment manually on the PR if needed.*")
+        body_parts.append("\n---\n*Please post this comment manually on the PR if needed.*")
 
         context = NotificationContext(
             task_id=task_id,
@@ -259,34 +260,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Add comments to GitHub PRs with Slack notification"
     )
-    parser.add_argument(
-        "--pr", "-p",
-        type=int,
-        required=True,
-        help="PR number to comment on"
-    )
-    parser.add_argument(
-        "--body", "-b",
-        help="Comment body (markdown supported)"
-    )
-    parser.add_argument(
-        "--body-file", "-f",
-        help="Read comment body from file"
-    )
-    parser.add_argument(
-        "--no-notify",
-        action="store_true",
-        help="Skip sending Slack notification"
-    )
-    parser.add_argument(
-        "--no-sign",
-        action="store_true",
-        help="Don't add jib signature to comment"
-    )
-    parser.add_argument(
-        "--task-id", "-t",
-        help="Task ID for Slack thread correlation"
-    )
+    parser.add_argument("--pr", "-p", type=int, required=True, help="PR number to comment on")
+    parser.add_argument("--body", "-b", help="Comment body (markdown supported)")
+    parser.add_argument("--body-file", "-f", help="Read comment body from file")
+    parser.add_argument("--no-notify", action="store_true", help="Skip sending Slack notification")
+    parser.add_argument("--no-sign", action="store_true", help="Don't add jib signature to comment")
+    parser.add_argument("--task-id", "-t", help="Task ID for Slack thread correlation")
 
     args = parser.parse_args()
 
@@ -320,7 +299,7 @@ def main():
     # For non-writable repos, send Slack notification instead of posting to GitHub
     if not is_writable:
         print(f"Note: Repository '{repo_name}' is not in the writable repos list.")
-        print(f"Sending Slack notification with comment content instead of posting to GitHub.")
+        print("Sending Slack notification with comment content instead of posting to GitHub.")
         print()
 
         # Add signature if requested
@@ -329,34 +308,23 @@ def main():
             comment_body = commenter.add_signature(body)
 
         commenter.send_slack_only_notification(
-            pr_number=args.pr,
-            body=comment_body,
-            pr_info=pr_info,
-            task_id=args.task_id
+            pr_number=args.pr, body=comment_body, pr_info=pr_info, task_id=args.task_id
         )
 
-        print(f"\nSlack notification sent!")
+        print("\nSlack notification sent!")
         print(f"Comment content ready for manual posting on PR #{args.pr}")
         sys.exit(0)
 
     # Post the comment (for writable repos)
-    result = commenter.post_comment(
-        pr_number=args.pr,
-        body=body,
-        sign=not args.no_sign
-    )
+    result = commenter.post_comment(pr_number=args.pr, body=body, sign=not args.no_sign)
 
     # Send notification
     if not args.no_notify:
-        commenter.create_notification(
-            result=result,
-            pr_info=pr_info,
-            task_id=args.task_id
-        )
+        commenter.create_notification(result=result, pr_info=pr_info, task_id=args.task_id)
 
     # Output result
     if result["success"]:
-        print(f"\nComment posted successfully!")
+        print("\nComment posted successfully!")
         if result.get("comment_url"):
             print(f"URL: {result['comment_url']}")
         sys.exit(0)

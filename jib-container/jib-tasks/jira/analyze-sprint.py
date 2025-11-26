@@ -16,9 +16,9 @@ Usage:
 
 import re
 import subprocess
-from pathlib import Path
+import sys
 from datetime import datetime
-from typing import Dict, List, Optional
+from pathlib import Path
 
 
 class SprintAnalyzer:
@@ -29,65 +29,65 @@ class SprintAnalyzer:
         self.notifications_dir = Path.home() / "sharing" / "notifications"
         self.notifications_dir.mkdir(parents=True, exist_ok=True)
 
-    def parse_ticket_file(self, ticket_file: Path) -> Optional[Dict]:
+    def parse_ticket_file(self, ticket_file: Path) -> dict | None:
         """Parse a JIRA ticket markdown file."""
         try:
             content = ticket_file.read_text()
 
             ticket = {
-                'file': ticket_file,
-                'key': '',
-                'title': '',
-                'status': '',
-                'assignee': '',
-                'priority': '',
-                'type': '',
-                'labels': [],
-                'description': '',
-                'has_acceptance_criteria': False,
-                'comments_count': 0,
-                'updated': ''
+                "file": ticket_file,
+                "key": "",
+                "title": "",
+                "status": "",
+                "assignee": "",
+                "priority": "",
+                "type": "",
+                "labels": [],
+                "description": "",
+                "has_acceptance_criteria": False,
+                "comments_count": 0,
+                "updated": "",
             }
 
-            lines = content.split('\n')
+            lines = content.split("\n")
 
             # Extract key and title from first line (# INFRA-1234: Title)
-            first_line = lines[0] if lines else ''
-            title_match = re.match(r'^#\s+([A-Z]+-\d+):\s+(.+)$', first_line)
+            first_line = lines[0] if lines else ""
+            title_match = re.match(r"^#\s+([A-Z]+-\d+):\s+(.+)$", first_line)
             if title_match:
-                ticket['key'] = title_match.group(1)
-                ticket['title'] = title_match.group(2)
+                ticket["key"] = title_match.group(1)
+                ticket["title"] = title_match.group(2)
 
             # Extract metadata
             for line in lines:
-                if line.startswith('**Status:**'):
-                    ticket['status'] = line.replace('**Status:**', '').strip()
-                elif line.startswith('**Assignee:**'):
-                    ticket['assignee'] = line.replace('**Assignee:**', '').strip()
-                elif line.startswith('**Priority:**'):
-                    ticket['priority'] = line.replace('**Priority:**', '').strip()
-                elif line.startswith('**Type:**'):
-                    ticket['type'] = line.replace('**Type:**', '').strip()
-                elif line.startswith('**Labels:**'):
-                    labels_str = line.replace('**Labels:**', '').strip()
-                    ticket['labels'] = [l.strip() for l in labels_str.split(',') if l.strip()]
-                elif line.startswith('**Updated:**'):
-                    ticket['updated'] = line.replace('**Updated:**', '').strip()
+                if line.startswith("**Status:**"):
+                    ticket["status"] = line.replace("**Status:**", "").strip()
+                elif line.startswith("**Assignee:**"):
+                    ticket["assignee"] = line.replace("**Assignee:**", "").strip()
+                elif line.startswith("**Priority:**"):
+                    ticket["priority"] = line.replace("**Priority:**", "").strip()
+                elif line.startswith("**Type:**"):
+                    ticket["type"] = line.replace("**Type:**", "").strip()
+                elif line.startswith("**Labels:**"):
+                    labels_str = line.replace("**Labels:**", "").strip()
+                    ticket["labels"] = [l.strip() for l in labels_str.split(",") if l.strip()]
+                elif line.startswith("**Updated:**"):
+                    ticket["updated"] = line.replace("**Updated:**", "").strip()
 
             # Check for acceptance criteria
-            if 'acceptance criteria' in content.lower() or '- [ ]' in content:
-                ticket['has_acceptance_criteria'] = True
+            if "acceptance criteria" in content.lower() or "- [ ]" in content:
+                ticket["has_acceptance_criteria"] = True
 
             # Count comments
-            ticket['comments_count'] = content.count('### Comment ')
+            ticket["comments_count"] = content.count("### Comment ")
 
             # Extract description section
-            desc_start = content.find('## Description')
+            desc_start = content.find("## Description")
             if desc_start != -1:
-                desc_end = content.find('\n## ', desc_start + 1)
+                desc_end = content.find("\n## ", desc_start + 1)
                 if desc_end == -1:
                     desc_end = len(content)
-                ticket['description'] = content[desc_start:desc_end].strip()
+                ticket["description"] = content[desc_start:desc_end].strip()
 
             return ticket
 
@@ -95,16 +95,14 @@ class SprintAnalyzer:
             print(f"Error parsing {ticket_file}: {e}")
             return None
 
-    def is_assigned_to_me(self, ticket: Dict) -> bool:
+    def is_assigned_to_me(self, ticket: dict) -> bool:
         """Check if ticket is assigned to current user."""
-        assignee = ticket.get('assignee', '').lower()
+        assignee = ticket.get("assignee", "").lower()
 
         # Get user info from environment or git config
         try:
             result = subprocess.run(
-                ['git', 'config', 'user.name'],
-                capture_output=True,
-                text=True
+                ["git", "config", "user.name"], check=False, capture_output=True, text=True
             )
             if result.returncode == 0:
                 git_name = result.stdout.strip().lower()
@@ -112,14 +110,12 @@ class SprintAnalyzer:
                     return True
 
             result = subprocess.run(
-                ['git', 'config', 'user.email'],
-                capture_output=True,
-                text=True
+                ["git", "config", "user.email"], check=False, capture_output=True, text=True
             )
             if result.returncode == 0:
                 git_email = result.stdout.strip().lower()
                 # Extract name from email
-                email_name = git_email.split('@')[0].replace('.', ' ')
+                email_name = git_email.split("@")[0].replace(".", " ")
                 if email_name in assignee:
                     return True
         except:
@@ -127,86 +123,80 @@ class SprintAnalyzer:
 
         return False
 
-    def is_in_active_sprint(self, ticket: Dict) -> bool:
+    def is_in_active_sprint(self, ticket: dict) -> bool:
         """Check if ticket is in active sprint (heuristic based on labels/status)."""
         # Check labels for sprint indicators
-        labels = [l.lower() for l in ticket.get('labels', [])]
-        if any('sprint' in label for label in labels):
+        labels = [l.lower() for l in ticket.get("labels", [])]
+        if any("sprint" in label for label in labels):
             return True
 
         # Active statuses typically indicate sprint work
-        status = ticket.get('status', '').lower()
-        active_statuses = ['in progress', 'in review', 'ready for review', 'testing']
-        if any(s in status for s in active_statuses):
-            return True
+        status = ticket.get("status", "").lower()
+        active_statuses = ["in progress", "in review", "ready for review", "testing"]
+        return bool(any(s in status for s in active_statuses))
 
-        return False
-
-    def analyze_ticket(self, ticket: Dict) -> Dict:
+    def analyze_ticket(self, ticket: dict) -> dict:
         """Analyze a ticket and suggest next steps."""
-        analysis = {
-            'priority_score': 0,
-            'next_steps': [],
-            'blockers': [],
-            'suggestions': []
-        }
+        analysis = {"priority_score": 0, "next_steps": [], "blockers": [], "suggestions": []}
 
-        status = ticket.get('status', '').lower()
-        priority = ticket.get('priority', '').lower()
+        status = ticket.get("status", "").lower()
+        priority = ticket.get("priority", "").lower()
 
         # Priority scoring
-        if 'critical' in priority or 'highest' in priority:
-            analysis['priority_score'] = 5
-        elif 'high' in priority:
-            analysis['priority_score'] = 4
-        elif 'medium' in priority:
-            analysis['priority_score'] = 3
+        if "critical" in priority or "highest" in priority:
+            analysis["priority_score"] = 5
+        elif "high" in priority:
+            analysis["priority_score"] = 4
+        elif "medium" in priority:
+            analysis["priority_score"] = 3
         else:
-            analysis['priority_score'] = 2
+            analysis["priority_score"] = 2
 
         # Status-based next steps
-        if 'to do' in status or 'open' in status or 'backlog' in status:
-            analysis['next_steps'].append("Start work on this ticket")
-            if not ticket.get('has_acceptance_criteria'):
-                analysis['suggestions'].append("Add acceptance criteria before starting")
+        if "to do" in status or "open" in status or "backlog" in status:
+            analysis["next_steps"].append("Start work on this ticket")
+            if not ticket.get("has_acceptance_criteria"):
+                analysis["suggestions"].append("Add acceptance criteria before starting")
 
-        elif 'in progress' in status:
-            if ticket.get('comments_count', 0) == 0:
-                analysis['suggestions'].append("Add progress update in comments")
-            analysis['next_steps'].append("Continue implementation")
-            analysis['next_steps'].append("Add tests for new functionality")
+        elif "in progress" in status:
+            if ticket.get("comments_count", 0) == 0:
+                analysis["suggestions"].append("Add progress update in comments")
+            analysis["next_steps"].append("Continue implementation")
+            analysis["next_steps"].append("Add tests for new functionality")
 
-        elif 'review' in status:
-            analysis['next_steps'].append("Address review comments")
-            analysis['next_steps'].append("Request re-review when ready")
+        elif "review" in status:
+            analysis["next_steps"].append("Address review comments")
+            analysis["next_steps"].append("Request re-review when ready")
 
-        elif 'testing' in status:
-            analysis['next_steps'].append("Verify tests pass")
-            analysis['next_steps'].append("Test in staging environment")
+        elif "testing" in status:
+            analysis["next_steps"].append("Verify tests pass")
+            analysis["next_steps"].append("Test in staging environment")
 
         # Type-based suggestions
-        ticket_type = ticket.get('type', '').lower()
-        if 'epic' in ticket_type:
-            analysis['suggestions'].append("Break down into smaller sub-tasks")
+        ticket_type = ticket.get("type", "").lower()
+        if "epic" in ticket_type:
+            analysis["suggestions"].append("Break down into smaller sub-tasks")
 
         # Check for potential blockers
-        description = ticket.get('description', '').lower()
-        blocker_keywords = ['blocked', 'waiting', 'depends on', 'requires', 'need']
+        description = ticket.get("description", "").lower()
+        blocker_keywords = ["blocked", "waiting", "depends on", "requires", "need"]
         for keyword in blocker_keywords:
             if keyword in description:
-                analysis['blockers'].append(f"Potential blocker: '{keyword}' mentioned in description")
+                analysis["blockers"].append(
+                    f"Potential blocker: '{keyword}' mentioned in description"
+                )
 
         return analysis
 
-    def get_backlog_suggestions(self, all_tickets: List[Dict]) -> List[Dict]:
+    def get_backlog_suggestions(self, all_tickets: list[dict]) -> list[dict]:
         """Suggest which backlog tickets to pull into sprint."""
         backlog = []
 
         for ticket in all_tickets:
-            status = ticket.get('status', '').lower()
+            status = ticket.get("status", "").lower()
 
             # Skip tickets already in progress
-            if status in ['in progress', 'in review', 'testing', 'done']:
+            if status in ["in progress", "in review", "testing", "done"]:
                 continue
 
             # Skip unassigned tickets (not ready for current user)
@@ -217,40 +207,37 @@ class SprintAnalyzer:
             score = 0
 
             # Priority weight
-            priority = ticket.get('priority', '').lower()
-            if 'critical' in priority or 'highest' in priority:
+            priority = ticket.get("priority", "").lower()
+            if "critical" in priority or "highest" in priority:
                 score += 10
-            elif 'high' in priority:
+            elif "high" in priority:
                 score += 7
-            elif 'medium' in priority:
+            elif "medium" in priority:
                 score += 4
 
             # Completeness weight (tickets with acceptance criteria are better defined)
-            if ticket.get('has_acceptance_criteria'):
+            if ticket.get("has_acceptance_criteria"):
                 score += 3
 
             # Recent activity weight
-            if ticket.get('comments_count', 0) > 0:
+            if ticket.get("comments_count", 0) > 0:
                 score += 2
 
             # Type weight (prefer tasks over epics)
-            ticket_type = ticket.get('type', '').lower()
-            if 'story' in ticket_type or 'task' in ticket_type:
+            ticket_type = ticket.get("type", "").lower()
+            if "story" in ticket_type or "task" in ticket_type:
                 score += 3
-            elif 'bug' in ticket_type:
+            elif "bug" in ticket_type:
                 score += 5  # Bugs often need quick attention
 
-            backlog.append({
-                'ticket': ticket,
-                'score': score
-            })
+            backlog.append({"ticket": ticket, "score": score})
 
         # Sort by score descending
-        backlog.sort(key=lambda x: -x['score'])
+        backlog.sort(key=lambda x: -x["score"])
 
         return backlog[:5]  # Top 5 suggestions
 
-    def generate_notification(self, assigned_tickets: List[Dict], backlog_suggestions: List[Dict]):
+    def generate_notification(self, assigned_tickets: list[dict], backlog_suggestions: list[dict]):
         """Generate Slack notification with sprint analysis."""
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         task_id = f"{timestamp}-sprint-analysis"
@@ -291,17 +278,14 @@ class SprintAnalyzer:
         for ticket in assigned_tickets:
             analysis = self.analyze_ticket(ticket)
 
-            ticket_data = {
-                'ticket': ticket,
-                'analysis': analysis
-            }
+            ticket_data = {"ticket": ticket, "analysis": analysis}
 
-            status = ticket.get('status', '').lower()
-            if 'progress' in status:
+            status = ticket.get("status", "").lower()
+            if "progress" in status:
                 in_progress.append(ticket_data)
-            elif 'review' in status:
+            elif "review" in status:
                 in_review.append(ticket_data)
-            elif 'blocked' in status or analysis['blockers']:
+            elif "blocked" in status or analysis["blockers"]:
                 blocked.append(ticket_data)
             else:
                 todo.append(ticket_data)
@@ -310,21 +294,21 @@ class SprintAnalyzer:
         if in_progress:
             detail_content += "### 🚀 In Progress\n\n"
             for item in in_progress:
-                ticket = item['ticket']
-                analysis = item['analysis']
+                ticket = item["ticket"]
+                analysis = item["analysis"]
 
                 detail_content += f"**{ticket['key']}: {ticket['title']}**\n"
                 detail_content += f"- Priority: {ticket.get('priority', 'Unknown')}\n"
                 detail_content += f"- Status: {ticket.get('status', 'Unknown')}\n"
 
-                if analysis['next_steps']:
+                if analysis["next_steps"]:
                     detail_content += "- **Next Steps**:\n"
-                    for step in analysis['next_steps']:
+                    for step in analysis["next_steps"]:
                         detail_content += f"  - {step}\n"
 
-                if analysis['suggestions']:
+                if analysis["suggestions"]:
                     detail_content += "- **Suggestions**:\n"
-                    for suggestion in analysis['suggestions']:
+                    for suggestion in analysis["suggestions"]:
                         detail_content += f"  - {suggestion}\n"
 
                 detail_content += "\n"
@@ -333,14 +317,14 @@ class SprintAnalyzer:
         if in_review:
             detail_content += "### 👀 In Review\n\n"
             for item in in_review:
-                ticket = item['ticket']
-                analysis = item['analysis']
+                ticket = item["ticket"]
+                analysis = item["analysis"]
 
                 detail_content += f"**{ticket['key']}: {ticket['title']}**\n"
                 detail_content += f"- Priority: {ticket.get('priority', 'Unknown')}\n"
 
-                if analysis['next_steps']:
-                    for step in analysis['next_steps']:
+                if analysis["next_steps"]:
+                    for step in analysis["next_steps"]:
                         detail_content += f"- {step}\n"
 
                 detail_content += "\n"
@@ -349,16 +333,16 @@ class SprintAnalyzer:
         if blocked:
             detail_content += "### ⚠️ Blocked or Needs Attention\n\n"
             for item in blocked:
-                ticket = item['ticket']
-                analysis = item['analysis']
+                ticket = item["ticket"]
+                analysis = item["analysis"]
 
                 detail_content += f"**{ticket['key']}: {ticket['title']}**\n"
                 detail_content += f"- Priority: {ticket.get('priority', 'Unknown')}\n"
                 detail_content += f"- Status: {ticket.get('status', 'Unknown')}\n"
 
-                if analysis['blockers']:
+                if analysis["blockers"]:
                     detail_content += "- **Blockers**:\n"
-                    for blocker in analysis['blockers']:
+                    for blocker in analysis["blockers"]:
                         detail_content += f"  - {blocker}\n"
 
                 detail_content += "\n"
@@ -367,14 +351,14 @@ class SprintAnalyzer:
         if todo:
             detail_content += "### 📝 To Do\n\n"
             for item in todo:
-                ticket = item['ticket']
-                analysis = item['analysis']
+                ticket = item["ticket"]
+                analysis = item["analysis"]
 
                 detail_content += f"**{ticket['key']}: {ticket['title']}**\n"
                 detail_content += f"- Priority: {ticket.get('priority', 'Unknown')}\n"
 
-                if analysis['suggestions']:
-                    for suggestion in analysis['suggestions']:
+                if analysis["suggestions"]:
+                    for suggestion in analysis["suggestions"]:
                         detail_content += f"- 💡 {suggestion}\n"
 
                 detail_content += "\n"
@@ -385,18 +369,18 @@ class SprintAnalyzer:
             detail_content += "*Based on priority, clarity, and recent activity*\n\n"
 
             for item in backlog_suggestions:
-                ticket = item['ticket']
-                score = item['score']
+                ticket = item["ticket"]
+                score = item["score"]
 
                 detail_content += f"**{ticket['key']}: {ticket['title']}** (Score: {score})\n"
                 detail_content += f"- Priority: {ticket.get('priority', 'Unknown')}\n"
                 detail_content += f"- Type: {ticket.get('type', 'Unknown')}\n"
                 detail_content += f"- Status: {ticket.get('status', 'Unknown')}\n"
 
-                if ticket.get('has_acceptance_criteria'):
+                if ticket.get("has_acceptance_criteria"):
                     detail_content += "- ✓ Has acceptance criteria\n"
 
-                if ticket.get('comments_count', 0) > 0:
+                if ticket.get("comments_count", 0) > 0:
                     detail_content += f"- {ticket['comments_count']} comment(s) - recent activity\n"
 
                 detail_content += "\n"
@@ -420,7 +404,7 @@ class SprintAnalyzer:
 
         detail_file.write_text(detail_content)
 
-        print(f"✓ Sprint analysis complete!")
+        print("✓ Sprint analysis complete!")
         print(f"  Summary: {summary_file}")
         print(f"  Detail: {detail_file}")
 
@@ -477,4 +461,4 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    sys.exit(main())

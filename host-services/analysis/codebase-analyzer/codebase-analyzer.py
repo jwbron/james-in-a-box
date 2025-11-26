@@ -24,37 +24,36 @@ Usage:
   codebase-analyzer.py --focus structural  # Focus on structural analysis
 """
 
-import os
-import sys
+import argparse
 import json
 import logging
-import argparse
-import hashlib
+import os
 import re
-from pathlib import Path
-from datetime import datetime
-from typing import List, Dict, Optional, Set, Tuple
-from enum import Enum
-from dataclasses import dataclass, field
 import subprocess
-import fnmatch
+import sys
 from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
 
 
 class AnalysisCategory(Enum):
     """Categories of analysis the tool performs."""
-    CODE_QUALITY = "code_quality"       # Error handling, exceptions, style
-    STRUCTURAL = "structural"           # Directory organization, file placement
-    UNUSED_CODE = "unused_code"         # Dead code, obsolete files
-    DUPLICATION = "duplication"         # Similar patterns, repeated code
-    DOCUMENTATION = "documentation"     # README drift, outdated docs
-    SYMLINKS = "symlinks"               # Broken or incorrect symlinks
-    NAMING = "naming"                   # Naming consistency
-    PATTERNS = "patterns"               # Design pattern consistency
+
+    CODE_QUALITY = "code_quality"  # Error handling, exceptions, style
+    STRUCTURAL = "structural"  # Directory organization, file placement
+    UNUSED_CODE = "unused_code"  # Dead code, obsolete files
+    DUPLICATION = "duplication"  # Similar patterns, repeated code
+    DOCUMENTATION = "documentation"  # README drift, outdated docs
+    SYMLINKS = "symlinks"  # Broken or incorrect symlinks
+    NAMING = "naming"  # Naming consistency
+    PATTERNS = "patterns"  # Design pattern consistency
 
 
 class FixResult(Enum):
     """Result of attempting to fix an issue."""
+
     SUCCESS = "success"
     FILE_NOT_FOUND = "file_not_found"
     FILE_TOO_LARGE = "file_too_large"
@@ -69,27 +68,29 @@ class FixResult(Enum):
 @dataclass
 class StructuralInfo:
     """Information about codebase structure."""
-    directory_tree: Dict[str, List[str]] = field(default_factory=dict)
-    file_types: Dict[str, int] = field(default_factory=dict)
-    symlinks: Dict[str, str] = field(default_factory=dict)  # symlink -> target
-    broken_symlinks: List[str] = field(default_factory=list)
-    readme_files: List[str] = field(default_factory=list)
-    naming_patterns: Dict[str, List[str]] = field(default_factory=dict)  # pattern -> files
+
+    directory_tree: dict[str, list[str]] = field(default_factory=dict)
+    file_types: dict[str, int] = field(default_factory=dict)
+    symlinks: dict[str, str] = field(default_factory=dict)  # symlink -> target
+    broken_symlinks: list[str] = field(default_factory=list)
+    readme_files: list[str] = field(default_factory=list)
+    naming_patterns: dict[str, list[str]] = field(default_factory=dict)  # pattern -> files
 
 
 @dataclass
 class PRResult:
     """Result of PR creation attempt."""
+
     success: bool
-    pr_url: Optional[str] = None
-    branch_name: Optional[str] = None
-    error: Optional[str] = None
+    pr_url: str | None = None
+    branch_name: str | None = None
+    error: str | None = None
 
 
 class CodebaseAnalyzer:
     """Analyzes codebase for improvements using a single Claude Code call."""
 
-    def __init__(self, codebase_path: Path, notification_dir: Path, focus: Optional[str] = None):
+    def __init__(self, codebase_path: Path, notification_dir: Path, focus: str | None = None):
         self.codebase_path = codebase_path
         self.notification_dir = notification_dir
         self.focus = focus  # Optional focus category
@@ -102,19 +103,16 @@ class CodebaseAnalyzer:
 
         # Load gitignore patterns
         self.gitignore_patterns = self._load_gitignore_patterns()
-        self.always_ignore = {'.git', '__pycache__', 'node_modules', '.venv'}
+        self.always_ignore = {".git", "__pycache__", "node_modules", ".venv"}
 
         # Structural information (populated during analysis)
-        self.structural_info: Optional[StructuralInfo] = None
+        self.structural_info: StructuralInfo | None = None
 
     def _check_claude_cli(self) -> bool:
         """Check if claude CLI is available."""
         try:
             result = subprocess.run(
-                ['claude', '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5
+                ["claude", "--version"], check=False, capture_output=True, text=True, timeout=5
             )
             return result.returncode == 0
         except (subprocess.SubprocessError, FileNotFoundError):
@@ -122,26 +120,26 @@ class CodebaseAnalyzer:
 
     def _setup_logging(self) -> logging.Logger:
         """Configure logging."""
-        logger = logging.getLogger('codebase-analyzer')
+        logger = logging.getLogger("codebase-analyzer")
         logger.setLevel(logging.INFO)
         if not logger.handlers:
             console = logging.StreamHandler()
             console.setLevel(logging.INFO)
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
             console.setFormatter(formatter)
             logger.addHandler(console)
         return logger
 
-    def _load_gitignore_patterns(self) -> Set[str]:
+    def _load_gitignore_patterns(self) -> set[str]:
         """Load and parse .gitignore file."""
         patterns = set()
-        gitignore_path = self.codebase_path / '.gitignore'
+        gitignore_path = self.codebase_path / ".gitignore"
 
         if gitignore_path.exists():
             try:
-                with open(gitignore_path, 'r', encoding='utf-8') as f:
+                with open(gitignore_path, encoding="utf-8") as f:
                     for line in f:
-                        line = line.split('#')[0].strip()
+                        line = line.split("#")[0].strip()
                         if line:
                             patterns.add(line)
             except Exception as e:
@@ -157,8 +155,8 @@ class CodebaseAnalyzer:
                 return False
 
         # Only analyze specific file types
-        valid_extensions = {'.py', '.sh', '.md', '.yml', '.yaml', '.json'}
-        if file_path.suffix.lower() not in valid_extensions and file_path.name != 'Dockerfile':
+        valid_extensions = {".py", ".sh", ".md", ".yml", ".yaml", ".json"}
+        if file_path.suffix.lower() not in valid_extensions and file_path.name != "Dockerfile":
             return False
 
         # Skip very large files (>50KB)
@@ -170,10 +168,10 @@ class CodebaseAnalyzer:
 
         return True
 
-    def get_files_to_analyze(self) -> List[Path]:
+    def get_files_to_analyze(self) -> list[Path]:
         """Get list of files to analyze from codebase."""
         files = []
-        for file_path in self.codebase_path.rglob('*'):
+        for file_path in self.codebase_path.rglob("*"):
             if file_path.is_file() and self._should_analyze(file_path):
                 files.append(file_path)
 
@@ -185,12 +183,12 @@ class CodebaseAnalyzer:
         info = StructuralInfo()
 
         # Build directory tree
-        for path in self.codebase_path.rglob('*'):
+        for path in self.codebase_path.rglob("*"):
             if any(ig in str(path) for ig in self.always_ignore):
                 continue
 
             rel_path = path.relative_to(self.codebase_path)
-            parent = str(rel_path.parent) if rel_path.parent != Path('.') else '.'
+            parent = str(rel_path.parent) if rel_path.parent != Path(".") else "."
 
             if path.is_dir():
                 if parent not in info.directory_tree:
@@ -198,15 +196,15 @@ class CodebaseAnalyzer:
                 info.directory_tree[parent].append(str(rel_path.name))
             elif path.is_file():
                 # Track file types
-                ext = path.suffix.lower() or 'no_extension'
+                ext = path.suffix.lower() or "no_extension"
                 info.file_types[ext] = info.file_types.get(ext, 0) + 1
 
                 # Track README files
-                if path.name.lower().startswith('readme'):
+                if path.name.lower().startswith("readme"):
                     info.readme_files.append(str(rel_path))
 
         # Check symlinks
-        for path in self.codebase_path.rglob('*'):
+        for path in self.codebase_path.rglob("*"):
             if any(ig in str(path) for ig in self.always_ignore):
                 continue
 
@@ -221,23 +219,23 @@ class CodebaseAnalyzer:
                     info.broken_symlinks.append(rel_path)
 
         # Analyze naming patterns for Python/shell scripts
-        for path in self.codebase_path.rglob('*'):
+        for path in self.codebase_path.rglob("*"):
             if any(ig in str(path) for ig in self.always_ignore):
                 continue
 
-            if path.suffix in {'.py', '.sh'} and path.is_file():
+            if path.suffix in {".py", ".sh"} and path.is_file():
                 rel_path = str(path.relative_to(self.codebase_path))
                 name = path.stem
 
                 # Categorize naming patterns
-                if '-' in name:
-                    pattern = 'kebab-case'
-                elif '_' in name:
-                    pattern = 'snake_case'
+                if "-" in name:
+                    pattern = "kebab-case"
+                elif "_" in name:
+                    pattern = "snake_case"
                 elif name[0].isupper():
-                    pattern = 'PascalCase'
+                    pattern = "PascalCase"
                 else:
-                    pattern = 'lowercase'
+                    pattern = "lowercase"
 
                 if pattern not in info.naming_patterns:
                     info.naming_patterns[pattern] = []
@@ -246,7 +244,7 @@ class CodebaseAnalyzer:
         self.structural_info = info
         return info
 
-    def detect_potential_duplicates(self, files: List[Path]) -> List[Tuple[str, str, float]]:
+    def detect_potential_duplicates(self, files: list[Path]) -> list[tuple[str, str, float]]:
         """Detect potentially duplicated code by comparing file content hashes and structure.
 
         Returns list of (file1, file2, similarity_score) tuples.
@@ -254,7 +252,7 @@ class CodebaseAnalyzer:
         duplicates = []
 
         # Group files by size (similar size = potential duplicate)
-        size_groups: Dict[int, List[Path]] = defaultdict(list)
+        size_groups: dict[int, list[Path]] = defaultdict(list)
         for f in files:
             try:
                 size = f.stat().st_size
@@ -265,20 +263,20 @@ class CodebaseAnalyzer:
                 continue
 
         # For groups with multiple files, compare content
-        for bucket, group in size_groups.items():
+        for _bucket, group in size_groups.items():
             if len(group) < 2:
                 continue
 
             # Compare files in group
             for i, f1 in enumerate(group):
-                for f2 in group[i+1:]:
+                for f2 in group[i + 1 :]:
                     try:
-                        c1 = f1.read_text(encoding='utf-8', errors='ignore')
-                        c2 = f2.read_text(encoding='utf-8', errors='ignore')
+                        c1 = f1.read_text(encoding="utf-8", errors="ignore")
+                        c2 = f2.read_text(encoding="utf-8", errors="ignore")
 
                         # Simple similarity: line-based comparison
-                        lines1 = set(c1.strip().split('\n'))
-                        lines2 = set(c2.strip().split('\n'))
+                        lines1 = set(c1.strip().split("\n"))
+                        lines2 = set(c2.strip().split("\n"))
 
                         if not lines1 or not lines2:
                             continue
@@ -296,25 +294,25 @@ class CodebaseAnalyzer:
 
         return duplicates
 
-    def check_readme_consistency(self, files: List[Path]) -> List[Dict]:
+    def check_readme_consistency(self, files: list[Path]) -> list[dict]:
         """Check if README files reference files that exist or are missing."""
         issues = []
 
         for readme_path in files:
-            if not readme_path.name.lower().startswith('readme'):
+            if not readme_path.name.lower().startswith("readme"):
                 continue
 
             try:
-                content = readme_path.read_text(encoding='utf-8', errors='ignore')
+                content = readme_path.read_text(encoding="utf-8", errors="ignore")
                 rel_readme = str(readme_path.relative_to(self.codebase_path))
                 readme_dir = readme_path.parent
 
                 # Find file/path references in README
                 # Look for: `filename`, ./filename, ../filename, path/to/file
                 patterns = [
-                    r'`([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)`',  # `filename.ext`
-                    r'`([a-zA-Z0-9_\-]+\.(py|sh|md|yml|yaml|json))`',  # `script.py`
-                    r'(?:^|\s)(\.{1,2}/[a-zA-Z0-9_\-./]+)',  # ./path or ../path
+                    r"`([a-zA-Z0-9_\-./]+\.[a-zA-Z]+)`",  # `filename.ext`
+                    r"`([a-zA-Z0-9_\-]+\.(py|sh|md|yml|yaml|json))`",  # `script.py`
+                    r"(?:^|\s)(\.{1,2}/[a-zA-Z0-9_\-./]+)",  # ./path or ../path
                 ]
 
                 referenced_files = set()
@@ -325,34 +323,36 @@ class CodebaseAnalyzer:
                 # Check each reference
                 for ref in referenced_files:
                     # Skip URLs and anchors
-                    if ref.startswith('http') or ref.startswith('#'):
+                    if ref.startswith(("http", "#")):
                         continue
 
                     # Check if file exists relative to README location
                     ref_path = readme_dir / ref
                     if not ref_path.exists() and not (self.codebase_path / ref).exists():
-                        issues.append({
-                            "file": rel_readme,
-                            "line_hint": f"references '{ref}'",
-                            "priority": "MEDIUM",
-                            "category": "documentation",
-                            "description": f"README references non-existent file: {ref}",
-                            "suggestion": f"Update or remove reference to '{ref}' in README"
-                        })
+                        issues.append(
+                            {
+                                "file": rel_readme,
+                                "line_hint": f"references '{ref}'",
+                                "priority": "MEDIUM",
+                                "category": "documentation",
+                                "description": f"README references non-existent file: {ref}",
+                                "suggestion": f"Update or remove reference to '{ref}' in README",
+                            }
+                        )
 
             except Exception as e:
                 self.logger.warning(f"Error checking README {readme_path}: {e}")
 
         return issues
 
-    def build_codebase_summary(self, files: List[Path]) -> str:
+    def build_codebase_summary(self, files: list[Path]) -> str:
         """Build a summary of the codebase for Claude to analyze."""
         summary_parts = []
 
         for file_path in files:
             try:
                 rel_path = file_path.relative_to(self.codebase_path)
-                content = file_path.read_text(encoding='utf-8', errors='ignore')
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
 
                 # Truncate large files
                 if len(content) > 3000:
@@ -365,7 +365,9 @@ class CodebaseAnalyzer:
 
         return "\n".join(summary_parts)
 
-    def build_structural_context(self, structural_info: StructuralInfo, duplicates: List[Tuple[str, str, float]]) -> str:
+    def build_structural_context(
+        self, structural_info: StructuralInfo, duplicates: list[tuple[str, str, float]]
+    ) -> str:
         """Build a structural context section for the Claude prompt."""
         context_parts = []
 
@@ -397,7 +399,7 @@ class CodebaseAnalyzer:
 
         return "\n".join(context_parts)
 
-    def analyze_codebase(self, files: List[Path]) -> List[Dict]:
+    def analyze_codebase(self, files: list[Path]) -> list[dict]:
         """Analyze entire codebase in a single Claude call."""
         self.logger.info("Gathering structural information...")
         structural_info = self.gather_structural_info()
@@ -520,11 +522,12 @@ Return ONLY the JSON array, no other text."""
 
         try:
             result = subprocess.run(
-                ['claude', '--dangerously-skip-permissions'],
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout for large analysis
+                timeout=300,  # 5 minute timeout for large analysis
             )
 
             if result.returncode != 0:
@@ -536,30 +539,32 @@ Return ONLY the JSON array, no other text."""
             # Extract JSON from response
             try:
                 # Find JSON array in response
-                start_idx = response.find('[')
-                end_idx = response.rfind(']') + 1
+                start_idx = response.find("[")
+                end_idx = response.rfind("]") + 1
                 if start_idx != -1 and end_idx > start_idx:
                     json_str = response[start_idx:end_idx]
                     issues = json.loads(json_str)
 
                     # Merge pre-detected README issues (avoid duplicates)
-                    existing_files = {i.get('file') for i in issues}
+                    existing_files = {i.get("file") for i in issues}
                     for readme_issue in readme_issues:
-                        if readme_issue['file'] not in existing_files:
+                        if readme_issue["file"] not in existing_files:
                             issues.append(readme_issue)
 
                     # Add broken symlink issues
                     for broken_link in structural_info.broken_symlinks:
                         if broken_link not in existing_files:
-                            issues.append({
-                                "file": broken_link,
-                                "line_hint": "symlink",
-                                "priority": "HIGH",
-                                "category": "symlinks",
-                                "description": f"Broken symlink: target does not exist",
-                                "suggestion": f"Fix or remove broken symlink",
-                                "auto_fixable": False
-                            })
+                            issues.append(
+                                {
+                                    "file": broken_link,
+                                    "line_hint": "symlink",
+                                    "priority": "HIGH",
+                                    "category": "symlinks",
+                                    "description": "Broken symlink: target does not exist",
+                                    "suggestion": "Fix or remove broken symlink",
+                                    "auto_fixable": False,
+                                }
+                            )
 
                     self.logger.info(f"Found {len(issues)} total issues")
                     return issues
@@ -574,7 +579,7 @@ Return ONLY the JSON array, no other text."""
                             "category": "symlinks",
                             "description": "Broken symlink",
                             "suggestion": "Fix or remove",
-                            "auto_fixable": False
+                            "auto_fixable": False,
                         }
                         for link in structural_info.broken_symlinks
                     ]
@@ -590,25 +595,25 @@ Return ONLY the JSON array, no other text."""
             self.logger.error(f"Error calling Claude: {e}")
             return readme_issues  # Return pre-detected issues on error
 
-    def implement_fix(self, issue: Dict) -> Tuple[FixResult, Optional[str]]:
+    def implement_fix(self, issue: dict) -> tuple[FixResult, str | None]:
         """Implement a single fix using Claude Code.
 
         Returns:
             Tuple of (FixResult, details_string)
         """
         # Skip issues marked as not auto-fixable
-        if not issue.get('auto_fixable', True):
+        if not issue.get("auto_fixable", True):
             detail = f"Issue requires human review ({issue.get('category', 'unknown')})"
             self.logger.info(f"Skipping {issue['file']}: {detail}")
             return (FixResult.REQUIRES_RESTRUCTURING, detail)
 
         # Skip structural issues (directory moves, deletions, etc.)
-        if issue.get('category') in ['structural', 'unused_code', 'symlinks']:
-            detail = f"Structural change requires human review"
+        if issue.get("category") in ["structural", "unused_code", "symlinks"]:
+            detail = "Structural change requires human review"
             self.logger.info(f"Skipping {issue['file']}: {detail}")
             return (FixResult.REQUIRES_RESTRUCTURING, detail)
 
-        file_path = self.codebase_path / issue['file']
+        file_path = self.codebase_path / issue["file"]
 
         if not file_path.exists():
             self.logger.warning(f"File not found: {file_path}")
@@ -619,7 +624,7 @@ Return ONLY the JSON array, no other text."""
             return (FixResult.REQUIRES_RESTRUCTURING, "Target is a directory")
 
         try:
-            content = file_path.read_text(encoding='utf-8')
+            content = file_path.read_text(encoding="utf-8")
             file_size = len(content)
 
             # Skip files that are too large for the full-rewrite approach
@@ -637,10 +642,10 @@ Return ONLY the JSON array, no other text."""
 
             prompt = f"""Fix this issue in the file. Make ONLY the minimal change needed.
 
-FILE: {issue['file']}
-ISSUE: {issue['description']}
-LOCATION: {issue.get('line_hint', 'unknown')}
-SUGGESTION: {issue['suggestion']}
+FILE: {issue["file"]}
+ISSUE: {issue["description"]}
+LOCATION: {issue.get("line_hint", "unknown")}
+SUGGESTION: {issue["suggestion"]}
 
 CURRENT FILE ({len(content)} characters):
 ```
@@ -653,11 +658,12 @@ Do NOT include explanations or markdown fences.
 The output should be similar in length to the input."""
 
             result = subprocess.run(
-                ['claude', '--dangerously-skip-permissions'],
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=timeout_seconds
+                timeout=timeout_seconds,
             )
 
             if result.returncode != 0:
@@ -667,20 +673,28 @@ The output should be similar in length to the input."""
             fixed_content = result.stdout.strip()
 
             # Remove markdown fences if present
-            if fixed_content.startswith('```'):
-                lines = fixed_content.split('\n')
+            if fixed_content.startswith("```"):
+                lines = fixed_content.split("\n")
                 lines = lines[1:]  # Remove first line
-                if lines and lines[-1].strip() == '```':
+                if lines and lines[-1].strip() == "```":
                     lines = lines[:-1]
-                fixed_content = '\n'.join(lines)
+                fixed_content = "\n".join(lines)
 
             # Detect if Claude returned an explanation instead of code
             error_patterns = [
-                "I cannot", "I can't", "I apologize", "I'm sorry",
-                "Here's the", "Here is the", "The issue", "The fix",
-                "Unfortunately", "I don't", "I am unable"
+                "I cannot",
+                "I can't",
+                "I apologize",
+                "I'm sorry",
+                "Here's the",
+                "Here is the",
+                "The issue",
+                "The fix",
+                "Unfortunately",
+                "I don't",
+                "I am unable",
             ]
-            first_line = fixed_content.split('\n')[0] if fixed_content else ""
+            first_line = fixed_content.split("\n")[0] if fixed_content else ""
             if any(first_line.startswith(p) for p in error_patterns):
                 detail = f"Claude returned explanation: '{first_line[:60]}...'"
                 self.logger.warning(f"Invalid response for {issue['file']}: {detail}")
@@ -688,17 +702,21 @@ The output should be similar in length to the input."""
 
             # Validate the fix by size
             if len(fixed_content) < len(content) * 0.3:
-                detail = f"output {len(fixed_content)} chars vs original {len(content)} chars (< 30%)"
+                detail = (
+                    f"output {len(fixed_content)} chars vs original {len(content)} chars (< 30%)"
+                )
                 self.logger.warning(f"Fixed content too short for {issue['file']}: {detail}")
                 return (FixResult.CONTENT_TOO_SHORT, detail)
 
             if len(fixed_content) > len(content) * 3:
-                detail = f"output {len(fixed_content)} chars vs original {len(content)} chars (> 300%)"
+                detail = (
+                    f"output {len(fixed_content)} chars vs original {len(content)} chars (> 300%)"
+                )
                 self.logger.warning(f"Fixed content too long for {issue['file']}: {detail}")
                 return (FixResult.CONTENT_TOO_LONG, detail)
 
             # Write the fix
-            file_path.write_text(fixed_content, encoding='utf-8')
+            file_path.write_text(fixed_content, encoding="utf-8")
             self.logger.info(f"✓ Fixed: {issue['file']} ({issue['category']})")
             return (FixResult.SUCCESS, None)
 
@@ -710,7 +728,11 @@ The output should be similar in length to the input."""
             self.logger.error(f"Error fixing {issue['file']}: {e}")
             return (FixResult.OTHER_ERROR, str(e)[:200])
 
-    def create_pr(self, implemented: List[Dict], skipped: List[Tuple[Dict, FixResult, Optional[str]]] = None) -> PRResult:
+    def create_pr(
+        self,
+        implemented: list[dict],
+        skipped: list[tuple[dict, FixResult, str | None]] | None = None,
+    ) -> PRResult:
         """Commit changes and create a PR.
 
         Args:
@@ -729,54 +751,59 @@ The output should be similar in length to the input."""
         try:
             # Check for changes
             result = subprocess.run(
-                ['git', 'status', '--porcelain'],
+                ["git", "status", "--porcelain"],
+                check=False,
                 cwd=self.codebase_path,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if not result.stdout.strip():
                 self.logger.warning("No changes to commit")
-                return PRResult(success=False, error="No changes to commit (fixes may not have modified files)")
+                return PRResult(
+                    success=False, error="No changes to commit (fixes may not have modified files)"
+                )
 
             # Create branch
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             branch_name = f"auto-fix/codebase-{timestamp}"
 
             subprocess.run(
-                ['git', 'checkout', '-b', branch_name],
+                ["git", "checkout", "-b", branch_name],
                 cwd=self.codebase_path,
                 check=True,
-                capture_output=True
+                capture_output=True,
             )
 
             # Stage and commit
-            subprocess.run(['git', 'add', '-A'], cwd=self.codebase_path, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "add", "-A"], cwd=self.codebase_path, check=True, capture_output=True
+            )
 
-            categories = set(i['category'] for i in implemented)
+            categories = {i["category"] for i in implemented}
             commit_msg = f"""Auto-fix: {len(implemented)} codebase improvements
 
-Categories: {', '.join(categories)}
+Categories: {", ".join(categories)}
 
 Fixes:
 """
             for issue in implemented:
                 commit_msg += f"- {issue['file']}: {issue['description'][:50]}...\n"
 
-
             subprocess.run(
-                ['git', 'commit', '-m', commit_msg],
+                ["git", "commit", "-m", commit_msg],
                 cwd=self.codebase_path,
                 check=True,
-                capture_output=True
+                capture_output=True,
             )
 
             # Push
             result = subprocess.run(
-                ['git', 'push', '-u', 'origin', branch_name],
+                ["git", "push", "-u", "origin", branch_name],
+                check=False,
                 cwd=self.codebase_path,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if result.returncode != 0:
@@ -787,7 +814,7 @@ Fixes:
             # Create PR body
             pr_body = f"## Auto-fix: {len(implemented)} improvements\n\n"
             for cat in sorted(categories):
-                cat_issues = [i for i in implemented if i['category'] == cat]
+                cat_issues = [i for i in implemented if i["category"] == cat]
                 pr_body += f"### {cat.title()} ({len(cat_issues)})\n"
                 for i in cat_issues:
                     pr_body += f"- `{i['file']}`: {i['description'][:60]}\n"
@@ -798,21 +825,31 @@ Fixes:
                 pr_body += f"## ⚠️ Skipped Issues ({len(skipped)})\n\n"
                 pr_body += "These issues were identified but couldn't be auto-fixed:\n\n"
                 for issue, fix_result, detail in skipped:
-                    reason = fix_result.value.replace('_', ' ')
+                    reason = fix_result.value.replace("_", " ")
                     pr_body += f"- `{issue['file']}`: {reason}"
                     if detail:
                         pr_body += f" ({detail})"
                     pr_body += f"\n  - Issue: {issue['description'][:80]}\n"
                 pr_body += "\n"
 
-
             result = subprocess.run(
-                ['gh', 'pr', 'create', '--base', 'main', '--head', branch_name,
-                 '--title', f'Auto-fix: {len(implemented)} codebase improvements',
-                 '--body', pr_body],
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--base",
+                    "main",
+                    "--head",
+                    branch_name,
+                    "--title",
+                    f"Auto-fix: {len(implemented)} codebase improvements",
+                    "--body",
+                    pr_body,
+                ],
+                check=False,
                 cwd=self.codebase_path,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if result.returncode != 0:
@@ -835,10 +872,10 @@ Fixes:
 
     def create_notification(
         self,
-        issues: List[Dict],
-        pr_result: Optional[PRResult] = None,
-        implemented: List[Dict] = None,
-        skipped: List[Tuple[Dict, FixResult, Optional[str]]] = None
+        issues: list[dict],
+        pr_result: PRResult | None = None,
+        implemented: list[dict] | None = None,
+        skipped: list[tuple[dict, FixResult, str | None]] | None = None,
     ):
         """Create a notification with findings.
 
@@ -856,7 +893,7 @@ Fixes:
         implemented = implemented or []
         skipped = skipped or []
 
-        content = f"# 🔍 Codebase Analysis\n\n"
+        content = "# 🔍 Codebase Analysis\n\n"
         content += f"**Found {len(issues)} issues**\n\n"
 
         # Show PR result with details
@@ -864,7 +901,7 @@ Fixes:
             if pr_result.success and pr_result.pr_url:
                 content += f"**PR Created**: {pr_result.pr_url}\n\n"
             else:
-                content += f"**⚠️ PR Creation Failed**\n"
+                content += "**⚠️ PR Creation Failed**\n"
                 if pr_result.error:
                     content += f"- Error: {pr_result.error}\n"
                 if pr_result.branch_name:
@@ -888,39 +925,39 @@ Fixes:
 
         # Build category-priority groups
         for cat_key, cat_name in categories_order:
-            cat_issues = [i for i in issues if i.get('category') == cat_key]
+            cat_issues = [i for i in issues if i.get("category") == cat_key]
             if not cat_issues:
                 continue
 
-            high_cat = [i for i in cat_issues if i.get('priority') == 'HIGH']
-            medium_cat = [i for i in cat_issues if i.get('priority') == 'MEDIUM']
+            high_cat = [i for i in cat_issues if i.get("priority") == "HIGH"]
+            medium_cat = [i for i in cat_issues if i.get("priority") == "MEDIUM"]
 
             content += f"## {cat_name}\n\n"
 
             if high_cat:
                 content += "**🔴 HIGH:**\n"
                 for i in high_cat:
-                    auto = "✅" if i.get('auto_fixable', True) else "👤"
+                    auto = "✅" if i.get("auto_fixable", True) else "👤"
                     content += f"- {auto} `{i['file']}`: {i['description']}\n"
-                    if i.get('suggestion'):
+                    if i.get("suggestion"):
                         content += f"  - Fix: {i['suggestion'][:80]}\n"
 
             if medium_cat:
                 content += "**🟡 MEDIUM:**\n"
                 for i in medium_cat:
-                    auto = "✅" if i.get('auto_fixable', True) else "👤"
+                    auto = "✅" if i.get("auto_fixable", True) else "👤"
                     content += f"- {auto} `{i['file']}`: {i['description']}\n"
-                    if i.get('suggestion'):
+                    if i.get("suggestion"):
                         content += f"  - Fix: {i['suggestion'][:80]}\n"
 
             content += "\n"
 
         # Issues without a recognized category
-        other_issues = [i for i in issues if i.get('category') not in dict(categories_order)]
+        other_issues = [i for i in issues if i.get("category") not in dict(categories_order)]
         if other_issues:
             content += "## Other Issues\n\n"
             for i in other_issues:
-                priority_icon = "🔴" if i.get('priority') == 'HIGH' else "🟡"
+                priority_icon = "🔴" if i.get("priority") == "HIGH" else "🟡"
                 content += f"- {priority_icon} `{i['file']}`: {i['description']}\n"
             content += "\n"
 
@@ -928,7 +965,7 @@ Fixes:
         if skipped:
             content += "## ⚠️ Skipped (couldn't auto-fix)\n\n"
             for issue, fix_result, detail in skipped:
-                reason = fix_result.value.replace('_', ' ')
+                reason = fix_result.value.replace("_", " ")
                 content += f"- `{issue['file']}`: **{reason}**"
                 if detail:
                     content += f" - {detail}"
@@ -991,8 +1028,7 @@ Fixes:
                 self.logger.warning("All fixes were skipped - no PR created")
                 # Create a PRResult to explain what happened
                 pr_result = PRResult(
-                    success=False,
-                    error="All fix attempts were skipped (see skipped issues below)"
+                    success=False, error="All fix attempts were skipped (see skipped issues below)"
                 )
 
         # Create notification
@@ -1019,13 +1055,19 @@ Examples:
   %(prog)s --focus structural        # Focus on structural issues
   %(prog)s --implement               # Auto-fix top 10 issues, create PR
   %(prog)s --implement --max-fixes 5 # Auto-fix top 5 issues
-"""
+""",
     )
-    parser.add_argument('--implement', action='store_true', help='Implement fixes and create PR')
-    parser.add_argument('--max-fixes', type=int, default=10, help='Max fixes to implement')
-    parser.add_argument('--focus', type=str, choices=['structural', 'duplication', 'unused', 'documentation', 'patterns'],
-                        help='Focus analysis on a specific category')
-    parser.add_argument('--force', action='store_true', help='Force run (ignored, kept for compatibility)')
+    parser.add_argument("--implement", action="store_true", help="Implement fixes and create PR")
+    parser.add_argument("--max-fixes", type=int, default=10, help="Max fixes to implement")
+    parser.add_argument(
+        "--focus",
+        type=str,
+        choices=["structural", "duplication", "unused", "documentation", "patterns"],
+        help="Focus analysis on a specific category",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Force run (ignored, kept for compatibility)"
+    )
 
     args = parser.parse_args()
 

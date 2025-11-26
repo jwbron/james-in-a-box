@@ -9,20 +9,14 @@ Tests the GitHub PR check watcher:
 """
 
 import json
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from datetime import datetime
-import sys
 from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from unittest.mock import patch
+
 
 # Load github watcher module
 watcher_path = (
-    Path(__file__).parent.parent.parent
-    / "jib-container"
-    / "jib-tasks"
-    / "github"
-    / "watcher.py"
+    Path(__file__).parent.parent.parent / "jib-container" / "jib-tasks" / "github" / "watcher.py"
 )
 loader = SourceFileLoader("github_watcher", str(watcher_path))
 github_watcher = loader.load_module()
@@ -35,7 +29,7 @@ class TestGitHubWatcherInit:
 
     def test_init_paths(self, temp_dir, monkeypatch):
         """Test that paths are initialized correctly."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
             assert watcher.github_dir == temp_dir / "context-sync" / "github"
@@ -50,27 +44,25 @@ class TestStateManagement:
 
     def test_load_state_no_file(self, temp_dir):
         """Test loading state when file doesn't exist."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
             state = watcher.load_state()
 
-            assert state == {'notified': {}}
+            assert state == {"notified": {}}
 
     def test_load_state_valid_file(self, temp_dir):
         """Test loading state from existing file."""
         state_file = temp_dir / "sharing" / "tracking" / "github-watcher-state.json"
         state_file.parent.mkdir(parents=True)
-        state_file.write_text(json.dumps({
-            'notified': {
-                'repo-123:check1,check2': '2025-01-01T00:00:00Z'
-            }
-        }))
+        state_file.write_text(
+            json.dumps({"notified": {"repo-123:check1,check2": "2025-01-01T00:00:00Z"}})
+        )
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
             state = watcher.load_state()
 
-            assert 'repo-123:check1,check2' in state['notified']
+            assert "repo-123:check1,check2" in state["notified"]
 
     def test_load_state_invalid_json(self, temp_dir):
         """Test loading state when file contains invalid JSON."""
@@ -78,19 +70,17 @@ class TestStateManagement:
         state_file.parent.mkdir(parents=True)
         state_file.write_text("invalid json{")
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
             state = watcher.load_state()
 
-            assert state == {'notified': {}}
+            assert state == {"notified": {}}
 
     def test_save_state(self, temp_dir):
         """Test saving state to file."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
-            watcher.notified_failures = {
-                'test-key': '2025-01-01T00:00:00Z'
-            }
+            watcher.notified_failures = {"test-key": "2025-01-01T00:00:00Z"}
             watcher.save_state()
 
             # Verify state was saved
@@ -98,7 +88,7 @@ class TestStateManagement:
             assert state_file.exists()
 
             saved = json.loads(state_file.read_text())
-            assert saved['notified']['test-key'] == '2025-01-01T00:00:00Z'
+            assert saved["notified"]["test-key"] == "2025-01-01T00:00:00Z"
 
 
 class TestAnalyzeFailure:
@@ -106,81 +96,78 @@ class TestAnalyzeFailure:
 
     def test_analyze_test_failure(self, temp_dir):
         """Test analyzing test failures."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
-            pr_context = {'files_changed': ['src/app.py']}
-            failed_checks = [
-                {'name': 'pytest', 'full_log': 'AssertionError: expected 5, got 3'}
-            ]
+            pr_context = {"files_changed": ["src/app.py"]}
+            failed_checks = [{"name": "pytest", "full_log": "AssertionError: expected 5, got 3"}]
 
             analysis = watcher.analyze_failure(pr_context, failed_checks)
 
-            assert 'test' in analysis['summary'].lower()
-            assert analysis['root_cause'] is not None
-            assert len(analysis['actions']) > 0
+            assert "test" in analysis["summary"].lower()
+            assert analysis["root_cause"] is not None
+            assert len(analysis["actions"]) > 0
 
     def test_analyze_lint_failure(self, temp_dir):
         """Test analyzing linting failures."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
-            pr_context = {'files_changed': ['src/app.js']}
-            failed_checks = [
-                {'name': 'eslint', 'full_log': 'Missing semicolon'}
-            ]
+            pr_context = {"files_changed": ["src/app.js"]}
+            failed_checks = [{"name": "eslint", "full_log": "Missing semicolon"}]
 
             analysis = watcher.analyze_failure(pr_context, failed_checks)
 
-            assert 'lint' in analysis['summary'].lower() or 'quality' in analysis['summary'].lower()
-            assert analysis['can_auto_fix'] is True
-            assert analysis['auto_fix_description'] is not None
+            assert "lint" in analysis["summary"].lower() or "quality" in analysis["summary"].lower()
+            assert analysis["can_auto_fix"] is True
+            assert analysis["auto_fix_description"] is not None
 
     def test_analyze_build_failure(self, temp_dir):
         """Test analyzing build failures."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
             pr_context = {}
-            failed_checks = [
-                {'name': 'build', 'full_log': 'Compilation error: syntax error'}
-            ]
+            failed_checks = [{"name": "build", "full_log": "Compilation error: syntax error"}]
 
             analysis = watcher.analyze_failure(pr_context, failed_checks)
 
-            assert 'build' in analysis['summary'].lower()
-            assert analysis['can_auto_fix'] is False
+            assert "build" in analysis["summary"].lower()
+            assert analysis["can_auto_fix"] is False
 
     def test_analyze_import_error(self, temp_dir):
         """Test analyzing import/module errors."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
             pr_context = {}
             failed_checks = [
-                {'name': 'test', 'full_log': 'ModuleNotFoundError: No module named "foo"'}
+                {"name": "test", "full_log": 'ModuleNotFoundError: No module named "foo"'}
             ]
 
             analysis = watcher.analyze_failure(pr_context, failed_checks)
 
-            assert 'missing dependency' in analysis['root_cause'].lower() or 'import' in analysis['root_cause'].lower()
-            assert any('requirements' in action.lower() or 'dependencies' in action.lower()
-                      for action in analysis['actions'])
+            assert (
+                "missing dependency" in analysis["root_cause"].lower()
+                or "import" in analysis["root_cause"].lower()
+            )
+            assert any(
+                "requirements" in action.lower() or "dependencies" in action.lower()
+                for action in analysis["actions"]
+            )
 
     def test_analyze_unknown_failure(self, temp_dir):
         """Test analyzing unknown failure types."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
             pr_context = {}
-            failed_checks = [
-                {'name': 'custom-check', 'full_log': 'Something went wrong'}
-            ]
+            failed_checks = [{"name": "custom-check", "full_log": "Something went wrong"}]
 
             analysis = watcher.analyze_failure(pr_context, failed_checks)
 
-            assert 'failed' in analysis['summary'].lower()
-            assert len(analysis['actions']) > 0
+            assert "failed" in analysis["summary"].lower()
+            assert len(analysis["actions"]) > 0
 
 
 class TestGetPrContext:
@@ -188,13 +175,13 @@ class TestGetPrContext:
 
     def test_get_pr_context_no_files(self, temp_dir):
         """Test getting context when no PR files exist."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
             context = watcher.get_pr_context("test-repo", 123)
 
-            assert context['pr_number'] == 123
-            assert context['title'] == "PR #123"
-            assert context['files_changed'] == []
+            assert context["pr_number"] == 123
+            assert context["title"] == "PR #123"
+            assert context["files_changed"] == []
 
     def test_get_pr_context_with_pr_file(self, temp_dir):
         """Test getting context from PR markdown file."""
@@ -212,14 +199,14 @@ class TestGetPrContext:
 - `tests/test_app.py` (+20, -0)
 """)
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
             context = watcher.get_pr_context("test-repo", 123)
 
-            assert "Fix important bug" in context['title']
-            assert "github.com" in context['url']
-            assert "feature-branch" in context['branch']
-            assert len(context['files_changed']) == 2
+            assert "Fix important bug" in context["title"]
+            assert "github.com" in context["url"]
+            assert "feature-branch" in context["branch"]
+            assert len(context["files_changed"]) == 2
 
     def test_get_pr_context_with_diff(self, temp_dir):
         """Test getting context includes diff availability."""
@@ -229,12 +216,12 @@ class TestGetPrContext:
         diff_file = prs_dir / "test-repo-PR-123.diff"
         diff_file.write_text("diff --git a/file.py b/file.py\n+new line")
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
             context = watcher.get_pr_context("test-repo", 123)
 
-            assert context.get('diff_available') is True
-            assert context.get('diff_size', 0) > 0
+            assert context.get("diff_available") is True
+            assert context.get("diff_size", 0) > 0
 
 
 class TestProcessCheckFile:
@@ -246,16 +233,20 @@ class TestProcessCheckFile:
         checks_dir.mkdir(parents=True)
 
         check_file = checks_dir / "repo-PR-123-checks.json"
-        check_file.write_text(json.dumps({
-            'pr_number': 123,
-            'repository': 'owner/repo',
-            'checks': [
-                {'name': 'test', 'conclusion': 'success'},
-                {'name': 'lint', 'conclusion': 'success'}
-            ]
-        }))
+        check_file.write_text(
+            json.dumps(
+                {
+                    "pr_number": 123,
+                    "repository": "owner/repo",
+                    "checks": [
+                        {"name": "test", "conclusion": "success"},
+                        {"name": "lint", "conclusion": "success"},
+                    ],
+                }
+            )
+        )
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
             # Should not create notification for passing checks
             watcher.process_check_file(check_file)
@@ -272,18 +263,20 @@ class TestProcessCheckFile:
         notifications_dir.mkdir(parents=True)
 
         check_file = checks_dir / "repo-PR-123-checks.json"
-        check_file.write_text(json.dumps({
-            'pr_number': 123,
-            'repository': 'owner/repo',
-            'checks': [
-                {'name': 'test', 'conclusion': 'failure', 'status': 'completed'}
-            ]
-        }))
+        check_file.write_text(
+            json.dumps(
+                {
+                    "pr_number": 123,
+                    "repository": "owner/repo",
+                    "checks": [{"name": "test", "conclusion": "failure", "status": "completed"}],
+                }
+            )
+        )
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
-            with patch.object(watcher, 'create_beads_task', return_value=None):
+            with patch.object(watcher, "create_beads_task", return_value=None):
                 watcher.process_check_file(check_file)
 
             # Notification should be created
@@ -298,18 +291,20 @@ class TestProcessCheckFile:
         notifications_dir.mkdir(parents=True)
 
         check_file = checks_dir / "repo-PR-123-checks.json"
-        check_file.write_text(json.dumps({
-            'pr_number': 123,
-            'repository': 'owner/repo',
-            'checks': [
-                {'name': 'test', 'conclusion': 'failure', 'status': 'completed'}
-            ]
-        }))
+        check_file.write_text(
+            json.dumps(
+                {
+                    "pr_number": 123,
+                    "repository": "owner/repo",
+                    "checks": [{"name": "test", "conclusion": "failure", "status": "completed"}],
+                }
+            )
+        )
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
-            with patch.object(watcher, 'create_beads_task', return_value=None):
+            with patch.object(watcher, "create_beads_task", return_value=None):
                 # Process twice
                 watcher.process_check_file(check_file)
                 watcher.process_check_file(check_file)
@@ -324,7 +319,7 @@ class TestWatch:
 
     def test_watch_no_checks_dir(self, temp_dir, capsys):
         """Test watch when checks directory doesn't exist."""
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
             watcher.watch()
 
@@ -339,16 +334,20 @@ class TestWatch:
         # Create multiple check files
         for i in range(3):
             check_file = checks_dir / f"repo-PR-{i}-checks.json"
-            check_file.write_text(json.dumps({
-                'pr_number': i,
-                'repository': 'owner/repo',
-                'checks': [{'name': 'test', 'conclusion': 'success'}]
-            }))
+            check_file.write_text(
+                json.dumps(
+                    {
+                        "pr_number": i,
+                        "repository": "owner/repo",
+                        "checks": [{"name": "test", "conclusion": "success"}],
+                    }
+                )
+            )
 
-        with patch.object(Path, 'home', return_value=temp_dir):
+        with patch.object(Path, "home", return_value=temp_dir):
             watcher = GitHubWatcher()
 
-            with patch.object(watcher, 'process_check_file') as mock_process:
+            with patch.object(watcher, "process_check_file") as mock_process:
                 watcher.watch()
 
             # Should process all 3 files

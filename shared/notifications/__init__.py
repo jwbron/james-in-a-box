@@ -27,19 +27,17 @@ Threading:
     - You can also explicitly set thread_id in NotificationContext
 """
 
+from .base import NotificationService
+from .slack import (
+    SlackNotificationService,
+    get_slack_service,
+)
 from .types import (
-    NotificationType,
     NotificationChannel,
     NotificationContext,
     NotificationMessage,
     NotificationResult,
-)
-
-from .base import NotificationService
-
-from .slack import (
-    SlackNotificationService,
-    get_slack_service,
+    NotificationType,
 )
 
 
@@ -76,14 +74,14 @@ def slack_notify(
 
 
 __all__ = [
-    # Types
-    "NotificationType",
     "NotificationChannel",
     "NotificationContext",
     "NotificationMessage",
     "NotificationResult",
     # Base class
     "NotificationService",
+    # Types
+    "NotificationType",
     # Slack implementation
     "SlackNotificationService",
     "get_slack_service",

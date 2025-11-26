@@ -10,11 +10,11 @@ Uses Claude Code to intelligently analyze tickets and create action plans.
 Scope: Only processes tickets assigned to you
 """
 
-import sys
 import json
 import subprocess
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
 
 
 def main():
@@ -34,9 +34,9 @@ def main():
         try:
             with state_file.open() as f:
                 data = json.load(f)
-                processed_tickets = data.get('processed', {})
-        except (json.JSONDecodeError, IOError) as e:
-            print(f'Warning: Failed to load state: {e}')
+                processed_tickets = data.get("processed", {})
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Warning: Failed to load state: {e}")
 
     # Collect new or updated tickets
     new_or_updated = []
@@ -52,13 +52,15 @@ def main():
                 content = ticket_file.read_text()
                 is_new = ticket_path not in processed_tickets
 
-                new_or_updated.append({
-                    'file': ticket_file,
-                    'path': ticket_path,
-                    'mtime': mtime_str,
-                    'is_new': is_new,
-                    'content': content
-                })
+                new_or_updated.append(
+                    {
+                        "file": ticket_file,
+                        "path": ticket_path,
+                        "mtime": mtime_str,
+                        "is_new": is_new,
+                        "content": content,
+                    }
+                )
         except Exception as e:
             print(f"Error processing {ticket_file}: {e}")
 
@@ -71,7 +73,7 @@ def main():
     # Construct prompt for Claude
     tickets_summary = []
     for t in new_or_updated:
-        status = "New" if t['is_new'] else "Updated"
+        status = "New" if t["is_new"] else "Updated"
         tickets_summary.append(f"**{status}**: {t['file'].name}")
 
     prompt = f"""# JIRA Ticket Analysis
@@ -81,22 +83,22 @@ You are analyzing JIRA tickets that have been assigned to you. Your goal is to u
 ## Summary
 
 {len(new_or_updated)} ticket(s) require attention:
-{chr(10).join('- ' + s for s in tickets_summary)}
+{chr(10).join("- " + s for s in tickets_summary)}
 
 ## Full Ticket Details
 
 """
 
     for t in new_or_updated:
-        status = "NEW TICKET" if t['is_new'] else "UPDATED TICKET"
+        status = "NEW TICKET" if t["is_new"] else "UPDATED TICKET"
         prompt += f"""
-### {status}: {t['file'].name}
+### {status}: {t["file"].name}
 
-**File:** `{t['file']}`
+**File:** `{t["file"]}`
 
 **Content:**
 ```markdown
-{t['content'][:2000]}{"..." if len(t['content']) > 2000 else ""}
+{t["content"][:2000]}{"..." if len(t["content"]) > 2000 else ""}
 ```
 
 ---
@@ -151,10 +153,11 @@ Analyze these tickets now and take appropriate action."""
     try:
         result = subprocess.run(
             ["claude", "--dangerously-skip-permissions"],
+            check=False,
             input=prompt,
             capture_output=False,
             text=True,
-            timeout=900  # 15 minute timeout
+            timeout=900,  # 15 minute timeout
         )
 
         if result.returncode == 0:
@@ -162,11 +165,11 @@ Analyze these tickets now and take appropriate action."""
 
             # Update state file with processed tickets
             for t in new_or_updated:
-                processed_tickets[t['path']] = t['mtime']
+                processed_tickets[t["path"]] = t["mtime"]
 
             state_file.parent.mkdir(parents=True, exist_ok=True)
-            with state_file.open('w') as f:
-                json.dump({'processed': processed_tickets}, f, indent=2)
+            with state_file.open("w") as f:
+                json.dump({"processed": processed_tickets}, f, indent=2)
 
             return 0
         else:
@@ -181,5 +184,5 @@ Analyze these tickets now and take appropriate action."""
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

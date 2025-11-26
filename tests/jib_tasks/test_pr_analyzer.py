@@ -8,11 +8,11 @@ Tests the GitHub PR analyzer:
 """
 
 import json
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 import sys
 from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from unittest.mock import patch
+
 
 # Load pr-analyzer module (hyphenated filename)
 pr_analyzer_path = (
@@ -48,7 +48,7 @@ class TestLoadContext:
             "owner": "test-owner",
             "repo": "test-repo",
             "pr_number": 123,
-            "pr": {"title": "Test PR"}
+            "pr": {"title": "Test PR"},
         }
         context_file.write_text(json.dumps(context_data))
 
@@ -86,7 +86,7 @@ class TestFormatPrSummary:
                 "changedFiles": 5,
                 "createdAt": "2025-01-01T00:00:00Z",
                 "updatedAt": "2025-01-02T00:00:00Z",
-                "body": "This PR adds a new feature."
+                "body": "This PR adds a new feature.",
             }
         }
 
@@ -119,7 +119,7 @@ class TestFormatFilesChanged:
         ctx = {
             "files": [
                 {"path": "src/app.py", "additions": 10, "deletions": 5},
-                {"path": "tests/test_app.py", "additions": 20, "deletions": 0}
+                {"path": "tests/test_app.py", "additions": 20, "deletions": 0},
             ]
         }
 
@@ -146,7 +146,7 @@ class TestFormatChecks:
         ctx = {
             "checks": [
                 {"name": "pytest", "conclusion": "failure", "state": "completed"},
-                {"name": "lint", "conclusion": "failure", "state": "completed"}
+                {"name": "lint", "conclusion": "failure", "state": "completed"},
             ]
         }
 
@@ -158,11 +158,7 @@ class TestFormatChecks:
 
     def test_format_pending_checks(self):
         """Test formatting in-progress checks."""
-        ctx = {
-            "checks": [
-                {"name": "build", "state": "in_progress", "conclusion": None}
-            ]
-        }
+        ctx = {"checks": [{"name": "build", "state": "in_progress", "conclusion": None}]}
 
         result = format_checks(ctx)
         assert "In Progress" in result
@@ -173,7 +169,7 @@ class TestFormatChecks:
         ctx = {
             "checks": [
                 {"name": "test1", "conclusion": "success", "state": "completed"},
-                {"name": "test2", "conclusion": "success", "state": "completed"}
+                {"name": "test2", "conclusion": "success", "state": "completed"},
             ]
         }
 
@@ -193,11 +189,7 @@ class TestFormatFailedLogs:
 
     def test_format_logs(self):
         """Test formatting check logs."""
-        ctx = {
-            "failed_check_logs": {
-                "pytest": "Test failed: AssertionError\nExpected 5, got 3"
-            }
-        }
+        ctx = {"failed_check_logs": {"pytest": "Test failed: AssertionError\nExpected 5, got 3"}}
 
         result = format_failed_logs(ctx)
 
@@ -207,11 +199,7 @@ class TestFormatFailedLogs:
     def test_format_truncated_logs(self):
         """Test that very long logs are truncated."""
         long_log = "x" * 20000
-        ctx = {
-            "failed_check_logs": {
-                "check": long_log
-            }
-        }
+        ctx = {"failed_check_logs": {"check": long_log}}
 
         result = format_failed_logs(ctx)
 
@@ -236,7 +224,7 @@ class TestFormatComments:
                 {
                     "author": {"login": "reviewer"},
                     "createdAt": "2025-01-01T00:00:00Z",
-                    "body": "This looks good!"
+                    "body": "This looks good!",
                 }
             ]
         }
@@ -259,15 +247,7 @@ class TestFormatReviews:
 
     def test_format_reviews(self):
         """Test formatting PR reviews."""
-        ctx = {
-            "reviews": [
-                {
-                    "author": {"login": "reviewer"},
-                    "state": "APPROVED",
-                    "body": "LGTM"
-                }
-            ]
-        }
+        ctx = {"reviews": [{"author": {"login": "reviewer"}, "state": "APPROVED", "body": "LGTM"}]}
 
         result = format_reviews(ctx)
 
@@ -294,7 +274,7 @@ class TestFormatReviewComments:
                     "path": "src/app.py",
                     "line": 42,
                     "user": {"login": "reviewer"},
-                    "body": "Consider using a constant here"
+                    "body": "Consider using a constant here",
                 }
             ]
         }
@@ -321,7 +301,7 @@ class TestFormatCommits:
         ctx = {
             "commits": [
                 {"oid": "abc123456789", "messageHeadline": "Add feature"},
-                {"oid": "def987654321", "messageHeadline": "Fix bug"}
+                {"oid": "def987654321", "messageHeadline": "Fix bug"},
             ]
         }
 
@@ -345,9 +325,7 @@ class TestFormatDiff:
 
     def test_format_diff(self):
         """Test formatting PR diff."""
-        ctx = {
-            "diff": "diff --git a/file.py b/file.py\n+new line\n-old line"
-        }
+        ctx = {"diff": "diff --git a/file.py b/file.py\n+new line\n-old line"}
 
         result = format_diff(ctx)
 
@@ -388,7 +366,7 @@ class TestBuildAnalysisPrompt:
             "reviews": [],
             "comments": [],
             "commits": [],
-            "diff": ""
+            "diff": "",
         }
 
         result = build_analysis_prompt(ctx, fix_mode=False)
@@ -409,7 +387,7 @@ class TestBuildAnalysisPrompt:
             "reviews": [],
             "comments": [],
             "commits": [],
-            "diff": ""
+            "diff": "",
         }
 
         result = build_analysis_prompt(ctx, fix_mode=True)
@@ -430,7 +408,7 @@ class TestBuildAnalysisPrompt:
             "reviews": [{"author": {"login": "user"}, "state": "CHANGES_REQUESTED"}],
             "comments": [{"author": {"login": "user"}, "body": "Comment"}],
             "commits": [{"oid": "abc", "messageHeadline": "Commit"}],
-            "diff": "diff content"
+            "diff": "diff content",
         }
 
         result = build_analysis_prompt(ctx)
@@ -451,32 +429,36 @@ class TestMain:
         """Test error when context file doesn't exist."""
         nonexistent = temp_dir / "nonexistent.json"
 
-        with patch.object(sys, 'argv', ['pr-analyzer.py', str(nonexistent)]):
+        with patch.object(sys, "argv", ["pr-analyzer.py", str(nonexistent)]):
             exit_code = pr_analyzer.main()
 
         captured = capsys.readouterr()
         assert exit_code == 1
         assert "not found" in captured.err.lower()
 
-    @patch.object(pr_analyzer, 'run_claude', return_value=True)
-    @patch.object(pr_analyzer, 'stop_background_services')
+    @patch.object(pr_analyzer, "run_claude", return_value=True)
+    @patch.object(pr_analyzer, "stop_background_services")
     def test_successful_analysis(self, mock_stop, mock_claude, temp_dir):
         """Test successful PR analysis."""
         context_file = temp_dir / "context.json"
-        context_file.write_text(json.dumps({
-            "owner": "owner",
-            "repo": "repo",
-            "pr_number": 123,
-            "pr": {"title": "Test"},
-            "files": [],
-            "checks": [],
-            "reviews": [],
-            "comments": [],
-            "commits": [],
-            "diff": ""
-        }))
+        context_file.write_text(
+            json.dumps(
+                {
+                    "owner": "owner",
+                    "repo": "repo",
+                    "pr_number": 123,
+                    "pr": {"title": "Test"},
+                    "files": [],
+                    "checks": [],
+                    "reviews": [],
+                    "comments": [],
+                    "commits": [],
+                    "diff": "",
+                }
+            )
+        )
 
-        with patch.object(sys, 'argv', ['pr-analyzer.py', str(context_file)]):
+        with patch.object(sys, "argv", ["pr-analyzer.py", str(context_file)]):
             exit_code = pr_analyzer.main()
 
         assert exit_code == 0

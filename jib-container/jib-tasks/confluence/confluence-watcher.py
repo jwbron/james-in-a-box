@@ -10,11 +10,11 @@ Uses Claude Code to intelligently analyze documentation and identify impacts.
 Focus: ADRs, runbooks, and engineering documentation
 """
 
-import sys
 import json
 import subprocess
-from pathlib import Path
+import sys
 from datetime import datetime
+from pathlib import Path
 
 
 def main():
@@ -34,13 +34,15 @@ def main():
         try:
             with state_file.open() as f:
                 data = json.load(f)
-                processed_docs = data.get('processed', {})
-        except (json.JSONDecodeError, IOError) as e:
-            print(f'Warning: Failed to load state: {e}')
+                processed_docs = data.get("processed", {})
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Warning: Failed to load state: {e}")
 
     # Focus on high-value documents: ADRs and Runbooks
     adr_files = list(confluence_dir.rglob("*ADR*.md")) + list(confluence_dir.rglob("*adr*.md"))
-    runbook_files = list(confluence_dir.rglob("*unbook*.md")) + list(confluence_dir.rglob("*RUNBOOK*.md"))
+    runbook_files = list(confluence_dir.rglob("*unbook*.md")) + list(
+        confluence_dir.rglob("*RUNBOOK*.md")
+    )
 
     # Collect new or updated documents
     new_or_updated = []
@@ -57,14 +59,16 @@ def main():
                 content = doc_file.read_text()
                 is_new = doc_path not in processed_docs
 
-                new_or_updated.append({
-                    'file': doc_file,
-                    'path': doc_path,
-                    'mtime': mtime_str,
-                    'is_new': is_new,
-                    'doc_type': 'ADR',
-                    'content': content
-                })
+                new_or_updated.append(
+                    {
+                        "file": doc_file,
+                        "path": doc_path,
+                        "mtime": mtime_str,
+                        "is_new": is_new,
+                        "doc_type": "ADR",
+                        "content": content,
+                    }
+                )
         except Exception as e:
             print(f"Error processing {doc_file}: {e}")
 
@@ -80,14 +84,16 @@ def main():
                 content = doc_file.read_text()
                 is_new = doc_path not in processed_docs
 
-                new_or_updated.append({
-                    'file': doc_file,
-                    'path': doc_path,
-                    'mtime': mtime_str,
-                    'is_new': is_new,
-                    'doc_type': 'Runbook',
-                    'content': content
-                })
+                new_or_updated.append(
+                    {
+                        "file": doc_file,
+                        "path": doc_path,
+                        "mtime": mtime_str,
+                        "is_new": is_new,
+                        "doc_type": "Runbook",
+                        "content": content,
+                    }
+                )
         except Exception as e:
             print(f"Error processing {doc_file}: {e}")
 
@@ -100,7 +106,7 @@ def main():
     # Construct prompt for Claude
     docs_summary = []
     for d in new_or_updated:
-        status = "New" if d['is_new'] else "Updated"
+        status = "New" if d["is_new"] else "Updated"
         docs_summary.append(f"**{status} {d['doc_type']}**: {d['file'].name}")
 
     prompt = f"""# Confluence Documentation Analysis
@@ -110,23 +116,23 @@ You are analyzing Confluence documentation that has been created or updated. You
 ## Summary
 
 {len(new_or_updated)} document(s) require attention:
-{chr(10).join('- ' + s for s in docs_summary)}
+{chr(10).join("- " + s for s in docs_summary)}
 
 ## Full Document Details
 
 """
 
     for d in new_or_updated:
-        status = "NEW" if d['is_new'] else "UPDATED"
+        status = "NEW" if d["is_new"] else "UPDATED"
         prompt += f"""
-### {status} {d['doc_type']}: {d['file'].name}
+### {status} {d["doc_type"]}: {d["file"].name}
 
-**Type:** {d['doc_type']}
-**File:** `{d['file']}`
+**Type:** {d["doc_type"]}
+**File:** `{d["file"]}`
 
 **Content:**
 ```markdown
-{d['content'][:3000]}{"..." if len(d['content']) > 3000 else ""}
+{d["content"][:3000]}{"..." if len(d["content"]) > 3000 else ""}
 ```
 
 ---
@@ -185,10 +191,11 @@ Analyze these documents now and take appropriate action."""
     try:
         result = subprocess.run(
             ["claude", "--dangerously-skip-permissions"],
+            check=False,
             input=prompt,
             capture_output=False,
             text=True,
-            timeout=900  # 15 minute timeout
+            timeout=900,  # 15 minute timeout
         )
 
         if result.returncode == 0:
@@ -196,11 +203,11 @@ Analyze these documents now and take appropriate action."""
 
             # Update state file with processed documents
             for d in new_or_updated:
-                processed_docs[d['path']] = d['mtime']
+                processed_docs[d["path"]] = d["mtime"]
 
             state_file.parent.mkdir(parents=True, exist_ok=True)
-            with state_file.open('w') as f:
-                json.dump({'processed': processed_docs}, f, indent=2)
+            with state_file.open("w") as f:
+                json.dump({"processed": processed_docs}, f, indent=2)
 
             return 0
         else:
@@ -215,5 +222,5 @@ Analyze these documents now and take appropriate action."""
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

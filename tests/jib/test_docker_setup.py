@@ -10,20 +10,16 @@ Note: Most installation functions require root and package managers,
 so we focus on testing detection and helper functions.
 """
 
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock, call
-import subprocess
 import os
-import sys
 from importlib.machinery import SourceFileLoader
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 
 # Load docker-setup module (hyphenated filename)
-docker_setup_path = (
-    Path(__file__).parent.parent.parent
-    / "jib-container"
-    / "docker-setup.py"
-)
+docker_setup_path = Path(__file__).parent.parent.parent / "jib-container" / "docker-setup.py"
 loader = SourceFileLoader("docker_setup", str(docker_setup_path))
 docker_setup = loader.load_module()
 
@@ -82,12 +78,7 @@ class TestRun:
 
         run(["test"], capture_output=True, text=True)
 
-        mock_run.assert_called_with(
-            ["test"],
-            check=True,
-            capture_output=True,
-            text=True
-        )
+        mock_run.assert_called_with(["test"], check=True, capture_output=True, text=True)
 
 
 class TestRunShell:
@@ -125,15 +116,21 @@ class TestDetectDistro:
         fedora_release = temp_dir / "fedora-release"
         fedora_release.write_text("Fedora release 39")
 
-        with patch.object(Path, '__truediv__', lambda self, other: temp_dir / other if str(self) == "/etc" else Path.__truediv__(self, other)):
+        with patch.object(
+            Path,
+            "__truediv__",
+            lambda self, other: temp_dir / other
+            if str(self) == "/etc"
+            else Path.__truediv__(self, other),
+        ):
             # Need to mock the Path("/etc/fedora-release").exists() call
-            with patch('pathlib.Path.exists') as mock_exists:
+            with patch("pathlib.Path.exists"):
+
                 def exists_side_effect():
                     # This is a bit hacky but works for the test
                     return True
 
                 # Actually, let's just test the logic directly
-                pass
 
     def test_detect_distro_fedora_path(self, temp_dir, monkeypatch):
         """Test Fedora detection via file check."""
@@ -155,7 +152,7 @@ class TestDetectDistro:
             return original_path(path_str)
 
         # Mock at module level
-        with patch.object(docker_setup, 'Path', side_effect=mock_path):
+        with patch.object(docker_setup, "Path", side_effect=mock_path):
             # The function uses Path directly, so we need different approach
             pass
 
@@ -169,7 +166,7 @@ class TestDetectDistro:
 class TestGetArch:
     """Tests for architecture detection."""
 
-    @patch('os.uname')
+    @patch("os.uname")
     def test_get_arch_x86_64(self, mock_uname):
         """Test detecting x86_64 architecture."""
         mock_uname.return_value = MagicMock(machine="x86_64")
@@ -177,7 +174,7 @@ class TestGetArch:
         result = get_arch()
         assert result == "x86_64"
 
-    @patch('os.uname')
+    @patch("os.uname")
     def test_get_arch_aarch64(self, mock_uname):
         """Test detecting ARM64 architecture."""
         mock_uname.return_value = MagicMock(machine="aarch64")
@@ -185,7 +182,7 @@ class TestGetArch:
         result = get_arch()
         assert result == "aarch64"
 
-    @patch('os.uname')
+    @patch("os.uname")
     def test_get_arch_arm(self, mock_uname):
         """Test detecting ARM architecture."""
         mock_uname.return_value = MagicMock(machine="armv7l")
@@ -197,8 +194,8 @@ class TestGetArch:
 class TestInstallJava:
     """Tests for Java installation."""
 
-    @patch.object(docker_setup, 'run')
-    @patch.object(docker_setup, 'run_shell')
+    @patch.object(docker_setup, "run")
+    @patch.object(docker_setup, "run_shell")
     def test_install_java_ubuntu(self, mock_run_shell, mock_run, capsys):
         """Test Java installation on Ubuntu."""
         mock_run.return_value = MagicMock(returncode=0)
@@ -212,8 +209,8 @@ class TestInstallJava:
         apt_calls = [c for c in calls if "apt-get" in str(c)]
         assert len(apt_calls) > 0
 
-    @patch.object(docker_setup, 'run')
-    @patch.object(docker_setup, 'run_shell')
+    @patch.object(docker_setup, "run")
+    @patch.object(docker_setup, "run_shell")
     def test_install_java_fedora(self, mock_run_shell, mock_run, capsys):
         """Test Java installation on Fedora."""
         mock_run.return_value = MagicMock(returncode=0)
@@ -231,8 +228,8 @@ class TestInstallJava:
 class TestInstallGo:
     """Tests for Go installation."""
 
-    @patch.object(docker_setup, 'run')
-    @patch.object(docker_setup, 'run_shell')
+    @patch.object(docker_setup, "run")
+    @patch.object(docker_setup, "run_shell")
     def test_install_go_already_installed(self, mock_run_shell, mock_run, capsys):
         """Test Go installation when already installed."""
         # First call is go version check
@@ -250,9 +247,9 @@ class TestInstallGo:
 class TestInstallNodejs:
     """Tests for Node.js installation."""
 
-    @patch.object(docker_setup, 'run')
-    @patch.object(docker_setup, 'run_shell')
-    @patch('builtins.open', create=True)
+    @patch.object(docker_setup, "run")
+    @patch.object(docker_setup, "run_shell")
+    @patch("builtins.open", create=True)
     def test_install_nodejs_ubuntu(self, mock_open, mock_run_shell, mock_run, capsys):
         """Test Node.js installation on Ubuntu."""
         mock_run.return_value = MagicMock(returncode=0)
@@ -274,8 +271,8 @@ class TestInstallNodejs:
 class TestConfigureSystem:
     """Tests for system configuration."""
 
-    @patch.object(docker_setup, 'run')
-    @patch('builtins.open', create=True)
+    @patch.object(docker_setup, "run")
+    @patch("builtins.open", create=True)
     def test_configure_system_sets_inotify(self, mock_open, mock_run, capsys):
         """Test that system configuration sets inotify watchers."""
         mock_run.return_value = MagicMock(returncode=0)
@@ -294,7 +291,7 @@ class TestMain:
 
     def test_main_requires_root(self, capsys, monkeypatch):
         """Test that main requires root privileges."""
-        monkeypatch.setattr(os, 'geteuid', lambda: 1000)  # Non-root
+        monkeypatch.setattr(os, "geteuid", lambda: 1000)  # Non-root
 
         with pytest.raises(SystemExit) as excinfo:
             docker_setup.main()

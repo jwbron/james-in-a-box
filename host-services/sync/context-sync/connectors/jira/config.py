@@ -3,7 +3,6 @@ Configuration for JIRA connector.
 """
 
 import os
-from typing import Optional
 
 
 class JIRAConfig:
@@ -17,22 +16,18 @@ class JIRAConfig:
     API_TOKEN: str = os.getenv("JIRA_API_TOKEN", "")
 
     # Output directory
-    OUTPUT_DIR: str = os.getenv(
-        "JIRA_OUTPUT_DIR",
-        os.path.expanduser("~/context-sync/jira")
-    )
+    OUTPUT_DIR: str = os.getenv("JIRA_OUTPUT_DIR", os.path.expanduser("~/context-sync/jira"))
 
     # Sync options
     # JQL query to filter tickets
     # Default: All open INFRA project tickets (including epics)
     JQL_QUERY: str = os.getenv(
-        "JIRA_JQL_QUERY",
-        "project = INFRA AND resolution = Unresolved ORDER BY updated DESC"
+        "JIRA_JQL_QUERY", "project = INFRA AND resolution = Unresolved ORDER BY updated DESC"
     )
 
     # Maximum tickets to sync (None = unlimited)
     _max_tickets_env: int = int(os.getenv("JIRA_MAX_TICKETS", "0"))
-    MAX_TICKETS: Optional[int] = None if _max_tickets_env == 0 else _max_tickets_env
+    MAX_TICKETS: int | None = None if _max_tickets_env == 0 else _max_tickets_env
 
     # Include ticket comments
     INCLUDE_COMMENTS: bool = os.getenv("JIRA_INCLUDE_COMMENTS", "true").lower() == "true"
@@ -63,12 +58,12 @@ class JIRAConfig:
 
         if not cls.BASE_URL:
             errors.append("JIRA_BASE_URL is required")
-        elif not cls.BASE_URL.startswith(('http://', 'https://')):
+        elif not cls.BASE_URL.startswith(("http://", "https://")):
             errors.append("JIRA_BASE_URL must be a valid URL")
 
         if not cls.USERNAME:
             errors.append("JIRA_USERNAME is required")
-        elif '@' not in cls.USERNAME:
+        elif "@" not in cls.USERNAME:
             errors.append("JIRA_USERNAME should be an email address")
 
         if not cls.API_TOKEN:

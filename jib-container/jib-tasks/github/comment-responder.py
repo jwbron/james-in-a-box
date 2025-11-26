@@ -15,14 +15,12 @@ Scope:
 
 import json
 import logging
-import os
-import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+
 
 # Validate required dependencies at startup with clear error messages
 def _check_dependencies():
@@ -30,12 +28,12 @@ def _check_dependencies():
     missing = []
 
     try:
-        import yaml
+        import yaml  # noqa: F401
     except ImportError:
         missing.append(("yaml", "pyyaml", "pip3 install pyyaml"))
 
     try:
-        import requests
+        import requests  # noqa: F401
     except ImportError:
         missing.append(("requests", "requests", "pip3 install requests"))
 
@@ -43,7 +41,7 @@ def _check_dependencies():
         print("=" * 60, file=sys.stderr)
         print("ERROR: Missing required Python dependencies", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
-        for module, package, install_cmd in missing:
+        for module, _package, install_cmd in missing:
             print(f"  Module '{module}' not found", file=sys.stderr)
             print(f"    Install with: {install_cmd}", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
@@ -54,21 +52,25 @@ def _check_dependencies():
         print("Or rebuild the container after fixing.", file=sys.stderr)
         sys.exit(1)
 
+
 _check_dependencies()
 
 import yaml
+
 
 # Add shared directory to path for notifications import
 # Path: jib-container/jib-tasks/github/comment-responder.py -> repo-root/shared
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 try:
-    from notifications import get_slack_service, NotificationContext, NotificationType
+    from notifications import NotificationContext, get_slack_service
 except ImportError as e:
     print("=" * 60, file=sys.stderr)
     print("ERROR: Cannot import notifications library", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
     print(f"  Import error: {e}", file=sys.stderr)
-    print(f"  Expected path: {Path(__file__).parent.parent.parent.parent / 'shared'}", file=sys.stderr)
+    print(
+        f"  Expected path: {Path(__file__).parent.parent.parent.parent / 'shared'}", file=sys.stderr
+    )
     print("", file=sys.stderr)
     print("This usually means the shared/notifications module is missing.", file=sys.stderr)
     print("Check that shared/notifications/ exists in the repo root.", file=sys.stderr)
@@ -77,7 +79,7 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
-def load_config() -> Dict:
+def load_config() -> dict:
     """Load repository configuration."""
     config_paths = [
         Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml",
@@ -92,7 +94,7 @@ def load_config() -> Dict:
     return {"writable_repos": []}
 
 
-def is_writable_repo(repo: str, config: Dict) -> bool:
+def is_writable_repo(repo: str, config: dict) -> bool:
     """Check if repo has write access."""
     writable = config.get("writable_repos", [])
     return repo in writable or repo.split("/")[-1] in [r.split("/")[-1] for r in writable]
@@ -123,34 +125,33 @@ class CommentResponder:
         """Check if claude CLI is available."""
         try:
             result = subprocess.run(
-                ['claude', '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5
+                ["claude", "--version"], check=False, capture_output=True, text=True, timeout=5
             )
             return result.returncode == 0
         except (subprocess.SubprocessError, FileNotFoundError):
             return False
 
-    def load_state(self) -> Dict:
+    def load_state(self) -> dict:
         """Load previously processed comment IDs."""
         if self.state_file.exists():
             try:
                 with self.state_file.open() as f:
                     data = json.load(f)
                     # Handle old nested format
-                    while isinstance(data.get('processed'), dict) and 'processed' in data.get('processed', {}):
-                        data = data['processed']
-                    return data.get('processed', {})
-            except (json.JSONDecodeError, IOError) as e:
+                    while isinstance(data.get("processed"), dict) and "processed" in data.get(
+                        "processed", {}
+                    ):
+                        data = data["processed"]
+                    return data.get("processed", {})
+            except (OSError, json.JSONDecodeError) as e:
                 logger.error(f"Failed to load state file: {e}")
         return {}
 
     def save_state(self):
         """Save processed comment IDs."""
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
-        with self.state_file.open('w') as f:
-            json.dump({'processed': self.processed_comments}, f, indent=2)
+        with self.state_file.open("w") as f:
+            json.dump({"processed": self.processed_comments}, f, indent=2)
 
     def watch(self):
         """Main watch loop - check for new comments on all PRs in parallel."""
@@ -171,8 +172,7 @@ class CommentResponder:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all PR processing tasks
             future_to_file = {
-                executor.submit(self._process_comment_file_safe, cf): cf
-                for cf in comment_files
+                executor.submit(self._process_comment_file_safe, cf): cf for cf in comment_files
             }
 
             # Collect results as they complete
@@ -186,6 +186,7 @@ class CommentResponder:
                 except Exception as e:
                     print(f"Error processing {comment_file.name}: {e}")
                     import traceback
+
                     traceback.print_exc()
 
         # Merge all processed IDs into state and save once
@@ -194,7 +195,7 @@ class CommentResponder:
             self.save_state()
             print(f"✓ Saved state with {len(all_processed_ids)} newly processed comment(s)")
 
-    def _process_comment_file_safe(self, comment_file: Path) -> Dict[str, str]:
+    def _process_comment_file_safe(self, comment_file: Path) -> dict[str, str]:
         """Process a comment file and return dict of processed comment IDs.
 
         This is a thread-safe wrapper that doesn't modify shared state directly.
@@ -205,10 +206,11 @@ class CommentResponder:
         except Exception as e:
             print(f"Error processing {comment_file.name}: {e}")
             import traceback
+
             traceback.print_exc()
             return {}
 
-    def process_comment_file(self, comment_file: Path) -> Dict[str, str]:
+    def process_comment_file(self, comment_file: Path) -> dict[str, str]:
         """Process a single PR's comment file - batches all unprocessed comments.
 
         Returns:
@@ -217,11 +219,11 @@ class CommentResponder:
         with comment_file.open() as f:
             data = json.load(f)
 
-        pr_num = data['pr_number']
-        repo = data['repository']
-        repo_name = repo.split('/')[-1]
+        pr_num = data["pr_number"]
+        repo = data["repository"]
+        repo_name = repo.split("/")[-1]
 
-        comments = data.get('comments', [])
+        comments = data.get("comments", [])
         if not comments:
             return {}
 
@@ -230,7 +232,7 @@ class CommentResponder:
         processed_ids = {}  # Return value: comment_id -> timestamp
 
         for comment in comments:
-            comment_id = str(comment.get('id'))
+            comment_id = str(comment.get("id"))
             if not comment_id or comment_id in self.processed_comments:
                 continue
 
@@ -239,7 +241,7 @@ class CommentResponder:
             else:
                 # Comment doesn't need a response (bot, jib's own comment, etc.)
                 # Mark as processed to avoid re-checking it every time
-                processed_ids[comment_id] = datetime.utcnow().isoformat() + 'Z'
+                processed_ids[comment_id] = datetime.utcnow().isoformat() + "Z"
 
         # If no pending comments, return any skipped comment IDs
         if not pending_comments:
@@ -253,28 +255,28 @@ class CommentResponder:
         if success:
             # Mark all processed comments as done
             for comment in pending_comments:
-                comment_id = str(comment.get('id'))
-                processed_ids[comment_id] = datetime.utcnow().isoformat() + 'Z'
+                comment_id = str(comment.get("id"))
+                processed_ids[comment_id] = datetime.utcnow().isoformat() + "Z"
             print(f"  ✓ PR #{pr_num}: Processed {len(pending_comments)} comment(s)")
         else:
             print(f"  ⚠ PR #{pr_num}: Failed to process comments - will retry on next run")
 
         return processed_ids
 
-    def needs_response(self, comment: Dict) -> bool:
+    def needs_response(self, comment: dict) -> bool:
         """Determine if a comment needs a response."""
-        body = comment.get('body', '')
-        author = comment.get('author', '')
+        body = comment.get("body", "")
+        author = comment.get("author", "")
 
         # Skip bot comments
-        if 'bot' in author.lower():
+        if "bot" in author.lower():
             return False
 
         # Skip jib's own comments (identified by signature)
         jib_signatures = [
-            'authored by jib',
-            '— jib',
-            'generated with [claude code]',
+            "authored by jib",
+            "— jib",
+            "generated with [claude code]",
         ]
         body_lower = body.lower()
         for sig in jib_signatures:
@@ -286,7 +288,9 @@ class CommentResponder:
         # Let Claude decide the appropriate action
         return True
 
-    def handle_pr_comments_batch(self, pr_num: int, repo_name: str, repo: str, pending_comments: List[Dict], pr_data: Dict) -> bool:
+    def handle_pr_comments_batch(
+        self, pr_num: int, repo_name: str, repo: str, pending_comments: list[dict], pr_data: dict
+    ) -> bool:
         """Handle all pending comments on a PR as a batch.
 
         This processes all unprocessed comments chronologically, allowing Claude to:
@@ -301,7 +305,7 @@ class CommentResponder:
         pr_context = self.load_pr_context(repo_name, pr_num)
 
         # Load all comments for full thread context
-        all_comments = pr_data.get('comments', [])
+        all_comments = pr_data.get("comments", [])
 
         # Check if this is a writable repo
         writable = is_writable_repo(repo, self.config)
@@ -312,9 +316,9 @@ class CommentResponder:
             print(f"  Could not get PR info for #{pr_num}")
             return False
 
-        pr_state = pr_info.get('state', 'UNKNOWN')
-        pr_branch = pr_info.get('headRefName', '')
-        base_branch = pr_info.get('baseRefName', 'main')
+        pr_state = pr_info.get("state", "UNKNOWN")
+        pr_branch = pr_info.get("headRefName", "")
+        base_branch = pr_info.get("baseRefName", "main")
 
         # Find the repo directory
         repo_dir = self.find_repo_dir(repo_name)
@@ -330,7 +334,7 @@ class CommentResponder:
             repo_dir=repo_dir,
             pr_branch=pr_branch,
             base_branch=base_branch,
-            pr_state=pr_state
+            pr_state=pr_state,
         )
 
         if not response:
@@ -339,7 +343,9 @@ class CommentResponder:
 
         return True
 
-    def handle_comment(self, pr_num: int, repo_name: str, repo: str, comment: Dict, pr_data: Dict) -> bool:
+    def handle_comment(
+        self, pr_num: int, repo_name: str, repo: str, comment: dict, pr_data: dict
+    ) -> bool:
         """Handle a single comment (legacy method for backwards compatibility).
 
         Returns:
@@ -350,13 +356,15 @@ class CommentResponder:
         pr_context = self.load_pr_context(repo_name, pr_num)
 
         # Load all comments for context
-        all_comments = pr_data.get('comments', [])
+        all_comments = pr_data.get("comments", [])
 
         # Check if this is a writable repo
         writable = is_writable_repo(repo, self.config)
 
         # Generate response using Claude
-        response = self.generate_response_with_claude(comment, pr_context, all_comments, repo, pr_num, writable)
+        response = self.generate_response_with_claude(
+            comment, pr_context, all_comments, repo, pr_num, writable
+        )
 
         if not response:
             print(f"  Failed to generate response for comment {comment.get('id')}")
@@ -371,16 +379,16 @@ class CommentResponder:
 
     def generate_batch_response(
         self,
-        pending_comments: List[Dict],
-        pr_context: Dict,
-        all_comments: List[Dict],
+        pending_comments: list[dict],
+        pr_context: dict,
+        all_comments: list[dict],
         repo: str,
         pr_num: int,
         writable: bool,
-        repo_dir: Optional[Path],
+        repo_dir: Path | None,
         pr_branch: str,
         base_branch: str,
-        pr_state: str
+        pr_state: str,
     ) -> bool:
         """Generate batch response using Claude with full context.
 
@@ -395,13 +403,13 @@ class CommentResponder:
         # Build full comment history
         comment_history = ""
         for c in all_comments:
-            author = c.get('author', 'unknown')
-            body = c.get('body', '')
-            created = c.get('created_at', '')
-            comment_id = str(c.get('id', ''))
+            author = c.get("author", "unknown")
+            body = c.get("body", "")
+            created = c.get("created_at", "")
+            comment_id = str(c.get("id", ""))
 
             # Mark pending comments that need responses
-            is_pending = any(str(pc.get('id')) == comment_id for pc in pending_comments)
+            is_pending = any(str(pc.get("id")) == comment_id for pc in pending_comments)
             marker = " **[NEEDS RESPONSE]**" if is_pending else ""
 
             comment_history += f"\n### {author} ({created}){marker}\n{body}\n"
@@ -414,19 +422,19 @@ class CommentResponder:
 - **Repository**: {repo}
 - **PR**: #{pr_num}
 - **PR State**: {pr_state}
-- **PR Title**: {pr_context.get('title', 'Unknown')}
-- **PR URL**: {pr_context.get('url', 'Unknown')}
+- **PR Title**: {pr_context.get("title", "Unknown")}
+- **PR URL**: {pr_context.get("url", "Unknown")}
 - **PR Branch**: {pr_branch} → {base_branch}
 - **Access**: {"WRITE (can make changes and push)" if writable else "READ-ONLY"}
 - **Repo Directory**: {repo_dir if repo_dir else "Not found locally"}
 
 ## PR Description
 
-{pr_context.get('pr_content', 'No description available')[:3000]}
+{pr_context.get("pr_content", "No description available")[:3000]}
 
 ## Current Diff
 
-{pr_context.get('diff', 'No diff available')[:5000]}
+{pr_context.get("diff", "No diff available")[:5000]}
 
 ## Comment Thread (Chronological)
 
@@ -484,17 +492,20 @@ Now process the pending comments and take the appropriate actions."""
             cwd = str(repo_dir) if repo_dir else str(Path.home() / "khan")
 
             result = subprocess.run(
-                ['claude', '--dangerously-skip-permissions'],
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
                 input=prompt,
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 minutes for complex PR work
-                cwd=cwd
+                cwd=cwd,
             )
 
             if result.returncode != 0:
                 print(f"  Claude error (returncode={result.returncode}): {result.stderr}")
-                print(f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}")
+                print(
+                    f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}"
+                )
                 return False
 
             print(f"  Claude response length: {len(result.stdout)} chars")
@@ -506,21 +517,24 @@ Now process the pending comments and take the appropriate actions."""
             return True
 
         except subprocess.TimeoutExpired:
-            print(f"  Claude call timed out after 300 seconds")
+            print("  Claude call timed out after 300 seconds")
             return False
         except Exception as e:
             print(f"  Error calling Claude: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
-    def _notify_batch_processed(self, repo: str, pr_num: int, pending_comments: List[Dict]):
+    def _notify_batch_processed(self, repo: str, pr_num: int, pending_comments: list[dict]):
         """Send Slack notification about processed PR comments."""
         try:
-            comment_summary = "\n".join([
-                f"- {c.get('author', 'Unknown')}: {c.get('body', '')[:100]}..."
-                for c in pending_comments[:5]
-            ])
+            comment_summary = "\n".join(
+                [
+                    f"- {c.get('author', 'Unknown')}: {c.get('body', '')[:100]}..."
+                    for c in pending_comments[:5]
+                ]
+            )
             if len(pending_comments) > 5:
                 comment_summary += f"\n- ... and {len(pending_comments) - 5} more"
 
@@ -539,57 +553,57 @@ Now process the pending comments and take the appropriate actions."""
         except Exception as e:
             print(f"  Warning: Failed to send Slack notification: {e}")
 
-    def load_pr_context(self, repo_name: str, pr_num: int) -> Dict:
+    def load_pr_context(self, repo_name: str, pr_num: int) -> dict:
         """Load PR context from synced files."""
         pr_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.md"
         diff_file = self.prs_dir / f"{repo_name}-PR-{pr_num}.diff"
 
         context = {
-            'pr_number': pr_num,
-            'title': f"PR #{pr_num}",
-            'description': '',
-            'url': '',
-            'diff': '',
+            "pr_number": pr_num,
+            "title": f"PR #{pr_num}",
+            "description": "",
+            "url": "",
+            "diff": "",
         }
 
         if pr_file.exists():
-            context['pr_content'] = pr_file.read_text()
+            context["pr_content"] = pr_file.read_text()
             # Parse key fields
-            for line in context['pr_content'].split('\n'):
-                if line.startswith('# PR #'):
-                    context['title'] = line.replace('# ', '').strip()
-                elif line.startswith('**URL**:'):
-                    context['url'] = line.replace('**URL**:', '').strip()
+            for line in context["pr_content"].split("\n"):
+                if line.startswith("# PR #"):
+                    context["title"] = line.replace("# ", "").strip()
+                elif line.startswith("**URL**:"):
+                    context["url"] = line.replace("**URL**:", "").strip()
 
         if diff_file.exists():
             diff_content = diff_file.read_text()
             # Truncate if too large
             if len(diff_content) > 10000:
                 diff_content = diff_content[:10000] + "\n... [diff truncated]"
-            context['diff'] = diff_content
+            context["diff"] = diff_content
 
         return context
 
     def generate_response_with_claude(
         self,
-        comment: Dict,
-        pr_context: Dict,
-        all_comments: List[Dict],
+        comment: dict,
+        pr_context: dict,
+        all_comments: list[dict],
         repo: str,
         pr_num: int,
-        writable: bool
-    ) -> Optional[Dict]:
+        writable: bool,
+    ) -> dict | None:
         """Use Claude to generate an appropriate response."""
 
-        comment_body = comment.get('body', '')
-        comment_author = comment.get('author', '')
+        comment_body = comment.get("body", "")
+        comment_author = comment.get("author", "")
 
         # Build comment history
         comment_history = ""
         for c in all_comments[-10:]:  # Last 10 comments for context
-            author = c.get('author', 'unknown')
-            body = c.get('body', '')[:500]
-            is_current = c.get('id') == comment.get('id')
+            author = c.get("author", "unknown")
+            body = c.get("body", "")[:500]
+            is_current = c.get("id") == comment.get("id")
             marker = " <-- THIS IS THE COMMENT TO RESPOND TO" if is_current else ""
             comment_history += f"\n--- {author}{marker} ---\n{body}\n"
 
@@ -599,15 +613,15 @@ Now process the pending comments and take the appropriate actions."""
 CONTEXT:
 - Repository: {repo}
 - PR: #{pr_num}
-- PR Title: {pr_context.get('title', 'Unknown')}
-- PR URL: {pr_context.get('url', 'Unknown')}
+- PR Title: {pr_context.get("title", "Unknown")}
+- PR URL: {pr_context.get("url", "Unknown")}
 - You have {"WRITE" if writable else "READ-ONLY"} access to this repository
 
 PR DESCRIPTION:
-{pr_context.get('pr_content', 'No description available')[:2000]}
+{pr_context.get("pr_content", "No description available")[:2000]}
 
 RECENT DIFF (relevant changes):
-{pr_context.get('diff', 'No diff available')[:3000]}
+{pr_context.get("diff", "No diff available")[:3000]}
 
 COMMENT THREAD:
 {comment_history}
@@ -639,18 +653,21 @@ IMPORTANT:
 Return ONLY the JSON, no other text."""
 
         try:
-            print(f"  Calling Claude to generate response...")
+            print("  Calling Claude to generate response...")
             result = subprocess.run(
-                ['claude', '--dangerously-skip-permissions'],
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
                 input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minutes for complex PR discussions
+                timeout=600,  # 10 minutes for complex PR discussions
             )
 
             if result.returncode != 0:
                 print(f"  Claude error (returncode={result.returncode}): {result.stderr}")
-                print(f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}")
+                print(
+                    f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}"
+                )
                 return None
 
             response_text = result.stdout.strip()
@@ -659,34 +676,43 @@ Return ONLY the JSON, no other text."""
             # Parse JSON from response
             try:
                 # Find JSON in response
-                start = response_text.find('{')
-                end = response_text.rfind('}') + 1
+                start = response_text.find("{")
+                end = response_text.rfind("}") + 1
                 if start != -1 and end > start:
                     json_str = response_text[start:end]
                     return json.loads(json_str)
                 else:
-                    print(f"  No JSON found in response")
+                    print("  No JSON found in response")
                     return None
             except json.JSONDecodeError as e:
                 print(f"  Failed to parse response JSON: {e}")
                 return None
 
         except subprocess.TimeoutExpired:
-            print(f"  Claude call timed out")
+            print("  Claude call timed out")
             return None
         except Exception as e:
             print(f"  Error calling Claude: {e}")
             return None
 
-    def get_pr_info(self, repo: str, pr_num: int) -> Optional[Dict]:
+    def get_pr_info(self, repo: str, pr_num: int) -> dict | None:
         """Get PR information from GitHub including branch name and state."""
         try:
             result = subprocess.run(
-                ['gh', 'pr', 'view', str(pr_num), '--repo', repo,
-                 '--json', 'state,headRefName,baseRefName'],
+                [
+                    "gh",
+                    "pr",
+                    "view",
+                    str(pr_num),
+                    "--repo",
+                    repo,
+                    "--json",
+                    "state,headRefName,baseRefName",
+                ],
+                check=False,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             if result.returncode == 0:
                 return json.loads(result.stdout)
@@ -697,23 +723,25 @@ Return ONLY the JSON, no other text."""
             print(f"  Error getting PR info: {e}")
             return None
 
-    def handle_writable_repo(self, pr_num: int, repo_name: str, repo: str, comment: Dict, response: Dict):
+    def handle_writable_repo(
+        self, pr_num: int, repo_name: str, repo: str, comment: dict, response: dict
+    ):
         """Handle response for a writable repository - post comment and make changes."""
-        response_text = response.get('response_text', '')
-        needs_changes = response.get('needs_code_changes', False)
-        change_desc = response.get('code_change_description', '')
+        response_text = response.get("response_text", "")
+        needs_changes = response.get("needs_code_changes", False)
+        change_desc = response.get("code_change_description", "")
 
         # Get PR info from GitHub
         pr_info = self.get_pr_info(repo, pr_num)
         if not pr_info:
-            print(f"  Could not get PR info, skipping code changes")
+            print("  Could not get PR info, skipping code changes")
             # Still post the comment
             self.post_github_comment(repo, pr_num, response_text)
             return
 
-        pr_state = pr_info.get('state', 'UNKNOWN')
-        pr_branch = pr_info.get('headRefName', '')
-        base_branch = pr_info.get('baseRefName', 'main')
+        pr_state = pr_info.get("state", "UNKNOWN")
+        pr_branch = pr_info.get("headRefName", "")
+        base_branch = pr_info.get("baseRefName", "main")
 
         # Find the repo directory
         repo_dir = self.find_repo_dir(repo_name)
@@ -721,53 +749,63 @@ Return ONLY the JSON, no other text."""
         # If code changes needed, make them
         result_info = None
         if needs_changes and change_desc and repo_dir:
-            if pr_state == 'OPEN':
+            if pr_state == "OPEN":
                 # PR is still open - push to the PR's branch
-                result_info = self.make_code_changes(repo_dir, repo, pr_num, pr_branch, base_branch, change_desc, response_text)
+                result_info = self.make_code_changes(
+                    repo_dir, repo, pr_num, pr_branch, base_branch, change_desc, response_text
+                )
             else:
                 # PR is closed/merged - create a new branch and PR
                 print(f"  PR #{pr_num} is {pr_state}, creating new PR for changes")
-                result_info = self.make_code_changes_new_pr(repo_dir, repo, pr_num, base_branch, change_desc, response_text)
+                result_info = self.make_code_changes_new_pr(
+                    repo_dir, repo, pr_num, base_branch, change_desc, response_text
+                )
 
             if result_info:
-                if result_info.get('new_pr_url'):
-                    response_text += f"\n\nI've created a new PR with the changes: {result_info['new_pr_url']}"
-                elif result_info.get('branch'):
-                    response_text += f"\n\nI've pushed the changes to branch `{result_info['branch']}`."
+                if result_info.get("new_pr_url"):
+                    response_text += (
+                        f"\n\nI've created a new PR with the changes: {result_info['new_pr_url']}"
+                    )
+                elif result_info.get("branch"):
+                    response_text += (
+                        f"\n\nI've pushed the changes to branch `{result_info['branch']}`."
+                    )
 
         # Post the response to GitHub (even on closed PRs, comments are fine)
         self.post_github_comment(repo, pr_num, response_text)
 
         print(f"  ✓ Posted response to PR #{pr_num}")
         if result_info:
-            if result_info.get('new_pr_url'):
+            if result_info.get("new_pr_url"):
                 print(f"  ✓ Created new PR: {result_info['new_pr_url']}")
-            elif result_info.get('branch'):
+            elif result_info.get("branch"):
                 print(f"  ✓ Pushed changes to branch: {result_info['branch']}")
 
         # Send Slack notification about actions taken
-        pushed_branch = result_info.get('branch') if result_info else None
-        new_pr_url = result_info.get('new_pr_url') if result_info else None
+        pushed_branch = result_info.get("branch") if result_info else None
+        new_pr_url = result_info.get("new_pr_url") if result_info else None
         self.slack.notify_pr_comment(
             pr_number=pr_num,
             repo=repo,
-            comment_author=comment.get('author', 'Unknown'),
-            comment_body=comment.get('body', ''),
+            comment_author=comment.get("author", "Unknown"),
+            comment_body=comment.get("body", ""),
             response_text=response_text,
             pushed_branch=pushed_branch,
             new_pr_url=new_pr_url,
         )
 
-    def handle_readonly_repo(self, pr_num: int, repo_name: str, repo: str, comment: Dict, response: Dict):
+    def handle_readonly_repo(
+        self, pr_num: int, repo_name: str, repo: str, comment: dict, response: dict
+    ):
         """Handle response for read-only repository - notify via Slack."""
-        response_text = response.get('response_text', '')
-        needs_changes = response.get('needs_code_changes', False)
-        change_desc = response.get('code_change_description', '')
-        reasoning = response.get('reasoning', '')
+        response_text = response.get("response_text", "")
+        needs_changes = response.get("needs_code_changes", False)
+        change_desc = response.get("code_change_description", "")
+        reasoning = response.get("reasoning", "")
 
         # Build notification body for read-only repo
-        comment_author = comment.get('author', 'Reviewer')
-        comment_body = comment.get('body', '')
+        comment_author = comment.get("author", "Reviewer")
+        comment_body = comment.get("body", "")
 
         body = f"""**Repository**: {repo} (read-only - manual action required)
 **PR**: #{pr_num}
@@ -819,38 +857,54 @@ Return ONLY the JSON, no other text."""
 
         print(f"  ✓ Created notification for PR #{pr_num} (read-only repo)")
 
-    def find_repo_dir(self, repo_name: str) -> Optional[Path]:
+    def find_repo_dir(self, repo_name: str) -> Path | None:
         """Find the local directory for a repository."""
         # Check common locations
         candidates = [
             self.khan_dir / repo_name,
-            self.khan_dir / repo_name.replace('-', '_'),
+            self.khan_dir / repo_name.replace("-", "_"),
         ]
 
         for candidate in candidates:
-            if candidate.exists() and (candidate / '.git').exists():
+            if candidate.exists() and (candidate / ".git").exists():
                 return candidate
 
         return None
 
-    def make_code_changes(self, repo_dir: Path, repo: str, pr_num: int, pr_branch: str, base_branch: str, change_desc: str, context: str) -> Optional[Dict]:
+    def make_code_changes(
+        self,
+        repo_dir: Path,
+        repo: str,
+        pr_num: int,
+        pr_branch: str,
+        base_branch: str,
+        change_desc: str,
+        context: str,
+    ) -> dict | None:
         """Use Claude to make code changes and push to the PR's branch."""
         try:
             # Fetch and checkout the PR's branch
             print(f"  Checking out PR branch: {pr_branch}")
-            subprocess.run(['git', 'fetch', 'origin', pr_branch], cwd=repo_dir, capture_output=True)
-            checkout_result = subprocess.run(
-                ['git', 'checkout', pr_branch],
+            subprocess.run(
+                ["git", "fetch", "origin", pr_branch],
+                check=False,
                 cwd=repo_dir,
                 capture_output=True,
-                text=True
+            )
+            checkout_result = subprocess.run(
+                ["git", "checkout", pr_branch],
+                check=False,
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
             )
             if checkout_result.returncode != 0:
                 # Try to create tracking branch
                 subprocess.run(
-                    ['git', 'checkout', '-b', pr_branch, f'origin/{pr_branch}'],
+                    ["git", "checkout", "-b", pr_branch, f"origin/{pr_branch}"],
+                    check=False,
                     cwd=repo_dir,
-                    capture_output=True
+                    capture_output=True,
                 )
 
             # Create prompt for Claude to make changes
@@ -878,12 +932,13 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
 
             # Use claude with full tool access for making changes
             result = subprocess.run(
-                ['claude', '--dangerously-skip-permissions'],
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
                 input=prompt,
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minutes for code changes
+                timeout=600,  # 10 minutes for code changes
             )
 
             if result.returncode != 0:
@@ -892,47 +947,68 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
 
             # Check if there are changes to commit
             status = subprocess.run(
-                ['git', 'status', '--porcelain'],
+                ["git", "status", "--porcelain"],
+                check=False,
                 cwd=repo_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if not status.stdout.strip():
-                print(f"  No changes made")
+                print("  No changes made")
                 return None
 
             # Commit any uncommitted changes
-            subprocess.run(['git', 'add', '-A'], cwd=repo_dir, capture_output=True)
+            subprocess.run(["git", "add", "-A"], check=False, cwd=repo_dir, capture_output=True)
             subprocess.run(
-                ['git', 'commit', '-m', f'Address PR #{pr_num} feedback\n\n{change_desc[:200]}\n\n—\nAuthored by jib'],
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"Address PR #{pr_num} feedback\n\n{change_desc[:200]}\n\n—\nAuthored by jib",
+                ],
+                check=False,
                 cwd=repo_dir,
-                capture_output=True
+                capture_output=True,
             )
 
             # Push to the PR's branch
             push_result = subprocess.run(
-                ['git', 'push', 'origin', pr_branch],
+                ["git", "push", "origin", pr_branch],
+                check=False,
                 cwd=repo_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if push_result.returncode != 0:
                 print(f"  Push failed: {push_result.stderr}")
                 return None
 
-            return {'branch': pr_branch}
+            return {"branch": pr_branch}
 
         except Exception as e:
             print(f"  Error making code changes: {e}")
             return None
 
-    def make_code_changes_new_pr(self, repo_dir: Path, repo: str, original_pr_num: int, base_branch: str, change_desc: str, context: str) -> Optional[Dict]:
+    def make_code_changes_new_pr(
+        self,
+        repo_dir: Path,
+        repo: str,
+        original_pr_num: int,
+        base_branch: str,
+        change_desc: str,
+        context: str,
+    ) -> dict | None:
         """Make code changes and create a new PR (when original PR is closed)."""
         try:
             # Fetch latest base branch
-            subprocess.run(['git', 'fetch', 'origin', base_branch], cwd=repo_dir, capture_output=True)
+            subprocess.run(
+                ["git", "fetch", "origin", base_branch],
+                check=False,
+                cwd=repo_dir,
+                capture_output=True,
+            )
 
             # Create a new branch from base
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -940,9 +1016,10 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
 
             print(f"  Creating new branch: {new_branch}")
             subprocess.run(
-                ['git', 'checkout', '-b', new_branch, f'origin/{base_branch}'],
+                ["git", "checkout", "-b", new_branch, f"origin/{base_branch}"],
+                check=False,
                 cwd=repo_dir,
-                capture_output=True
+                capture_output=True,
             )
 
             # Create prompt for Claude to make changes
@@ -970,12 +1047,13 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
 
             # Use claude with full tool access for making changes
             result = subprocess.run(
-                ['claude', '--dangerously-skip-permissions'],
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
                 input=prompt,
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minutes for code changes
+                timeout=600,  # 10 minutes for code changes
             )
 
             if result.returncode != 0:
@@ -984,30 +1062,38 @@ Make the changes now using the available tools (Read, Edit, Write, Bash for git 
 
             # Check if there are changes to commit
             status = subprocess.run(
-                ['git', 'status', '--porcelain'],
+                ["git", "status", "--porcelain"],
+                check=False,
                 cwd=repo_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if not status.stdout.strip():
-                print(f"  No changes made")
+                print("  No changes made")
                 return None
 
             # Commit any uncommitted changes
-            subprocess.run(['git', 'add', '-A'], cwd=repo_dir, capture_output=True)
+            subprocess.run(["git", "add", "-A"], check=False, cwd=repo_dir, capture_output=True)
             subprocess.run(
-                ['git', 'commit', '-m', f'Follow-up from PR #{original_pr_num}\n\n{change_desc[:200]}\n\n—\nAuthored by jib'],
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"Follow-up from PR #{original_pr_num}\n\n{change_desc[:200]}\n\n—\nAuthored by jib",
+                ],
+                check=False,
                 cwd=repo_dir,
-                capture_output=True
+                capture_output=True,
             )
 
             # Push the new branch
             push_result = subprocess.run(
-                ['git', 'push', '-u', 'origin', new_branch],
+                ["git", "push", "-u", "origin", new_branch],
+                check=False,
                 cwd=repo_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if push_result.returncode != 0:
@@ -1027,19 +1113,33 @@ This PR addresses feedback from the original PR which has been closed/merged.
 Authored by jib"""
 
             pr_result = subprocess.run(
-                ['gh', 'pr', 'create', '--repo', repo, '--base', base_branch,
-                 '--head', new_branch, '--title', pr_title, '--body', pr_body],
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--repo",
+                    repo,
+                    "--base",
+                    base_branch,
+                    "--head",
+                    new_branch,
+                    "--title",
+                    pr_title,
+                    "--body",
+                    pr_body,
+                ],
+                check=False,
                 cwd=repo_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if pr_result.returncode != 0:
                 print(f"  PR creation failed: {pr_result.stderr}")
-                return {'branch': new_branch}
+                return {"branch": new_branch}
 
             pr_url = pr_result.stdout.strip()
-            return {'branch': new_branch, 'new_pr_url': pr_url}
+            return {"branch": new_branch, "new_pr_url": pr_url}
 
         except Exception as e:
             print(f"  Error making code changes for new PR: {e}")
@@ -1049,10 +1149,11 @@ Authored by jib"""
         """Post a comment to a GitHub PR."""
         try:
             result = subprocess.run(
-                ['gh', 'pr', 'comment', str(pr_num), '--repo', repo, '--body', comment_text],
+                ["gh", "pr", "comment", str(pr_num), "--repo", repo, "--body", comment_text],
+                check=False,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
 
             if result.returncode != 0:
@@ -1061,13 +1162,12 @@ Authored by jib"""
             print(f"  Error posting comment: {e}")
 
 
-
 def main():
     """Main entry point."""
     logging.basicConfig(
         level=logging.INFO,
-        format='[%(asctime)s] %(levelname)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        format="[%(asctime)s] %(levelname)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     print("=" * 60)
@@ -1092,6 +1192,7 @@ def main():
         print(f"UNEXPECTED ERROR: {e}", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         print("=" * 60, file=sys.stderr)
         print("If this persists, check:", file=sys.stderr)
@@ -1102,5 +1203,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
