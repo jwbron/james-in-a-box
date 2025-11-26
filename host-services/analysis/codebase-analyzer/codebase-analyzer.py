@@ -709,7 +709,7 @@ Return ONLY the JSON array, no other text."""
                 first_line = content.split("\n")[0] if content else ""
                 if first_line.startswith("#!"):
                     structure_hint = f"The file MUST start with: {first_line}"
-                elif first_line.startswith('"""') or first_line.startswith("'''"):
+                elif first_line.startswith(('"""', "'''")):
                     structure_hint = "The file MUST start with a docstring"
                 else:
                     structure_hint = "The file should start with imports or code, not prose"
