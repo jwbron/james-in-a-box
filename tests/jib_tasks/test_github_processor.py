@@ -1,17 +1,19 @@
 """
 Tests for the GitHub processor module.
 
-Tests the GitHub PR check processor:
-- State management (load/save)
-- Check file processing
-- Failure analysis
-- PR context extraction
+Tests the GitHub Processor dispatcher:
+- Command-line argument parsing
+- Task dispatching to handlers
+- Prompt building for Claude
+- Make target detection
 """
 
 import json
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 # Load github processor module
@@ -25,334 +27,474 @@ processor_path = (
 loader = SourceFileLoader("github_processor", str(processor_path))
 github_processor = loader.load_module()
 
-GitHubWatcher = github_processor.GitHubWatcher
 
+class TestDetectMakeTargets:
+    """Tests for make target detection."""
 
-class TestGitHubProcessorInit:
-    """Tests for processor initialization."""
+    def test_detect_targets_no_makefile(self, temp_dir):
+        """Test when Makefile doesn't exist."""
+        result = github_processor.detect_make_targets(temp_dir)
+        assert result == {}
 
-    def test_init_paths(self, temp_dir, monkeypatch):
-        """Test that paths are initialized correctly."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
+    def test_detect_targets_with_makefile(self, temp_dir):
+        """Test detecting targets from Makefile."""
+        makefile = temp_dir / "Makefile"
+        makefile.write_text("""
+.PHONY: all test lint fix
 
-            assert watcher.github_dir == temp_dir / "context-sync" / "github"
-            assert watcher.checks_dir == temp_dir / "context-sync" / "github" / "checks"
-            assert watcher.prs_dir == temp_dir / "context-sync" / "github" / "prs"
-            assert watcher.notifications_dir == temp_dir / "sharing" / "notifications"
-            assert watcher.beads_dir == temp_dir / "beads"
+all: test lint
 
+test:
+	pytest tests/
 
-class TestStateManagement:
-    """Tests for state load/save."""
+lint:
+	ruff check .
 
-    def test_load_state_no_file(self, temp_dir):
-        """Test loading state when file doesn't exist."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            state = watcher.load_state()
+lint-fix:
+	ruff check . --fix
 
-            assert state == {"notified": {}}
-
-    def test_load_state_valid_file(self, temp_dir):
-        """Test loading state from existing file."""
-        state_file = temp_dir / "sharing" / "tracking" / "github-watcher-state.json"
-        state_file.parent.mkdir(parents=True)
-        state_file.write_text(
-            json.dumps({"notified": {"repo-123:check1,check2": "2025-01-01T00:00:00Z"}})
-        )
-
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            state = watcher.load_state()
-
-            assert "repo-123:check1,check2" in state["notified"]
-
-    def test_load_state_invalid_json(self, temp_dir):
-        """Test loading state when file contains invalid JSON."""
-        state_file = temp_dir / "sharing" / "tracking" / "github-watcher-state.json"
-        state_file.parent.mkdir(parents=True)
-        state_file.write_text("invalid json{")
-
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            state = watcher.load_state()
-
-            assert state == {"notified": {}}
-
-    def test_save_state(self, temp_dir):
-        """Test saving state to file."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            watcher.notified_failures = {"test-key": "2025-01-01T00:00:00Z"}
-            watcher.save_state()
-
-            # Verify state was saved
-            state_file = temp_dir / "sharing" / "tracking" / "github-watcher-state.json"
-            assert state_file.exists()
-
-            saved = json.loads(state_file.read_text())
-            assert saved["notified"]["test-key"] == "2025-01-01T00:00:00Z"
-
-
-class TestAnalyzeFailure:
-    """Tests for failure analysis."""
-
-    def test_analyze_test_failure(self, temp_dir):
-        """Test analyzing test failures."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-
-            pr_context = {"files_changed": ["src/app.py"]}
-            failed_checks = [{"name": "pytest", "full_log": "AssertionError: expected 5, got 3"}]
-
-            analysis = watcher.analyze_failure(pr_context, failed_checks)
-
-            assert "test" in analysis["summary"].lower()
-            assert analysis["root_cause"] is not None
-            assert len(analysis["actions"]) > 0
-
-    def test_analyze_lint_failure(self, temp_dir):
-        """Test analyzing linting failures."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-
-            pr_context = {"files_changed": ["src/app.js"]}
-            failed_checks = [{"name": "eslint", "full_log": "Missing semicolon"}]
-
-            analysis = watcher.analyze_failure(pr_context, failed_checks)
-
-            assert "lint" in analysis["summary"].lower() or "quality" in analysis["summary"].lower()
-            assert analysis["can_auto_fix"] is True
-            assert analysis["auto_fix_description"] is not None
-
-    def test_analyze_build_failure(self, temp_dir):
-        """Test analyzing build failures."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-
-            pr_context = {}
-            failed_checks = [{"name": "build", "full_log": "Compilation error: syntax error"}]
-
-            analysis = watcher.analyze_failure(pr_context, failed_checks)
-
-            assert "build" in analysis["summary"].lower()
-            assert analysis["can_auto_fix"] is False
-
-    def test_analyze_import_error(self, temp_dir):
-        """Test analyzing import/module errors."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-
-            pr_context = {}
-            failed_checks = [
-                {"name": "test", "full_log": 'ModuleNotFoundError: No module named "foo"'}
-            ]
-
-            analysis = watcher.analyze_failure(pr_context, failed_checks)
-
-            assert (
-                "missing dependency" in analysis["root_cause"].lower()
-                or "import" in analysis["root_cause"].lower()
-            )
-            assert any(
-                "requirements" in action.lower() or "dependencies" in action.lower()
-                for action in analysis["actions"]
-            )
-
-    def test_analyze_unknown_failure(self, temp_dir):
-        """Test analyzing unknown failure types."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-
-            pr_context = {}
-            failed_checks = [{"name": "custom-check", "full_log": "Something went wrong"}]
-
-            analysis = watcher.analyze_failure(pr_context, failed_checks)
-
-            assert "failed" in analysis["summary"].lower()
-            assert len(analysis["actions"]) > 0
-
-
-class TestGetPrContext:
-    """Tests for PR context extraction."""
-
-    def test_get_pr_context_no_files(self, temp_dir):
-        """Test getting context when no PR files exist."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            context = watcher.get_pr_context("test-repo", 123)
-
-            assert context["pr_number"] == 123
-            assert context["title"] == "PR #123"
-            assert context["files_changed"] == []
-
-    def test_get_pr_context_with_pr_file(self, temp_dir):
-        """Test getting context from PR markdown file."""
-        prs_dir = temp_dir / "context-sync" / "github" / "prs"
-        prs_dir.mkdir(parents=True)
-
-        pr_file = prs_dir / "test-repo-PR-123.md"
-        pr_file.write_text("""# PR #123: Fix important bug
-
-**URL**: https://github.com/owner/test-repo/pull/123
-**Branch**: feature-branch → main
-
-## Files Changed
-- `src/app.py` (+10, -5)
-- `tests/test_app.py` (+20, -0)
+fix: lint-fix
+	echo "Fixed"
 """)
 
+        result = github_processor.detect_make_targets(temp_dir)
+
+        assert "test" in result["all"]
+        assert "lint" in result["all"]
+        assert "lint-fix" in result["all"]
+        assert "fix" in result["all"]
+        assert "test" in result["test"]
+        assert "lint" in result["lint"]
+        assert "lint-fix" in result["lint"]
+        assert "lint-fix" in result["fix"]
+        assert "fix" in result["fix"]
+
+    def test_detect_targets_ignores_special(self, temp_dir):
+        """Test that special targets are ignored."""
+        makefile = temp_dir / "Makefile"
+        makefile.write_text("""
+.PHONY: test
+
+test:
+	pytest
+
+.DEFAULT_GOAL := test
+""")
+
+        result = github_processor.detect_make_targets(temp_dir)
+
+        assert "test" in result["all"]
+        assert ".PHONY" not in result["all"]
+        assert ".DEFAULT_GOAL" not in result["all"]
+
+
+class TestBuildCheckFailurePrompt:
+    """Tests for check failure prompt building."""
+
+    def test_build_prompt_basic(self, temp_dir):
+        """Test building basic check failure prompt."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix bug",
+            "pr_url": "https://github.com/owner/repo/pull/123",
+            "pr_branch": "fix-branch",
+            "base_branch": "main",
+            "pr_body": "This PR fixes a bug.",
+            "failed_checks": [
+                {"name": "test", "state": "FAILURE", "full_log": "Test failed"}
+            ],
+        }
+
+        prompt = github_processor.build_check_failure_prompt(context)
+
+        assert "owner/repo" in prompt
+        assert "#123" in prompt
+        assert "Fix bug" in prompt
+        assert "test" in prompt
+        assert "FAILURE" in prompt
+        assert "Test failed" in prompt
+
+    def test_build_prompt_with_log_excerpt(self, temp_dir):
+        """Test prompt with long log is truncated."""
+        long_log = "x" * 10000  # Very long log
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix bug",
+            "pr_url": "",
+            "pr_branch": "fix-branch",
+            "base_branch": "main",
+            "pr_body": "",
+            "failed_checks": [
+                {"name": "test", "state": "FAILURE", "full_log": long_log}
+            ],
+        }
+
+        prompt = github_processor.build_check_failure_prompt(context)
+
+        # Should contain excerpts, not full log
+        assert "first 2000 chars" in prompt.lower() or "log excerpt" in prompt.lower()
+        assert len(prompt) < len(long_log)
+
+    def test_build_prompt_with_make_targets(self, temp_dir):
+        """Test prompt includes make targets when available."""
+        # Create a makefile in the repo path
+        repo_path = temp_dir / "khan" / "repo"
+        repo_path.mkdir(parents=True)
+        makefile = repo_path / "Makefile"
+        makefile.write_text("""
+lint-fix:
+	ruff check . --fix
+
+test:
+	pytest
+""")
+
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix bug",
+            "pr_url": "",
+            "pr_branch": "fix-branch",
+            "base_branch": "main",
+            "pr_body": "",
+            "failed_checks": [
+                {"name": "lint", "state": "FAILURE", "full_log": "Linting failed"}
+            ],
+        }
+
         with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            context = watcher.get_pr_context("test-repo", 123)
+            prompt = github_processor.build_check_failure_prompt(context)
 
-            assert "Fix important bug" in context["title"]
-            assert "github.com" in context["url"]
-            assert "feature-branch" in context["branch"]
-            assert len(context["files_changed"]) == 2
-
-    def test_get_pr_context_with_diff(self, temp_dir):
-        """Test getting context includes diff availability."""
-        prs_dir = temp_dir / "context-sync" / "github" / "prs"
-        prs_dir.mkdir(parents=True)
-
-        diff_file = prs_dir / "test-repo-PR-123.diff"
-        diff_file.write_text("diff --git a/file.py b/file.py\n+new line")
-
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            context = watcher.get_pr_context("test-repo", 123)
-
-            assert context.get("diff_available") is True
-            assert context.get("diff_size", 0) > 0
+        assert "make lint-fix" in prompt or "make targets" in prompt.lower()
 
 
-class TestProcessCheckFile:
-    """Tests for check file processing."""
+class TestBuildCommentPrompt:
+    """Tests for comment response prompt building."""
 
-    def test_process_passing_checks(self, temp_dir):
-        """Test processing when all checks pass."""
-        checks_dir = temp_dir / "context-sync" / "github" / "checks"
-        checks_dir.mkdir(parents=True)
-
-        check_file = checks_dir / "repo-PR-123-checks.json"
-        check_file.write_text(
-            json.dumps(
+    def test_build_comment_prompt_basic(self):
+        """Test building basic comment prompt."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix bug",
+            "pr_url": "https://github.com/owner/repo/pull/123",
+            "comments": [
                 {
-                    "pr_number": 123,
-                    "repository": "owner/repo",
-                    "checks": [
-                        {"name": "test", "state": "SUCCESS"},
-                        {"name": "lint", "state": "SUCCESS"},
-                    ],
+                    "author": "reviewer",
+                    "body": "Please fix the typo",
+                    "type": "comment",
+                    "created_at": "2025-01-01T00:00:00Z",
+                    "state": "",
                 }
-            )
-        )
+            ],
+        }
 
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            # Should not create notification for passing checks
-            watcher.process_check_file(check_file)
+        prompt = github_processor.build_comment_prompt(context)
 
-            # No notification should be created
-            notifications = list((temp_dir / "sharing" / "notifications").glob("*.md"))
-            assert len(notifications) == 0
+        assert "owner/repo" in prompt
+        assert "#123" in prompt
+        assert "@reviewer" in prompt
+        assert "Please fix the typo" in prompt
 
-    def test_process_failing_checks_creates_notification(self, temp_dir):
-        """Test processing creates notification for failures."""
-        checks_dir = temp_dir / "context-sync" / "github" / "checks"
-        checks_dir.mkdir(parents=True)
+    def test_build_comment_prompt_multiple_comments(self):
+        """Test prompt with multiple comments."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix bug",
+            "pr_url": "",
+            "comments": [
+                {
+                    "author": "user1",
+                    "body": "Comment 1",
+                    "type": "comment",
+                    "created_at": "",
+                    "state": "",
+                },
+                {
+                    "author": "user2",
+                    "body": "Comment 2",
+                    "type": "review",
+                    "created_at": "",
+                    "state": "CHANGES_REQUESTED",
+                },
+            ],
+        }
+
+        prompt = github_processor.build_comment_prompt(context)
+
+        assert "@user1" in prompt
+        assert "@user2" in prompt
+        assert "Comment 1" in prompt
+        assert "Comment 2" in prompt
+        assert "CHANGES_REQUESTED" in prompt
+
+
+class TestBuildReviewPrompt:
+    """Tests for PR review prompt building."""
+
+    def test_build_review_prompt_basic(self):
+        """Test building basic review prompt."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Add feature",
+            "pr_url": "https://github.com/owner/repo/pull/123",
+            "pr_branch": "feature-branch",
+            "base_branch": "main",
+            "author": "developer",
+            "additions": 100,
+            "deletions": 50,
+            "files": ["src/app.py", "tests/test_app.py"],
+            "diff": "diff --git a/src/app.py\n+new code",
+        }
+
+        prompt = github_processor.build_review_prompt(context)
+
+        assert "owner/repo" in prompt
+        assert "#123" in prompt
+        assert "Add feature" in prompt
+        assert "@developer" in prompt
+        assert "+100" in prompt
+        assert "-50" in prompt
+        assert "src/app.py" in prompt
+        assert "new code" in prompt
+
+    def test_build_review_prompt_large_diff(self):
+        """Test prompt truncates large diffs."""
+        large_diff = "x" * 50000
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Add feature",
+            "pr_url": "",
+            "pr_branch": "feature-branch",
+            "base_branch": "main",
+            "author": "developer",
+            "additions": 1000,
+            "deletions": 500,
+            "files": ["file1.py"] * 30,  # Many files
+            "diff": large_diff,
+        }
+
+        prompt = github_processor.build_review_prompt(context)
+
+        # Should be truncated
+        assert len(prompt) < len(large_diff)
+        assert "truncated" in prompt.lower() or "..." in prompt
+
+    def test_build_review_prompt_many_files(self):
+        """Test prompt handles many files."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Add feature",
+            "pr_url": "",
+            "pr_branch": "feature-branch",
+            "base_branch": "main",
+            "author": "developer",
+            "additions": 100,
+            "deletions": 50,
+            "files": [f"file{i}.py" for i in range(30)],
+            "diff": "diff content",
+        }
+
+        prompt = github_processor.build_review_prompt(context)
+
+        # Should show first 20 files and indicate more exist
+        assert "file0.py" in prompt
+        assert "file19.py" in prompt
+        assert "..." in prompt
+
+
+class TestCreateNotification:
+    """Tests for notification creation."""
+
+    def test_create_notification(self, temp_dir):
+        """Test notification file is created."""
         notifications_dir = temp_dir / "sharing" / "notifications"
         notifications_dir.mkdir(parents=True)
 
-        check_file = checks_dir / "repo-PR-123-checks.json"
-        check_file.write_text(
-            json.dumps(
-                {
-                    "pr_number": 123,
-                    "repository": "owner/repo",
-                    "checks": [{"name": "test", "state": "FAILURE"}],
-                }
-            )
-        )
-
         with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
+            github_processor.create_notification("Test Title", "Test body content")
 
-            with patch.object(watcher, "create_beads_task", return_value=None):
-                watcher.process_check_file(check_file)
+        notifications = list(notifications_dir.glob("*.md"))
+        assert len(notifications) == 1
 
-            # Notification should be created
-            notifications = list(notifications_dir.glob("*pr-check-failed*.md"))
-            assert len(notifications) == 1
-
-    def test_no_duplicate_notification(self, temp_dir):
-        """Test that same failures don't trigger duplicate notifications."""
-        checks_dir = temp_dir / "context-sync" / "github" / "checks"
-        checks_dir.mkdir(parents=True)
-        notifications_dir = temp_dir / "sharing" / "notifications"
-        notifications_dir.mkdir(parents=True)
-
-        check_file = checks_dir / "repo-PR-123-checks.json"
-        check_file.write_text(
-            json.dumps(
-                {
-                    "pr_number": 123,
-                    "repository": "owner/repo",
-                    "checks": [{"name": "test", "state": "FAILURE"}],
-                }
-            )
-        )
-
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-
-            with patch.object(watcher, "create_beads_task", return_value=None):
-                # Process twice
-                watcher.process_check_file(check_file)
-                watcher.process_check_file(check_file)
-
-            # Only one notification
-            notifications = list(notifications_dir.glob("*pr-check-failed*.md"))
-            assert len(notifications) == 1
+        content = notifications[0].read_text()
+        assert "Test Title" in content
+        assert "Test body content" in content
 
 
-class TestWatch:
-    """Tests for the main watch loop."""
+class TestHandlers:
+    """Tests for task handlers."""
 
-    def test_watch_no_checks_dir(self, temp_dir, capsys):
-        """Test watch when checks directory doesn't exist."""
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
-            watcher.watch()
+    def test_handle_check_failure_invokes_claude(self, temp_dir):
+        """Test check failure handler invokes Claude."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix bug",
+            "pr_url": "",
+            "pr_branch": "fix-branch",
+            "base_branch": "main",
+            "pr_body": "",
+            "failed_checks": [{"name": "test", "state": "FAILURE"}],
+        }
 
-        captured = capsys.readouterr()
-        assert "not found" in captured.out
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            github_processor.handle_check_failure(context)
 
-    def test_watch_processes_all_check_files(self, temp_dir):
-        """Test watch processes all check files."""
-        checks_dir = temp_dir / "context-sync" / "github" / "checks"
-        checks_dir.mkdir(parents=True)
+            # Should invoke claude
+            mock_run.assert_called()
+            call_args = mock_run.call_args[0][0]
+            assert "claude" in call_args
 
-        # Create multiple check files
-        for i in range(3):
-            check_file = checks_dir / f"repo-PR-{i}-checks.json"
-            check_file.write_text(
-                json.dumps(
-                    {
-                        "pr_number": i,
-                        "repository": "owner/repo",
-                        "checks": [{"name": "test", "state": "SUCCESS"}],
-                    }
-                )
-            )
+    def test_handle_comment_invokes_claude(self, temp_dir):
+        """Test comment handler invokes Claude."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix bug",
+            "pr_url": "",
+            "comments": [{"author": "user", "body": "Please fix", "type": "comment"}],
+        }
 
-        with patch.object(Path, "home", return_value=temp_dir):
-            watcher = GitHubWatcher()
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            github_processor.handle_comment(context)
 
-            with patch.object(watcher, "process_check_file") as mock_process:
-                watcher.watch()
+            mock_run.assert_called()
+            call_args = mock_run.call_args[0][0]
+            assert "claude" in call_args
 
-            # Should process all 3 files
-            assert mock_process.call_count == 3
+    def test_handle_review_request_invokes_claude(self, temp_dir):
+        """Test review handler invokes Claude."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Add feature",
+            "pr_url": "",
+            "pr_branch": "feature",
+            "base_branch": "main",
+            "author": "dev",
+            "additions": 10,
+            "deletions": 5,
+            "files": ["app.py"],
+            "diff": "diff content",
+        }
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            github_processor.handle_review_request(context)
+
+            mock_run.assert_called()
+            call_args = mock_run.call_args[0][0]
+            assert "claude" in call_args
+
+
+class TestMain:
+    """Tests for main entry point."""
+
+    def test_main_requires_task(self):
+        """Test main requires --task argument."""
+        with patch("sys.argv", ["github-processor.py"]):
+            with pytest.raises(SystemExit):
+                github_processor.main()
+
+    def test_main_requires_context(self):
+        """Test main requires --context argument."""
+        with patch("sys.argv", ["github-processor.py", "--task", "check_failure"]):
+            with pytest.raises(SystemExit):
+                github_processor.main()
+
+    def test_main_invalid_context_json(self, capsys):
+        """Test main exits on invalid JSON context."""
+        with patch("sys.argv", [
+            "github-processor.py",
+            "--task",
+            "check_failure",
+            "--context",
+            "invalid{json",
+        ]):
+            with pytest.raises(SystemExit):
+                github_processor.main()
+
+    def test_main_dispatches_to_handler(self):
+        """Test main dispatches to correct handler."""
+        context = json.dumps({
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix",
+            "pr_url": "",
+            "pr_branch": "fix",
+            "base_branch": "main",
+            "pr_body": "",
+            "failed_checks": [],
+        })
+
+        with patch("sys.argv", [
+            "github-processor.py",
+            "--task",
+            "check_failure",
+            "--context",
+            context,
+        ]):
+            with patch.object(
+                github_processor, "handle_check_failure"
+            ) as mock_handler:
+                github_processor.main()
+                mock_handler.assert_called_once()
+
+    def test_main_handles_comment_task(self):
+        """Test main handles comment task."""
+        context = json.dumps({
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Fix",
+            "pr_url": "",
+            "comments": [],
+        })
+
+        with patch("sys.argv", [
+            "github-processor.py",
+            "--task",
+            "comment",
+            "--context",
+            context,
+        ]):
+            with patch.object(github_processor, "handle_comment") as mock_handler:
+                github_processor.main()
+                mock_handler.assert_called_once()
+
+    def test_main_handles_review_task(self):
+        """Test main handles review_request task."""
+        context = json.dumps({
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Add",
+            "pr_url": "",
+            "pr_branch": "feature",
+            "base_branch": "main",
+            "author": "dev",
+            "additions": 0,
+            "deletions": 0,
+            "files": [],
+            "diff": "",
+        })
+
+        with patch("sys.argv", [
+            "github-processor.py",
+            "--task",
+            "review_request",
+            "--context",
+            context,
+        ]):
+            with patch.object(
+                github_processor, "handle_review_request"
+            ) as mock_handler:
+                github_processor.main()
+                mock_handler.assert_called_once()
