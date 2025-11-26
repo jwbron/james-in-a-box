@@ -11,13 +11,19 @@ WorkingDirectory=%h/khan/james-in-a-box/host-services/sync/github-sync
 ExecStart=%h/khan/james-in-a-box/host-services/sync/github-sync/github-sync.py --use-config
 
 # After syncing PR data, run analysis in JIB container (new ephemeral container)
-# 1. Check monitor - analyzes failed checks and suggests fixes
+# 1. Conflict resolver - detects and auto-resolves merge conflicts
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/github/conflict-resolver.py
+
+# 2. Check fixer - automatically fixes common check failures (lint, format, etc.)
+ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/github/check-fixer.py
+
+# 3. Check monitor - analyzes remaining failed checks and suggests fixes
 ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/github/check-monitor.py
 
-# 2. PR reviewer - auto-reviews new PRs from others (skips your own)
+# 4. PR reviewer - auto-reviews new PRs from others (skips your own)
 ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py --watch
 
-# 3. Comment responder - detects new comments needing responses on YOUR PRs
+# 5. Comment responder - detects new comments needing responses on YOUR PRs
 ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/jib-container/jib-tasks/github/comment-responder.py
 
 [Install]
