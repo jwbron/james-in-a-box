@@ -401,7 +401,7 @@ See https://github.com/Khan/webapp/pull/12345 for details.
 
 Do the thing
 """
-        thread_ctx, pr_refs = extract_thread_context(content)
+        _thread_ctx, pr_refs = extract_thread_context(content)
 
         assert "Khan/webapp#12345" in pr_refs
 
@@ -416,7 +416,7 @@ Working on owner/repo#123
 
 Update needed
 """
-        thread_ctx, pr_refs = extract_thread_context(content)
+        _thread_ctx, pr_refs = extract_thread_context(content)
 
         assert "owner/repo#123" in pr_refs
 
@@ -433,7 +433,7 @@ Also see https://github.com/Khan/other-repo/pull/200
 
 Fix both
 """
-        thread_ctx, pr_refs = extract_thread_context(content)
+        _thread_ctx, pr_refs = extract_thread_context(content)
 
         assert "Khan/webapp#100" in pr_refs
         assert "Khan/other-repo#200" in pr_refs
@@ -452,7 +452,7 @@ PR: https://github.com/Khan/webapp/pull/100
 
 Same PR mentioned twice
 """
-        thread_ctx, pr_refs = extract_thread_context(content)
+        _thread_ctx, pr_refs = extract_thread_context(content)
 
         assert pr_refs.count("Khan/webapp#100") == 1
 
@@ -467,7 +467,7 @@ Thread content here
 
 This should not be in thread context
 """
-        thread_ctx, pr_refs = extract_thread_context(content)
+        thread_ctx, _pr_refs = extract_thread_context(content)
 
         assert "Thread content here" in thread_ctx
         assert "should not be in thread context" not in thread_ctx
