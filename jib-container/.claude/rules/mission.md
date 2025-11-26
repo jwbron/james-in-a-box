@@ -105,6 +105,12 @@ Use the discovered test command. Don't assume - every codebase is different!
 
 ### 6. Commit & Create PR
 
+**CRITICAL**: After making ANY code changes, you MUST create a PR or notify the user via Slack:
+- **Writable repos**: Create PR immediately after committing
+- **Non-writable repos**: Notify user via Slack with commit details so they can create the PR
+
+**NEVER** leave code changes committed without creating a PR or notifying the user. This ensures all work is visible and reviewable.
+
 **MANDATORY**: Always use the PR helpers - they handle both writable and non-writable repos:
 ```bash
 git add <files>
@@ -116,6 +122,16 @@ git commit -m "Brief description
 # ✅ ALWAYS use the helper - NEVER use `gh pr create` directly
 create-pr-helper.py --auto --no-notify
 ```
+
+If the helper fails or is unavailable, use GitHub MCP directly:
+```python
+# Use MCP: create_pull_request(owner, repo, title, head, base, body)
+```
+
+**If you cannot create a PR** (e.g., no write access, MCP failure), you MUST notify the user via Slack with:
+- Branch name and repository
+- Summary of changes
+- Request for them to create the PR manually
 
 ### 6.1. Preventing PR Cross-Contamination (CRITICAL)
 
