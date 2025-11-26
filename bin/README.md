@@ -12,7 +12,6 @@ Convenient symlinks to commonly used commands.
 **Setup Scripts:**
 - `setup-slack-notifier` - Install Slack notifier service
 - `setup-slack-receiver` - Install Slack receiver service
-- `setup-service-monitor` - Install service monitor
 - `setup-codebase-analyzer` - Install codebase analyzer timer
 - `setup-conversation-analyzer` - Install conversation analyzer timer
 
