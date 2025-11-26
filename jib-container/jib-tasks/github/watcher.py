@@ -65,8 +65,7 @@ class GitHubWatcher:
         # Find failed checks
         # Note: gh pr checks uses 'state' (e.g., 'FAILURE') not 'conclusion'
         failed_checks = [
-            c for c in data["checks"]
-            if c.get("state", "").upper() in ("FAILURE", "FAILED")
+            c for c in data["checks"] if c.get("state", "").upper() in ("FAILURE", "FAILED")
         ]
 
         if not failed_checks:
