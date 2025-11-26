@@ -1,8 +1,8 @@
-# GitHub Watcher
+# GitHub Processors
 
 Container-side component that provides comprehensive GitHub PR automation.
 
-**Type**: Exec-based analysis (triggered by github-sync.service)
+**Type**: Exec-based analysis (triggered by github-sync.service via `jib --exec`)
 **Capabilities**:
 - **Failure Monitoring**: Detect CI/CD failures, analyze logs, auto-implement fixes
 - **Auto-Review**: Automatically review new PRs from others (`--watch` mode)
@@ -11,19 +11,21 @@ Container-side component that provides comprehensive GitHub PR automation.
 
 ## Overview
 
-GitHub Watcher runs inside the jib container and analyzes `~/context-sync/github/` (synced by the host-side github-sync component). It is triggered via `jib --exec` after each github-sync run and provides three main capabilities:
+GitHub Processors run inside the jib container and analyze `~/context-sync/github/` (synced by the host-side github-sync component). Scripts are triggered via `jib --exec` after each github-sync run and provide three main capabilities:
 
-1. **Check Monitor** - Detects CI/CD failures and suggests/implements fixes
+1. **GitHub Processor** - Detects CI/CD failures and suggests/implements fixes
 2. **PR Reviewer** - Auto-reviews new PRs from others (watch mode)
 3. **Comment Responder** - Suggests responses to comments on your PRs
 
 ## Execution Model
 
+All scripts are invoked via `jib --exec`:
+
 ```
 github-sync.service completes
         ↓
 Triggers via ExecStartPost:
-  jib --exec python3 check-monitor.py
+  jib --exec python3 github-processor.py
   jib --exec python3 pr-reviewer.py --watch
   jib --exec python3 comment-responder.py
         ↓
@@ -32,14 +34,16 @@ Each script runs in ephemeral container, analyzes data, exits
 Notifications sent to ~/sharing/notifications/ → Slack
 ```
 
-## Check Monitor (`check-monitor.py`)
+**No background processes** - Each script runs once, performs analysis, creates notifications, and exits.
+
+## GitHub Processor (`github-processor.py`)
 
 Analyzes CI/CD check failures and suggests or implements fixes.
 
 ```
 ~/context-sync/github/checks/repo-PR-123-checks.json
         ↓
-check-monitor.py (runs after github-sync)
+github-processor.py (runs via jib --exec after github-sync)
         ↓
 Detects new failure (not previously notified)
         ↓
@@ -58,6 +62,12 @@ Determines if auto-fixable:
 Creates Slack notification with analysis and suggested actions
 ```
 
+**Usage:**
+```bash
+# Run manually (normally triggered automatically)
+jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py
+```
+
 ## PR Auto-Review (`pr-reviewer.py --watch`)
 
 Automatically reviews new PRs from others when running in watch mode.
@@ -65,7 +75,7 @@ Automatically reviews new PRs from others when running in watch mode.
 ```
 ~/context-sync/github/prs/*.md (all synced PRs)
         ↓
-pr-reviewer.py --watch (runs after github-sync)
+pr-reviewer.py --watch (runs via jib --exec after github-sync)
         ↓
 Scans for new PRs not yet reviewed
         ↓
@@ -89,14 +99,14 @@ Marks PR as reviewed (tracks in state file)
 
 **Usage:**
 ```bash
-# Watch mode (scan and review new PRs)
-python3 pr-reviewer.py --watch
+# Watch mode (scan and review new PRs) - normally triggered automatically
+jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py --watch
 
 # Review specific PR
-python3 pr-reviewer.py 123
+jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py 123
 
 # Review specific PR in repo
-python3 pr-reviewer.py 123 repo-name
+jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py 123 repo-name
 ```
 
 ## PR Code Review (On-Demand)
@@ -108,7 +118,7 @@ User sends via Slack: "review PR 123" or "review PR 123 in webapp"
         ↓
 Message appears in ~/sharing/incoming/
         ↓
-Command Handler (runs every 5 min)
+Command Handler (runs via jib --exec)
         ↓
 Parses command: PR #123, repo: webapp
         ↓
@@ -161,7 +171,7 @@ Host syncs PR comments every 15 min
 ~/context-sync/github/comments/
     repo-PR-123-comments.json
         ↓
-Comment Responder (runs every 5 min)
+Comment Responder (runs via jib --exec)
         ↓
 Detects new comment (not previously seen)
         ↓
@@ -215,7 +225,7 @@ Type: concern, Confidence: medium
 **Positive** - LGTM or approval:
 ```
 Original: "Looks good to me!"
-Suggested: "Thanks @reviewer! 🙏"
+Suggested: "Thanks @reviewer!"
 Type: positive, Confidence: high
 ```
 
@@ -228,7 +238,7 @@ Type: positive, Confidence: high
 
 ## Automatic Fix Examples
 
-### Linting Failures (IMPLEMENTED ✅)
+### Linting Failures (IMPLEMENTED)
 ```
 Detected: ESLint failures in PR #123
 Analysis: Code style violations
@@ -289,7 +299,7 @@ Action:
 
 Tracks which failures have been notified to avoid spam:
 
-**State file**: `~/sharing/tracking/github-watcher-state.json`
+**State file**: `~/sharing/tracking/github-processor-state.json`
 
 ```json
 {
@@ -307,11 +317,8 @@ Only notifies once per unique combination of (PR + failed check names).
 Every PR check failure creates a Beads task:
 
 ```bash
-beads add "Fix PR #123 check failures: eslint, pytest" \
-  --tags pr-123,ci-failure,webapp,urgent \
-  --notes "PR #123 in org/webapp
-Failed checks: eslint, pytest
-URL: https://github.com/org/webapp/pull/123"
+bd create "Fix PR #123 check failures: eslint, pytest" \
+  --label pr-123 --label ci-failure --label webapp --label urgent
 ```
 
 This enables:
@@ -319,46 +326,30 @@ This enables:
 - Resuming work after interruptions
 - Coordinating with other work
 
-## Logs
+## Running Scripts Manually
 
-**Location**: `~/sharing/tracking/github-watcher.log`
-
-```bash
-# View logs
-tail -f ~/sharing/tracking/github-watcher.log
-
-# Recent activity
-tail -n 50 ~/sharing/tracking/github-watcher.log
-```
-
-## Control
+All scripts should be run via `jib --exec`:
 
 ```bash
-# Start watcher
-~/khan/james-in-a-box/jib-container/watchers/github-watcher/github-watcher-ctl start
+# Run github processor manually
+jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py
 
-# Stop watcher
-~/khan/james-in-a-box/jib-container/watchers/github-watcher/github-watcher-ctl stop
+# Run PR reviewer in watch mode
+jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py --watch
 
-# Check status
-~/khan/james-in-a-box/jib-container/watchers/github-watcher/github-watcher-ctl status
+# Run comment responder
+jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/comment-responder.py
 
-# Restart
-~/khan/james-in-a-box/jib-container/watchers/github-watcher/github-watcher-ctl restart
+# Run command handler
+jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/command-handler.py
 ```
-
-## Startup
-
-GitHub Watcher scripts are triggered automatically by the host's `github-sync.service` via `jib --exec` after each sync (every 15 minutes).
-
-**No background process** - Each script runs once, performs analysis, creates notifications, and exits.
 
 ## Configuration
 
 No configuration needed - automatically discovers PRs from synced data.
 
 **Sync interval**: Every 15 minutes (host-side github-sync.timer)
-**Analysis trigger**: Immediately after sync completes
+**Analysis trigger**: Immediately after sync completes (via ExecStartPost)
 
 Detection timing:
 - Check failures: Within 15 minutes of failure occurring

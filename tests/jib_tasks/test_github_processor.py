@@ -1,7 +1,7 @@
 """
-Tests for the GitHub watcher module.
+Tests for the GitHub processor module.
 
-Tests the GitHub PR check watcher:
+Tests the GitHub PR check processor:
 - State management (load/save)
 - Check file processing
 - Failure analysis
@@ -14,18 +14,22 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-# Load github watcher module
-watcher_path = (
-    Path(__file__).parent.parent.parent / "jib-container" / "jib-tasks" / "github" / "watcher.py"
+# Load github processor module
+processor_path = (
+    Path(__file__).parent.parent.parent
+    / "jib-container"
+    / "jib-tasks"
+    / "github"
+    / "github-processor.py"
 )
-loader = SourceFileLoader("github_watcher", str(watcher_path))
-github_watcher = loader.load_module()
+loader = SourceFileLoader("github_processor", str(processor_path))
+github_processor = loader.load_module()
 
-GitHubWatcher = github_watcher.GitHubWatcher
+GitHubWatcher = github_processor.GitHubWatcher
 
 
-class TestGitHubWatcherInit:
-    """Tests for watcher initialization."""
+class TestGitHubProcessorInit:
+    """Tests for processor initialization."""
 
     def test_init_paths(self, temp_dir, monkeypatch):
         """Test that paths are initialized correctly."""

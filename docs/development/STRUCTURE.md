@@ -92,17 +92,17 @@ Tasks in `jib-container/jib-tasks/` are organized by product/service:
 jib-container/jib-tasks/
 ├── github/                    # GitHub-related tasks
 │   ├── README.md
-│   ├── check-monitor.py       # Analyzes CI failures
+│   ├── github-processor.py    # Analyzes CI failures
 │   ├── pr-reviewer.py         # Auto-reviews PRs
 │   ├── comment-responder.py   # Responds to PR comments
 │   └── pr-analyzer.py         # Analyzes PR context
 ├── jira/                      # JIRA-related tasks
 │   ├── README.md
-│   ├── jira-watcher.py        # Analyzes JIRA tickets
+│   ├── jira-processor.py      # Analyzes JIRA tickets
 │   └── analyze-sprint.py      # Sprint analysis
 ├── confluence/                # Confluence-related tasks
 │   ├── README.md
-│   └── confluence-watcher.py  # Analyzes docs
+│   └── confluence-processor.py # Analyzes docs
 └── slack/                     # Slack-related tasks
     ├── README.md
     └── incoming-processor.py  # Processes incoming messages
@@ -116,7 +116,6 @@ These are called via `jib --exec` from host-side systemd services (no background
 |------|------------|---------|
 | Python scripts | kebab-case | `codebase-analyzer.py` |
 | Shell scripts | kebab-case | `setup.sh`, `manage-scheduler.sh` |
-| Control scripts | `*-ctl` suffix, no extension | `github-watcher-ctl` |
 | Systemd files | `<service-name>.service`, `<service-name>.timer` | `slack-notifier.service` |
 | Config files | `.yaml` (not `.yml`) | `repositories.yaml` |
 | Documentation | UPPERCASE.md for guides, lowercase.md for READMEs | `SCHEDULING.md`, `README.md` |
