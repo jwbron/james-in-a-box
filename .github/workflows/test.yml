@@ -20,7 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov PyYAML
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt || true
           fi
