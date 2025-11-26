@@ -5,12 +5,143 @@ GitHub PR Issue Fixer - Detects and reports PR issues for Claude to fix
 Triggered by github-sync.service after syncing PR data.
 Detects check failures and merge conflicts, then delegates to Claude
 to determine the appropriate fix strategy.
+
+Each PR maintains persistent context in Beads for memory across sessions.
 """
 
 import sys
 import json
+import logging
 import subprocess
 from pathlib import Path
+from datetime import datetime
+from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class PRContextManager:
+    """Manages persistent PR context in Beads.
+
+    Each PR gets a unique task that tracks its entire lifecycle:
+    - Comments and responses
+    - CI check failures and fixes
+    - Review feedback and changes
+    - Merge conflict resolutions
+
+    Context ID format: pr-<repo>-<number> (e.g., pr-james-in-a-box-75)
+    """
+
+    def __init__(self):
+        self.beads_dir = Path.home() / "beads"
+
+    def get_context_id(self, repo: str, pr_num: int) -> str:
+        """Generate unique context ID for a PR."""
+        repo_name = repo.split('/')[-1]
+        return f"pr-{repo_name}-{pr_num}"
+
+    def search_context(self, repo: str, pr_num: int) -> Optional[str]:
+        """Search for existing beads task for this PR."""
+        context_id = self.get_context_id(repo, pr_num)
+        try:
+            result = subprocess.run(
+                ['bd', 'list', '--search', context_id, '--allow-stale'],
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    if line.strip() and line.startswith('beads-'):
+                        return line.split()[0]
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to search beads context: {e}")
+            return None
+
+    def get_context(self, repo: str, pr_num: int) -> Optional[Dict]:
+        """Get existing context for a PR."""
+        task_id = self.search_context(repo, pr_num)
+        if not task_id:
+            return None
+
+        try:
+            result = subprocess.run(
+                ['bd', 'show', task_id, '--allow-stale'],
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10
+            )
+            if result.returncode == 0:
+                return {
+                    'task_id': task_id,
+                    'content': result.stdout.strip()
+                }
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to get beads context: {e}")
+            return None
+
+    def create_context(self, repo: str, pr_num: int, pr_title: str) -> Optional[str]:
+        """Create new beads task for a PR."""
+        context_id = self.get_context_id(repo, pr_num)
+        repo_name = repo.split('/')[-1]
+
+        try:
+            result = subprocess.run(
+                ['bd', 'create', f'PR #{pr_num}: {pr_title}',
+                 '--label', 'github-pr',
+                 '--label', context_id,
+                 '--label', repo_name,
+                 '--label', 'issue-fixer',
+                 '--allow-stale'],
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10
+            )
+            if result.returncode == 0:
+                output = result.stdout.strip()
+                if 'beads-' in output:
+                    for word in output.split():
+                        if word.startswith('beads-'):
+                            return word.rstrip(':')
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to create beads context: {e}")
+            return None
+
+    def update_context(self, task_id: str, notes: str, status: Optional[str] = None) -> bool:
+        """Update beads task with new notes."""
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+        timestamped_notes = f"=== {timestamp} ===\n{notes}"
+
+        try:
+            cmd = ['bd', 'update', task_id, '--notes', timestamped_notes, '--allow-stale']
+            if status:
+                cmd.extend(['--status', status])
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=self.beads_dir,
+                timeout=10
+            )
+            return result.returncode == 0
+        except Exception as e:
+            logger.warning(f"Failed to update beads context: {e}")
+            return False
+
+    def get_or_create_context(self, repo: str, pr_num: int, pr_title: str = "") -> Optional[str]:
+        """Get existing context or create new one."""
+        existing = self.search_context(repo, pr_num)
+        if existing:
+            return existing
+        return self.create_context(repo, pr_num, pr_title or f"PR #{pr_num}")
 
 
 def detect_merge_conflicts(prs_dir: Path, khan_dir: Path) -> list:
@@ -150,7 +281,7 @@ def check_conflict(repo_path: Path, head_branch: str, base_branch: str) -> tuple
         return False, str(e)
 
 
-def collect_check_failures(checks_dir: Path, prs_dir: Path) -> list:
+def collect_check_failures(checks_dir: Path, prs_dir: Path, pr_context_mgr: PRContextManager) -> list:
     """Collect all check failures from synced data."""
     failures = []
 
@@ -168,11 +299,29 @@ def collect_check_failures(checks_dir: Path, prs_dir: Path) -> list:
                 pr_file = prs_dir / f"{repo_name}-PR-{pr_num}.md"
                 pr_context = pr_file.read_text() if pr_file.exists() else "PR details not available"
 
+                # Get or create beads context for this PR
+                beads_task_id = pr_context_mgr.get_or_create_context(
+                    repo, pr_num, f"CI failure in PR #{pr_num}"
+                )
+                beads_context = None
+                if beads_task_id:
+                    beads_context = pr_context_mgr.get_context(repo, pr_num)
+                    # Update with check failure info
+                    check_names = [c['name'] for c in failed_checks]
+                    pr_context_mgr.update_context(
+                        beads_task_id,
+                        f"CI check failure detected\nFailed checks: {', '.join(check_names)}",
+                        status='in_progress'
+                    )
+                    print(f"  PR #{pr_num}: Beads task {beads_task_id}")
+
                 failures.append({
                     'pr_number': pr_num,
                     'repository': repo,
                     'pr_context': pr_context,
                     'failed_checks': failed_checks,
+                    'beads_task_id': beads_task_id,
+                    'beads_context': beads_context,
                 })
 
         except Exception as e:
@@ -215,8 +364,19 @@ Conflict details:
     if failures:
         prompt += f"## Check Failures ({len(failures)} PR(s))\n\n"
         for f in failures:
+            # Include beads context if available
+            beads_section = ""
+            if f.get('beads_task_id'):
+                beads_section = f"**Beads Task**: {f['beads_task_id']}\n"
+                if f.get('beads_context'):
+                    beads_section += f"""**Previous Context**:
+```
+{f['beads_context'].get('content', '')[:1000]}
+```
+"""
             prompt += f"""### PR #{f['pr_number']} - {f['repository']}
 
+{beads_section}
 **PR Context:**
 ```
 {f['pr_context'][:1000]}...
@@ -241,21 +401,27 @@ Conflict details:
 
 For each issue:
 
-1. **Analyze** - Understand what's wrong
-2. **Fix** - Checkout the PR branch and implement appropriate fixes:
+1. **Check Beads Context First**:
+   - A Beads task has been created/updated for each PR with issues
+   - Review previous context to understand what's already been tried
+   - Avoid repeating failed approaches
+
+2. **Analyze** - Understand what's wrong
+3. **Fix** - Checkout the PR branch and implement appropriate fixes:
    - Merge conflicts: Resolve conflicts intelligently based on the code context
    - Lint/format errors: Run appropriate linters/formatters
    - Test failures: Examine and fix tests if the fix is clear
    - Build errors: Check dependencies, imports, etc.
-3. **Commit** - Commit your fixes with clear messages
-4. **Push** - Push to the PR branch
-5. **Comment** - Add a PR comment explaining what you fixed
-6. **Notify** - Create a notification summarizing your work
+4. **Commit** - Commit your fixes with clear messages
+5. **Push** - Push to the PR branch
+6. **Comment** - Add a PR comment explaining what you fixed
+7. **Update Beads Context**:
+   - Use `bd update <task-id> --notes "your update"` to record what was done
+   - Include: analysis results, fix attempts, current status
+8. **Notify** - Create a notification summarizing your work
 
 Use your judgment to determine the best approach for each issue. You have full access
 to the codebase and can make any changes needed.
-
-**Track in Beads**: `bd add "Fix issues in PR #<num>" --tags github,ci`
 
 Begin analysis now.
 """
@@ -272,10 +438,13 @@ def main():
     prs_dir = github_dir / "prs"
     khan_dir = Path.home() / "khan"
 
+    # Initialize PR context manager for beads integration
+    pr_context_mgr = PRContextManager()
+
     # Collect issues
     failures = []
     if checks_dir.exists():
-        failures = collect_check_failures(checks_dir, prs_dir)
+        failures = collect_check_failures(checks_dir, prs_dir, pr_context_mgr)
         print(f"Found {len(failures)} PR(s) with check failures")
 
     conflicts = []

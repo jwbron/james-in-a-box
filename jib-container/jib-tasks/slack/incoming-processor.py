@@ -134,6 +134,19 @@ def process_task(message_file: Path):
 
     print(f"Task: {task_content[:100]}...")
 
+    # Build thread context section if available
+    thread_context_section = ""
+    if frontmatter.get('thread_ts'):
+        thread_context_section = f"""
+## Thread Context (CRITICAL)
+
+**Thread ID:** `{thread_ts}`
+**This is part of an ongoing Slack conversation.** You MUST:
+1. Search beads for existing context: `bd --allow-stale search "{original_task_id}"`
+2. If found, load the previous work context before proceeding
+3. If not found, create a new beads task with this thread ID as a label
+"""
+
     # Construct prompt for Claude with full context
     prompt = f"""# Slack Task Processing
 
@@ -144,6 +157,7 @@ You received a task via Slack. Process it according to the workflow below.
 **File:** `{message_file.name}`
 **Task ID:** `{original_task_id}`
 **Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+{thread_context_section}
 
 ## Task from User
 
@@ -151,20 +165,44 @@ You received a task via Slack. Process it according to the workflow below.
 
 ## Your Workflow
 
-1. **Understand the request**: Analyze what the user is asking for
-2. **Track in Beads**: Add task to beads with `bd add` (include relevant tags)
-3. **Execute the task**:
+### 1. FIRST: Check Beads for Existing Context (MANDATORY)
+
+```bash
+cd ~/beads
+bd --allow-stale search "{original_task_id}"
+# If found: bd --allow-stale show <found-id> to load context
+# If not found: Create new task below
+```
+
+### 2. Track in Beads
+
+If no existing task was found:
+```bash
+bd --allow-stale create "Slack: {original_task_id}" --labels slack-thread,"{original_task_id}" --description "Task from Slack thread"
+bd --allow-stale update <id> --status in_progress
+```
+
+### 3. Execute the task
    - Read relevant code/documentation
    - Make necessary changes
    - Run tests if applicable
    - Commit changes with clear messages
-4. **Create PR (if code changes were made)**:
+
+### 4. Create PR (if code changes were made)
    - Use the PR helper: `~/khan/james-in-a-box/jib-container/scripts/create-pr-helper.py`
    - Run: `create-pr-helper.py --auto --reviewer jwiesebron --no-notify`
    - Or with custom title: `create-pr-helper.py --title "Your PR title" --body "Description" --no-notify`
    - The script will push the branch and create a PR automatically
    - IMPORTANT: Always use `--no-notify` flag - your output will be captured and threaded correctly
-5. **Output your response**: Print a clear summary to stdout with:
+
+### 5. Update Beads with Results (MANDATORY)
+```bash
+bd --allow-stale update <task-id> --notes "Summary of work done. PR #XX if created. Next steps if any."
+bd --allow-stale update <task-id> --status closed  # Or keep open if awaiting response
+```
+
+### 6. Output your response
+Print a clear summary to stdout with:
    - Summary of what was done
    - PR URL (if created)
    - Branch name (if commits were made)
@@ -176,7 +214,7 @@ You received a task via Slack. Process it according to the workflow below.
 - You're in an ephemeral container (will exit when done)
 - All work should be committed to git
 - **Create a PR after completing code changes** - this lets the user review on GitHub
-- Use beads to track progress across sessions
+- **Beads is your persistent memory** - ALWAYS check and update beads
 - Working directory: You can access all repos in `~/khan/`
 - The PR helper automatically requests review from @jwiesebron
 - **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack notification automatically
@@ -295,14 +333,22 @@ def process_response(message_file: Path):
         return False
 
     # Construct prompt for Claude with full context
+    task_id_for_search = referenced_notif if referenced_notif else message_file.stem
     prompt = f"""# Slack Response Processing
 
 You sent a notification that prompted a response from the user. Process their response and take appropriate action.
 
-## Thread Context
+## Thread Context (CRITICAL)
 
-**Task ID:** `{message_file.stem}`
+**Task ID:** `{task_id_for_search}`
 **Thread:** This is a threaded conversation - your response will be posted in the same thread.
+
+**FIRST ACTION REQUIRED:** Search beads for existing context from this thread:
+```bash
+cd ~/beads
+bd --allow-stale search "{task_id_for_search}"
+# If found: bd --allow-stale show <found-id> to load full context
+```
 
 ## Original Notification
 
@@ -314,21 +360,37 @@ You sent a notification that prompted a response from the user. Process their re
 
 ## Your Workflow
 
-1. **Understand the response**: What is the user asking or telling you?
-2. **Check Beads context**: Use `bd` to see related tasks and previous work
-3. **Take appropriate action**:
-   - If they answered a question: Continue the work
-   - If they gave feedback: Incorporate it
-   - If they requested changes: Make the changes
-   - If they asked a question: Research and respond
-4. **Update Beads**: Update task status as appropriate
-5. **Output your response**: Print a clear summary to stdout
+### 1. Load Beads Context (MANDATORY)
+```bash
+cd ~/beads
+bd --allow-stale search "{task_id_for_search}"
+bd --allow-stale show <found-id>  # Review what you did before
+```
+
+### 2. Understand the response
+What is the user asking or telling you? Common patterns:
+- Answered a question → Continue the work
+- Gave feedback → Incorporate it
+- Requested changes → Make the changes
+- Asked a question → Research and respond
+
+### 3. Take appropriate action
+Execute what's needed based on the response.
+
+### 4. Update Beads (MANDATORY)
+```bash
+bd --allow-stale update <task-id> --notes "User responded: [summary]. Action taken: [what you did]. Next: [pending items]."
+bd --allow-stale update <task-id> --status closed  # Or keep open if more expected
+```
+
+### 5. Output your response
+Print a clear summary to stdout.
 
 ## Important Notes
 
 - You're in an ephemeral container (will exit when done)
 - All work should be committed to git
-- Use beads to track progress and maintain context
+- **Beads is your persistent memory** - ALWAYS check and update beads
 - **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack reply automatically
 
 Process this response now."""
