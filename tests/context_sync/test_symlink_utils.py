@@ -404,7 +404,6 @@ class TestMainFunction:
 
     def test_main_shows_usage_with_no_args(self, capsys):
         """Test that main shows usage when no args provided."""
-
         args = []
         if len(args) < 1:
             print("Usage:")
@@ -416,7 +415,6 @@ class TestMainFunction:
 
     def test_main_parses_project_path(self, temp_dir):
         """Test parsing project path argument."""
-
         args = [str(temp_dir / "my-project")]
         target_project = args[0]
 

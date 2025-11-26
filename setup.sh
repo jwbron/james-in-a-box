@@ -257,6 +257,7 @@ else
     cd "$SCRIPT_DIR"
 fi
 
+
 # Check and install Beads (bd) - persistent task memory system
 print_info "Checking for Beads (bd)..."
 if command -v bd &> /dev/null; then
