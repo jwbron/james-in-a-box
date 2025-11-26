@@ -44,5 +44,6 @@ jobs:
       - name: Find and lint shell scripts
         run: |
           # Find all .sh files and run bashate
-          # Ignoring: E003 (indent not multiple of 4 - heredocs), E006 (long lines), E042 (local hides errors - common pattern)
-          find . -name "*.sh" -type f ! -path "./.git/*" -print0 | xargs -0 -r bashate -i E003,E006,E042
+          # Ignoring: E003 (indent not multiple of 4), E006 (long lines), E042 (local hides errors)
+          find . -name "*.sh" -type f ! -path "./.git/*" -print0 | \
+            xargs -0 -r bashate -i E003,E006,E042

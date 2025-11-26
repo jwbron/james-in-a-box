@@ -160,15 +160,17 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
     pr_num = pr_data["number"]
 
     # Get check status
-    checks = gh_json([
-        "pr",
-        "checks",
-        str(pr_num),
-        "--repo",
-        repo,
-        "--json",
-        "name,state,startedAt,completedAt,link,description,workflow",
-    ])
+    checks = gh_json(
+        [
+            "pr",
+            "checks",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "name,state,startedAt,completedAt,link,description,workflow",
+        ]
+    )
 
     if checks is None:
         return None
@@ -195,15 +197,17 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
             check["full_log"] = log
 
     # Get PR details
-    pr_details = gh_json([
-        "pr",
-        "view",
-        str(pr_num),
-        "--repo",
-        repo,
-        "--json",
-        "number,title,body,url,headRefName,baseRefName,state",
-    ])
+    pr_details = gh_json(
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "number,title,body,url,headRefName,baseRefName,state",
+        ]
+    )
 
     return {
         "type": "check_failure",
@@ -254,15 +258,17 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
     pr_num = pr_data["number"]
 
     # Get PR comments
-    comments = gh_json([
-        "pr",
-        "view",
-        str(pr_num),
-        "--repo",
-        repo,
-        "--json",
-        "comments,reviews",
-    ])
+    comments = gh_json(
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "comments,reviews",
+        ]
+    )
 
     if comments is None:
         return None
@@ -271,25 +277,29 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
 
     # Regular comments
     for c in comments.get("comments", []):
-        all_comments.append({
-            "id": c.get("id", ""),
-            "author": c.get("author", {}).get("login", "unknown"),
-            "body": c.get("body", ""),
-            "created_at": c.get("createdAt", ""),
-            "type": "comment",
-        })
+        all_comments.append(
+            {
+                "id": c.get("id", ""),
+                "author": c.get("author", {}).get("login", "unknown"),
+                "body": c.get("body", ""),
+                "created_at": c.get("createdAt", ""),
+                "type": "comment",
+            }
+        )
 
     # Review comments
     for r in comments.get("reviews", []):
         if r.get("body"):
-            all_comments.append({
-                "id": r.get("id", ""),
-                "author": r.get("author", {}).get("login", "unknown"),
-                "body": r.get("body", ""),
-                "created_at": r.get("submittedAt", ""),
-                "type": "review",
-                "state": r.get("state", ""),
-            })
+            all_comments.append(
+                {
+                    "id": r.get("id", ""),
+                    "author": r.get("author", {}).get("login", "unknown"),
+                    "body": r.get("body", ""),
+                    "created_at": r.get("submittedAt", ""),
+                    "type": "review",
+                    "state": r.get("state", ""),
+                }
+            )
 
     if not all_comments:
         return None
@@ -332,16 +342,18 @@ def check_prs_for_review(repo: str, state: dict) -> list[dict]:
     Returns list of context dicts for PRs needing review.
     """
     # Get open PRs NOT authored by @me
-    prs = gh_json([
-        "pr",
-        "list",
-        "--repo",
-        repo,
-        "--state",
-        "open",
-        "--json",
-        "number,title,url,headRefName,baseRefName,author,createdAt,additions,deletions,files",
-    ])
+    prs = gh_json(
+        [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,url,headRefName,baseRefName,author,createdAt,additions,deletions,files",
+        ]
+    )
 
     if prs is None:
         return []
@@ -361,26 +373,30 @@ def check_prs_for_review(repo: str, state: dict) -> list[dict]:
         if review_signature in state.get("processed_reviews", {}):
             continue
 
-        print(f"  PR #{pr_num}: New PR from {pr.get('author', {}).get('login', 'unknown')} needs review")
+        print(
+            f"  PR #{pr_num}: New PR from {pr.get('author', {}).get('login', 'unknown')} needs review"
+        )
 
         # Get PR diff
         diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
 
-        results.append({
-            "type": "review_request",
-            "repository": repo,
-            "pr_number": pr_num,
-            "pr_title": pr.get("title", ""),
-            "pr_url": pr.get("url", ""),
-            "pr_branch": pr.get("headRefName", ""),
-            "base_branch": pr.get("baseRefName", ""),
-            "author": pr.get("author", {}).get("login", ""),
-            "additions": pr.get("additions", 0),
-            "deletions": pr.get("deletions", 0),
-            "files": [f.get("path", "") for f in pr.get("files", [])],
-            "diff": diff[:50000] if diff else "",  # Limit diff size
-            "review_signature": review_signature,
-        })
+        results.append(
+            {
+                "type": "review_request",
+                "repository": repo,
+                "pr_number": pr_num,
+                "pr_title": pr.get("title", ""),
+                "pr_url": pr.get("url", ""),
+                "pr_branch": pr.get("headRefName", ""),
+                "base_branch": pr.get("baseRefName", ""),
+                "author": pr.get("author", {}).get("login", ""),
+                "additions": pr.get("additions", 0),
+                "deletions": pr.get("deletions", 0),
+                "files": [f.get("path", "") for f in pr.get("files", [])],
+                "diff": diff[:50000] if diff else "",  # Limit diff size
+                "review_signature": review_signature,
+            }
+        )
 
     return results
 
@@ -411,18 +427,20 @@ def main():
         print(f"\n[{repo}]")
 
         # Get open PRs authored by @me (for check failures and comments)
-        my_prs = gh_json([
-            "pr",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            "open",
-            "--author",
-            "@me",
-            "--json",
-            "number,title,url,headRefName,baseRefName",
-        ])
+        my_prs = gh_json(
+            [
+                "pr",
+                "list",
+                "--repo",
+                repo,
+                "--state",
+                "open",
+                "--author",
+                "@me",
+                "--json",
+                "number,title,url,headRefName,baseRefName",
+            ]
+        )
 
         if my_prs:
             print(f"  Found {len(my_prs)} open PR(s) authored by me")
@@ -431,17 +449,17 @@ def main():
                 # Check for failures
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):
-                    state.setdefault("processed_failures", {})[
-                        failure_ctx["failure_signature"]
-                    ] = datetime.utcnow().isoformat()
+                    state.setdefault("processed_failures", {})[failure_ctx["failure_signature"]] = (
+                        datetime.utcnow().isoformat()
+                    )
                     tasks_queued += 1
 
                 # Check for comments
                 comment_ctx = check_pr_for_comments(repo, pr, state)
                 if comment_ctx and invoke_jib("comment", comment_ctx):
-                    state.setdefault("processed_comments", {})[
-                        comment_ctx["comment_signature"]
-                    ] = datetime.utcnow().isoformat()
+                    state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
+                        datetime.utcnow().isoformat()
+                    )
                     tasks_queued += 1
         else:
             print("  No open PRs authored by me")
@@ -450,9 +468,9 @@ def main():
         review_contexts = check_prs_for_review(repo, state)
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
-                state.setdefault("processed_reviews", {})[
-                    review_ctx["review_signature"]
-                ] = datetime.utcnow().isoformat()
+                state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
+                    datetime.utcnow().isoformat()
+                )
                 tasks_queued += 1
 
     # Save state

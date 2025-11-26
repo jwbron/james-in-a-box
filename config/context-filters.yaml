@@ -4,9 +4,9 @@
 confluence:
   allowed_spaces:
     - ENG          # Engineering documentation
-    - INFRA        # Infrastructure docs  
+    - INFRA        # Infrastructure docs
     - PRODUCT      # Product docs (internal)
-  
+
   blocked_spaces:
     - POPS         # People Ops - HR data
     - SCHOOL       # School partnerships - customer data
@@ -21,7 +21,7 @@ jira:
     - INFRA
     - WEBAPP
     - MOBILE
-  
+
   blocked_projects:
     - SUPPORT      # Customer support - PII
     - SALES        # Sales - customer data

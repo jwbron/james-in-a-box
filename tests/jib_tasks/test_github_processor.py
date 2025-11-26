@@ -101,9 +101,7 @@ class TestBuildCheckFailurePrompt:
             "pr_branch": "fix-branch",
             "base_branch": "main",
             "pr_body": "This PR fixes a bug.",
-            "failed_checks": [
-                {"name": "test", "state": "FAILURE", "full_log": "Test failed"}
-            ],
+            "failed_checks": [{"name": "test", "state": "FAILURE", "full_log": "Test failed"}],
         }
 
         prompt = github_processor.build_check_failure_prompt(context)
@@ -126,9 +124,7 @@ class TestBuildCheckFailurePrompt:
             "pr_branch": "fix-branch",
             "base_branch": "main",
             "pr_body": "",
-            "failed_checks": [
-                {"name": "test", "state": "FAILURE", "full_log": long_log}
-            ],
+            "failed_checks": [{"name": "test", "state": "FAILURE", "full_log": long_log}],
         }
 
         prompt = github_processor.build_check_failure_prompt(context)
@@ -159,9 +155,7 @@ test:
             "pr_branch": "fix-branch",
             "base_branch": "main",
             "pr_body": "",
-            "failed_checks": [
-                {"name": "lint", "state": "FAILURE", "full_log": "Linting failed"}
-            ],
+            "failed_checks": [{"name": "lint", "state": "FAILURE", "full_log": "Linting failed"}],
         }
 
         with patch.object(Path, "home", return_value=temp_dir):
@@ -413,88 +407,102 @@ class TestMain:
 
     def test_main_invalid_context_json(self, capsys):
         """Test main exits on invalid JSON context."""
-        with patch("sys.argv", [
-            "github-processor.py",
-            "--task",
-            "check_failure",
-            "--context",
-            "invalid{json",
-        ]):
+        with patch(
+            "sys.argv",
+            [
+                "github-processor.py",
+                "--task",
+                "check_failure",
+                "--context",
+                "invalid{json",
+            ],
+        ):
             with pytest.raises(SystemExit):
                 github_processor.main()
 
     def test_main_dispatches_to_handler(self):
         """Test main dispatches to correct handler."""
-        context = json.dumps({
-            "repository": "owner/repo",
-            "pr_number": 123,
-            "pr_title": "Fix",
-            "pr_url": "",
-            "pr_branch": "fix",
-            "base_branch": "main",
-            "pr_body": "",
-            "failed_checks": [],
-        })
+        context = json.dumps(
+            {
+                "repository": "owner/repo",
+                "pr_number": 123,
+                "pr_title": "Fix",
+                "pr_url": "",
+                "pr_branch": "fix",
+                "base_branch": "main",
+                "pr_body": "",
+                "failed_checks": [],
+            }
+        )
 
-        with patch("sys.argv", [
-            "github-processor.py",
-            "--task",
-            "check_failure",
-            "--context",
-            context,
-        ]):
-            with patch.object(
-                github_processor, "handle_check_failure"
-            ) as mock_handler:
+        with patch(
+            "sys.argv",
+            [
+                "github-processor.py",
+                "--task",
+                "check_failure",
+                "--context",
+                context,
+            ],
+        ):
+            with patch.object(github_processor, "handle_check_failure") as mock_handler:
                 github_processor.main()
                 mock_handler.assert_called_once()
 
     def test_main_handles_comment_task(self):
         """Test main handles comment task."""
-        context = json.dumps({
-            "repository": "owner/repo",
-            "pr_number": 123,
-            "pr_title": "Fix",
-            "pr_url": "",
-            "comments": [],
-        })
+        context = json.dumps(
+            {
+                "repository": "owner/repo",
+                "pr_number": 123,
+                "pr_title": "Fix",
+                "pr_url": "",
+                "comments": [],
+            }
+        )
 
-        with patch("sys.argv", [
-            "github-processor.py",
-            "--task",
-            "comment",
-            "--context",
-            context,
-        ]):
+        with patch(
+            "sys.argv",
+            [
+                "github-processor.py",
+                "--task",
+                "comment",
+                "--context",
+                context,
+            ],
+        ):
             with patch.object(github_processor, "handle_comment") as mock_handler:
                 github_processor.main()
                 mock_handler.assert_called_once()
 
     def test_main_handles_review_task(self):
         """Test main handles review_request task."""
-        context = json.dumps({
-            "repository": "owner/repo",
-            "pr_number": 123,
-            "pr_title": "Add",
-            "pr_url": "",
-            "pr_branch": "feature",
-            "base_branch": "main",
-            "author": "dev",
-            "additions": 0,
-            "deletions": 0,
-            "files": [],
-            "diff": "",
-        })
+        context = json.dumps(
+            {
+                "repository": "owner/repo",
+                "pr_number": 123,
+                "pr_title": "Add",
+                "pr_url": "",
+                "pr_branch": "feature",
+                "base_branch": "main",
+                "author": "dev",
+                "additions": 0,
+                "deletions": 0,
+                "files": [],
+                "diff": "",
+            }
+        )
 
-        with patch("sys.argv", [
-            "github-processor.py",
-            "--task",
-            "review_request",
-            "--context",
-            context,
-        ]):
-            with patch.object(
-                github_processor, "handle_review_request"
-            ) as mock_handler:
+        with patch(
+            "sys.argv",
+            [
+                "github-processor.py",
+                "--task",
+                "review_request",
+                "--context",
+                context,
+            ],
+        ):
+            with patch.object(github_processor, "handle_review_request") as mock_handler:
                 github_processor.main()
                 mock_handler.assert_called_once()

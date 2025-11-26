@@ -117,7 +117,7 @@ def build_check_failure_prompt(context: dict) -> str:
 - **Branch**: {pr_branch} -> {base_branch}
 
 ## PR Description
-{pr_body[:2000] if pr_body else 'No description provided'}
+{pr_body[:2000] if pr_body else "No description provided"}
 
 ## Failed Checks ({len(failed_checks)})
 
@@ -300,7 +300,7 @@ def build_comment_prompt(context: dict) -> str:
         created_at = comment.get("created_at", "")
         state = comment.get("state", "")
 
-        prompt += f"""### From @{author} ({comment_type}{' - ' + state if state else ''})
+        prompt += f"""### From @{author} ({comment_type}{" - " + state if state else ""})
 *{created_at}*
 
 {body}
@@ -404,13 +404,13 @@ def build_review_prompt(context: dict) -> str:
 - **Changes**: +{additions} / -{deletions}
 
 ## Files Changed ({len(files)})
-{chr(10).join('- ' + f for f in files[:20])}
-{'...' if len(files) > 20 else ''}
+{chr(10).join("- " + f for f in files[:20])}
+{"..." if len(files) > 20 else ""}
 
 ## Diff
 ```diff
-{diff[:30000] if diff else 'Diff not available'}
-{'...(truncated)' if diff and len(diff) > 30000 else ''}
+{diff[:30000] if diff else "Diff not available"}
+{"...(truncated)" if diff and len(diff) > 30000 else ""}
 ```
 
 ## Your Task

@@ -71,11 +71,15 @@ class TestStateManagement:
         state_dir = temp_dir / ".local" / "share" / "github-watcher"
         state_dir.mkdir(parents=True)
         state_file = state_dir / "state.json"
-        state_file.write_text(json.dumps({
-            "processed_failures": {"repo-123:test": "2025-01-01T00:00:00"},
-            "processed_comments": {},
-            "processed_reviews": {},
-        }))
+        state_file.write_text(
+            json.dumps(
+                {
+                    "processed_failures": {"repo-123:test": "2025-01-01T00:00:00"},
+                    "processed_comments": {},
+                    "processed_reviews": {},
+                }
+            )
+        )
 
         with patch.object(Path, "home", return_value=temp_dir):
             state = github_watcher.load_state()
