@@ -1,29 +1,16 @@
 # Documentation Sync Makefile
 
-# Python virtual environment setup
-VENV := .venv
-PYTHON := $(or ${PYTHON},python3.11)
-export PYTHON
+# Use the parent host-services venv (managed by uv at the host-services level)
+VENV := ../../.venv
 
-# Ensure the virtual environment exists and has pip
-${VENV}/bin/pip:
-	@if [ ! -d ${VENV} ]; then \
-		echo "Creating virtual environment with `${PYTHON} --version`"; \
-		${PYTHON} -m venv ${VENV}; \
-	fi
-	@if [ ! -e ${VENV}/bin/pip ]; then \
-		echo "Virtual environment created but pip not found. Recreating..."; \
-		rm -rf ${VENV}; \
-		${PYTHON} -m venv ${VENV}; \
-	fi
-
-# Install Python dependencies
-${VENV}/built.deps: requirements.txt ${VENV}/bin/pip
-	${VENV}/bin/pip install -r requirements.txt
-	@touch "$@"
+# Ensure the virtual environment exists (created by setup.sh via uv sync)
+${VENV}/bin/python:
+	@echo "Virtual environment not found at ${VENV}"
+	@echo "Run 'uv sync' from the host-services directory or run setup.sh"
+	@exit 1
 
 .PHONY: deps
-deps: ${VENV}/built.deps
+deps: ${VENV}/bin/python
 
 # Documentation sync targets
 # Sync all connectors

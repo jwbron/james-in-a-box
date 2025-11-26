@@ -201,10 +201,10 @@ install-linters:
 	@echo "Installing linting tools..."
 	@echo ""
 	@echo "==> Installing ruff (Python linter)..."
-	pip install ruff
+	uv tool install ruff
 	@echo ""
 	@echo "==> Installing yamllint (YAML linter)..."
-	pip install yamllint
+	uv tool install yamllint
 	@echo ""
 	@echo "==> Checking for shfmt..."
 	@if ! command -v shfmt >/dev/null 2>&1; then \

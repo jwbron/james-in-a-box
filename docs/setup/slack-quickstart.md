@@ -4,7 +4,8 @@ Get Slack notifications working in 10 minutes.
 
 ## Prerequisites
 
-- Python 3.x with pip
+- Python 3.x
+- [uv](https://docs.astral.sh/uv/) (installed automatically by setup.sh)
 - A Slack workspace you can add apps to
 
 ## Quick Setup
@@ -26,7 +27,8 @@ This will:
 ### 1. Install Dependencies
 
 ```bash
-pip install --user slack-sdk
+cd ~/khan/james-in-a-box/host-services
+uv sync
 ```
 
 ### 2. Create Slack App
