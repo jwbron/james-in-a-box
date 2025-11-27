@@ -3,11 +3,14 @@
 Create symlinks to Confluence documentation in other projects.
 """
 
+import logging
 import sys
 from pathlib import Path
 
 from connectors.confluence.config import ConfluenceConfig
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 
 def ensure_gitignore_pattern(link_name: str = "confluence-docs") -> bool:
@@ -182,8 +185,8 @@ def list_projects_with_symlinks():
                         try:
                             if item.resolve() == source_path:
                                 found_links.append((project, item))
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Error resolving symlink {item}: {e}")
 
     if found_links:
         for project, symlink in found_links:

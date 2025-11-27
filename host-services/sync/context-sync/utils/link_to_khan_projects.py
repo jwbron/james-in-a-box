@@ -219,8 +219,8 @@ def list_khan_projects_with_links():
                 try:
                     if item.resolve() == source_path:
                         found_links.append((project, item))
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Warning: Could not resolve symlink in {project.name}: {e}")
 
     if found_links:
         for project, symlink in found_links:
