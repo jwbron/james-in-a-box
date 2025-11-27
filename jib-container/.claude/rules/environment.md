@@ -36,6 +36,13 @@ claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" \
 - **MCP**: All GitHub API operations (PRs, issues, comments, file reads from remote, pushing)
 - **Local git**: Local commits, staging, diff viewing
 
+**IMPORTANT - Get owner/repo from local git first:**
+Before any GitHub MCP operation, check the actual remote to get the correct owner/repo:
+```bash
+git remote -v   # e.g., origin https://github.com/jwbron/james-in-a-box.git
+```
+Do NOT assume owner from context (e.g., don't assume `Khan/` just because you're working on Khan Academy code). The local repo knows its origin - use that.
+
 **Authentication**: Configured automatically via `GITHUB_TOKEN` environment variable.
 
 ## Capabilities
@@ -71,7 +78,7 @@ claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" \
 ## Custom Commands
 
 | Command | Purpose |
-|---------|---------|
+|---------|---------||
 | `@load-context <name>` | Load knowledge from `~/sharing/context/` |
 | `@save-context <name>` | Save learnings to `~/sharing/context/` |
 | `@create-pr [audit] [draft]` | Generate PR description |
