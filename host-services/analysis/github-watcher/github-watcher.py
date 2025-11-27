@@ -15,14 +15,19 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 import json
 import subprocess
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
 
 def load_config() -> dict:
-    """Load repository configuration."""
+    """Load repository configuration.
+
+    Returns dict with:
+        - writable_repos: List of repos jib can modify
+        - github_username: Configured GitHub username (for filtering)
+    """
     config_paths = [
         Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml",
         Path(__file__).parent.parent.parent.parent / "config" / "repositories.yaml",
@@ -33,7 +38,7 @@ def load_config() -> dict:
             with open(config_path) as f:
                 return yaml.safe_load(f)
 
-    return {"writable_repos": []}
+    return {"writable_repos": [], "github_username": "jib"}
 
 
 def load_state() -> dict:
@@ -42,10 +47,21 @@ def load_state() -> dict:
     if state_file.exists():
         try:
             with state_file.open() as f:
-                return json.load(f)
+                state = json.load(f)
+                # Ensure all expected keys exist
+                state.setdefault("processed_failures", {})
+                state.setdefault("processed_comments", {})
+                state.setdefault("processed_reviews", {})
+                state.setdefault("last_run", None)
+                return state
         except Exception:
             pass
-    return {"processed_failures": {}, "processed_comments": {}, "processed_reviews": {}}
+    return {
+        "processed_failures": {},
+        "processed_comments": {},
+        "processed_reviews": {},
+        "last_run": None,
+    }
 
 
 def save_state(state: dict):
@@ -250,8 +266,17 @@ def fetch_check_logs(repo: str, check: dict) -> str | None:
     return None
 
 
-def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
+def check_pr_for_comments(
+    repo: str, pr_data: dict, state: dict, github_username: str, since_timestamp: str | None = None
+) -> dict | None:
     """Check a PR for new comments from others that need response.
+
+    Args:
+        repo: Repository in owner/repo format
+        pr_data: PR data dict with number, title, url, etc.
+        state: State dict with processed_comments
+        github_username: Configured GitHub username (to filter out own comments)
+        since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
     """
@@ -304,16 +329,25 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
     if not all_comments:
         return None
 
-    # Filter to comments from others (not @me/jib)
-    # We'll let the container filter based on who authored the PR
-    other_comments = [
-        c
-        for c in all_comments
-        if c["author"].lower() not in ("jib", "github-actions[bot]", "dependabot[bot]")
-    ]
+    # Filter to comments from others (not from configured user or common bots)
+    # Build list of authors to exclude (case-insensitive)
+    excluded_authors = {
+        github_username.lower(),
+        "jib",  # Always exclude jib bot
+        "github-actions[bot]",
+        "dependabot[bot]",
+    }
+
+    other_comments = [c for c in all_comments if c["author"].lower() not in excluded_authors]
 
     if not other_comments:
         return None
+
+    # Filter by since_timestamp if provided (only show comments newer than last run)
+    if since_timestamp:
+        other_comments = [c for c in other_comments if c.get("created_at", "") > since_timestamp]
+        if not other_comments:
+            return None  # No new comments since last run
 
     # Create signature based on latest comment timestamp
     latest_comment = max(other_comments, key=lambda c: c.get("created_at", ""))
@@ -322,7 +356,7 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
     if comment_signature in state.get("processed_comments", {}):
         return None  # Already processed
 
-    print(f"  PR #{pr_num}: {len(other_comments)} comment(s) from others")
+    print(f"  PR #{pr_num}: {len(other_comments)} new comment(s) from others")
 
     return {
         "type": "comment",
@@ -336,8 +370,16 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
     }
 
 
-def check_prs_for_review(repo: str, state: dict) -> list[dict]:
+def check_prs_for_review(
+    repo: str, state: dict, github_username: str, since_timestamp: str | None = None
+) -> list[dict]:
     """Check for PRs from others that need review.
+
+    Args:
+        repo: Repository in owner/repo format
+        state: State dict with processed_reviews
+        github_username: Configured GitHub username (to filter out own PRs)
+        since_timestamp: ISO timestamp to filter PRs (only show newer)
 
     Returns list of context dicts for PRs needing review.
     """
@@ -358,11 +400,24 @@ def check_prs_for_review(repo: str, state: dict) -> list[dict]:
     if prs is None:
         return []
 
-    # Filter to PRs from others
-    other_prs = [p for p in prs if p.get("author", {}).get("login", "").lower() not in ("jib",)]
+    # Filter to PRs from others (not from configured user or jib)
+    excluded_authors = {
+        github_username.lower(),
+        "jib",  # Always exclude jib bot
+    }
+
+    other_prs = [
+        p for p in prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
+    ]
 
     if not other_prs:
         return []
+
+    # Filter by since_timestamp if provided (only show PRs created after last run)
+    if since_timestamp:
+        other_prs = [p for p in other_prs if p.get("createdAt", "") > since_timestamp]
+        if not other_prs:
+            return []  # No new PRs since last run
 
     results = []
     for pr in other_prs:
@@ -401,23 +456,57 @@ def check_prs_for_review(repo: str, state: dict) -> list[dict]:
     return results
 
 
+def utc_now_iso() -> str:
+    """Get current UTC time in ISO format with Z suffix.
+
+    This ensures consistent timestamp format for comparison with GitHub timestamps.
+    GitHub returns timestamps like: 2025-11-27T02:01:26Z
+    We generate:                    2025-11-27T04:29:21Z (no microseconds for cleaner comparison)
+    """
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def get_since_timestamp(state: dict) -> str | None:
+    """Get ISO timestamp for 'since' queries based on last run time.
+
+    Returns None if this is the first run or last_run is not set.
+    """
+    last_run = state.get("last_run")
+    if last_run:
+        return last_run
+    return None
+
+
 def main():
     """Main entry point - scan configured repos and trigger jib as needed."""
+    current_run_time = utc_now_iso()
+
     print("=" * 60)
     print("GitHub Watcher - Host-side monitoring service")
-    print(f"Time: {datetime.now().isoformat()}")
+    print(f"Local time: {datetime.now().isoformat()}")
+    print(f"UTC time:   {current_run_time}")
     print("=" * 60)
 
     # Load config
     config = load_config()
     repos = config.get("writable_repos", [])
+    github_username = config.get("github_username", "jib")
 
     if not repos:
         print("No repositories configured - check config/repositories.yaml")
         return 0
 
+    print(f"GitHub username: {github_username}")
+
     # Load state
     state = load_state()
+
+    # Get the timestamp from last run for filtering queries
+    since_timestamp = get_since_timestamp(state)
+    if since_timestamp:
+        print(f"Checking for events since last run: {since_timestamp}")
+    else:
+        print("First run - checking all open items")
 
     print(f"Scanning {len(repos)} repository(ies)...")
 
@@ -450,34 +539,38 @@ def main():
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):
                     state.setdefault("processed_failures", {})[failure_ctx["failure_signature"]] = (
-                        datetime.utcnow().isoformat()
+                        utc_now_iso()
                     )
                     tasks_queued += 1
 
                 # Check for comments
-                comment_ctx = check_pr_for_comments(repo, pr, state)
+                comment_ctx = check_pr_for_comments(
+                    repo, pr, state, github_username, since_timestamp
+                )
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
-                        datetime.utcnow().isoformat()
+                        utc_now_iso()
                     )
                     tasks_queued += 1
         else:
             print("  No open PRs authored by me")
 
         # Check for PRs from others that need review
-        review_contexts = check_prs_for_review(repo, state)
+        review_contexts = check_prs_for_review(repo, state, github_username, since_timestamp)
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
                 state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
-                    datetime.utcnow().isoformat()
+                    utc_now_iso()
                 )
                 tasks_queued += 1
 
-    # Save state
+    # Update last run timestamp and save state
+    state["last_run"] = current_run_time
     save_state(state)
 
     print("\n" + "=" * 60)
     print(f"GitHub Watcher completed - {tasks_queued} task(s) triggered")
+    print(f"Next run will check for events since: {current_run_time}")
     print("=" * 60)
 
     return 0
