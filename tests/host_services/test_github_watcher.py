@@ -208,14 +208,17 @@ class TestCheckPrForFailures:
 
     def test_no_failed_checks(self):
         """Test PR with all passing checks."""
-        pr_data = {"number": 123, "title": "Fix bug"}
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
         state = {"processed_failures": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = [
-                {"name": "test", "state": "SUCCESS"},
-                {"name": "lint", "state": "SUCCESS"},
-            ]
+            # API returns check_runs wrapper with conclusion field
+            mock_gh.return_value = {
+                "check_runs": [
+                    {"name": "test", "conclusion": "success"},
+                    {"name": "lint", "conclusion": "success"},
+                ]
+            }
 
             result = github_watcher.check_pr_for_failures("owner/repo", pr_data, state)
 
@@ -229,14 +232,27 @@ class TestCheckPrForFailures:
             "url": "https://github.com/owner/repo/pull/123",
             "headRefName": "fix-branch",
             "baseRefName": "main",
+            "headRefOid": "abc123def456",
         }
         state = {"processed_failures": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            # First call: get checks
+            # First call: get check runs via API
             # Second call: get PR details
             mock_gh.side_effect = [
-                [{"name": "test", "state": "FAILURE", "link": ""}],
+                {
+                    "check_runs": [
+                        {
+                            "name": "test",
+                            "conclusion": "failure",
+                            "html_url": "",
+                            "started_at": "",
+                            "completed_at": "",
+                            "output": {},
+                            "app": {},
+                        }
+                    ]
+                },
                 {"body": "PR description"},
             ]
 
@@ -251,15 +267,28 @@ class TestCheckPrForFailures:
 
     def test_already_processed_skipped(self):
         """Test already processed failures are skipped."""
-        pr_data = {"number": 123, "title": "Fix bug"}
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
         state = {"processed_failures": {"owner/repo-123:test": "2025-01-01"}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = [{"name": "test", "state": "FAILURE"}]
+            mock_gh.return_value = {
+                "check_runs": [
+                    {"name": "test", "conclusion": "failure", "html_url": "", "output": {}, "app": {}}
+                ]
+            }
 
             result = github_watcher.check_pr_for_failures("owner/repo", pr_data, state)
 
             assert result is None
+
+    def test_no_head_sha_skipped(self):
+        """Test PR without headRefOid is skipped."""
+        pr_data = {"number": 123, "title": "Fix bug"}
+        state = {"processed_failures": {}}
+
+        result = github_watcher.check_pr_for_failures("owner/repo", pr_data, state)
+
+        assert result is None
 
 
 class TestCheckPrForComments:
