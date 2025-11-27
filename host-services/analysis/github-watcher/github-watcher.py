@@ -15,7 +15,7 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 import json
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -490,7 +490,7 @@ def utc_now_iso() -> str:
     GitHub returns timestamps like: 2025-11-27T02:01:26Z
     We generate:                    2025-11-27T04:29:21Z (no microseconds for cleaner comparison)
     """
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def get_since_timestamp(state: dict) -> str | None:
