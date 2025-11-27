@@ -13,7 +13,6 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 """
 
 import json
-import os
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -127,10 +126,8 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     """
     context_json = json.dumps(context)
 
-    # Get the current user's home directory for constructing container paths
-    # The container maps the host user's home to the same path inside
-    username = os.environ.get("USER", "agent")
-    processor_path = f"/home/{username}/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
+    # Container path is fixed - jib always mounts to /home/jwies/khan/
+    processor_path = "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
 
     # Build command
     cmd = [
