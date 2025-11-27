@@ -178,19 +178,38 @@ def build_check_failure_prompt(context: dict) -> str:
                 prompt += f"- `make {t}`\n"
         prompt += "\n"
 
-    prompt += """## Your Task
+    prompt += f"""## CRITICAL: Branch Verification (MUST DO FIRST)
 
-1. **Analyze** the failures - understand root cause from logs
-2. **Fix** - checkout the PR branch and implement fixes:
+**Target PR Branch**: `{pr_branch}`
+
+Before making ANY changes, you MUST:
+```bash
+cd ~/khan/{repo_name}
+git fetch origin {pr_branch}
+git checkout {pr_branch}
+git branch --show-current  # VERIFY this shows: {pr_branch}
+```
+
+**WARNING**: Your container starts on a temporary branch (jib-temp-*), NOT the PR branch!
+If you commit without checking out `{pr_branch}` first, your changes will go to the WRONG branch
+and may contaminate other PRs. This has caused issues before.
+
+## Your Task
+
+1. **CHECKOUT PR BRANCH FIRST** (see above) - do NOT skip this step
+2. **Verify branch**: Run `git branch --show-current` and confirm it shows `{pr_branch}`
+3. **Analyze** the failures - understand root cause from logs
+4. **Fix** - implement fixes on the PR branch:
    - For lint errors: Try `make fix` or `make lint-fix` first (auto-fix)
    - For test failures: Examine and fix tests
    - For build errors: Check dependencies, imports
-3. **Verify** - Run `make lint` and `make test` to verify fixes
-4. **Commit** - Commit fixes with clear message
-5. **Push** - Push to the PR branch
-6. **Comment** - Add PR comment explaining fixes
+5. **Verify fixes** - Run `make lint` and `make test` to verify
+6. **Verify branch again**: Run `git branch --show-current` - confirm still on `{pr_branch}`
+7. **Commit** - Commit fixes with clear message
+8. **Push** - Push to the PR branch: `git push origin {pr_branch}`
+9. **Comment** - Add PR comment explaining fixes
 
-Begin analysis now.
+Begin by checking out the PR branch now.
 """
 
     return prompt
@@ -279,7 +298,10 @@ def build_comment_prompt(context: dict) -> str:
     pr_num = context.get("pr_number", 0)
     pr_title = context.get("pr_title", "")
     pr_url = context.get("pr_url", "")
+    pr_branch = context.get("pr_branch", "")
     comments = context.get("comments", [])
+
+    repo_name = repo.split("/")[-1]
 
     prompt = f"""# PR Comment Response
 
@@ -288,6 +310,7 @@ def build_comment_prompt(context: dict) -> str:
 - **PR Number**: #{pr_num}
 - **Title**: {pr_title}
 - **URL**: {pr_url}
+- **PR Branch**: {pr_branch}
 
 ## Comments to Respond To
 
@@ -309,13 +332,34 @@ def build_comment_prompt(context: dict) -> str:
 
 """
 
-    prompt += """## Your Task
+    prompt += f"""## CRITICAL: Branch Verification (IF MAKING CODE CHANGES)
+
+If you need to make code changes in response to comments, you MUST checkout the correct branch first:
+
+**Target PR Branch**: `{pr_branch}`
+
+```bash
+cd ~/khan/{repo_name}
+git fetch origin {pr_branch}
+git checkout {pr_branch}
+git branch --show-current  # VERIFY this shows: {pr_branch}
+```
+
+**WARNING**: Your container starts on a temporary branch (jib-temp-*), NOT the PR branch!
+If you commit without checking out `{pr_branch}` first, your changes will go to the WRONG branch.
+
+## Your Task
 
 Review the comments above and:
 
 1. **Understand** what the commenter is asking or suggesting
 2. **Research** - read relevant code if needed to understand context
-3. **Implement** any requested changes if appropriate
+3. **IF implementing changes**:
+   a. FIRST checkout the PR branch: `git checkout {pr_branch}`
+   b. Verify with: `git branch --show-current`
+   c. Make changes
+   d. Verify branch again before committing
+   e. Commit and push to `{pr_branch}`
 4. **Respond** - use `gh pr comment` to respond thoughtfully:
    - Acknowledge their feedback
    - Explain what you've done or will do
