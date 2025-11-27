@@ -273,7 +273,13 @@ class TestCheckPrForFailures:
         with patch.object(github_watcher, "gh_json") as mock_gh:
             mock_gh.return_value = {
                 "check_runs": [
-                    {"name": "test", "conclusion": "failure", "html_url": "", "output": {}, "app": {}}
+                    {
+                        "name": "test",
+                        "conclusion": "failure",
+                        "html_url": "",
+                        "output": {},
+                        "app": {},
+                    }
                 ]
             }
 

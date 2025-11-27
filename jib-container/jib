@@ -988,7 +988,7 @@ def run_claude() -> bool:
         return False
 
 
-def exec_in_new_container(command: List[str]) -> bool:
+def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool:
     """Execute a command in a new ephemeral container with isolated worktrees.
 
     Creates worktrees for all repos to isolate changes (same as interactive mode):
@@ -999,6 +999,7 @@ def exec_in_new_container(command: List[str]) -> bool:
 
     Args:
         command: Command to execute
+        timeout_minutes: Timeout in minutes (default: 30)
 
     Returns:
         True if successful, False otherwise
@@ -1025,6 +1026,7 @@ def exec_in_new_container(command: List[str]) -> bool:
 
     info(f"Executing command in new container: {container_id}")
     print(f"Command: {' '.join(command)}")
+    print(f"Timeout: {timeout_minutes} minutes")
     print()
 
     # Create worktrees for repos (isolates container from host repos)
@@ -1116,13 +1118,14 @@ def exec_in_new_container(command: List[str]) -> bool:
     # Add the command to execute
     cmd.extend(command)
 
-    # Run container with 30-minute timeout (configurable via timeout_seconds parameter)
+    # Run container with configurable timeout
+    timeout_seconds = timeout_minutes * 60
     try:
-        result = subprocess.run(cmd, timeout=1800)  # 30 minutes
+        result = subprocess.run(cmd, timeout=timeout_seconds)
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         print()
-        error("Container execution timed out after 30 minutes")
+        error(f"Container execution timed out after {timeout_minutes} minutes")
         # Kill the container if it's still running
         subprocess.run(["docker", "kill", container_id],
                       stdout=subprocess.DEVNULL,
@@ -1148,8 +1151,10 @@ Examples:
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
   jib --exec python3 /home/jwies/khan/james-in-a-box/jib-container/components/incoming-processor.py /home/jwies/sharing/incoming/task.md
+  jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
+      Default timeout is 30 minutes, configurable via --timeout
         """
     )
     parser.add_argument(
@@ -1161,6 +1166,13 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         "--reset",
         action="store_true",
         help="Clear configuration and start over"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=30,
+        metavar="MINUTES",
+        help="Timeout in minutes for --exec commands (default: 30)"
     )
     parser.add_argument(
         "--exec",
@@ -1220,7 +1232,7 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
 
     # Handle exec - execute in a new ephemeral container
     if args.exec:
-        if not exec_in_new_container(args.exec):
+        if not exec_in_new_container(args.exec, timeout_minutes=args.timeout):
             return 1
         return 0
 

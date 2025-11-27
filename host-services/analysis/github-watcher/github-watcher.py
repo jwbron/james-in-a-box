@@ -576,9 +576,7 @@ def main():
                     tasks_queued += 1
 
                 # Check for comments (filter out bot's own comments, not human's)
-                comment_ctx = check_pr_for_comments(
-                    repo, pr, state, bot_username, since_timestamp
-                )
+                comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
                         utc_now_iso()
@@ -618,9 +616,7 @@ def main():
                     tasks_queued += 1
 
                 # Check for comments on bot's PRs (filter out bot's own comments)
-                comment_ctx = check_pr_for_comments(
-                    repo, pr, state, bot_username, since_timestamp
-                )
+                comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
                         utc_now_iso()
