@@ -182,6 +182,22 @@ Claude Code natively supports MCP servers via configuration:
 - `create_pull_request` - Create PRs
 - `add_issue_comment` - Comment on issues/PRs
 
+**⚠️ Checks API Limitation:**
+
+Fine-grained Personal Access Tokens (PATs) **cannot access the Checks API** (workflow run status, check runs, annotations). This is a known GitHub limitation confirmed by GitHub Support (November 2025):
+
+> "It isn't possible to assign Checks permissions to a Fine-grained PAT—only GitHub Apps can access this API. We had that functionality initially, but due to some edge cases we disabled it."
+
+| Token Type | Checks API Access |
+|------------|-------------------|
+| Fine-grained PAT | ❌ Not supported |
+| Classic PAT | ⚠️ Requires broad `repo` scope |
+| GitHub App | ✅ Granular `checks:read` permission |
+
+**Implication:** To query GitHub Actions workflow status (e.g., "did the CI pass on this PR?"), you need either:
+1. A **Classic PAT** with `repo` scope (grants broad access, not ideal)
+2. A **GitHub App** with `checks:read` permission (recommended)
+
 ### 4. Preserving Watcher Workflows
 
 Current watchers run post-sync to analyze changes. With MCP, we shift to:
@@ -293,6 +309,74 @@ We considered responding to each comment as it arrives, but rejected this becaus
 - Later comments may contradict or supersede earlier ones
 - Higher total token usage across multiple sessions
 
+### 5.1. GitHub App Webhooks for Real-Time Events
+
+With a GitHub App, we can receive **real-time webhooks** instead of polling every 5-15 minutes. This eliminates `github-watcher.py` entirely and enables instant responses.
+
+**Available Webhook Events:**
+
+| Event | Trigger | Use Case |
+|-------|---------|----------|
+| `issue_comment` | Comment on issue/PR | Respond to reviewer questions |
+| `pull_request_review_comment` | Line-level PR comment | Address specific code feedback |
+| `pull_request_review` | Review submitted | React to approvals/rejections |
+| `pull_request` | PR opened/updated | Auto-review new PRs |
+| `check_run` | CI check completes | React to failures |
+| `check_suite` | All checks complete | Notify on CI completion |
+
+**Architecture with Webhooks:**
+
+```
+GitHub App Webhook
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Host (Webhook Receiver)                      │
+│                                                              │
+│  Option A: Cloudflare Tunnel / ngrok                        │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  webhook-receiver.py (Flask/FastAPI)                  │   │
+│  │    - Receives GitHub events                           │   │
+│  │    - Validates webhook signature                      │   │
+│  │    - Writes to ~/sharing/incoming/                    │   │
+│  │    - OR triggers jib container directly               │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  Option B: smee.io (Development)                            │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  smee -u https://smee.io/xxx --path /webhook          │   │
+│  │    - GitHub → smee.io → local client                  │   │
+│  │    - No port exposure needed                          │   │
+│  └──────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+        │
+        ▼ (file or direct trigger)
+┌──────────────────────────────────────────────────────────────┐
+│                    Container (jib)                            │
+│                                                               │
+│  Process event → Generate response → Post via GitHub MCP     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Benefits over Polling:**
+- **Instant response:** Events processed in seconds, not 5-15 minutes
+- **No wasted cycles:** Only process when events occur
+- **Richer context:** Webhook payload includes full event details
+- **Check status access:** GitHub App can query Checks API
+
+**Implementation Considerations:**
+- Webhook receiver runs on host (container cannot receive inbound)
+- Use Cloudflare Tunnel or smee.io to expose endpoint securely
+- Debounce logic (Section 5) still applies for rapid-fire comments
+- Combine with GitHub App installation token for API calls
+
+**Migration Path:**
+1. Create GitHub App with webhook URL
+2. Configure events: `issue_comment`, `pull_request_review`, `check_run`
+3. Implement webhook receiver on host
+4. Test alongside existing `github-watcher.py`
+5. Deprecate polling-based watcher
+
 ### 6. Example: Migrated JIRA Watcher
 
 **Before (Custom Sync):**
@@ -376,6 +460,27 @@ def analyze_tickets():
 - **Atlassian:** OAuth 2.0 with user-scoped tokens (respects Jira/Confluence permissions)
 - **GitHub:** Personal Access Token or GitHub App (scoped to repos)
 
+**GitHub Authentication Strategy:**
+
+Due to the Checks API limitation (see Section 3), we recommend a **hybrid authentication approach**:
+
+| Use Case | Auth Method | Rationale |
+|----------|-------------|-----------|
+| PR/Issue operations | Fine-grained PAT | Minimal permissions, secure |
+| Checks/Workflow status | GitHub App | Only option for Checks API |
+| Real-time webhooks | GitHub App | Apps can receive webhooks |
+
+**GitHub App Benefits:**
+- Granular permissions (can request only `checks:read`)
+- Webhook support for real-time event processing
+- Higher rate limits than PATs
+- Installation tokens auto-expire (1 hour)
+
+**GitHub App Trade-offs:**
+- More complex setup (private key, JWT generation)
+- Short-lived tokens require refresh logic
+- Requires webhook endpoint for real-time events
+
 **Permission Boundaries:**
 - Agent actions limited by authenticated user's permissions
 - Audit trail via Atlassian/GitHub activity logs
@@ -384,7 +489,8 @@ def analyze_tickets():
 **Credential Management:**
 - OAuth tokens stored in Claude Code config (encrypted)
 - Refresh handled automatically by MCP protocol
-- No long-lived API tokens in environment variables
+- GitHub App private keys stored securely on host
+- Installation tokens generated on-demand (1-hour expiry)
 
 ## Migration Strategy
 
@@ -534,20 +640,33 @@ The decision to keep Confluence file-based is **low permanence** - we can migrat
 
 ### Alternative 4: Webhook-Based Real-Time Sync
 
-**Description:** Replace polling with webhooks for real-time file updates.
+**Description:** Replace polling with webhooks for real-time event processing.
 
 **Pros:**
-- Real-time updates
-- Keeps file-based architecture
-- Lower latency than polling
+- Real-time updates (instant vs. 5-15 minute polling)
+- Richer event context in webhook payload
+- No wasted polling cycles
+- Eliminates `github-watcher.py` entirely
 
 **Cons:**
-- Requires inbound network access (breaks sandbox model)
-- Still one-way sync
-- Complex webhook management
-- Doesn't enable bi-directional operations
+- Requires inbound network access to host (not container)
+- More complex infrastructure (tunnel or public endpoint)
+- Webhook secret management
 
-**Rejected because:** Breaks security model (sandbox cannot receive inbound connections) and still doesn't enable write operations.
+**Original Rejection Reconsidered:**
+
+Initially rejected because "sandbox cannot receive inbound connections." However, this concern is mitigated:
+
+1. **Webhooks go to host, not container** - The webhook receiver runs on the host machine, not inside the sandboxed container. The host can receive inbound connections.
+
+2. **Secure tunnel options exist:**
+   - Cloudflare Tunnel (free, no port exposure)
+   - smee.io (GitHub's recommended dev solution)
+   - ngrok (easy setup)
+
+3. **GitHub App enables bi-directional operations** - Unlike the original file-sync approach, a GitHub App provides both webhook reception AND API access for write operations.
+
+**Revised Status:** Now **recommended** as part of the hybrid approach (see Section 5.1). The GitHub App requirement for Checks API access makes webhooks a natural addition.
 
 ### Alternative 5: Database Replication
 
