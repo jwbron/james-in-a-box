@@ -26,6 +26,7 @@ incoming_processor = loader.load_module()
 
 parse_frontmatter = incoming_processor.parse_frontmatter
 create_notification_with_thread = incoming_processor.create_notification_with_thread
+extract_thread_context = incoming_processor.extract_thread_context
 
 
 class TestParseFrontmatter:
@@ -354,3 +355,119 @@ Here is my response to your question.
             result = incoming_processor.process_response(response_file)
 
         assert result is True
+
+
+class TestExtractThreadContext:
+    """Tests for thread context extraction."""
+
+    def test_no_thread_context(self):
+        """Test content without thread context section."""
+        content = "Just some plain content\nwith no thread context"
+        thread_ctx, pr_refs = extract_thread_context(content)
+
+        assert thread_ctx == ""
+        assert pr_refs == []
+
+    def test_extracts_pr_analysis_reference(self):
+        """Test extraction of PR Analysis format references."""
+        content = """
+## Thread Context
+
+Full conversation history:
+
+**1. James in a box:**
+# PR Analysis: Khan/terraform-modules#29
+
+Some analysis content
+
+## Current Message
+
+User message here
+"""
+        thread_ctx, pr_refs = extract_thread_context(content)
+
+        assert "Khan/terraform-modules#29" in pr_refs
+        assert len(pr_refs) == 1
+        assert "PR Analysis" in thread_ctx
+
+    def test_extracts_github_url(self):
+        """Test extraction of GitHub PR URLs."""
+        content = """
+## Thread Context
+
+See https://github.com/Khan/webapp/pull/12345 for details.
+
+## Current Message
+
+Do the thing
+"""
+        _thread_ctx, pr_refs = extract_thread_context(content)
+
+        assert "Khan/webapp#12345" in pr_refs
+
+    def test_extracts_shorthand_reference(self):
+        """Test extraction of owner/repo#number shorthand."""
+        content = """
+## Thread Context
+
+Working on owner/repo#123
+
+## Current Message
+
+Update needed
+"""
+        _thread_ctx, pr_refs = extract_thread_context(content)
+
+        assert "owner/repo#123" in pr_refs
+
+    def test_multiple_pr_references(self):
+        """Test extraction of multiple PR references."""
+        content = """
+## Thread Context
+
+# PR Analysis: Khan/webapp#100
+
+Also see https://github.com/Khan/other-repo/pull/200
+
+## Current Message
+
+Fix both
+"""
+        _thread_ctx, pr_refs = extract_thread_context(content)
+
+        assert "Khan/webapp#100" in pr_refs
+        assert "Khan/other-repo#200" in pr_refs
+        assert len(pr_refs) == 2
+
+    def test_deduplicates_references(self):
+        """Test that duplicate references are not repeated."""
+        content = """
+## Thread Context
+
+# PR Analysis: Khan/webapp#100
+
+PR: https://github.com/Khan/webapp/pull/100
+
+## Current Message
+
+Same PR mentioned twice
+"""
+        _thread_ctx, pr_refs = extract_thread_context(content)
+
+        assert pr_refs.count("Khan/webapp#100") == 1
+
+    def test_thread_context_stops_at_next_section(self):
+        """Test that thread context extraction stops at ## Current Message."""
+        content = """
+## Thread Context
+
+Thread content here
+
+## Current Message
+
+This should not be in thread context
+"""
+        thread_ctx, _pr_refs = extract_thread_context(content)
+
+        assert "Thread content here" in thread_ctx
+        assert "should not be in thread context" not in thread_ctx

@@ -14,7 +14,8 @@ WorkingDirectory=%h/khan/james-in-a-box/host-services/analysis/codebase-analyzer
 # Execute the analyzer via jib --exec (runs in ephemeral container with Claude Code)
 # --implement: automatically fix issues and open a PR
 # --max-fixes 10: limit to top 10 highest-priority fixes
-ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/host-services/analysis/codebase-analyzer/codebase-analyzer.py --implement --max-fixes 10
+# --since 1: only analyze files changed in the last day (incremental analysis)
+ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 %h/khan/james-in-a-box/host-services/analysis/codebase-analyzer/codebase-analyzer.py --implement --max-fixes 10 --since 1
 
 # Logging
 StandardOutput=journal
