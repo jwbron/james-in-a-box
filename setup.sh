@@ -723,6 +723,129 @@ else
     fi
 fi
 
+# GitHub App configuration (for Checks API access)
+print_info "Checking GitHub App configuration..."
+
+github_app_id_file="$jib_user_config_dir/github-app-id"
+github_app_installation_file="$jib_user_config_dir/github-app-installation-id"
+github_app_pem_file="$jib_user_config_dir/github-app.pem"
+
+if [ -f "$github_app_id_file" ] && [ -f "$github_app_installation_file" ] && [ -f "$github_app_pem_file" ]; then
+    print_success "GitHub App configured"
+    echo "   App ID: $(cat "$github_app_id_file")"
+    echo "   Installation ID: $(cat "$github_app_installation_file")"
+    echo "   Private key: $github_app_pem_file"
+else
+    echo ""
+    print_info "GitHub App setup (optional but recommended)"
+    echo ""
+    echo "A GitHub App provides access to the Checks API (workflow status)"
+    echo "which is NOT available with fine-grained Personal Access Tokens."
+    echo ""
+    echo "Benefits of GitHub App:"
+    echo "  • Query CI/CD workflow status (pass/fail)"
+    echo "  • Granular permissions (can request only what's needed)"
+    echo "  • Higher API rate limits"
+    echo "  • Foundation for real-time webhooks"
+    echo ""
+    read -p "Set up GitHub App now? (y/n) " -n 1 -r
+    echo
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "GitHub App Setup"
+        echo "================"
+        echo ""
+        echo "If you haven't created a GitHub App yet:"
+        echo "  1. Go to: https://github.com/settings/apps/new"
+        echo "  2. Name: james-in-a-box (or similar)"
+        echo "  3. Homepage URL: https://github.com/$current_username/james-in-a-box"
+        echo "  4. Uncheck 'Webhook Active' (unless setting up webhooks)"
+        echo "  5. Permissions → Repository:"
+        echo "     - Checks: Read-only"
+        echo "     - Contents: Read and write"
+        echo "     - Pull requests: Read and write"
+        echo "     - Commit statuses: Read-only"
+        echo "  6. Click 'Create GitHub App'"
+        echo "  7. Note the App ID shown on the next page"
+        echo "  8. Scroll down and click 'Generate a private key' (downloads .pem file)"
+        echo "  9. Go to 'Install App' in left sidebar → Install on your account"
+        echo "     - Select 'Only select repositories' → choose james-in-a-box"
+        echo "  10. Note the Installation ID from the URL after installation"
+        echo "      (URL will be: github.com/settings/installations/XXXXX)"
+        echo ""
+
+        # Get App ID
+        read -p "Enter App ID (numeric): " app_id
+        if [[ ! "$app_id" =~ ^[0-9]+$ ]]; then
+            print_error "Invalid App ID (must be numeric)"
+        else
+            echo "$app_id" > "$github_app_id_file"
+            print_success "App ID saved"
+
+            # Get Installation ID
+            read -p "Enter Installation ID (numeric): " installation_id
+            if [[ ! "$installation_id" =~ ^[0-9]+$ ]]; then
+                print_error "Invalid Installation ID (must be numeric)"
+                rm -f "$github_app_id_file"
+            else
+                echo "$installation_id" > "$github_app_installation_file"
+                print_success "Installation ID saved"
+
+                # Get Private Key
+                echo ""
+                echo "Enter the path to your private key .pem file"
+                echo "(downloaded when you clicked 'Generate a private key')"
+                read -p "Path to .pem file: " pem_path
+
+                # Expand ~ and check file
+                pem_path="${pem_path/#\~/$HOME}"
+
+                if [ -f "$pem_path" ]; then
+                    cp "$pem_path" "$github_app_pem_file"
+                    chmod 600 "$github_app_pem_file"
+                    print_success "Private key copied to $github_app_pem_file"
+
+                    # Test token generation
+                    echo ""
+                    print_info "Testing GitHub App token generation..."
+                    token_script="$SCRIPT_DIR/jib-container/jib-tools/github-app-token.py"
+
+                    if [ -f "$token_script" ]; then
+                        if token_output=$(python3 "$token_script" --config-dir "$jib_user_config_dir" 2>&1); then
+                            if [[ "$token_output" == ghs_* ]] || [ -n "$token_output" ]; then
+                                print_success "GitHub App token generation works!"
+                                echo "   Container will use App authentication for full API access"
+                            else
+                                print_warning "Token generation returned unexpected output"
+                                echo "   Output: $token_output"
+                            fi
+                        else
+                            print_error "Token generation failed"
+                            echo "   Error: $token_output"
+                            echo ""
+                            echo "   Check that:"
+                            echo "   - App ID and Installation ID are correct"
+                            echo "   - Private key matches the App"
+                            echo "   - App is installed on your repository"
+                        fi
+                    else
+                        print_warning "Token script not found, skipping test"
+                        echo "   Script should be at: $token_script"
+                    fi
+                else
+                    print_error "Private key file not found: $pem_path"
+                    rm -f "$github_app_id_file" "$github_app_installation_file"
+                fi
+            fi
+        fi
+    else
+        print_info "Skipping GitHub App setup"
+        echo "   Container will use PAT (if configured) - no Checks API access"
+        echo "   Run setup.sh again to configure GitHub App later"
+    fi
+fi
+
 # Container setup info
 print_header "Next Steps"
 
