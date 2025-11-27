@@ -360,8 +360,10 @@ def check_pr_for_comments(
 
     # Filter to comments from the bot itself or common bots
     # Build list of authors to exclude (case-insensitive)
+    # Include both the base username and the [bot] suffix variant
     excluded_authors = {
         bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
         "github-actions[bot]",
         "dependabot[bot]",
     }
@@ -584,6 +586,46 @@ def main():
                     tasks_queued += 1
         else:
             print(f"  No open PRs authored by {github_username}")
+
+        # Also check PRs authored by the bot (for check failures and comments)
+        # The bot creates PRs via GitHub App, so its PRs need monitoring too
+        bot_author = f"{bot_username}[bot]"
+        bot_prs = gh_json(
+            [
+                "pr",
+                "list",
+                "--repo",
+                repo,
+                "--state",
+                "open",
+                "--author",
+                f"app/{bot_username}",
+                "--json",
+                "number,title,url,headRefName,baseRefName,headRefOid",
+            ]
+        )
+
+        if bot_prs:
+            print(f"  Found {len(bot_prs)} open PR(s) authored by {bot_author}")
+
+            for pr in bot_prs:
+                # Check for failures on bot's PRs
+                failure_ctx = check_pr_for_failures(repo, pr, state)
+                if failure_ctx and invoke_jib("check_failure", failure_ctx):
+                    state.setdefault("processed_failures", {})[failure_ctx["failure_signature"]] = (
+                        utc_now_iso()
+                    )
+                    tasks_queued += 1
+
+                # Check for comments on bot's PRs (filter out bot's own comments)
+                comment_ctx = check_pr_for_comments(
+                    repo, pr, state, bot_username, since_timestamp
+                )
+                if comment_ctx and invoke_jib("comment", comment_ctx):
+                    state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
+                        utc_now_iso()
+                    )
+                    tasks_queued += 1
 
         # Check for PRs from others that need review (filter out bot's PRs)
         review_contexts = check_prs_for_review(repo, state, bot_username, since_timestamp)
