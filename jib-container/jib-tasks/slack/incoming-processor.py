@@ -277,6 +277,31 @@ Process this task now."""
         return False
 
 
+def extract_original_task_id(content: str) -> str | None:
+    """Extract the original task ID from thread context.
+
+    Looks for patterns like:
+    - "Saved to: `task-20251126-150200.md`"
+    - "task-YYYYMMDD-HHMMSS" anywhere in thread context
+
+    Returns the task ID (e.g., "task-20251126-150200") or None.
+    """
+    # Pattern to match task IDs: task-YYYYMMDD-HHMMSS
+    task_pattern = r"task-\d{8}-\d{6}"
+
+    # Look for "Saved to:" pattern first (most reliable)
+    saved_to_match = re.search(r"Saved to: `(" + task_pattern + r")\.md`", content)
+    if saved_to_match:
+        return saved_to_match.group(1)
+
+    # Fall back to any task ID in the content
+    task_match = re.search(task_pattern, content)
+    if task_match:
+        return task_match.group(0)
+
+    return None
+
+
 def extract_thread_context(content: str) -> tuple[str, list[str]]:
     """Extract thread context and PR/repo references from message content.
 
@@ -348,6 +373,13 @@ def process_response(message_file: Path):
     if thread_ts:
         print(f"📧 Thread context: {thread_ts}")
 
+    # CRITICAL: Extract the original task ID from thread context
+    # This is the key to preserving memory across Slack thread conversations
+    # The original task ID (e.g., "task-20251126-150200") is what beads tasks are labeled with
+    original_task_id = extract_original_task_id(content)
+    if original_task_id:
+        print(f"🔗 Original task ID from thread: {original_task_id}")
+
     # Extract thread context and PR references from the message
     thread_context_text, pr_refs = extract_thread_context(content)
     if pr_refs:
@@ -392,7 +424,9 @@ def process_response(message_file: Path):
         return False
 
     # Construct prompt for Claude with full context
-    task_id_for_search = referenced_notif if referenced_notif else message_file.stem
+    # PRIORITY: original_task_id > referenced_notif > message_file.stem
+    # original_task_id is the actual beads label, which is what we need to search for
+    task_id_for_search = original_task_id or referenced_notif or message_file.stem
 
     # Build PR context warning if we found PR references
     pr_context_warning = ""
