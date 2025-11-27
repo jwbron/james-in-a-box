@@ -1,0 +1,790 @@
+{
+  "file_hashes": {
+    "README.md": "4f390e3f090385dbaf3cde5eaa20372b",
+    "setup.sh": "2f2dd3b4a070a50f0a075ebc1565494e",
+    "bin/README.md": "059bbfc14f951626d84d34cd0d02d860",
+    "config/context-filters.yaml": "628ead143cabd27fa4e9f55917d2befb",
+    "config/host_config.py": "f6ac0a1f498c62857312ed201900844f",
+    "config/repo_config.py": "85658d141fadf397c99a655d85f0b0fc",
+    "docs/adr/ADR-Context-Sync-Strategy-Custom-vs-MCP.md": "b1135f83457b35d4049b73bd3f4988e1",
+    "docs/architecture/slack-integration.md": "792ad0d7b3131079f6e91c08efd35780",
+    "docs/development/STRUCTURE.md": "f74d0da2a2d9fa9e37544ae76ef121ee",
+    "docs/reference/codebase-analyzer.md": "ce60344bfb5aab3f07d9352dc958a0b7",
+    "docs/setup/slack-quickstart.md": "4ce6fbacd321207cfb67d1244bce97d4",
+    "host-services/analysis/codebase-analyzer/setup.sh": "b7b437b80888aa9e67e4e13c4ea35ab5",
+    "host-services/analysis/conversation-analyzer/README.md": "039f77460288d2c8ee7aed08f74da961",
+    "host-services/analysis/conversation-analyzer/conversation-analyzer.py": "db8b658b9619dbabea740075f4af9ec0",
+    "host-services/analysis/conversation-analyzer/setup.sh": "8cf09242742ccc85d96d2f37212ac3a1",
+    "host-services/analysis/github-watcher/README.md": "51057a858ff019c71e17cf48292ac2d9",
+    "host-services/analysis/github-watcher/github-watcher.py": "af206d8f6e1e49205e65b9e7e0d619da",
+    "host-services/analysis/github-watcher/setup.sh": "66e62ba92daeb7f4093159f2f2743633",
+    "host-services/slack/slack-notifier/setup.sh": "01c627c6f274dbee8e2625aba86314c0",
+    "host-services/slack/slack-notifier/slack-notifier.py": "abc529f8860153ea88a672a8a6ae5c38",
+    "host-services/slack/slack-receiver/create-pr.sh": "90b013587fc23f94dd79f1fe0d0f2a0e",
+    "host-services/slack/slack-receiver/host_command_handler.py": "8bdf228282b25145be7174acab25ad29",
+    "host-services/slack/slack-receiver/setup.sh": "315a6cdd0cd6340e760e9d0854f1ffe6",
+    "host-services/slack/slack-receiver/slack-receiver.py": "37fd48d6da3f8e0b9b162445a938201c",
+    "host-services/sync/context-sync/context-sync.py": "a7dc23391c8924e3ad76ffccb14d9741",
+    "host-services/sync/context-sync/manage_scheduler.sh": "9676b8f0a80a7e7abb8a671fc1a6881c",
+    "host-services/sync/context-sync/connectors/base.py": "8b4fe5b5c7d27b358694eea63f1cdf25",
+    "host-services/sync/context-sync/connectors/confluence/config.py": "b971d760545ec48d89a995522e078613",
+    "host-services/sync/context-sync/connectors/confluence/connector.py": "0642c6670a7cdcfb432a16539914f263",
+    "host-services/sync/context-sync/connectors/confluence/sync.py": "c4e42398ae9817c9875769e01ec2ed32",
+    "host-services/sync/context-sync/connectors/jira/__init__.py": "c8bce8374e0639932f668b19ffcf4f03",
+    "host-services/sync/context-sync/connectors/jira/config.py": "751fa8488d1fe7ad59d32cfea933456b",
+    "host-services/sync/context-sync/connectors/jira/connector.py": "95b52dcedca907865ff48dea2fb3ca37",
+    "host-services/sync/context-sync/connectors/jira/sync.py": "4375221bc9e4b2445e690008f35d3659",
+    "host-services/sync/context-sync/utils/create_symlink.py": "a6fbccb79d70b7be979f73bbf7670d72",
+    "host-services/sync/context-sync/utils/get_space_ids.py": "a183b3c1d0bb17fea9738b8bbee2d66a",
+    "host-services/sync/context-sync/utils/link_to_khan_projects.py": "efaedc0bde0f1f65e9b281564be9c1ee",
+    "host-services/sync/context-sync/utils/list_spaces.py": "bad931604ec1b2e2ce26218329336a27",
+    "host-services/sync/context-sync/utils/maintenance.py": "345895e1714382a8129f59bf7ca8e516",
+    "host-services/sync/context-sync/utils/search.py": "da46231c7864773ca738ac6a87178585",
+    "host-services/sync/context-sync/utils/setup.py": "731d259701b482c9b0dfd8e1134bba0b",
+    "host-services/utilities/worktree-watcher/README.md": "5a2105c71408ec8475e06fba742d3b53",
+    "host-services/utilities/worktree-watcher/worktree-watcher.sh": "2911d2e19dd5a0350246ceb123d09949",
+    "jib-container/Dockerfile": "e3604d934c83f0e58b9d0943ccf75dea",
+    "jib-container/README.md": "d9fb6fe49abd36fdd1bee5f20c4ae5fe",
+    "jib-container/docker-setup.py": "48c114f85c728951d7280f2c2f6f1321",
+    "jib-container/.claude/README.md": "4cc14920fa019663f437d3788d4a5d61",
+    "jib-container/.claude/commands/README.md": "f0ded3e5674fc6678fd9ec9713eeee7f",
+    "jib-container/.claude/commands/create-pr.md": "4e06018df3964409b31c40d8e2bb51c6",
+    "jib-container/.claude/commands/update-confluence-doc.md": "26933ac3ea9c621fcd029501cfe31ca2",
+    "jib-container/.claude/rules/README.md": "fcae36c02183a159dac5ff9fdcf623d0",
+    "jib-container/.claude/rules/environment.md": "45074322c69270f5956fd76120524b89",
+    "jib-container/.claude/rules/mission.md": "de686353820d3f96aadcca2ad89d5092",
+    "jib-container/jib-tasks/confluence/confluence-processor.py": "b0c2bcc2a157c7184eb62e6c77c28102",
+    "jib-container/jib-tasks/github/README.md": "c203fbfde6cb6d5c4840dbb8b90ddc6d",
+    "jib-container/jib-tasks/github/command-handler.py": "693ea3326581107490555c7ac30bb82d",
+    "jib-container/jib-tasks/github/comment-responder.py": "c8609a1c114cc9dbb8db5f5a973432db",
+    "jib-container/jib-tasks/github/github-processor.py": "05d7413d1ea5c00c21f05371fd7bb181",
+    "jib-container/jib-tasks/github/pr-analyzer.py": "7bd28ed426f22f1de381c8d7e5883c82",
+    "jib-container/jib-tasks/github/pr-reviewer.py": "59420b3f0bb4bd5be1daf6371114aab7",
+    "jib-container/jib-tasks/jira/analyze-sprint.py": "6562e81d05772131e1c62e08fad0187c",
+    "jib-container/jib-tasks/jira/jira-processor.py": "ad10c55ec4466e427feb11f55b8aa472",
+    "jib-container/jib-tasks/slack/incoming-processor.py": "e6e4804227d639e6c489b47fd8f22b3d",
+    "jib-container/jib-tools/comment-pr-helper.py": "202e6b7b07b5df74f4fb0c6c75b427da",
+    "jib-container/jib-tools/create-pr-helper.py": "677572c5a544237f80e587ee67d983c7",
+    "jib-container/jib-tools/discover-tests.py": "f53463169827d727822bbaea2a5e9b62",
+    "shared/notifications/__init__.py": "82836718c4ae27b96629d0788b339118",
+    "shared/notifications/base.py": "d01c37a3b8ce7c2f2674b71d6f2e4170",
+    "shared/notifications/slack.py": "cb54a93c9772df8438a8a29e2c15d6fb",
+    "shared/notifications/types.py": "5612802bdc71c7f19cc3de4c1ba29c05",
+    "tests/conftest.py": "314bd6c83e3b0e766183bb5bcb1f87de",
+    "tests/run_tests.py": "977c8434d8ea9b006e76c1d2f5940147",
+    "tests/test_bash_syntax.py": "261904cedb7e0a2657548caa63b0506b",
+    "tests/test_python_syntax.py": "16d0a26851dc5eea6b24ed4974801a5f",
+    "tests/config/__init__.py": "2e02c42bb5a1f0dc2dc5781a0c319633",
+    "tests/config/test_repo_config.py": "aa7722384dcd60135f2e58d2f7ab0701",
+    "tests/context_sync/__init__.py": "c547177e70c8518d145d5da86da90da8",
+    "tests/context_sync/test_base_connector.py": "72f3390f4c06e68e0d79dff97b90a553",
+    "tests/context_sync/test_confluence_connector.py": "9bcd95fa938e332685d0096d1cc7eae7",
+    "tests/context_sync/test_context_sync.py": "647491e80627c15d078ee8153c783f25",
+    "tests/context_sync/test_github_sync.py": "5af187263392e504df9220a95938e59e",
+    "tests/context_sync/test_jira_connector.py": "1939c39928e82fbc7c3857ca9289839f",
+    "tests/context_sync/test_symlink_utils.py": "571d969f5294d97c7716eadad6809b3e",
+    "tests/context_sync/test_utilities.py": "f2fef2da9fe37eae33a33986c013a588",
+    "tests/host_services/__init__.py": "f7aeb33816d1cc707645a705e83d642c",
+    "tests/host_services/test_codebase_analyzer.py": "ec081909e30b217955df6380924a3b8b",
+    "tests/host_services/test_conversation_analyzer.py": "a1be5f066db220488e66a932e8825497",
+    "tests/host_services/test_github_watcher.py": "1b02990dd298f6f351bb3177ff2a8411",
+    "tests/host_services/test_slack_notifier.py": "ebf9089ad1d9451fe6b06e8186144d8a",
+    "tests/host_services/test_slack_receiver.py": "e965e09c9e28470e14b3fd9a7daa1444",
+    "tests/host_services/test_utilities.py": "4f1b7cf34e7ec8a9aba1fa124f014a1f",
+    "tests/jib/__init__.py": "3eb1293cf2f455db67a151926d95b939",
+    "tests/jib/test_docker_setup.py": "23f585ce22eebfa2cb0ecdf5ad5257e7",
+    "tests/jib/test_jib.py": "fff71e715b6dfc19c27e1b57f1b8173e",
+    "tests/jib_tasks/__init__.py": "05d6cd8781f4425e6e91fb63d06cef5a",
+    "tests/jib_tasks/test_analyze_sprint.py": "a4c5bfcb261074e9f319576b0e0b0f53",
+    "tests/jib_tasks/test_confluence_watcher.py": "d96dafd58633d66c40f238dd40fe3930",
+    "tests/jib_tasks/test_github_processor.py": "9d606b56df6469c089a52cda767f20f8",
+    "tests/jib_tasks/test_incoming_processor.py": "d21cb21cd8caf32e2f957d24ba130f24",
+    "tests/jib_tasks/test_jira_watcher.py": "aaa6d2284efa18dd479b8b89ff9a4457",
+    "tests/jib_tasks/test_pr_analyzer.py": "eaeee9f101214a93a0df780200106933",
+    "tests/jib_tools/__init__.py": "42975a00187bc2adefd2196d55b92ecc",
+    "tests/jib_tools/test_discover_tests.py": "82d446cf5134731eee59eb2de3589ee2",
+    "tests/jib_tools/test_pr_helpers.py": "2b81865f8e50aaccd05656144d58136a",
+    "tests/shared/__init__.py": "7e8e9b2587dd8f61837623308753bbb6",
+    "tests/shared/test_notifications_init.py": "58d97833ac0dba220ba140d29b682d2b",
+    "tests/shared/test_notifications_slack.py": "efa0f10e4de20897020270040b52ef3e",
+    "tests/shared/test_notifications_types.py": "ea51585dbb6b5afb1fb4110be5fc6338"
+  },
+  "last_analyzed": "2025-11-27T03:38:01.744733",
+  "issues": [
+    {
+      "file": "host-services/analysis/conversation-analyzer/conversation-analyzer.py",
+      "line_hint": "function main() at line 1051",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'main' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/slack/slack-receiver/slack-receiver.py",
+      "line_hint": "line 628",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/slack/slack-receiver/slack-receiver.py",
+      "line_hint": "line 680",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/confluence/sync.py",
+      "line_hint": "line 56",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/confluence/sync.py",
+      "line_hint": "line 722",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/jira/sync.py",
+      "line_hint": "line 55",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/utils/create_symlink.py",
+      "line_hint": "line 185",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
+      "line_hint": "line 222",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/github/pr-analyzer.py",
+      "line_hint": "function main() at line 382",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'main' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/jib-tasks/github/pr-reviewer.py",
+      "line_hint": "line 219",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/github/pr-reviewer.py",
+      "line_hint": "line 292",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/jira/analyze-sprint.py",
+      "line_hint": "line 121",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tools/comment-pr-helper.py",
+      "line_hint": "function main() at line 259",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'main' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/jib-tools/create-pr-helper.py",
+      "line_hint": "function main() at line 402",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'main' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/jib-tools/discover-tests.py",
+      "line_hint": "function main() at line 479",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'main' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/run_tests.py",
+      "line_hint": "function main() at line 153",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'main' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/context_sync/test_symlink_utils.py",
+      "line_hint": "line 381",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions including KeyboardInterrupt",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the error",
+      "auto_fixable": true
+    },
+    {
+      "file": "tests/host_services/test_slack_notifier.py",
+      "line_hint": "function parse_frontmatter() at line 75",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'parse_frontmatter' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/host_services/test_slack_notifier.py",
+      "line_hint": "function parse_frontmatter() at line 112",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'parse_frontmatter' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/host_services/test_slack_notifier.py",
+      "line_hint": "function chunk_message() at line 156",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'chunk_message' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/host_services/test_slack_notifier.py",
+      "line_hint": "function chunk_message() at line 203",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'chunk_message' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/host_services/test_slack_receiver.py",
+      "line_hint": "function parse_message() at line 29",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'parse_message' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/host_services/test_slack_receiver.py",
+      "line_hint": "function parse_message() at line 44",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'parse_message' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/host_services/test_slack_receiver.py",
+      "line_hint": "function parse_message() at line 61",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'parse_message' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/host_services/test_slack_receiver.py",
+      "line_hint": "function parse_message() at line 87",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'parse_message' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/host_services/test_slack_receiver.py",
+      "line_hint": "function chunk_message() at line 262",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'chunk_message' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/jib/test_docker_setup.py",
+      "line_hint": "function mock_path() at line 145",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'mock_path' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/jib_tools/test_discover_tests.py",
+      "line_hint": "function test_default_values() at line 33",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_default_values' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/jib_tools/test_discover_tests.py",
+      "line_hint": "function test_with_all_values() at line 44",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_with_all_values' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/jib_tools/test_discover_tests.py",
+      "line_hint": "function test_default_values() at line 63",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_default_values' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/shared/test_notifications_types.py",
+      "line_hint": "function test_default_context() at line 48",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_default_context' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/shared/test_notifications_types.py",
+      "line_hint": "function test_context_with_values() at line 58",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_context_with_values' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/shared/test_notifications_types.py",
+      "line_hint": "function test_default_message() at line 80",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_default_message' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/shared/test_notifications_types.py",
+      "line_hint": "function test_message_with_type() at line 88",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_message_with_type' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/shared/test_notifications_types.py",
+      "line_hint": "function test_to_markdown_with_context() at line 102",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_to_markdown_with_context' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/shared/test_notifications_types.py",
+      "line_hint": "function test_success_result() at line 127",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_success_result' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "tests/shared/test_notifications_types.py",
+      "line_hint": "function test_failure_result() at line 139",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'test_failure_result' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "README.md",
+      "line_hint": "references 'comment-pr-helper.py'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: comment-pr-helper.py",
+      "suggestion": "Update or remove reference to 'comment-pr-helper.py' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "README.md",
+      "line_hint": "references 'create-pr-helper.py'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: create-pr-helper.py",
+      "suggestion": "Update or remove reference to 'create-pr-helper.py' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "README.md",
+      "line_hint": "references 'discover-tests.py'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: discover-tests.py",
+      "suggestion": "Update or remove reference to 'discover-tests.py' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/analysis/conversation-analyzer/README.md",
+      "line_hint": "references 'latest-metrics.json'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: latest-metrics.json",
+      "suggestion": "Update or remove reference to 'latest-metrics.json' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/analysis/conversation-analyzer/README.md",
+      "line_hint": "references 'latest-report.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: latest-report.md",
+      "suggestion": "Update or remove reference to 'latest-report.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/analysis/conversation-analyzer/README.md",
+      "line_hint": "references 'analysis-YYYYMMDD-HHMMSS.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: analysis-YYYYMMDD-HHMMSS.md",
+      "suggestion": "Update or remove reference to 'analysis-YYYYMMDD-HHMMSS.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/analysis/conversation-analyzer/README.md",
+      "line_hint": "references 'metrics-YYYYMMDD-HHMMSS.json'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: metrics-YYYYMMDD-HHMMSS.json",
+      "suggestion": "Update or remove reference to 'metrics-YYYYMMDD-HHMMSS.json' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'beads-usage.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: beads-usage.md",
+      "suggestion": "Update or remove reference to 'beads-usage.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'environment.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: environment.md",
+      "suggestion": "Update or remove reference to 'environment.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'conversation-analysis-criteria.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: conversation-analysis-criteria.md",
+      "suggestion": "Update or remove reference to 'conversation-analysis-criteria.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'test-workflow.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: test-workflow.md",
+      "suggestion": "Update or remove reference to 'test-workflow.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'github-pr-context.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: github-pr-context.md",
+      "suggestion": "Update or remove reference to 'github-pr-context.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'pr-descriptions.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: pr-descriptions.md",
+      "suggestion": "Update or remove reference to 'pr-descriptions.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'khan-academy-culture.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: khan-academy-culture.md",
+      "suggestion": "Update or remove reference to 'khan-academy-culture.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'slack-thread-context.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: slack-thread-context.md",
+      "suggestion": "Update or remove reference to 'slack-thread-context.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'notification-template.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: notification-template.md",
+      "suggestion": "Update or remove reference to 'notification-template.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'khan-academy.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: khan-academy.md",
+      "suggestion": "Update or remove reference to 'khan-academy.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/README.md",
+      "line_hint": "references 'mission.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: mission.md",
+      "suggestion": "Update or remove reference to 'mission.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/commands/README.md",
+      "line_hint": "references 'create-pr-helper.py'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: create-pr-helper.py",
+      "suggestion": "Update or remove reference to 'create-pr-helper.py' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/rules/README.md",
+      "line_hint": "references 'CLAUDE.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: CLAUDE.md",
+      "suggestion": "Update or remove reference to 'CLAUDE.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/slack/slack-receiver/slack-receiver.py",
+      "line_hint": "bare except clauses in multiple locations",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clauses catch all exceptions including KeyboardInterrupt and SystemExit, making it hard to stop the service gracefully",
+      "suggestion": "Replace 'except:' with 'except Exception as e:' and log the specific error",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/confluence/sync.py",
+      "line_hint": "_load_sync_state and _save_sync_state methods",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clauses silently swallow all errors including system errors, making debugging difficult",
+      "suggestion": "Replace 'except:' with 'except (OSError, pickle.PickleError) as e:' and add logging",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/jira/sync.py",
+      "line_hint": "_load_sync_state method",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause in state loading hides errors that could indicate data corruption",
+      "suggestion": "Replace 'except:' with 'except (OSError, pickle.PickleError) as e:' and log warning",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/utils/create_symlink.py",
+      "line_hint": "ensure_gitignore_pattern function",
+      "priority": "MEDIUM",
+      "category": "code_quality",
+      "description": "Bare except clause catches all exceptions when checking gitignore",
+      "suggestion": "Replace with specific exception handling for OSError/IOError",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
+      "line_hint": "ensure_gitignore_pattern function",
+      "priority": "MEDIUM",
+      "category": "code_quality",
+      "description": "Bare except clause, and this function is duplicated from create_symlink.py",
+      "suggestion": "Remove duplicate function and import from create_symlink.py instead",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/jib-tasks/github/pr-reviewer.py",
+      "line_hint": "bare except in search_context method",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Bare except clause in PRContextManager.search_context catches all exceptions",
+      "suggestion": "Replace with 'except (subprocess.CalledProcessError, TimeoutError, OSError) as e:'",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/utils/",
+      "line_hint": "create_symlink.py and link_to_khan_projects.py",
+      "priority": "MEDIUM",
+      "category": "duplication",
+      "description": "ensure_gitignore_pattern() and ensure_cursor_rule() functions are duplicated across both files with identical implementations",
+      "suggestion": "Extract shared functions to a common utils module and import in both files",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/slack/slack-notifier/setup.sh",
+      "line_hint": "entire file",
+      "priority": "MEDIUM",
+      "category": "duplication",
+      "description": "82% similar to slack-receiver/setup.sh - both follow identical patterns for systemd service setup",
+      "suggestion": "Create a shared setup_service.sh helper script that both can call with service-specific parameters",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/analysis/conversation-analyzer/setup.sh",
+      "line_hint": "echo output says 'daily (2 AM)' but timer is weekly",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Setup script output says 'conversation analyzer will run daily (2 AM)' but README says it runs weekly on Mondays at 11 AM",
+      "suggestion": "Update the echo statement to say 'weekly (Monday 11 AM)' to match actual behavior",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/github/comment-responder.py",
+      "line_hint": "PRContextManager class definition",
+      "priority": "MEDIUM",
+      "category": "duplication",
+      "description": "PRContextManager class is duplicated nearly identically in both comment-responder.py and pr-reviewer.py",
+      "suggestion": "Extract PRContextManager to a shared module (e.g., jib-tasks/github/pr_context.py) and import in both files",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/analysis/conversation-analyzer/conversation-analyzer.py",
+      "line_hint": "main() function",
+      "priority": "MEDIUM",
+      "category": "code_quality",
+      "description": "Public function 'main' lacks a docstring explaining its purpose and return value",
+      "suggestion": "Add docstring: '''Run conversation analysis job. Returns exit code 0 on success.'''",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/slack/slack-receiver/create-pr.sh",
+      "line_hint": "get_default_branch function around line 30",
+      "priority": "MEDIUM",
+      "category": "patterns",
+      "description": "Shell script hardcodes 'webapp' and 'frontend' repo defaults while the Python config system uses repositories.yaml",
+      "suggestion": "Either read from repositories.yaml or remove hardcoded cases in favor of git detection only",
+      "auto_fixable": false
+    },
+    {
+      "file": "config/host_config.py",
+      "line_hint": "_migrate_legacy_configs method",
+      "priority": "MEDIUM",
+      "category": "unused_code",
+      "description": "The _migrate_legacy_configs method exists but is never called - migration was made manual",
+      "suggestion": "Either call it during __init__ when legacy configs exist, or remove the method entirely if migration is truly manual-only",
+      "auto_fixable": false
+    },
+    {
+      "file": "docs/development/STRUCTURE.md",
+      "line_hint": "Host Service Structure section",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Lists 'github-sync' under host-services/sync/ but this directory doesn't exist - it's now 'github-watcher' under analysis/",
+      "suggestion": "Update structure to reflect actual directory layout with github-watcher under analysis/",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/github/command-handler.py",
+      "line_hint": "entire file",
+      "priority": "MEDIUM",
+      "category": "unused_code",
+      "description": "CommandHandler class appears to be unused - no references to it in other files and not registered as an entry point",
+      "suggestion": "Verify if this is dead code and remove if unused, or document how it should be invoked",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/",
+      "line_hint": "naming convention across directories",
+      "priority": "MEDIUM",
+      "category": "naming",
+      "description": "Inconsistent naming: kebab-case for directories (slack-notifier) but snake_case for Python files (host_command_handler.py)",
+      "suggestion": "Standardize on kebab-case for directories and snake_case for Python files, or use kebab-case consistently throughout",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/jib-tasks/jira/analyze-sprint.py",
+      "line_hint": "entire file",
+      "priority": "MEDIUM",
+      "category": "structural",
+      "description": "File is in jib-tasks/jira/ but the docstring says path is 'jib-container/scripts/analyze-sprint.py' which doesn't exist",
+      "suggestion": "Update docstring to reflect actual location: 'jib-container/jib-tasks/jira/analyze-sprint.py'",
+      "auto_fixable": true
+    },
+    {
+      "file": "bin/README.md",
+      "line_hint": "Commands section",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Lists 'view-logs' as a symlink but it doesn't exist in bin/ directory according to the symlinks section",
+      "suggestion": "Either create the view-logs symlink or remove it from the README",
+      "auto_fixable": false
+    }
+  ]
+}
