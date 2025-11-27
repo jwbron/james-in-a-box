@@ -198,6 +198,27 @@ Fine-grained Personal Access Tokens (PATs) **cannot access the Checks API** (wor
 1. A **Classic PAT** with `repo` scope (grants broad access, not ideal)
 2. A **GitHub App** with `checks:read` permission (recommended)
 
+**⚠️ GitHub MCP Server Tool Gap:**
+
+The GitHub MCP server (api.githubcopilot.com) does **not** expose tools for the Checks API. Even with a GitHub App that has `checks:read` permission, the MCP server provides no way to query:
+- Check runs (individual CI job results)
+- Check suites (aggregated workflow status)
+- Workflow run details (logs, annotations)
+
+| GitHub API | MCP Server Support |
+|------------|-------------------|
+| Repos, Files, Branches | ✅ Full support |
+| Issues and Pull Requests | ✅ Full support |
+| Commits | ✅ Full support |
+| Checks API | ❌ Not exposed |
+
+**Solution:** Build a custom MCP tool that wraps the GitHub Checks API directly. This tool will:
+1. Use the GitHub App installation token for authentication
+2. Query check runs and workflow status via REST API
+3. Expose results through the MCP protocol
+
+See [PR #56](https://github.com/jwbron/james-in-a-box/pull/56) for related security and lockdown considerations when building custom MCP extensions.
+
 ### 4. Preserving Watcher Workflows
 
 Current watchers run post-sync to analyze changes. With MCP, we shift to:
