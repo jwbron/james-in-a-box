@@ -155,12 +155,18 @@ cleanup_orphaned_branches() {
             # Extract container ID from branch name
             # Branch format: jib-temp-{container_id} or jib-exec-{container_id}
             # Container ID format: jib-YYYYMMDD-HHMMSS-PID or jib-exec-YYYYMMDD-HHMMSS-PID
-            local container_id
+            local container_id=""
             if [[ "$branch" == jib-temp-* ]]; then
                 container_id=$(echo "$branch" | sed 's/^jib-temp-//')
             elif [[ "$branch" == jib-exec-* ]]; then
                 # jib-exec branches use the branch name as container ID
                 container_id="$branch"
+            fi
+
+            # Skip if we couldn't extract a container ID (shouldn't happen given the branch filter)
+            if [ -z "$container_id" ]; then
+                log "  Warning: Could not extract container ID from branch: $branch"
+                continue
             fi
 
             # Check if container still exists
