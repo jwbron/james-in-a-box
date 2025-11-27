@@ -67,3 +67,27 @@ jobs:
           else
             echo "No pyproject.toml found, skipping dependency resolution check"
           fi
+
+      - name: Verify host-services uv.lock is up-to-date
+        run: |
+          if [ -f host-services/pyproject.toml ] && [ -f host-services/uv.lock ]; then
+            echo "Checking host-services uv.lock is up-to-date..."
+            cd host-services
+            # Run uv lock to regenerate the lockfile
+            uv lock
+            # Check if there are any changes
+            if git diff --exit-code uv.lock; then
+              echo "host-services/uv.lock is up-to-date"
+            else
+              echo "host-services/uv.lock is out of date!"
+              echo ""
+              echo "The lockfile does not match pyproject.toml dependencies."
+              echo "Please run the following locally and commit the changes:"
+              echo ""
+              echo "  cd host-services && uv lock"
+              echo ""
+              exit 1
+            fi
+          else
+            echo "No host-services/pyproject.toml or uv.lock found, skipping"
+          fi
