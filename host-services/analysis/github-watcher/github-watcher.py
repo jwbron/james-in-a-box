@@ -22,7 +22,12 @@ import yaml
 
 
 def load_config() -> dict:
-    """Load repository configuration."""
+    """Load repository configuration.
+
+    Returns dict with:
+        - writable_repos: List of repos jib can modify
+        - github_username: Configured GitHub username (for filtering)
+    """
     config_paths = [
         Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml",
         Path(__file__).parent.parent.parent.parent / "config" / "repositories.yaml",
@@ -33,7 +38,7 @@ def load_config() -> dict:
             with open(config_path) as f:
                 return yaml.safe_load(f)
 
-    return {"writable_repos": []}
+    return {"writable_repos": [], "github_username": "jib"}
 
 
 def load_state() -> dict:
@@ -257,7 +262,7 @@ def fetch_check_logs(repo: str, check: dict) -> str | None:
 
 
 def check_pr_for_comments(
-    repo: str, pr_data: dict, state: dict, since_timestamp: str | None = None
+    repo: str, pr_data: dict, state: dict, github_username: str, since_timestamp: str | None = None
 ) -> dict | None:
     """Check a PR for new comments from others that need response.
 
@@ -265,6 +270,7 @@ def check_pr_for_comments(
         repo: Repository in owner/repo format
         pr_data: PR data dict with number, title, url, etc.
         state: State dict with processed_comments
+        github_username: Configured GitHub username (to filter out own comments)
         since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
@@ -318,12 +324,19 @@ def check_pr_for_comments(
     if not all_comments:
         return None
 
-    # Filter to comments from others (not @me/jib)
-    # We'll let the container filter based on who authored the PR
+    # Filter to comments from others (not from configured user or common bots)
+    # Build list of authors to exclude (case-insensitive)
+    excluded_authors = {
+        github_username.lower(),
+        "jib",  # Always exclude jib bot
+        "github-actions[bot]",
+        "dependabot[bot]",
+    }
+
     other_comments = [
         c
         for c in all_comments
-        if c["author"].lower() not in ("jib", "github-actions[bot]", "dependabot[bot]")
+        if c["author"].lower() not in excluded_authors
     ]
 
     if not other_comments:
@@ -359,13 +372,14 @@ def check_pr_for_comments(
 
 
 def check_prs_for_review(
-    repo: str, state: dict, since_timestamp: str | None = None
+    repo: str, state: dict, github_username: str, since_timestamp: str | None = None
 ) -> list[dict]:
     """Check for PRs from others that need review.
 
     Args:
         repo: Repository in owner/repo format
         state: State dict with processed_reviews
+        github_username: Configured GitHub username (to filter out own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
     Returns list of context dicts for PRs needing review.
@@ -387,8 +401,16 @@ def check_prs_for_review(
     if prs is None:
         return []
 
-    # Filter to PRs from others
-    other_prs = [p for p in prs if p.get("author", {}).get("login", "").lower() not in ("jib",)]
+    # Filter to PRs from others (not from configured user or jib)
+    excluded_authors = {
+        github_username.lower(),
+        "jib",  # Always exclude jib bot
+    }
+
+    other_prs = [
+        p for p in prs
+        if p.get("author", {}).get("login", "").lower() not in excluded_authors
+    ]
 
     if not other_prs:
         return []
@@ -459,10 +481,13 @@ def main():
     # Load config
     config = load_config()
     repos = config.get("writable_repos", [])
+    github_username = config.get("github_username", "jib")
 
     if not repos:
         print("No repositories configured - check config/repositories.yaml")
         return 0
+
+    print(f"GitHub username: {github_username}")
 
     # Load state
     state = load_state()
@@ -510,7 +535,7 @@ def main():
                     tasks_queued += 1
 
                 # Check for comments
-                comment_ctx = check_pr_for_comments(repo, pr, state, since_timestamp)
+                comment_ctx = check_pr_for_comments(repo, pr, state, github_username, since_timestamp)
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
                         datetime.utcnow().isoformat()
@@ -520,7 +545,7 @@ def main():
             print("  No open PRs authored by me")
 
         # Check for PRs from others that need review
-        review_contexts = check_prs_for_review(repo, state, since_timestamp)
+        review_contexts = check_prs_for_review(repo, state, github_username, since_timestamp)
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
                 state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
