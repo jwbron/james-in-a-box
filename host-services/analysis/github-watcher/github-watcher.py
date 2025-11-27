@@ -279,7 +279,7 @@ def fetch_check_logs(repo: str, check: dict) -> str | None:
 
 
 def check_pr_for_comments(
-    repo: str, pr_data: dict, state: dict, github_username: str, since_timestamp: str | None = None
+    repo: str, pr_data: dict, state: dict, bot_username: str, since_timestamp: str | None = None
 ) -> dict | None:
     """Check a PR for new comments from others that need response.
 
@@ -287,7 +287,7 @@ def check_pr_for_comments(
         repo: Repository in owner/repo format
         pr_data: PR data dict with number, title, url, etc.
         state: State dict with processed_comments
-        github_username: Configured GitHub username (to filter out own comments)
+        bot_username: Bot's username (to filter out bot's own comments)
         since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
@@ -341,11 +341,10 @@ def check_pr_for_comments(
     if not all_comments:
         return None
 
-    # Filter to comments from others (not from configured user or common bots)
+    # Filter to comments from the bot itself or common bots
     # Build list of authors to exclude (case-insensitive)
     excluded_authors = {
-        github_username.lower(),
-        "jib",  # Always exclude jib bot
+        bot_username.lower(),
         "github-actions[bot]",
         "dependabot[bot]",
     }
@@ -383,14 +382,14 @@ def check_pr_for_comments(
 
 
 def check_prs_for_review(
-    repo: str, state: dict, github_username: str, since_timestamp: str | None = None
+    repo: str, state: dict, bot_username: str, since_timestamp: str | None = None
 ) -> list[dict]:
     """Check for PRs from others that need review.
 
     Args:
         repo: Repository in owner/repo format
         state: State dict with processed_reviews
-        github_username: Configured GitHub username (to filter out own PRs)
+        bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
     Returns list of context dicts for PRs needing review.
@@ -412,10 +411,9 @@ def check_prs_for_review(
     if prs is None:
         return []
 
-    # Filter to PRs from others (not from configured user or jib)
+    # Filter to PRs from others (not from the bot)
     excluded_authors = {
-        github_username.lower(),
-        "jib",  # Always exclude jib bot
+        bot_username.lower(),
     }
 
     other_prs = [
@@ -503,12 +501,14 @@ def main():
     config = load_config()
     repos = config.get("writable_repos", [])
     github_username = config.get("github_username", "jib")
+    bot_username = config.get("bot_username", "jib")
 
     if not repos:
         print("No repositories configured - check config/repositories.yaml")
         return 0
 
     print(f"GitHub username: {github_username}")
+    print(f"Bot username: {bot_username}")
 
     # Load state
     state = load_state()
@@ -555,9 +555,9 @@ def main():
                     )
                     tasks_queued += 1
 
-                # Check for comments
+                # Check for comments (filter out bot's own comments, not human's)
                 comment_ctx = check_pr_for_comments(
-                    repo, pr, state, github_username, since_timestamp
+                    repo, pr, state, bot_username, since_timestamp
                 )
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
@@ -567,8 +567,8 @@ def main():
         else:
             print(f"  No open PRs authored by {github_username}")
 
-        # Check for PRs from others that need review
-        review_contexts = check_prs_for_review(repo, state, github_username, since_timestamp)
+        # Check for PRs from others that need review (filter out bot's PRs)
+        review_contexts = check_prs_for_review(repo, state, bot_username, since_timestamp)
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
                 state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
