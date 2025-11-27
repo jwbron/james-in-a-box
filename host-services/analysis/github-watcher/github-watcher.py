@@ -127,7 +127,9 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     context_json = json.dumps(context)
 
     # Container path is fixed - jib always mounts to /home/jwies/khan/
-    processor_path = "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
+    processor_path = (
+        "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
+    )
 
     # Build command
     cmd = [
