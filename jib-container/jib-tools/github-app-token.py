@@ -23,10 +23,9 @@ Token expires in 1 hour. Generate fresh token for each container launch.
 import json
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Optional, Tuple
 
 
 def create_jwt(app_id: str, private_key: str) -> str:
@@ -37,14 +36,13 @@ def create_jwt(app_id: str, private_key: str) -> str:
     The JWT is valid for 10 minutes (GitHub's maximum).
     """
     import base64
-    import hashlib
-    import hmac
 
     # For RS256, we need proper RSA signing. Check if cryptography is available.
     try:
+        from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import padding
-        from cryptography.hazmat.backends import default_backend
+
         HAS_CRYPTOGRAPHY = True
     except ImportError:
         HAS_CRYPTOGRAPHY = False
@@ -53,6 +51,7 @@ def create_jwt(app_id: str, private_key: str) -> str:
         # Try PyJWT as fallback
         try:
             import jwt
+
             now = int(time.time())
             payload = {
                 "iat": now - 60,  # Issued 60 seconds ago (clock skew)
@@ -61,17 +60,19 @@ def create_jwt(app_id: str, private_key: str) -> str:
             }
             return jwt.encode(payload, private_key, algorithm="RS256")
         except ImportError:
-            print("ERROR: Neither 'cryptography' nor 'PyJWT' package is installed.", file=sys.stderr)
+            print(
+                "ERROR: Neither 'cryptography' nor 'PyJWT' package is installed.", file=sys.stderr
+            )
             print("Install with: pip install cryptography", file=sys.stderr)
             sys.exit(1)
 
     # Use cryptography library for RS256 signing
     def b64url_encode(data: bytes) -> str:
-        return base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii')
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
     # JWT Header
     header = {"alg": "RS256", "typ": "JWT"}
-    header_b64 = b64url_encode(json.dumps(header, separators=(',', ':')).encode())
+    header_b64 = b64url_encode(json.dumps(header, separators=(",", ":")).encode())
 
     # JWT Payload
     now = int(time.time())
@@ -80,30 +81,24 @@ def create_jwt(app_id: str, private_key: str) -> str:
         "exp": now + 600,  # Expires in 10 minutes (GitHub maximum)
         "iss": app_id,
     }
-    payload_b64 = b64url_encode(json.dumps(payload, separators=(',', ':')).encode())
+    payload_b64 = b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
 
     # Message to sign
     message = f"{header_b64}.{payload_b64}".encode()
 
     # Load private key and sign
     private_key_obj = serialization.load_pem_private_key(
-        private_key.encode(),
-        password=None,
-        backend=default_backend()
+        private_key.encode(), password=None, backend=default_backend()
     )
 
-    signature = private_key_obj.sign(
-        message,
-        padding.PKCS1v15(),
-        hashes.SHA256()
-    )
+    signature = private_key_obj.sign(message, padding.PKCS1v15(), hashes.SHA256())
 
     signature_b64 = b64url_encode(signature)
 
     return f"{header_b64}.{payload_b64}.{signature_b64}"
 
 
-def get_installation_token(jwt_token: str, installation_id: str) -> Tuple[Optional[str], Optional[str]]:
+def get_installation_token(jwt_token: str, installation_id: str) -> tuple[str | None, str | None]:
     """
     Exchange JWT for an installation access token.
 
@@ -136,7 +131,7 @@ def get_installation_token(jwt_token: str, installation_id: str) -> Tuple[Option
         return None, str(e)
 
 
-def load_config(config_dir: Path) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+def load_config(config_dir: Path) -> tuple[str | None, str | None, str | None, str | None]:
     """
     Load GitHub App configuration from files.
 
@@ -181,19 +176,17 @@ def load_config(config_dir: Path) -> Tuple[Optional[str], Optional[str], Optiona
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Generate GitHub App installation access token"
-    )
+    parser = argparse.ArgumentParser(description="Generate GitHub App installation access token")
     parser.add_argument(
         "--config-dir",
         type=Path,
         default=Path.home() / ".config" / "jib",
-        help="Directory containing GitHub App config files"
+        help="Directory containing GitHub App config files",
     )
     parser.add_argument(
         "--quiet",
         action="store_true",
-        help="Suppress error messages (just exit non-zero on failure)"
+        help="Suppress error messages (just exit non-zero on failure)",
     )
 
     args = parser.parse_args()

@@ -126,12 +126,17 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     """
     context_json = json.dumps(context)
 
+    # Container path is fixed - jib always mounts to /home/jwies/khan/
+    processor_path = (
+        "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
+    )
+
     # Build command
     cmd = [
         "jib",
         "--exec",
         "python3",
-        "/home/agent/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py",
+        processor_path,
         "--task",
         task_type,
         "--context",
@@ -154,7 +159,14 @@ def invoke_jib(task_type: str, context: dict) -> bool:
             return True
         else:
             print(f"  jib failed with code {result.returncode}")
-            print(f"  stderr: {result.stderr[:500]}")
+            # Show last 2000 chars of stderr to capture actual error (not just Docker build progress)
+            stderr_tail = result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr
+            if stderr_tail:
+                print(f"  stderr (last 2000 chars): {stderr_tail}")
+            # Also show stdout if there's useful output
+            if result.stdout:
+                stdout_tail = result.stdout[-1000:] if len(result.stdout) > 1000 else result.stdout
+                print(f"  stdout (last 1000 chars): {stdout_tail}")
             return False
 
     except subprocess.TimeoutExpired:

@@ -272,9 +272,11 @@ echo ""
 # Add the GitHub MCP server using the claude mcp add command
 # GitHub MCP provides bi-directional access: repos, issues, PRs, comments, file operations
 # This replaces direct gh CLI usage for all GitHub operations
+# NOTE: Use --scope user to make it available in ALL projects (not just current dir)
 if [ -n "${GITHUB_TOKEN:-}" ]; then
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
         --transport http \
+        --scope user \
         github \
         "https://api.githubcopilot.com/mcp/" \
         --header "Authorization: Bearer ${GITHUB_TOKEN}" \
