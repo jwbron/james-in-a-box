@@ -56,7 +56,12 @@ def load_state() -> dict:
                 return state
         except Exception:
             pass
-    return {"processed_failures": {}, "processed_comments": {}, "processed_reviews": {}, "last_run": None}
+    return {
+        "processed_failures": {},
+        "processed_comments": {},
+        "processed_reviews": {},
+        "last_run": None,
+    }
 
 
 def save_state(state: dict):
@@ -333,20 +338,14 @@ def check_pr_for_comments(
         "dependabot[bot]",
     }
 
-    other_comments = [
-        c
-        for c in all_comments
-        if c["author"].lower() not in excluded_authors
-    ]
+    other_comments = [c for c in all_comments if c["author"].lower() not in excluded_authors]
 
     if not other_comments:
         return None
 
     # Filter by since_timestamp if provided (only show comments newer than last run)
     if since_timestamp:
-        other_comments = [
-            c for c in other_comments if c.get("created_at", "") > since_timestamp
-        ]
+        other_comments = [c for c in other_comments if c.get("created_at", "") > since_timestamp]
         if not other_comments:
             return None  # No new comments since last run
 
@@ -408,8 +407,7 @@ def check_prs_for_review(
     }
 
     other_prs = [
-        p for p in prs
-        if p.get("author", {}).get("login", "").lower() not in excluded_authors
+        p for p in prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
     ]
 
     if not other_prs:
@@ -535,7 +533,9 @@ def main():
                     tasks_queued += 1
 
                 # Check for comments
-                comment_ctx = check_pr_for_comments(repo, pr, state, github_username, since_timestamp)
+                comment_ctx = check_pr_for_comments(
+                    repo, pr, state, github_username, since_timestamp
+                )
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
                         datetime.utcnow().isoformat()

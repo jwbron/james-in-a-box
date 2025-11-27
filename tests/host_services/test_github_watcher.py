@@ -64,6 +64,7 @@ class TestStateManagement:
                 "processed_failures": {},
                 "processed_comments": {},
                 "processed_reviews": {},
+                "last_run": None,
             }
 
     def test_load_state_with_file(self, temp_dir):
@@ -272,7 +273,9 @@ class TestCheckPrForComments:
         with patch.object(github_watcher, "gh_json") as mock_gh:
             mock_gh.return_value = {"comments": [], "reviews": []}
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state)
+            result = github_watcher.check_pr_for_comments(
+                "owner/repo", pr_data, state, "testuser"
+            )
 
             assert result is None
 
@@ -299,7 +302,9 @@ class TestCheckPrForComments:
                 "reviews": [],
             }
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state)
+            result = github_watcher.check_pr_for_comments(
+                "owner/repo", pr_data, state, "testuser"
+            )
 
             assert result is not None
             assert result["type"] == "comment"
@@ -329,7 +334,9 @@ class TestCheckPrForComments:
                 "reviews": [],
             }
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state)
+            result = github_watcher.check_pr_for_comments(
+                "owner/repo", pr_data, state, "testuser"
+            )
 
             assert result is None
 
@@ -344,7 +351,9 @@ class TestCheckPrsForReview:
         with patch.object(github_watcher, "gh_json") as mock_gh:
             mock_gh.return_value = []
 
-            result = github_watcher.check_prs_for_review("owner/repo", state)
+            result = github_watcher.check_prs_for_review(
+                "owner/repo", state, "testuser"
+            )
 
             assert result == []
 
@@ -369,7 +378,9 @@ class TestCheckPrsForReview:
             ]
 
             with patch.object(github_watcher, "gh_text", return_value="diff content"):
-                result = github_watcher.check_prs_for_review("owner/repo", state)
+                result = github_watcher.check_prs_for_review(
+                    "owner/repo", state, "testuser"
+                )
 
             assert len(result) == 1
             assert result[0]["type"] == "review_request"
@@ -389,6 +400,8 @@ class TestCheckPrsForReview:
                 }
             ]
 
-            result = github_watcher.check_prs_for_review("owner/repo", state)
+            result = github_watcher.check_prs_for_review(
+                "owner/repo", state, "testuser"
+            )
 
             assert result == []
