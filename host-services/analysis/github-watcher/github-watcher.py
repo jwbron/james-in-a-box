@@ -42,10 +42,16 @@ def load_state() -> dict:
     if state_file.exists():
         try:
             with state_file.open() as f:
-                return json.load(f)
+                state = json.load(f)
+                # Ensure all expected keys exist
+                state.setdefault("processed_failures", {})
+                state.setdefault("processed_comments", {})
+                state.setdefault("processed_reviews", {})
+                state.setdefault("last_run", None)
+                return state
         except Exception:
             pass
-    return {"processed_failures": {}, "processed_comments": {}, "processed_reviews": {}}
+    return {"processed_failures": {}, "processed_comments": {}, "processed_reviews": {}, "last_run": None}
 
 
 def save_state(state: dict):
@@ -250,8 +256,16 @@ def fetch_check_logs(repo: str, check: dict) -> str | None:
     return None
 
 
-def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
+def check_pr_for_comments(
+    repo: str, pr_data: dict, state: dict, since_timestamp: str | None = None
+) -> dict | None:
     """Check a PR for new comments from others that need response.
+
+    Args:
+        repo: Repository in owner/repo format
+        pr_data: PR data dict with number, title, url, etc.
+        state: State dict with processed_comments
+        since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
     """
@@ -315,6 +329,14 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
     if not other_comments:
         return None
 
+    # Filter by since_timestamp if provided (only show comments newer than last run)
+    if since_timestamp:
+        other_comments = [
+            c for c in other_comments if c.get("created_at", "") > since_timestamp
+        ]
+        if not other_comments:
+            return None  # No new comments since last run
+
     # Create signature based on latest comment timestamp
     latest_comment = max(other_comments, key=lambda c: c.get("created_at", ""))
     comment_signature = f"{repo}-{pr_num}:{latest_comment['id']}"
@@ -322,7 +344,7 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
     if comment_signature in state.get("processed_comments", {}):
         return None  # Already processed
 
-    print(f"  PR #{pr_num}: {len(other_comments)} comment(s) from others")
+    print(f"  PR #{pr_num}: {len(other_comments)} new comment(s) from others")
 
     return {
         "type": "comment",
@@ -336,8 +358,15 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
     }
 
 
-def check_prs_for_review(repo: str, state: dict) -> list[dict]:
+def check_prs_for_review(
+    repo: str, state: dict, since_timestamp: str | None = None
+) -> list[dict]:
     """Check for PRs from others that need review.
+
+    Args:
+        repo: Repository in owner/repo format
+        state: State dict with processed_reviews
+        since_timestamp: ISO timestamp to filter PRs (only show newer)
 
     Returns list of context dicts for PRs needing review.
     """
@@ -363,6 +392,12 @@ def check_prs_for_review(repo: str, state: dict) -> list[dict]:
 
     if not other_prs:
         return []
+
+    # Filter by since_timestamp if provided (only show PRs created after last run)
+    if since_timestamp:
+        other_prs = [p for p in other_prs if p.get("createdAt", "") > since_timestamp]
+        if not other_prs:
+            return []  # No new PRs since last run
 
     results = []
     for pr in other_prs:
@@ -401,8 +436,21 @@ def check_prs_for_review(repo: str, state: dict) -> list[dict]:
     return results
 
 
+def get_since_timestamp(state: dict) -> str | None:
+    """Get ISO timestamp for 'since' queries based on last run time.
+
+    Returns None if this is the first run or last_run is not set.
+    """
+    last_run = state.get("last_run")
+    if last_run:
+        return last_run
+    return None
+
+
 def main():
     """Main entry point - scan configured repos and trigger jib as needed."""
+    current_run_time = datetime.utcnow().isoformat() + "Z"
+
     print("=" * 60)
     print("GitHub Watcher - Host-side monitoring service")
     print(f"Time: {datetime.now().isoformat()}")
@@ -418,6 +466,13 @@ def main():
 
     # Load state
     state = load_state()
+
+    # Get the timestamp from last run for filtering queries
+    since_timestamp = get_since_timestamp(state)
+    if since_timestamp:
+        print(f"Checking for events since last run: {since_timestamp}")
+    else:
+        print("First run - checking all open items")
 
     print(f"Scanning {len(repos)} repository(ies)...")
 
@@ -455,7 +510,7 @@ def main():
                     tasks_queued += 1
 
                 # Check for comments
-                comment_ctx = check_pr_for_comments(repo, pr, state)
+                comment_ctx = check_pr_for_comments(repo, pr, state, since_timestamp)
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
                         datetime.utcnow().isoformat()
@@ -465,7 +520,7 @@ def main():
             print("  No open PRs authored by me")
 
         # Check for PRs from others that need review
-        review_contexts = check_prs_for_review(repo, state)
+        review_contexts = check_prs_for_review(repo, state, since_timestamp)
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
                 state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
@@ -473,11 +528,13 @@ def main():
                 )
                 tasks_queued += 1
 
-    # Save state
+    # Update last run timestamp and save state
+    state["last_run"] = current_run_time
     save_state(state)
 
     print("\n" + "=" * 60)
     print(f"GitHub Watcher completed - {tasks_queued} task(s) triggered")
+    print(f"Next run will check for events since: {current_run_time}")
     print("=" * 60)
 
     return 0
