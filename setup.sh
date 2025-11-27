@@ -662,73 +662,16 @@ else
     print_warning "repositories.yaml not found, skipping config update"
 fi
 
-# Check and configure GitHub token for container PR management
-print_info "Checking GitHub token for container..."
-
-# Token is stored in ~/.config/jib/github-token (separate from Docker staging in ~/.jib/)
-jib_user_config_dir="$HOME/.config/jib"
-github_token_file="$jib_user_config_dir/github-token"
-
-mkdir -p "$jib_user_config_dir"
-chmod 700 "$jib_user_config_dir"
-
-if [ -f "$github_token_file" ] && [ -s "$github_token_file" ]; then
-    print_success "GitHub token found in jib config"
-    echo "   Location: $github_token_file"
-    echo "   Container will use this token for PR management"
-else
-    echo ""
-    print_info "GitHub token needed for container PR management"
-    echo ""
-    echo "The container needs a GitHub token to create PRs, push to branches, etc."
-    echo "This is stored separately from your host's gh authentication."
-    echo ""
-    echo "Create a fine-grained token at: https://github.com/settings/tokens?type=beta"
-    echo ""
-    echo "Token configuration:"
-    echo "  - Name: james-in-a-box-pr-access"
-    echo "  - Repository: $current_username/james-in-a-box (only)"
-    echo "  - Permissions:"
-    echo "      Contents: Read and write"
-    echo "      Pull requests: Read and write"
-    echo "      Workflows: Read-only"
-    echo ""
-
-    # Check for environment variable first
-    if [ -n "$GITHUB_TOKEN" ]; then
-        print_info "Using GITHUB_TOKEN from environment..."
-        echo "$GITHUB_TOKEN" > "$github_token_file"
-        chmod 600 "$github_token_file"
-        print_success "GitHub token saved to jib config"
-        echo "   Location: $github_token_file"
-    else
-        # Prompt for token (input hidden for security)
-        echo -n "Enter GitHub token (input hidden, press Enter when done): "
-        read -s GITHUB_TOKEN
-        echo ""  # newline after hidden input
-
-        if [ -n "$GITHUB_TOKEN" ]; then
-            # Take only the first token if user pasted multiple times
-            GITHUB_TOKEN=$(echo "$GITHUB_TOKEN" | grep -oE '(ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)' | head -1)
-            echo "$GITHUB_TOKEN" > "$github_token_file"
-            chmod 600 "$github_token_file"
-            print_success "GitHub token saved to jib config"
-            echo "   Location: $github_token_file"
-            echo "   Container will authenticate gh on startup"
-        else
-            print_warning "Skipping GitHub token setup"
-            echo "   PR creation features will not be available in container"
-            echo "   Add token later: echo 'your-token' > $github_token_file"
-        fi
-    fi
-fi
-
-# GitHub App configuration (for Checks API access)
+# GitHub App configuration (required for container GitHub access)
 print_info "Checking GitHub App configuration..."
 
+jib_user_config_dir="$HOME/.config/jib"
 github_app_id_file="$jib_user_config_dir/github-app-id"
 github_app_installation_file="$jib_user_config_dir/github-app-installation-id"
 github_app_pem_file="$jib_user_config_dir/github-app.pem"
+
+mkdir -p "$jib_user_config_dir"
+chmod 700 "$jib_user_config_dir"
 
 if [ -f "$github_app_id_file" ] && [ -f "$github_app_installation_file" ] && [ -f "$github_app_pem_file" ]; then
     print_success "GitHub App configured"
@@ -737,16 +680,15 @@ if [ -f "$github_app_id_file" ] && [ -f "$github_app_installation_file" ] && [ -
     echo "   Private key: $github_app_pem_file"
 else
     echo ""
-    print_info "GitHub App setup (optional but recommended)"
+    print_warning "GitHub App not configured"
     echo ""
-    echo "A GitHub App provides access to the Checks API (workflow status)"
-    echo "which is NOT available with fine-grained Personal Access Tokens."
+    echo "A GitHub App is required for container GitHub access."
     echo ""
     echo "Benefits of GitHub App:"
+    echo "  • Full GitHub API access (PRs, issues, checks)"
     echo "  • Query CI/CD workflow status (pass/fail)"
     echo "  • Granular permissions (can request only what's needed)"
     echo "  • Higher API rate limits"
-    echo "  • Foundation for real-time webhooks"
     echo ""
     read -p "Set up GitHub App now? (y/n) " -n 1 -r
     echo
@@ -842,9 +784,9 @@ else
             fi
         fi
     else
-        print_info "Skipping GitHub App setup"
-        echo "   Container will use PAT (if configured) - no Checks API access"
-        echo "   Run setup.sh again to configure GitHub App later"
+        print_warning "Skipping GitHub App setup"
+        echo "   Container will NOT have GitHub access until configured"
+        echo "   Run setup.sh again to configure GitHub App"
     fi
 fi
 
