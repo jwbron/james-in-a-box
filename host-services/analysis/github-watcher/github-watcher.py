@@ -490,7 +490,8 @@ def utc_now_iso() -> str:
     GitHub returns timestamps like: 2025-11-27T02:01:26Z
     We generate:                    2025-11-27T04:29:21Z (no microseconds for cleaner comparison)
     """
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Use timezone.utc for Python 3.10 compatibility (host may run Ubuntu 22.04)
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: UP017
 
 
 def get_since_timestamp(state: dict) -> str | None:
