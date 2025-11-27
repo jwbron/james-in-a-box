@@ -15,10 +15,15 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
+
+
+# Buffer time to handle race conditions where events occur during a watcher run
+# This ensures we don't miss events that happen near the boundary of a run
+TIMESTAMP_BUFFER_SECONDS = 60
 
 
 def load_config() -> dict:
@@ -224,6 +229,9 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
     ]
 
     if not failed_checks:
+        # Show check status for debugging
+        statuses = [c.get("conclusion", "pending") for c in check_runs]
+        print(f"    PR #{pr_num}: {len(check_runs)} check(s), all passing ({', '.join(set(statuses))})")
         return None
 
     # Create signature to detect if we've already processed this exact failure set
@@ -231,9 +239,14 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
     failure_signature = f"{repo}-{pr_num}:" + ",".join(failed_names)
 
     if failure_signature in state.get("processed_failures", {}):
+        processed_at = state["processed_failures"].get(failure_signature, "unknown")
+        print(
+            f"    PR #{pr_num}: {len(failed_checks)} check(s) failing but already processed "
+            f"at {processed_at}: {', '.join(failed_names)}"
+        )
         return None  # Already processed
 
-    print(f"  PR #{pr_num}: {len(failed_checks)} check(s) failing")
+    print(f"  PR #{pr_num}: {len(failed_checks)} check(s) failing: {', '.join(failed_names)}")
 
     # Fetch logs for failed checks
     for check in failed_checks:
@@ -358,6 +371,9 @@ def check_pr_for_comments(
     if not all_comments:
         return None
 
+    # Debug: show comment count
+    print(f"    PR #{pr_num}: Found {len(all_comments)} total comment(s)")
+
     # Filter to comments from the bot itself or common bots
     # Build list of authors to exclude (case-insensitive)
     # Include both the base username and the [bot] suffix variant
@@ -371,12 +387,19 @@ def check_pr_for_comments(
     other_comments = [c for c in all_comments if c["author"].lower() not in excluded_authors]
 
     if not other_comments:
+        print(f"    PR #{pr_num}: No comments from others (all from bot/excluded authors)")
         return None
 
     # Filter by since_timestamp if provided (only show comments newer than last run)
+    # Use >= to avoid missing comments that occur at exactly the same timestamp
     if since_timestamp:
-        other_comments = [c for c in other_comments if c.get("created_at", "") > since_timestamp]
+        pre_filter_count = len(other_comments)
+        other_comments = [c for c in other_comments if c.get("created_at", "") >= since_timestamp]
         if not other_comments:
+            print(
+                f"    PR #{pr_num}: {pre_filter_count} comment(s) filtered out "
+                f"(all before {since_timestamp})"
+            )
             return None  # No new comments since last run
 
     # Create signature based on latest comment timestamp
@@ -384,6 +407,11 @@ def check_pr_for_comments(
     comment_signature = f"{repo}-{pr_num}:{latest_comment['id']}"
 
     if comment_signature in state.get("processed_comments", {}):
+        processed_at = state["processed_comments"].get(comment_signature, "unknown")
+        print(
+            f"    PR #{pr_num}: Latest comment already processed at {processed_at} "
+            f"(author: {latest_comment['author']})"
+        )
         return None  # Already processed
 
     print(f"  PR #{pr_num}: {len(other_comments)} new comment(s) from others")
@@ -443,8 +471,9 @@ def check_prs_for_review(
         return []
 
     # Filter by since_timestamp if provided (only show PRs created after last run)
+    # Use >= to avoid missing PRs that occur at exactly the same timestamp
     if since_timestamp:
-        other_prs = [p for p in other_prs if p.get("createdAt", "") > since_timestamp]
+        other_prs = [p for p in other_prs if p.get("createdAt", "") >= since_timestamp]
         if not other_prs:
             return []  # No new PRs since last run
 
@@ -500,10 +529,23 @@ def get_since_timestamp(state: dict) -> str | None:
     """Get ISO timestamp for 'since' queries based on last run time.
 
     Returns None if this is the first run or last_run is not set.
+
+    Applies a buffer to handle race conditions where events occur during a run.
+    For example, if last_run was 10:00:00 and buffer is 60 seconds, we'll check
+    for events since 09:59:00 to avoid missing events that occurred near the
+    boundary.
     """
     last_run = state.get("last_run")
     if last_run:
-        return last_run
+        try:
+            # Parse the ISO timestamp
+            dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+            # Apply buffer
+            buffered_dt = dt - timedelta(seconds=TIMESTAMP_BUFFER_SECONDS)
+            # Return in same format
+            return buffered_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except (ValueError, AttributeError):
+            return last_run
     return None
 
 
@@ -533,10 +575,15 @@ def main():
     # Load state
     state = load_state()
 
-    # Get the timestamp from last run for filtering queries
+    # Get the timestamp from last run for filtering queries (with buffer applied)
     since_timestamp = get_since_timestamp(state)
+    last_run_raw = state.get("last_run")
     if since_timestamp:
-        print(f"Checking for events since last run: {since_timestamp}")
+        if last_run_raw and last_run_raw != since_timestamp:
+            print(f"Last run was: {last_run_raw}")
+            print(f"Checking for events since: {since_timestamp} ({TIMESTAMP_BUFFER_SECONDS}s buffer)")
+        else:
+            print(f"Checking for events since last run: {since_timestamp}")
     else:
         print("First run - checking all open items")
 
