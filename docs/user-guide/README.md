@@ -27,8 +27,8 @@ bin/jib
 
 **Create a PR:**
 ```bash
-# Inside container - commit changes then:
-create-pr-helper.py --auto
+# Inside container - commit changes then use GitHub MCP:
+# Use MCP: create_pull_request(owner, repo, title, head, base, body)
 ```
 
 **Check Task Status:**
@@ -44,7 +44,7 @@ bd list                         # All tasks
 3. **Load context**: `/load-context <project-name>`
 4. **Work on task**: Claude works in isolated git worktree
 5. **Commit changes**: Git commit to temp branch
-6. **Create PR**: `create-pr-helper.py --auto`
+6. **Create PR**: Use GitHub MCP `create_pull_request`
 7. **Save learnings**: `/save-context <project-name>`
 8. **Complete task**: `bd update <task-id> --status done`
 

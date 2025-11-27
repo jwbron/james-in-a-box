@@ -41,7 +41,7 @@ Automated pull request creation with smart description generation.
 - Analyzes git branch and commits
 - Generates comprehensive PR description
 - Extracts Jira issue from branch name
-- Creates PR via `create-pr-helper.py`
+- Creates PR via GitHub MCP
 
 **File**: `create-pr.md`
 
