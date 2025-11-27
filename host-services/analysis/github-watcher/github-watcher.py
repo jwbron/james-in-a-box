@@ -15,7 +15,7 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 import json
 import subprocess
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -456,6 +456,16 @@ def check_prs_for_review(
     return results
 
 
+def utc_now_iso() -> str:
+    """Get current UTC time in ISO format with Z suffix.
+
+    This ensures consistent timestamp format for comparison with GitHub timestamps.
+    GitHub returns timestamps like: 2025-11-27T02:01:26Z
+    We generate:                    2025-11-27T04:29:21Z (no microseconds for cleaner comparison)
+    """
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def get_since_timestamp(state: dict) -> str | None:
     """Get ISO timestamp for 'since' queries based on last run time.
 
@@ -469,11 +479,12 @@ def get_since_timestamp(state: dict) -> str | None:
 
 def main():
     """Main entry point - scan configured repos and trigger jib as needed."""
-    current_run_time = datetime.utcnow().isoformat() + "Z"
+    current_run_time = utc_now_iso()
 
     print("=" * 60)
     print("GitHub Watcher - Host-side monitoring service")
-    print(f"Time: {datetime.now().isoformat()}")
+    print(f"Local time: {datetime.now().isoformat()}")
+    print(f"UTC time:   {current_run_time}")
     print("=" * 60)
 
     # Load config
@@ -527,9 +538,9 @@ def main():
                 # Check for failures
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):
-                    state.setdefault("processed_failures", {})[failure_ctx["failure_signature"]] = (
-                        datetime.utcnow().isoformat()
-                    )
+                    state.setdefault("processed_failures", {})[
+                        failure_ctx["failure_signature"]
+                    ] = utc_now_iso()
                     tasks_queued += 1
 
                 # Check for comments
@@ -537,9 +548,9 @@ def main():
                     repo, pr, state, github_username, since_timestamp
                 )
                 if comment_ctx and invoke_jib("comment", comment_ctx):
-                    state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
-                        datetime.utcnow().isoformat()
-                    )
+                    state.setdefault("processed_comments", {})[
+                        comment_ctx["comment_signature"]
+                    ] = utc_now_iso()
                     tasks_queued += 1
         else:
             print("  No open PRs authored by me")
@@ -548,9 +559,9 @@ def main():
         review_contexts = check_prs_for_review(repo, state, github_username, since_timestamp)
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
-                state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
-                    datetime.utcnow().isoformat()
-                )
+                state.setdefault("processed_reviews", {})[
+                    review_ctx["review_signature"]
+                ] = utc_now_iso()
                 tasks_queued += 1
 
     # Update last run timestamp and save state
