@@ -13,6 +13,7 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 """
 
 import json
+import os
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -126,12 +127,17 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     """
     context_json = json.dumps(context)
 
+    # Get the current user's home directory for constructing container paths
+    # The container maps the host user's home to the same path inside
+    username = os.environ.get("USER", "agent")
+    processor_path = f"/home/{username}/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
+
     # Build command
     cmd = [
         "jib",
         "--exec",
         "python3",
-        "/home/agent/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py",
+        processor_path,
         "--task",
         task_type,
         "--context",
@@ -154,7 +160,14 @@ def invoke_jib(task_type: str, context: dict) -> bool:
             return True
         else:
             print(f"  jib failed with code {result.returncode}")
-            print(f"  stderr: {result.stderr[:500]}")
+            # Show last 2000 chars of stderr to capture actual error (not just Docker build progress)
+            stderr_tail = result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr
+            if stderr_tail:
+                print(f"  stderr (last 2000 chars): {stderr_tail}")
+            # Also show stdout if there's useful output
+            if result.stdout:
+                stdout_tail = result.stdout[-1000:] if len(result.stdout) > 1000 else result.stdout
+                print(f"  stdout (last 1000 chars): {stdout_tail}")
             return False
 
     except subprocess.TimeoutExpired:
