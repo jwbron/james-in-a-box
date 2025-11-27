@@ -19,6 +19,10 @@
 # Your GitHub username (set by setup.sh)
 github_username: jwbron
 
+# Bot username - the bot's GitHub identity for filtering out its own comments
+# Comments from this user are ignored (so the bot doesn't respond to itself)
+bot_username: james-in-a-box
+
 # Repositories where jib has WRITE access
 # These are repos where jib can:
 # - Respond to PR comments

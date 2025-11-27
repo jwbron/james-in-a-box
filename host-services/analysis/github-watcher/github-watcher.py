@@ -186,25 +186,42 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
     Returns context dict if failures found and not already processed.
     """
     pr_num = pr_data["number"]
+    head_sha = pr_data.get("headRefOid")
 
-    # Get check status
-    checks = gh_json(
+    if not head_sha:
+        print(f"  PR #{pr_num}: No head SHA available, skipping check status")
+        return None
+
+    # Get check runs via GitHub API (more reliable than gh pr checks)
+    # gh pr checks only shows "required" checks; this gets all check runs
+    check_runs_response = gh_json(
         [
-            "pr",
-            "checks",
-            str(pr_num),
-            "--repo",
-            repo,
-            "--json",
-            "name,state,startedAt,completedAt,link,description,workflow",
+            "api",
+            f"repos/{repo}/commits/{head_sha}/check-runs",
         ]
     )
 
-    if checks is None:
+    if check_runs_response is None:
         return None
 
-    # Find failed checks
-    failed_checks = [c for c in checks if c.get("state", "").upper() in ("FAILURE", "FAILED")]
+    check_runs = check_runs_response.get("check_runs", [])
+    if not check_runs:
+        return None  # No checks have run (e.g., PR created before workflows existed)
+
+    # Find failed checks (conclusion: "failure" or "cancelled" or "timed_out")
+    failed_checks = [
+        {
+            "name": c.get("name", ""),
+            "state": c.get("conclusion", "").upper(),
+            "startedAt": c.get("started_at", ""),
+            "completedAt": c.get("completed_at", ""),
+            "link": c.get("html_url", ""),
+            "description": c.get("output", {}).get("summary", ""),
+            "workflow": c.get("app", {}).get("name", ""),
+        }
+        for c in check_runs
+        if c.get("conclusion", "").lower() in ("failure", "cancelled", "timed_out")
+    ]
 
     if not failed_checks:
         return None
@@ -279,7 +296,7 @@ def fetch_check_logs(repo: str, check: dict) -> str | None:
 
 
 def check_pr_for_comments(
-    repo: str, pr_data: dict, state: dict, github_username: str, since_timestamp: str | None = None
+    repo: str, pr_data: dict, state: dict, bot_username: str, since_timestamp: str | None = None
 ) -> dict | None:
     """Check a PR for new comments from others that need response.
 
@@ -287,7 +304,7 @@ def check_pr_for_comments(
         repo: Repository in owner/repo format
         pr_data: PR data dict with number, title, url, etc.
         state: State dict with processed_comments
-        github_username: Configured GitHub username (to filter out own comments)
+        bot_username: Bot's username (to filter out bot's own comments)
         since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
@@ -341,11 +358,10 @@ def check_pr_for_comments(
     if not all_comments:
         return None
 
-    # Filter to comments from others (not from configured user or common bots)
+    # Filter to comments from the bot itself or common bots
     # Build list of authors to exclude (case-insensitive)
     excluded_authors = {
-        github_username.lower(),
-        "jib",  # Always exclude jib bot
+        bot_username.lower(),
         "github-actions[bot]",
         "dependabot[bot]",
     }
@@ -383,14 +399,14 @@ def check_pr_for_comments(
 
 
 def check_prs_for_review(
-    repo: str, state: dict, github_username: str, since_timestamp: str | None = None
+    repo: str, state: dict, bot_username: str, since_timestamp: str | None = None
 ) -> list[dict]:
     """Check for PRs from others that need review.
 
     Args:
         repo: Repository in owner/repo format
         state: State dict with processed_reviews
-        github_username: Configured GitHub username (to filter out own PRs)
+        bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
     Returns list of context dicts for PRs needing review.
@@ -412,10 +428,9 @@ def check_prs_for_review(
     if prs is None:
         return []
 
-    # Filter to PRs from others (not from configured user or jib)
+    # Filter to PRs from others (not from the bot)
     excluded_authors = {
-        github_username.lower(),
-        "jib",  # Always exclude jib bot
+        bot_username.lower(),
     }
 
     other_prs = [
@@ -503,12 +518,14 @@ def main():
     config = load_config()
     repos = config.get("writable_repos", [])
     github_username = config.get("github_username", "jib")
+    bot_username = config.get("bot_username", "jib")
 
     if not repos:
         print("No repositories configured - check config/repositories.yaml")
         return 0
 
     print(f"GitHub username: {github_username}")
+    print(f"Bot username: {bot_username}")
 
     # Load state
     state = load_state()
@@ -539,7 +556,7 @@ def main():
                 "--author",
                 github_username,
                 "--json",
-                "number,title,url,headRefName,baseRefName",
+                "number,title,url,headRefName,baseRefName,headRefOid",
             ]
         )
 
@@ -555,9 +572,9 @@ def main():
                     )
                     tasks_queued += 1
 
-                # Check for comments
+                # Check for comments (filter out bot's own comments, not human's)
                 comment_ctx = check_pr_for_comments(
-                    repo, pr, state, github_username, since_timestamp
+                    repo, pr, state, bot_username, since_timestamp
                 )
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
@@ -567,8 +584,8 @@ def main():
         else:
             print(f"  No open PRs authored by {github_username}")
 
-        # Check for PRs from others that need review
-        review_contexts = check_prs_for_review(repo, state, github_username, since_timestamp)
+        # Check for PRs from others that need review (filter out bot's PRs)
+        review_contexts = check_prs_for_review(repo, state, bot_username, since_timestamp)
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
                 state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
