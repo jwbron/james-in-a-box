@@ -515,7 +515,7 @@ def main():
     for repo in repos:
         print(f"\n[{repo}]")
 
-        # Get open PRs authored by @me (for check failures and comments)
+        # Get open PRs authored by configured user (for check failures and comments)
         my_prs = gh_json(
             [
                 "pr",
@@ -525,14 +525,14 @@ def main():
                 "--state",
                 "open",
                 "--author",
-                "@me",
+                github_username,
                 "--json",
                 "number,title,url,headRefName,baseRefName",
             ]
         )
 
         if my_prs:
-            print(f"  Found {len(my_prs)} open PR(s) authored by me")
+            print(f"  Found {len(my_prs)} open PR(s) authored by {github_username}")
 
             for pr in my_prs:
                 # Check for failures
@@ -553,7 +553,7 @@ def main():
                     )
                     tasks_queued += 1
         else:
-            print("  No open PRs authored by me")
+            print(f"  No open PRs authored by {github_username}")
 
         # Check for PRs from others that need review
         review_contexts = check_prs_for_review(repo, state, github_username, since_timestamp)

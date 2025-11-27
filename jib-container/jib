@@ -106,7 +106,7 @@ def get_platform() -> str:
 
 
 def get_github_token() -> Optional[str]:
-    """Get GitHub token from jib config file.
+    """Get GitHub PAT from jib config file (for host use).
 
     Returns:
         Token string if found and valid, None otherwise
@@ -118,6 +118,65 @@ def get_github_token() -> Optional[str]:
                 return token
         except Exception:
             pass
+    return None
+
+
+def get_github_app_token() -> Optional[str]:
+    """Generate GitHub App installation token for container use.
+
+    Uses the github-app-token.py script to generate a fresh installation token
+    from App credentials (App ID, Installation ID, private key).
+
+    Returns:
+        Installation token string if successful, None otherwise
+    """
+    # Check if App credentials exist
+    app_id_file = Config.USER_CONFIG_DIR / "github-app-id"
+    installation_id_file = Config.USER_CONFIG_DIR / "github-app-installation-id"
+    private_key_file = Config.USER_CONFIG_DIR / "github-app.pem"
+
+    if not all(f.exists() for f in [app_id_file, installation_id_file, private_key_file]):
+        return None  # App not configured, fall back to PAT
+
+    # Find the token generation script
+    script_dir = Path(__file__).resolve().parent
+    token_script = script_dir / "jib-tools" / "github-app-token.py"
+
+    if not token_script.exists():
+        warn(f"GitHub App token script not found: {token_script}")
+        return None
+
+    # Use the host-services venv Python which has cryptography installed
+    # Fall back to system python3 if venv doesn't exist
+    jib_root = script_dir.parent
+    venv_python = jib_root / "host-services" / ".venv" / "bin" / "python"
+    python_cmd = str(venv_python) if venv_python.exists() else "python3"
+
+    try:
+        result = subprocess.run(
+            [python_cmd, str(token_script), "--config-dir", str(Config.USER_CONFIG_DIR)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            token = result.stdout.strip()
+            if token and token.startswith("ghs_"):  # Installation tokens start with ghs_
+                return token
+            elif token:
+                # Token format might vary, accept if non-empty
+                return token
+
+        # Log error but don't fail - we can fall back to PAT
+        if result.stderr:
+            warn(f"GitHub App token generation failed: {result.stderr.strip()}")
+
+    except subprocess.TimeoutExpired:
+        warn("GitHub App token generation timed out")
+    except Exception as e:
+        warn(f"GitHub App token generation error: {e}")
+
     return None
 
 
@@ -885,14 +944,22 @@ def run_claude() -> bool:
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
-    # Add GitHub token if available (for PR creation/management)
-    github_token = get_github_token()
-    if github_token:
-        cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
-        info("GitHub token: Found (PR creation enabled)")
+    # Add GitHub token for container (prefer App token, fall back to PAT)
+    github_app_token = get_github_app_token()
+    if github_app_token:
+        cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
+        info("GitHub auth: App installation token (1-hour expiry)")
+        print("  Full GitHub API access including Checks API")
     else:
-        warn("GitHub token: Not found (PR creation disabled)")
-        print("  Configure with: ./setup.sh --update")
+        # Fall back to PAT if App not configured
+        github_token = get_github_token()
+        if github_token:
+            cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
+            info("GitHub auth: Personal Access Token (fallback)")
+            warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
+        else:
+            warn("GitHub auth: Not configured (GitHub operations disabled)")
+            print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
 
     info("Network mode: Bridge (isolated from host, outbound HTTP only)")
     print("  Container can: Access Claude API, download packages")
@@ -1031,10 +1098,14 @@ def exec_in_new_container(command: List[str]) -> bool:
         "-e", f"CONTAINER_ID={container_id}",
     ]
 
-    # Add GitHub token if available (for PR creation/management)
-    github_token = get_github_token()
-    if github_token:
-        cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
+    # Add GitHub token for container (prefer App token, fall back to PAT)
+    github_app_token = get_github_app_token()
+    if github_app_token:
+        cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
+    else:
+        github_token = get_github_token()
+        if github_token:
+            cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
 
     # Add mount arguments
     cmd.extend(mount_args)
