@@ -45,15 +45,35 @@ def load_state() -> dict:
                 return json.load(f)
         except Exception:
             pass
-    return {"processed_failures": {}, "processed_comments": {}, "processed_reviews": {}}
+    return {
+        "processed_failures": {},
+        "processed_comments": {},
+        "processed_reviews": {},
+        "last_run_at": None,
+    }
 
 
 def save_state(state: dict):
     """Save notification state."""
     state_file = Path.home() / ".local" / "share" / "github-watcher" / "state.json"
     state_file.parent.mkdir(parents=True, exist_ok=True)
+    # Update last_run_at timestamp
+    state["last_run_at"] = datetime.utcnow().isoformat() + "Z"
     with state_file.open("w") as f:
         json.dump(state, f, indent=2)
+
+
+def get_time_since_last_run(state: dict) -> str | None:
+    """Get ISO timestamp to use for filtering GitHub results.
+
+    If we've run before, return the last_run_at timestamp.
+    This allows backfilling after laptop sleep/restart.
+    Returns None if never run before (will use default lookback).
+    """
+    last_run = state.get("last_run_at")
+    if last_run:
+        return last_run
+    return None
 
 
 def gh_json(args: list[str]) -> dict | list | None:
@@ -336,10 +356,51 @@ def check_pr_for_comments(repo: str, pr_data: dict, state: dict) -> dict | None:
     }
 
 
+def build_review_context(repo: str, pr: dict, state: dict) -> dict | None:
+    """Build review context for a single PR.
+
+    Returns context dict if PR needs review, None otherwise.
+    """
+    pr_num = pr["number"]
+
+    # Get PR diff
+    diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
+
+    # Get more PR details
+    pr_details = gh_json(
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "additions,deletions,files",
+        ]
+    )
+
+    return {
+        "type": "review_request",
+        "repository": repo,
+        "pr_number": pr_num,
+        "pr_title": pr.get("title", ""),
+        "pr_url": pr.get("url", ""),
+        "pr_branch": pr.get("headRefName", ""),
+        "base_branch": pr.get("baseRefName", ""),
+        "author": pr.get("author", {}).get("login", ""),
+        "additions": pr_details.get("additions", 0) if pr_details else 0,
+        "deletions": pr_details.get("deletions", 0) if pr_details else 0,
+        "files": [f.get("path", "") for f in pr_details.get("files", [])] if pr_details else [],
+        "diff": diff[:50000] if diff else "",  # Limit diff size
+        "review_signature": f"{repo}-{pr_num}:review",
+    }
+
+
 def check_prs_for_review(repo: str, state: dict) -> list[dict]:
     """Check for PRs from others that need review.
 
     Returns list of context dicts for PRs needing review.
+    Note: This function is deprecated when sync_all_prs=true, as main() handles it inline.
     """
     # Get open PRs NOT authored by @me
     prs = gh_json(
@@ -411,6 +472,8 @@ def main():
     # Load config
     config = load_config()
     repos = config.get("writable_repos", [])
+    github_sync = config.get("github_sync", {})
+    sync_all_prs = github_sync.get("sync_all_prs", False)
 
     if not repos:
         print("No repositories configured - check config/repositories.yaml")
@@ -419,34 +482,46 @@ def main():
     # Load state
     state = load_state()
 
+    # Report last run time for debugging
+    last_run = state.get("last_run_at")
+    if last_run:
+        print(f"Last run: {last_run}")
+    else:
+        print("Last run: never (first run)")
+
     print(f"Scanning {len(repos)} repository(ies)...")
+    print(f"Mode: {'all PRs' if sync_all_prs else 'only @me PRs'}")
 
     tasks_queued = 0
 
     for repo in repos:
         print(f"\n[{repo}]")
 
-        # Get open PRs authored by @me (for check failures and comments)
-        my_prs = gh_json(
-            [
-                "pr",
-                "list",
-                "--repo",
-                repo,
-                "--state",
-                "open",
-                "--author",
-                "@me",
-                "--json",
-                "number,title,url,headRefName,baseRefName",
-            ]
-        )
+        # Get open PRs - either all PRs or just @me's based on config
+        pr_list_args = [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,url,headRefName,baseRefName,author",
+        ]
 
-        if my_prs:
-            print(f"  Found {len(my_prs)} open PR(s) authored by me")
+        # Only add --author filter if NOT syncing all PRs
+        if not sync_all_prs:
+            pr_list_args.extend(["--author", "@me"])
 
-            for pr in my_prs:
-                # Check for failures
+        all_prs = gh_json(pr_list_args)
+
+        if all_prs:
+            print(f"  Found {len(all_prs)} open PR(s)")
+
+            for pr in all_prs:
+                pr_author = pr.get("author", {}).get("login", "unknown")
+
+                # Check for check failures (on all PRs)
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):
                     state.setdefault("processed_failures", {})[failure_ctx["failure_signature"]] = (
@@ -454,26 +529,31 @@ def main():
                     )
                     tasks_queued += 1
 
-                # Check for comments
+                # Check for comments on PRs
+                # For PRs authored by jib: look for comments from others
+                # For PRs authored by others: look for comments that might need jib's attention
                 comment_ctx = check_pr_for_comments(repo, pr, state)
                 if comment_ctx and invoke_jib("comment", comment_ctx):
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
                         datetime.utcnow().isoformat()
                     )
                     tasks_queued += 1
+
+                # For PRs from others (not jib), also trigger review if not yet reviewed
+                if pr_author.lower() != "jib":
+                    review_signature = f"{repo}-{pr['number']}:review"
+                    if review_signature not in state.get("processed_reviews", {}):
+                        print(f"  PR #{pr['number']}: From {pr_author} - checking if review needed")
+                        review_ctx = build_review_context(repo, pr, state)
+                        if review_ctx and invoke_jib("review_request", review_ctx):
+                            state.setdefault("processed_reviews", {})[review_signature] = (
+                                datetime.utcnow().isoformat()
+                            )
+                            tasks_queued += 1
         else:
-            print("  No open PRs authored by me")
+            print("  No open PRs found")
 
-        # Check for PRs from others that need review
-        review_contexts = check_prs_for_review(repo, state)
-        for review_ctx in review_contexts:
-            if invoke_jib("review_request", review_ctx):
-                state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
-                    datetime.utcnow().isoformat()
-                )
-                tasks_queued += 1
-
-    # Save state
+    # Save state (also updates last_run_at)
     save_state(state)
 
     print("\n" + "=" * 60)
