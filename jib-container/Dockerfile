@@ -274,13 +274,18 @@ echo ""
 # This replaces direct gh CLI usage for all GitHub operations
 # NOTE: Use --scope user to make it available in ALL projects (not just current dir)
 if [ -n "${GITHUB_TOKEN:-}" ]; then
+    # Remove any existing github MCP config to ensure clean state
+    # This handles upgrades from old configs (e.g., local scope → user scope)
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local 2>/dev/null || true
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user 2>/dev/null || true
+
+    # Add fresh config with user scope
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
         --transport http \
         --scope user \
         github \
         "https://api.githubcopilot.com/mcp/" \
-        --header "Authorization: Bearer ${GITHUB_TOKEN}" \
-        2>/dev/null || true
+        --header "Authorization: Bearer ${GITHUB_TOKEN}"
     echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
     echo "  All GitHub operations go through MCP: PRs, issues, repos, comments"
 else
