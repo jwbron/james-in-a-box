@@ -810,9 +810,11 @@ else
                     echo ""
                     print_info "Testing GitHub App token generation..."
                     token_script="$SCRIPT_DIR/jib-container/jib-tools/github-app-token.py"
+                    # Use the host-services venv Python which has cryptography installed
+                    venv_python="$SCRIPT_DIR/host-services/.venv/bin/python"
 
                     if [ -f "$token_script" ]; then
-                        if token_output=$(python3 "$token_script" --config-dir "$jib_user_config_dir" 2>&1); then
+                        if token_output=$("$venv_python" "$token_script" --config-dir "$jib_user_config_dir" 2>&1); then
                             if [[ "$token_output" == ghs_* ]] || [ -n "$token_output" ]; then
                                 print_success "GitHub App token generation works!"
                                 echo "   Container will use App authentication for full API access"

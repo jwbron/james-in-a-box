@@ -146,9 +146,15 @@ def get_github_app_token() -> Optional[str]:
         warn(f"GitHub App token script not found: {token_script}")
         return None
 
+    # Use the host-services venv Python which has cryptography installed
+    # Fall back to system python3 if venv doesn't exist
+    jib_root = script_dir.parent
+    venv_python = jib_root / "host-services" / ".venv" / "bin" / "python"
+    python_cmd = str(venv_python) if venv_python.exists() else "python3"
+
     try:
         result = subprocess.run(
-            ["python3", str(token_script), "--config-dir", str(Config.USER_CONFIG_DIR)],
+            [python_cmd, str(token_script), "--config-dir", str(Config.USER_CONFIG_DIR)],
             capture_output=True,
             text=True,
             timeout=30
