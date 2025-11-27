@@ -538,9 +538,9 @@ def main():
                 # Check for failures
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):
-                    state.setdefault("processed_failures", {})[
-                        failure_ctx["failure_signature"]
-                    ] = utc_now_iso()
+                    state.setdefault("processed_failures", {})[failure_ctx["failure_signature"]] = (
+                        utc_now_iso()
+                    )
                     tasks_queued += 1
 
                 # Check for comments
@@ -548,9 +548,9 @@ def main():
                     repo, pr, state, github_username, since_timestamp
                 )
                 if comment_ctx and invoke_jib("comment", comment_ctx):
-                    state.setdefault("processed_comments", {})[
-                        comment_ctx["comment_signature"]
-                    ] = utc_now_iso()
+                    state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
+                        utc_now_iso()
+                    )
                     tasks_queued += 1
         else:
             print("  No open PRs authored by me")
@@ -559,9 +559,9 @@ def main():
         review_contexts = check_prs_for_review(repo, state, github_username, since_timestamp)
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
-                state.setdefault("processed_reviews", {})[
-                    review_ctx["review_signature"]
-                ] = utc_now_iso()
+                state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
+                    utc_now_iso()
+                )
                 tasks_queued += 1
 
     # Update last run timestamp and save state
