@@ -15,15 +15,10 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 import json
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
-
-
-# Buffer time to handle race conditions where events occur during a watcher run
-# This ensures we don't miss events that happen near the boundary of a run
-TIMESTAMP_BUFFER_SECONDS = 60
 
 
 def load_config() -> dict:
@@ -57,6 +52,8 @@ def load_state() -> dict:
                 state.setdefault("processed_failures", {})
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
+                state.setdefault("last_run_start", None)
+                # Keep last_run for backwards compatibility
                 state.setdefault("last_run", None)
                 return state
         except Exception:
@@ -65,6 +62,7 @@ def load_state() -> dict:
         "processed_failures": {},
         "processed_comments": {},
         "processed_reviews": {},
+        "last_run_start": None,
         "last_run": None,
     }
 
@@ -526,37 +524,28 @@ def utc_now_iso() -> str:
 
 
 def get_since_timestamp(state: dict) -> str | None:
-    """Get ISO timestamp for 'since' queries based on last run time.
+    """Get ISO timestamp for 'since' queries based on last run START time.
 
-    Returns None if this is the first run or last_run is not set.
+    Returns None if this is the first run or last_run_start is not set.
 
-    Applies a buffer to handle race conditions where events occur during a run.
-    For example, if last_run was 10:00:00 and buffer is 60 seconds, we'll check
-    for events since 09:59:00 to avoid missing events that occurred near the
-    boundary.
+    We use last_run_start (when the previous watcher run began) rather than
+    last_run (when it ended) to ensure we don't miss any events that occurred
+    during the previous run's execution.
     """
-    last_run = state.get("last_run")
-    if last_run:
-        try:
-            # Parse the ISO timestamp
-            dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
-            # Apply buffer
-            buffered_dt = dt - timedelta(seconds=TIMESTAMP_BUFFER_SECONDS)
-            # Return in same format
-            return buffered_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-        except (ValueError, AttributeError):
-            return last_run
-    return None
+    # Use last_run_start if available (preferred - captures events during run)
+    # Fall back to last_run for backwards compatibility with old state files
+    return state.get("last_run_start") or state.get("last_run")
 
 
 def main():
     """Main entry point - scan configured repos and trigger jib as needed."""
-    current_run_time = utc_now_iso()
+    # Record when this run STARTS - this is what we'll use for next run's "since"
+    current_run_start = utc_now_iso()
 
     print("=" * 60)
     print("GitHub Watcher - Host-side monitoring service")
     print(f"Local time: {datetime.now().isoformat()}")
-    print(f"UTC time:   {current_run_time}")
+    print(f"UTC time:   {current_run_start}")
     print("=" * 60)
 
     # Load config
@@ -575,17 +564,13 @@ def main():
     # Load state
     state = load_state()
 
-    # Get the timestamp from last run for filtering queries (with buffer applied)
+    # Get the timestamp from when the PREVIOUS run started (for comment filtering)
     since_timestamp = get_since_timestamp(state)
-    last_run_raw = state.get("last_run")
     if since_timestamp:
-        if last_run_raw and last_run_raw != since_timestamp:
-            print(f"Last run was: {last_run_raw}")
-            print(f"Checking for events since: {since_timestamp} ({TIMESTAMP_BUFFER_SECONDS}s buffer)")
-        else:
-            print(f"Checking for events since last run: {since_timestamp}")
+        print(f"Checking for comments since last run start: {since_timestamp}")
     else:
         print("First run - checking all open items")
+    print("PR check failures: checking ALL open PRs unconditionally")
 
     print(f"Scanning {len(repos)} repository(ies)...")
 
@@ -683,13 +668,14 @@ def main():
                 )
                 tasks_queued += 1
 
-    # Update last run timestamp and save state
-    state["last_run"] = current_run_time
+    # Update last run START timestamp and save state
+    # We store when this run STARTED so next run checks for comments since then
+    state["last_run_start"] = current_run_start
     save_state(state)
 
     print("\n" + "=" * 60)
     print(f"GitHub Watcher completed - {tasks_queued} task(s) triggered")
-    print(f"Next run will check for events since: {current_run_time}")
+    print(f"Next run will check for comments since: {current_run_start}")
     print("=" * 60)
 
     return 0

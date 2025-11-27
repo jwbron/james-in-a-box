@@ -64,6 +64,7 @@ class TestStateManagement:
                 "processed_failures": {},
                 "processed_comments": {},
                 "processed_reviews": {},
+                "last_run_start": None,
                 "last_run": None,
             }
 
