@@ -18,8 +18,9 @@ from utils.config_loader import load_env_file
 load_env_file()
 
 # Import connectors
+# Note: JIRA connector removed - JIRA now uses Atlassian MCP server for real-time access
+# See ADR-Context-Sync-Strategy-Custom-vs-MCP.md for details
 from connectors.confluence.connector import ConfluenceConnector
-from connectors.jira.connector import JIRAConnector
 
 
 # Configure root logger
@@ -55,15 +56,9 @@ def get_all_connectors() -> list:
     except Exception as e:
         logger.error(f"Failed to initialize Confluence connector: {e}")
 
-    # JIRA connector
-    try:
-        connector = JIRAConnector()
-        if connector.validate_config():
-            connectors.append(connector)
-        else:
-            logger.warning("JIRA connector configuration invalid, skipping")
-    except Exception as e:
-        logger.error(f"Failed to initialize JIRA connector: {e}")
+    # Note: JIRA connector removed - JIRA now uses Atlassian MCP server for real-time access
+    # Benefits: Real-time data, bi-directional operations, reduced maintenance
+    # See ADR-Context-Sync-Strategy-Custom-vs-MCP.md for details
 
     # Add more connectors here as they are implemented
     # Example:

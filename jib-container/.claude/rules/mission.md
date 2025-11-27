@@ -15,10 +15,10 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 | Source | Location | Purpose |
 |--------|----------|---------|
 | Confluence | `~/context-sync/confluence/` | ADRs, runbooks, best practices |
-| JIRA | `~/context-sync/jira/` | Tickets, requirements, sprint info |
+| **JIRA MCP** | Atlassian MCP server | Tickets, requirements, sprint info (real-time) |
 | Slack | `~/sharing/incoming/` | Task requests |
 | Beads | `~/beads/` | Persistent task memory |
-| **GitHub MCP** | Real-time API access | PRs, issues, repos, comments |
+| **GitHub MCP** | GitHub MCP server | PRs, issues, repos, comments (real-time) |
 
 ## CRITICAL TOOL REQUIREMENTS
 
@@ -60,6 +60,33 @@ The helper provides:
 - Proper notifications with thread context
 - Automatic reviewer assignment
 - Consistent PR formatting
+
+### JIRA Operations - USE ATLASSIAN MCP
+
+All JIRA operations go through the **Atlassian MCP server**. See `environment.md` for available tools and configuration.
+
+**Available MCP Tools:**
+- **Search**: `jira_search` (JQL-based queries)
+- **Issues**: `jira_get_issue`, `jira_create_issue`, `jira_update_issue`
+- **Transitions**: `jira_transition_issue` (change status)
+- **Comments**: `jira_add_comment`
+
+**Common JIRA workflows:**
+```
+# Search for your assigned tickets
+jira_search("assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC")
+
+# Get ticket details before starting work
+jira_get_issue("PROJ-1234")
+
+# Add progress comment
+jira_add_comment("PROJ-1234", "Started implementation. See PR #123.")
+
+# Transition to In Progress
+jira_transition_issue("PROJ-1234", "In Progress")
+```
+
+**Authentication**: Uses OAuth 2.1 via browser flow. First use triggers browser authorization.
 
 ## Workflow
 

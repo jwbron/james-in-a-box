@@ -286,6 +286,20 @@ else
     echo "  Add GITHUB_TOKEN to enable GitHub MCP server"
 fi
 
+# Add the Atlassian MCP server for JIRA access
+# Atlassian MCP requires the mcp-remote proxy to handle OAuth 2.1 browser-based authorization
+# URL: https://mcp.atlassian.com/v1/sse (SSE transport via mcp-remote)
+# First-time use triggers browser OAuth flow for Atlassian credentials
+# Note: OAuth tokens are cached locally after first authorization
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
+    atlassian \
+    -- \
+    npx -y mcp-remote@0.1.13 https://mcp.atlassian.com/v1/sse \
+    2>/dev/null || true
+echo "✓ Atlassian MCP server configured (mcp.atlassian.com)"
+echo "  JIRA operations go through MCP: issues, search, comments, transitions"
+echo "  First use will prompt for Atlassian OAuth authorization via browser"
+
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
 # Also add jib-container/scripts to PATH
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
@@ -391,9 +405,10 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "📚 Available Resources:"
     echo "  • Workspace: ~/khan/                      (code reference, MOUNTED ro)"
-    echo "  • Context: ~/context-sync/                (context sources, MOUNTED ro)"
-    echo "    - ~/context-sync/confluence/            (ADRs, runbooks, docs)"
-    echo "    - ~/context-sync/jira/                  (JIRA tickets, issues)"
+    echo "  • Context: ~/context-sync/confluence/     (ADRs, runbooks, docs - MOUNTED ro)"
+    echo "  • MCP Servers:"
+    echo "    - GitHub MCP                            (PRs, issues, repos, comments)"
+    echo "    - Atlassian MCP                         (JIRA tickets, search, transitions)"
     echo "  • Sharing: ~/sharing/                     (ALL persistent data, MOUNTED rw)"
     echo "    - ~/sharing/tmp/                        (persistent scratch, symlinked to ~/tmp/)"
     echo "    - ~/sharing/notifications/              (Claude → You via Slack)"
@@ -414,7 +429,8 @@ if [ $# -eq 0 ]; then
     echo "💡 Tips:"
     echo "  • ~/khan/ is READ-WRITE - make changes directly, commit to git"
     echo "  • Human reviews commits and pushes from host"
-    echo "  • Check context-sync/ for Confluence docs, JIRA tickets, etc."
+    echo "  • Use Atlassian MCP for real-time JIRA access (search, update, comment)"
+    echo "  • Check context-sync/confluence/ for ADRs and runbooks"
     echo "  • Send notifications to ~/sharing/notifications/ to get Slack DM"
     echo "  • Check ~/sharing/incoming/ for tasks sent via Slack"
     echo "  • Check ~/sharing/responses/ for replies to your notifications"

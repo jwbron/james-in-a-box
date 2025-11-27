@@ -10,7 +10,7 @@ You run in a **sandboxed Docker container** with "Bypass Permissions" mode becau
 | Credentials | No SSH keys, cloud creds, or production access |
 | Container | Cannot access host services or directories |
 
-**You CAN**: Interact with GitHub via the GitHub MCP server (all reads, writes, PR operations)
+**You CAN**: Interact with GitHub and Atlassian (JIRA) via MCP servers (all reads, writes, real-time operations)
 
 ## GitHub MCP Server (Primary GitHub Interface)
 
@@ -38,6 +38,34 @@ claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" \
 
 **Authentication**: Configured automatically via `GITHUB_TOKEN` environment variable.
 
+## Atlassian MCP Server (JIRA Interface)
+
+All JIRA operations go through the **Atlassian MCP server** (mcp.atlassian.com). This provides real-time, bi-directional access and replaces file-based JIRA sync.
+
+**Configuration**: The MCP server is configured at container startup via `claude mcp add` with the mcp-remote proxy:
+```bash
+claude mcp add atlassian -- npx -y mcp-remote@0.1.13 https://mcp.atlassian.com/v1/sse
+```
+
+**Available Tools:**
+| Category | Tools |
+|----------|-------|
+| **Search** | `jira_search` (JQL-based queries) |
+| **Issues** | `jira_get_issue`, `jira_create_issue`, `jira_update_issue` |
+| **Transitions** | `jira_transition_issue` (change status) |
+| **Comments** | `jira_add_comment` |
+
+**When to use JIRA MCP:**
+- Search for assigned tickets: JQL query like `assignee = currentUser() AND resolution = Unresolved`
+- Get ticket details before starting work
+- Add comments to track progress
+- Transition tickets (e.g., move to "In Progress")
+- Create new tickets for discovered issues
+
+**Authentication**: Uses OAuth 2.1 via browser flow. First use triggers browser authorization. Tokens are cached locally after authorization.
+
+**Rate Limits**: Standard plan has 1000 requests/hour. Batch queries when possible.
+
 ## Capabilities
 
 **CAN do:**
@@ -47,6 +75,8 @@ claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" \
 - Create/manage PRs via GitHub MCP
 - Query issues, repos, comments via GitHub MCP
 - Push files/changes via GitHub MCP
+- Search/update JIRA tickets via Atlassian MCP
+- Add comments and transition tickets via Atlassian MCP
 - Use PostgreSQL, Redis, Python, Node.js, Go, Java
 
 **CANNOT do:**
@@ -61,12 +91,13 @@ claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" \
 |------|--------|---------|
 | `~/khan/` | RW | Code workspace (mounted from host) |
 | `~/context-sync/confluence/` | RO | ADRs, runbooks, docs |
-| `~/context-sync/jira/` | RO | JIRA tickets |
 | `~/sharing/` | RW | Persistent data (survives rebuilds) |
 | `~/sharing/tmp/` | RW | Scratch space (symlinked from `~/tmp/`) |
 | `~/sharing/notifications/` | RW | Async messages → Slack DM (use notifications lib) |
 | `~/sharing/context/` | RW | @save-context / @load-context data |
 | `~/beads/` | RW | Persistent task memory |
+
+**Note**: JIRA tickets are accessed via Atlassian MCP (real-time API), not file sync.
 
 ## Custom Commands
 
@@ -88,6 +119,8 @@ service redis-server status
 ## Error Handling
 
 **GitHub MCP fails** - Check `GITHUB_TOKEN` environment variable is set. MCP authentication is automatic.
+
+**Atlassian MCP fails** - OAuth may have expired. Re-run a JIRA query to trigger browser re-authorization. Check that mcp-remote is installed (`npx -y mcp-remote@0.1.13`).
 
 **Cloud operations fail** - Expected. No credentials. Document what user needs to do on host.
 
