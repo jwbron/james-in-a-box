@@ -44,23 +44,23 @@ from .logger import BoundLogger, JibLogger, configure_root_logging, get_logger
 
 
 __all__ = [
-    # Primary API
-    "get_logger",
+    "BoundLogger",
+    "ConsoleFormatter",
     "ContextScope",
     # Logger classes
     "JibLogger",
-    "BoundLogger",
-    # Context management
-    "LogContext",
-    "get_current_context",
-    "set_current_context",
-    "get_or_create_context",
-    "context_from_env",
     # Formatters (for advanced use)
     "JsonFormatter",
-    "ConsoleFormatter",
+    # Context management
+    "LogContext",
     # Configuration
     "configure_root_logging",
+    "context_from_env",
+    "get_current_context",
+    # Primary API
+    "get_logger",
+    "get_or_create_context",
+    "set_current_context",
 ]
 
 __version__ = "0.1.0"

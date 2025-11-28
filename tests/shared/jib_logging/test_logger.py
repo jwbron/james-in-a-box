@@ -2,12 +2,8 @@
 
 import json
 import logging
-import tempfile
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-
 from jib_logging import ContextScope, JibLogger, get_logger, set_current_context
 from jib_logging.logger import BoundLogger, _loggers
 

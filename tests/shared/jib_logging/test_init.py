@@ -1,7 +1,5 @@
 """Tests for jib_logging module initialization and exports."""
 
-import pytest
-
 from jib_logging import (
     BoundLogger,
     ConsoleFormatter,

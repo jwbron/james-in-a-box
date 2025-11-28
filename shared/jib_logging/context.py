@@ -7,7 +7,6 @@ Aligns with OpenTelemetry trace context for distributed tracing compatibility.
 
 import os
 import secrets
-import threading
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any

@@ -7,7 +7,7 @@ Provides JSON and console formatters compatible with GCP Cloud Logging.
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -117,7 +117,7 @@ class JsonFormatter(logging.Formatter):
 
     def _format_timestamp(self, record: logging.LogRecord) -> str:
         """Format timestamp in ISO 8601 format with UTC timezone."""
-        dt = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        dt = datetime.fromtimestamp(record.created, tz=UTC)
         return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{int(dt.microsecond / 1000):03d}Z"
 
     def _extract_extra(self, record: logging.LogRecord) -> dict[str, Any]:
@@ -209,10 +209,7 @@ class ConsoleFormatter(logging.Formatter):
         # Check for NO_COLOR environment variable
         import os
 
-        if os.environ.get("NO_COLOR"):
-            return False
-
-        return True
+        return not os.environ.get("NO_COLOR")
 
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record for console output."""

@@ -12,7 +12,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from .context import LogContext, get_current_context
+from .context import get_current_context
 from .formatters import ConsoleFormatter, JsonFormatter
 
 

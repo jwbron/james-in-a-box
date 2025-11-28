@@ -2,8 +2,6 @@
 
 import os
 
-import pytest
-
 from jib_logging import (
     ContextScope,
     LogContext,
@@ -178,10 +176,10 @@ class TestContextScope:
 
     def test_nested_context_scopes(self):
         """Test nested context scopes."""
-        with ContextScope(task_id="outer") as outer:
+        with ContextScope(task_id="outer"):
             assert get_current_context().task_id == "outer"
 
-            with ContextScope(task_id="inner") as inner:
+            with ContextScope(task_id="inner"):
                 assert get_current_context().task_id == "inner"
 
             assert get_current_context().task_id == "outer"
