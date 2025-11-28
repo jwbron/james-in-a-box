@@ -30,7 +30,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -230,9 +230,7 @@ class DriftDetector:
                     continue  # Link points outside project
 
                 # Handle directory links (ending with /) - check for index files
-                if link_target.endswith("/") or (
-                    self.project_root / link_target
-                ).is_dir():
+                if link_target.endswith("/") or (self.project_root / link_target).is_dir():
                     dir_path = link_target.rstrip("/")
                     # Check if directory exists or has README/index
                     if (self.project_root / dir_path).is_dir():
@@ -283,7 +281,7 @@ class DriftDetector:
 
         if not self.docs_dir.exists():
             return DriftReport(
-                generated=datetime.now(timezone.utc).isoformat(),
+                generated=datetime.now(UTC).isoformat(),
                 project=self.project_root.name,
                 docs_checked=0,
                 issues_found=0,
@@ -313,7 +311,7 @@ class DriftDetector:
             issues.extend(self.check_doc(claude_md))
 
         return DriftReport(
-            generated=datetime.now(timezone.utc).isoformat(),
+            generated=datetime.now(UTC).isoformat(),
             project=self.project_root.name,
             docs_checked=docs_checked,
             issues_found=len(issues),
@@ -435,7 +433,7 @@ Examples:
             sys.exit(1)
         issues = detector.check_doc(doc_path)
         report = DriftReport(
-            generated=datetime.now(timezone.utc).isoformat(),
+            generated=datetime.now(UTC).isoformat(),
             project=project_root.name,
             docs_checked=1,
             issues_found=len(issues),
