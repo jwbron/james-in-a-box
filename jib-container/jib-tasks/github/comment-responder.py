@@ -58,9 +58,10 @@ _check_dependencies()
 import yaml
 
 
-# Add shared directory to path for notifications import
+# Add shared directory to path for imports
 # Path: jib-container/jib-tasks/github/comment-responder.py -> repo-root/shared
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from claude_runner import check_claude_cli, run_claude
 try:
     from notifications import NotificationContext, get_slack_service
 except ImportError as e:
@@ -278,19 +279,9 @@ class CommentResponder:
         self.state_file = Path.home() / "sharing" / "tracking" / "comment-responder-state.json"
         self.processed_comments = self.load_state()
 
-        # Check for claude CLI
-        if not self._check_claude_cli():
+        # Check for claude CLI using shared function
+        if not check_claude_cli():
             raise RuntimeError("claude CLI not found - required for response generation")
-
-    def _check_claude_cli(self) -> bool:
-        """Check if claude CLI is available."""
-        try:
-            result = subprocess.run(
-                ["claude", "--version"], check=False, capture_output=True, text=True, timeout=5
-            )
-            return result.returncode == 0
-        except (subprocess.SubprocessError, FileNotFoundError):
-            return False
 
     def load_state(self) -> dict:
         """Load previously processed comment IDs."""
@@ -688,46 +679,38 @@ For a comment asking to "add error handling to the function":
 
 Now process the pending comments and take the appropriate actions."""
 
-        try:
-            print(f"  Calling Claude to process {len(pending_comments)} comment(s)...")
+        print(f"  Calling Claude to process {len(pending_comments)} comment(s)...")
 
-            # Change to repo directory if available
-            cwd = str(repo_dir) if repo_dir else str(Path.home() / "khan")
+        # Change to repo directory if available
+        cwd = repo_dir if repo_dir else Path.home() / "khan"
 
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=600,  # 10 minutes for complex PR work
-                cwd=cwd,
+        result = run_claude(
+            prompt,
+            timeout=600,  # 10 minutes for complex PR work
+            cwd=cwd,
+            capture_output=True,
+        )
+
+        if result.timed_out:
+            print("  Claude call timed out after 600 seconds")
+            return False
+
+        if not result.success:
+            print(f"  Claude error (returncode={result.returncode}): {result.stderr}")
+            print(
+                f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}"
             )
-
-            if result.returncode != 0:
-                print(f"  Claude error (returncode={result.returncode}): {result.stderr}")
-                print(
-                    f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}"
-                )
-                return False
-
-            print(f"  Claude response length: {len(result.stdout)} chars")
-            print(f"  ✓ Claude processed {len(pending_comments)} comment(s)")
-
-            # Send Slack notification about the processed comments
-            self._notify_batch_processed(repo, pr_num, pending_comments)
-
-            return True
-
-        except subprocess.TimeoutExpired:
-            print("  Claude call timed out after 300 seconds")
+            if result.error:
+                print(f"  Error: {result.error}")
             return False
-        except Exception as e:
-            print(f"  Error calling Claude: {e}")
-            import traceback
 
-            traceback.print_exc()
-            return False
+        print(f"  Claude response length: {len(result.stdout)} chars")
+        print(f"  ✓ Claude processed {len(pending_comments)} comment(s)")
+
+        # Send Slack notification about the processed comments
+        self._notify_batch_processed(repo, pr_num, pending_comments)
+
+        return True
 
     def _notify_batch_processed(self, repo: str, pr_num: int, pending_comments: list[dict]):
         """Send Slack notification about processed PR comments."""
@@ -855,47 +838,42 @@ IMPORTANT:
 
 Return ONLY the JSON, no other text."""
 
-        try:
-            print("  Calling Claude to generate response...")
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=600,  # 10 minutes for complex PR discussions
-            )
+        print("  Calling Claude to generate response...")
+        result = run_claude(
+            prompt,
+            timeout=600,  # 10 minutes for complex PR discussions
+            capture_output=True,
+        )
 
-            if result.returncode != 0:
-                print(f"  Claude error (returncode={result.returncode}): {result.stderr}")
-                print(
-                    f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}"
-                )
-                return None
-
-            response_text = result.stdout.strip()
-            print(f"  Claude response length: {len(response_text)} chars")
-
-            # Parse JSON from response
-            try:
-                # Find JSON in response
-                start = response_text.find("{")
-                end = response_text.rfind("}") + 1
-                if start != -1 and end > start:
-                    json_str = response_text[start:end]
-                    return json.loads(json_str)
-                else:
-                    print("  No JSON found in response")
-                    return None
-            except json.JSONDecodeError as e:
-                print(f"  Failed to parse response JSON: {e}")
-                return None
-
-        except subprocess.TimeoutExpired:
+        if result.timed_out:
             print("  Claude call timed out")
             return None
-        except Exception as e:
-            print(f"  Error calling Claude: {e}")
+
+        if not result.success:
+            print(f"  Claude error (returncode={result.returncode}): {result.stderr}")
+            print(
+                f"  Claude stdout (first 500 chars): {result.stdout[:500] if result.stdout else '(empty)'}"
+            )
+            if result.error:
+                print(f"  Error: {result.error}")
+            return None
+
+        response_text = result.stdout.strip()
+        print(f"  Claude response length: {len(response_text)} chars")
+
+        # Parse JSON from response
+        try:
+            # Find JSON in response
+            start = response_text.find("{")
+            end = response_text.rfind("}") + 1
+            if start != -1 and end > start:
+                json_str = response_text[start:end]
+                return json.loads(json_str)
+            else:
+                print("  No JSON found in response")
+                return None
+        except json.JSONDecodeError as e:
+            print(f"  Failed to parse response JSON: {e}")
             return None
 
     def get_pr_info(self, repo: str, pr_num: int) -> dict | None:
@@ -1134,18 +1112,17 @@ After making changes, output a JSON summary:
 Make the changes now using the available tools (Read, Edit, Write, Bash for git commands)."""
 
             # Use claude with full tool access for making changes
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
+            result = run_claude(
+                prompt,
+                timeout=600,  # 10 minutes for code changes
                 cwd=repo_dir,
                 capture_output=True,
-                text=True,
-                timeout=600,  # 10 minutes for code changes
             )
 
-            if result.returncode != 0:
+            if not result.success:
                 print(f"  Code change failed: {result.stderr}")
+                if result.error:
+                    print(f"  Error: {result.error}")
                 return None
 
             # Check if there are changes to commit
@@ -1249,18 +1226,17 @@ After making changes, output a JSON summary:
 Make the changes now using the available tools (Read, Edit, Write, Bash for git commands)."""
 
             # Use claude with full tool access for making changes
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
+            result = run_claude(
+                prompt,
+                timeout=600,  # 10 minutes for code changes
                 cwd=repo_dir,
                 capture_output=True,
-                text=True,
-                timeout=600,  # 10 minutes for code changes
             )
 
-            if result.returncode != 0:
+            if not result.success:
                 print(f"  Code change failed: {result.stderr}")
+                if result.error:
+                    print(f"  Error: {result.error}")
                 return None
 
             # Check if there are changes to commit
