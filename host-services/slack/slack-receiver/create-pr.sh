@@ -202,7 +202,7 @@ Format:
 Issue: <link or none>
 
 Test plan:
-- Testing steps' | claude --dangerously-skip-permissions --no-auto-update
+- Testing steps' | claude --dangerously-skip-permissions
         " > "$pr_desc_file" 2>&1
 
         if [ $? -eq 0 ] && [ -s "$pr_desc_file" ]; then

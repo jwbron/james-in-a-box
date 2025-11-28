@@ -26,7 +26,6 @@ Usage:
 
 Threading/Non-Interactive Mode:
     - All calls use --dangerously-skip-permissions flag
-    - All calls use --no-auto-update to prevent auto-update prompts
     - Input is passed via stdin (not --print flag which creates restricted session)
     - This allows full access to tools and filesystem
 """
