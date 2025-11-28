@@ -51,6 +51,15 @@ When creating a new ADR, include:
 4. **Decision** - What did we decide?
 5. **Consequences** - What are the trade-offs?
 
+### Important Guidelines
+
+**DO NOT include time-based estimates** in ADRs (e.g., "Week 1-2", "Phase 1 takes 3 weeks"). Time estimates are not reliable or relevant for LLM-assisted development where task completion depends on many unpredictable factors. Instead:
+
+- Use **phase numbering** without time estimates (Phase 1, Phase 2, etc.)
+- Define **success criteria** for each phase
+- List **dependencies** between phases
+- Focus on **what** needs to be done, not **when**
+
 Place new ADRs in `not-implemented/` until work begins.
 
 ## See Also
