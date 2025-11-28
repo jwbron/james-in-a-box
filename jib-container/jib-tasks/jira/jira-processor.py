@@ -11,15 +11,18 @@ Scope: Only processes tickets assigned to you
 """
 
 import json
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
+# Add shared directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from claude_runner import run_claude
+
 
 def main():
     """Run one-shot JIRA ticket analysis using Claude Code."""
-    print("🔍 JIRA Watcher - Analyzing assigned tickets...")
+    print("\U0001f50d JIRA Watcher - Analyzing assigned tickets...")
 
     jira_dir = Path.home() / "context-sync" / "jira"
     state_file = Path.home() / "sharing" / "tracking" / "jira-watcher-state.json"
@@ -149,38 +152,28 @@ For each ticket:
 
 Analyze these tickets now and take appropriate action."""
 
-    # Run Claude Code
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            capture_output=False,
-            text=True,
-            timeout=900,  # 15 minute timeout
-        )
+    # Run Claude Code using shared runner
+    result = run_claude(prompt, timeout=900, interactive=True)
 
-        if result.returncode == 0:
-            print("✅ Ticket analysis complete")
+    if result.success:
+        print("\u2705 Ticket analysis complete")
 
-            # Update state file with processed tickets
-            for t in new_or_updated:
-                processed_tickets[t["path"]] = t["mtime"]
+        # Update state file with processed tickets
+        for t in new_or_updated:
+            processed_tickets[t["path"]] = t["mtime"]
 
-            state_file.parent.mkdir(parents=True, exist_ok=True)
-            with state_file.open("w") as f:
-                json.dump({"processed": processed_tickets}, f, indent=2)
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        with state_file.open("w") as f:
+            json.dump({"processed": processed_tickets}, f, indent=2)
 
-            return 0
-        else:
-            print(f"⚠️  Claude exited with code {result.returncode}")
-            return 1
-
-    except subprocess.TimeoutExpired:
-        print("⚠️ Analysis timed out after 15 minutes")
+        return 0
+    elif result.timed_out:
+        print("\u26a0\ufe0f Analysis timed out after 15 minutes")
         return 1
-    except Exception as e:
-        print(f"❌ Error running Claude: {e}")
+    else:
+        print(f"\u26a0\ufe0f Claude exited with code {result.returncode}")
+        if result.error:
+            print(f"\u274c Error: {result.error}")
         return 1
 
 

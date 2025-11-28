@@ -11,15 +11,18 @@ Focus: ADRs, runbooks, and engineering documentation
 """
 
 import json
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
+# Add shared directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from claude_runner import run_claude
+
 
 def main():
     """Run one-shot Confluence documentation analysis using Claude Code."""
-    print("🔍 Confluence Watcher - Analyzing documentation changes...")
+    print("\U0001f50d Confluence Watcher - Analyzing documentation changes...")
 
     confluence_dir = Path.home() / "context-sync" / "confluence"
     state_file = Path.home() / "sharing" / "tracking" / "confluence-watcher-state.json"
@@ -187,38 +190,28 @@ For each document:
 
 Analyze these documents now and take appropriate action."""
 
-    # Run Claude Code
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            capture_output=False,
-            text=True,
-            timeout=900,  # 15 minute timeout
-        )
+    # Run Claude Code using shared runner
+    result = run_claude(prompt, timeout=900, interactive=True)
 
-        if result.returncode == 0:
-            print("✅ Documentation analysis complete")
+    if result.success:
+        print("\u2705 Documentation analysis complete")
 
-            # Update state file with processed documents
-            for d in new_or_updated:
-                processed_docs[d["path"]] = d["mtime"]
+        # Update state file with processed documents
+        for d in new_or_updated:
+            processed_docs[d["path"]] = d["mtime"]
 
-            state_file.parent.mkdir(parents=True, exist_ok=True)
-            with state_file.open("w") as f:
-                json.dump({"processed": processed_docs}, f, indent=2)
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        with state_file.open("w") as f:
+            json.dump({"processed": processed_docs}, f, indent=2)
 
-            return 0
-        else:
-            print(f"⚠️  Claude exited with code {result.returncode}")
-            return 1
-
-    except subprocess.TimeoutExpired:
-        print("⚠️ Analysis timed out after 15 minutes")
+        return 0
+    elif result.timed_out:
+        print("\u26a0\ufe0f Analysis timed out after 15 minutes")
         return 1
-    except Exception as e:
-        print(f"❌ Error running Claude: {e}")
+    else:
+        print(f"\u26a0\ufe0f Claude exited with code {result.returncode}")
+        if result.error:
+            print(f"\u274c Error: {result.error}")
         return 1
 
 
