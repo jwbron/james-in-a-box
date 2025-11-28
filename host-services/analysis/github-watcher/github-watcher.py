@@ -247,7 +247,7 @@ def invoke_jib(task_type: str, context: dict) -> bool:
             capture_output=True,
             text=True,
             check=False,
-            timeout=600,  # 10 minute timeout for complex analysis
+            timeout=1800,  # 30 minute timeout (matches shared/claude/runner.py default)
         )
 
         if result.returncode == 0:
@@ -266,7 +266,7 @@ def invoke_jib(task_type: str, context: dict) -> bool:
             return False
 
     except subprocess.TimeoutExpired:
-        print("  jib timed out after 10 minutes")
+        print("  jib timed out after 30 minutes")
         return False
     except FileNotFoundError:
         print("  jib command not found - is it in PATH?")
