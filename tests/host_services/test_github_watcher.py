@@ -268,7 +268,7 @@ class TestCheckPrForFailures:
     def test_already_processed_skipped(self):
         """Test already processed failures are skipped."""
         pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
-        state = {"processed_failures": {"owner/repo-123:test": "2025-01-01"}}
+        state = {"processed_failures": {"owner/repo-123-abc123:test": "2025-01-01"}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
             mock_gh.return_value = {
