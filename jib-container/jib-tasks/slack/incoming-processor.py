@@ -19,7 +19,6 @@ Usage:
   python3 incoming-processor.py <message-file>
 """
 
-import json
 import logging
 import re
 import subprocess
@@ -27,6 +26,17 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+# Add shared directory to path for enrichment module
+sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
+
+try:
+    from enrichment import enrich_task  # noqa: E402
+except ImportError:
+    # Fallback if shared module not available
+    def enrich_task(task_text: str, project_root: Path | None = None) -> str:
+        """Fallback enrichment - returns empty string."""
+        return ""
 
 
 # Configure logging
@@ -120,134 +130,6 @@ def create_notification_with_thread(
     return notification_file
 
 
-def enrich_task_with_context(task_text: str, project_root: Path | None = None) -> str:
-    """Enrich task text with relevant documentation context.
-
-    Per ADR: LLM Documentation Index Strategy (Phase 3)
-    Automatically finds relevant docs and code examples based on task keywords.
-
-    Args:
-        task_text: The task description to enrich
-        project_root: Project root (defaults to ~/khan/james-in-a-box)
-
-    Returns:
-        Markdown string with relevant context section
-    """
-    if project_root is None:
-        project_root = Path.home() / "khan" / "james-in-a-box"
-
-    docs_dir = project_root / "docs"
-    generated_dir = docs_dir / "generated"
-
-    # Keyword patterns to detect
-    keyword_patterns = {
-        r"\btest(?:s|ing)?\b": ["testing"],
-        r"\bauth(?:entication|orization)?\b": ["auth", "security"],
-        r"\bslack\b": ["slack", "notification"],
-        r"\bnotif(?:ication|y)?\b": ["notification"],
-        r"\bgithub\b": ["github"],
-        r"\bpr\b": ["github", "pr"],
-        r"\bbeads?\b": ["beads"],
-        r"\bcontext[\s-]?sync\b": ["context-sync"],
-        r"\bjira\b": ["jira"],
-        r"\bconfluence\b": ["confluence"],
-        r"\bapi\b": ["api"],
-        r"\bdocker\b": ["docker"],
-        r"\barchitecture\b": ["architecture"],
-        r"\badr\b": ["adr"],
-        r"\bsecur(?:e|ity)\b": ["security"],
-    }
-
-    # Doc index mapping
-    doc_index = {
-        "testing": [("docs/reference/README.md", "Testing and reference guides")],
-        "auth": [
-            ("docs/reference/claude-authentication.md", "Authentication guide"),
-            ("docs/setup/github-app-setup.md", "GitHub App auth"),
-        ],
-        "security": [
-            ("docs/adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md", "Security"),
-        ],
-        "slack": [
-            ("docs/architecture/slack-integration.md", "Slack integration"),
-            ("docs/reference/slack-quick-reference.md", "Slack reference"),
-        ],
-        "notification": [
-            ("docs/architecture/slack-integration.md", "Notification system"),
-        ],
-        "github": [("docs/setup/github-app-setup.md", "GitHub setup")],
-        "beads": [("docs/reference/beads.md", "Beads task tracking")],
-        "context-sync": [
-            ("docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md", "Context sync"),
-        ],
-        "jira": [
-            ("docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md", "JIRA sync"),
-        ],
-        "confluence": [
-            ("docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md", "Confluence sync"),
-        ],
-        "api": [("docs/architecture/README.md", "API patterns")],
-        "architecture": [
-            ("docs/architecture/README.md", "Architecture overview"),
-            ("docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md", "System ADR"),
-        ],
-        "adr": [("docs/adr/README.md", "ADR index")],
-    }
-
-    # Extract keywords
-    keywords = set()
-    task_lower = task_text.lower()
-    for pattern, kw_list in keyword_patterns.items():
-        if re.search(pattern, task_lower, re.IGNORECASE):
-            keywords.update(kw_list)
-
-    if not keywords:
-        return ""  # No enrichment needed
-
-    # Find relevant docs
-    doc_refs = {}
-    for kw in keywords:
-        if kw in doc_index:
-            for doc_path, desc in doc_index[kw]:
-                if doc_path not in doc_refs:
-                    full_path = project_root / doc_path
-                    if full_path.exists():
-                        doc_refs[doc_path] = desc
-
-    # Find relevant patterns from patterns.json
-    patterns_found = []
-    patterns_file = generated_dir / "patterns.json"
-    if patterns_file.exists():
-        try:
-            patterns_data = json.loads(patterns_file.read_text())
-            for pattern_name in patterns_data.get("patterns", {}).keys():
-                pattern_keywords = pattern_name.replace("_", " ").split()
-                if any(kw in pattern_keywords for kw in keywords):
-                    patterns_found.append(pattern_name)
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # Build context section
-    lines = ["## Relevant Documentation Context", ""]
-
-    if doc_refs:
-        lines.append("### Read These First")
-        for doc_path, desc in list(doc_refs.items())[:5]:
-            lines.append(f"- `{doc_path}`: {desc}")
-        lines.append("")
-
-    if patterns_found:
-        lines.append("### Patterns in This Codebase")
-        for pattern in patterns_found[:3]:
-            lines.append(f"- `{pattern}`")
-        lines.append("")
-
-    lines.append(f"*Auto-detected keywords: {', '.join(sorted(keywords))}*")
-    lines.append("")
-
-    return "\n".join(lines)
-
-
 def process_task(message_file: Path):
     """Process an incoming task from Slack using Claude Code.
 
@@ -299,7 +181,7 @@ def process_task(message_file: Path):
     logger.info(f"Task content: {task_content[:100]}...")
 
     # Enrich task with relevant documentation context (Phase 3 of LLM Doc Strategy ADR)
-    enriched_context = enrich_task_with_context(task_content)
+    enriched_context = enrich_task(task_content)
     if enriched_context:
         logger.info("Added documentation context enrichment")
 
@@ -687,7 +569,7 @@ def process_response(message_file: Path):
     logger.info(f"Response content: {response_content[:100]}...")
 
     # Enrich response with relevant documentation context (Phase 3 of LLM Doc Strategy ADR)
-    enriched_context = enrich_task_with_context(response_content)
+    enriched_context = enrich_task(response_content)
     if enriched_context:
         logger.info("Added documentation context enrichment to response")
 

@@ -1,22 +1,22 @@
 """
-Tests for the spec enricher.
+Tests for the spec enricher and shared enrichment module.
 
 Per ADR: LLM Documentation Index Strategy (Phase 3)
 """
 
 import json
-from importlib import import_module
 from pathlib import Path
 
 import pytest
 
-
-# Import the module (it's a script, not a package)
-spec_enricher = import_module("spec-enricher")
-SpecEnricher = spec_enricher.SpecEnricher
-DocReference = spec_enricher.DocReference
-CodeExample = spec_enricher.CodeExample
-EnrichedContext = spec_enricher.EnrichedContext
+# Import from shared enrichment module
+from enrichment import (
+    SpecEnricher,
+    DocReference,
+    CodeExample,
+    EnrichedContext,
+    enrich_task,
+)
 
 
 class TestSpecEnricherInit:
@@ -38,7 +38,6 @@ class TestSpecEnricherInit:
         enricher = SpecEnricher(temp_dir)
         assert enricher.codebase_index == {}
         assert enricher.patterns_index == {}
-        assert enricher.dependencies_index == {}
 
 
 class TestExtractKeywords:
@@ -92,56 +91,80 @@ class TestExtractKeywords:
         assert keywords == sorted(keywords)
 
 
-class TestFindRelevantDocs:
-    """Tests for finding relevant documentation."""
+class TestDynamicDocDiscovery:
+    """Tests for dynamic documentation discovery from index.md."""
 
-    def test_finds_docs_for_slack_keyword(self, temp_dir):
-        """Test that Slack docs are found for slack keyword."""
-        # Create mock docs structure
+    def test_parses_index_md_tables(self, temp_dir):
+        """Test that markdown tables in index.md are parsed correctly."""
+        # Create mock index.md with table
+        (temp_dir / "docs").mkdir(parents=True)
+        index_content = """# Documentation Index
+
+## Core Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Slack Integration](architecture/slack-integration.md) | How Slack works |
+| [Beads Guide](reference/beads.md) | Task tracking system |
+"""
+        (temp_dir / "docs" / "index.md").write_text(index_content)
+
+        # Create the doc files so they're found
         (temp_dir / "docs" / "architecture").mkdir(parents=True)
-        (temp_dir / "docs" / "architecture" / "slack-integration.md").touch()
-
-        enricher = SpecEnricher(temp_dir)
-        docs = enricher.find_relevant_docs(["slack"])
-
-        assert len(docs) > 0
-        doc_paths = [d.path for d in docs]
-        assert "docs/architecture/slack-integration.md" in doc_paths
-
-    def test_finds_docs_for_beads_keyword(self, temp_dir):
-        """Test that beads docs are found for beads keyword."""
-        # Create mock docs structure
         (temp_dir / "docs" / "reference").mkdir(parents=True)
+        (temp_dir / "docs" / "architecture" / "slack-integration.md").touch()
         (temp_dir / "docs" / "reference" / "beads.md").touch()
 
         enricher = SpecEnricher(temp_dir)
-        docs = enricher.find_relevant_docs(["beads"])
 
+        # Should find docs for slack keyword
+        docs = enricher.find_relevant_docs(["slack"])
         assert len(docs) > 0
         doc_paths = [d.path for d in docs]
-        assert "docs/reference/beads.md" in doc_paths
+        assert any("slack" in p for p in doc_paths)
+
+    def test_extracts_keywords_from_descriptions(self, temp_dir):
+        """Test that keywords are extracted from doc descriptions."""
+        (temp_dir / "docs").mkdir(parents=True)
+        index_content = """# Documentation Index
+
+| Document | Description |
+|----------|-------------|
+| [Auth Guide](setup/auth.md) | Authentication and security setup |
+"""
+        (temp_dir / "docs" / "index.md").write_text(index_content)
+        (temp_dir / "docs" / "setup").mkdir(parents=True)
+        (temp_dir / "docs" / "setup" / "auth.md").touch()
+
+        enricher = SpecEnricher(temp_dir)
+
+        # Should find this doc for auth keyword
+        docs = enricher.find_relevant_docs(["auth", "security"])
+        assert len(docs) > 0
+
+
+class TestFindRelevantDocs:
+    """Tests for finding relevant documentation."""
 
     def test_limits_docs_to_5(self, temp_dir):
         """Test that at most 5 docs are returned."""
-        # Create many mock docs
-        for subdir in ["architecture", "reference", "setup", "adr/in-progress", "adr/not-implemented"]:
-            (temp_dir / "docs" / subdir).mkdir(parents=True)
-        (temp_dir / "docs" / "architecture" / "slack-integration.md").touch()
-        (temp_dir / "docs" / "architecture" / "README.md").touch()
-        (temp_dir / "docs" / "reference" / "slack-quick-reference.md").touch()
-        (temp_dir / "docs" / "setup" / "slack-quickstart.md").touch()
-        (temp_dir / "docs" / "architecture" / "host-slack-notifier.md").touch()
-        (temp_dir / "docs" / "adr" / "in-progress" / "ADR-Autonomous-Software-Engineer.md").touch()
+        # Create many mock docs via index.md
+        (temp_dir / "docs").mkdir(parents=True)
+        index_lines = ["# Index\n\n| Doc | Desc |\n|---|---|\n"]
+        for i in range(10):
+            (temp_dir / "docs" / f"slack{i}.md").touch()
+            index_lines.append(f"| [Slack {i}](slack{i}.md) | Slack doc {i} |\n")
+        (temp_dir / "docs" / "index.md").write_text("".join(index_lines))
 
         enricher = SpecEnricher(temp_dir)
-        docs = enricher.find_relevant_docs(["slack", "notification", "security"])
+        docs = enricher.find_relevant_docs(["slack"])
 
         assert len(docs) <= 5
 
     def test_returns_empty_for_unknown_keyword(self, temp_dir):
         """Test that unknown keywords return no docs."""
         enricher = SpecEnricher(temp_dir)
-        docs = enricher.find_relevant_docs(["xyz123"])
+        docs = enricher.find_relevant_docs(["xyz123unknownkeyword"])
         assert docs == []
 
 
@@ -253,6 +276,23 @@ class TestEnrich:
         assert result.documentation == []
 
 
+class TestEnrichTaskFunction:
+    """Tests for the convenience enrich_task function."""
+
+    def test_returns_markdown_string(self, temp_dir):
+        """Test that enrich_task returns markdown."""
+        result = enrich_task("Add Slack notification", temp_dir)
+        assert isinstance(result, str)
+        # Should have markdown formatting
+        if result:  # May be empty if no docs found
+            assert "##" in result or "*" in result
+
+    def test_returns_empty_for_no_keywords(self, temp_dir):
+        """Test that simple text returns empty string."""
+        result = enrich_task("Fix typo", temp_dir)
+        assert result == ""
+
+
 class TestFormatting:
     """Tests for output formatting."""
 
@@ -279,7 +319,19 @@ class TestFormatting:
             keywords_matched=["test"],
         )
         md_output = enricher.format_markdown(context)
-        assert "## Relevant Context" in md_output
+        assert "## Relevant Documentation Context" in md_output
+
+    def test_format_markdown_empty_for_no_keywords(self, temp_dir):
+        """Test that Markdown format is empty when no keywords matched."""
+        enricher = SpecEnricher(temp_dir)
+        context = EnrichedContext(
+            documentation=[],
+            examples=[],
+            patterns=[],
+            keywords_matched=[],
+        )
+        md_output = enricher.format_markdown(context)
+        assert md_output == ""
 
     def test_format_json_is_valid(self, temp_dir):
         """Test that JSON format is valid JSON."""
