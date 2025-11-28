@@ -17,9 +17,12 @@ This script:
 """
 
 import json
-import subprocess
 import sys
 from pathlib import Path
+
+# Add shared directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from claude_runner import run_claude as claude_run
 
 
 def load_context(context_file: Path) -> dict:
@@ -330,51 +333,40 @@ The notification should be concise and actionable.
 
 
 def run_claude(prompt: str, interactive: bool = False) -> bool:
-    """Run Claude with the analysis prompt."""
-    try:
-        if interactive:
-            # Interactive mode - show output in real-time
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                text=True,
-                cwd=str(Path.home() / "khan"),
-            )
-            return result.returncode == 0
+    """Run Claude with the analysis prompt using the shared runner."""
+    result = claude_run(
+        prompt,
+        timeout=900,  # 15 minute timeout
+        cwd=Path.home() / "khan",
+        interactive=interactive,
+    )
+
+    if interactive:
+        # Interactive mode - output already streamed
+        return result.success
+    else:
+        # Non-interactive - show captured output
+        if result.success:
+            print("=" * 60)
+            print("ANALYSIS RESULTS")
+            print("=" * 60)
+            print(result.stdout)
+            return True
+        elif result.timed_out:
+            print("Analysis timed out after 15 minutes", file=sys.stderr)
+            return False
         else:
-            # Non-interactive - capture output
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                timeout=900,  # 15 minute timeout
-                cwd=str(Path.home() / "khan"),
-            )
-
-            if result.returncode == 0:
-                print("=" * 60)
-                print("ANALYSIS RESULTS")
-                print("=" * 60)
-                print(result.stdout)
-                return True
-            else:
-                print(f"Claude exited with code {result.returncode}", file=sys.stderr)
+            print(f"Claude exited with code {result.returncode}", file=sys.stderr)
+            if result.stderr:
                 print(f"stderr: {result.stderr}", file=sys.stderr)
-                return False
-
-    except subprocess.TimeoutExpired:
-        print("Analysis timed out after 15 minutes", file=sys.stderr)
-        return False
-    except Exception as e:
-        print(f"Error running Claude: {e}", file=sys.stderr)
-        return False
+            if result.error:
+                print(f"Error: {result.error}", file=sys.stderr)
+            return False
 
 
 def stop_background_services():
     """Stop services that would keep the container alive."""
+    import subprocess
     subprocess.run(["service", "postgresql", "stop"], check=False, capture_output=True)
     subprocess.run(["service", "redis-server", "stop"], check=False, capture_output=True)
 
