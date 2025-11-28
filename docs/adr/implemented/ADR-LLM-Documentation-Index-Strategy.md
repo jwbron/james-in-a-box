@@ -495,6 +495,176 @@ schedules:
       - "Cloud Run best practices GCP"
 ```
 
+### 6. PR-Based Research Workflow
+
+**Problem:** Research findings need review and iteration before integration. Simply updating documents in place bypasses discussion and validation.
+
+**Solution:** Output research findings as PRs that enable iterative review before merging.
+
+**Workflow Diagram:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  PR-Based Research Workflow                      │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    1. SCOPE SELECTION                        │ │
+│  │  Choose research scope:                                      │ │
+│  │  - "open PRs" → ADRs with pending review                    │ │
+│  │  - "merged ADRs" → Implemented decisions needing refresh    │ │
+│  │  - "specific topic" → Targeted research area                │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    2. RESEARCH EXECUTION                     │ │
+│  │  For each ADR/topic:                                         │ │
+│  │  - Web search for current best practices (2024-2025)        │ │
+│  │  - Check academic sources (arXiv, conference papers)        │ │
+│  │  - Review official documentation updates                    │ │
+│  │  - Identify industry adoption patterns                      │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    3. FINDINGS SYNTHESIS                     │ │
+│  │  Create "Research Updates" section with:                    │ │
+│  │  - Industry adoption tables                                 │ │
+│  │  - Key insights with citations                              │ │
+│  │  - Implementation recommendations                           │ │
+│  │  - Linked research sources                                  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    4. PR CREATION                            │ │
+│  │  One PR per ADR with:                                        │ │
+│  │  - Summary of research findings                             │ │
+│  │  - Specific implementation recommendations                  │ │
+│  │  - Links to sources                                         │ │
+│  │  - Test plan / validation steps                             │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    5. ITERATIVE REVIEW                       │ │
+│  │  PR enables:                                                 │ │
+│  │  - Discussion of findings                                   │ │
+│  │  - Challenge of recommendations                             │ │
+│  │  - Refinement of implementation details                     │ │
+│  │  - Decision to implement, defer, or reject                  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Research Updates Section Template:**
+
+```markdown
+## Research Updates ({Month} {Year})
+
+Based on external research into {topic}:
+
+### {Subtopic 1}
+
+{Key findings with context}
+
+| {Column 1} | {Column 2} | {Column 3} |
+|------------|------------|------------|
+| Data       | Data       | Data       |
+
+**Application to {project}:**
+- Specific recommendation 1
+- Specific recommendation 2
+
+### {Subtopic 2}
+
+{Additional findings...}
+
+### Research Sources
+
+- [Source Title](URL) - Brief description
+- [Source Title](URL) - Brief description
+```
+
+**PR Description Template:**
+
+```markdown
+## Summary
+
+Updates {ADR-Name} with current industry research on {topic}.
+
+### Key Changes
+
+- **{Category 1}:** {What was updated}
+- **{Category 2}:** {What was updated}
+
+### Implementation Recommendations
+
+Based on research, consider:
+
+1. **{Recommendation}:** {Details}
+2. **{Recommendation}:** {Details}
+
+### Research Sources
+
+- [Source](URL)
+- [Source](URL)
+
+## Test plan
+
+- [x] ADR markdown renders correctly
+- [x] All research source links are valid
+- [x] Recommendations align with current architecture
+```
+
+**Research Source Types:**
+
+| Source Type | Examples | When to Use |
+|-------------|----------|-------------|
+| **Academic Papers** | arXiv, ACL, NeurIPS, ICML | Cutting-edge research, theoretical foundations |
+| **Official Docs** | Anthropic, OpenAI, framework docs | Authoritative patterns, API updates |
+| **Industry Blogs** | Engineering blogs, thought leaders | Practical adoption patterns, lessons learned |
+| **Standards Bodies** | OWASP, NIST, W3C | Security, compliance, accessibility |
+| **Product Announcements** | Release notes, launch posts | New capabilities, deprecations |
+| **GitHub/Community** | Trending repos, discussions | Community patterns, adoption signals |
+
+**Slash Command Integration:**
+
+```bash
+# Research all open ADR PRs
+/research-adrs open-prs
+
+# Research all merged/implemented ADRs
+/research-adrs merged
+
+# Research specific ADR topic
+/research-adrs topic "Docker sandbox isolation"
+
+# Research with specific reference PR for methodology
+/research-adrs merged --reference-pr 123
+```
+
+**Output Options:**
+
+| Output | Description | Use Case |
+|--------|-------------|----------|
+| **PR per ADR** | Separate PR for each researched ADR | Granular review, independent merge |
+| **Combined PR** | Single PR with all research findings | Bulk updates, related topics |
+| **Comment on PR** | Add research as PR comment | Enrich existing open PRs |
+| **Markdown report** | Generate report without PR | Initial exploration, sharing |
+
+**Example Execution (What We Just Did):**
+
+```bash
+# 1. Research open ADR PRs (posted comments)
+/research-adrs open-prs
+# → Posted research comments to PRs #124, #144, #138, #126, #170
+
+# 2. Research merged ADRs (created PRs)
+/research-adrs merged
+# → Created PRs #174, #175, #176 with findings and recommendations
+```
+
 ## Documentation Index Architecture
 
 ### File Structure
