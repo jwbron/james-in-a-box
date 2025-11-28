@@ -109,15 +109,14 @@ if ! getent passwd "${RUNTIME_UID}" >/dev/null 2>&1; then
     chmod 0440 "/etc/sudoers.d/010-${RUNTIME_USER}-nopasswd"
 fi
 
-# Start PostgreSQL in container
-if ! pgrep -x postgres > /dev/null; then
-    service postgresql start >/dev/null 2>&1 && echo "✓ PostgreSQL started" || echo "⚠ PostgreSQL failed to start"
-fi
-
-# Start Redis in container
-if ! pgrep -x redis-server > /dev/null; then
-    service redis-server start >/dev/null 2>&1 && echo "✓ Redis started" || echo "⚠ Redis failed to start"
-fi
+# PostgreSQL and Redis disabled for faster startup
+# Uncomment if needed for specific tasks:
+# if ! pgrep -x postgres > /dev/null; then
+#     service postgresql start >/dev/null 2>&1 && echo "✓ PostgreSQL started" || echo "⚠ PostgreSQL failed to start"
+# fi
+# if ! pgrep -x redis-server > /dev/null; then
+#     service redis-server start >/dev/null 2>&1 && echo "✓ Redis started" || echo "⚠ Redis failed to start"
+# fi
 
 # Set up environment
 export HOME="${USER_HOME}"
@@ -147,10 +146,11 @@ gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global advice.pushUpdateReject
 
 # Also fix local repo configs in case they were corrupted with Claude's authorship
 # Local configs override global, so we need to ensure they use jib too
+# OPTIMIZATION: Run git config in parallel for faster startup
 if [ -d "${USER_HOME}/.git-main" ]; then
-    for repo_config in "${USER_HOME}/.git-main"/*/config; do
+    configure_repo() {
+        repo_config="$1"
         if [ -f "$repo_config" ]; then
-            repo_dir=$(dirname "$repo_config")
             # Use git config to set local repo identity (will update the config file)
             git config -f "$repo_config" user.name "jib"
             git config -f "$repo_config" user.email "jib@khan.org"
@@ -160,13 +160,17 @@ if [ -d "${USER_HOME}/.git-main" ]; then
             remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
             if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
                 echo "⚠ WARNING: Found token in git remote URL, cleaning it up..."
-                # Extract the GitHub repo path (owner/repo.git)
                 clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
                 git config -f "$repo_config" remote.origin.url "$clean_url"
                 echo "  Cleaned: $remote_url -> $clean_url"
             fi
         fi
-    done
+    }
+    export -f configure_repo
+
+    # Run in parallel (up to 8 concurrent jobs)
+    find "${USER_HOME}/.git-main" -maxdepth 2 -name config -type f 2>/dev/null | \
+        xargs -P 8 -I {} bash -c 'configure_repo "$@"' _ {}
 fi
 echo "✓ Git configured to commit as jib <jib@khan.org>"
 
@@ -320,20 +324,36 @@ echo ""
 # GitHub MCP provides bi-directional access: repos, issues, PRs, comments, file operations
 # This replaces direct gh CLI usage for all GitHub operations
 # NOTE: Use --scope user to make it available in ALL projects (not just current dir)
+# OPTIMIZATION: Skip reconfiguration if already configured with same token
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-    # Remove any existing github MCP config to ensure clean state
-    # This handles upgrades from old configs (e.g., local scope → user scope)
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local 2>/dev/null || true
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user 2>/dev/null || true
+    MCP_SETTINGS="${USER_HOME}/.claude/settings.local.json"
+    TOKEN_HASH=$(echo -n "${GITHUB_TOKEN}" | md5sum | cut -d' ' -f1)
+    CACHE_FILE="${USER_HOME}/.claude/.mcp_token_hash"
+    CACHED_HASH=""
+    [ -f "$CACHE_FILE" ] && CACHED_HASH=$(cat "$CACHE_FILE" 2>/dev/null)
 
-    # Add fresh config with user scope
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
-        --transport http \
-        --scope user \
-        github \
-        "https://api.githubcopilot.com/mcp/" \
-        --header "Authorization: Bearer ${GITHUB_TOKEN}"
-    echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
+    # Check if MCP is already configured with same token
+    if [ -f "$MCP_SETTINGS" ] && [ "$TOKEN_HASH" = "$CACHED_HASH" ] && \
+       grep -q '"github"' "$MCP_SETTINGS" 2>/dev/null; then
+        echo "✓ GitHub MCP server already configured (skipped)"
+    else
+        # Remove any existing github MCP config to ensure clean state
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local 2>/dev/null || true
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user 2>/dev/null || true
+
+        # Add fresh config with user scope
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
+            --transport http \
+            --scope user \
+            github \
+            "https://api.githubcopilot.com/mcp/" \
+            --header "Authorization: Bearer ${GITHUB_TOKEN}"
+
+        # Cache token hash for next startup
+        echo "$TOKEN_HASH" > "$CACHE_FILE"
+        chown "${RUNTIME_UID}:${RUNTIME_GID}" "$CACHE_FILE"
+        echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
+    fi
     echo "  All GitHub operations go through MCP: PRs, issues, repos, comments"
 else
     echo "ℹ GitHub token not provided - GitHub MCP server not configured"
@@ -387,9 +407,21 @@ chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/beads"
 # Create convenience symlink: ~/beads → ~/sharing/beads
 ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
 
-# Import JSONL if needed (cache is auto-rebuilt)
+# OPTIMIZATION: Only sync if JSONL changed since last sync
+# Skip sync if cache is up-to-date (saves ~500ms-1s)
 cd "${USER_HOME}/sharing/beads"
-gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd sync --import-only > /dev/null 2>&1 || true
+JSONL_FILE="${USER_HOME}/sharing/beads/.beads/issues.jsonl"
+CACHE_FILE="${USER_HOME}/sharing/beads/.beads/cache.db"
+SYNC_MARKER="${USER_HOME}/sharing/beads/.beads/.last_sync_mtime"
+
+JSONL_MTIME=$(stat -c %Y "$JSONL_FILE" 2>/dev/null || echo "0")
+LAST_SYNC_MTIME=$(cat "$SYNC_MARKER" 2>/dev/null || echo "0")
+
+if [ "$JSONL_MTIME" != "$LAST_SYNC_MTIME" ] || [ ! -f "$CACHE_FILE" ]; then
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd sync --import-only > /dev/null 2>&1 || true
+    echo "$JSONL_MTIME" > "$SYNC_MARKER"
+    chown "${RUNTIME_UID}:${RUNTIME_GID}" "$SYNC_MARKER"
+fi
 
 echo "✓ Beads memory system ready"
 echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
