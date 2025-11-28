@@ -22,6 +22,14 @@ Automated code analysis system reference.
 - How to interpret results
 - Configuration options
 
+### [Claude Authentication](claude-authentication.md)
+Claude CLI authentication and setup.
+
+**Information about:**
+- Initial authentication
+- Token management
+- Troubleshooting auth issues
+
 ## Common Issues
 
 **Slack not receiving notifications:**

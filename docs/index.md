@@ -11,6 +11,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 
 | Document | Description |
 |----------|-------------|
+| [ADR Overview](adr/README.md) | Index of all ADRs and their status |
 | [Autonomous Software Engineer](adr/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, and design decisions |
 | [LLM Documentation Index Strategy](adr/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation (this index) |
 | [Context Sync Strategy](adr/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | How external data (Confluence, JIRA, GitHub) is synced |

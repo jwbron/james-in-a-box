@@ -34,7 +34,7 @@ Quick reference guides and troubleshooting.
 
 - **[Slack Quick Reference](reference/slack-quick-reference.md)** - Common Slack operations
 - **[Codebase Analyzer](reference/codebase-analyzer.md)** - Automated code analysis
-- **[Service Failure Notifications](reference/service-failure-notifications.md)** - Alert system
+- **[Claude Authentication](reference/claude-authentication.md)** - Claude CLI authentication
 
 ### [Development](development/)
 For contributors and developers.
