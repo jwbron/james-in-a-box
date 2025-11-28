@@ -346,7 +346,8 @@ Monthly, review all reinforcement records to:
 ## Related Documents
 
 - [CLAUDE.md](../../CLAUDE.md) - jib operating instructions
-- [ADR-Autonomous-Software-Engineer.md](./ADR-Autonomous-Software-Engineer.md) - jib architecture
+- [ADR-Autonomous-Software-Engineer.md](../in-progress/ADR-Autonomous-Software-Engineer.md) - jib architecture
+- [ADR-Standardized-Logging-Interface.md](./ADR-Standardized-Logging-Interface.md) - Structured logging is essential for detecting and analyzing breakages
 
 ## Revision History
 
