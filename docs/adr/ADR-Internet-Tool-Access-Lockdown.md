@@ -14,9 +14,12 @@
 - [Decision](#decision)
 - [High-Level Design](#high-level-design)
 - [Security Analysis](#security-analysis)
+- [MCP Considerations](#mcp-considerations)
+- [GCP Deployment Considerations](#gcp-deployment-considerations)
 - [Consequences](#consequences)
 - [Alternatives Considered](#alternatives-considered)
-- [Implementation Reference](#implementation-reference)
+- [Related ADRs](#related-adrs)
+- [References](#references)
 
 ## Context
 
@@ -282,7 +285,7 @@ Both options preserve credential isolation - the key principle remains.
 For Cloud Run deployment:
 
 | Component | Local (Docker) | GCP (Cloud Run) |
-|-----------|----------------|-----------------|
+|-----------|----------------|------------------|
 | Network isolation | Docker networks | VPC Service Controls |
 | Gateway sidecar | Separate container | Cloud Run sidecar |
 | Audit logs | File/stdout | Cloud Logging |
@@ -312,10 +315,15 @@ The implementation code was developed and reviewed but removed from this ADR to 
 | ADR | Relationship |
 |-----|--------------|
 | [ADR-Autonomous-Software-Engineer](./ADR-Autonomous-Software-Engineer.md) | Parent ADR - defines overall security model |
-| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) (PR #36) | MCP strategy affects how gateway integrates |
-| ADR-GCP-Deployment-Terraform (PR #44 refs) | Gateway must work in Cloud Run |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | MCP strategy affects how gateway integrates |
+| [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Gateway must work in Cloud Run |
+
+## References
+
+- [Docker Security Best Practices](https://docs.docker.com/engine/security/)
+- [Cloud Run Sidecar Containers](https://cloud.google.com/run/docs/deploying#sidecars)
+- [Squid Proxy Documentation](http://www.squid-cache.org/Doc/)
 
 ---
 
-**Last Updated:** 2025-11-26
-**Status:** Draft - Awaiting Review
+**Last Updated:** 2025-11-28
