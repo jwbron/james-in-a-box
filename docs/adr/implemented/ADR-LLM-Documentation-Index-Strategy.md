@@ -72,11 +72,17 @@ Several standards and approaches are emerging:
 
 | Standard/Approach | Description | Adoption |
 |-------------------|-------------|----------|
-| **llms.txt** | Proposed standard for LLM-friendly website content | Stripe, Anthropic, Cursor, Mintlify |
+| **llms.txt** | Proposed standard for LLM-friendly website content | Stripe, Anthropic, Cursor, Mintlify, GitBook, Webflow |
 | **AGENTS.md** | OpenAI's convention for agent instructions | GitHub Copilot, AMP, Roo Code |
 | **CLAUDE.md** | Anthropic's context file for Claude Code | Claude Code users |
 | **BMAD Method** | AI-driven development with specialized agents | Growing community |
 | **.instructions.md** | GitHub Copilot's per-directory custom instructions | GitHub Copilot |
+
+**llms.txt Adoption Status (November 2025):**
+- ~951 domains have published llms.txt files (per NerdyData analysis)
+- Major adopters: Stripe Developers, Anthropic, Cursor, Mintlify, GitBook, Webflow
+- The specification now defines two files: `/llms.txt` (navigation index) and `/llms-full.txt` (comprehensive content)
+- Note: Current LLM bots (GPTbot, ClaudeBot, PerplexityBot) do not yet treat llms.txt with special importance—adoption is developer-driven
 
 ## Decision
 
@@ -816,6 +822,77 @@ The documentation index approach aligns with emerging industry standards (llms.t
 - Embedding drift issues
 
 **Rejected because:** Over-engineered for current needs; can revisit if scale demands.
+
+## Research Updates (November 2025)
+
+Based on external research into current industry practices:
+
+### llms.txt Specification Evolution
+
+The llms.txt specification has matured to define a **dual-file approach**:
+
+| File | Purpose |
+|------|---------|
+| `/llms.txt` | Streamlined navigation index with prioritized links |
+| `/llms-full.txt` | Comprehensive documentation in a single file |
+
+**Implementation Guidance:**
+```markdown
+# /llms.txt (Navigation)
+# Project Name
+
+> One-line description of what the project does
+
+## Core Documentation
+- [Architecture](./docs/architecture.md): System design decisions
+- [API Reference](./docs/api.md): REST endpoints and usage
+
+## Optional
+- [Contributing](./CONTRIBUTING.md): How to contribute
+```
+
+### Best Practices from Industry Research
+
+1. **Avoid content dumps:** Don't paste every URL or marketing copy into llms.txt
+2. **Use clear, actionable descriptions:** "REST API endpoints with usage examples" beats "API docs"
+3. **Maintain both human and LLM readability:** The files serve dual audiences
+4. **Automate generation:** Tools like nbdev, Mintlify, and GitBook can auto-generate llms.txt alongside HTML docs
+5. **Test with LLM frameworks:** Validate retrieval using LangChain or LlamaIndex to simulate how models process your content
+6. **Update regularly:** llms.txt should evolve with documentation changes
+
+### Validation and Testing
+
+**Recommended Testing Approach:**
+```python
+# Test llms.txt effectiveness with LangChain
+from langchain.document_loaders import WebBaseLoader
+from langchain.llms import Claude
+
+# Load your llms.txt
+loader = WebBaseLoader("https://your-site.com/llms.txt")
+docs = loader.load()
+
+# Test retrieval quality
+llm = Claude()
+response = llm.invoke(f"Based on this index, find the authentication docs:\n{docs}")
+# Verify it correctly identifies the right documentation
+```
+
+### Implementation Recommendations
+
+Based on research, we should:
+
+1. **Create dual files:** Generate both `docs/index.md` (our llms.txt equivalent) and `docs/full-context.md` (comprehensive)
+2. **Add llms.txt validator:** Run compliance checks as part of documentation CI
+3. **Integrate with doc generation pipeline:** Auto-regenerate indexes when docs change
+4. **Monitor effectiveness:** Track whether agent correctly navigates to relevant docs
+
+### Sources
+
+- [llms.txt Specification](https://llmstxt.org/)
+- [GitBook llms.txt Guide](https://www.gitbook.com/blog/what-is-llms-txt)
+- [Bluehost 2025 Guide](https://www.bluehost.com/blog/what-is-llms-txt/)
+- [Instructor llms.txt Adoption](https://python.useinstructor.com/blog/2025/03/19/instructor-adopts-llms-txt/)
 
 ## References
 
