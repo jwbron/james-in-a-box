@@ -6,7 +6,6 @@ Runs all configured connectors and syncs content to ~/context-sync/<connector-na
 """
 
 import argparse
-import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,24 +16,23 @@ from utils.config_loader import load_env_file
 
 load_env_file()
 
+# Add shared directory to path for jib_logging
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+
+from jib_logging import get_logger
+
 # Import connectors
 from connectors.confluence.connector import ConfluenceConnector
 from connectors.jira.connector import JIRAConnector
 
 
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(
-            Path.home() / "context-sync" / "logs" / f"sync_{datetime.now().strftime('%Y%m%d')}.log"
-        ),
-    ],
-)
+# Initialize logger
+logger = get_logger("context-sync")
 
-logger = logging.getLogger("context-sync")
+# Add file handler for persistent logs
+log_dir = Path.home() / "context-sync" / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+logger.add_file_handler(log_dir / f"sync_{datetime.now().strftime('%Y%m%d')}.log")
 
 
 def get_all_connectors() -> list:

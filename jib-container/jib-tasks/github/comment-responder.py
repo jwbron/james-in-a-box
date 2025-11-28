@@ -14,7 +14,6 @@ Scope:
 """
 
 import json
-import logging
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -58,27 +57,27 @@ _check_dependencies()
 import yaml
 
 
-# Add shared directory to path for notifications and claude imports
+# Add shared directory to path for notifications, claude, and jib_logging imports
 # Path: jib-container/jib-tasks/github/comment-responder.py -> repo-root/shared
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 try:
     from claude import is_claude_available, run_claude
-
+    from jib_logging import get_logger
     from notifications import NotificationContext, get_slack_service
 except ImportError as e:
     print("=" * 60, file=sys.stderr)
-    print("ERROR: Cannot import notifications library", file=sys.stderr)
+    print("ERROR: Cannot import shared libraries", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
     print(f"  Import error: {e}", file=sys.stderr)
     print(
         f"  Expected path: {Path(__file__).parent.parent.parent.parent / 'shared'}", file=sys.stderr
     )
     print("", file=sys.stderr)
-    print("This usually means the shared/notifications module is missing.", file=sys.stderr)
-    print("Check that shared/notifications/ exists in the repo root.", file=sys.stderr)
+    print("This usually means a shared module is missing.", file=sys.stderr)
+    print("Check that shared/ directory exists in the repo root.", file=sys.stderr)
     sys.exit(1)
 
-logger = logging.getLogger(__name__)
+logger = get_logger("comment-responder")
 
 
 class PRContextManager:
@@ -1310,12 +1309,7 @@ Authored by jib"""
 
 def main():
     """Main entry point."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s] %(levelname)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
+    logger.info("Comment Responder - Starting")
     print("=" * 60)
     print("Comment Responder - Starting")
     print("=" * 60)
