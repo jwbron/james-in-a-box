@@ -29,6 +29,14 @@ Usage:
     result = git.push("origin", "main")
     # Automatically logs with timing and context
 
+    # Model output capture (Phase 3)
+    from jib_logging.model_capture import capture_model_response
+
+    with capture_model_response(prompt="Explain Python") as ctx:
+        result = subprocess.run(["claude", "--print", "-p", "Explain Python"])
+        ctx.set_output(result.stdout)
+    # Automatically logs token usage, timing, and stores full response
+
 Features:
     - Structured JSON logs for production/GCP Cloud Logging
     - Human-readable console output for development
@@ -36,6 +44,7 @@ Features:
     - Beads task ID correlation
     - File handler with rotation support
     - Tool wrappers for bd, git, gh, claude (Phase 2)
+    - Model output capture with token tracking (Phase 3)
 """
 
 from .context import (
@@ -48,10 +57,20 @@ from .context import (
 )
 from .formatters import ConsoleFormatter, JsonFormatter
 from .logger import BoundLogger, JibLogger, configure_root_logging, get_logger
+from .model_capture import (
+    CaptureContext,
+    ModelOutputCapture,
+    ModelResponse,
+    TokenUsage,
+    capture_model_response,
+    get_model_capture,
+)
 
 
 __all__ = [
     "BoundLogger",
+    # Model capture (Phase 3)
+    "CaptureContext",
     "ConsoleFormatter",
     "ContextScope",
     # Logger classes
@@ -60,14 +79,20 @@ __all__ = [
     "JsonFormatter",
     # Context management
     "LogContext",
+    "ModelOutputCapture",
+    "ModelResponse",
+    "TokenUsage",
+    # Model capture functions
+    "capture_model_response",
     # Configuration
     "configure_root_logging",
     "context_from_env",
     "get_current_context",
     # Primary API
     "get_logger",
+    "get_model_capture",
     "get_or_create_context",
     "set_current_context",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
