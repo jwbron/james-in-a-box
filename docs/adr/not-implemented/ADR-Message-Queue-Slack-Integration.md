@@ -582,7 +582,7 @@ This ADR is the foundation for a series defining the jib GCP deployment architec
 
 | ADR | Relationship to This ADR |
 |-----|-------------------------|
-| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Sync jobs use Pub/Sub to send completion notifications |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Sync jobs use Pub/Sub to send completion notifications |
 | [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Defines MCP for reading Slack (complementary to Pub/Sub for sending) |
 | [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Slash commands trigger jobs that publish results via Pub/Sub |
 | [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Terraform definitions for Pub/Sub topics, slack-worker service |
@@ -593,7 +593,7 @@ This ADR is the foundation for a series defining the jib GCP deployment architec
 - [Pub/Sub Emulator](https://cloud.google.com/pubsub/docs/emulator)
 - [Cloud Run Push Subscriptions](https://cloud.google.com/run/docs/triggering/pubsub-push)
 - [Firestore Documentation](https://cloud.google.com/firestore/docs)
-- [Current Slack Integration Architecture](../architecture/slack-integration.md)
+- [Current Slack Integration Architecture](../../architecture/slack-integration.md)
 
 ---
 

@@ -487,7 +487,7 @@ To measure effectiveness, track metrics before and after reinforcements (per SMA
 
 ### Integration with LLM Inefficiency Reporting
 
-The [ADR-LLM-Inefficiency-Reporting](../ADR-LLM-Inefficiency-Reporting.md) and this Continuous System Reinforcement ADR form a **complementary learning system**:
+The [ADR-LLM-Inefficiency-Reporting](ADR-LLM-Inefficiency-Reporting.md) and this Continuous System Reinforcement ADR form a **complementary learning system**:
 
 | Aspect | Inefficiency Reporting | Continuous Reinforcement |
 |--------|----------------------|--------------------------|
@@ -601,7 +601,7 @@ Based on emerging research:
 - [CLAUDE.md](../../CLAUDE.md) - jib operating instructions
 - [ADR-Autonomous-Software-Engineer.md](../in-progress/ADR-Autonomous-Software-Engineer.md) - jib architecture
 - [ADR-Standardized-Logging-Interface.md](./ADR-Standardized-Logging-Interface.md) - Structured logging is essential for detecting and analyzing breakages
-- [ADR-LLM-Inefficiency-Reporting.md](../ADR-LLM-Inefficiency-Reporting.md) - Complementary self-improvement mechanism; forms unified learning system with this ADR
+- [ADR-LLM-Inefficiency-Reporting.md](ADR-LLM-Inefficiency-Reporting.md) - Complementary self-improvement mechanism; forms unified learning system with this ADR
 
 ## References
 

@@ -163,8 +163,8 @@ Detailed index following llms.txt conventions:
 > James-in-a-box: LLM-powered autonomous software engineering agent
 
 ## Core Documentation
-- [Architecture ADR](./adr/ADR-Autonomous-Software-Engineer.md): System architecture and design decisions
-- [Context Sync Strategy](./adr/ADR-Context-Sync-Strategy-Custom-vs-MCP.md): How external data is synced
+- [Architecture ADR](../in-progress/ADR-Autonomous-Software-Engineer.md): System architecture and design decisions
+- [Context Sync Strategy](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md): How external data is synced
 - [Security Model](./security/model.md): Isolation, permissions, data handling
 
 ## Development Guides
@@ -178,8 +178,8 @@ Detailed index following llms.txt conventions:
 - [Monitoring](./runbooks/monitoring.md): Metrics, alerts, dashboards
 
 ## Machine-Readable
-- [codebase.json](./generated/codebase.json): Structured codebase analysis
-- [patterns.json](./generated/patterns.json): Extracted code patterns
+- [codebase.json](../../generated/codebase.json): Structured codebase analysis
+- [patterns.json](../../generated/patterns.json): Extracted code patterns
 ```
 
 ### 2. Codebase Index (Machine-Readable)
@@ -1251,7 +1251,7 @@ The documentation index approach aligns with emerging industry standards (llms.t
 
 | ADR | Relationship |
 |-----|--------------|
-| [ADR-LLM-Inefficiency-Reporting](../ADR-LLM-Inefficiency-Reporting.md) | Documentation indexes help detect Tool Discovery Failures (Category 1 in inefficiency taxonomy) |
+| [ADR-LLM-Inefficiency-Reporting](../not-implemented/ADR-LLM-Inefficiency-Reporting.md) | Documentation indexes help detect Tool Discovery Failures (Category 1 in inefficiency taxonomy) |
 | [ADR-Jib-Repo-Onboarding](../not-implemented/ADR-Jib-Repo-Onboarding.md) | Extends this ADR with repository-specific onboarding patterns |
 
 ---

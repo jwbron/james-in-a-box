@@ -7,7 +7,7 @@
 
 ## Setup (First Time Only)
 
-1. **Create Slack app**: See `SLACK-APP-SETUP.md`
+1. **Create Slack app**: See [Slack App Setup Guide](../setup/slack-app-setup.md)
 2. **Get tokens**: Bot token (`xoxb-...`) and App token (`xapp-...`)
 3. **Configure**: `systemctl --user setup`
 4. **Start receiver**: `systemctl --user start`
@@ -108,6 +108,6 @@ Container:
 
 ## Full Documentation
 
-- **Slack App Setup**: See `../setup/slack-app-setup.md`
-- **Bidirectional Setup**: See `../setup/slack-bidirectional.md`
-- **Slack Architecture**: See `../architecture/slack-integration.md`
+- **Slack App Setup**: [Slack App Setup Guide](../setup/slack-app-setup.md)
+- **Bidirectional Setup**: [Slack Bidirectional Setup](../setup/slack-bidirectional.md)
+- **Slack Architecture**: [Slack Integration Architecture](../architecture/slack-integration.md)
