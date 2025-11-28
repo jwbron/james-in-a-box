@@ -19,6 +19,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "slack"))
 sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis"))
 sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "sync" / "context-sync"))
 sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis" / "github-watcher"))
+sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis" / "index-generator"))
 sys.path.insert(0, str(PROJECT_ROOT / "config"))
 
 

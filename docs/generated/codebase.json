@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T08:05:54.957110+00:00",
+  "generated": "2025-11-28T08:10:38.232582+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -289,6 +289,14 @@
               "test_slack_notifier.py",
               "test_slack_receiver.py",
               "test_utilities.py"
+            ]
+          },
+          "index_generator/": {
+            "description": "index_generator directory",
+            "files": [
+              "__init__.py",
+              "test_index_generator.py",
+              "test_query_index.py"
             ]
           },
           "jib/": {
@@ -1224,8 +1232,8 @@
     }
   ],
   "summary": {
-    "total_python_files": 87,
-    "total_classes": 252,
+    "total_python_files": 90,
+    "total_classes": 268,
     "total_functions": 174,
     "patterns_detected": [
       "config",

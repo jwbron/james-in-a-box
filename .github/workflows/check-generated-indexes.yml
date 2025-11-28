@@ -1,0 +1,65 @@
+name: Check Generated Indexes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Trigger when Python files change (could affect generated indexes)
+      - '**/*.py'
+      # Trigger when the generator itself changes
+      - 'host-services/analysis/index-generator/**'
+      # Trigger when requirements change (affects dependencies.json)
+      - '**/requirements*.txt'
+      - '**/pyproject.toml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.py'
+      - 'host-services/analysis/index-generator/**'
+      - '**/requirements*.txt'
+      - '**/pyproject.toml'
+
+jobs:
+  check-indexes:
+    name: Verify Generated Indexes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Regenerate indexes
+        run: |
+          echo "Running index generator..."
+          python3 host-services/analysis/index-generator/index-generator.py --project . --output docs/generated
+          echo "Index generation complete"
+
+      - name: Check for differences
+        run: |
+          echo "Checking if generated files are up to date..."
+
+          # Check if any generated files have changed
+          if git diff --exit-code docs/generated/; then
+            echo "✅ Generated indexes are up to date"
+          else
+            echo ""
+            echo "❌ Generated indexes are out of date!"
+            echo ""
+            echo "The following files need to be regenerated:"
+            git diff --name-only docs/generated/
+            echo ""
+            echo "To fix this, run:"
+            echo "  python3 host-services/analysis/index-generator/index-generator.py"
+            echo ""
+            echo "Then commit the updated files."
+            exit 1
+          fi
+
+      - name: Show index summary (on success)
+        if: success()
+        run: |
+          echo "=== Generated Index Summary ==="
+          python3 host-services/analysis/index-generator/query-index.py --indexes docs/generated summary || true
