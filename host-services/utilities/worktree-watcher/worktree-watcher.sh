@@ -158,6 +158,13 @@ cleanup_orphaned_branches() {
 
         local repo_branches_deleted=0
 
+        # OPTIMIZATION: Fetch all open PRs once per repo instead of per-branch
+        # This reduces N API calls (one per branch) to 1 per repo
+        local all_open_prs=""
+        if [ -n "$github_repo" ] && command -v gh &>/dev/null; then
+            all_open_prs=$(gh pr list --repo "$github_repo" --state open --json number,headRefName 2>/dev/null || echo "[]")
+        fi
+
         # Check each branch
         while IFS= read -r branch; do
             if [ -z "$branch" ]; then
@@ -207,13 +214,11 @@ cleanup_orphaned_branches() {
             unmerged_commits=$(echo "$unmerged_commits" | tr -d '[:space:]' | head -1)
             unmerged_commits=${unmerged_commits:-0}
 
-            # Check if branch has an open PR in GitHub
+            # Check if branch has an open PR in GitHub (using cached PR list)
             local has_open_pr=false
-            if [ -n "$github_repo" ] && command -v gh &>/dev/null; then
-                local pr_json
-                pr_json=$(gh pr list --repo "$github_repo" --head "$branch" --state open --json number 2>/dev/null || echo "[]")
-                # Check if the JSON contains any PR numbers (non-empty array)
-                if echo "$pr_json" | grep -q '"number"'; then
+            if [ -n "$all_open_prs" ] && [ "$all_open_prs" != "[]" ]; then
+                # Check if this branch name appears in the cached PR list
+                if echo "$all_open_prs" | grep -q "\"headRefName\":\"$branch\""; then
                     has_open_pr=true
                 fi
             fi
