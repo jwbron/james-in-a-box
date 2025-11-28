@@ -25,8 +25,11 @@ bd --allow-stale search "keywords"           # Related task exists?
 | **Add notes** | `bd --allow-stale update <id> --notes "Progress..."` |
 | **Complete** | `bd --allow-stale update <id> --status closed --notes "Summary"` |
 | **Find ready work** | `bd --allow-stale ready` |
-| **Search** | `bd --allow-stale search "text"` |
+| **Search by text** | `bd --allow-stale search "text"` (title/description only) |
+| **Find by label** | `bd --allow-stale list --label "label-name"` |
 | **Show details** | `bd --allow-stale show <id>` |
+
+**IMPORTANT**: `search` only checks title, description, and ID. To find tasks by label (like `task_id`), use `list --label`.
 
 ## Status Values
 
@@ -99,7 +102,8 @@ bd --allow-stale update bd-xxxx --status closed --notes "Done. PR #42 created."
 | Problem | Fix |
 |---------|-----|
 | "Database out of sync" | Use `--allow-stale` |
-| Can't find task | `bd --allow-stale search "partial"` |
+| Can't find task by label | Use `bd --allow-stale list --label "label"` not search |
+| Can't find task by text | `bd --allow-stale search "partial"` (title/desc only) |
 | Changes not saving | Verify `cd ~/beads` first |
 
 ---
