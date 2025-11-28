@@ -63,6 +63,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 try:
     from claude import is_claude_available, run_claude
+
     from notifications import NotificationContext, get_slack_service
 except ImportError as e:
     print("=" * 60, file=sys.stderr)
