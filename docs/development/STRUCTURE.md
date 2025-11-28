@@ -190,8 +190,9 @@ host-services/<service>/docs/  # Extended docs (only if needed)
 3. Add required files:
    - `README.md` - Document purpose and usage (one per product directory)
    - Main implementation (`.py`)
-4. Update the host-side systemd service to call via `jib --exec`
-5. Update main `README.md` container components section
+4. **Integrate with Beads** - See [Beads Integration Guide](beads-integration.md)
+5. Update the host-side systemd service to call via `jib --exec`
+6. Update main `README.md` container components section
 
 ## Adding a New Container Tool
 
