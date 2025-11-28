@@ -678,9 +678,15 @@ def main():
         my_prs = [
             p for p in all_prs if p.get("author", {}).get("login", "").lower() == github_username.lower()
         ]
-        bot_author = f"{bot_username}[bot]"
+
+        # Bot PRs can have author login as either "bot_username" or "bot_username[bot]"
+        # depending on how the GitHub App creates the PR
+        bot_author_variants = {
+            bot_username.lower(),
+            f"{bot_username.lower()}[bot]",
+        }
         bot_prs = [
-            p for p in all_prs if p.get("author", {}).get("login", "").lower() == bot_author.lower()
+            p for p in all_prs if p.get("author", {}).get("login", "").lower() in bot_author_variants
         ]
 
         # Process user's PRs
@@ -709,7 +715,7 @@ def main():
         # Process bot's PRs (for check failures and comments)
         # The bot creates PRs via GitHub App, so its PRs need monitoring too
         if bot_prs:
-            print(f"  Found {len(bot_prs)} open PR(s) authored by {bot_author}")
+            print(f"  Found {len(bot_prs)} open PR(s) authored by bot ({bot_username})")
 
             for pr in bot_prs:
                 # Check for failures on bot's PRs
