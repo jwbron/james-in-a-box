@@ -588,3 +588,9 @@ The receiver service writes to Pub/Sub instead of files, but the message format 
 - [korotovsky/slack-mcp-server](https://github.com/korotovsky/slack-mcp-server)
 - [Slack MCP Announcement](https://slack.dev/secure-data-connectivity-for-the-modern-ai-era/)
 - [Current Slack Integration Architecture](../architecture/slack-integration.md)
+
+---
+
+**Last Updated:** 2025-11-28
+**Next Review:** 2025-12-28 (Monthly)
+**Status:** Proposed

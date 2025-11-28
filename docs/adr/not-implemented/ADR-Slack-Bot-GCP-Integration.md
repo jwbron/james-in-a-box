@@ -916,3 +916,9 @@ The specific commands can evolve, but the Slack bot as control plane is a founda
 - [ADR: Message Queue for Slack Integration](./ADR-Message-Queue-Slack-Integration.md)
 - [ADR: Slack Integration Strategy - MCP vs Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md)
 - [ADR: Context Sync Strategy - Custom vs MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md)
+
+---
+
+**Last Updated:** 2025-11-28
+**Next Review:** 2025-12-28 (Monthly)
+**Status:** Proposed
