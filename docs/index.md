@@ -20,6 +20,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Slack Bot GCP Integration](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
 | [GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment strategy |
 | [Internet Tool Access Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on network access |
+| [Automated PR Review Agent](adr/not-implemented/ADR-Automated-PR-Review-Agent.md) | Bounded-context automated PR review agent |
 
 ### Architecture
 
@@ -75,6 +76,7 @@ When working on specific tasks, consult these documents first:
 | **Security-related changes** | [ADR: Internet Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Context sync modifications** | [ADR: Context Sync](adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |
 | **GCP deployment changes** | [ADR: GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | [ADR: Slack GCP](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) |
+| **PR review automation** | [ADR: PR Review Agent](adr/not-implemented/ADR-Automated-PR-Review-Agent.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
 
 ## Machine-Readable Indexes
