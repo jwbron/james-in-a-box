@@ -30,8 +30,8 @@ mkdir -p ~/.local/share/github-watcher
 # Install systemd user services
 mkdir -p ~/.config/systemd/user
 
-cp "${SCRIPT_DIR}/github-watcher.service" ~/.config/systemd/user/
-cp "${SCRIPT_DIR}/github-watcher.timer" ~/.config/systemd/user/
+ln -sf "${SCRIPT_DIR}/github-watcher.service" ~/.config/systemd/user/
+ln -sf "${SCRIPT_DIR}/github-watcher.timer" ~/.config/systemd/user/
 
 # Reload systemd
 systemctl --user daemon-reload

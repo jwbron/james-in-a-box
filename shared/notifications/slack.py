@@ -360,7 +360,7 @@ class SlackNotificationService(NotificationService):
 
         context = NotificationContext(
             task_id=f"pr-created-{repo.split('/')[-1]}-{branch}",
-            source="create-pr-helper",
+            source="pr-created",
             repository=repo,
             branch=branch,
         )

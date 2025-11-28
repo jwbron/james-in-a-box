@@ -11,13 +11,13 @@ Host-side service that monitors GitHub repositories and triggers jib container a
 Following ADR Section 4 "Option B: Scheduled Analysis with MCP":
 
 ```
-Scheduled job (every 15 min) - HOST SIDE
+Scheduled job (every 5 min) - HOST SIDE
     |
     v
-Query GitHub via CLI for:
+Query GitHub via CLI for events since last run:
 - Open PRs with check failures
-- PRs with unresponded comments
-- New PRs from others for review
+- PRs with new comments (since last check)
+- New PRs from others for review (created since last check)
     |
     v
 Trigger jib container via `jib --exec` for analysis
@@ -25,6 +25,10 @@ Trigger jib container via `jib --exec` for analysis
     v
 Container analyzes and takes action via GitHub CLI/MCP
 ```
+
+**Note:** The watcher tracks when it last ran. If your machine is off for a period,
+the first run after boot will pull all GitHub events since it last ran, ensuring
+nothing is missed.
 
 **Key principle**: The container should ONLY be called via `jib --exec`.
 No watching/polling logic lives in the container.
@@ -63,7 +67,7 @@ journalctl --user -u github-watcher.service -f
 ### Enable Automated Monitoring
 
 ```bash
-# Start automated monitoring (every 15 minutes)
+# Start automated monitoring (every 5 minutes)
 systemctl --user enable --now github-watcher.timer
 
 # Check timer status
@@ -100,11 +104,16 @@ writable_repos:
 
 ## State Tracking
 
-The watcher maintains state in `~/.local/share/github-watcher/state.json` to avoid duplicate processing. State includes:
+The watcher maintains state in `~/.local/share/github-watcher/state.json` to avoid duplicate processing and track the last run time. State includes:
 
+- `last_run`: ISO timestamp of when the watcher last ran (used to filter events)
 - `processed_failures`: Check failure signatures already handled
 - `processed_comments`: Comment threads already responded to
 - `processed_reviews`: PRs already reviewed
+
+When the watcher runs, it filters comments and new PRs to only those created after
+`last_run`. This means if your machine was off for hours/days, the first run will
+catch up on everything that happened since the last successful run.
 
 ## Migration from github-sync
 
@@ -115,7 +124,8 @@ This service replaces the deprecated `github-sync` which:
 The new approach:
 - Queries GitHub directly via CLI
 - No intermediate file sync needed
-- Real-time data, not 15-minute-stale files
+- Real-time data, not stale files
+- Tracks last run time to catch up after downtime
 - Simpler architecture
 
 To migrate:

@@ -148,53 +148,74 @@ class TestGetPlatform:
 
 
 class TestGetGithubToken:
-    """Tests for GitHub token retrieval."""
+    """Tests for GitHub token retrieval.
 
-    def test_no_token_file(self, temp_dir, monkeypatch):
-        """Test when token file doesn't exist."""
-        # Point to non-existent token file
-        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", temp_dir / "nonexistent")
-        assert jib.get_github_token() is None
+    The get_github_token() function uses HostConfig which loads tokens from:
+    1. Environment variable GITHUB_TOKEN (highest priority)
+    2. ~/.config/jib/secrets.env
+    3. ~/.config/jib/github-token
 
-    def test_valid_ghp_token(self, temp_dir, monkeypatch):
+    These tests create mock HostConfig modules in sys.modules before calling
+    get_github_token() to test the token validation logic.
+    """
+
+    def _call_get_github_token_with_mock(self, token_value):
+        """Helper to call get_github_token with a mocked HostConfig."""
+        import sys
+
+        # Create mock HostConfig class
+        mock_config_instance = MagicMock()
+        mock_config_instance.github_token = token_value
+
+        mock_module = MagicMock()
+        mock_module.HostConfig = MagicMock(return_value=mock_config_instance)
+
+        # Clear any cached import and inject mock
+        if "config.host_config" in sys.modules:
+            del sys.modules["config.host_config"]
+        sys.modules["config.host_config"] = mock_module
+
+        try:
+            return jib.get_github_token()
+        finally:
+            # Clean up
+            if "config.host_config" in sys.modules:
+                del sys.modules["config.host_config"]
+
+    def test_no_token_configured(self):
+        """Test when no token is configured."""
+        assert self._call_get_github_token_with_mock("") is None
+
+    def test_valid_ghp_token(self):
         """Test reading valid ghp_ prefixed token."""
-        token_file = temp_dir / "github-token"
-        token_file.write_text("ghp_test1234567890abcdef")
-        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
+        assert (
+            self._call_get_github_token_with_mock("ghp_test1234567890abcdef")
+            == "ghp_test1234567890abcdef"
+        )
 
-        assert jib.get_github_token() == "ghp_test1234567890abcdef"
-
-    def test_valid_github_pat_token(self, temp_dir, monkeypatch):
+    def test_valid_github_pat_token(self):
         """Test reading valid github_pat_ prefixed token."""
-        token_file = temp_dir / "github-token"
-        token_file.write_text("github_pat_test1234567890")
-        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
+        assert (
+            self._call_get_github_token_with_mock("github_pat_test1234567890")
+            == "github_pat_test1234567890"
+        )
 
-        assert jib.get_github_token() == "github_pat_test1234567890"
-
-    def test_invalid_token_prefix(self, temp_dir, monkeypatch):
+    def test_invalid_token_prefix(self):
         """Test rejecting token with invalid prefix."""
-        token_file = temp_dir / "github-token"
-        token_file.write_text("invalid_token_1234567890")
-        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
+        assert self._call_get_github_token_with_mock("invalid_token_1234567890") is None
 
-        assert jib.get_github_token() is None
+    def test_empty_token(self):
+        """Test empty token."""
+        assert self._call_get_github_token_with_mock("") is None
 
-    def test_empty_token_file(self, temp_dir, monkeypatch):
-        """Test empty token file."""
-        token_file = temp_dir / "github-token"
-        token_file.write_text("")
-        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
+    def test_none_token(self):
+        """Test None token."""
+        assert self._call_get_github_token_with_mock(None) is None
 
-        assert jib.get_github_token() is None
-
-    def test_whitespace_stripped(self, temp_dir, monkeypatch):
-        """Test whitespace is stripped from token."""
-        token_file = temp_dir / "github-token"
-        token_file.write_text("  ghp_test1234567890abcdef  \n")
-        monkeypatch.setattr(Config, "GITHUB_TOKEN_FILE", token_file)
-
-        assert jib.get_github_token() == "ghp_test1234567890abcdef"
+    def test_whitespace_only_token(self):
+        """Test whitespace-only token (HostConfig should strip it)."""
+        # HostConfig strips whitespace when loading, but if it didn't, empty string fails validation
+        assert self._call_get_github_token_with_mock("   ") is None
 
 
 class TestIsDangerousDir:

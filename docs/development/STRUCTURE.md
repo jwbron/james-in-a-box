@@ -40,7 +40,6 @@ host-services/
 │   ├── github-sync/           # GitHub PR sync
 │   └── context-sync/          # Confluence/JIRA sync
 ├── analysis/                  # Analysis services and tools
-│   ├── codebase-analyzer/     # Code review automation
 │   ├── conversation-analyzer/ # Quality analysis
 │   └── analyze-pr/            # PR analysis CLI tool
 └── utilities/                 # Utility services
@@ -113,7 +112,7 @@ These are called via `jib --exec` from host-side systemd services (no background
 
 | Type | Convention | Example |
 |------|------------|---------|
-| Python scripts | kebab-case | `codebase-analyzer.py` |
+| Python scripts | kebab-case | `conversation-analyzer.py` |
 | Shell scripts | kebab-case | `setup.sh`, `manage-scheduler.sh` |
 | Systemd files | `<service-name>.service`, `<service-name>.timer` | `slack-notifier.service` |
 | Config files | `.yaml` (not `.yml`) | `repositories.yaml` |

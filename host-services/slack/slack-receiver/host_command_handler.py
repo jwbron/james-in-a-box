@@ -8,7 +8,6 @@ This script runs on the host machine to control containers and services.
 Commands supported:
 - jib status/restart/rebuild/logs: Container management
 - service list/status/restart/start/stop/logs: Systemd service management
-- pr create: Pull request creation
 - help: Show available commands
 
 Can be used standalone (CLI) or imported by slack-receiver.py.
@@ -29,7 +28,6 @@ class CommandType(Enum):
 
     JIB = "jib"
     SERVICE = "service"
-    PR = "pr"
     HELP = "help"
 
 
@@ -485,43 +483,6 @@ Timers:
         self.notify(message)
         return CommandResult(success=True, message=message)
 
-    # ========== PR COMMANDS ==========
-
-    def pr_create(self, repo_name: str | None = None, ready: bool = False) -> CommandResult:
-        """Create a pull request using the create-pr.sh script.
-
-        Args:
-            repo_name: Repository name (defaults to james-in-a-box)
-            ready: If True, create as ready for review (not draft)
-        """
-        self.log(f"Creating PR for repo: {repo_name or 'current'}")
-
-        create_pr_script = Path(__file__).parent / "create-pr.sh"
-
-        if not create_pr_script.exists():
-            message = f"❌ PR creation script not found: {create_pr_script}"
-            self.notify(message)
-            return CommandResult(success=False, message=message)
-
-        # Build command
-        cmd = ["bash", str(create_pr_script)]
-        if repo_name:
-            cmd.append(repo_name)
-        if ready:
-            cmd.append("--ready")
-
-        # Execute in background
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-
-        self.log("PR creation initiated")
-        # Note: The create-pr.sh script handles its own notification
-        return CommandResult(success=True, message="PR creation initiated")
-
     # ========== HELP ==========
 
     def show_help(self) -> CommandResult:
@@ -542,20 +503,10 @@ Services:
   /service stop <name>             - Stop a service
   /service logs <name> [lines]     - Show service logs
 
-Pull Requests:
-  /pr create [repo]                - Create draft PR for current branch
-  /pr create [repo] --ready        - Create ready-for-review PR
-
-  Examples:
-    /pr create                     - Create PR in james-in-a-box
-    /pr create webapp              - Create PR in ~/khan/webapp
-    /pr create frontend --ready    - Create non-draft PR
-
 Examples:
   /jib restart
   /service restart slack-notifier.service
-  /service logs slack-receiver.service 100
-  /pr create webapp"""
+  /service logs slack-receiver.service 100"""
 
         self.notify(help_text, title="📖 Help")
         return CommandResult(success=True, message=help_text, title="Help")
@@ -566,7 +517,7 @@ Examples:
         """Execute a remote command.
 
         Args:
-            command: Main command (jib, service, pr, help)
+            command: Main command (jib, service, help)
             subcommand: Subcommand (status, restart, etc.)
             *args: Additional arguments
 
@@ -606,21 +557,6 @@ Examples:
             elif subcommand == "logs" and args:
                 lines = int(args[1]) if len(args) > 1 else 50
                 return self.service_logs(args[0], lines)
-            else:
-                return self.show_help()
-
-        elif command == "pr":
-            subcommand = (subcommand or "").lower()
-            if subcommand == "create":
-                # Parse args for repo name and --ready flag
-                repo_name = None
-                ready = False
-                for arg in args:
-                    if arg == "--ready":
-                        ready = True
-                    else:
-                        repo_name = arg
-                return self.pr_create(repo_name, ready)
             else:
                 return self.show_help()
 
@@ -672,12 +608,11 @@ Examples:
   %(prog)s jib restart
   %(prog)s service list
   %(prog)s service restart slack-notifier.service
-  %(prog)s pr create webapp --ready
   %(prog)s help
         """,
     )
 
-    parser.add_argument("command", help="Main command (jib, service, pr, help)")
+    parser.add_argument("command", help="Main command (jib, service, help)")
     parser.add_argument("subcommand", nargs="?", help="Subcommand")
     parser.add_argument("args", nargs="*", help="Additional arguments")
 

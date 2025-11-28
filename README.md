@@ -141,10 +141,6 @@ Container:
 
    # Conversation analyzer (optional)
    cd host-services/analysis/conversation-analyzer && ./setup.sh
-
-   # Codebase analyzer (optional)
-   cd host-services/analysis/codebase-analyzer && ./setup.sh
-
    ```
    </details>
 
@@ -186,7 +182,6 @@ All host components run as systemd user services for reliability and auto-restar
 - **[github-sync](host-services/sync/github-sync/README.md)** - Syncs PR data and check status to `~/context-sync/github/` (every 15 min)
 
 **Analysis:**
-- **[codebase-analyzer](host-services/analysis/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
 - **[conversation-analyzer](host-services/analysis/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
 
 **Utilities:**
@@ -208,8 +203,6 @@ Scripts called via `jib --exec` from host-side systemd services:
 
 Interactive utilities used inside the container:
 
-- `create-pr-helper.py` - Create PRs with auto-generated descriptions
-- `comment-pr-helper.py` - Post PR comments
 - `discover-tests.py` - Discover test frameworks in a codebase
 
 ### Container Config
@@ -342,24 +335,24 @@ Reviews are sent as Slack notifications with prioritized findings (high/medium/l
 cd ~/beads
 
 # Create task
-bd add "Implement OAuth2 authentication" --tags feature,security
+bd --allow-stale create "Implement OAuth2 authentication" --labels feature,security
 
 # List tasks ready to work on
-bd ready
+bd --allow-stale ready
 
 # Update status
-bd update bd-a3f8 --status in-progress
+bd --allow-stale update bd-a3f8 --status in_progress
 
 # Add notes
-bd update bd-a3f8 --notes "Using RFC 6749 spec, per ADR-042"
+bd --allow-stale update bd-a3f8 --notes "Using RFC 6749 spec, per ADR-042"
 
 # Mark complete
-bd update bd-a3f8 --status done
+bd --allow-stale update bd-a3f8 --status closed
 ```
 
 **Custom commands:**
 - `@beads-status` - Show current tasks, ready work, and blockers
-- `@beads-sync` - Commit Beads state to git and rebuild cache
+- `@beads-sync` - Commit Beads state to git and sync database
 
 **Storage:**
 - Location: `~/.jib-sharing/beads/` (git repository)
@@ -429,15 +422,9 @@ jib provides comprehensive GitHub PR automation:
 
 ### PR Creation (After Task Completion)
 
-When jib completes a task with code changes, it can automatically create a PR:
+When jib completes a task with code changes, it creates a PR using GitHub MCP:
 
-```bash
-# Inside container (automatic after task completion)
-create-pr-helper.py --auto
-```
-
-This:
-1. Pushes the branch to remote (via HTTPS using `gh` CLI)
+1. Pushes the branch to remote
 2. Creates PR with auto-generated title/body from commits
 3. Requests review from configured reviewer
 4. Sends Slack notification with PR URL
@@ -477,13 +464,13 @@ When CI/CD checks fail on your PRs:
 
 ```bash
 # Check all services
-systemctl --user list-timers | grep -E 'conversation|codebase'
+systemctl --user list-timers | grep -E 'conversation|github|worktree'
 systemctl --user status slack-notifier.service
 systemctl --user status slack-receiver.service
 
 # View logs
 journalctl --user -u slack-notifier.service -f
-journalctl --user -u codebase-analyzer.service -f
+journalctl --user -u conversation-analyzer.service -f
 
 # Restart services
 systemctl --user restart slack-notifier.service
@@ -520,7 +507,6 @@ docker logs -f jib-claude
 - [slack-receiver](host-services/slack/slack-receiver/README.md) - Incoming messages
 - [github-sync](host-services/sync/github-sync/README.md) - GitHub PR sync
 - [context-sync](host-services/sync/context-sync/README.md) - Confluence/JIRA sync
-- [codebase-analyzer](host-services/analysis/codebase-analyzer/README.md) - Code review automation
 - [conversation-analyzer](host-services/analysis/conversation-analyzer/README.md) - Quality analysis
 
 **Container Tasks:**

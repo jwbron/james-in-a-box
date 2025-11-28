@@ -90,9 +90,8 @@ check_installation_status() {
         "slack-notifier.service"
         "slack-receiver.service"
         "context-sync.timer"
-        "github-sync.timer"
+        "github-watcher.timer"
         "worktree-watcher.timer"
-        "codebase-analyzer.timer"
         "conversation-analyzer.timer"
     )
 
@@ -173,7 +172,7 @@ if [ "$UPDATE_MODE" = true ]; then
 else
     echo "This script will:"
     echo "  • Install and configure Slack integration (notifier and receiver)"
-    echo "  • Set up automated analyzers (codebase and conversation)"
+    echo "  • Set up automated analyzers (conversation)"
     echo "  • Configure worktree cleanup"
     echo "  • Enable and start all systemd services"
     echo ""
@@ -353,9 +352,8 @@ declare -A component_descriptions=(
     ["slack-notifier"]="Slack Notifier (Claude → You)"
     ["slack-receiver"]="Slack Receiver (You → Claude)"
     ["context-sync"]="Context Sync (Confluence, JIRA → Local)"
-    ["github-sync"]="GitHub Sync (PR data → Local)"
+    ["github-watcher"]="GitHub Watcher (PR/issue monitoring)"
     ["worktree-watcher"]="Worktree Watcher (cleanup orphaned worktrees)"
-    ["codebase-analyzer"]="Codebase Analyzer (weekly)"
     ["conversation-analyzer"]="Conversation Analyzer (daily)"
 )
 
@@ -364,9 +362,8 @@ component_order=(
     "slack/slack-notifier"
     "slack/slack-receiver"
     "sync/context-sync"
-    "sync/github-sync"
+    "analysis/github-watcher"
     "utilities/worktree-watcher"
-    "analysis/codebase-analyzer"
     "analysis/conversation-analyzer"
 )
 
@@ -447,9 +444,8 @@ if [ "$UPDATE_MODE" = true ]; then
         "slack-notifier.service"
         "slack-receiver.service"
         "context-sync.timer"
-        "github-sync.timer"
+        "github-watcher.timer"
         "worktree-watcher.timer"
-        "codebase-analyzer.timer"
         "conversation-analyzer.timer"
     )
 
@@ -482,9 +478,8 @@ services=(
     "slack-notifier.service:Slack Notifier"
     "slack-receiver.service:Slack Receiver"
     "context-sync.timer:Context Sync"
-    "github-sync.timer:GitHub Sync"
+    "github-watcher.timer:GitHub Watcher"
     "worktree-watcher.timer:Worktree Watcher"
-    "codebase-analyzer.timer:Codebase Analyzer"
     "conversation-analyzer.timer:Conversation Analyzer"
 )
 
@@ -547,6 +542,22 @@ if [ -f "$jib_secrets_file" ]; then
     else
         print_warning "Slack app token not configured"
     fi
+
+    # Check GitHub token (PAT fallback when GitHub App not configured)
+    if grep -q "^GITHUB_TOKEN=\"gh" "$jib_secrets_file" 2>/dev/null; then
+        print_success "GitHub PAT configured (fallback for GitHub App)"
+    else
+        # Check if GitHub App is configured (primary method)
+        if [ -f "$jib_config_dir/github-app-id" ] && [ -f "$jib_config_dir/github-app-installation-id" ] && [ -f "$jib_config_dir/github-app.pem" ]; then
+            print_info "GitHub auth: App configured (GITHUB_TOKEN generated dynamically)"
+        else
+            print_warning "GitHub auth: Not configured"
+            echo "   Container will not be able to push code or use GitHub MCP"
+            echo "   Configure either:"
+            echo "     1. GitHub App (recommended): Run setup.sh and follow prompts"
+            echo "     2. Personal Access Token: Add GITHUB_TOKEN to $jib_secrets_file"
+        fi
+    fi
 else
     print_warning "No configuration found"
     echo "   Configure secrets in: $jib_secrets_file"
@@ -592,10 +603,8 @@ else
     if git init; then
         # Initialize beads (allow user input for git hooks prompt)
         if bd init; then
-            # Build SQLite cache for fast queries
-            bd build-cache || true
             print_success "Beads initialized: $beads_dir"
-            echo "   Usage in container: bd add 'task description' --tags feature"
+            echo "   Usage in container: bd --allow-stale create 'task description' --labels feature"
         else
             print_error "Failed to initialize beads"
             exit 1
@@ -662,64 +671,135 @@ else
     print_warning "repositories.yaml not found, skipping config update"
 fi
 
-# Check and configure GitHub token for container PR management
-print_info "Checking GitHub token for container..."
+# GitHub App configuration (required for container GitHub access)
+print_info "Checking GitHub App configuration..."
 
-# Token is stored in ~/.config/jib/github-token (separate from Docker staging in ~/.jib/)
 jib_user_config_dir="$HOME/.config/jib"
-github_token_file="$jib_user_config_dir/github-token"
+github_app_id_file="$jib_user_config_dir/github-app-id"
+github_app_installation_file="$jib_user_config_dir/github-app-installation-id"
+github_app_pem_file="$jib_user_config_dir/github-app.pem"
 
 mkdir -p "$jib_user_config_dir"
 chmod 700 "$jib_user_config_dir"
 
-if [ -f "$github_token_file" ] && [ -s "$github_token_file" ]; then
-    print_success "GitHub token found in jib config"
-    echo "   Location: $github_token_file"
-    echo "   Container will use this token for PR management"
+if [ -f "$github_app_id_file" ] && [ -f "$github_app_installation_file" ] && [ -f "$github_app_pem_file" ]; then
+    print_success "GitHub App configured"
+    echo "   App ID: $(cat "$github_app_id_file")"
+    echo "   Installation ID: $(cat "$github_app_installation_file")"
+    echo "   Private key: $github_app_pem_file"
 else
     echo ""
-    print_info "GitHub token needed for container PR management"
+    print_warning "GitHub App not configured"
     echo ""
-    echo "The container needs a GitHub token to create PRs, push to branches, etc."
-    echo "This is stored separately from your host's gh authentication."
+    echo "A GitHub App is required for container GitHub access."
     echo ""
-    echo "Create a fine-grained token at: https://github.com/settings/tokens?type=beta"
+    echo "Benefits of GitHub App:"
+    echo "  • Full GitHub API access (PRs, issues, checks)"
+    echo "  • Query CI/CD workflow status (pass/fail)"
+    echo "  • Granular permissions (can request only what's needed)"
+    echo "  • Higher API rate limits"
     echo ""
-    echo "Token configuration:"
-    echo "  - Name: james-in-a-box-pr-access"
-    echo "  - Repository: $current_username/james-in-a-box (only)"
-    echo "  - Permissions:"
-    echo "      Contents: Read and write"
-    echo "      Pull requests: Read and write"
-    echo "      Workflows: Read-only"
-    echo ""
+    read -p "Set up GitHub App now? (y/n) " -n 1 -r
+    echo
 
-    # Check for environment variable first
-    if [ -n "$GITHUB_TOKEN" ]; then
-        print_info "Using GITHUB_TOKEN from environment..."
-        echo "$GITHUB_TOKEN" > "$github_token_file"
-        chmod 600 "$github_token_file"
-        print_success "GitHub token saved to jib config"
-        echo "   Location: $github_token_file"
-    else
-        # Prompt for token (input hidden for security)
-        echo -n "Enter GitHub token (input hidden, press Enter when done): "
-        read -s GITHUB_TOKEN
-        echo ""  # newline after hidden input
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "GitHub App Setup"
+        echo "================"
+        echo ""
+        echo "If you haven't created a GitHub App yet:"
+        echo "  1. Go to: https://github.com/settings/apps/new"
+        echo "  2. Name: james-in-a-box (or similar)"
+        echo "  3. Homepage URL: https://github.com/$current_username/james-in-a-box"
+        echo "  4. Uncheck 'Webhook Active' (unless setting up webhooks)"
+        echo "  5. Permissions → Repository:"
+        echo "     - Checks: Read-only"
+        echo "     - Contents: Read and write"
+        echo "     - Pull requests: Read and write"
+        echo "     - Commit statuses: Read-only"
+        echo "  6. Click 'Create GitHub App'"
+        echo "  7. Note the App ID shown on the next page"
+        echo "  8. Scroll down and click 'Generate a private key' (downloads .pem file)"
+        echo "  9. Go to 'Install App' in left sidebar → Install on your account"
+        echo "     - Select 'Only select repositories' → choose james-in-a-box"
+        echo "  10. Note the Installation ID from the URL after installation"
+        echo "      (URL will be: github.com/settings/installations/XXXXX)"
+        echo ""
 
-        if [ -n "$GITHUB_TOKEN" ]; then
-            # Take only the first token if user pasted multiple times
-            GITHUB_TOKEN=$(echo "$GITHUB_TOKEN" | grep -oE '(ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+)' | head -1)
-            echo "$GITHUB_TOKEN" > "$github_token_file"
-            chmod 600 "$github_token_file"
-            print_success "GitHub token saved to jib config"
-            echo "   Location: $github_token_file"
-            echo "   Container will authenticate gh on startup"
+        # Get App ID
+        read -p "Enter App ID (numeric): " app_id
+        if [[ ! "$app_id" =~ ^[0-9]+$ ]]; then
+            print_error "Invalid App ID (must be numeric)"
         else
-            print_warning "Skipping GitHub token setup"
-            echo "   PR creation features will not be available in container"
-            echo "   Add token later: echo 'your-token' > $github_token_file"
+            echo "$app_id" > "$github_app_id_file"
+            print_success "App ID saved"
+
+            # Get Installation ID
+            read -p "Enter Installation ID (numeric): " installation_id
+            if [[ ! "$installation_id" =~ ^[0-9]+$ ]]; then
+                print_error "Invalid Installation ID (must be numeric)"
+                rm -f "$github_app_id_file"
+            else
+                echo "$installation_id" > "$github_app_installation_file"
+                print_success "Installation ID saved"
+
+                # Get Private Key
+                echo ""
+                echo "Enter the path to your private key .pem file"
+                echo "(downloaded when you clicked 'Generate a private key')"
+                read -p "Path to .pem file: " pem_path
+
+                # Expand ~ and check file
+                pem_path="${pem_path/#\~/$HOME}"
+
+                if [ -f "$pem_path" ]; then
+                    cp "$pem_path" "$github_app_pem_file"
+                    chmod 600 "$github_app_pem_file"
+                    print_success "Private key copied to $github_app_pem_file"
+
+                    # Test token generation
+                    echo ""
+                    print_info "Testing GitHub App token generation..."
+                    token_script="$SCRIPT_DIR/jib-container/jib-tools/github-app-token.py"
+                    # Use the host-services venv Python which has cryptography installed
+                    venv_python="$SCRIPT_DIR/host-services/.venv/bin/python"
+
+                    if [ -f "$token_script" ]; then
+                        if token_output=$("$venv_python" "$token_script" --config-dir "$jib_user_config_dir" 2>&1); then
+                            if [[ "$token_output" == ghs_* ]] || [ -n "$token_output" ]; then
+                                print_success "GitHub App token generation works!"
+                                echo "   Container will use App authentication for full API access"
+                            else
+                                print_warning "Token generation returned unexpected output"
+                                echo "   Output: $token_output"
+                            fi
+                        else
+                            print_error "Token generation failed"
+                            echo "   Error: $token_output"
+                            echo ""
+                            echo "   Check that:"
+                            echo "   - App ID and Installation ID are correct"
+                            echo "   - Private key matches the App"
+                            echo "   - App is installed on your repository"
+                        fi
+                    else
+                        print_warning "Token script not found, skipping test"
+                        echo "   Script should be at: $token_script"
+                    fi
+                else
+                    print_error "Private key file not found: $pem_path"
+                    rm -f "$github_app_id_file" "$github_app_installation_file"
+                fi
+            fi
         fi
+    else
+        print_warning "Skipping GitHub App setup"
+        echo ""
+        echo "   To enable GitHub access, choose one option:"
+        echo "   Option 1: Run setup.sh again and configure GitHub App (recommended)"
+        echo "   Option 2: Add GITHUB_TOKEN to ~/.config/jib/secrets.env"
+        echo "             Create a fine-grained PAT at https://github.com/settings/tokens?type=beta"
+        echo "             Required scopes: Contents (R/W), Pull requests (R/W)"
     fi
 fi
 
@@ -736,7 +816,7 @@ if [ "$UPDATE_MODE" = true ]; then
     echo ""
     echo "To verify:"
     echo "  systemctl --user status slack-notifier.service"
-    echo "  systemctl --user list-timers | grep -E 'conversation|codebase|worktree'"
+    echo "  systemctl --user list-timers | grep -E 'conversation|github|worktree'"
     echo ""
 else
     echo "Host setup complete! Next steps:"
@@ -745,6 +825,10 @@ else
     echo "   Copy template:  cp $SCRIPT_DIR/config/secrets.template.env ~/.config/jib/secrets.env"
     echo "   Edit secrets:   ~/.config/jib/secrets.env"
     echo "   Add your Slack bot token (xoxb-...) and app token (xapp-...)"
+    echo ""
+    echo "   For GitHub access (if you skipped GitHub App setup):"
+    echo "   Add GITHUB_TOKEN with a fine-grained PAT (ghp_... or github_pat_...)"
+    echo "   Required scopes: Contents (R/W), Pull requests (R/W)"
     echo ""
     echo "   Or migrate from legacy config:"
     echo "   python3 $SCRIPT_DIR/config/host_config.py --migrate"

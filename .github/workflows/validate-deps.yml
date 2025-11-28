@@ -6,12 +6,22 @@ on:
   pull_request:
     branches: [main]
 
+# For auto-fix commits to work, the workflow needs write permissions
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   validate:
     name: Validate Python Dependencies
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Checkout the PR branch directly (not the merge commit)
+          ref: ${{ github.head_ref }}
+          # Need full history for commits
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -67,3 +77,44 @@ jobs:
           else
             echo "No pyproject.toml found, skipping dependency resolution check"
           fi
+
+      - name: Verify host-services uv.lock is up-to-date
+        id: check-lock
+        continue-on-error: true
+        run: |
+          if [ -f host-services/pyproject.toml ] && [ -f host-services/uv.lock ]; then
+            echo "Checking host-services uv.lock is up-to-date..."
+            cd host-services
+            # Run uv lock to regenerate the lockfile
+            uv lock
+            # Check if there are any changes
+            if git diff --exit-code uv.lock; then
+              echo "host-services/uv.lock is up-to-date"
+              echo "needs_fix=false" >> $GITHUB_OUTPUT
+            else
+              echo "host-services/uv.lock is out of date!"
+              echo "needs_fix=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No host-services/pyproject.toml or uv.lock found, skipping"
+            echo "needs_fix=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push updated uv.lock
+        if: steps.check-lock.outputs.needs_fix == 'true' && github.event_name == 'pull_request'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "fix: regenerate host-services/uv.lock"
+          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          file_pattern: "host-services/uv.lock"
+
+      - name: Fail if not a PR (push to main)
+        if: steps.check-lock.outputs.needs_fix == 'true' && github.event_name != 'pull_request'
+        run: |
+          echo "host-services/uv.lock is out of date on main branch!"
+          echo ""
+          echo "Please run the following locally and commit the changes:"
+          echo ""
+          echo "  cd host-services && uv lock"
+          echo ""
+          exit 1

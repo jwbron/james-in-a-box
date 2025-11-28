@@ -15,6 +15,13 @@ This installs all host services including Slack integration.
 
 ## Available Guides
 
+### [GitHub App Setup](github-app-setup.md)
+GitHub App configuration for automated PR creation:
+- Required permissions (read-only and read-write)
+- Installation steps
+- Token configuration
+- Troubleshooting common permission errors
+
 ### [Slack Quickstart](slack-quickstart.md)
 Fast setup for Slack integration. Get notifications working in 10 minutes.
 
@@ -46,7 +53,6 @@ Setting up two-way Slack communication:
 | slack-receiver | You → Claude messages | Included in main setup |
 | context-sync | Confluence/JIRA sync | Included in main setup |
 | github-sync | GitHub PR data sync | Included in main setup |
-| codebase-analyzer | Weekly code analysis | Included in main setup |
 | conversation-analyzer | Daily conversation analysis | Included in main setup |
 
 ## See Also

@@ -14,11 +14,19 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 
 | Source | Location | Purpose |
 |--------|----------|---------|
+| **Documentation Index** | `~/khan/james-in-a-box/docs/index.md` | Navigation hub for all docs |
 | Confluence | `~/context-sync/confluence/` | ADRs, runbooks, best practices |
 | **JIRA MCP** | Atlassian MCP server | Tickets, requirements, sprint info (real-time) |
 | Slack | `~/sharing/incoming/` | Task requests |
 | Beads | `~/beads/` | Persistent task memory |
 | **GitHub MCP** | GitHub MCP server | PRs, issues, repos, comments (real-time) |
+
+### Documentation Navigation
+
+**Before starting complex tasks**, consult the documentation index:
+- Read `~/khan/james-in-a-box/docs/index.md` for task-specific guides
+- Check relevant ADRs before architectural changes
+- The index follows the [llms.txt](https://llmstxt.org/) standard for efficient navigation
 
 ## CRITICAL TOOL REQUIREMENTS
 
@@ -27,39 +35,37 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 **NEVER skip beads.** Before ANY work, you MUST:
 ```bash
 cd ~/beads
-bd list --status in-progress      # Check for work to resume
-bd list --search "keywords"       # Check for related tasks
+bd --allow-stale list --status in_progress   # Check for work to resume
+bd --allow-stale search "keywords"           # Check for related tasks
 ```
 
 **ALWAYS create a beads task** for new work:
 ```bash
-bd add "Task description" --tags feature,slack
-bd update <id> --status in-progress
+bd --allow-stale create "Task description" --labels feature,slack
+bd --allow-stale update <id> --status in_progress
 ```
 
 **ALWAYS update beads** as you work:
 ```bash
-bd update <id> --notes "Progress: completed step 1..."
-bd update <id> --status done --notes "Summary of what was done"
+bd --allow-stale update <id> --notes "Progress: completed step 1..."
+bd --allow-stale update <id> --status closed --notes "Summary of what was done"
 ```
 
 This is NOT optional. Beads enables persistent memory across container restarts.
 
-### GitHub Operations - USE GITHUB MCP
+### GitHub Operations
 
-All GitHub operations go through the **GitHub MCP server**. See `environment.md` for available tools and configuration.
-
-**For PR creation with notifications**, use `create-pr-helper.py`:
+**Pushing code**: Use `git push` (authenticated via GitHub App token)
 ```bash
-# Creates PR via MCP and sends Slack notification
-create-pr-helper.py --auto --no-notify
+git push origin <branch>
 ```
 
-The helper provides:
-- PR creation via GitHub MCP
-- Proper notifications with thread context
-- Automatic reviewer assignment
-- Consistent PR formatting
+**Creating PRs and other API operations**: Use GitHub MCP
+```python
+# Use MCP: create_pull_request(owner, repo, title, head, base, body)
+```
+
+See `environment.md` for details on git push and MCP tools.
 
 ### JIRA Operations - USE ATLASSIAN MCP
 
@@ -93,9 +99,9 @@ jira_transition_issue("PROJ-1234", "In Progress")
 ### 1. Check Beads Task (ALWAYS FIRST)
 ```bash
 cd ~/beads
-bd list --status in-progress      # Resume work?
-bd list --search "keywords"       # Related task?
-bd add "Task description" --tags feature,jira-1234  # New task
+bd --allow-stale list --status in_progress   # Resume work?
+bd --allow-stale search "keywords"           # Related task?
+bd --allow-stale create "Task description" --labels feature,jira-1234  # New task
 ```
 
 ### 2. Gather Context
@@ -115,43 +121,44 @@ You work in an **isolated git worktree**:
 
 Break complex tasks into Beads subtasks:
 ```bash
-bd add "Subtask 1" --parent $TASK_ID
-bd update bd-xyz --status done --notes "Completed per ADR-042"
+bd --allow-stale create "Subtask 1" --parent $TASK_ID
+bd --allow-stale update bd-xyz --status closed --notes "Completed per ADR-042"
 ```
 
 ### 5. Test
 
 Use the discovered test command. Don't assume - every codebase is different!
 
-### 6. Commit & Create PR
+### 6. Commit, Push & Create PR
 
 **CRITICAL**: After making ANY code changes, you MUST create a PR or notify the user via Slack:
-- **Writable repos**: Create PR immediately after committing
+- **Writable repos**: Commit, push, then create PR immediately
 - **Non-writable repos**: Notify user via Slack with commit details so they can create the PR
 
 **NEVER** leave code changes committed without creating a PR or notifying the user. This ensures all work is visible and reviewable.
 
-**MANDATORY**: Always use the PR helpers - they handle both writable and non-writable repos:
+**Workflow for pushing and PR creation:**
 ```bash
+# 1. Commit your changes
 git add <files>
 git commit -m "Brief description
 
 - Details
 - JIRA-1234"
 
-# ✅ ALWAYS use the helper - NEVER use `gh pr create` directly
-create-pr-helper.py --auto --no-notify
+# 2. Push to GitHub (uses GitHub App token automatically)
+git push origin <branch>
 ```
 
-If the helper fails or is unavailable, use GitHub MCP directly:
+Then use GitHub MCP to create the PR:
 ```python
 # Use MCP: create_pull_request(owner, repo, title, head, base, body)
 ```
 
-**If you cannot create a PR** (e.g., no write access, MCP failure), you MUST notify the user via Slack with:
+**If you cannot push or create a PR** (e.g., SSH remote, no write access, MCP failure), you MUST notify the user via Slack with:
 - Branch name and repository
 - Summary of changes
-- Request for them to create the PR manually
+- Request for them to push/create the PR manually
 
 ### 6.1. Preventing PR Cross-Contamination (CRITICAL)
 
@@ -201,20 +208,7 @@ git reset --hard HEAD~1      # Only if you backed up!
 
 **Rule of thumb**: When in doubt, run `git branch --show-current` and `git log --oneline -5` to verify you're working in the right context.
 
-**How the helpers handle repo access:**
-- **Writable repos**: Creates PR on GitHub and sends Slack notification
-- **Non-writable repos**: Automatically sends Slack notification with full PR context,
-  prompting manual PR creation (no GitHub operations attempted)
-
-Check writable repos: `create-pr-helper.py --list-writable`
-
-**For PR comments**, use `comment-pr-helper.py`:
-- **Writable repos**: Posts comment to GitHub and notifies via Slack
-- **Non-writable repos**: Sends comment content via Slack for manual posting
-
-**Troubleshooting**: If GitHub MCP fails, check `GITHUB_TOKEN` environment variable.
-
-**REMINDER**: Use GitHub MCP for all GitHub operations. Use `create-pr-helper.py` for PRs with Slack notifications.
+**Troubleshooting**: If git push fails, check the remote URL is HTTPS (not SSH). If GitHub MCP fails, check `GITHUB_TOKEN` environment variable.
 
 ### 6.5. PR Lifecycle (IMPORTANT)
 
@@ -229,7 +223,7 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 1. **First**: Check PR is still OPEN (use MCP `get_pull_request`)
 2. Check out that PR's branch locally: `git fetch origin && git checkout <branch>`
 3. Make changes and commit to that branch
-4. Push via MCP `push_files` or local git push
+4. Push via `git push origin <branch>`
 5. Do NOT create a new PR for the same work
 
 **PR approval vs feedback - know the difference:**
@@ -254,7 +248,8 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 git fetch origin && git checkout <pr-branch-name>
 # 3. Make changes...
 git add -A && git commit -m "Add error handling"
-# 4. Push via MCP push_files or git push
+# 4. Push to GitHub
+git push origin <pr-branch-name>
 ```
 
 **Example - closing superseded PR:**
@@ -267,14 +262,14 @@ git add -A && git commit -m "Add error handling"
 
 **MANDATORY**: Update beads when task is complete:
 ```bash
-# Mark task done with summary
-bd update $TASK_ID --status done --notes "Summary. Tests passing. PR #XX created."
+# Mark task closed with summary
+bd --allow-stale update $TASK_ID --status closed --notes "Summary. Tests passing. PR #XX created."
 
 # Save context for future sessions
 @save-context <project-name>
 ```
 
-**NEVER** finish work without updating beads status to `done`.
+**NEVER** finish work without updating beads status to `closed`.
 
 ## Git Safety (CRITICAL)
 

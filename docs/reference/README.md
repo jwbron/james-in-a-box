@@ -4,6 +4,17 @@ Quick reference guides and troubleshooting.
 
 ## Available References
 
+### [Beads Task Tracking](beads.md)
+Persistent task memory system for autonomous agents.
+
+**Essential for:**
+- Tracking work across container restarts
+- Finding existing tasks before creating new ones
+- Recording decisions and progress
+- Linking related work (Slack threads, PRs, JIRA)
+
+**Quick start:** Always run `bd --allow-stale list --status in_progress` before starting work.
+
 ### [Slack Quick Reference](slack-quick-reference.md)
 Common Slack operations and commands.
 
@@ -13,14 +24,29 @@ Common Slack operations and commands.
 - Troubleshooting connection issues
 - Managing channels and tokens
 
-### [Codebase Analyzer](codebase-analyzer.md)
-Automated code analysis system reference.
+### [Claude Authentication](claude-authentication.md)
+Claude CLI authentication and setup.
 
 **Information about:**
-- What it analyzes
-- When it runs
-- How to interpret results
-- Configuration options
+- Initial authentication
+- Token management
+- Troubleshooting auth issues
+
+### [Khan Academy Culture](khan-academy-culture.md)
+Engineering culture standards from the Khan Academy Career Ladder.
+
+**Information about:**
+- L3-L4 (Senior Software Engineer) behavioral expectations
+- Problem solving, communication, and collaboration standards
+- Engineering principles
+
+### [Conversation Analysis Criteria](conversation-analysis-criteria.md)
+Assessment criteria for the conversation analyzer.
+
+**Information about:**
+- Assessment dimensions and scoring
+- Positive and negative indicators
+- Target performance levels
 
 ## Common Issues
 

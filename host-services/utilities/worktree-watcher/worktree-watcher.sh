@@ -126,6 +126,18 @@ cleanup_orphaned_branches() {
         repo_name=$(basename "$repo")
         cd "$repo"
 
+        # Detect the default branch (main, master, etc.)
+        local default_branch
+        default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+        if [ -z "$default_branch" ]; then
+            # Fallback: try to get from remote
+            default_branch=$(git remote show origin 2>/dev/null | grep "HEAD branch" | sed 's/.*: //')
+        fi
+        if [ -z "$default_branch" ]; then
+            # Final fallback
+            default_branch="main"
+        fi
+
         # Get GitHub remote owner/repo for PR checks
         local remote_url
         remote_url=$(git remote get-url origin 2>/dev/null || echo "")
@@ -146,6 +158,13 @@ cleanup_orphaned_branches() {
 
         local repo_branches_deleted=0
 
+        # OPTIMIZATION: Fetch all open PRs once per repo instead of per-branch
+        # This reduces N API calls (one per branch) to 1 per repo
+        local all_open_prs=""
+        if [ -n "$github_repo" ] && command -v gh &>/dev/null; then
+            all_open_prs=$(gh pr list --repo "$github_repo" --state open --json number,headRefName 2>/dev/null || echo "[]")
+        fi
+
         # Check each branch
         while IFS= read -r branch; do
             if [ -z "$branch" ]; then
@@ -155,12 +174,18 @@ cleanup_orphaned_branches() {
             # Extract container ID from branch name
             # Branch format: jib-temp-{container_id} or jib-exec-{container_id}
             # Container ID format: jib-YYYYMMDD-HHMMSS-PID or jib-exec-YYYYMMDD-HHMMSS-PID
-            local container_id
+            local container_id=""
             if [[ "$branch" == jib-temp-* ]]; then
                 container_id=$(echo "$branch" | sed 's/^jib-temp-//')
             elif [[ "$branch" == jib-exec-* ]]; then
                 # jib-exec branches use the branch name as container ID
                 container_id="$branch"
+            fi
+
+            # Skip if we couldn't extract a container ID (shouldn't happen given the branch filter)
+            if [ -z "$container_id" ]; then
+                log "  Warning: Could not extract container ID from branch: $branch"
+                continue
             fi
 
             # Check if container still exists
@@ -176,16 +201,24 @@ cleanup_orphaned_branches() {
                 continue
             fi
 
-            # Check if branch has unmerged changes (commits not in main)
-            local unmerged_commits
-            unmerged_commits=$(git log main.."$branch" --oneline 2>/dev/null | wc -l)
+            # Check if branch has truly unique commits not in the default branch
+            # Use git cherry to find commits that haven't been cherry-picked or merged
+            local unmerged_commits=0
+            if git rev-parse --verify "origin/$default_branch" &>/dev/null; then
+                # Count commits with '+' prefix (truly unique, not cherry-picked)
+                unmerged_commits=$(git cherry "origin/$default_branch" "$branch" 2>/dev/null | grep -c '^+' || echo "0")
+            elif git rev-parse --verify "$default_branch" &>/dev/null; then
+                unmerged_commits=$(git cherry "$default_branch" "$branch" 2>/dev/null | grep -c '^+' || echo "0")
+            fi
+            # Ensure unmerged_commits is a number (handle potential multi-line issues)
+            unmerged_commits=$(echo "$unmerged_commits" | tr -d '[:space:]' | head -1)
+            unmerged_commits=${unmerged_commits:-0}
 
-            # Check if branch has an open PR in GitHub
+            # Check if branch has an open PR in GitHub (using cached PR list)
             local has_open_pr=false
-            if [ -n "$github_repo" ] && command -v gh &>/dev/null; then
-                local pr_count
-                pr_count=$(gh pr list --repo "$github_repo" --head "$branch" --state open --json number 2>/dev/null | grep -c '"number"' || echo "0")
-                if [ "$pr_count" -gt 0 ]; then
+            if [ -n "$all_open_prs" ] && [ "$all_open_prs" != "[]" ]; then
+                # Check if this branch name appears in the cached PR list
+                if echo "$all_open_prs" | grep -q "\"headRefName\":\"$branch\""; then
                     has_open_pr=true
                 fi
             fi

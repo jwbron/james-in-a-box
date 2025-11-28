@@ -211,25 +211,23 @@ class TestCreateNotificationWithThread:
 class TestMain:
     """Tests for main entry point."""
 
-    def test_missing_argument(self, capsys):
+    def test_missing_argument(self, caplog):
         """Test error when no file argument provided."""
         with patch.object(sys, "argv", ["incoming-processor.py"]):
             exit_code = incoming_processor.main()
 
-        captured = capsys.readouterr()
         assert exit_code == 1
-        assert "Usage:" in captured.err
+        assert "Usage:" in caplog.text
 
-    def test_file_not_found(self, temp_dir, capsys):
+    def test_file_not_found(self, temp_dir, caplog):
         """Test error when file doesn't exist."""
         nonexistent = temp_dir / "nonexistent.md"
 
         with patch.object(sys, "argv", ["incoming-processor.py", str(nonexistent)]):
             exit_code = incoming_processor.main()
 
-        captured = capsys.readouterr()
         assert exit_code == 1
-        assert "not found" in captured.err.lower()
+        assert "not found" in caplog.text.lower()
 
     def test_incoming_file_routing(self, temp_dir, monkeypatch):
         """Test that incoming directory triggers process_task."""
@@ -259,7 +257,7 @@ class TestMain:
 
             mock_response.assert_called_once_with(response_file)
 
-    def test_unknown_directory_error(self, temp_dir, capsys):
+    def test_unknown_directory_error(self, temp_dir, caplog):
         """Test error for file in unknown directory."""
         unknown_dir = temp_dir / "unknown"
         unknown_dir.mkdir()
@@ -269,9 +267,8 @@ class TestMain:
         with patch.object(sys, "argv", ["incoming-processor.py", str(unknown_file)]):
             exit_code = incoming_processor.main()
 
-        captured = capsys.readouterr()
         assert exit_code == 1
-        assert "unknown message type" in captured.err.lower()
+        assert "unknown message type" in caplog.text.lower()
 
 
 class TestProcessTask:

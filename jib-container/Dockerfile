@@ -122,14 +122,30 @@ fi
 # Set up environment
 export HOME="${USER_HOME}"
 export USER="${RUNTIME_USER}"
-# Add jib scripts to PATH for create-pr-helper.py and other tools
+# Add jib scripts to PATH for comment-pr-helper.py and other tools
 export PATH="${USER_HOME}/khan/james-in-a-box/jib-container/scripts:/usr/local/bin:${PATH}"
 # Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
 export PYTHONDONTWRITEBYTECODE=1
+# Disable Claude Code auto-update prompts (prevents interrupts in automation)
+export DISABLE_AUTOUPDATER=1
 
 # Configure git to commit as "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.name "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.org"
+
+# Configure git credential helper for GitHub authentication
+# Uses GITHUB_TOKEN environment variable (set by jib launcher from GitHub App)
+# This allows git push over HTTPS without embedding tokens in remote URLs
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper "${USER_HOME}/khan/james-in-a-box/jib-container/scripts/git-credential-github-token"
+    echo "✓ Git credential helper configured for GitHub push"
+else
+    # No token - disable credential helper (will fail on push attempts)
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper ""
+fi
+# CRITICAL: Never embed tokens in git remote URLs
+# Remote URLs are managed by the HOST and should not be modified by the container
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global advice.pushUpdateRejected false
 
 # Also fix local repo configs in case they were corrupted with Claude's authorship
 # Local configs override global, so we need to ensure they use jib too
@@ -140,6 +156,17 @@ if [ -d "${USER_HOME}/.git-main" ]; then
             # Use git config to set local repo identity (will update the config file)
             git config -f "$repo_config" user.name "jib"
             git config -f "$repo_config" user.email "jib@khan.org"
+
+            # CRITICAL: Verify remote URLs don't have embedded tokens
+            # If they do, strip them out (tokens belong in env vars, not URLs)
+            remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
+            if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
+                echo "⚠ WARNING: Found token in git remote URL, cleaning it up..."
+                # Extract the GitHub repo path (owner/repo.git)
+                clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
+                git config -f "$repo_config" remote.origin.url "$clean_url"
+                echo "  Cleaned: $remote_url -> $clean_url"
+            fi
         fi
     done
 fi
@@ -148,23 +175,90 @@ echo "✓ Git configured to commit as jib <jib@khan.org>"
 # Fix worktree .git files to point to mounted git directories
 # Worktrees have .git files that reference the main repo's .git directory
 # We mount the main .git at ~/.git-main/{repo}/ so we need to rewrite these references
+#
+# FAIL FAST: If worktree setup is broken, exit immediately.
+# A container with broken git is worse than no container at all.
+worktree_setup_failed=false
+
 if [ -d "${USER_HOME}/khan" ]; then
+    # Check if there are any worktrees to configure
+    has_worktrees=false
     for repo_dir in "${USER_HOME}/khan"/*; do
         if [ -f "${repo_dir}/.git" ]; then
-            repo_name=$(basename "$repo_dir")
-            # Read the original gitdir path
-            original_gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
-            # Extract the worktree admin directory name (last component of path)
-            worktree_admin=$(basename "$original_gitdir")
-            # Rewrite .git file to point to the mounted location
-            echo "gitdir: ${USER_HOME}/.git-main/${repo_name}/worktrees/${worktree_admin}" > "${repo_dir}/.git"
-            chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
+            has_worktrees=true
+            break
         fi
     done
-    echo "✓ Khan worktrees configured (isolated from host)"
-    echo "  Git metadata mounted read-write from ~/.git-main/"
+
+    if [ "$has_worktrees" = true ]; then
+        # First, verify ~/.git-main mount exists
+        if [ ! -d "${USER_HOME}/.git-main" ]; then
+            echo "✗ FATAL: ~/.git-main not mounted but worktrees exist"
+            echo "  This means jib failed to mount the git directories."
+            echo "  Container cannot start with broken git configuration."
+            echo ""
+            echo "  Possible causes:"
+            echo "    - Docker mount failed"
+            echo "    - Host .git directories don't exist"
+            echo "    - Permission issues on host"
+            worktree_setup_failed=true
+        else
+            worktrees_configured=0
+            worktrees_failed=0
+            failed_repos=""
+
+            for repo_dir in "${USER_HOME}/khan"/*; do
+                if [ -f "${repo_dir}/.git" ]; then
+                    repo_name=$(basename "$repo_dir")
+                    # Read the original gitdir path
+                    original_gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
+                    # Extract the worktree admin directory name (last component of path)
+                    worktree_admin=$(basename "$original_gitdir")
+
+                    # Build the target path
+                    target_path="${USER_HOME}/.git-main/${repo_name}/worktrees/${worktree_admin}"
+
+                    # Verify target path exists before rewriting
+                    if [ -d "$target_path" ]; then
+                        echo "gitdir: ${target_path}" > "${repo_dir}/.git"
+                        chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
+                        worktrees_configured=$((worktrees_configured + 1))
+                    else
+                        echo "✗ FATAL: Worktree path doesn't exist for ${repo_name}"
+                        echo "  Expected: ${target_path}"
+                        echo "  Original: ${original_gitdir}"
+                        worktrees_failed=$((worktrees_failed + 1))
+                        failed_repos="${failed_repos} ${repo_name}"
+                    fi
+                fi
+            done
+
+            if [ $worktrees_failed -gt 0 ]; then
+                echo ""
+                echo "✗ FATAL: ${worktrees_failed} worktree(s) failed to configure:${failed_repos}"
+                echo "  Container cannot start with broken git configuration."
+                echo ""
+                echo "  Possible causes:"
+                echo "    - Worktree was deleted on host"
+                echo "    - Git metadata corrupted"
+                echo "    - Mount configuration mismatch"
+                worktree_setup_failed=true
+            elif [ $worktrees_configured -gt 0 ]; then
+                echo "✓ Khan worktrees configured: ${worktrees_configured} repo(s)"
+                echo "  Git metadata mounted read-write from ~/.git-main/"
+            fi
+        fi
+    fi
 else
     echo "⚠ Khan workspace not found - check mount configuration"
+fi
+
+# Exit if worktree setup failed - don't start a broken container
+if [ "$worktree_setup_failed" = true ]; then
+    echo ""
+    echo "Container startup aborted due to worktree configuration failure."
+    echo "Please check your jib setup and try again."
+    exit 1
 fi
 
 # Create convenience symlink to ~/sharing/tmp
@@ -190,20 +284,42 @@ else
 fi
 
 # Set up agent rules for AI guidance using CLAUDE.md format
-# Combine all rules into one file: mission + environment + Khan Academy standards
-if [ -f "/opt/claude-rules/mission.md" ] && [ -f "/opt/claude-rules/environment.md" ] && [ -f "/opt/claude-rules/khan-academy.md" ]; then
-    cat /opt/claude-rules/mission.md > "${USER_HOME}/CLAUDE.md"
-    echo "" >> "${USER_HOME}/CLAUDE.md"
-    echo "---" >> "${USER_HOME}/CLAUDE.md"
-    echo "" >> "${USER_HOME}/CLAUDE.md"
-    cat /opt/claude-rules/environment.md >> "${USER_HOME}/CLAUDE.md"
-    echo "" >> "${USER_HOME}/CLAUDE.md"
-    echo "---" >> "${USER_HOME}/CLAUDE.md"
-    echo "" >> "${USER_HOME}/CLAUDE.md"
-    cat /opt/claude-rules/khan-academy.md >> "${USER_HOME}/CLAUDE.md"
+# Combine all rules into one file in logical order (per LLM Documentation Index Strategy ADR)
+# Order: mission (core) → environment (constraints) → beads (task tracking) → context → standards → quality
+RULES_DIR="/opt/claude-rules"
+RULES_ORDER=(
+    "mission.md"              # Core agent instructions (start here)
+    "environment.md"          # Sandbox constraints
+    "beads-usage.md"          # Persistent task tracking (mandatory)
+    "context-tracking.md"     # Slack/PR context persistence
+    "khan-academy.md"         # Tech stack and standards
+    "test-workflow.md"        # Test discovery and execution
+    "pr-descriptions.md"      # PR writing guidelines
+    "notification-template.md" # Async notifications
+)
+
+if [ -f "${RULES_DIR}/mission.md" ]; then
+    # Start fresh
+    : > "${USER_HOME}/CLAUDE.md"
+
+    # Concatenate rules in defined order
+    first_file=true
+    for rule_file in "${RULES_ORDER[@]}"; do
+        if [ -f "${RULES_DIR}/${rule_file}" ]; then
+            if [ "$first_file" = false ]; then
+                echo "" >> "${USER_HOME}/CLAUDE.md"
+                echo "---" >> "${USER_HOME}/CLAUDE.md"
+                echo "" >> "${USER_HOME}/CLAUDE.md"
+            fi
+            cat "${RULES_DIR}/${rule_file}" >> "${USER_HOME}/CLAUDE.md"
+            first_file=false
+        fi
+    done
+
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/CLAUDE.md"
-    echo "✓ AI agent rules installed: ~/CLAUDE.md (mission + environment + Khan standards)"
-    echo "  Note: All rules combined in one file since ~/khan/ is mounted from host"
+    echo "✓ AI agent rules installed: ~/CLAUDE.md"
+    echo "  Combined ${#RULES_ORDER[@]} rule files (index-based per LLM Doc ADR)"
+    echo "  Note: Reference docs in ~/khan/james-in-a-box/docs/ (fetched on-demand)"
 fi
 
 # Set up .claude directory structure
@@ -272,13 +388,21 @@ echo ""
 # Add the GitHub MCP server using the claude mcp add command
 # GitHub MCP provides bi-directional access: repos, issues, PRs, comments, file operations
 # This replaces direct gh CLI usage for all GitHub operations
+# NOTE: Use --scope user to make it available in ALL projects (not just current dir)
 if [ -n "${GITHUB_TOKEN:-}" ]; then
+    # Remove any existing github MCP config to ensure clean state
+    # This handles upgrades from old configs (e.g., local scope → user scope)
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local 2>/dev/null || true
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user 2>/dev/null || true
+
+    # Add fresh config with user scope
+    # Suppress output to avoid logging the Authorization header/token
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
         --transport http \
+        --scope user \
         github \
         "https://api.githubcopilot.com/mcp/" \
-        --header "Authorization: Bearer ${GITHUB_TOKEN}" \
-        2>/dev/null || true
+        --header "Authorization: Bearer ${GITHUB_TOKEN}" > /dev/null 2>&1
     echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
     echo "  All GitHub operations go through MCP: PRs, issues, repos, comments"
 else
@@ -347,13 +471,13 @@ chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/beads"
 # Create convenience symlink: ~/beads → ~/sharing/beads
 ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
 
-# Rebuild cache in case it's stale
+# Import JSONL if needed (cache is auto-rebuilt)
 cd "${USER_HOME}/sharing/beads"
-gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd build-cache > /dev/null 2>&1 || true
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd sync --import-only > /dev/null 2>&1 || true
 
 echo "✓ Beads memory system ready"
 echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
-echo "  Usage: bd add 'task description' --tags feature,important"
+echo "  Usage: bd --allow-stale create 'task description' --labels feature,important"
 
 # NOTE: All analysis uses exec-based pattern (no background processes)
 # Analysis scripts are triggered by host-side systemd services via `jib --exec`
@@ -381,6 +505,35 @@ echo "  - GitHub analysis: Triggered after github-sync"
 echo "  - Message processing: Triggered by slack-receiver"
 echo ""
 
+# Setup cleanup trap for container shutdown
+cleanup_on_exit() {
+    echo ""
+    echo "🧹 Cleaning up on container exit..."
+
+    # Check and clean git remote URLs one final time
+    if [ -d "${USER_HOME}/.git-main" ]; then
+        for repo_config in "${USER_HOME}/.git-main"/*/config; do
+            if [ -f "$repo_config" ]; then
+                remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
+                if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
+                    echo "⚠ WARNING: Git remote URL was modified during session!"
+                    echo "  Found token in: $repo_config"
+                    # Clean it up
+                    clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
+                    git config -f "$repo_config" remote.origin.url "$clean_url"
+                    echo "  ✓ Cleaned: $remote_url -> $clean_url"
+                    echo "  Note: This should not happen. Git remote URLs should never contain tokens."
+                fi
+            fi
+        done
+    fi
+
+    echo "✓ Cleanup complete"
+}
+
+# Register cleanup trap
+trap cleanup_on_exit EXIT SIGTERM SIGINT
+
 # Drop privileges and start shell or run claude
 if [ $# -eq 0 ]; then
     echo ""
@@ -393,7 +546,8 @@ if [ $# -eq 0 ]; then
     echo "Human: Reviews and ships your work"
     echo ""
     echo "📋 Your Instructions:"
-    echo "  • ~/CLAUDE.md                      (all rules: mission, environment, Khan)"
+    echo "  • ~/CLAUDE.md                      (concise rules: mission, beads, context, etc.)"
+    echo "  • ~/khan/james-in-a-box/docs/      (reference docs - fetch on demand)"
     echo "  Note: ~/khan/ is mounted from host - all code changes persist immediately"
     echo ""
     echo "🚀 Quick Start:"
@@ -428,7 +582,7 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "💡 Tips:"
     echo "  • ~/khan/ is READ-WRITE - make changes directly, commit to git"
-    echo "  • Human reviews commits and pushes from host"
+    echo "  • Human reviews commits - you can push directly via git push"
     echo "  • Use Atlassian MCP for real-time JIRA access (search, update, comment)"
     echo "  • Check context-sync/confluence/ for ADRs and runbooks"
     echo "  • Send notifications to ~/sharing/notifications/ to get Slack DM"
@@ -442,7 +596,8 @@ if [ $# -eq 0 ]; then
     echo "  • Bridge network (isolated from host services)"
     echo "  • Outbound HTTP only (for Claude API and packages)"
     echo "  • No inbound ports (cannot accept connections)"
-    echo "  • No credentials (cannot push to git or deploy to cloud)"
+    echo "  • GitHub App token for git push (HTTPS only, no SSH keys)"
+    echo "  • No cloud credentials (cannot deploy to GCP/AWS)"
     echo ""
     echo "======================================================================"
     echo ""
@@ -460,4 +615,3 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # WORKDIR is set dynamically in entrypoint based on RUNTIME_USER
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-

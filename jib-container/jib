@@ -106,18 +106,95 @@ def get_platform() -> str:
 
 
 def get_github_token() -> Optional[str]:
-    """Get GitHub token from jib config file.
+    """Get GitHub PAT using the unified HostConfig system.
+
+    Uses HostConfig to load the token from (in order of precedence):
+    - Environment variable GITHUB_TOKEN (highest priority)
+    - ~/.config/jib/secrets.env (GITHUB_TOKEN=...)
+    - ~/.config/jib/github-token (dedicated file)
+
+    This follows the same configuration pattern as other jib secrets
+    (Slack tokens, Confluence tokens, etc.) via config/host_config.py.
 
     Returns:
         Token string if found and valid, None otherwise
     """
-    if Config.GITHUB_TOKEN_FILE.exists():
-        try:
-            token = Config.GITHUB_TOKEN_FILE.read_text().strip()
-            if token and token.startswith(("ghp_", "github_pat_")):
+    try:
+        # Import HostConfig from project root
+        script_dir = Path(__file__).resolve().parent
+        project_root = script_dir.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
+        from config.host_config import HostConfig
+        config = HostConfig()
+        token = config.github_token
+
+        if token and token.startswith(("ghp_", "github_pat_")):
+            return token
+    except ImportError as e:
+        warn(f"Could not import HostConfig: {e}")
+    except Exception as e:
+        warn(f"Error loading GitHub token from config: {e}")
+    return None
+
+
+def get_github_app_token() -> Optional[str]:
+    """Generate GitHub App installation token for container use.
+
+    Uses the github-app-token.py script to generate a fresh installation token
+    from App credentials (App ID, Installation ID, private key).
+
+    Returns:
+        Installation token string if successful, None otherwise
+    """
+    # Check if App credentials exist
+    app_id_file = Config.USER_CONFIG_DIR / "github-app-id"
+    installation_id_file = Config.USER_CONFIG_DIR / "github-app-installation-id"
+    private_key_file = Config.USER_CONFIG_DIR / "github-app.pem"
+
+    if not all(f.exists() for f in [app_id_file, installation_id_file, private_key_file]):
+        return None  # App not configured, fall back to PAT
+
+    # Find the token generation script
+    script_dir = Path(__file__).resolve().parent
+    token_script = script_dir / "jib-tools" / "github-app-token.py"
+
+    if not token_script.exists():
+        warn(f"GitHub App token script not found: {token_script}")
+        return None
+
+    # Use the host-services venv Python which has cryptography installed
+    # Fall back to system python3 if venv doesn't exist
+    jib_root = script_dir.parent
+    venv_python = jib_root / "host-services" / ".venv" / "bin" / "python"
+    python_cmd = str(venv_python) if venv_python.exists() else "python3"
+
+    try:
+        result = subprocess.run(
+            [python_cmd, str(token_script), "--config-dir", str(Config.USER_CONFIG_DIR)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0:
+            token = result.stdout.strip()
+            if token and token.startswith("ghs_"):  # Installation tokens start with ghs_
                 return token
-        except Exception:
-            pass
+            elif token:
+                # Token format might vary, accept if non-empty
+                return token
+
+        # Log error but don't fail - we can fall back to PAT
+        if result.stderr:
+            warn(f"GitHub App token generation failed: {result.stderr.strip()}")
+
+    except subprocess.TimeoutExpired:
+        warn("GitHub App token generation timed out")
+    except Exception as e:
+        warn(f"GitHub App token generation error: {e}")
+
     return None
 
 
@@ -402,12 +479,20 @@ def create_worktrees(container_id: str) -> dict:
         if not repo_path.is_dir():
             continue
 
-        # Check if it's a git repository
+        # Check if it's a git repository with a .git DIRECTORY
+        # If .git is a file, the host repo is itself a worktree, which is unsupported
         git_dir = repo_path / ".git"
         if not git_dir.exists():
             continue
 
         repo_name = repo_path.name
+
+        if git_dir.is_file():
+            # Host repo is a worktree - skip it with a warning
+            warn(f"  ⚠ Skipping {repo_name}: host repo is a worktree (.git is a file)")
+            warn(f"    jib requires host repos to be normal git repos")
+            continue
+
         worktree_path = worktree_dir / repo_name
 
         try:
@@ -442,6 +527,8 @@ def cleanup_worktrees(container_id: str) -> None:
     Args:
         container_id: Unique container identifier
     """
+    import shutil
+
     worktree_dir = Config.WORKTREE_BASE / container_id
 
     if not worktree_dir.exists():
@@ -449,45 +536,67 @@ def cleanup_worktrees(container_id: str) -> None:
 
     info(f"Cleaning up worktrees for {container_id}...")
 
-    # Collect repos that need pruning
-    repos_to_prune = set()
+    # Collect repos and their worktree admin directories
+    # We need to forcibly remove admin dirs because container modified .git files
+    # to point to container-only paths, which breaks git worktree prune
+    repos_to_clean = {}  # repo_path -> list of admin dir names
     for worktree_path in worktree_dir.iterdir():
         if worktree_path.is_dir():
             repo_name = worktree_path.name
             original_repo = Config.KHAN_SOURCE / repo_name
             if original_repo.exists():
-                repos_to_prune.add(original_repo)
+                # Find the admin directory name from the worktree's .git file
+                git_file = worktree_path / ".git"
+                if git_file.is_file():
+                    try:
+                        content = git_file.read_text().strip()
+                        # Format: "gitdir: /path/to/.git/worktrees/NAME" or
+                        # "gitdir: /path/to/.git-main/repo/worktrees/NAME"
+                        if "worktrees/" in content:
+                            admin_name = content.split("worktrees/")[-1]
+                            if original_repo not in repos_to_clean:
+                                repos_to_clean[original_repo] = []
+                            repos_to_clean[original_repo].append(admin_name)
+                    except Exception:
+                        pass
 
-    # Remove container worktree directory
-    # Don't use 'git worktree remove' because:
-    # - Container modified .git files to point to container paths
-    # - Git cannot validate the worktree state from the host
-    # - Commits are already safe in git (on the jib-temp-* branch)
-    # - We just need to clean up the working directory and prune metadata
+    # Remove container worktree directory first
     try:
-        import shutil
         shutil.rmtree(worktree_dir)
         info(f"  ✓ Removed worktree directory")
     except Exception as e:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
-    # Prune stale worktree metadata from each repo
-    # This removes the .git/worktrees/* admin directories
-    # All commits on jib-temp-* branches are preserved
-    for repo_path in repos_to_prune:
+    # Forcibly remove worktree admin directories
+    # Don't rely on git worktree prune - it fails when .git files are corrupted
+    admin_dirs_removed = 0
+    for repo_path, admin_names in repos_to_clean.items():
+        worktrees_dir = repo_path / ".git" / "worktrees"
+        if worktrees_dir.is_dir():
+            for admin_name in admin_names:
+                admin_dir = worktrees_dir / admin_name
+                if admin_dir.exists():
+                    try:
+                        shutil.rmtree(admin_dir)
+                        admin_dirs_removed += 1
+                    except Exception as e:
+                        warn(f"  ✗ Failed to remove admin dir {admin_dir}: {e}")
+
+    # Also run git worktree prune as a fallback for any we missed
+    for repo_path in repos_to_clean.keys():
         try:
             subprocess.run(
                 ["git", "worktree", "prune", "-v"],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
-                check=True
+                check=False  # Don't fail if prune has issues
             )
         except Exception:
-            pass  # Non-critical if pruning fails
+            pass
 
-    if repos_to_prune:
-        info(f"  ✓ Pruned metadata in {len(repos_to_prune)} repo(s)")
+    if admin_dirs_removed > 0:
+        info(f"  ✓ Removed {admin_dirs_removed} worktree admin dir(s)")
         info(f"  💡 Commits preserved on branch: jib-temp-{container_id}")
 
 
@@ -852,12 +961,19 @@ def run_claude() -> bool:
     # Mount main repo .git directories (read-write) so worktrees can commit changes
     for repo_name in main_repos_needed:
         main_repo = Config.KHAN_SOURCE / repo_name
-        if (main_repo / ".git").exists():
+        git_path = main_repo / ".git"
+        if git_path.is_dir():
             # Mount the main repo's .git directory at a special location
             # Worktree .git files will be rewritten to point here
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:rw,z"])
+            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
+        elif git_path.is_file():
+            # .git is a file = host repo is itself a worktree
+            # This is an unsupported configuration for jib
+            warn(f"Host repo {repo_name} is a worktree (.git is a file)")
+            warn(f"  jib requires host repos to be normal git repos, not worktrees")
+            warn(f"  Git operations may fail for this repo")
 
     # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
@@ -885,14 +1001,22 @@ def run_claude() -> bool:
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
-    # Add GitHub token if available (for PR creation/management)
-    github_token = get_github_token()
-    if github_token:
-        cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
-        info("GitHub token: Found (PR creation enabled)")
+    # Add GitHub token for container (prefer App token, fall back to PAT)
+    github_app_token = get_github_app_token()
+    if github_app_token:
+        cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
+        info("GitHub auth: App installation token (1-hour expiry)")
+        print("  Full GitHub API access including Checks API")
     else:
-        warn("GitHub token: Not found (PR creation disabled)")
-        print("  Configure with: ./setup.sh --update")
+        # Fall back to PAT if App not configured
+        github_token = get_github_token()
+        if github_token:
+            cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
+            info("GitHub auth: Personal Access Token (fallback)")
+            warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
+        else:
+            warn("GitHub auth: Not configured (GitHub operations disabled)")
+            print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
 
     info("Network mode: Bridge (isolated from host, outbound HTTP only)")
     print("  Container can: Access Claude API, download packages")
@@ -921,7 +1045,7 @@ def run_claude() -> bool:
         return False
 
 
-def exec_in_new_container(command: List[str]) -> bool:
+def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool:
     """Execute a command in a new ephemeral container with isolated worktrees.
 
     Creates worktrees for all repos to isolate changes (same as interactive mode):
@@ -932,6 +1056,7 @@ def exec_in_new_container(command: List[str]) -> bool:
 
     Args:
         command: Command to execute
+        timeout_minutes: Timeout in minutes (default: 30)
 
     Returns:
         True if successful, False otherwise
@@ -958,6 +1083,7 @@ def exec_in_new_container(command: List[str]) -> bool:
 
     info(f"Executing command in new container: {container_id}")
     print(f"Command: {' '.join(command)}")
+    print(f"Timeout: {timeout_minutes} minutes")
     print()
 
     # Create worktrees for repos (isolates container from host repos)
@@ -1013,10 +1139,15 @@ def exec_in_new_container(command: List[str]) -> bool:
     # Mount main repo .git directories (read-write) so worktrees can commit changes
     for repo_name in main_repos_needed:
         main_repo = Config.KHAN_SOURCE / repo_name
-        if (main_repo / ".git").exists():
+        git_path = main_repo / ".git"
+        if git_path.is_dir():
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:rw,z"])
+            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
+        elif git_path.is_file():
+            # .git is a file = host repo is itself a worktree
+            warn(f"Host repo {repo_name} is a worktree (.git is a file)")
+            warn(f"  Git operations may fail for this repo")
 
     print()
 
@@ -1031,10 +1162,14 @@ def exec_in_new_container(command: List[str]) -> bool:
         "-e", f"CONTAINER_ID={container_id}",
     ]
 
-    # Add GitHub token if available (for PR creation/management)
-    github_token = get_github_token()
-    if github_token:
-        cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
+    # Add GitHub token for container (prefer App token, fall back to PAT)
+    github_app_token = get_github_app_token()
+    if github_app_token:
+        cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
+    else:
+        github_token = get_github_token()
+        if github_token:
+            cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
 
     # Add mount arguments
     cmd.extend(mount_args)
@@ -1045,13 +1180,14 @@ def exec_in_new_container(command: List[str]) -> bool:
     # Add the command to execute
     cmd.extend(command)
 
-    # Run container with 20-minute timeout (configurable via timeout_seconds parameter)
+    # Run container with configurable timeout
+    timeout_seconds = timeout_minutes * 60
     try:
-        result = subprocess.run(cmd, timeout=1200)  # 20 minutes
+        result = subprocess.run(cmd, timeout=timeout_seconds)
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         print()
-        error("Container execution timed out after 20 minutes")
+        error(f"Container execution timed out after {timeout_minutes} minutes")
         # Kill the container if it's still running
         subprocess.run(["docker", "kill", container_id],
                       stdout=subprocess.DEVNULL,
@@ -1077,8 +1213,10 @@ Examples:
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
   jib --exec python3 /home/jwies/khan/james-in-a-box/jib-container/components/incoming-processor.py /home/jwies/sharing/incoming/task.md
+  jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
+      Default timeout is 30 minutes, configurable via --timeout
         """
     )
     parser.add_argument(
@@ -1090,6 +1228,13 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         "--reset",
         action="store_true",
         help="Clear configuration and start over"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=30,
+        metavar="MINUTES",
+        help="Timeout in minutes for --exec commands (default: 30)"
     )
     parser.add_argument(
         "--exec",
@@ -1149,7 +1294,7 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
 
     # Handle exec - execute in a new ephemeral container
     if args.exec:
-        if not exec_in_new_container(args.exec):
+        if not exec_in_new_container(args.exec, timeout_minutes=args.timeout):
             return 1
         return 0
 

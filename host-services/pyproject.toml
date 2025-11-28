@@ -23,6 +23,9 @@ dependencies = [
 
     # YAML parsing (repo_config.py)
     "pyyaml>=6.0",
+
+    # GitHub App JWT signing (github-app-token.py)
+    "cryptography>=41.0.0",
 ]
 
 [project.optional-dependencies]

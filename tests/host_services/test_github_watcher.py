@@ -64,6 +64,8 @@ class TestStateManagement:
                 "processed_failures": {},
                 "processed_comments": {},
                 "processed_reviews": {},
+                "processed_conflicts": {},
+                "last_run_start": None,
             }
 
     def test_load_state_with_file(self, temp_dir):
@@ -207,14 +209,17 @@ class TestCheckPrForFailures:
 
     def test_no_failed_checks(self):
         """Test PR with all passing checks."""
-        pr_data = {"number": 123, "title": "Fix bug"}
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
         state = {"processed_failures": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = [
-                {"name": "test", "state": "SUCCESS"},
-                {"name": "lint", "state": "SUCCESS"},
-            ]
+            # API returns check_runs wrapper with conclusion field
+            mock_gh.return_value = {
+                "check_runs": [
+                    {"name": "test", "conclusion": "success"},
+                    {"name": "lint", "conclusion": "success"},
+                ]
+            }
 
             result = github_watcher.check_pr_for_failures("owner/repo", pr_data, state)
 
@@ -228,14 +233,27 @@ class TestCheckPrForFailures:
             "url": "https://github.com/owner/repo/pull/123",
             "headRefName": "fix-branch",
             "baseRefName": "main",
+            "headRefOid": "abc123def456",
         }
         state = {"processed_failures": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            # First call: get checks
+            # First call: get check runs via API
             # Second call: get PR details
             mock_gh.side_effect = [
-                [{"name": "test", "state": "FAILURE", "link": ""}],
+                {
+                    "check_runs": [
+                        {
+                            "name": "test",
+                            "conclusion": "failure",
+                            "html_url": "",
+                            "started_at": "",
+                            "completed_at": "",
+                            "output": {},
+                            "app": {},
+                        }
+                    ]
+                },
                 {"body": "PR description"},
             ]
 
@@ -250,15 +268,34 @@ class TestCheckPrForFailures:
 
     def test_already_processed_skipped(self):
         """Test already processed failures are skipped."""
-        pr_data = {"number": 123, "title": "Fix bug"}
-        state = {"processed_failures": {"owner/repo-123:test": "2025-01-01"}}
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
+        state = {"processed_failures": {"owner/repo-123-abc123:test": "2025-01-01"}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = [{"name": "test", "state": "FAILURE"}]
+            mock_gh.return_value = {
+                "check_runs": [
+                    {
+                        "name": "test",
+                        "conclusion": "failure",
+                        "html_url": "",
+                        "output": {},
+                        "app": {},
+                    }
+                ]
+            }
 
             result = github_watcher.check_pr_for_failures("owner/repo", pr_data, state)
 
             assert result is None
+
+    def test_no_head_sha_skipped(self):
+        """Test PR without headRefOid is skipped."""
+        pr_data = {"number": 123, "title": "Fix bug"}
+        state = {"processed_failures": {}}
+
+        result = github_watcher.check_pr_for_failures("owner/repo", pr_data, state)
+
+        assert result is None
 
 
 class TestCheckPrForComments:
@@ -272,7 +309,7 @@ class TestCheckPrForComments:
         with patch.object(github_watcher, "gh_json") as mock_gh:
             mock_gh.return_value = {"comments": [], "reviews": []}
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state)
+            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
             assert result is None
 
@@ -299,7 +336,7 @@ class TestCheckPrForComments:
                 "reviews": [],
             }
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state)
+            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
             assert result is not None
             assert result["type"] == "comment"
@@ -329,7 +366,7 @@ class TestCheckPrForComments:
                 "reviews": [],
             }
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state)
+            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
             assert result is None
 
@@ -340,55 +377,169 @@ class TestCheckPrsForReview:
     def test_no_prs_from_others(self):
         """Test when no PRs from others exist."""
         state = {"processed_reviews": {}}
+        all_prs = []  # Pre-fetched empty list
 
-        with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = []
+        result = github_watcher.check_prs_for_review(
+            "owner/repo", all_prs, state, "testuser", "botuser"
+        )
 
-            result = github_watcher.check_prs_for_review("owner/repo", state)
-
-            assert result == []
+        assert result == []
 
     def test_prs_from_others_detected(self):
         """Test PRs from others are detected."""
         state = {"processed_reviews": {}}
+        all_prs = [
+            {
+                "number": 456,
+                "title": "New feature",
+                "url": "https://github.com/owner/repo/pull/456",
+                "headRefName": "feature",
+                "baseRefName": "main",
+                "author": {"login": "other-dev"},
+                "createdAt": "2025-01-01",
+                "additions": 100,
+                "deletions": 50,
+                "files": [{"path": "app.py"}],
+            }
+        ]
 
-        with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = [
-                {
-                    "number": 456,
-                    "title": "New feature",
-                    "url": "https://github.com/owner/repo/pull/456",
-                    "headRefName": "feature",
-                    "baseRefName": "main",
-                    "author": {"login": "other-dev"},
-                    "createdAt": "2025-01-01",
-                    "additions": 100,
-                    "deletions": 50,
-                    "files": [{"path": "app.py"}],
-                }
-            ]
+        with patch.object(github_watcher, "gh_text", return_value="diff content"):
+            result = github_watcher.check_prs_for_review(
+                "owner/repo", all_prs, state, "testuser", "botuser"
+            )
 
-            with patch.object(github_watcher, "gh_text", return_value="diff content"):
-                result = github_watcher.check_prs_for_review("owner/repo", state)
-
-            assert len(result) == 1
-            assert result[0]["type"] == "review_request"
-            assert result[0]["pr_number"] == 456
-            assert result[0]["author"] == "other-dev"
+        assert len(result) == 1
+        assert result[0]["type"] == "review_request"
+        assert result[0]["pr_number"] == 456
+        assert result[0]["author"] == "other-dev"
 
     def test_already_reviewed_skipped(self):
         """Test already reviewed PRs are skipped."""
         state = {"processed_reviews": {"owner/repo-456:review": "2025-01-01"}}
+        all_prs = [
+            {
+                "number": 456,
+                "title": "New feature",
+                "author": {"login": "other-dev"},
+            }
+        ]
+
+        result = github_watcher.check_prs_for_review(
+            "owner/repo", all_prs, state, "testuser", "botuser"
+        )
+
+        assert result == []
+
+
+class TestCheckPrForMergeConflict:
+    """Tests for PR merge conflict detection."""
+
+    def test_no_conflict(self):
+        """Test PR with no merge conflict."""
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
+        state = {"processed_conflicts": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = [
-                {
-                    "number": 456,
-                    "title": "New feature",
-                    "author": {"login": "other-dev"},
-                }
-            ]
+            mock_gh.return_value = {
+                "number": 123,
+                "title": "Fix bug",
+                "body": "PR description",
+                "url": "https://github.com/owner/repo/pull/123",
+                "headRefName": "fix-branch",
+                "baseRefName": "main",
+                "mergeable": "MERGEABLE",
+                "mergeStateStatus": "CLEAN",
+            }
 
-            result = github_watcher.check_prs_for_review("owner/repo", state)
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
 
-            assert result == []
+            assert result is None
+
+    def test_conflict_detected(self):
+        """Test PR with merge conflict returns context."""
+        pr_data = {
+            "number": 123,
+            "title": "Fix bug",
+            "url": "https://github.com/owner/repo/pull/123",
+            "headRefName": "fix-branch",
+            "baseRefName": "main",
+            "headRefOid": "abc123def456",
+        }
+        state = {"processed_conflicts": {}}
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            mock_gh.return_value = {
+                "number": 123,
+                "title": "Fix bug",
+                "body": "PR description",
+                "url": "https://github.com/owner/repo/pull/123",
+                "headRefName": "fix-branch",
+                "baseRefName": "main",
+                "mergeable": "CONFLICTING",
+                "mergeStateStatus": "DIRTY",
+            }
+
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is not None
+            assert result["type"] == "merge_conflict"
+            assert result["repository"] == "owner/repo"
+            assert result["pr_number"] == 123
+            assert "conflict_signature" in result
+
+    def test_dirty_state_detected(self):
+        """Test PR with DIRTY mergeStateStatus is detected."""
+        pr_data = {
+            "number": 123,
+            "title": "Fix bug",
+            "headRefOid": "abc123",
+        }
+        state = {"processed_conflicts": {}}
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            mock_gh.return_value = {
+                "number": 123,
+                "title": "Fix bug",
+                "body": "",
+                "url": "",
+                "headRefName": "fix-branch",
+                "baseRefName": "main",
+                "mergeable": "UNKNOWN",
+                "mergeStateStatus": "DIRTY",
+            }
+
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is not None
+            assert result["type"] == "merge_conflict"
+
+    def test_already_processed_skipped(self):
+        """Test already processed conflicts are skipped."""
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
+        state = {"processed_conflicts": {"owner/repo-123-abc123:conflict": "2025-01-01"}}
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            mock_gh.return_value = {
+                "number": 123,
+                "title": "Fix bug",
+                "body": "",
+                "url": "",
+                "headRefName": "fix-branch",
+                "baseRefName": "main",
+                "mergeable": "CONFLICTING",
+                "mergeStateStatus": "DIRTY",
+            }
+
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is None
+
+    def test_api_failure_returns_none(self):
+        """Test API failure returns None."""
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
+        state = {"processed_conflicts": {}}
+
+        with patch.object(github_watcher, "gh_json", return_value=None):
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is None

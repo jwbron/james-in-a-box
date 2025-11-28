@@ -436,10 +436,21 @@ class TestMain:
         assert exit_code == 1
         assert "not found" in captured.err.lower()
 
-    @patch.object(pr_analyzer, "run_claude", return_value=True)
     @patch.object(pr_analyzer, "stop_background_services")
-    def test_successful_analysis(self, mock_stop, mock_claude, temp_dir):
+    def test_successful_analysis(self, mock_stop, temp_dir):
         """Test successful PR analysis."""
+        # Import ClaudeResult for mocking
+        from claude import ClaudeResult
+
+        # Create a mock ClaudeResult for successful run
+        mock_result = ClaudeResult(
+            success=True,
+            stdout="Analysis complete",
+            stderr="",
+            returncode=0,
+            error=None,
+        )
+
         context_file = temp_dir / "context.json"
         context_file.write_text(
             json.dumps(
@@ -458,8 +469,9 @@ class TestMain:
             )
         )
 
-        with patch.object(sys, "argv", ["pr-analyzer.py", str(context_file)]):
-            exit_code = pr_analyzer.main()
+        with patch.object(pr_analyzer, "run_claude", return_value=mock_result) as mock_claude:
+            with patch.object(sys, "argv", ["pr-analyzer.py", str(context_file)]):
+                exit_code = pr_analyzer.main()
 
         assert exit_code == 0
         mock_claude.assert_called_once()
