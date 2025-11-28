@@ -126,6 +126,18 @@ cleanup_orphaned_branches() {
         repo_name=$(basename "$repo")
         cd "$repo"
 
+        # Detect the default branch (main, master, etc.)
+        local default_branch
+        default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+        if [ -z "$default_branch" ]; then
+            # Fallback: try to get from remote
+            default_branch=$(git remote show origin 2>/dev/null | grep "HEAD branch" | sed 's/.*: //')
+        fi
+        if [ -z "$default_branch" ]; then
+            # Final fallback
+            default_branch="main"
+        fi
+
         # Get GitHub remote owner/repo for PR checks
         local remote_url
         remote_url=$(git remote get-url origin 2>/dev/null || echo "")
@@ -182,16 +194,26 @@ cleanup_orphaned_branches() {
                 continue
             fi
 
-            # Check if branch has unmerged changes (commits not in main)
-            local unmerged_commits
-            unmerged_commits=$(git log main.."$branch" --oneline 2>/dev/null | wc -l)
+            # Check if branch has truly unique commits not in the default branch
+            # Use git cherry to find commits that haven't been cherry-picked or merged
+            local unmerged_commits=0
+            if git rev-parse --verify "origin/$default_branch" &>/dev/null; then
+                # Count commits with '+' prefix (truly unique, not cherry-picked)
+                unmerged_commits=$(git cherry "origin/$default_branch" "$branch" 2>/dev/null | grep -c '^+' || echo "0")
+            elif git rev-parse --verify "$default_branch" &>/dev/null; then
+                unmerged_commits=$(git cherry "$default_branch" "$branch" 2>/dev/null | grep -c '^+' || echo "0")
+            fi
+            # Ensure unmerged_commits is a number (handle potential multi-line issues)
+            unmerged_commits=$(echo "$unmerged_commits" | tr -d '[:space:]' | head -1)
+            unmerged_commits=${unmerged_commits:-0}
 
             # Check if branch has an open PR in GitHub
             local has_open_pr=false
             if [ -n "$github_repo" ] && command -v gh &>/dev/null; then
-                local pr_count
-                pr_count=$(gh pr list --repo "$github_repo" --head "$branch" --state open --json number 2>/dev/null | grep -c '"number"' || echo "0")
-                if [ "$pr_count" -gt 0 ]; then
+                local pr_json
+                pr_json=$(gh pr list --repo "$github_repo" --head "$branch" --state open --json number 2>/dev/null || echo "[]")
+                # Check if the JSON contains any PR numbers (non-empty array)
+                if echo "$pr_json" | grep -q '"number"'; then
                     has_open_pr=true
                 fi
             fi
