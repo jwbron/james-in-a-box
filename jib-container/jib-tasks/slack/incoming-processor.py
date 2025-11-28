@@ -30,8 +30,8 @@ from pathlib import Path
 # Add shared directory to path for enrichment and Claude runner modules
 sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 
-from enrichment import enrich_task
 from claude.runner import run_claude
+from enrichment import enrich_task
 
 
 # Configure logging
@@ -324,7 +324,9 @@ Process this task now."""
         logger.error("Task timed out")
         partial_output = ""
         if claude_result.stdout:
-            partial_output = f"\n\n**Partial output before timeout:**\n{claude_result.stdout[:1000]}"
+            partial_output = (
+                f"\n\n**Partial output before timeout:**\n{claude_result.stdout[:1000]}"
+            )
 
         notification_content = f"""# Task Processing Timed Out
 
@@ -709,7 +711,9 @@ Process this response now."""
         logger.error("Response processing timed out")
         partial_output = ""
         if claude_result.stdout:
-            partial_output = f"\n\n**Partial output before timeout:**\n{claude_result.stdout[:1000]}"
+            partial_output = (
+                f"\n\n**Partial output before timeout:**\n{claude_result.stdout[:1000]}"
+            )
 
         notification_content = f"""# Response Processing Timed Out
 
