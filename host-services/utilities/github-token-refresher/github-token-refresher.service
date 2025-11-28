@@ -1,0 +1,38 @@
+[Unit]
+Description=GitHub Token Refresher - Keep GitHub App tokens fresh for jib containers
+Documentation=file://%h/khan/james-in-a-box/host-services/utilities/github-token-refresher/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/khan/james-in-a-box
+
+# Use the shared virtual environment
+ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/utilities/github-token-refresher/github-token-refresher.py
+
+# Restart on failure with exponential backoff
+Restart=on-failure
+RestartSec=30s
+RestartSteps=5
+RestartMaxDelaySec=300s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=github-token-refresher
+
+# Resource limits (this is a lightweight service)
+Nice=15
+IOSchedulingClass=3
+IOSchedulingPriority=7
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.jib-sharing
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
