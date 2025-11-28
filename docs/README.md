@@ -33,7 +33,6 @@ System design and technical details.
 Quick reference guides and troubleshooting.
 
 - **[Slack Quick Reference](reference/slack-quick-reference.md)** - Common Slack operations
-- **[Codebase Analyzer](reference/codebase-analyzer.md)** - Automated code analysis
 - **[Claude Authentication](reference/claude-authentication.md)** - Claude CLI authentication
 
 ### [Development](development/)

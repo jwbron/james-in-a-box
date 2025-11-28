@@ -53,7 +53,6 @@ Setting up two-way Slack communication:
 | slack-receiver | You → Claude messages | Included in main setup |
 | context-sync | Confluence/JIRA sync | Included in main setup |
 | github-sync | GitHub PR data sync | Included in main setup |
-| codebase-analyzer | Weekly code analysis | Included in main setup |
 | conversation-analyzer | Daily conversation analysis | Included in main setup |
 
 ## See Also

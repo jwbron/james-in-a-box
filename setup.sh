@@ -92,7 +92,6 @@ check_installation_status() {
         "context-sync.timer"
         "github-watcher.timer"
         "worktree-watcher.timer"
-        "codebase-analyzer.timer"
         "conversation-analyzer.timer"
     )
 
@@ -173,7 +172,7 @@ if [ "$UPDATE_MODE" = true ]; then
 else
     echo "This script will:"
     echo "  • Install and configure Slack integration (notifier and receiver)"
-    echo "  • Set up automated analyzers (codebase and conversation)"
+    echo "  • Set up automated analyzers (conversation)"
     echo "  • Configure worktree cleanup"
     echo "  • Enable and start all systemd services"
     echo ""
@@ -355,7 +354,6 @@ declare -A component_descriptions=(
     ["context-sync"]="Context Sync (Confluence, JIRA → Local)"
     ["github-watcher"]="GitHub Watcher (PR/issue monitoring)"
     ["worktree-watcher"]="Worktree Watcher (cleanup orphaned worktrees)"
-    ["codebase-analyzer"]="Codebase Analyzer (weekly)"
     ["conversation-analyzer"]="Conversation Analyzer (daily)"
 )
 
@@ -366,7 +364,6 @@ component_order=(
     "sync/context-sync"
     "analysis/github-watcher"
     "utilities/worktree-watcher"
-    "analysis/codebase-analyzer"
     "analysis/conversation-analyzer"
 )
 
@@ -449,7 +446,6 @@ if [ "$UPDATE_MODE" = true ]; then
         "context-sync.timer"
         "github-watcher.timer"
         "worktree-watcher.timer"
-        "codebase-analyzer.timer"
         "conversation-analyzer.timer"
     )
 
@@ -484,7 +480,6 @@ services=(
     "context-sync.timer:Context Sync"
     "github-watcher.timer:GitHub Watcher"
     "worktree-watcher.timer:Worktree Watcher"
-    "codebase-analyzer.timer:Codebase Analyzer"
     "conversation-analyzer.timer:Conversation Analyzer"
 )
 
@@ -821,7 +816,7 @@ if [ "$UPDATE_MODE" = true ]; then
     echo ""
     echo "To verify:"
     echo "  systemctl --user status slack-notifier.service"
-    echo "  systemctl --user list-timers | grep -E 'conversation|codebase|worktree'"
+    echo "  systemctl --user list-timers | grep -E 'conversation|github|worktree'"
     echo ""
 else
     echo "Host setup complete! Next steps:"
