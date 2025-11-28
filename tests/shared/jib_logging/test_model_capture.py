@@ -11,16 +11,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
+from jib_logging.context import ContextScope, set_current_context
 from jib_logging.model_capture import (
-    CaptureContext,
     ModelOutputCapture,
     ModelResponse,
     TokenUsage,
     capture_model_response,
     get_model_capture,
 )
-from jib_logging.context import ContextScope, set_current_context
 
 
 class TestTokenUsage:
@@ -259,15 +257,17 @@ class TestModelOutputCapture:
 
     def test_parse_claude_output_json(self, capture):
         """Test parsing Claude JSON output."""
-        json_output = json.dumps({
-            "model": "claude-sonnet-4-5-20250929",
-            "usage": {
-                "input_tokens": 100,
-                "output_tokens": 50,
-                "cache_read_input_tokens": 20,
-            },
-            "stop_reason": "end_turn",
-        })
+        json_output = json.dumps(
+            {
+                "model": "claude-sonnet-4-5-20250929",
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_read_input_tokens": 20,
+                },
+                "stop_reason": "end_turn",
+            }
+        )
 
         parsed = capture.parse_claude_output(json_output)
 
@@ -335,10 +335,12 @@ class TestModelOutputCapture:
 
     def test_context_manager_parses_output(self, capture):
         """Test context manager parses JSON output automatically."""
-        json_output = json.dumps({
-            "model": "claude-sonnet-4-5-20250929",
-            "usage": {"input_tokens": 100, "output_tokens": 50},
-        })
+        json_output = json.dumps(
+            {
+                "model": "claude-sonnet-4-5-20250929",
+                "usage": {"input_tokens": 100, "output_tokens": 50},
+            }
+        )
 
         with capture.capture_response() as ctx:
             ctx.set_output(json_output)
@@ -409,6 +411,7 @@ class TestGlobalCapture:
         """Test that get_model_capture returns singleton."""
         # Reset singleton
         import jib_logging.model_capture as mc
+
         mc._model_capture = None
 
         capture1 = get_model_capture()
@@ -430,13 +433,17 @@ class TestGlobalCapture:
     def test_get_model_capture_env_vars(self):
         """Test capture respects environment variables."""
         import jib_logging.model_capture as mc
+
         mc._model_capture = None
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, {
-                "JIB_MODEL_OUTPUT_DIR": tmpdir,
-                "JIB_STORE_MODEL_OUTPUT": "false",
-            }):
+            with patch.dict(
+                os.environ,
+                {
+                    "JIB_MODEL_OUTPUT_DIR": tmpdir,
+                    "JIB_STORE_MODEL_OUTPUT": "false",
+                },
+            ):
                 # Reset singleton to pick up env vars
                 mc._model_capture = None
                 capture = get_model_capture()
@@ -473,15 +480,17 @@ class TestIntegration:
         with ContextScope(task_id="bd-test", repository="owner/repo"):
             with capture.capture_response(prompt="Explain Python") as ctx:
                 # Simulate Claude output
-                output = json.dumps({
-                    "model": "claude-sonnet-4-5-20250929",
-                    "content": "Python is a programming language...",
-                    "usage": {
-                        "input_tokens": 50,
-                        "output_tokens": 200,
-                    },
-                    "stop_reason": "end_turn",
-                })
+                output = json.dumps(
+                    {
+                        "model": "claude-sonnet-4-5-20250929",
+                        "content": "Python is a programming language...",
+                        "usage": {
+                            "input_tokens": 50,
+                            "output_tokens": 200,
+                        },
+                        "stop_reason": "end_turn",
+                    }
+                )
                 ctx.set_output(output)
 
         response = ctx.response

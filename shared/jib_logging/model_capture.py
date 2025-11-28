@@ -15,11 +15,11 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .context import LogContext, get_current_context, get_or_create_context
+from .context import get_or_create_context
 from .logger import get_logger
 
 
@@ -98,7 +98,7 @@ class ModelResponse:
     finish_reasons: list[str] = field(default_factory=list)
     session_id: str | None = None
     error: str | None = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     trace_id: str | None = None
     span_id: str | None = None
     task_id: str | None = None
@@ -199,7 +199,7 @@ class ModelOutputCapture:
 
     def _get_output_dir(self) -> Path:
         """Get the output directory, creating date-based subdirectory."""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         output_dir = self._output_dir / today
         if self._store_full_responses:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -207,7 +207,7 @@ class ModelOutputCapture:
 
     def _generate_output_filename(self, trace_id: str | None) -> str:
         """Generate a unique filename for the response."""
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
         if trace_id:
             # Use first 8 chars of trace_id for identification
             return f"{timestamp}_{trace_id[:8]}.json"
@@ -593,7 +593,9 @@ def get_model_capture(
 
         return ModelOutputCapture(
             output_dir=output_dir or env_dir,
-            store_full_responses=store_full_responses if store_full_responses is not None else env_store,
+            store_full_responses=store_full_responses
+            if store_full_responses is not None
+            else env_store,
         )
 
     # Return or create singleton
