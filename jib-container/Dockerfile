@@ -329,12 +329,13 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user 2>/dev/null || true
 
     # Add fresh config with user scope
+    # Suppress output to avoid logging the Authorization header/token
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
         --transport http \
         --scope user \
         github \
         "https://api.githubcopilot.com/mcp/" \
-        --header "Authorization: Bearer ${GITHUB_TOKEN}"
+        --header "Authorization: Bearer ${GITHUB_TOKEN}" > /dev/null 2>&1
     echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
     echo "  All GitHub operations go through MCP: PRs, issues, repos, comments"
 else
