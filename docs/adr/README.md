@@ -22,11 +22,12 @@ ADRs are organized by implementation status:
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
 | [Context Sync Strategy](in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Custom sync vs MCP for Confluence/JIRA/GitHub |
-| [LLM Documentation Index Strategy](in-progress/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation |
 
 ### Implemented
 
-*No ADRs have been fully implemented yet.*
+| ADR | Summary |
+|-----|---------|
+| [LLM Documentation Index Strategy](implemented/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation |
 
 ### Not Implemented
 
@@ -37,6 +38,7 @@ ADRs are organized by implementation status:
 | [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
 | [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
 | [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
+| [Standardized Logging Interface](not-implemented/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 
 ## ADR Template
 
