@@ -296,3 +296,65 @@ class TestToolWrapperLogging:
         # Just verify no exception is raised during logging
         result = self.wrapper.run("fail")
         assert not result.success
+
+
+class TestToolWrapperEnvironment:
+    """Tests for environment variable handling in ToolWrapper."""
+
+    def setup_method(self):
+        """Create a wrapper for testing."""
+
+        class TestWrapper(ToolWrapper):
+            tool_name = "echo"
+
+        self.wrapper = TestWrapper()
+
+    @patch("jib_logging.wrappers.base.subprocess.run")
+    @patch.dict("os.environ", {"PATH": "/usr/bin", "HOME": "/home/test"}, clear=True)
+    def test_env_merges_with_current_environment(self, mock_run):
+        """Test that custom env is merged with current environment."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+        self.wrapper.run("test", env={"CUSTOM_VAR": "custom_value"})
+
+        call_kwargs = mock_run.call_args[1]
+        passed_env = call_kwargs["env"]
+        # Custom var should be present
+        assert passed_env["CUSTOM_VAR"] == "custom_value"
+        # Original env vars should be preserved
+        assert passed_env["PATH"] == "/usr/bin"
+        assert passed_env["HOME"] == "/home/test"
+
+    @patch("jib_logging.wrappers.base.subprocess.run")
+    def test_none_env_passes_none_to_subprocess(self, mock_run):
+        """Test that None env passes None to subprocess (inherits current)."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+        self.wrapper.run("test")
+
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["env"] is None
+
+    @patch("jib_logging.wrappers.base.subprocess.run")
+    @patch.dict("os.environ", {"EXISTING": "original"}, clear=True)
+    def test_env_can_override_existing_vars(self, mock_run):
+        """Test that custom env can override existing environment vars."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+
+        self.wrapper.run("test", env={"EXISTING": "overridden"})
+
+        call_kwargs = mock_run.call_args[1]
+        passed_env = call_kwargs["env"]
+        assert passed_env["EXISTING"] == "overridden"

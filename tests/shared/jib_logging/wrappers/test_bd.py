@@ -282,3 +282,21 @@ class TestBdContextExtraction:
             "",
         )
         assert context.get("new_status") == "in_progress"
+
+    def test_extracts_bd_format_task_id_from_args(self):
+        """Test that bd-xxx format task ID is extracted from args."""
+        context = self.wrapper._extract_context(
+            ("--allow-stale", "update", "bd-xyz789", "--status", "done"),
+            "",
+            "",
+        )
+        assert context.get("task_id") == "bd-xyz789"
+
+    def test_extracts_bd_format_task_id_from_output(self):
+        """Test that bd-xxx format task ID is extracted from create output."""
+        context = self.wrapper._extract_context(
+            ("--allow-stale", "create", "New task"),
+            "Created issue: bd-abc123\n",
+            "",
+        )
+        assert context.get("task_id") == "bd-abc123"

@@ -4,6 +4,7 @@ Base classes for tool wrappers.
 Provides common functionality for wrapping command-line tools with logging.
 """
 
+import os
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -90,7 +91,7 @@ class ToolWrapper:
             capture_output: If True, capture stdout/stderr
             timeout: Timeout in seconds (None = no timeout)
             cwd: Working directory for the command
-            env: Environment variables to set
+            env: Environment variables to set (merged with current environment)
             input_text: Text to send to stdin
 
         Returns:
@@ -103,6 +104,12 @@ class ToolWrapper:
         command = [self.tool_name, *args]
         start_time = time.perf_counter()
 
+        # Merge provided env with current environment to preserve PATH, etc.
+        effective_env = None
+        if env is not None:
+            effective_env = os.environ.copy()
+            effective_env.update(env)
+
         try:
             result = subprocess.run(
                 command,
@@ -111,7 +118,7 @@ class ToolWrapper:
                 text=True,
                 timeout=timeout,
                 cwd=cwd,
-                env=env,
+                env=effective_env,
                 input=input_text,
             )
 

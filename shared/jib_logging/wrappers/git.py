@@ -256,7 +256,7 @@ class GitWrapper(ToolWrapper):
         """Branch operations.
 
         Args:
-            name: Branch name (for create/delete)
+            name: Branch name (for create/delete - required for delete operations)
             delete: Delete the branch
             force_delete: Force delete the branch
             list_all: List all branches (including remote)
@@ -265,6 +265,9 @@ class GitWrapper(ToolWrapper):
 
         Returns:
             ToolResult
+
+        Raises:
+            ValueError: If delete or force_delete is True but name is not provided
         """
         args: list[str] = ["branch"]
 
@@ -273,9 +276,13 @@ class GitWrapper(ToolWrapper):
         elif list_all:
             args.append("-a")
         elif force_delete:
-            args.extend(["-D", name or ""])
+            if not name:
+                raise ValueError("Branch name is required for force_delete")
+            args.extend(["-D", name])
         elif delete:
-            args.extend(["-d", name or ""])
+            if not name:
+                raise ValueError("Branch name is required for delete")
+            args.extend(["-d", name])
         elif name:
             args.append(name)
 

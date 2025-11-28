@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Drop-in replacement for 'claude' command with automatic logging.
+# All arguments are passed through to the real claude command.
+#
+# Set JIB_LOGGING_PASSTHROUGH=1 to bypass logging entirely.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Ensure shared directory is in PYTHONPATH
+export PYTHONPATH="${SHARED_DIR}:${PYTHONPATH:-}"
+
+exec python3 -c "
+import sys
+sys.path.insert(0, '${SHARED_DIR}')
+from jib_logging.cli import claude_main
+sys.exit(claude_main())
+" "$@"

@@ -252,14 +252,17 @@ class BdWrapper(ToolWrapper):
         return context
 
     def _find_task_id(self, args: tuple[str, ...], stdout: str) -> str | None:
-        """Find task ID from arguments or command output."""
-        # Check args for existing task ID pattern
+        """Find task ID from arguments or command output.
+
+        Supports both beads-xxx and bd-xxx formats for backwards compatibility.
+        """
+        # Check args for existing task ID pattern (both beads-xxx and bd-xxx)
         for arg in args:
-            if re.match(r"^beads-[a-z0-9]+$", arg):
+            if re.match(r"^(beads|bd)-[a-z0-9]+$", arg):
                 return arg
 
         # Check output for created task ID (e.g., "Created issue: beads-abc123")
-        match = re.search(r"(beads-[a-z0-9]+)", stdout)
+        match = re.search(r"((beads|bd)-[a-z0-9]+)", stdout)
         if match:
             return match.group(1)
 

@@ -316,6 +316,27 @@ class TestGitBranch:
         assert "-d" in args
         assert "old-branch" in args
 
+    @patch.object(GitWrapper, "run")
+    def test_branch_force_delete(self, mock_run):
+        """Test force deleting a branch."""
+        mock_run.return_value = MagicMock(exit_code=0, stdout="")
+
+        self.wrapper.branch("old-branch", force_delete=True)
+
+        args = mock_run.call_args[0]
+        assert "-D" in args
+        assert "old-branch" in args
+
+    def test_branch_delete_without_name_raises(self):
+        """Test that delete without name raises ValueError."""
+        with pytest.raises(ValueError, match="Branch name is required for delete"):
+            self.wrapper.branch(delete=True)
+
+    def test_branch_force_delete_without_name_raises(self):
+        """Test that force_delete without name raises ValueError."""
+        with pytest.raises(ValueError, match="Branch name is required for force_delete"):
+            self.wrapper.branch(force_delete=True)
+
 
 class TestGitLog:
     """Tests for GitWrapper.log() method."""
