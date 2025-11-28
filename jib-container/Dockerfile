@@ -175,23 +175,90 @@ echo "✓ Git configured to commit as jib <jib@khan.org>"
 # Fix worktree .git files to point to mounted git directories
 # Worktrees have .git files that reference the main repo's .git directory
 # We mount the main .git at ~/.git-main/{repo}/ so we need to rewrite these references
+#
+# FAIL FAST: If worktree setup is broken, exit immediately.
+# A container with broken git is worse than no container at all.
+worktree_setup_failed=false
+
 if [ -d "${USER_HOME}/khan" ]; then
+    # Check if there are any worktrees to configure
+    has_worktrees=false
     for repo_dir in "${USER_HOME}/khan"/*; do
         if [ -f "${repo_dir}/.git" ]; then
-            repo_name=$(basename "$repo_dir")
-            # Read the original gitdir path
-            original_gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
-            # Extract the worktree admin directory name (last component of path)
-            worktree_admin=$(basename "$original_gitdir")
-            # Rewrite .git file to point to the mounted location
-            echo "gitdir: ${USER_HOME}/.git-main/${repo_name}/worktrees/${worktree_admin}" > "${repo_dir}/.git"
-            chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
+            has_worktrees=true
+            break
         fi
     done
-    echo "✓ Khan worktrees configured (isolated from host)"
-    echo "  Git metadata mounted read-write from ~/.git-main/"
+
+    if [ "$has_worktrees" = true ]; then
+        # First, verify ~/.git-main mount exists
+        if [ ! -d "${USER_HOME}/.git-main" ]; then
+            echo "✗ FATAL: ~/.git-main not mounted but worktrees exist"
+            echo "  This means jib failed to mount the git directories."
+            echo "  Container cannot start with broken git configuration."
+            echo ""
+            echo "  Possible causes:"
+            echo "    - Docker mount failed"
+            echo "    - Host .git directories don't exist"
+            echo "    - Permission issues on host"
+            worktree_setup_failed=true
+        else
+            worktrees_configured=0
+            worktrees_failed=0
+            failed_repos=""
+
+            for repo_dir in "${USER_HOME}/khan"/*; do
+                if [ -f "${repo_dir}/.git" ]; then
+                    repo_name=$(basename "$repo_dir")
+                    # Read the original gitdir path
+                    original_gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
+                    # Extract the worktree admin directory name (last component of path)
+                    worktree_admin=$(basename "$original_gitdir")
+
+                    # Build the target path
+                    target_path="${USER_HOME}/.git-main/${repo_name}/worktrees/${worktree_admin}"
+
+                    # Verify target path exists before rewriting
+                    if [ -d "$target_path" ]; then
+                        echo "gitdir: ${target_path}" > "${repo_dir}/.git"
+                        chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
+                        worktrees_configured=$((worktrees_configured + 1))
+                    else
+                        echo "✗ FATAL: Worktree path doesn't exist for ${repo_name}"
+                        echo "  Expected: ${target_path}"
+                        echo "  Original: ${original_gitdir}"
+                        worktrees_failed=$((worktrees_failed + 1))
+                        failed_repos="${failed_repos} ${repo_name}"
+                    fi
+                fi
+            done
+
+            if [ $worktrees_failed -gt 0 ]; then
+                echo ""
+                echo "✗ FATAL: ${worktrees_failed} worktree(s) failed to configure:${failed_repos}"
+                echo "  Container cannot start with broken git configuration."
+                echo ""
+                echo "  Possible causes:"
+                echo "    - Worktree was deleted on host"
+                echo "    - Git metadata corrupted"
+                echo "    - Mount configuration mismatch"
+                worktree_setup_failed=true
+            elif [ $worktrees_configured -gt 0 ]; then
+                echo "✓ Khan worktrees configured: ${worktrees_configured} repo(s)"
+                echo "  Git metadata mounted read-write from ~/.git-main/"
+            fi
+        fi
+    fi
 else
     echo "⚠ Khan workspace not found - check mount configuration"
+fi
+
+# Exit if worktree setup failed - don't start a broken container
+if [ "$worktree_setup_failed" = true ]; then
+    echo ""
+    echo "Container startup aborted due to worktree configuration failure."
+    echo "Please check your jib setup and try again."
+    exit 1
 fi
 
 # Create convenience symlink to ~/sharing/tmp

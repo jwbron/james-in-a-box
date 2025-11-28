@@ -479,12 +479,20 @@ def create_worktrees(container_id: str) -> dict:
         if not repo_path.is_dir():
             continue
 
-        # Check if it's a git repository
+        # Check if it's a git repository with a .git DIRECTORY
+        # If .git is a file, the host repo is itself a worktree, which is unsupported
         git_dir = repo_path / ".git"
         if not git_dir.exists():
             continue
 
         repo_name = repo_path.name
+
+        if git_dir.is_file():
+            # Host repo is a worktree - skip it with a warning
+            warn(f"  ⚠ Skipping {repo_name}: host repo is a worktree (.git is a file)")
+            warn(f"    jib requires host repos to be normal git repos")
+            continue
+
         worktree_path = worktree_dir / repo_name
 
         try:
@@ -929,12 +937,19 @@ def run_claude() -> bool:
     # Mount main repo .git directories (read-write) so worktrees can commit changes
     for repo_name in main_repos_needed:
         main_repo = Config.KHAN_SOURCE / repo_name
-        if (main_repo / ".git").exists():
+        git_path = main_repo / ".git"
+        if git_path.is_dir():
             # Mount the main repo's .git directory at a special location
             # Worktree .git files will be rewritten to point here
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:rw,z"])
+            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
+        elif git_path.is_file():
+            # .git is a file = host repo is itself a worktree
+            # This is an unsupported configuration for jib
+            warn(f"Host repo {repo_name} is a worktree (.git is a file)")
+            warn(f"  jib requires host repos to be normal git repos, not worktrees")
+            warn(f"  Git operations may fail for this repo")
 
     # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
@@ -1100,10 +1115,15 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
     # Mount main repo .git directories (read-write) so worktrees can commit changes
     for repo_name in main_repos_needed:
         main_repo = Config.KHAN_SOURCE / repo_name
-        if (main_repo / ".git").exists():
+        git_path = main_repo / ".git"
+        if git_path.is_dir():
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{main_repo / '.git'}:{git_container_path}:rw,z"])
+            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
+        elif git_path.is_file():
+            # .git is a file = host repo is itself a worktree
+            warn(f"Host repo {repo_name} is a worktree (.git is a file)")
+            warn(f"  Git operations may fail for this repo")
 
     print()
 
