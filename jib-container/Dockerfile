@@ -131,12 +131,19 @@ export PYTHONDONTWRITEBYTECODE=1
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.name "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.org"
 
-# CRITICAL: Prevent modification of git remote URLs
-# Container has GITHUB_TOKEN for MCP server, but should NEVER embed it in git remotes
+# Configure git credential helper for GitHub authentication
+# Uses GITHUB_TOKEN environment variable (set by jib launcher from GitHub App)
+# This allows git push over HTTPS without embedding tokens in remote URLs
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper "${USER_HOME}/khan/james-in-a-box/jib-container/scripts/git-credential-github-token"
+    echo "✓ Git credential helper configured for GitHub push"
+else
+    # No token - disable credential helper (will fail on push attempts)
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper ""
+fi
+# CRITICAL: Never embed tokens in git remote URLs
 # Remote URLs are managed by the HOST and should not be modified by the container
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global advice.pushUpdateRejected false
-gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper ""
-# Set helper to empty string - container should NOT use credential helpers that modify remotes
 
 # Also fix local repo configs in case they were corrupted with Claude's authorship
 # Local configs override global, so we need to ensure they use jib too
@@ -162,7 +169,6 @@ if [ -d "${USER_HOME}/.git-main" ]; then
     done
 fi
 echo "✓ Git configured to commit as jib <jib@khan.org>"
-echo "✓ Git credential helper disabled (container uses MCP, not git credentials)"
 
 # Fix worktree .git files to point to mounted git directories
 # Worktrees have .git files that reference the main repo's .git directory
@@ -468,7 +474,7 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "💡 Tips:"
     echo "  • ~/khan/ is READ-WRITE - make changes directly, commit to git"
-    echo "  • Human reviews commits and pushes from host"
+    echo "  • Human reviews commits - you can push directly via git push"
     echo "  • Check context-sync/ for Confluence docs, JIRA tickets, etc."
     echo "  • Send notifications to ~/sharing/notifications/ to get Slack DM"
     echo "  • Check ~/sharing/incoming/ for tasks sent via Slack"
@@ -481,7 +487,8 @@ if [ $# -eq 0 ]; then
     echo "  • Bridge network (isolated from host services)"
     echo "  • Outbound HTTP only (for Claude API and packages)"
     echo "  • No inbound ports (cannot accept connections)"
-    echo "  • No credentials (cannot push to git or deploy to cloud)"
+    echo "  • GitHub App token for git push (HTTPS only, no SSH keys)"
+    echo "  • No cloud credentials (cannot deploy to GCP/AWS)"
     echo ""
     echo "======================================================================"
     echo ""
@@ -499,4 +506,3 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # WORKDIR is set dynamically in entrypoint based on RUNTIME_USER
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-
