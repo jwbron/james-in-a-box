@@ -37,6 +37,58 @@ class CodebaseIndexer:
         'build', 'dist', '*.egg-info'
     }
 
+    # Package name to import name mappings (package -> import)
+    # Used when PyPI package name differs from import name
+    PACKAGE_IMPORT_MAP = {
+        'pyyaml': 'yaml',
+        'python-dotenv': 'dotenv',
+        'pyjwt': 'jwt',
+        'pillow': 'PIL',
+        'scikit-learn': 'sklearn',
+        'beautifulsoup4': 'bs4',
+        'opencv-python': 'cv2',
+    }
+
+    # Python standard library modules (Python 3.10+)
+    STDLIB_MODULES = {
+        'abc', 'aifc', 'argparse', 'array', 'ast', 'asynchat', 'asyncio',
+        'asyncore', 'atexit', 'audioop', 'base64', 'bdb', 'binascii',
+        'binhex', 'bisect', 'builtins', 'bz2', 'calendar', 'cgi', 'cgitb',
+        'chunk', 'cmath', 'cmd', 'code', 'codecs', 'codeop', 'collections',
+        'colorsys', 'compileall', 'concurrent', 'configparser', 'contextlib',
+        'contextvars', 'copy', 'copyreg', 'cProfile', 'crypt', 'csv',
+        'ctypes', 'curses', 'dataclasses', 'datetime', 'dbm', 'decimal',
+        'difflib', 'dis', 'distutils', 'doctest', 'email', 'encodings',
+        'enum', 'errno', 'faulthandler', 'fcntl', 'filecmp', 'fileinput',
+        'fnmatch', 'fractions', 'ftplib', 'functools', 'gc', 'getopt',
+        'getpass', 'gettext', 'glob', 'graphlib', 'grp', 'gzip', 'hashlib',
+        'heapq', 'hmac', 'html', 'http', 'idlelib', 'imaplib', 'imghdr',
+        'imp', 'importlib', 'inspect', 'io', 'ipaddress', 'itertools',
+        'json', 'keyword', 'lib2to3', 'linecache', 'locale', 'logging',
+        'lzma', 'mailbox', 'mailcap', 'marshal', 'math', 'mimetypes',
+        'mmap', 'modulefinder', 'multiprocessing', 'netrc', 'nis',
+        'nntplib', 'numbers', 'operator', 'optparse', 'os', 'ossaudiodev',
+        'pathlib', 'pdb', 'pickle', 'pickletools', 'pipes', 'pkgutil',
+        'platform', 'plistlib', 'poplib', 'posix', 'posixpath', 'pprint',
+        'profile', 'pstats', 'pty', 'pwd', 'py_compile', 'pyclbr',
+        'pydoc', 'queue', 'quopri', 'random', 're', 'readline', 'reprlib',
+        'resource', 'rlcompleter', 'runpy', 'sched', 'secrets', 'select',
+        'selectors', 'shelve', 'shlex', 'shutil', 'signal', 'site',
+        'smtpd', 'smtplib', 'sndhdr', 'socket', 'socketserver', 'spwd',
+        'sqlite3', 'ssl', 'stat', 'statistics', 'string', 'stringprep',
+        'struct', 'subprocess', 'sunau', 'symtable', 'sys', 'sysconfig',
+        'syslog', 'tabnanny', 'tarfile', 'telnetlib', 'tempfile', 'termios',
+        'test', 'textwrap', 'threading', 'time', 'timeit', 'tkinter',
+        'token', 'tokenize', 'trace', 'traceback', 'tracemalloc', 'tty',
+        'turtle', 'turtledemo', 'types', 'typing', 'unicodedata', 'unittest',
+        'urllib', 'uu', 'uuid', 'venv', 'warnings', 'wave', 'weakref',
+        'webbrowser', 'winreg', 'winsound', 'wsgiref', 'xdrlib', 'xml',
+        'xmlrpc', 'zipapp', 'zipfile', 'zipimport', 'zlib', 'zoneinfo',
+        # Also include common submodules
+        'collections.abc', 'concurrent.futures', 'os.path', 'urllib.parse',
+        'urllib.request', 'xml.etree', 'xml.etree.ElementTree',
+    }
+
     # Known patterns to detect
     PATTERNS = {
         'event_driven': {
@@ -200,20 +252,41 @@ class CodebaseIndexer:
         return file_info
 
     def _categorize_import(self, module_name: str, file_info: dict):
-        """Categorize import as internal or external."""
+        """Categorize import as internal, external, or stdlib."""
+        # Extract package name (first part of module path)
+        package = module_name.split('.')[0]
+
+        # Check if it's a stdlib module
+        if package in self.STDLIB_MODULES or module_name in self.STDLIB_MODULES:
+            return  # Skip stdlib modules entirely
+
         # Check if it's an internal import (relative or from this project)
         if module_name.startswith('.') or module_name.startswith(self.project_name):
             if module_name not in file_info['imports']['internal']:
                 file_info['imports']['internal'].append(module_name)
+        elif self._is_internal_module(package):
+            # It's a local module within the project
+            if module_name not in file_info['imports']['internal']:
+                file_info['imports']['internal'].append(module_name)
         else:
-            # External import - extract package name
-            package = module_name.split('.')[0]
+            # External (third-party) import
             if package not in file_info['imports']['external']:
                 file_info['imports']['external'].append(package)
 
             # Track for external deps (we'll try to get versions later)
             if package not in self.external_deps:
                 self.external_deps[package] = 'unknown'
+
+    def _is_internal_module(self, module_name: str) -> bool:
+        """Check if a module exists within the project directory."""
+        # Check for module_name.py or module_name/__init__.py anywhere in project
+        for py_file in self.project_root.rglob(f'{module_name}.py'):
+            if not any(part in self.SKIP_DIRS for part in py_file.parts):
+                return True
+        for init_file in self.project_root.rglob(f'{module_name}/__init__.py'):
+            if not any(part in self.SKIP_DIRS for part in init_file.parts):
+                return True
+        return False
 
     def _detect_patterns(self, name: str, file_path: str, line: int, kind: str):
         """Detect code patterns based on naming conventions."""
@@ -262,24 +335,55 @@ class CodebaseIndexer:
         return structure
 
     def extract_versions_from_requirements(self):
-        """Try to extract versions from requirements files."""
-        req_files = [
-            self.project_root / 'requirements.txt',
-            self.project_root / 'requirements-dev.txt',
-            self.project_root / 'pyproject.toml',
-        ]
+        """Try to extract versions from requirements files throughout the project."""
+        # Find all requirements files recursively
+        req_files = list(self.project_root.rglob('requirements*.txt'))
 
+        # Also check for pyproject.toml files
+        pyproject_files = list(self.project_root.rglob('pyproject.toml'))
+
+        # Parse requirements.txt files
         for req_file in req_files:
-            if req_file.exists():
-                try:
-                    content = req_file.read_text()
-                    # Simple regex for requirements.txt format
-                    for match in re.finditer(r'^([a-zA-Z0-9_-]+)==([^\s]+)', content, re.MULTILINE):
-                        pkg, version = match.groups()
-                        if pkg in self.external_deps:
-                            self.external_deps[pkg] = version
-                except Exception:
-                    pass
+            # Skip files in ignored directories
+            if any(part in self.SKIP_DIRS for part in req_file.parts):
+                continue
+            try:
+                content = req_file.read_text()
+                # Match various requirement formats: pkg==1.0, pkg>=1.0, pkg~=1.0
+                for match in re.finditer(r'^([a-zA-Z0-9_-]+)[=~><]=?=?([0-9][^\s,;#]*)', content, re.MULTILINE):
+                    pkg, version = match.groups()
+                    self._update_dep_version(pkg, version)
+            except Exception:
+                pass
+
+        # Parse pyproject.toml files for dependencies
+        for pyproject in pyproject_files:
+            if any(part in self.SKIP_DIRS for part in pyproject.parts):
+                continue
+            try:
+                content = pyproject.read_text()
+                # Simple regex to find dependencies in pyproject.toml
+                # Matches: "package>=1.0" or 'package==1.0' etc.
+                for match in re.finditer(r'["\']([a-zA-Z0-9_-]+)[=~><]=?=?([0-9][^"\']*)["\']', content):
+                    pkg, version = match.groups()
+                    self._update_dep_version(pkg, version)
+            except Exception:
+                pass
+
+    def _update_dep_version(self, pkg: str, version: str):
+        """Update dependency version, handling package name mappings."""
+        pkg_lower = pkg.lower().replace('-', '_')
+
+        # Check if this package maps to a different import name
+        import_name = self.PACKAGE_IMPORT_MAP.get(pkg.lower())
+
+        for dep in list(self.external_deps.keys()):
+            dep_normalized = dep.lower().replace('-', '_')
+            # Match either by normalized name or by mapped import name
+            if dep_normalized == pkg_lower or (import_name and dep == import_name):
+                if self.external_deps[dep] == 'unknown':
+                    self.external_deps[dep] = version
+                break
 
     def generate_indexes(self):
         """Main method to generate all indexes."""

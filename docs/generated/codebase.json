@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T07:26:55.356470+00:00",
+  "generated": "2025-11-28T08:05:54.957110+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -76,7 +76,9 @@
               "index-generator/": {
                 "description": "index-generator directory",
                 "files": [
-                  "index-generator.py"
+                  "index-generator.py",
+                  "query-index.py",
+                  "setup.sh"
                 ]
               }
             }
@@ -799,6 +801,61 @@
       "description": "Main entry point - scan configured repos and trigger jib as needed."
     },
     {
+      "name": "load_index",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 18,
+      "type": "function",
+      "description": "Load a JSON index file."
+    },
+    {
+      "name": "cmd_component",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 29,
+      "type": "function",
+      "description": "Find component by name."
+    },
+    {
+      "name": "cmd_pattern",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 55,
+      "type": "function",
+      "description": "Show pattern details."
+    },
+    {
+      "name": "cmd_deps",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 90,
+      "type": "function",
+      "description": "Show dependencies."
+    },
+    {
+      "name": "cmd_structure",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 124,
+      "type": "function",
+      "description": "Show project structure."
+    },
+    {
+      "name": "cmd_summary",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 147,
+      "type": "function",
+      "description": "Show codebase summary."
+    },
+    {
+      "name": "cmd_search",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 178,
+      "type": "function",
+      "description": "Search across all indexes."
+    },
+    {
+      "name": "main",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 216,
+      "type": "function"
+    },
+    {
       "name": "CodebaseIndexer",
       "file": "host-services/analysis/index-generator/index-generator.py",
       "line": 24,
@@ -810,17 +867,17 @@
         "get_directory_description",
         "analyze_python_file",
         "_categorize_import",
+        "_is_internal_module",
         "_detect_patterns",
         "build_structure",
         "extract_versions_from_requirements",
-        "generate_indexes",
-        "_add_pattern_conventions"
+        "_update_dep_version"
       ]
     },
     {
       "name": "main",
       "file": "host-services/analysis/index-generator/index-generator.py",
-      "line": 420,
+      "line": 524,
       "type": "function",
       "description": "CLI entry point."
     },
@@ -1164,68 +1221,12 @@
       "line": 107,
       "type": "function",
       "description": "Create symlinks in all Khan Academy git projects."
-    },
-    {
-      "name": "list_khan_projects_with_links",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 197,
-      "type": "function",
-      "description": "List Khan Academy projects that have symlinks to the documentation."
-    },
-    {
-      "name": "main",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 232,
-      "type": "function",
-      "description": "Main function."
-    },
-    {
-      "name": "list_all_spaces",
-      "file": "host-services/sync/context-sync/utils/list_spaces.py",
-      "line": 13,
-      "type": "function",
-      "description": "List all available spaces in Confluence."
-    },
-    {
-      "name": "get_sync_status",
-      "file": "host-services/sync/context-sync/utils/maintenance.py",
-      "line": 13,
-      "type": "function",
-      "description": "Show sync status and statistics."
-    },
-    {
-      "name": "find_orphaned_files",
-      "file": "host-services/sync/context-sync/utils/maintenance.py",
-      "line": 49,
-      "type": "function",
-      "description": "Find orphaned files (files that exist but shouldn't)."
-    },
-    {
-      "name": "main",
-      "file": "host-services/sync/context-sync/utils/maintenance.py",
-      "line": 95,
-      "type": "function",
-      "description": "Main maintenance function."
-    },
-    {
-      "name": "search_documentation",
-      "file": "host-services/sync/context-sync/utils/search.py",
-      "line": 13,
-      "type": "function",
-      "description": "Search through synced documentation."
-    },
-    {
-      "name": "list_spaces",
-      "file": "host-services/sync/context-sync/utils/search.py",
-      "line": 78,
-      "type": "function",
-      "description": "List all available spaces."
     }
   ],
   "summary": {
-    "total_python_files": 86,
+    "total_python_files": 87,
     "total_classes": 252,
-    "total_functions": 166,
+    "total_functions": 174,
     "patterns_detected": [
       "config",
       "sync",

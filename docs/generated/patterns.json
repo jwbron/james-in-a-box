@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T07:26:55.356470+00:00",
+  "generated": "2025-11-28T08:05:54.957110+00:00",
   "project": "james-in-a-box",
   "patterns": {
     "config": {
@@ -27,9 +27,9 @@
         "tests/context_sync/test_github_sync.py:468",
         "tests/context_sync/test_jira_connector.py:42",
         "tests/context_sync/test_utilities.py:10",
+        "tests/host_services/test_github_watcher.py:29",
         "tests/host_services/test_slack_notifier.py:248",
         "tests/host_services/test_slack_receiver.py:181",
-        "tests/host_services/test_github_watcher.py:29",
         "tests/jib/test_docker_setup.py:271",
         "tests/jib/test_jib.py:80"
       ],
