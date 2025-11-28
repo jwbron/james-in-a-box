@@ -1,9 +1,9 @@
 {
-  "generated": "2025-11-28T09:27:44.704983+00:00",
+  "generated": "2025-11-28T09:48:35.712748+00:00",
   "project": "james-in-a-box",
   "internal": {
-    "host-services/analysis/codebase-analyzer/codebase-analyzer.py": [
-      "claude"
+    "host-services/analysis/spec-enricher/spec-enricher.py": [
+      "enrichment"
     ],
     "host-services/slack/slack-receiver/slack-receiver.py": [
       "host_command_handler"
@@ -70,8 +70,14 @@
     "jib-container/jib-tasks/jira/jira-processor.py": [
       "claude"
     ],
+    "jib-container/jib-tasks/slack/incoming-processor.py": [
+      "enrichment"
+    ],
     "shared/claude/__init__.py": [
       "runner"
+    ],
+    "shared/enrichment/__init__.py": [
+      "enricher"
     ],
     "shared/notifications/__init__.py": [
       "base",
@@ -93,6 +99,9 @@
     ],
     "tests/shared/test_notifications_types.py": [
       "notifications.types"
+    ],
+    "tests/spec_enricher/test_spec_enricher.py": [
+      "enrichment"
     ]
   },
   "external": {
