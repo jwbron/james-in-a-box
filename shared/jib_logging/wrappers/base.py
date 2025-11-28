@@ -106,6 +106,7 @@ class ToolWrapper:
         try:
             result = subprocess.run(
                 command,
+                check=False,
                 capture_output=capture_output,
                 text=True,
                 timeout=timeout,
@@ -132,7 +133,7 @@ class ToolWrapper:
 
             return tool_result
 
-        except subprocess.TimeoutExpired as e:
+        except subprocess.TimeoutExpired:
             duration_ms = (time.perf_counter() - start_time) * 1000
             self._log_timeout(command, duration_ms, timeout)
             raise

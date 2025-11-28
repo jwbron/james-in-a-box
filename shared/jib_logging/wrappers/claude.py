@@ -6,7 +6,6 @@ This is a basic wrapper for Phase 2 - full model output capture is planned for P
 """
 
 import json
-import re
 from typing import Any
 
 from .base import ToolResult, ToolWrapper
@@ -161,7 +160,9 @@ class ClaudeWrapper(ToolWrapper):
                 if prompt_idx + 1 < len(args):
                     prompt = args[prompt_idx + 1]
                     # Truncate long prompts for logging
-                    context["prompt_preview"] = prompt[:200] + "..." if len(prompt) > 200 else prompt
+                    context["prompt_preview"] = (
+                        prompt[:200] + "..." if len(prompt) > 200 else prompt
+                    )
                     context["prompt_length"] = len(prompt)
             except (ValueError, IndexError):
                 pass
