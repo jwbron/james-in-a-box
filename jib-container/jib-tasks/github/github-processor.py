@@ -398,6 +398,43 @@ Begin analysis now.
     return prompt
 
 
+def check_existing_review(repo: str, pr_num: int, bot_username: str = "james-in-a-box") -> bool:
+    """Check if a review from the bot already exists on this PR.
+
+    Returns True if a review already exists (should skip), False otherwise.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "view", str(pr_num), "--repo", repo, "--json", "reviews"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+        )
+        reviews_data = json.loads(result.stdout)
+        reviews = reviews_data.get("reviews", [])
+
+        # Check if any review is from the bot
+        bot_variants = {
+            bot_username.lower(),
+            f"{bot_username.lower()}[bot]",
+            f"app/{bot_username.lower()}",
+        }
+
+        for review in reviews:
+            author = review.get("author", {}).get("login", "").lower()
+            if author in bot_variants:
+                return True
+
+        return False
+    except Exception as e:
+        print(f"  Warning: Could not check for existing reviews: {e}")
+        # On error, proceed with review to avoid missing PRs
+        return False
+
+
 def handle_review_request(context: dict):
     """Handle new PR review request by invoking Claude for code review.
 
@@ -419,6 +456,11 @@ def handle_review_request(context: dict):
     author = context.get("author", "unknown")
 
     print(f"Handling review request for PR #{pr_num} by @{author} in {repo}")
+
+    # Idempotency check: skip if we've already reviewed this PR
+    if check_existing_review(repo, pr_num):
+        print(f"  PR #{pr_num} already has a review from jib, skipping duplicate review")
+        return
 
     # Build prompt for Claude
     prompt = build_review_prompt(context)
