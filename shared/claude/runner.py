@@ -100,7 +100,7 @@ def run_claude(
 
     try:
         result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions", "--no-auto-update"],
+            ["claude", "--dangerously-skip-permissions"],
             check=False,
             input=prompt,
             text=True,
