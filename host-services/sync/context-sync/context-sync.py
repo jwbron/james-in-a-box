@@ -19,11 +19,10 @@ load_env_file()
 # Add shared directory to path for jib_logging
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 
-from jib_logging import get_logger
-
 # Import connectors
 from connectors.confluence.connector import ConfluenceConnector
 from connectors.jira.connector import JIRAConnector
+from jib_logging import get_logger
 
 
 # Initialize logger
