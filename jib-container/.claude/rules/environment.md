@@ -45,6 +45,14 @@ Do NOT assume owner from context (e.g., don't assume `Khan/` just because you're
 
 **Authentication**: Configured automatically via `GITHUB_TOKEN` environment variable.
 
+**CRITICAL - Git Remote URLs:**
+- **NEVER** modify git remote URLs using `git remote set-url` or similar commands
+- **NEVER** embed tokens in git remote URLs (e.g., `https://token@github.com/...`)
+- Remote URLs are managed by the HOST and must remain clean HTTPS URLs
+- You have `GITHUB_TOKEN` as an environment variable for the GitHub MCP server
+- The MCP server handles all GitHub authentication - you don't need to configure git credentials
+- If you see a remote URL with an embedded token, DO NOT modify it - report it to the user
+
 ## Capabilities
 
 **CAN do:**

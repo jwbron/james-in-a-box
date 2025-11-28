@@ -131,6 +131,13 @@ export PYTHONDONTWRITEBYTECODE=1
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.name "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.org"
 
+# CRITICAL: Prevent modification of git remote URLs
+# Container has GITHUB_TOKEN for MCP server, but should NEVER embed it in git remotes
+# Remote URLs are managed by the HOST and should not be modified by the container
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global advice.pushUpdateRejected false
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper ""
+# Set helper to empty string - container should NOT use credential helpers that modify remotes
+
 # Also fix local repo configs in case they were corrupted with Claude's authorship
 # Local configs override global, so we need to ensure they use jib too
 if [ -d "${USER_HOME}/.git-main" ]; then
@@ -140,10 +147,22 @@ if [ -d "${USER_HOME}/.git-main" ]; then
             # Use git config to set local repo identity (will update the config file)
             git config -f "$repo_config" user.name "jib"
             git config -f "$repo_config" user.email "jib@khan.org"
+
+            # CRITICAL: Verify remote URLs don't have embedded tokens
+            # If they do, strip them out (tokens belong in env vars, not URLs)
+            remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
+            if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
+                echo "⚠ WARNING: Found token in git remote URL, cleaning it up..."
+                # Extract the GitHub repo path (owner/repo.git)
+                clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
+                git config -f "$repo_config" remote.origin.url "$clean_url"
+                echo "  Cleaned: $remote_url -> $clean_url"
+            fi
         fi
     done
 fi
 echo "✓ Git configured to commit as jib <jib@khan.org>"
+echo "✓ Git credential helper disabled (container uses MCP, not git credentials)"
 
 # Fix worktree .git files to point to mounted git directories
 # Worktrees have .git files that reference the main repo's .git directory
@@ -373,6 +392,35 @@ echo "  - Context analysis: Triggered after context-sync"
 echo "  - GitHub analysis: Triggered after github-sync"
 echo "  - Message processing: Triggered by slack-receiver"
 echo ""
+
+# Setup cleanup trap for container shutdown
+cleanup_on_exit() {
+    echo ""
+    echo "🧹 Cleaning up on container exit..."
+
+    # Check and clean git remote URLs one final time
+    if [ -d "${USER_HOME}/.git-main" ]; then
+        for repo_config in "${USER_HOME}/.git-main"/*/config; do
+            if [ -f "$repo_config" ]; then
+                remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
+                if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
+                    echo "⚠ WARNING: Git remote URL was modified during session!"
+                    echo "  Found token in: $repo_config"
+                    # Clean it up
+                    clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
+                    git config -f "$repo_config" remote.origin.url "$clean_url"
+                    echo "  ✓ Cleaned: $remote_url -> $clean_url"
+                    echo "  Note: This should not happen. Git remote URLs should never contain tokens."
+                fi
+            fi
+        done
+    fi
+
+    echo "✓ Cleanup complete"
+}
+
+# Register cleanup trap
+trap cleanup_on_exit EXIT SIGTERM SIGINT
 
 # Drop privileges and start shell or run claude
 if [ $# -eq 0 ]; then
