@@ -665,7 +665,7 @@ PR created: #142 "Fix documentation drift in auth and testing docs"
 
 ## Migration Strategy
 
-### Phase 1: Index Structure (Week 1-2)
+### Phase 1: Index Structure
 
 1. Create `docs/index.md` navigation index
 2. Refactor CLAUDE.md to be index-focused
@@ -674,7 +674,9 @@ PR created: #142 "Fix documentation drift in auth and testing docs"
 
 **Success Criteria:** Agent can navigate to relevant docs using index
 
-### Phase 2: Codebase Index Generation (Week 3-4)
+### Phase 2: Codebase Index Generation
+
+**Dependencies:** Phase 1 (index structure in place)
 
 1. Implement codebase analyzer using tree-sitter
 2. Generate initial `codebase.json`
@@ -683,7 +685,9 @@ PR created: #142 "Fix documentation drift in auth and testing docs"
 
 **Success Criteria:** Machine-readable codebase index exists and updates automatically
 
-### Phase 3: Spec Enrichment (Week 5-6)
+### Phase 3: Spec Enrichment
+
+**Dependencies:** Phase 1 and Phase 2 (indexes available for linking)
 
 1. Implement spec enricher script
 2. Integrate with task ingestion workflow
@@ -692,7 +696,9 @@ PR created: #142 "Fix documentation drift in auth and testing docs"
 
 **Success Criteria:** Specs automatically include relevant documentation links
 
-### Phase 4: LLM Documentation Authoring (Week 7-8)
+### Phase 4: LLM Documentation Authoring
+
+**Dependencies:** Phase 2 (codebase index for analysis)
 
 1. Implement multi-agent documentation pipeline
 2. Create pattern extraction workflow
@@ -701,7 +707,9 @@ PR created: #142 "Fix documentation drift in auth and testing docs"
 
 **Success Criteria:** Agent generates and maintains documentation with human review
 
-### Phase 5: External Best Practices (Week 9-10)
+### Phase 5: External Best Practices
+
+**Dependencies:** Phase 4 (documentation authoring pipeline established)
 
 1. Implement web research workflow
 2. Create best practice research prompts
