@@ -71,6 +71,46 @@ cd host-services/analysis/index-generator
 ./setup.sh enable
 ```
 
+## Documentation Authoring (Phase 4)
+
+Generate documentation from detected patterns:
+
+```bash
+# List available topics
+bin/generate-docs --list-topics
+
+# Generate status quo docs for a pattern
+bin/generate-docs --topic notification --type status-quo
+
+# Generate all pattern documentation
+bin/generate-docs --all
+
+# Preview without saving
+bin/generate-docs --all --dry-run
+```
+
+Check for documentation drift:
+
+```bash
+# Check all docs for stale references
+bin/check-doc-drift
+
+# Check specific doc
+bin/check-doc-drift --doc docs/architecture/README.md
+
+# Include fix suggestions
+bin/check-doc-drift --suggest-fixes
+
+# JSON output for automation
+bin/check-doc-drift --json
+```
+
+Enable weekly auto-generation:
+
+```bash
+bin/setup-doc-generator enable
+```
+
 ## Generation Schedule
 
 | Index | Frequency | Trigger |
@@ -86,7 +126,8 @@ See [ADR: LLM Documentation Index Strategy](../adr/ADR-LLM-Documentation-Index-S
 
 **Phase 1 (Complete):** Directory structure, navigation index, llms.txt
 **Phase 2 (Complete):** Codebase analyzer with pattern extraction and dependency analysis
-**Phase 3 (Planned):** Spec enrichment workflow
+**Phase 3 (Complete):** Spec enrichment workflow
+**Phase 4 (Complete):** LLM documentation authoring and drift detection
 
 ---
 
