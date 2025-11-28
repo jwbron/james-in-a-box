@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T17:54:57.005492+00:00",
+  "generated": "2025-11-28T18:18:19.923542+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -663,30 +663,53 @@
     {
       "name": "DocContext",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 39,
+      "line": 50,
       "type": "class",
       "description": "Context gathered by the Context Agent."
     },
     {
       "name": "DraftDoc",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 51,
+      "line": 62,
       "type": "class",
       "description": "Documentation draft from the Draft Agent."
     },
     {
       "name": "ReviewResult",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 62,
+      "line": 73,
       "type": "class",
       "description": "Review feedback from the Review Agent."
     },
     {
+      "name": "ExternalResearch",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 82,
+      "type": "class",
+      "description": "External research results from the External Validation Agent."
+    },
+    {
+      "name": "ExternalValidator",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 94,
+      "type": "class",
+      "description": "External Validation Agent - Researches best practices from authoritative sources.",
+      "methods": [
+        "__init__",
+        "research",
+        "_normalize_topic",
+        "_enrich_from_sources",
+        "_load_cache",
+        "_save_cache",
+        "generate_research_prompt"
+      ]
+    },
+    {
       "name": "DocumentationGenerator",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 70,
+      "line": 394,
       "type": "class",
-      "description": "Multi-agent documentation generation pipeline.",
+      "description": "Full 6-agent documentation generation pipeline.",
       "methods": [
         "__init__",
         "_load_json",
@@ -695,7 +718,7 @@
         "_topic_matches",
         "generate_draft",
         "_draft_status_quo",
-        "_draft_best_practice",
+        "_draft_best_practice_skeleton",
         "_draft_pattern",
         "review_draft"
       ]
@@ -703,7 +726,7 @@
     {
       "name": "main",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 569,
+      "line": 1046,
       "type": "function",
       "description": "CLI entry point."
     },
@@ -749,91 +772,98 @@
     {
       "name": "load_config",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 63,
+      "line": 68,
       "type": "function",
       "description": "Load repository configuration."
     },
     {
       "name": "load_state",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 83,
+      "line": 88,
       "type": "function",
       "description": "Load previous notification state to avoid duplicate processing."
     },
     {
       "name": "save_state",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 106,
+      "line": 113,
       "type": "function",
       "description": "Save notification state."
     },
     {
       "name": "gh_json",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 114,
+      "line": 121,
       "type": "function",
       "description": "Run gh CLI command and return JSON output with rate limit handling."
     },
     {
       "name": "gh_text",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 161,
+      "line": 168,
       "type": "function",
       "description": "Run gh CLI command and return text output with rate limit handling."
     },
     {
       "name": "invoke_jib",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 206,
+      "line": 213,
       "type": "function",
       "description": "Invoke jib container with context via jib --exec."
     },
     {
       "name": "check_pr_for_failures",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 272,
+      "line": 279,
       "type": "function",
       "description": "Check a PR for check failures."
     },
     {
       "name": "fetch_check_logs",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 371,
+      "line": 378,
       "type": "function",
       "description": "Fetch full logs for a failed check."
     },
     {
       "name": "check_pr_for_comments",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 398,
+      "line": 405,
       "type": "function",
       "description": "Check a PR for new comments from others that need response."
     },
     {
+      "name": "check_pr_for_merge_conflict",
+      "file": "host-services/analysis/github-watcher/github-watcher.py",
+      "line": 525,
+      "type": "function",
+      "description": "Check a PR for merge conflicts."
+    },
+    {
       "name": "check_prs_for_review",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 518,
+      "line": 586,
       "type": "function",
       "description": "Check for PRs from others that need review."
     },
     {
       "name": "utc_now_iso",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 599,
+      "line": 667,
       "type": "function",
       "description": "Get current UTC time in ISO format with Z suffix."
     },
     {
       "name": "get_since_timestamp",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 610,
+      "line": 678,
       "type": "function",
       "description": "Get ISO timestamp for 'since' queries based on last run START time."
     },
     {
       "name": "main",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 622,
+      "line": 690,
       "type": "function",
       "description": "Main entry point - scan configured repos and trigger jib as needed."
     },
@@ -1237,33 +1267,12 @@
       "line": 13,
       "type": "function",
       "description": "Get space IDs for configured spaces."
-    },
-    {
-      "name": "find_git_projects",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 13,
-      "type": "function",
-      "description": "Find all git projects under the given path."
-    },
-    {
-      "name": "ensure_gitignore_pattern",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 38,
-      "type": "function",
-      "description": "Ensure the symlink pattern is in the global gitignore."
-    },
-    {
-      "name": "ensure_cursor_rule",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 61,
-      "type": "function",
-      "description": "Ensure Cursor rule exists to guide AI behavior with confluence-docs directories."
     }
   ],
   "summary": {
     "total_python_files": 95,
-    "total_classes": 267,
-    "total_functions": 176,
+    "total_classes": 270,
+    "total_functions": 178,
     "patterns_detected": [
       "config",
       "connector",
