@@ -6,18 +6,37 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 
 An ADR captures the context, decision, and consequences of an architectural choice. They help future contributors understand why the system is designed the way it is.
 
+## Directory Structure
+
+ADRs are organized by implementation status:
+
+- **`in-progress/`** - ADRs actively being implemented
+- **`implemented/`** - ADRs fully implemented and in production
+- **`not-implemented/`** - ADRs proposed but not yet started
+
 ## ADR Index
 
-| ADR | Status | Summary |
-|-----|--------|--------|
-| [Autonomous Software Engineer](ADR-Autonomous-Software-Engineer.md) | Accepted | Core system architecture, security model, operating principles |
-| [LLM Documentation Index Strategy](ADR-LLM-Documentation-Index-Strategy.md) | Proposed | Strategy for LLM-navigable documentation |
-| [Context Sync Strategy](ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Accepted | Custom sync vs MCP for Confluence/JIRA/GitHub |
-| [Slack Integration Strategy](ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Accepted | Custom Slack integration vs MCP server |
-| [Message Queue Integration](ADR-Message-Queue-Slack-Integration.md) | Proposed | GCP Pub/Sub for Slack message queuing |
-| [Slack Bot GCP Integration](ADR-Slack-Bot-GCP-Integration.md) | Proposed | GCP-hosted Slack bot architecture |
-| [GCP Deployment](ADR-GCP-Deployment-Terraform.md) | Proposed | Terraform-based GCP deployment |
-| [Internet Tool Access Lockdown](ADR-Internet-Tool-Access-Lockdown.md) | Accepted | Security restrictions on agent network access |
+### In Progress
+
+| ADR | Summary |
+|-----|---------|
+| [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
+| [Context Sync Strategy](in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Custom sync vs MCP for Confluence/JIRA/GitHub |
+| [LLM Documentation Index Strategy](in-progress/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation |
+
+### Implemented
+
+*No ADRs have been fully implemented yet.*
+
+### Not Implemented
+
+| ADR | Summary |
+|-----|---------|
+| [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
+| [Internet Tool Access Lockdown](not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
+| [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
+| [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
+| [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
 
 ## ADR Template
 
@@ -28,6 +47,8 @@ When creating a new ADR, include:
 3. **Context** - What problem are we solving?
 4. **Decision** - What did we decide?
 5. **Consequences** - What are the trade-offs?
+
+Place new ADRs in `not-implemented/` until work begins.
 
 ## See Also
 
