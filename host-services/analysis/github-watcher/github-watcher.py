@@ -4,7 +4,7 @@ GitHub Watcher - Host-side service that monitors GitHub and triggers jib contain
 
 This service runs on the host (NOT in the container) and:
 1. Queries GitHub directly via gh CLI for PR/issue status
-2. Detects check failures, new comments, and review requests
+2. Detects check failures, merge conflicts, new comments, and review requests
 3. Triggers jib container via `jib --exec github-processor.py --context <json>`
 
 The container should ONLY be called via `jib --exec`. No watching/polling logic lives in the container.
@@ -15,10 +15,12 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 
 ### Which PRs are monitored:
 1. **User's PRs** (authored by `github_username` from config):
+   - Merge conflicts: Detects and resolves conflicts with base branch
    - Check failures: Detects and triggers fixes for failing CI checks
    - Comments: Responds to comments from others (not from bot)
 
 2. **Bot's PRs** (authored by `bot_username[bot]`):
+   - Merge conflicts: Detects and resolves conflicts with base branch
    - Check failures: Detects and triggers fixes for failing CI checks
    - Comments: Responds to comments from the user and others (not from bot itself)
 
@@ -27,16 +29,23 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 - Comments from the `bot_username` and common bots (github-actions, dependabot) are IGNORED
 - Only comments newer than the last watcher run are processed (to avoid re-processing)
 
-### Check failure retry behavior:
+### Merge conflict handling:
+- PRs with mergeable state "CONFLICTING" are detected
+- Claude merges the base branch and resolves conflicts
+- Each (repo, PR, commit SHA) combination is tracked to avoid duplicate processing
+- Pushing a new commit resets the processed state for conflict detection
+
+### Check failure handling:
 - Each unique (repo, PR, commit SHA, failing check names) combination is tracked
 - If a commit's failures have been processed, they won't be retried for that same commit
 - Pushing a new commit resets the processed state, allowing fresh retry attempts
+- Claude first merges main and runs checks locally before attempting fixes
 
 ### What happens when jib is invoked:
-- jib runs Claude with the task context (check failures, comments, or review request)
-- Claude analyzes the issue and takes action (fix code, respond to comments, etc.)
+- jib runs Claude with the task context (merge conflicts, check failures, comments, or review request)
+- Claude analyzes the issue and takes action (resolve conflicts, fix code, respond to comments, etc.)
 - Claude uses `gh pr comment` to post responses
-- Claude commits and pushes fixes for check failures
+- Claude commits and pushes fixes for check failures and conflict resolutions
 
 ### Configuration (config/repositories.yaml):
 - `github_username`: Your GitHub username (for identifying your PRs)
@@ -84,6 +93,7 @@ def load_state() -> dict:
                 state.setdefault("processed_failures", {})
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
+                state.setdefault("processed_conflicts", {})
                 state.setdefault("last_run_start", None)
                 return state
         except Exception:
@@ -92,6 +102,7 @@ def load_state() -> dict:
         "processed_failures": {},
         "processed_comments": {},
         "processed_reviews": {},
+        "processed_conflicts": {},
         "last_run_start": None,
     }
 
@@ -458,6 +469,68 @@ def check_pr_for_comments(
     }
 
 
+def check_pr_for_merge_conflicts(repo: str, pr_data: dict, state: dict) -> dict | None:
+    """Check a PR for merge conflicts.
+
+    Returns context dict if conflicts found and not already processed.
+    Uses GitHub's GraphQL API to get mergeable state.
+    """
+    pr_num = pr_data["number"]
+    head_sha = pr_data.get("headRefOid")
+
+    # Get PR mergeable state via GraphQL (REST API requires waiting for computation)
+    # The REST API's "mergeable" field can be null while GitHub computes it
+    pr_details = gh_json(
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "number,title,url,headRefName,baseRefName,mergeable,mergeStateStatus,body",
+        ]
+    )
+
+    if pr_details is None:
+        return None
+
+    # Check mergeable state
+    # mergeable can be: "MERGEABLE", "CONFLICTING", "UNKNOWN"
+    # mergeStateStatus gives more detail: "CLEAN", "DIRTY", "UNKNOWN", "UNSTABLE", "HAS_HOOKS", "BLOCKED"
+    mergeable = pr_details.get("mergeable", "")
+    merge_state = pr_details.get("mergeStateStatus", "")
+
+    # Only process if explicitly conflicting
+    if mergeable != "CONFLICTING":
+        if mergeable == "UNKNOWN":
+            print(f"    PR #{pr_num}: Merge state unknown (GitHub still computing)")
+        return None
+
+    # Create signature based on head SHA (new commits should trigger re-check)
+    conflict_signature = f"{repo}-{pr_num}-{head_sha}:conflict"
+
+    if conflict_signature in state.get("processed_conflicts", {}):
+        processed_at = state["processed_conflicts"].get(conflict_signature, "unknown")
+        print(f"    PR #{pr_num}: Merge conflicts already processed at {processed_at}")
+        return None
+
+    print(f"  PR #{pr_num}: Has merge conflicts (state: {merge_state})")
+
+    return {
+        "type": "merge_conflict",
+        "repository": repo,
+        "pr_number": pr_num,
+        "pr_title": pr_data.get("title", ""),
+        "pr_url": pr_data.get("url", ""),
+        "pr_branch": pr_data.get("headRefName", ""),
+        "base_branch": pr_details.get("baseRefName", "main"),
+        "pr_body": pr_details.get("body", ""),
+        "head_sha": head_sha,
+        "conflict_signature": conflict_signature,
+    }
+
+
 def check_prs_for_review(
     repo: str, state: dict, bot_username: str, since_timestamp: str | None = None
 ) -> list[dict]:
@@ -629,6 +702,14 @@ def main():
             print(f"  Found {len(my_prs)} open PR(s) authored by {github_username}")
 
             for pr in my_prs:
+                # Check for merge conflicts first (higher priority)
+                conflict_ctx = check_pr_for_merge_conflicts(repo, pr, state)
+                if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
+                    state.setdefault("processed_conflicts", {})[
+                        conflict_ctx["conflict_signature"]
+                    ] = utc_now_iso()
+                    tasks_queued += 1
+
                 # Check for failures
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):
@@ -669,6 +750,14 @@ def main():
             print(f"  Found {len(bot_prs)} open PR(s) authored by {bot_author}")
 
             for pr in bot_prs:
+                # Check for merge conflicts first (higher priority)
+                conflict_ctx = check_pr_for_merge_conflicts(repo, pr, state)
+                if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
+                    state.setdefault("processed_conflicts", {})[
+                        conflict_ctx["conflict_signature"]
+                    ] = utc_now_iso()
+                    tasks_queued += 1
+
                 # Check for failures on bot's PRs
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):

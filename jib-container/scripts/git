@@ -1,0 +1,102 @@
+#!/bin/bash
+#
+# Git wrapper for jib container
+# Blocks commands that modify remote repos and directs to GitHub MCP instead.
+#
+# This wrapper is placed in PATH before /usr/bin/git to intercept dangerous commands.
+# Safe local operations (commit, add, diff, log, etc.) pass through to real git.
+#
+
+REAL_GIT=/usr/bin/git
+
+# Function to show MCP usage message
+show_mcp_message() {
+    local operation="$1"
+    cat >&2 << 'EOF'
+
+================================================================================
+  GIT REMOTE OPERATION BLOCKED
+================================================================================
+
+This container uses the GitHub MCP server for all remote repository operations.
+Direct git push/remote commands are disabled to prevent credential issues.
+
+EOF
+    case "$operation" in
+        push)
+            cat >&2 << 'EOF'
+For PUSHING changes, use GitHub MCP:
+
+  1. Commit locally (allowed):
+     git add <files>
+     git commit -m "Your message"
+
+  2. Push via MCP (use one of these):
+     - mcp__github__push_files(owner, repo, branch, files, message)
+     - mcp__github__create_or_update_file(owner, repo, path, content, message, branch)
+
+  3. Or create a PR directly via MCP:
+     - mcp__github__create_pull_request(owner, repo, title, head, base, body)
+
+EOF
+            ;;
+        remote)
+            cat >&2 << 'EOF'
+Git remote URLs are managed by the HOST and must not be modified.
+
+If you need to interact with a different repository:
+  - Use GitHub MCP tools with the appropriate owner/repo parameters
+  - MCP handles authentication automatically via GITHUB_TOKEN
+
+EOF
+            ;;
+    esac
+    cat >&2 << 'EOF'
+For more info, see ~/CLAUDE.md section on GitHub MCP Server.
+================================================================================
+
+EOF
+    return 1
+}
+
+# Parse the git command
+cmd=""
+for arg in "$@"; do
+    # Skip flags (start with -)
+    if [[ "$arg" != -* ]]; then
+        cmd="$arg"
+        break
+    fi
+done
+
+case "$cmd" in
+    push)
+        show_mcp_message "push"
+        exit 1
+        ;;
+    remote)
+        # Check for subcommands that modify remotes
+        shift  # Remove 'remote' from args
+        subcmd=""
+        for arg in "$@"; do
+            if [[ "$arg" != -* ]]; then
+                subcmd="$arg"
+                break
+            fi
+        done
+        case "$subcmd" in
+            set-url|add|remove|rm|rename|set-head|set-branches|prune)
+                show_mcp_message "remote"
+                exit 1
+                ;;
+            *)
+                # Allow read-only remote commands: show, get-url, -v
+                exec "$REAL_GIT" remote "$@"
+                ;;
+        esac
+        ;;
+    *)
+        # All other commands pass through
+        exec "$REAL_GIT" "$@"
+        ;;
+esac

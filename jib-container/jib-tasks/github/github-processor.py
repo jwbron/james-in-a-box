@@ -179,14 +179,17 @@ def build_check_failure_prompt(context: dict) -> str:
                 prompt += f"- `make {t}`\n"
         prompt += "\n"
 
-    prompt += f"""## CRITICAL: Branch Verification (MUST DO FIRST)
+    prompt += f"""## CRITICAL: Branch Verification and Setup (MUST DO FIRST)
 
 **Target PR Branch**: `{pr_branch}`
+**Base Branch**: `{base_branch}`
 
 Before making ANY changes, you MUST:
+
+### Step 1: Checkout PR branch
 ```bash
 cd ~/khan/{repo_name}
-git fetch origin {pr_branch}
+git fetch origin {pr_branch} {base_branch}
 git checkout {pr_branch}
 git branch --show-current  # VERIFY this shows: {pr_branch}
 ```
@@ -195,20 +198,45 @@ git branch --show-current  # VERIFY this shows: {pr_branch}
 If you commit without checking out `{pr_branch}` first, your changes will go to the WRONG branch
 and may contaminate other PRs. This has caused issues before.
 
+### Step 2: Pull in latest {base_branch} (IMPORTANT)
+The failures may be due to the PR branch being out of sync with {base_branch}. Merge it in:
+```bash
+git merge origin/{base_branch} --no-edit
+```
+
+If there are merge conflicts:
+- Resolve them first (see files with `git diff --name-only --diff-filter=U`)
+- Complete the merge before proceeding
+
+### Step 3: Run checks locally BEFORE attempting fixes
+This helps identify whether failures are:
+- Real issues in the PR code (need fixing)
+- Flaky tests (may pass on retry)
+- Issues introduced by merging {base_branch} (need careful resolution)
+
+```bash
+make lint   # Check lint status
+make test   # Run tests
+```
+
+Review the output carefully. Note which failures match the CI logs vs new/different failures.
+
 ## Your Task
 
 1. **CHECKOUT PR BRANCH FIRST** (see above) - do NOT skip this step
 2. **Verify branch**: Run `git branch --show-current` and confirm it shows `{pr_branch}`
-3. **Analyze** the failures - understand root cause from logs
-4. **Fix** - implement fixes on the PR branch:
+3. **Merge {base_branch}**: Pull in latest changes from {base_branch}
+4. **Run checks locally**: Execute lint and test commands to reproduce failures
+5. **Analyze** the failures - compare local output with CI logs
+6. **Fix** - implement fixes on the PR branch:
    - For lint errors: Try `make fix` or `make lint-fix` first (auto-fix)
    - For test failures: Examine and fix tests
    - For build errors: Check dependencies, imports
-5. **Verify fixes** - Run `make lint` and `make test` to verify
-6. **Verify branch again**: Run `git branch --show-current` - confirm still on `{pr_branch}`
-7. **Commit** - Commit fixes with clear message
-8. **Push** - Push to the PR branch: `git push origin {pr_branch}`
-9. **Comment** - Add PR comment explaining fixes
+7. **Verify fixes** - Run `make lint` and `make test` again to confirm fixes work
+8. **Verify branch again**: Run `git branch --show-current` - confirm still on `{pr_branch}`
+9. **Commit** - Commit fixes with clear message
+10. **Push** - Push to the PR branch: `git push origin {pr_branch}`
+11. **Comment** - Add PR comment explaining fixes
 
 Begin by checking out the PR branch now.
 """
