@@ -348,6 +348,7 @@ Monthly, review all reinforcement records to:
 - [CLAUDE.md](../../CLAUDE.md) - jib operating instructions
 - [ADR-Autonomous-Software-Engineer.md](../in-progress/ADR-Autonomous-Software-Engineer.md) - jib architecture
 - [ADR-Standardized-Logging-Interface.md](./ADR-Standardized-Logging-Interface.md) - Structured logging is essential for detecting and analyzing breakages
+- [ADR-LLM-Inefficiency-Reporting.md](../ADR-LLM-Inefficiency-Reporting.md) - Complementary self-improvement mechanism; Inefficiency learns from processing patterns, Reinforcement learns from breakages
 
 ## Revision History
 
