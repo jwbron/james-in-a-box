@@ -169,7 +169,7 @@ def install_python(distro: str) -> None:
     print(f"Python 3.13 installed at: {python_path}")
 
     # Create symlinks so python3 and python point to 3.13
-    python_dir = Path(python_path).parent
+    Path(python_path).parent
     run(["ln", "-sf", python_path, "/usr/local/bin/python3.13"])
     run(["ln", "-sf", python_path, "/usr/local/bin/python3"])
     run(["ln", "-sf", python_path, "/usr/local/bin/python"])
