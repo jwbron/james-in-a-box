@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:34:51.514937+00:00",
+  "generated": "2025-11-28T09:50:46.756206+00:00",
   "project": "james-in-a-box",
   "patterns": {
     "config": {
@@ -12,7 +12,7 @@
         "config/repo_config.py:146",
         "config/repo_config.py:37",
         "config/repo_config.py:66",
-        "host-services/analysis/github-watcher/github-watcher.py:63",
+        "host-services/analysis/github-watcher/github-watcher.py:68",
         "host-services/sync/context-sync/connectors/confluence/config.py:8",
         "host-services/sync/context-sync/connectors/jira/config.py:8",
         "jib-container/docker-setup.py:450",
