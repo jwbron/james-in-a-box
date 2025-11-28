@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:34:51.514937+00:00",
+  "generated": "2025-11-28T09:27:44.704983+00:00",
   "project": "james-in-a-box",
   "patterns": {
     "config": {
@@ -66,7 +66,7 @@
       "examples": [
         "host-services/slack/slack-receiver/host_command_handler.py:43",
         "jib-container/jib-tasks/github/command-handler.py:16",
-        "jib-container/jib-tasks/slack/incoming-processor.py:87",
+        "jib-container/jib-tasks/slack/incoming-processor.py:88",
         "jib-container/jib-tools/github-app-token.py:101",
         "tests/host_services/test_utilities.py:16",
         "tests/host_services/test_utilities.py:64",
@@ -92,7 +92,7 @@
         "host-services/slack/slack-notifier/slack-notifier.py:40",
         "host-services/slack/slack-receiver/slack-receiver.py:36",
         "jib-container/jib-tasks/github/github-processor.py:36",
-        "jib-container/jib-tasks/slack/incoming-processor.py:87",
+        "jib-container/jib-tasks/slack/incoming-processor.py:88",
         "shared/notifications/__init__.py:45",
         "shared/notifications/base.py:13",
         "shared/notifications/slack.py:27",
@@ -102,7 +102,8 @@
         "shared/notifications/types.py:23",
         "shared/notifications/types.py:35",
         "shared/notifications/types.py:56",
-        "tests/conftest.py:47",
+        "tests/conftest.py:48",
+        "tests/host_services/test_codebase_analyzer.py:386",
         "tests/host_services/test_conversation_analyzer.py:379",
         "tests/host_services/test_slack_notifier.py:22",
         "tests/host_services/test_slack_notifier.py:248",
@@ -138,8 +139,8 @@
     "processor": {
       "description": "Data processing pipelines",
       "examples": [
-        "jib-container/jib-tasks/slack/incoming-processor.py:122",
-        "jib-container/jib-tasks/slack/incoming-processor.py:473"
+        "jib-container/jib-tasks/slack/incoming-processor.py:251",
+        "jib-container/jib-tasks/slack/incoming-processor.py:608"
       ],
       "conventions": [
         "Processors transform data from one format to another",
