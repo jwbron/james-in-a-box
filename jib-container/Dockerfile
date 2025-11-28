@@ -343,7 +343,7 @@ fi
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
 # Also add jib-container/scripts to PATH
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
-alias claude='claude --dangerously-skip-permissions'
+alias claude='claude --dangerously-skip-permissions --no-auto-update'
 export PS1='\[\033[01;32m\]\u@sandboxed\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
 export PATH="${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
 BASHRC
@@ -518,7 +518,7 @@ if [ $# -eq 0 ]; then
     # Start in khan directory
     cd "${USER_HOME}/khan" 2>/dev/null || cd "${USER_HOME}"
     # Auto-start Claude Code (bypasses permissions since we're in a sandbox)
-    exec gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude --dangerously-skip-permissions
+    exec gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude --dangerously-skip-permissions --no-auto-update
 else
     exec gosu "${RUNTIME_UID}:${RUNTIME_GID}" "$@"
 fi
