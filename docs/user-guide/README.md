@@ -33,20 +33,20 @@ bin/jib
 
 **Check Task Status:**
 ```bash
-bd list --status in-progress    # Current tasks
-bd list                         # All tasks
+bd --allow-stale list --status in_progress    # Current tasks
+bd --allow-stale list                         # All tasks
 ```
 
 ## Workflow Overview
 
 1. **Start container**: `bin/jib`
-2. **Check for tasks**: `bd list` or check `~/sharing/incoming/`
+2. **Check for tasks**: `bd --allow-stale list` or check `~/sharing/incoming/`
 3. **Load context**: `/load-context <project-name>`
 4. **Work on task**: Claude works in isolated git worktree
 5. **Commit changes**: Git commit to temp branch
 6. **Create PR**: Use GitHub MCP `create_pull_request`
 7. **Save learnings**: `/save-context <project-name>`
-8. **Complete task**: `bd update <task-id> --status done`
+8. **Complete task**: `bd --allow-stale update <task-id> --status closed`
 
 ## Key Directories
 

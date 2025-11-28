@@ -340,24 +340,24 @@ Reviews are sent as Slack notifications with prioritized findings (high/medium/l
 cd ~/beads
 
 # Create task
-bd add "Implement OAuth2 authentication" --tags feature,security
+bd --allow-stale create "Implement OAuth2 authentication" --labels feature,security
 
 # List tasks ready to work on
-bd ready
+bd --allow-stale ready
 
 # Update status
-bd update bd-a3f8 --status in-progress
+bd --allow-stale update bd-a3f8 --status in_progress
 
 # Add notes
-bd update bd-a3f8 --notes "Using RFC 6749 spec, per ADR-042"
+bd --allow-stale update bd-a3f8 --notes "Using RFC 6749 spec, per ADR-042"
 
 # Mark complete
-bd update bd-a3f8 --status done
+bd --allow-stale update bd-a3f8 --status closed
 ```
 
 **Custom commands:**
 - `@beads-status` - Show current tasks, ready work, and blockers
-- `@beads-sync` - Commit Beads state to git and rebuild cache
+- `@beads-sync` - Commit Beads state to git and sync database
 
 **Storage:**
 - Location: `~/.jib-sharing/beads/` (git repository)

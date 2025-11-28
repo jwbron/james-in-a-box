@@ -9,20 +9,39 @@ IMPORTANT: Preserves thread context from incoming messages.
 The incoming message file contains YAML frontmatter with thread_ts,
 which is propagated to the response notification for proper Slack threading.
 
+Notification behavior:
+- ALWAYS sends a notification back to Slack, even on failure
+- Success: includes Claude's response
+- Failure: includes error details and troubleshooting info
+- Timeout: notifies user and suggests retry
+
 Usage:
   python3 incoming-processor.py <message-file>
 """
 
+import logging
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
 
-# Import shared Claude runner
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "shared"))
-from claude import run_claude
+# Configure logging
+LOG_DIR = Path.home() / "sharing" / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "incoming-processor.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger(__name__)
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
@@ -101,8 +120,13 @@ def create_notification_with_thread(
 
 
 def process_task(message_file: Path):
-    """Process an incoming task from Slack using Claude Code."""
-    print(f"📋 Processing task: {message_file.name}")
+    """Process an incoming task from Slack using Claude Code.
+
+    ALWAYS creates a notification back to Slack, whether successful or not.
+    """
+    start_time = time.time()
+    logger.info(f"{'=' * 60}")
+    logger.info(f"Processing task: {message_file.name}")
 
     # Read full message content
     raw_content = message_file.read_text()
@@ -111,9 +135,11 @@ def process_task(message_file: Path):
     frontmatter, content = parse_frontmatter(raw_content)
     thread_ts = frontmatter.get("thread_ts", "")
     original_task_id = frontmatter.get("task_id", message_file.stem)
+    notifications_dir = Path.home() / "sharing" / "notifications"
 
+    logger.info(f"Task ID: {original_task_id}")
     if thread_ts:
-        print(f"📧 Thread context: {thread_ts}")
+        logger.info(f"Thread context: {thread_ts}")
 
     # Extract task description (after "## Current Message" header)
     task_lines = []
@@ -131,10 +157,17 @@ def process_task(message_file: Path):
     task_content = "\n".join(task_lines).strip()
 
     if not task_content:
-        print("⚠️ Empty task content")
+        logger.warning("Empty task content - nothing to process")
+        # Still send a notification about the empty task
+        create_notification_with_thread(
+            notifications_dir=notifications_dir,
+            task_id=original_task_id,
+            thread_ts=thread_ts,
+            content="# Task Processing Issue\n\nReceived an empty task with no content to process.\n",
+        )
         return False
 
-    print(f"Task: {task_content[:100]}...")
+    logger.info(f"Task content: {task_content[:100]}...")
 
     # Build thread context section if available
     thread_context_section = ""
@@ -225,45 +258,135 @@ Process this task now."""
     # Run Claude Code via stdin (not --print which creates restricted session)
     # This allows full access to tools and filesystem
     # Important: Start in ~/khan/ and use bypass permissions
-    result = run_claude(prompt, timeout=600, cwd=Path.home() / "khan")
+    logger.info("Starting Claude Code subprocess...")
 
-    if result.success:
-        print("✅ Task processed successfully")
+    result = None
+    error_message = None
+    timed_out = False
 
-        # Create notification with Claude's response
-        # IMPORTANT: Include thread_ts in frontmatter for proper Slack threading
-        notifications_dir = Path.home() / "sharing" / "notifications"
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    try:
+        result = subprocess.run(
+            ["claude", "--dangerously-skip-permissions"],
+            check=False,
+            input=prompt,
+            text=True,
+            capture_output=True,  # Capture output to create notification
+            timeout=600,  # 10 minute timeout
+            cwd=str(Path.home() / "khan"),  # Start in khan directory
+        )
+        logger.info(f"Claude exited with return code: {result.returncode}")
+        if result.stderr:
+            logger.warning(f"Claude stderr: {result.stderr[:500]}")
 
-        notification_content = f"""# Task Response - {timestamp}
+    except subprocess.TimeoutExpired as e:
+        timed_out = True
+        error_message = "Task processing timed out after 10 minutes"
+        logger.error(error_message)
+        # Try to get partial output if available
+        if hasattr(e, "stdout") and e.stdout:
+            result = type("Result", (), {"stdout": e.stdout, "stderr": "", "returncode": -1})()
 
-**Task:** {task_content[:100]}{"..." if len(task_content) > 100 else ""}
+    except Exception as e:
+        error_message = f"Error running Claude: {e}"
+        logger.error(error_message, exc_info=True)
 
-## Claude's Response
+    # Calculate processing time
+    elapsed_time = time.time() - start_time
+    elapsed_str = f"{elapsed_time:.1f}s" if elapsed_time < 60 else f"{elapsed_time / 60:.1f}m"
+    logger.info(f"Processing completed in {elapsed_str}")
 
-{result.stdout}
+    # ALWAYS create a notification - success, failure, or timeout
+    task_summary = task_content[:100] + ("..." if len(task_content) > 100 else "")
+
+    if result and result.returncode == 0:
+        # SUCCESS: Include Claude's response
+        logger.info("Task processed successfully")
+
+        claude_output = result.stdout.strip() if result.stdout else ""
+        if not claude_output:
+            logger.warning("Claude returned empty output despite success return code")
+            claude_output = "*Claude completed but produced no output. The task may have been processed - check GitHub for any PRs created.*"
+
+        notification_content = f"""# Task Completed
+
+**Task:** {task_summary}
+**Processing time:** {elapsed_str}
+**Status:** Success
+
+## Response
+
+{claude_output}
 
 ---
-*Generated by james-in-a-box incoming processor*
+*Generated by jib incoming-processor*
+"""
+    elif timed_out:
+        # TIMEOUT: Notify user with helpful context
+        logger.error("Task timed out")
+        partial_output = ""
+        if result and result.stdout:
+            partial_output = f"\n\n**Partial output before timeout:**\n{result.stdout[:1000]}"
+
+        notification_content = f"""# Task Processing Timed Out
+
+**Task:** {task_summary}
+**Processing time:** {elapsed_str} (timeout)
+**Status:** Timed out after 10 minutes
+
+The task took too long to complete. This can happen with complex tasks.
+{partial_output}
+
+**What you can do:**
+- Check GitHub for any PRs that may have been created before timeout
+- Try breaking the task into smaller pieces
+- Retry the task if it was interrupted mid-way
+
+---
+*Generated by jib incoming-processor*
+"""
+    else:
+        # FAILURE: Include error details
+        return_code = result.returncode if result else "N/A"
+        stderr_output = result.stderr[:500] if result and result.stderr else "None"
+        stdout_output = result.stdout[:500] if result and result.stdout else "None"
+
+        logger.error(f"Task failed: return_code={return_code}, error={error_message}")
+
+        notification_content = f"""# Task Processing Failed
+
+**Task:** {task_summary}
+**Processing time:** {elapsed_str}
+**Status:** Failed (exit code: {return_code})
+
+## Error Details
+
+{error_message or "Claude exited with non-zero status"}
+
+**Stderr:** {stderr_output}
+
+**Stdout (partial):** {stdout_output}
+
+**What you can do:**
+- Check the logs at `~/sharing/logs/incoming-processor.log`
+- Check GitHub for any PRs that may have been created
+- Retry the task
+
+---
+*Generated by jib incoming-processor*
 """
 
-        # Use helper function to create notification with thread context
-        notification_file = create_notification_with_thread(
-            notifications_dir=notifications_dir,
-            task_id=original_task_id,
-            thread_ts=thread_ts,
-            content=notification_content,
-        )
-        print(f"📬 Notification created: {notification_file.name}")
-        if thread_ts:
-            print(f"📧 Thread context preserved: {thread_ts}")
+    # Write the notification
+    notification_file = create_notification_with_thread(
+        notifications_dir=notifications_dir,
+        task_id=original_task_id,
+        thread_ts=thread_ts,
+        content=notification_content,
+    )
+    logger.info(f"Notification created: {notification_file.name}")
+    if thread_ts:
+        logger.info(f"Thread context preserved: {thread_ts}")
 
-        return True
-    else:
-        print(f"⚠️ {result.error}")
-        if result.stderr:
-            print(f"Error output: {result.stderr}")
-        return False
+    return result is not None and result.returncode == 0
 
 
 def extract_original_task_id(content: str) -> str | None:
@@ -348,8 +471,13 @@ def extract_thread_context(content: str) -> tuple[str, list[str]]:
 
 
 def process_response(message_file: Path):
-    """Process a user's response to a previous notification using Claude Code."""
-    print(f"💬 Processing response: {message_file.name}")
+    """Process a user's response to a previous notification using Claude Code.
+
+    ALWAYS creates a notification back to Slack, whether successful or not.
+    """
+    start_time = time.time()
+    logger.info(f"{'=' * 60}")
+    logger.info(f"Processing response: {message_file.name}")
 
     # Read response content
     raw_content = message_file.read_text()
@@ -358,21 +486,22 @@ def process_response(message_file: Path):
     frontmatter, content = parse_frontmatter(raw_content)
     thread_ts = frontmatter.get("thread_ts", "")
     referenced_notif = frontmatter.get("referenced_notification", "")
+    notifications_dir = Path.home() / "sharing" / "notifications"
 
-    if thread_ts:
-        print(f"📧 Thread context: {thread_ts}")
+    logger.info(f"Thread TS: {thread_ts or 'None'}")
+    logger.info(f"Referenced notification: {referenced_notif or 'None'}")
 
     # CRITICAL: Extract the original task ID from thread context
     # This is the key to preserving memory across Slack thread conversations
     # The original task ID (e.g., "task-20251126-150200") is what beads tasks are labeled with
     original_task_id = extract_original_task_id(content)
     if original_task_id:
-        print(f"🔗 Original task ID from thread: {original_task_id}")
+        logger.info(f"Original task ID from thread: {original_task_id}")
 
     # Extract thread context and PR references from the message
     thread_context_text, pr_refs = extract_thread_context(content)
     if pr_refs:
-        print(f"📌 PR references found: {', '.join(pr_refs)}")
+        logger.info(f"PR references found: {', '.join(pr_refs)}")
 
     # Fallback: Extract referenced notification from content if not in frontmatter
     original_notif_content = None
@@ -387,11 +516,11 @@ def process_response(message_file: Path):
 
     # Try to load original notification for context
     if referenced_notif:
-        print(f"Response references: {referenced_notif}")
-        notifications_dir = Path.home() / "sharing" / "notifications"
+        logger.info(f"Response references: {referenced_notif}")
         original_file = notifications_dir / f"{referenced_notif}.md"
         if original_file.exists():
             original_notif_content = original_file.read_text()
+            logger.info(f"Loaded original notification: {original_file.name}")
 
     # Extract response content
     response_lines = []
@@ -409,8 +538,18 @@ def process_response(message_file: Path):
     response_content = "\n".join(response_lines).strip()
 
     if not response_content:
-        print("⚠️ Empty response content")
+        logger.warning("Empty response content - nothing to process")
+        # Still send a notification about the empty response
+        task_id = referenced_notif if referenced_notif else message_file.stem
+        create_notification_with_thread(
+            notifications_dir=notifications_dir,
+            task_id=task_id,
+            thread_ts=thread_ts,
+            content="# Response Processing Issue\n\nReceived an empty response with no content to process.\n",
+        )
         return False
+
+    logger.info(f"Response content: {response_content[:100]}...")
 
     # Construct prompt for Claude with full context
     # PRIORITY: original_task_id > referenced_notif > message_file.stem
@@ -422,7 +561,7 @@ def process_response(message_file: Path):
     if pr_refs:
         pr_list = ", ".join(pr_refs)
         pr_context_warning = f"""
-## ⚠️ CRITICAL: PR/Repo Context
+## \u26a0\ufe0f CRITICAL: PR/Repo Context
 
 **This conversation is about: {pr_list}**
 
@@ -477,10 +616,10 @@ bd --allow-stale show <found-id>  # Review what you did before
 
 ### 2. Understand the response
 What is the user asking or telling you? Common patterns:
-- Answered a question → Continue the work
-- Gave feedback → Incorporate it
-- Requested changes → Make the changes
-- Asked a question → Research and respond
+- Answered a question \u2192 Continue the work
+- Gave feedback \u2192 Incorporate it
+- Requested changes \u2192 Make the changes
+- Asked a question \u2192 Research and respond
 
 **IMPORTANT:** Work on the specific PR/task mentioned in the thread, not on any other recent work.
 
@@ -508,77 +647,176 @@ Process this response now."""
     # Run Claude Code via stdin (not --print which creates restricted session)
     # This allows full access to tools and filesystem
     # Important: Start in ~/khan/ and use bypass permissions
-    result = run_claude(prompt, timeout=600, cwd=Path.home() / "khan")
+    logger.info("Starting Claude Code subprocess for response...")
 
-    if result.success:
-        print("✅ Response processed successfully")
+    # Determine task_id for notification filename
+    # If we have a referenced notification, use that ID so slack-notifier threads correctly
+    task_id = referenced_notif if referenced_notif else message_file.stem
 
-        # Create notification with Claude's response
-        # IMPORTANT: Include thread_ts in frontmatter for proper Slack threading
-        notifications_dir = Path.home() / "sharing" / "notifications"
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    result = None
+    error_message = None
+    timed_out = False
 
-        # Determine task_id for notification filename
-        # If we have a referenced notification, use that ID so slack-notifier threads correctly
-        task_id = referenced_notif if referenced_notif else message_file.stem
+    try:
+        result = subprocess.run(
+            ["claude", "--dangerously-skip-permissions"],
+            check=False,
+            input=prompt,
+            text=True,
+            capture_output=True,  # Capture output to create notification
+            timeout=600,  # 10 minute timeout
+            cwd=str(Path.home() / "khan"),  # Start in khan directory
+        )
+        logger.info(f"Claude exited with return code: {result.returncode}")
+        if result.stderr:
+            logger.warning(f"Claude stderr: {result.stderr[:500]}")
 
-        notification_content = f"""# Response Processed - {timestamp}
+    except subprocess.TimeoutExpired as e:
+        timed_out = True
+        error_message = "Response processing timed out after 10 minutes"
+        logger.error(error_message)
+        # Try to get partial output if available
+        if hasattr(e, "stdout") and e.stdout:
+            result = type("Result", (), {"stdout": e.stdout, "stderr": "", "returncode": -1})()
 
-**Referenced Notification:** {referenced_notif if referenced_notif else "None"}
+    except Exception as e:
+        error_message = f"Error running Claude: {e}"
+        logger.error(error_message, exc_info=True)
 
-## Claude's Response
+    # Calculate processing time
+    elapsed_time = time.time() - start_time
+    elapsed_str = f"{elapsed_time:.1f}s" if elapsed_time < 60 else f"{elapsed_time / 60:.1f}m"
+    logger.info(f"Response processing completed in {elapsed_str}")
 
-{result.stdout}
+    # ALWAYS create a notification - success, failure, or timeout
+    response_summary = response_content[:100] + ("..." if len(response_content) > 100 else "")
+
+    if result and result.returncode == 0:
+        # SUCCESS: Include Claude's response
+        logger.info("Response processed successfully")
+
+        claude_output = result.stdout.strip() if result.stdout else ""
+        if not claude_output:
+            logger.warning("Claude returned empty output despite success return code")
+            claude_output = "*Claude completed but produced no output. The response may have been processed - check GitHub for any updates.*"
+
+        notification_content = f"""# Response Processed
+
+**Your message:** {response_summary}
+**Processing time:** {elapsed_str}
+**Status:** Success
+
+## Response
+
+{claude_output}
 
 ---
-*Generated by james-in-a-box incoming processor*
+*Generated by jib incoming-processor*
+"""
+    elif timed_out:
+        # TIMEOUT: Notify user with helpful context
+        logger.error("Response processing timed out")
+        partial_output = ""
+        if result and result.stdout:
+            partial_output = f"\n\n**Partial output before timeout:**\n{result.stdout[:1000]}"
+
+        notification_content = f"""# Response Processing Timed Out
+
+**Your message:** {response_summary}
+**Processing time:** {elapsed_str} (timeout)
+**Status:** Timed out after 10 minutes
+
+The response took too long to process.
+{partial_output}
+
+**What you can do:**
+- Check GitHub for any updates that may have been made
+- Try rephrasing your request more concisely
+- Retry if the task was interrupted
+
+---
+*Generated by jib incoming-processor*
+"""
+    else:
+        # FAILURE: Include error details
+        return_code = result.returncode if result else "N/A"
+        stderr_output = result.stderr[:500] if result and result.stderr else "None"
+        stdout_output = result.stdout[:500] if result and result.stdout else "None"
+
+        logger.error(
+            f"Response processing failed: return_code={return_code}, error={error_message}"
+        )
+
+        notification_content = f"""# Response Processing Failed
+
+**Your message:** {response_summary}
+**Processing time:** {elapsed_str}
+**Status:** Failed (exit code: {return_code})
+
+## Error Details
+
+{error_message or "Claude exited with non-zero status"}
+
+**Stderr:** {stderr_output}
+
+**Stdout (partial):** {stdout_output}
+
+**What you can do:**
+- Check the logs at `~/sharing/logs/incoming-processor.log`
+- Check GitHub for any updates
+- Retry the message
+
+---
+*Generated by jib incoming-processor*
 """
 
-        # Use helper function to create notification with thread context
-        notification_file = create_notification_with_thread(
-            notifications_dir=notifications_dir,
-            task_id=task_id,
-            thread_ts=thread_ts,
-            content=notification_content,
-        )
-        print(f"📬 Notification created: {notification_file.name}")
-        if thread_ts:
-            print(f"📧 Thread context preserved: {thread_ts}")
+    # Write the notification
+    notification_file = create_notification_with_thread(
+        notifications_dir=notifications_dir,
+        task_id=task_id,
+        thread_ts=thread_ts,
+        content=notification_content,
+    )
+    logger.info(f"Notification created: {notification_file.name}")
+    if thread_ts:
+        logger.info(f"Thread context preserved: {thread_ts}")
 
-        return True
-    else:
-        print(f"⚠️ {result.error}")
-        if result.stderr:
-            print(f"Error output: {result.stderr}")
-        return False
+    return result is not None and result.returncode == 0
 
 
 def main():
     """Main entry point."""
     if len(sys.argv) < 2:
-        print("Usage: incoming-processor.py <message-file>", file=sys.stderr)
+        logger.error("Usage: incoming-processor.py <message-file>")
         return 1
 
     message_file = Path(sys.argv[1])
+    logger.info(f"Starting incoming-processor with file: {message_file}")
 
     if not message_file.exists():
-        print(f"Error: File not found: {message_file}", file=sys.stderr)
+        logger.error(f"File not found: {message_file}")
         return 1
 
     # Determine message type based on parent directory
     if "incoming" in str(message_file.parent):
+        logger.info("Message type: incoming task")
         success = process_task(message_file)
     elif "responses" in str(message_file.parent):
+        logger.info("Message type: response to previous notification")
         success = process_response(message_file)
     else:
-        print(f"Error: Unknown message type for {message_file}", file=sys.stderr)
+        logger.error(f"Unknown message type for {message_file}")
         return 1
+
+    logger.info(f"Processing {'succeeded' if success else 'failed'}")
 
     # Stop background services before exiting (PostgreSQL, Redis keep container alive)
     # This ensures ephemeral jib --exec containers exit cleanly
+    logger.info("Stopping background services...")
     subprocess.run(["service", "postgresql", "stop"], check=False, capture_output=True)
     subprocess.run(["service", "redis-server", "stop"], check=False, capture_output=True)
 
+    logger.info("Incoming processor complete")
     return 0 if success else 1
 
 
