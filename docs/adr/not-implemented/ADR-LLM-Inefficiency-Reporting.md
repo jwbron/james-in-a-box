@@ -752,7 +752,7 @@ Week N+2 (Monday):
 
 ## Implementation Details
 
-### Phase 1: Trace Collection (Week 1-2)
+### Phase 1: Trace Collection
 
 **Deliverables:**
 - [ ] Define trace event schema
@@ -760,12 +760,16 @@ Week N+2 (Monday):
 - [ ] Create trace storage structure
 - [ ] Build trace indexing for queries
 
+**Success Criteria:** Traces are captured for all tool calls and can be queried by session/date.
+
 **Files:**
 - `jib-container/scripts/trace-collector.py`
 - `jib-container/.claude/hooks/post-tool-call.sh`
 - `~/sharing/traces/` directory structure
 
-### Phase 2: Inefficiency Detection (Week 3-4)
+### Phase 2: Inefficiency Detection
+
+**Dependencies:** Phase 1 (trace collection operational)
 
 **Deliverables:**
 - [ ] Implement pattern detectors for each category
@@ -773,12 +777,16 @@ Week N+2 (Monday):
 - [ ] Create detection configuration (thresholds, weights)
 - [ ] Test against historical sessions (if available)
 
+**Success Criteria:** Detection engine identifies all 7 inefficiency categories with <10% false positive rate.
+
 **Files:**
 - `jib-container/analysis/inefficiency_detector.py`
 - `jib-container/analysis/patterns/` (one file per category)
 - `jib-container/config/inefficiency_thresholds.yaml`
 
-### Phase 3: Report Generation (Week 5-6)
+### Phase 3: Report Generation
+
+**Dependencies:** Phase 2 (detection engine operational)
 
 **Deliverables:**
 - [ ] Build report generator
@@ -786,18 +794,24 @@ Week N+2 (Monday):
 - [ ] Integrate with existing analyzer timer
 - [ ] Set up Slack delivery
 
+**Success Criteria:** Weekly reports generated automatically and delivered via Slack.
+
 **Files:**
 - `jib-container/analysis/report_generator.py`
 - `jib-container/templates/inefficiency_report.md`
 - `host-services/inefficiency-analyzer.timer`
 
-### Phase 4: Self-Improvement Loop (Week 7-8)
+### Phase 4: Self-Improvement Loop
+
+**Dependencies:** Phase 3 (reports operational), human review process established
 
 **Deliverables:**
 - [ ] Build improvement proposal generator
 - [ ] Create human review interface (Slack-based)
 - [ ] Implement impact tracking
 - [ ] Document improvement review process
+
+**Success Criteria:** Improvement proposals generated, reviewed, and tracked with measurable impact metrics.
 
 **Files:**
 - `jib-container/analysis/improvement_proposer.py`
