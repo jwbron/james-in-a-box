@@ -14,7 +14,7 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 - **Context-aware**: Syncs Confluence docs, JIRA tickets, and codebase knowledge
 - **Self-improving**: Automated analyzers continuously refine agent behavior and code quality
 - **LLM-optimized documentation**: Structured indexes following the [llms.txt](https://llmstxt.org/) standard help the agent navigate docs efficiently
-- **Persistent memory**: Beads task tracking survives restarts, enables multi-session work
+- **Persistent memory**: Beads git-backed task system preserves Slack thread context, PR state, and progress across restarts
 - **Mobile-first**: Fully productive workflow from phone (notifications, PR reviews, approvals)
 - **Cultural alignment**: Behavior matches Khan Academy L3-L4 engineering standards
 
@@ -227,7 +227,7 @@ jib separates concerns between the host machine and the sandboxed container:
 │  ├── Claude Code agent with custom rules and commands               │
 │  ├── Access to synced context (read-only)                           │
 │  ├── Code workspace (read-write, isolated worktree)                 │
-│  ├── Beads task memory (persistent, git-backed)                     │
+│  ├── Beads task memory (persistent, git-backed, shared across runs) │
 │  └── GitHub MCP server (PR operations)                              │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -320,47 +320,95 @@ Reviews analyze code changes for:
 
 Reviews are sent as Slack notifications with prioritized findings (high/medium/low severity).
 
-### Using Beads for Task Tracking
+### Beads: Persistent Task Memory
 
-**Beads** provides persistent task memory that survives container rebuilds and enables coordination across multiple containers.
+**Beads** is jib's persistent memory system—a git-backed task tracker that enables the agent to remember context across container restarts and coordinate multi-session work.
 
-**When to use:**
-- Multi-session tasks that span multiple container restarts
-- Complex features with dependencies and subtasks
-- Coordinating work across concurrent containers
-- Tracking blockers and progress over time
+#### Why Beads Matters
 
-**Quick start:**
+| Problem | Beads Solution |
+|---------|----------------|
+| Containers are ephemeral | Task state persists in git, survives rebuilds |
+| Slack threads are conversations | Thread context stored and resumed automatically |
+| PRs span multiple sessions | PR work tracked across reviews and iterations |
+| Complex tasks have subtasks | Dependencies and parent/child relationships |
+| Concurrent containers | Shared database, no conflicts |
+
+#### Automatic Context Tracking
+
+**Slack Thread Persistence:**
+When you send a message to jib, the thread ID is automatically tracked:
 ```bash
-# Inside container
-cd ~/beads
+# Agent receives Slack message with task_id in frontmatter
+# Checks for existing context
+bd --allow-stale list --label "task-20251128-135211"
 
-# Create task
-bd --allow-stale create "Implement OAuth2 authentication" --labels feature,security
-
-# List tasks ready to work on
-bd --allow-stale ready
-
-# Update status
-bd --allow-stale update bd-a3f8 --status in_progress
-
-# Add notes
-bd --allow-stale update bd-a3f8 --notes "Using RFC 6749 spec, per ADR-042"
-
-# Mark complete
-bd --allow-stale update bd-a3f8 --status closed
+# Resumes previous work or creates new task
+bd --allow-stale create "Slack: Implement feature X" --labels slack-thread,task-20251128-135211
 ```
 
-**Custom commands:**
-- `@beads-status` - Show current tasks, ready work, and blockers
-- `@beads-sync` - Commit Beads state to git and sync database
+Follow-up messages in the same Slack thread automatically reconnect to the existing task, preserving all context, decisions, and progress notes.
+
+**GitHub PR Context Persistence:**
+PR work is tracked by PR number and branch name:
+```bash
+# When working on a PR
+bd --allow-stale create "PR #123: Add authentication" --labels pr,PR-123,feature-branch
+
+# Updates preserved across sessions
+bd --allow-stale update bd-xyz --notes "Addressed review feedback: added error handling"
+
+# When PR is merged
+bd --allow-stale update bd-xyz --status closed --notes "Merged. Tests passing."
+```
+
+This enables seamless handoffs—start a PR, close laptop, resume tomorrow with full context.
+
+#### Task Management Features
+
+| Feature | Description |
+|---------|-------------|
+| **Status tracking** | `open` → `in_progress` → `blocked` → `closed` |
+| **Dependencies** | `blocks`, `related`, `discovered-from` relationships |
+| **Labels** | Searchable tags for source, type, priority, repo |
+| **Notes** | Append progress updates, decisions, context |
+| **Subtasks** | Parent/child hierarchies for complex work |
+| **Ready queue** | `bd ready` shows unblocked work |
+
+#### Quick Reference
+
+```bash
+cd ~/beads
+
+# ALWAYS START HERE - check for existing work
+bd --allow-stale list --status in_progress
+bd --allow-stale search "keywords"
+
+# Create task with searchable title
+bd --allow-stale create "Feature Name (PR #XXX) - repo" --labels feature,repo-name
+
+# Update as you work
+bd --allow-stale update bd-xyz --status in_progress
+bd --allow-stale update bd-xyz --notes "Completed step 1: API endpoints"
+
+# Complete with summary
+bd --allow-stale update bd-xyz --status closed --notes "Done. PR #123 created."
+```
+
+#### Integration Points
+
+- **Slack threads**: `task_id` label links to conversation
+- **GitHub PRs**: `PR-XXX` label links to pull request
+- **JIRA tickets**: `jira-XXXX` label links to ticket
+- **Notifications**: Beads ID included in Slack notifications
+- **PR descriptions**: Beads tracking section in PR body
 
 **Storage:**
 - Location: `~/.jib-sharing/beads/` (git repository)
-- Access: `~/beads/` in container (all containers share same database)
-- Persistence: Survives container rebuilds, accessible to all containers
+- Access: `~/beads/` in container (all containers share)
+- Persistence: Survives rebuilds, syncs via git
 
-See [Beads documentation](https://github.com/steveyegge/beads) and container rules at `jib-container/.claude/rules/beads-usage.md` for detailed usage.
+See [Beads Reference](docs/reference/beads.md) for complete documentation.
 
 ## Security Model
 
@@ -512,7 +560,7 @@ jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly docum
 ### Quick References
 
 - [Slack Quick Reference](docs/reference/slack-quick-reference.md) - Common Slack commands
-- [Beads Task Tracking](docs/reference/beads.md) - Persistent memory system
+- [Beads Task Tracking](docs/reference/beads.md) - Persistent memory: Slack thread context, PR state, multi-session work
 - [Khan Academy Culture](docs/reference/khan-academy-culture.md) - L3-L4 engineering standards
 
 ## Roadmap
