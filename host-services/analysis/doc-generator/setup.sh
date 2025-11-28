@@ -89,10 +89,10 @@ create_doc_timer() {
 Description=Weekly JIB Documentation Generation
 
 [Timer]
-# Run weekly on Sunday at 4am (after index-generator at 3am)
-OnCalendar=Sun *-*-* 04:00:00
+# Run weekly on Monday at 11:30am (after research at 11am)
+OnCalendar=Mon *-*-* 11:30:00
 Persistent=true
-RandomizedDelaySec=1800
+RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target
@@ -136,10 +136,10 @@ create_research_timer() {
 Description=Weekly JIB Best Practice Research
 
 [Timer]
-# Run weekly on Sunday at 3:30am (before doc generation at 4am)
-OnCalendar=Sun *-*-* 03:30:00
+# Run weekly on Monday at 11am (before doc generation at 11:30am)
+OnCalendar=Mon *-*-* 11:00:00
 Persistent=true
-RandomizedDelaySec=600
+RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target
@@ -160,7 +160,7 @@ enable_doc_timer() {
     systemctl --user enable "${DOC_SERVICE_NAME}.timer"
     systemctl --user start "${DOC_SERVICE_NAME}.timer"
 
-    log_info "Doc generation timer enabled (weekly on Sundays at 4am)"
+    log_info "Doc generation timer enabled (weekly on Mondays at 11:30am)"
 }
 
 enable_research_timer() {
@@ -175,7 +175,7 @@ enable_research_timer() {
     systemctl --user enable "${RESEARCH_SERVICE_NAME}.timer"
     systemctl --user start "${RESEARCH_SERVICE_NAME}.timer"
 
-    log_info "Research timer enabled (weekly on Sundays at 3:30am)"
+    log_info "Research timer enabled (weekly on Mondays at 11am)"
 }
 
 enable_all_timers() {
@@ -183,7 +183,7 @@ enable_all_timers() {
     enable_doc_timer
 
     log_section "All timers enabled"
-    log_info "Research runs at 3:30am, doc generation at 4am (Sundays)"
+    log_info "Research runs at 11am, doc generation at 11:30am (Mondays)"
     log_info "Run 'systemctl --user list-timers' to see scheduled runs"
 }
 
@@ -278,8 +278,8 @@ Commands:
   help             Show this help message
 
 Schedule:
-  Research:        Sundays at 3:30am (updates best practice cache)
-  Doc Generation:  Sundays at 4:00am (generates docs with external validation)
+  Research:        Mondays at 11:00am (updates best practice cache)
+  Doc Generation:  Mondays at 11:30am (generates docs with external validation)
 
 The 6-agent pipeline:
   1. Context Agent     - Analyzes code patterns
