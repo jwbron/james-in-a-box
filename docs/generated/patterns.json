@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T19:07:28.951556+00:00",
+  "generated": "2025-11-28T19:12:49.132937+00:00",
   "project": "james-in-a-box",
   "patterns": {
     "config": {
@@ -18,6 +18,7 @@
         "jib-container/docker-setup.py:450",
         "jib-container/jib-tasks/github/comment-responder.py:242",
         "jib-container/jib-tools/github-app-token.py:134",
+        "jib-container/scripts/mcp-token-watcher.py:85",
         "tests/config/test_repo_config.py:14",
         "tests/config/test_repo_config.py:203",
         "tests/config/test_repo_config.py:308",

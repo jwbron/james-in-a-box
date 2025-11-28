@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T19:07:28.951556+00:00",
+  "generated": "2025-11-28T19:12:49.132937+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -186,6 +186,13 @@
           "utilities/": {
             "description": "Utility scripts and tools",
             "children": {
+              "github-token-refresher/": {
+                "description": "github-token-refresher directory",
+                "files": [
+                  "github-token-refresher.py",
+                  "setup.sh"
+                ]
+              },
               "worktree-watcher/": {
                 "description": "worktree-watcher directory",
                 "files": [
@@ -253,7 +260,10 @@
             ]
           },
           "scripts/": {
-            "description": "scripts directory"
+            "description": "scripts directory",
+            "files": [
+              "mcp-token-watcher.py"
+            ]
           }
         },
         "files": [
@@ -668,35 +678,35 @@
     {
       "name": "DocContext",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 50,
+      "line": 47,
       "type": "class",
       "description": "Context gathered by the Context Agent."
     },
     {
       "name": "DraftDoc",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 62,
+      "line": 59,
       "type": "class",
       "description": "Documentation draft from the Draft Agent."
     },
     {
       "name": "ReviewResult",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 73,
+      "line": 70,
       "type": "class",
       "description": "Review feedback from the Review Agent."
     },
     {
       "name": "ExternalResearch",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 82,
+      "line": 79,
       "type": "class",
       "description": "External research results from the External Validation Agent."
     },
     {
       "name": "ExternalValidator",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 94,
+      "line": 91,
       "type": "class",
       "description": "External Validation Agent - Researches best practices from authoritative sources.",
       "methods": [
@@ -712,7 +722,7 @@
     {
       "name": "DocumentationGenerator",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 394,
+      "line": 429,
       "type": "class",
       "description": "Full 6-agent documentation generation pipeline.",
       "methods": [
@@ -731,28 +741,28 @@
     {
       "name": "main",
       "file": "host-services/analysis/doc-generator/doc-generator.py",
-      "line": 1046,
+      "line": 1081,
       "type": "function",
       "description": "CLI entry point."
     },
     {
       "name": "DriftIssue",
       "file": "host-services/analysis/doc-generator/drift-detector.py",
-      "line": 39,
+      "line": 38,
       "type": "class",
       "description": "A documentation drift issue."
     },
     {
       "name": "DriftReport",
       "file": "host-services/analysis/doc-generator/drift-detector.py",
-      "line": 51,
+      "line": 50,
       "type": "class",
       "description": "Full drift detection report."
     },
     {
       "name": "DriftDetector",
       "file": "host-services/analysis/doc-generator/drift-detector.py",
-      "line": 61,
+      "line": 60,
       "type": "class",
       "description": "Detects documentation that has drifted from current code.",
       "methods": [
@@ -770,7 +780,7 @@
     {
       "name": "main",
       "file": "host-services/analysis/doc-generator/drift-detector.py",
-      "line": 370,
+      "line": 369,
       "type": "function",
       "description": "CLI entry point."
     },
@@ -1275,9 +1285,9 @@
     }
   ],
   "summary": {
-    "total_python_files": 95,
+    "total_python_files": 97,
     "total_classes": 270,
-    "total_functions": 178,
+    "total_functions": 197,
     "patterns_detected": [
       "config",
       "connector",

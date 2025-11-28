@@ -11,8 +11,8 @@ schedules:
   # Security research - highest priority, weekly refresh
   - name: "Security Best Practices"
     frequency: weekly
-    day: sunday
-    hour: 4
+    day: monday
+    hour: 11
     topics:
       - security
       - auth

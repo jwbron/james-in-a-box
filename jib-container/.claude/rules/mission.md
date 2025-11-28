@@ -221,7 +221,7 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 
 **When asked to update an existing PR:**
 1. **First**: Check PR is still OPEN (use MCP `get_pull_request`)
-2. Check out that PR's branch locally: `git fetch origin && git checkout <branch>`
+2. Check out that PR's branch locally: `git checkout <branch> && git pull origin <branch>`
 3. Make changes and commit to that branch
 4. Push via `git push origin <branch>`
 5. Do NOT create a new PR for the same work
@@ -245,7 +245,7 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 # Human says: "Please add error handling to PR #26"
 # 1. Check PR state via MCP: get_pull_request(owner, repo, 26)
 # 2. Switch to PR's branch locally:
-git fetch origin && git checkout <pr-branch-name>
+git checkout <pr-branch-name> && git pull origin <pr-branch-name>
 # 3. Make changes...
 git add -A && git commit -m "Add error handling"
 # 4. Push to GitHub

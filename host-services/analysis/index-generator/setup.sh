@@ -70,16 +70,16 @@ ReadWritePaths=${PROJECT_ROOT}/docs/generated
 NoNewPrivileges=true
 EOF
 
-    # Create timer file (weekly on Sunday at 3am)
+    # Create timer file (weekly on Monday at 10:30am, before research at 11am)
     cat > "${user_systemd_dir}/index-generator.timer" << EOF
 [Unit]
 Description=Weekly Codebase Index Generation
 Documentation=docs/adr/ADR-LLM-Documentation-Index-Strategy.md
 
 [Timer]
-OnCalendar=Sun *-*-* 03:00:00
+OnCalendar=Mon *-*-* 10:30:00
 Persistent=true
-RandomizedDelaySec=1800
+RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target

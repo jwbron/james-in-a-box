@@ -30,9 +30,8 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 
 @dataclass
@@ -171,7 +170,7 @@ class DriftDetector:
                             doc_path=rel_doc_path,
                             line_number=line_num,
                             issue_type="missing_file",
-                            description=f"Referenced file does not exist",
+                            description="Referenced file does not exist",
                             referenced=file_ref,
                             suggestion=suggestion,
                         )
@@ -189,7 +188,7 @@ class DriftDetector:
                             doc_path=rel_doc_path,
                             line_number=line_num,
                             issue_type="missing_file",
-                            description=f"Referenced file:line does not exist",
+                            description="Referenced file:line does not exist",
                             referenced=f"{file_ref}:{line_ref}",
                             suggestion=suggestion,
                         )
@@ -215,7 +214,7 @@ class DriftDetector:
 
             # Check markdown links
             for match in self.PATTERNS["md_link"].finditer(line):
-                link_text = match.group(1)
+                match.group(1)
                 link_target = match.group(2)
 
                 # Skip external links
@@ -240,7 +239,7 @@ class DriftDetector:
                             doc_path=rel_doc_path,
                             line_number=line_num,
                             issue_type="broken_link",
-                            description=f"Link target does not exist",
+                            description="Link target does not exist",
                             referenced=link_target,
                             suggestion=suggestion,
                         )
@@ -259,7 +258,7 @@ class DriftDetector:
                                 doc_path=rel_doc_path,
                                 line_number=line_num,
                                 issue_type="stale_path",
-                                description=f"Path reference may be outdated",
+                                description="Path reference may be outdated",
                                 referenced=path_ref,
                                 suggestion=suggestion,
                             )
@@ -274,7 +273,7 @@ class DriftDetector:
 
         if not self.docs_dir.exists():
             return DriftReport(
-                generated=datetime.now(timezone.utc).isoformat(),
+                generated=datetime.now(UTC).isoformat(),
                 project=self.project_root.name,
                 docs_checked=0,
                 issues_found=0,
@@ -304,7 +303,7 @@ class DriftDetector:
             issues.extend(self.check_doc(claude_md))
 
         return DriftReport(
-            generated=datetime.now(timezone.utc).isoformat(),
+            generated=datetime.now(UTC).isoformat(),
             project=self.project_root.name,
             docs_checked=docs_checked,
             issues_found=len(issues),
@@ -426,7 +425,7 @@ Examples:
             sys.exit(1)
         issues = detector.check_doc(doc_path)
         report = DriftReport(
-            generated=datetime.now(timezone.utc).isoformat(),
+            generated=datetime.now(UTC).isoformat(),
             project=project_root.name,
             docs_checked=1,
             issues_found=len(issues),
