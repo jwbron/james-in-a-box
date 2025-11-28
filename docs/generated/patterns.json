@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:48:35.712748+00:00",
+  "generated": "2025-11-28T10:05:10.727067+00:00",
   "project": "james-in-a-box",
   "patterns": {
     "config": {
@@ -66,7 +66,7 @@
       "examples": [
         "host-services/slack/slack-receiver/host_command_handler.py:43",
         "jib-container/jib-tasks/github/command-handler.py:16",
-        "jib-container/jib-tasks/slack/incoming-processor.py:98",
+        "jib-container/jib-tasks/slack/incoming-processor.py:99",
         "jib-container/jib-tools/github-app-token.py:101",
         "tests/host_services/test_utilities.py:16",
         "tests/host_services/test_utilities.py:64",
@@ -92,7 +92,7 @@
         "host-services/slack/slack-notifier/slack-notifier.py:40",
         "host-services/slack/slack-receiver/slack-receiver.py:36",
         "jib-container/jib-tasks/github/github-processor.py:36",
-        "jib-container/jib-tasks/slack/incoming-processor.py:98",
+        "jib-container/jib-tasks/slack/incoming-processor.py:99",
         "shared/notifications/__init__.py:45",
         "shared/notifications/base.py:13",
         "shared/notifications/slack.py:27",
@@ -138,8 +138,8 @@
     "processor": {
       "description": "Data processing pipelines",
       "examples": [
-        "jib-container/jib-tasks/slack/incoming-processor.py:133",
-        "jib-container/jib-tasks/slack/incoming-processor.py:490"
+        "jib-container/jib-tasks/slack/incoming-processor.py:134",
+        "jib-container/jib-tasks/slack/incoming-processor.py:491"
       ],
       "conventions": [
         "Processors transform data from one format to another",

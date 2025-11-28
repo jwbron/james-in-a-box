@@ -340,11 +340,11 @@ def analyze_with_claude(prompt: str, interactive: bool = False) -> bool:
 
     if interactive:
         # Interactive mode - show output in real-time
-        result = run_claude(prompt, timeout=900, cwd=cwd, capture_output=False)
+        result = run_claude(prompt, cwd=cwd, capture_output=False)
         return result.success
     else:
         # Non-interactive - capture output
-        result = run_claude(prompt, timeout=900, cwd=cwd)
+        result = run_claude(prompt, cwd=cwd)
 
         if result.success:
             print("=" * 60)

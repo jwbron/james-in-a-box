@@ -80,7 +80,7 @@ def handle_check_failure(context: dict):
     # This allows full access to tools and filesystem
     print("Invoking Claude for analysis...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, timeout=900, cwd=cwd)
+    result = run_claude(prompt, cwd=cwd)
 
     if result.success:
         print("Claude analysis completed successfully")
@@ -305,7 +305,7 @@ def handle_comment(context: dict):
     # This allows full access to tools and filesystem
     print("Invoking Claude for response generation...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, timeout=600, cwd=cwd)
+    result = run_claude(prompt, cwd=cwd)
 
     if result.success:
         print("Claude response generation completed")
@@ -431,7 +431,7 @@ def handle_review_request(context: dict):
     # This allows full access to tools and filesystem
     print("Invoking Claude for code review...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, timeout=900, cwd=cwd)
+    result = run_claude(prompt, cwd=cwd)
 
     if result.success:
         print("Claude code review completed")
@@ -532,7 +532,7 @@ def handle_merge_conflict(context: dict):
     # Run Claude Code via stdin
     print("Invoking Claude for conflict resolution...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, timeout=900, cwd=cwd)
+    result = run_claude(prompt, cwd=cwd)
 
     if result.success:
         print("Claude conflict resolution completed successfully")
