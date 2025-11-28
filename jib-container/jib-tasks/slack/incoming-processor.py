@@ -27,11 +27,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+
 # Add shared directory to path for enrichment module
 sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 
 try:
-    from enrichment import enrich_task  # noqa: E402
+    from enrichment import enrich_task
 except ImportError:
     # Fallback if shared module not available
     def enrich_task(task_text: str, project_root: Path | None = None) -> str:

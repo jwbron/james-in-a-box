@@ -205,9 +205,20 @@ class SpecEnricher:
         # Also extract simple words that might be keywords
         words = re.findall(r"\b[a-z]{3,}\b", text_lower)
         important_words = {
-            "slack", "github", "beads", "authentication", "security",
-            "deployment", "architecture", "testing", "notification",
-            "sync", "jira", "confluence", "setup", "reference",
+            "slack",
+            "github",
+            "beads",
+            "authentication",
+            "security",
+            "deployment",
+            "architecture",
+            "testing",
+            "notification",
+            "sync",
+            "jira",
+            "confluence",
+            "setup",
+            "reference",
         }
         for word in words:
             if word in important_words:

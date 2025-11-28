@@ -5,16 +5,13 @@ Per ADR: LLM Documentation Index Strategy (Phase 3)
 """
 
 import json
-from pathlib import Path
-
-import pytest
 
 # Import from shared enrichment module
 from enrichment import (
-    SpecEnricher,
-    DocReference,
     CodeExample,
+    DocReference,
     EnrichedContext,
+    SpecEnricher,
     enrich_task,
 )
 
@@ -186,9 +183,7 @@ class TestFindCodeExamples:
                 }
             }
         }
-        (temp_dir / "docs" / "generated" / "patterns.json").write_text(
-            json.dumps(patterns_data)
-        )
+        (temp_dir / "docs" / "generated" / "patterns.json").write_text(json.dumps(patterns_data))
 
         enricher = SpecEnricher(temp_dir)
         examples = enricher.find_code_examples(["notification"])
@@ -214,9 +209,7 @@ class TestFindCodeExamples:
                 }
             }
         }
-        (temp_dir / "docs" / "generated" / "patterns.json").write_text(
-            json.dumps(patterns_data)
-        )
+        (temp_dir / "docs" / "generated" / "patterns.json").write_text(json.dumps(patterns_data))
 
         enricher = SpecEnricher(temp_dir)
         examples = enricher.find_code_examples(["notification"])
@@ -236,9 +229,7 @@ class TestFindRelevantPatterns:
                 "sync": {"description": "Synchronization", "examples": []},
             }
         }
-        (temp_dir / "docs" / "generated" / "patterns.json").write_text(
-            json.dumps(patterns_data)
-        )
+        (temp_dir / "docs" / "generated" / "patterns.json").write_text(json.dumps(patterns_data))
 
         enricher = SpecEnricher(temp_dir)
         patterns = enricher.find_relevant_patterns(["notification"])

@@ -8,16 +8,17 @@ Dynamically parses docs/index.md to discover available documentation.
 """
 
 from .enricher import (
-    DocReference,
     CodeExample,
+    DocReference,
     EnrichedContext,
     SpecEnricher,
     enrich_task,
 )
 
+
 __all__ = [
-    "DocReference",
     "CodeExample",
+    "DocReference",
     "EnrichedContext",
     "SpecEnricher",
     "enrich_task",

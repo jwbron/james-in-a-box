@@ -25,18 +25,20 @@ import argparse
 import sys
 from pathlib import Path
 
+
 # Add shared directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 
-from enrichment import (  # noqa: E402
-    SpecEnricher,
-    DocReference,
+from enrichment import (
     CodeExample,
+    DocReference,
     EnrichedContext,
+    SpecEnricher,
 )
 
+
 # Re-export for backwards compatibility
-__all__ = ["SpecEnricher", "DocReference", "CodeExample", "EnrichedContext"]
+__all__ = ["CodeExample", "DocReference", "EnrichedContext", "SpecEnricher"]
 
 
 def main():
@@ -121,19 +123,18 @@ Examples:
     # Output
     if args.context_only:
         print(context_str)
+    # Include original spec with context injected
+    elif args.format == "yaml":
+        print(context_str)
+        print()
+        print("# Original spec:")
+        print(spec_text)
     else:
-        # Include original spec with context injected
-        if args.format == "yaml":
-            print(context_str)
-            print()
-            print("# Original spec:")
-            print(spec_text)
-        else:
-            print(context_str)
-            print()
-            print("---")
-            print()
-            print(spec_text)
+        print(context_str)
+        print()
+        print("---")
+        print()
+        print(spec_text)
 
 
 if __name__ == "__main__":
