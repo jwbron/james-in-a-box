@@ -27,6 +27,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+
 # Configure logging
 LOG_DIR = Path.home() / "sharing" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -295,7 +296,6 @@ Process this task now."""
     logger.info(f"Processing completed in {elapsed_str}")
 
     # ALWAYS create a notification - success, failure, or timeout
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     task_summary = task_content[:100] + ("..." if len(task_content) > 100 else "")
 
     if result and result.returncode == 0:
@@ -689,7 +689,6 @@ Process this response now."""
     logger.info(f"Response processing completed in {elapsed_str}")
 
     # ALWAYS create a notification - success, failure, or timeout
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     response_summary = response_content[:100] + ("..." if len(response_content) > 100 else "")
 
     if result and result.returncode == 0:
@@ -744,7 +743,9 @@ The response took too long to process.
         stderr_output = result.stderr[:500] if result and result.stderr else "None"
         stdout_output = result.stdout[:500] if result and result.stdout else "None"
 
-        logger.error(f"Response processing failed: return_code={return_code}, error={error_message}")
+        logger.error(
+            f"Response processing failed: return_code={return_code}, error={error_message}"
+        )
 
         notification_content = f"""# Response Processing Failed
 
