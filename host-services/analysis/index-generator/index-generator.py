@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+"""
+Codebase Index Generator for LLM Documentation Strategy
+
+Generates machine-readable indexes of the codebase for efficient LLM navigation:
+- codebase.json: Structured project layout with components
+- patterns.json: Extracted code patterns and conventions
+- dependencies.json: Internal and external dependency graph
+
+Per ADR: LLM Documentation Index Strategy (Phase 2)
+"""
+
+import ast
+import json
+import os
+import re
+import sys
+from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+class CodebaseIndexer:
+    """Analyzes a codebase and generates structured indexes."""
+
+    # File extensions to analyze
+    PYTHON_EXTENSIONS = {'.py'}
+    SHELL_EXTENSIONS = {'.sh'}
+    CONFIG_EXTENSIONS = {'.json', '.yaml', '.yml', '.toml'}
+    DOC_EXTENSIONS = {'.md'}
+
+    # Directories to skip
+    SKIP_DIRS = {
+        '__pycache__', '.git', '.pytest_cache', 'node_modules',
+        '.mypy_cache', '.tox', 'venv', '.venv', 'env', '.env',
+        'build', 'dist', '*.egg-info'
+    }
+
+    # Known patterns to detect
+    PATTERNS = {
+        'event_driven': {
+            'indicators': ['watcher', 'observer', 'listener', 'handler', 'on_'],
+            'description': 'Event-driven architecture with watchers and handlers'
+        },
+        'connector': {
+            'indicators': ['connector', 'client', 'adapter', 'Connector'],
+            'description': 'External service integration via connectors'
+        },
+        'processor': {
+            'indicators': ['processor', 'Processor', 'process_'],
+            'description': 'Data processing pipelines'
+        },
+        'notification': {
+            'indicators': ['notify', 'notification', 'alert', 'slack'],
+            'description': 'Notification and alerting system'
+        },
+        'sync': {
+            'indicators': ['sync', 'Sync', 'synchronize'],
+            'description': 'Data synchronization patterns'
+        },
+        'config': {
+            'indicators': ['config', 'Config', 'settings', 'Settings'],
+            'description': 'Configuration management'
+        }
+    }
+
+    def __init__(self, project_root: Path, output_dir: Path):
+        self.project_root = project_root.resolve()
+        self.output_dir = output_dir.resolve()
+        self.project_name = self.project_root.name
+
+        # Collected data
+        self.structure: dict[str, Any] = {}
+        self.components: list[dict] = []
+        self.patterns_found: dict[str, dict] = defaultdict(lambda: {
+            'description': '',
+            'examples': [],
+            'conventions': []
+        })
+        self.internal_deps: dict[str, list] = defaultdict(list)
+        self.external_deps: dict[str, str] = {}
+
+    def should_skip_dir(self, dir_name: str) -> bool:
+        """Check if directory should be skipped."""
+        return dir_name in self.SKIP_DIRS or dir_name.startswith('.')
+
+    def get_directory_description(self, dir_path: Path) -> str:
+        """Infer directory purpose from name and contents."""
+        name = dir_path.name
+
+        # Known directory patterns
+        descriptions = {
+            'host-services': 'Services running on the host machine',
+            'analysis': 'Code and conversation analysis tools',
+            'slack': 'Slack integration services',
+            'sync': 'Data synchronization services',
+            'utilities': 'Utility scripts and tools',
+            'jib-container': 'Docker container configuration and scripts',
+            'jib-tasks': 'Tasks executed inside the container',
+            'jib-tools': 'Tools available inside the container',
+            'config': 'Configuration files and loaders',
+            'shared': 'Shared libraries and utilities',
+            'tests': 'Test suite',
+            'docs': 'Documentation',
+            'connectors': 'External service connectors',
+            'utils': 'Utility functions',
+        }
+
+        return descriptions.get(name, f'{name} directory')
+
+    def analyze_python_file(self, file_path: Path) -> dict | None:
+        """Parse a Python file and extract components."""
+        try:
+            content = file_path.read_text(encoding='utf-8')
+            tree = ast.parse(content, filename=str(file_path))
+        except (SyntaxError, UnicodeDecodeError) as e:
+            print(f"  Warning: Could not parse {file_path}: {e}")
+            return None
+
+        rel_path = file_path.relative_to(self.project_root)
+        file_info = {
+            'path': str(rel_path),
+            'classes': [],
+            'functions': [],
+            'imports': {
+                'internal': [],
+                'external': []
+            }
+        }
+
+        # Get module docstring
+        module_doc = ast.get_docstring(tree)
+        if module_doc:
+            file_info['description'] = module_doc.split('\n')[0][:200]
+
+        for node in ast.walk(tree):
+            # Extract classes
+            if isinstance(node, ast.ClassDef):
+                class_info = {
+                    'name': node.name,
+                    'file': str(rel_path),
+                    'line': node.lineno,
+                    'type': 'class'
+                }
+
+                # Get class docstring
+                docstring = ast.get_docstring(node)
+                if docstring:
+                    class_info['description'] = docstring.split('\n')[0][:200]
+
+                # Get base classes
+                bases = []
+                for base in node.bases:
+                    if isinstance(base, ast.Name):
+                        bases.append(base.id)
+                    elif isinstance(base, ast.Attribute):
+                        bases.append(f"{base.value.id if hasattr(base.value, 'id') else '...'}.{base.attr}")
+                if bases:
+                    class_info['bases'] = bases
+
+                # Get methods
+                methods = [n.name for n in node.body if isinstance(n, ast.FunctionDef)]
+                if methods:
+                    class_info['methods'] = methods[:10]  # Limit to first 10
+
+                file_info['classes'].append(class_info)
+
+                # Detect patterns
+                self._detect_patterns(node.name, str(rel_path), node.lineno, 'class')
+
+            # Extract top-level functions
+            elif isinstance(node, ast.FunctionDef) and node.col_offset == 0:
+                func_info = {
+                    'name': node.name,
+                    'file': str(rel_path),
+                    'line': node.lineno,
+                    'type': 'function'
+                }
+
+                # Get function docstring
+                docstring = ast.get_docstring(node)
+                if docstring:
+                    func_info['description'] = docstring.split('\n')[0][:200]
+
+                file_info['functions'].append(func_info)
+
+                # Detect patterns
+                self._detect_patterns(node.name, str(rel_path), node.lineno, 'function')
+
+            # Extract imports
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    self._categorize_import(alias.name, file_info)
+
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    self._categorize_import(node.module, file_info)
+
+        return file_info
+
+    def _categorize_import(self, module_name: str, file_info: dict):
+        """Categorize import as internal or external."""
+        # Check if it's an internal import (relative or from this project)
+        if module_name.startswith('.') or module_name.startswith(self.project_name):
+            if module_name not in file_info['imports']['internal']:
+                file_info['imports']['internal'].append(module_name)
+        else:
+            # External import - extract package name
+            package = module_name.split('.')[0]
+            if package not in file_info['imports']['external']:
+                file_info['imports']['external'].append(package)
+
+            # Track for external deps (we'll try to get versions later)
+            if package not in self.external_deps:
+                self.external_deps[package] = 'unknown'
+
+    def _detect_patterns(self, name: str, file_path: str, line: int, kind: str):
+        """Detect code patterns based on naming conventions."""
+        name_lower = name.lower()
+
+        for pattern_name, pattern_info in self.PATTERNS.items():
+            for indicator in pattern_info['indicators']:
+                if indicator.lower() in name_lower:
+                    example = f"{file_path}:{line}"
+                    if example not in self.patterns_found[pattern_name]['examples']:
+                        self.patterns_found[pattern_name]['examples'].append(example)
+                        self.patterns_found[pattern_name]['description'] = pattern_info['description']
+                    break
+
+    def build_structure(self, path: Path, depth: int = 0) -> dict:
+        """Recursively build directory structure."""
+        if depth > 5:  # Limit depth
+            return {}
+
+        structure = {
+            'description': self.get_directory_description(path),
+            'children': {}
+        }
+
+        files = []
+
+        try:
+            for item in sorted(path.iterdir()):
+                if item.is_dir():
+                    if not self.should_skip_dir(item.name):
+                        structure['children'][item.name + '/'] = self.build_structure(item, depth + 1)
+                elif item.is_file():
+                    # Track relevant files
+                    if item.suffix in self.PYTHON_EXTENSIONS | self.SHELL_EXTENSIONS:
+                        files.append(item.name)
+        except PermissionError:
+            pass
+
+        if files:
+            structure['files'] = files[:20]  # Limit files shown
+
+        # Remove empty children
+        if not structure['children']:
+            del structure['children']
+
+        return structure
+
+    def extract_versions_from_requirements(self):
+        """Try to extract versions from requirements files."""
+        req_files = [
+            self.project_root / 'requirements.txt',
+            self.project_root / 'requirements-dev.txt',
+            self.project_root / 'pyproject.toml',
+        ]
+
+        for req_file in req_files:
+            if req_file.exists():
+                try:
+                    content = req_file.read_text()
+                    # Simple regex for requirements.txt format
+                    for match in re.finditer(r'^([a-zA-Z0-9_-]+)==([^\s]+)', content, re.MULTILINE):
+                        pkg, version = match.groups()
+                        if pkg in self.external_deps:
+                            self.external_deps[pkg] = version
+                except Exception:
+                    pass
+
+    def generate_indexes(self):
+        """Main method to generate all indexes."""
+        print(f"Analyzing codebase: {self.project_root}")
+
+        # Build directory structure
+        print("  Building directory structure...")
+        self.structure = self.build_structure(self.project_root)
+
+        # Analyze Python files
+        print("  Analyzing Python files...")
+        python_files = list(self.project_root.rglob('*.py'))
+        for py_file in python_files:
+            # Skip files in ignored directories
+            if any(part in self.SKIP_DIRS for part in py_file.parts):
+                continue
+
+            file_info = self.analyze_python_file(py_file)
+            if file_info:
+                # Add classes and functions to components
+                for cls in file_info['classes']:
+                    self.components.append(cls)
+                for func in file_info['functions']:
+                    # Only add significant functions (not test helpers, etc.)
+                    if not func['name'].startswith('_') and not func['name'].startswith('test_'):
+                        self.components.append(func)
+
+                # Build internal dependency graph
+                for internal_import in file_info['imports']['internal']:
+                    rel_path = str(py_file.relative_to(self.project_root))
+                    self.internal_deps[rel_path].append(internal_import)
+
+        # Try to get package versions
+        print("  Extracting dependency versions...")
+        self.extract_versions_from_requirements()
+
+        # Add conventions to detected patterns
+        self._add_pattern_conventions()
+
+        # Generate timestamp
+        generated_at = datetime.now(timezone.utc).isoformat()
+
+        # Build codebase.json
+        codebase_json = {
+            'generated': generated_at,
+            'project': self.project_name,
+            'structure': self.structure,
+            'components': self.components[:100],  # Limit to top 100
+            'summary': {
+                'total_python_files': len(python_files),
+                'total_classes': len([c for c in self.components if c.get('type') == 'class']),
+                'total_functions': len([c for c in self.components if c.get('type') == 'function']),
+                'patterns_detected': list(self.patterns_found.keys())
+            }
+        }
+
+        # Build patterns.json
+        patterns_json = {
+            'generated': generated_at,
+            'project': self.project_name,
+            'patterns': dict(self.patterns_found)
+        }
+
+        # Build dependencies.json
+        dependencies_json = {
+            'generated': generated_at,
+            'project': self.project_name,
+            'internal': dict(self.internal_deps),
+            'external': self.external_deps
+        }
+
+        # Write files
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        codebase_path = self.output_dir / 'codebase.json'
+        patterns_path = self.output_dir / 'patterns.json'
+        deps_path = self.output_dir / 'dependencies.json'
+
+        print(f"  Writing {codebase_path}...")
+        with open(codebase_path, 'w') as f:
+            json.dump(codebase_json, f, indent=2)
+
+        print(f"  Writing {patterns_path}...")
+        with open(patterns_path, 'w') as f:
+            json.dump(patterns_json, f, indent=2)
+
+        print(f"  Writing {deps_path}...")
+        with open(deps_path, 'w') as f:
+            json.dump(dependencies_json, f, indent=2)
+
+        print(f"\nGenerated indexes:")
+        print(f"  - {codebase_path} ({len(self.components)} components)")
+        print(f"  - {patterns_path} ({len(self.patterns_found)} patterns)")
+        print(f"  - {deps_path} ({len(self.external_deps)} external deps)")
+
+        return codebase_json, patterns_json, dependencies_json
+
+    def _add_pattern_conventions(self):
+        """Add conventions to detected patterns based on examples."""
+        conventions = {
+            'event_driven': [
+                'Watchers monitor external sources (GitHub, Slack, file system)',
+                'Handlers process events and trigger actions',
+                'Use asyncio for concurrent event processing when appropriate'
+            ],
+            'connector': [
+                'Connectors inherit from BaseConnector',
+                'Each connector handles authentication for its service',
+                'Connectors are responsible for rate limiting'
+            ],
+            'processor': [
+                'Processors transform data from one format to another',
+                'Each processor handles a specific data source',
+                'Processors write output to standardized locations'
+            ],
+            'notification': [
+                'Use the notifications library for all Slack messaging',
+                'Notifications support threading via task_id',
+                'Different notification types: info, warning, action_required'
+            ],
+            'sync': [
+                'Sync services run on a schedule (systemd timers)',
+                'Sync operations are idempotent',
+                'Sync state is tracked to avoid duplicate processing'
+            ],
+            'config': [
+                'Configuration loaded from environment variables',
+                'Config classes validate required settings on init',
+                'Sensitive values never logged or exposed'
+            ]
+        }
+
+        for pattern_name, pattern_conventions in conventions.items():
+            if pattern_name in self.patterns_found:
+                self.patterns_found[pattern_name]['conventions'] = pattern_conventions
+
+
+def main():
+    """CLI entry point."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Generate codebase indexes for LLM navigation',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  %(prog)s                              # Index current project
+  %(prog)s --project ~/khan/webapp      # Index specific project
+  %(prog)s --output ./custom-output     # Custom output directory
+        '''
+    )
+
+    parser.add_argument(
+        '--project', '-p',
+        type=Path,
+        default=Path(__file__).parent.parent.parent.parent,  # james-in-a-box root
+        help='Project root to analyze (default: james-in-a-box)'
+    )
+
+    parser.add_argument(
+        '--output', '-o',
+        type=Path,
+        default=None,
+        help='Output directory (default: <project>/docs/generated)'
+    )
+
+    args = parser.parse_args()
+
+    project_root = args.project.resolve()
+    output_dir = args.output or (project_root / 'docs' / 'generated')
+
+    if not project_root.exists():
+        print(f"Error: Project root does not exist: {project_root}")
+        sys.exit(1)
+
+    indexer = CodebaseIndexer(project_root, output_dir)
+    indexer.generate_indexes()
+
+
+if __name__ == '__main__':
+    main()
