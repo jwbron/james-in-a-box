@@ -23,12 +23,12 @@ Options:
 import argparse
 import json
 import logging
-import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
 
 # Configuration
 CONFIG_DIR = Path.home() / ".config" / "jib"
@@ -103,7 +103,7 @@ def generate_token() -> tuple[str | None, str | None]:
     try:
         result = subprocess.run(
             [python_cmd, str(token_script), "--config-dir", str(CONFIG_DIR)],
-            capture_output=True,
+            check=False, capture_output=True,
             text=True,
             timeout=30
         )
@@ -135,14 +135,14 @@ def write_token_file(token: str) -> bool:
     # Ensure sharing directory exists
     SHARING_DIR.mkdir(parents=True, exist_ok=True)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now.timestamp() + TOKEN_VALIDITY_SECONDS
 
     data = {
         "token": token,
         "generated_at": now.isoformat(),
         "expires_at_unix": expires_at,
-        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
+        "expires_at": datetime.fromtimestamp(expires_at, UTC).isoformat(),
         "generated_by": "github-token-refresher",
         "validity_seconds": TOKEN_VALIDITY_SECONDS
     }
@@ -181,7 +181,7 @@ def token_needs_refresh(token_data: dict | None) -> bool:
 
     # Refresh if token expires within the next 20 minutes
     # This gives us a safety margin
-    now = datetime.now(timezone.utc).timestamp()
+    now = datetime.now(UTC).timestamp()
     return now > (expires_at - 20 * 60)
 
 
@@ -228,7 +228,7 @@ def run_once() -> bool:
 
 def run_daemon(interval: int = REFRESH_INTERVAL_SECONDS) -> None:
     """Run as a daemon, refreshing tokens periodically."""
-    logger.info(f"Starting GitHub Token Refresher daemon")
+    logger.info("Starting GitHub Token Refresher daemon")
     logger.info(f"Refresh interval: {interval // 60} minutes")
     logger.info(f"Token file: {TOKEN_FILE}")
 

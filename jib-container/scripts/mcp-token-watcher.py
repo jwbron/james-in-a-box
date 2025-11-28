@@ -22,14 +22,15 @@ The watcher can be:
 """
 
 import argparse
+import contextlib
 import hashlib
 import json
 import logging
-import os
 import subprocess
 import sys
 import time
 from pathlib import Path
+
 
 # Configuration
 TOKEN_FILE = Path.home() / "sharing" / ".github-token"
@@ -86,14 +87,12 @@ def reconfigure_mcp(token: str) -> bool:
     logger.info("Reconfiguring GitHub MCP server...")
 
     # Remove existing MCP config (ignore errors if it doesn't exist)
-    try:
+    with contextlib.suppress(Exception):
         subprocess.run(
             ["claude", "mcp", "remove", "github", "-s", "user"],
-            capture_output=True,
+            check=False, capture_output=True,
             timeout=30
         )
-    except Exception:
-        pass  # May not exist
 
     # Add new MCP config
     try:
@@ -106,7 +105,7 @@ def reconfigure_mcp(token: str) -> bool:
                 "https://api.githubcopilot.com/mcp/",
                 "--header", f"Authorization: Bearer {token}"
             ],
-            capture_output=True,
+            check=False, capture_output=True,
             text=True,
             timeout=30
         )
@@ -166,18 +165,18 @@ def check_and_update(force: bool = False) -> bool:
     return False
 
 
-def run_daemon() -> None:
+def run_daemon(interval: int = CHECK_INTERVAL_SECONDS) -> None:
     """Run as a daemon, continuously monitoring for token changes."""
     logger.info("Starting MCP Token Watcher daemon")
     logger.info(f"Monitoring: {TOKEN_FILE}")
-    logger.info(f"Check interval: {CHECK_INTERVAL_SECONDS}s")
+    logger.info(f"Check interval: {interval}s")
 
     # Initial check
     check_and_update()
 
     while True:
         try:
-            time.sleep(CHECK_INTERVAL_SECONDS)
+            time.sleep(interval)
             check_and_update()
         except KeyboardInterrupt:
             logger.info("Received interrupt, shutting down...")
@@ -221,9 +220,7 @@ def main():
         updated = check_and_update(force=args.force)
         sys.exit(0 if updated or not args.force else 1)
     else:
-        global CHECK_INTERVAL_SECONDS
-        CHECK_INTERVAL_SECONDS = args.interval
-        run_daemon()
+        run_daemon(interval=args.interval)
 
 
 if __name__ == "__main__":
