@@ -55,24 +55,24 @@ cleanup_orphaned_worktrees() {
 
             if [ -d "$original_repo/.git" ]; then
                 log "  Removing worktree: $repo_name"
-                cd "$original_repo"
+                cd "$original_repo" || { log "Error: cd failed to $original_repo"; continue; }
 
                 # Remove worktree (suppress errors if already gone)
-                if git worktree remove "$worktree" --force 2>/dev/null; then
+                if git worktree remove "${worktree}" --force 2>/dev/null; then
                     worktrees_removed=$((worktrees_removed + 1))
                 else
-                    log "  Warning: Could not remove worktree $worktree (may already be removed)"
+                    log "  Warning: Could not remove worktree ${worktree} (may already be removed)"
                 fi
             fi
         done
 
         # Remove container directory (best effort - some files may be owned by root/docker)
-        log "  Removing directory: $container_dir"
-        if rm -rf "$container_dir" 2>/dev/null; then
+        log "  Removing directory: ${container_dir}"
+        if rm -rf "${container_dir}" 2>/dev/null; then
             log "  Successfully removed directory"
         else
             log "  Warning: Could not remove all files (permission denied on some files)"
-            log "  Manual cleanup may be needed: rm -rf $container_dir"
+            log "  Manual cleanup may be needed: rm -rf ${container_dir}"
         fi
 
         total_cleaned=$((total_cleaned + 1))
@@ -93,7 +93,7 @@ prune_stale_worktree_references() {
         fi
 
         repo_name=$(basename "$repo")
-        cd "$repo"
+        cd "$repo" || { log "Error: cd failed to $repo"; continue; }
 
         # Prune stale worktree references (ignore errors)
         local prune_output
@@ -124,7 +124,7 @@ cleanup_orphaned_branches() {
         fi
 
         repo_name=$(basename "$repo")
-        cd "$repo"
+        cd "$repo" || { log "Error: cd failed to $repo"; continue; }
 
         # Detect the default branch (main, master, etc.)
         local default_branch

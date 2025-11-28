@@ -1,0 +1,250 @@
+{
+  "file_hashes": {
+    "README.md": "e068c5c772dca70c87e332a50533157a",
+    "setup.sh": "da40c3e00373a8e12b1c4f8126f7959e",
+    "config/README.md": "7e1e1d6b7fc3d9e9f16cae5d18e19559",
+    "config/repositories.yaml": "bf5030d415ecd84dc51f69498ef345e1",
+    "docs/README.md": "09443de9de769948310eb6ee05783929",
+    "docs/index.md": "d7e98b49dea3f5addc04bba69bf1bd4b",
+    "docs/adr/README.md": "9f451fa37dfaf5e2155372b93fd3c4d8",
+    "docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md": "4b74cb3abd5b7558f4a046accb6820aa",
+    "docs/adr/in-progress/ADR-LLM-Documentation-Index-Strategy.md": "82ed9f8b2bba2e58aa3b93fa92225338",
+    "docs/adr/not-implemented/ADR-GCP-Deployment-Terraform.md": "07185912b49dde0f00d26d2774e5bf15",
+    "docs/adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md": "518a7276e3fbf71a77af6d2601857819",
+    "docs/adr/not-implemented/ADR-Message-Queue-Slack-Integration.md": "a1e86547824506e32ce8b383d77ea696",
+    "docs/adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md": "437cc42b8934218ce0dcfc31e81ca920",
+    "docs/adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md": "a532542211e84ced2f99626eb1bbfc06",
+    "docs/architecture/README.md": "ec772fb6591d5c84ce896ad9ef78f05e",
+    "docs/generated/README.md": "fa4ca35606d984e84cde4b09bf3405be",
+    "docs/generated/codebase.json": "7c28c9c336a9da97b7d5b64c471a5944",
+    "docs/generated/dependencies.json": "2eeca1c6dda1b90dec1099749bd25da8",
+    "docs/generated/patterns.json": "ae1c0d89075d1416891d59de55b75de6",
+    "docs/reference/README.md": "0795aa1428adb5731cc5e86024d61790",
+    "docs/reference/beads.md": "089202287fb6fd10fa895e13e31acc30",
+    "docs/reference/conversation-analysis-criteria.md": "c036ab84218b693b23d832be9f92ac5b",
+    "docs/reference/khan-academy-culture.md": "9072ecec99f5653eb09ebf0ec9232a31",
+    "docs/setup/README.md": "af4e4e35a18ae86a1e92367b0f66ec5f",
+    "docs/setup/github-app-setup.md": "57b7974408b17d887f382a453ab7bad1",
+    "docs/user-guide/README.md": "b867632c60ae393327182182be00edb0",
+    "host-services/analysis/github-watcher/github-watcher.py": "17a83e65fb085c02ab4d111f0752e889",
+    "host-services/slack/slack-receiver/README.md": "51c4a32e36b649f6a26477395fc8329c",
+    "host-services/slack/slack-receiver/host_command_handler.py": "c244bf8926b7a66d2cd7ab86dc3c6366",
+    "host-services/utilities/worktree-watcher/worktree-watcher.sh": "f50ad0bac51db050ee1709c8a48cd210",
+    "jib-container/Dockerfile": "d09e1952a0ddc5f98105637627e495d3",
+    "jib-container/.claude/commands/README.md": "96faa438b49ac9b9a57583f961e26a35",
+    "jib-container/.claude/commands/beads-status.md": "9caf13b6d16bd984614041dc349316af",
+    "jib-container/.claude/commands/beads-sync.md": "b3195a8a763c28c87c59e030909e0f48",
+    "jib-container/.claude/rules/README.md": "54f6ff691b30380c53651a830182cf26",
+    "jib-container/.claude/rules/beads-usage.md": "46dcccb9503a0265e1336e4a7b5433e3",
+    "jib-container/.claude/rules/context-tracking.md": "1b1f37c33625c850324d22eca50604ce",
+    "jib-container/.claude/rules/environment.md": "0e84e432e430f577fafb061725fade38",
+    "jib-container/.claude/rules/mission.md": "68555ffbce05bee9576c8a612564276a",
+    "jib-container/.claude/rules/notification-template.md": "2be6ffdc37d2b520a103a33522572049",
+    "jib-container/.claude/rules/pr-descriptions.md": "bfa8c238950839daea5e1cd4a9c78597",
+    "jib-container/jib-tasks/confluence/confluence-processor.py": "662f158c9652f3e8b09ee600e7848990",
+    "jib-container/jib-tasks/github/comment-responder.py": "9e9c97c687a4672ac95295a44077f7df",
+    "jib-container/jib-tasks/github/github-processor.py": "d23287d78fc356c9bb7d8e1fffe55b15",
+    "jib-container/jib-tasks/github/pr-analyzer.py": "ebe769a351fdb797dba1f3d0a4d4769b",
+    "jib-container/jib-tasks/jira/jira-processor.py": "7ab22351fc5eef8442b5ec9b7c07e8a5",
+    "jib-container/jib-tasks/slack/incoming-processor.py": "e167d39f32b14ca88dbe307e6bebcd88",
+    "shared/claude/__init__.py": "c3610951c9330b88b3900d9bf7a0d238",
+    "shared/claude/runner.py": "fe8c956f936b44f022991e15b8243800",
+    "shared/notifications/slack.py": "64a21621317eca358bf62269cedb3708",
+    "tests/host_services/test_github_watcher.py": "15fe60f6bb019bc100da4f87e774e7e0",
+    "tests/jib/test_jib.py": "ef2a0f738e687af919c95ba2a6ff170b",
+    "tests/jib_tasks/test_incoming_processor.py": "ae8d7092ba6355f84e91de2c9b39810f",
+    "tests/jib_tasks/test_pr_analyzer.py": "75137cdda53589231af29340cfc17121"
+  },
+  "last_analyzed": "2025-11-28T09:05:25.830050",
+  "issues": [
+    {
+      "file": "jib-container/jib-tasks/github/pr-analyzer.py",
+      "line_hint": "function main() at line 368",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Public function 'main' lacks a docstring",
+      "suggestion": "Add a docstring describing what the function does",
+      "auto_fixable": false
+    },
+    {
+      "file": "README.md",
+      "line_hint": "references 'discover-tests.py'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: discover-tests.py",
+      "suggestion": "Update or remove reference to 'discover-tests.py' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "docs/README.md",
+      "line_hint": "references 'host-services/slack-notifier/README.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: host-services/slack-notifier/README.md",
+      "suggestion": "Update or remove reference to 'host-services/slack-notifier/README.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/.claude/rules/README.md",
+      "line_hint": "references 'CLAUDE.md'",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "README references non-existent file: CLAUDE.md",
+      "suggestion": "Update or remove reference to 'CLAUDE.md' in README",
+      "auto_fixable": false
+    },
+    {
+      "file": "README.md",
+      "line_hint": "line 505",
+      "priority": "HIGH",
+      "category": "documentation",
+      "description": "References non-existent file docs/adr/adr-autonomous-engineer-session.md",
+      "suggestion": "Update to docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md",
+      "auto_fixable": true
+    },
+    {
+      "file": "README.md",
+      "line_hint": "lines 186, 439, 513",
+      "priority": "HIGH",
+      "category": "documentation",
+      "description": "References host-services/sync/github-sync/ which does not exist; actual service is host-services/analysis/github-watcher/",
+      "suggestion": "Update references to use correct path: host-services/analysis/github-watcher/",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/jib-tasks/confluence/confluence-processor.py",
+      "line_hint": "lines 68, 91 - except Exception as e blocks",
+      "priority": "MEDIUM",
+      "category": "code_quality",
+      "description": "Bare 'except Exception as e' in document processing could mask unexpected errors",
+      "suggestion": "Narrow to specific exceptions: except (OSError, IOError, UnicodeDecodeError) as e:",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/jira/jira-processor.py",
+      "line_hint": "line 62-63 in ticket processing loop",
+      "priority": "HIGH",
+      "category": "code_quality",
+      "description": "Unhandled exception in ticket file processing could stop entire watch; bare except clause",
+      "suggestion": "Add explicit exception handling around ticket_file.stat() and read_text()",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/utilities/worktree-watcher/worktree-watcher.sh",
+      "line_hint": "lines 53-58",
+      "priority": "MEDIUM",
+      "category": "code_quality",
+      "description": "Unquoted shell variables ($worktree, $original_repo, $container_dir) could cause word splitting with special characters",
+      "suggestion": "Quote all variables using \"${var}\" pattern throughout the script",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/utilities/worktree-watcher/worktree-watcher.sh",
+      "line_hint": "line 58 - cd command",
+      "priority": "MEDIUM",
+      "category": "code_quality",
+      "description": "cd command result not checked before subsequent git operations",
+      "suggestion": "Add: cd \"$original_repo\" || { log \"Error: cd failed\"; continue; }",
+      "auto_fixable": true
+    },
+    {
+      "file": "README.md",
+      "line_hint": "lines 154, 564, 587",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "References legacy config location ~/.config/jib-notifier/config.json instead of consolidated ~/.config/jib/config.yaml",
+      "suggestion": "Replace all references to ~/.config/jib-notifier/ with ~/.config/jib/",
+      "auto_fixable": true
+    },
+    {
+      "file": "docs/setup/README.md",
+      "line_hint": "line 45",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "Setup instructions reference legacy config location ~/.config/jib-notifier/config.json",
+      "suggestion": "Update to reference consolidated config at ~/.config/jib/",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/confluence/",
+      "line_hint": "entire directory - duplicate of watchers/context-watcher/",
+      "priority": "MEDIUM",
+      "category": "duplication",
+      "description": "confluence-watcher.py is 98% identical to jib-container/watchers/context-watcher/confluence-watcher.py (219 lines duplicated)",
+      "suggestion": "Consolidate into shared/watchers/confluence_watcher.py and import from both locations",
+      "auto_fixable": false
+    },
+    {
+      "file": "jib-container/jib-tasks/jira/",
+      "line_hint": "entire directory - duplicate of watchers/context-watcher/",
+      "priority": "MEDIUM",
+      "category": "duplication",
+      "description": "jira-watcher.py is 100% identical to jib-container/watchers/context-watcher/jira-watcher.py (185 lines duplicated)",
+      "suggestion": "Consolidate into shared/watchers/jira_watcher.py and import from both locations",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/jira/sync.py",
+      "line_hint": "lines 48-62",
+      "priority": "MEDIUM",
+      "category": "duplication",
+      "description": "JIRA connector reimplements _load_sync_state/_save_sync_state that BaseConnector already provides (95% identical)",
+      "suggestion": "Remove duplicate methods and inherit from BaseConnector",
+      "auto_fixable": false
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/base.py",
+      "line_hint": "filename",
+      "priority": "MEDIUM",
+      "category": "naming",
+      "description": "Uses snake_case 'base.py' instead of kebab-case; too generic a name",
+      "suggestion": "Rename to connector-base.py or base-connector.py for consistency with project conventions",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/jira/sync.py",
+      "line_hint": "filename",
+      "priority": "MEDIUM",
+      "category": "naming",
+      "description": "Uses snake_case 'sync.py' instead of kebab-case; too generic a name",
+      "suggestion": "Rename to jira-sync.py for consistency with project conventions",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/confluence/ and jib-container/jib-tasks/jira/",
+      "line_hint": "directory names",
+      "priority": "MEDIUM",
+      "category": "naming",
+      "description": "Directory naming inconsistent: lowercase directories with kebab-case files (inconsistent with watchers/ pattern)",
+      "suggestion": "Rename to confluence-watcher/ and jira-watcher/ for consistency",
+      "auto_fixable": true
+    },
+    {
+      "file": "host-services/sync/context-sync/connectors/jira/sync.py",
+      "line_hint": "lines 124-125",
+      "priority": "MEDIUM",
+      "category": "code_quality",
+      "description": "RequestException catches too broadly; should distinguish timeouts from auth/network errors",
+      "suggestion": "Split into: except (requests.Timeout, requests.ConnectionError, requests.HTTPError):",
+      "auto_fixable": true
+    },
+    {
+      "file": "jib-container/jib-tasks/confluence/confluence-processor.py",
+      "line_hint": "lines 49, 72",
+      "priority": "MEDIUM",
+      "category": "code_quality",
+      "description": "Hard-coded list limits ([:10] and [:5]) silently drop documents without warning",
+      "suggestion": "Add logging: if len(adr_files) > 10: logger.warning(f'Limiting ADRs to first 10 of {len(adr_files)}')",
+      "auto_fixable": true
+    },
+    {
+      "file": "docs/reference/README.md",
+      "line_hint": "line 73",
+      "priority": "MEDIUM",
+      "category": "documentation",
+      "description": "References ./jib --reset but flag existence not verified in codebase",
+      "suggestion": "Verify jib CLI supports --reset flag or update to correct flag name",
+      "auto_fixable": false
+    }
+  ]
+}
