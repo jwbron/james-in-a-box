@@ -208,7 +208,6 @@ Scripts called via `jib --exec` from host-side systemd services:
 
 Interactive utilities used inside the container:
 
-- `comment-pr-helper.py` - Post PR comments
 - `discover-tests.py` - Discover test frameworks in a codebase
 
 ### Container Config

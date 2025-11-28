@@ -169,10 +169,6 @@ git reset --hard HEAD~1      # Only if you backed up!
 
 **Rule of thumb**: When in doubt, run `git branch --show-current` and `git log --oneline -5` to verify you're working in the right context.
 
-**For PR comments**, use `comment-pr-helper.py`:
-- **Writable repos**: Posts comment to GitHub and notifies via Slack
-- **Non-writable repos**: Sends comment content via Slack for manual posting
-
 **Troubleshooting**: If GitHub MCP fails, check `GITHUB_TOKEN` environment variable.
 
 **REMINDER**: Use GitHub MCP for all GitHub operations.
