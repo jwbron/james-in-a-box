@@ -64,7 +64,6 @@ class TestStateManagement:
                 "processed_failures": {},
                 "processed_comments": {},
                 "processed_reviews": {},
-                "processed_conflicts": {},
                 "last_run_start": None,
             }
 
@@ -377,55 +376,55 @@ class TestCheckPrsForReview:
     def test_no_prs_from_others(self):
         """Test when no PRs from others exist."""
         state = {"processed_reviews": {}}
+        all_prs = []  # Pre-fetched empty list
 
-        with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = []
+        result = github_watcher.check_prs_for_review(
+            "owner/repo", all_prs, state, "testuser", "botuser"
+        )
 
-            result = github_watcher.check_prs_for_review("owner/repo", state, "testuser")
-
-            assert result == []
+        assert result == []
 
     def test_prs_from_others_detected(self):
         """Test PRs from others are detected."""
         state = {"processed_reviews": {}}
+        all_prs = [
+            {
+                "number": 456,
+                "title": "New feature",
+                "url": "https://github.com/owner/repo/pull/456",
+                "headRefName": "feature",
+                "baseRefName": "main",
+                "author": {"login": "other-dev"},
+                "createdAt": "2025-01-01",
+                "additions": 100,
+                "deletions": 50,
+                "files": [{"path": "app.py"}],
+            }
+        ]
 
-        with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = [
-                {
-                    "number": 456,
-                    "title": "New feature",
-                    "url": "https://github.com/owner/repo/pull/456",
-                    "headRefName": "feature",
-                    "baseRefName": "main",
-                    "author": {"login": "other-dev"},
-                    "createdAt": "2025-01-01",
-                    "additions": 100,
-                    "deletions": 50,
-                    "files": [{"path": "app.py"}],
-                }
-            ]
+        with patch.object(github_watcher, "gh_text", return_value="diff content"):
+            result = github_watcher.check_prs_for_review(
+                "owner/repo", all_prs, state, "testuser", "botuser"
+            )
 
-            with patch.object(github_watcher, "gh_text", return_value="diff content"):
-                result = github_watcher.check_prs_for_review("owner/repo", state, "testuser")
-
-            assert len(result) == 1
-            assert result[0]["type"] == "review_request"
-            assert result[0]["pr_number"] == 456
-            assert result[0]["author"] == "other-dev"
+        assert len(result) == 1
+        assert result[0]["type"] == "review_request"
+        assert result[0]["pr_number"] == 456
+        assert result[0]["author"] == "other-dev"
 
     def test_already_reviewed_skipped(self):
         """Test already reviewed PRs are skipped."""
         state = {"processed_reviews": {"owner/repo-456:review": "2025-01-01"}}
+        all_prs = [
+            {
+                "number": 456,
+                "title": "New feature",
+                "author": {"login": "other-dev"},
+            }
+        ]
 
-        with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = [
-                {
-                    "number": 456,
-                    "title": "New feature",
-                    "author": {"login": "other-dev"},
-                }
-            ]
+        result = github_watcher.check_prs_for_review(
+            "owner/repo", all_prs, state, "testuser", "botuser"
+        )
 
-            result = github_watcher.check_prs_for_review("owner/repo", state, "testuser")
-
-            assert result == []
+        assert result == []

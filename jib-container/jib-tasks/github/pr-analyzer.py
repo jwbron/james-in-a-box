@@ -22,6 +22,11 @@ import sys
 from pathlib import Path
 
 
+# Import shared Claude runner
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "shared"))
+from claude import run_claude
+
+
 def load_context(context_file: Path) -> dict:
     """Load PR context from JSON file."""
     with open(context_file) as f:
@@ -329,48 +334,29 @@ The notification should be concise and actionable.
     return context_text + instructions
 
 
-def run_claude(prompt: str, interactive: bool = False) -> bool:
+def analyze_with_claude(prompt: str, interactive: bool = False) -> bool:
     """Run Claude with the analysis prompt."""
-    try:
-        if interactive:
-            # Interactive mode - show output in real-time
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                text=True,
-                cwd=str(Path.home() / "khan"),
-            )
-            return result.returncode == 0
+    cwd = Path.home() / "khan"
+
+    if interactive:
+        # Interactive mode - show output in real-time
+        result = run_claude(prompt, timeout=900, cwd=cwd, capture_output=False)
+        return result.success
+    else:
+        # Non-interactive - capture output
+        result = run_claude(prompt, timeout=900, cwd=cwd)
+
+        if result.success:
+            print("=" * 60)
+            print("ANALYSIS RESULTS")
+            print("=" * 60)
+            print(result.stdout)
+            return True
         else:
-            # Non-interactive - capture output
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                timeout=900,  # 15 minute timeout
-                cwd=str(Path.home() / "khan"),
-            )
-
-            if result.returncode == 0:
-                print("=" * 60)
-                print("ANALYSIS RESULTS")
-                print("=" * 60)
-                print(result.stdout)
-                return True
-            else:
-                print(f"Claude exited with code {result.returncode}", file=sys.stderr)
+            print(f"{result.error}", file=sys.stderr)
+            if result.stderr:
                 print(f"stderr: {result.stderr}", file=sys.stderr)
-                return False
-
-    except subprocess.TimeoutExpired:
-        print("Analysis timed out after 15 minutes", file=sys.stderr)
-        return False
-    except Exception as e:
-        print(f"Error running Claude: {e}", file=sys.stderr)
-        return False
+            return False
 
 
 def stop_background_services():
@@ -410,7 +396,7 @@ def main():
     prompt = build_analysis_prompt(ctx, fix_mode=args.fix)
 
     # Run Claude
-    success = run_claude(prompt, interactive=args.interactive)
+    success = analyze_with_claude(prompt, interactive=args.interactive)
 
     # Stop background services for clean exit
     stop_background_services()

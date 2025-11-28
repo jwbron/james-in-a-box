@@ -13,11 +13,20 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 ## Context Sources
 
 | Source | Location | Purpose |
-|--------|----------|---------|n| Confluence | `~/context-sync/confluence/` | ADRs, runbooks, best practices |
+|--------|----------|---------|
+| **Documentation Index** | `~/khan/james-in-a-box/docs/index.md` | Navigation hub for all docs |
+| Confluence | `~/context-sync/confluence/` | ADRs, runbooks, best practices |
 | JIRA | `~/context-sync/jira/` | Tickets, requirements, sprint info |
 | Slack | `~/sharing/incoming/` | Task requests |
 | Beads | `~/beads/` | Persistent task memory |
 | **GitHub MCP** | Real-time API access | PRs, issues, repos, comments |
+
+### Documentation Navigation
+
+**Before starting complex tasks**, consult the documentation index:
+- Read `~/khan/james-in-a-box/docs/index.md` for task-specific guides
+- Check relevant ADRs before architectural changes
+- The index follows the [llms.txt](https://llmstxt.org/) standard for efficient navigation
 
 ## CRITICAL TOOL REQUIREMENTS
 
@@ -26,20 +35,20 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 **NEVER skip beads.** Before ANY work, you MUST:
 ```bash
 cd ~/beads
-bd list --status in-progress      # Check for work to resume
-bd list --search "keywords"       # Check for related tasks
+bd --allow-stale list --status in_progress   # Check for work to resume
+bd --allow-stale search "keywords"           # Check for related tasks
 ```
 
 **ALWAYS create a beads task** for new work:
 ```bash
-bd add "Task description" --tags feature,slack
-bd update <id> --status in-progress
+bd --allow-stale create "Task description" --labels feature,slack
+bd --allow-stale update <id> --status in_progress
 ```
 
 **ALWAYS update beads** as you work:
 ```bash
-bd update <id> --notes "Progress: completed step 1..."
-bd update <id> --status done --notes "Summary of what was done"
+bd --allow-stale update <id> --notes "Progress: completed step 1..."
+bd --allow-stale update <id> --status closed --notes "Summary of what was done"
 ```
 
 This is NOT optional. Beads enables persistent memory across container restarts.
@@ -63,9 +72,9 @@ See `environment.md` for details on git push and MCP tools.
 ### 1. Check Beads Task (ALWAYS FIRST)
 ```bash
 cd ~/beads
-bd list --status in-progress      # Resume work?
-bd list --search "keywords"       # Related task?
-bd add "Task description" --tags feature,jira-1234  # New task
+bd --allow-stale list --status in_progress   # Resume work?
+bd --allow-stale search "keywords"           # Related task?
+bd --allow-stale create "Task description" --labels feature,jira-1234  # New task
 ```
 
 ### 2. Gather Context
@@ -85,8 +94,8 @@ You work in an **isolated git worktree**:
 
 Break complex tasks into Beads subtasks:
 ```bash
-bd add "Subtask 1" --parent $TASK_ID
-bd update bd-xyz --status done --notes "Completed per ADR-042"
+bd --allow-stale create "Subtask 1" --parent $TASK_ID
+bd --allow-stale update bd-xyz --status closed --notes "Completed per ADR-042"
 ```
 
 ### 5. Test
@@ -226,14 +235,14 @@ git push origin <pr-branch-name>
 
 **MANDATORY**: Update beads when task is complete:
 ```bash
-# Mark task done with summary
-bd update $TASK_ID --status done --notes "Summary. Tests passing. PR #XX created."
+# Mark task closed with summary
+bd --allow-stale update $TASK_ID --status closed --notes "Summary. Tests passing. PR #XX created."
 
 # Save context for future sessions
 @save-context <project-name>
 ```
 
-**NEVER** finish work without updating beads status to `done`.
+**NEVER** finish work without updating beads status to `closed`.
 
 ## Git Safety (CRITICAL)
 

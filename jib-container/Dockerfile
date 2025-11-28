@@ -215,20 +215,42 @@ else
 fi
 
 # Set up agent rules for AI guidance using CLAUDE.md format
-# Combine all rules into one file: mission + environment + Khan Academy standards
-if [ -f "/opt/claude-rules/mission.md" ] && [ -f "/opt/claude-rules/environment.md" ] && [ -f "/opt/claude-rules/khan-academy.md" ]; then
-    cat /opt/claude-rules/mission.md > "${USER_HOME}/CLAUDE.md"
-    echo "" >> "${USER_HOME}/CLAUDE.md"
-    echo "---" >> "${USER_HOME}/CLAUDE.md"
-    echo "" >> "${USER_HOME}/CLAUDE.md"
-    cat /opt/claude-rules/environment.md >> "${USER_HOME}/CLAUDE.md"
-    echo "" >> "${USER_HOME}/CLAUDE.md"
-    echo "---" >> "${USER_HOME}/CLAUDE.md"
-    echo "" >> "${USER_HOME}/CLAUDE.md"
-    cat /opt/claude-rules/khan-academy.md >> "${USER_HOME}/CLAUDE.md"
+# Combine all rules into one file in logical order (per LLM Documentation Index Strategy ADR)
+# Order: mission (core) → environment (constraints) → beads (task tracking) → context → standards → quality
+RULES_DIR="/opt/claude-rules"
+RULES_ORDER=(
+    "mission.md"              # Core agent instructions (start here)
+    "environment.md"          # Sandbox constraints
+    "beads-usage.md"          # Persistent task tracking (mandatory)
+    "context-tracking.md"     # Slack/PR context persistence
+    "khan-academy.md"         # Tech stack and standards
+    "test-workflow.md"        # Test discovery and execution
+    "pr-descriptions.md"      # PR writing guidelines
+    "notification-template.md" # Async notifications
+)
+
+if [ -f "${RULES_DIR}/mission.md" ]; then
+    # Start fresh
+    : > "${USER_HOME}/CLAUDE.md"
+
+    # Concatenate rules in defined order
+    first_file=true
+    for rule_file in "${RULES_ORDER[@]}"; do
+        if [ -f "${RULES_DIR}/${rule_file}" ]; then
+            if [ "$first_file" = false ]; then
+                echo "" >> "${USER_HOME}/CLAUDE.md"
+                echo "---" >> "${USER_HOME}/CLAUDE.md"
+                echo "" >> "${USER_HOME}/CLAUDE.md"
+            fi
+            cat "${RULES_DIR}/${rule_file}" >> "${USER_HOME}/CLAUDE.md"
+            first_file=false
+        fi
+    done
+
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/CLAUDE.md"
-    echo "✓ AI agent rules installed: ~/CLAUDE.md (mission + environment + Khan standards)"
-    echo "  Note: All rules combined in one file since ~/khan/ is mounted from host"
+    echo "✓ AI agent rules installed: ~/CLAUDE.md"
+    echo "  Combined ${#RULES_ORDER[@]} rule files (index-based per LLM Doc ADR)"
+    echo "  Note: Reference docs in ~/khan/james-in-a-box/docs/ (fetched on-demand)"
 fi
 
 # Set up .claude directory structure
@@ -440,7 +462,8 @@ if [ $# -eq 0 ]; then
     echo "Human: Reviews and ships your work"
     echo ""
     echo "📋 Your Instructions:"
-    echo "  • ~/CLAUDE.md                      (all rules: mission, environment, Khan)"
+    echo "  • ~/CLAUDE.md                      (concise rules: mission, beads, context, etc.)"
+    echo "  • ~/khan/james-in-a-box/docs/      (reference docs - fetch on demand)"
     echo "  Note: ~/khan/ is mounted from host - all code changes persist immediately"
     echo ""
     echo "🚀 Quick Start:"

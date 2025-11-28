@@ -11,10 +11,14 @@ Scope: Only processes tickets assigned to you
 """
 
 import json
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+
+# Import shared Claude runner
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "shared"))
+from claude import run_claude
 
 
 def main():
@@ -150,37 +154,22 @@ For each ticket:
 Analyze these tickets now and take appropriate action."""
 
     # Run Claude Code
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            capture_output=False,
-            text=True,
-            timeout=900,  # 15 minute timeout
-        )
+    result = run_claude(prompt, timeout=900, capture_output=False)
 
-        if result.returncode == 0:
-            print("✅ Ticket analysis complete")
+    if result.success:
+        print("✅ Ticket analysis complete")
 
-            # Update state file with processed tickets
-            for t in new_or_updated:
-                processed_tickets[t["path"]] = t["mtime"]
+        # Update state file with processed tickets
+        for t in new_or_updated:
+            processed_tickets[t["path"]] = t["mtime"]
 
-            state_file.parent.mkdir(parents=True, exist_ok=True)
-            with state_file.open("w") as f:
-                json.dump({"processed": processed_tickets}, f, indent=2)
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        with state_file.open("w") as f:
+            json.dump({"processed": processed_tickets}, f, indent=2)
 
-            return 0
-        else:
-            print(f"⚠️  Claude exited with code {result.returncode}")
-            return 1
-
-    except subprocess.TimeoutExpired:
-        print("⚠️ Analysis timed out after 15 minutes")
-        return 1
-    except Exception as e:
-        print(f"❌ Error running Claude: {e}")
+        return 0
+    else:
+        print(f"⚠️ {result.error}")
         return 1
 
 

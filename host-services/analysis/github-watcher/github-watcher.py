@@ -4,7 +4,7 @@ GitHub Watcher - Host-side service that monitors GitHub and triggers jib contain
 
 This service runs on the host (NOT in the container) and:
 1. Queries GitHub directly via gh CLI for PR/issue status
-2. Detects check failures, merge conflicts, new comments, and review requests
+2. Detects check failures, new comments, and review requests
 3. Triggers jib container via `jib --exec github-processor.py --context <json>`
 
 The container should ONLY be called via `jib --exec`. No watching/polling logic lives in the container.
@@ -15,12 +15,10 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 
 ### Which PRs are monitored:
 1. **User's PRs** (authored by `github_username` from config):
-   - Merge conflicts: Detects and resolves conflicts with base branch
    - Check failures: Detects and triggers fixes for failing CI checks
    - Comments: Responds to comments from others (not from bot)
 
 2. **Bot's PRs** (authored by `bot_username[bot]`):
-   - Merge conflicts: Detects and resolves conflicts with base branch
    - Check failures: Detects and triggers fixes for failing CI checks
    - Comments: Responds to comments from the user and others (not from bot itself)
 
@@ -29,23 +27,16 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 - Comments from the `bot_username` and common bots (github-actions, dependabot) are IGNORED
 - Only comments newer than the last watcher run are processed (to avoid re-processing)
 
-### Merge conflict handling:
-- PRs with mergeable state "CONFLICTING" are detected
-- Claude merges the base branch and resolves conflicts
-- Each (repo, PR, commit SHA) combination is tracked to avoid duplicate processing
-- Pushing a new commit resets the processed state for conflict detection
-
-### Check failure handling:
+### Check failure retry behavior:
 - Each unique (repo, PR, commit SHA, failing check names) combination is tracked
 - If a commit's failures have been processed, they won't be retried for that same commit
 - Pushing a new commit resets the processed state, allowing fresh retry attempts
-- Claude first merges main and runs checks locally before attempting fixes
 
 ### What happens when jib is invoked:
-- jib runs Claude with the task context (merge conflicts, check failures, comments, or review request)
-- Claude analyzes the issue and takes action (resolve conflicts, fix code, respond to comments, etc.)
+- jib runs Claude with the task context (check failures, comments, or review request)
+- Claude analyzes the issue and takes action (fix code, respond to comments, etc.)
 - Claude uses `gh pr comment` to post responses
-- Claude commits and pushes fixes for check failures and conflict resolutions
+- Claude commits and pushes fixes for check failures
 
 ### Configuration (config/repositories.yaml):
 - `github_username`: Your GitHub username (for identifying your PRs)
@@ -56,10 +47,17 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 import json
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+
+# Rate limiting configuration
+RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
+RATE_LIMIT_MAX_RETRIES = 3  # Max retries on rate limit errors
+RATE_LIMIT_BASE_WAIT = 60  # Base wait time in seconds for exponential backoff
 
 
 def load_config() -> dict:
@@ -93,7 +91,6 @@ def load_state() -> dict:
                 state.setdefault("processed_failures", {})
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
-                state.setdefault("processed_conflicts", {})
                 state.setdefault("last_run_start", None)
                 return state
         except Exception:
@@ -102,7 +99,6 @@ def load_state() -> dict:
         "processed_failures": {},
         "processed_comments": {},
         "processed_reviews": {},
-        "processed_conflicts": {},
         "last_run_start": None,
     }
 
@@ -116,45 +112,87 @@ def save_state(state: dict):
 
 
 def gh_json(args: list[str]) -> dict | list | None:
-    """Run gh CLI command and return JSON output."""
-    try:
-        result = subprocess.run(
-            ["gh"] + args,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=60,
-        )
-        return json.loads(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(f"  gh command failed: {' '.join(args)}")
-        print(f"  stderr: {e.stderr}")
-        return None
-    except json.JSONDecodeError:
-        return None
-    except subprocess.TimeoutExpired:
-        print(f"  gh command timed out: {' '.join(args)}")
-        return None
+    """Run gh CLI command and return JSON output with rate limit handling.
+
+    Implements exponential backoff on rate limit errors and basic throttling
+    between calls to prevent hitting rate limits.
+    """
+    # Basic throttling between calls
+    time.sleep(RATE_LIMIT_DELAY)
+
+    for attempt in range(RATE_LIMIT_MAX_RETRIES):
+        try:
+            result = subprocess.run(
+                ["gh"] + args,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=60,
+            )
+            return json.loads(result.stdout)
+        except subprocess.CalledProcessError as e:
+            # Check for rate limiting
+            if "rate limit" in e.stderr.lower():
+                if attempt < RATE_LIMIT_MAX_RETRIES - 1:
+                    wait_time = RATE_LIMIT_BASE_WAIT * (2**attempt)
+                    print(f"  Rate limited, waiting {wait_time}s before retry (attempt {attempt + 1})...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"  Rate limit exceeded after {RATE_LIMIT_MAX_RETRIES} retries: {' '.join(args)}")
+                    return None
+            else:
+                print(f"  gh command failed: {' '.join(args)}")
+                print(f"  stderr: {e.stderr}")
+                return None
+        except json.JSONDecodeError:
+            return None
+        except subprocess.TimeoutExpired:
+            print(f"  gh command timed out: {' '.join(args)}")
+            return None
+
+    return None
 
 
 def gh_text(args: list[str]) -> str | None:
-    """Run gh CLI command and return text output."""
-    try:
-        result = subprocess.run(
-            ["gh"] + args,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=120,
-        )
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        print(f"  gh command failed: {' '.join(args)}")
-        print(f"  stderr: {e.stderr}")
-        return None
-    except subprocess.TimeoutExpired:
-        print(f"  gh command timed out: {' '.join(args)}")
-        return None
+    """Run gh CLI command and return text output with rate limit handling.
+
+    Implements exponential backoff on rate limit errors and basic throttling
+    between calls to prevent hitting rate limits.
+    """
+    # Basic throttling between calls
+    time.sleep(RATE_LIMIT_DELAY)
+
+    for attempt in range(RATE_LIMIT_MAX_RETRIES):
+        try:
+            result = subprocess.run(
+                ["gh"] + args,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=120,
+            )
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            # Check for rate limiting
+            if "rate limit" in e.stderr.lower():
+                if attempt < RATE_LIMIT_MAX_RETRIES - 1:
+                    wait_time = RATE_LIMIT_BASE_WAIT * (2**attempt)
+                    print(f"  Rate limited, waiting {wait_time}s before retry (attempt {attempt + 1})...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"  Rate limit exceeded after {RATE_LIMIT_MAX_RETRIES} retries: {' '.join(args)}")
+                    return None
+            else:
+                print(f"  gh command failed: {' '.join(args)}")
+                print(f"  stderr: {e.stderr}")
+                return None
+        except subprocess.TimeoutExpired:
+            print(f"  gh command timed out: {' '.join(args)}")
+            return None
+
+    return None
 
 
 def invoke_jib(task_type: str, context: dict) -> bool:
@@ -469,105 +507,38 @@ def check_pr_for_comments(
     }
 
 
-def check_pr_for_merge_conflicts(repo: str, pr_data: dict, state: dict) -> dict | None:
-    """Check a PR for merge conflicts.
-
-    Returns context dict if conflicts found and not already processed.
-    Uses GitHub's GraphQL API to get mergeable state.
-    """
-    pr_num = pr_data["number"]
-    head_sha = pr_data.get("headRefOid")
-
-    # Get PR mergeable state via GraphQL (REST API requires waiting for computation)
-    # The REST API's "mergeable" field can be null while GitHub computes it
-    pr_details = gh_json(
-        [
-            "pr",
-            "view",
-            str(pr_num),
-            "--repo",
-            repo,
-            "--json",
-            "number,title,url,headRefName,baseRefName,mergeable,mergeStateStatus,body",
-        ]
-    )
-
-    if pr_details is None:
-        return None
-
-    # Check mergeable state
-    # mergeable can be: "MERGEABLE", "CONFLICTING", "UNKNOWN"
-    # mergeStateStatus gives more detail: "CLEAN", "DIRTY", "UNKNOWN", "UNSTABLE", "HAS_HOOKS", "BLOCKED"
-    mergeable = pr_details.get("mergeable", "")
-    merge_state = pr_details.get("mergeStateStatus", "")
-
-    # Only process if explicitly conflicting
-    if mergeable != "CONFLICTING":
-        if mergeable == "UNKNOWN":
-            print(f"    PR #{pr_num}: Merge state unknown (GitHub still computing)")
-        return None
-
-    # Create signature based on head SHA (new commits should trigger re-check)
-    conflict_signature = f"{repo}-{pr_num}-{head_sha}:conflict"
-
-    if conflict_signature in state.get("processed_conflicts", {}):
-        processed_at = state["processed_conflicts"].get(conflict_signature, "unknown")
-        print(f"    PR #{pr_num}: Merge conflicts already processed at {processed_at}")
-        return None
-
-    print(f"  PR #{pr_num}: Has merge conflicts (state: {merge_state})")
-
-    return {
-        "type": "merge_conflict",
-        "repository": repo,
-        "pr_number": pr_num,
-        "pr_title": pr_data.get("title", ""),
-        "pr_url": pr_data.get("url", ""),
-        "pr_branch": pr_data.get("headRefName", ""),
-        "base_branch": pr_details.get("baseRefName", "main"),
-        "pr_body": pr_details.get("body", ""),
-        "head_sha": head_sha,
-        "conflict_signature": conflict_signature,
-    }
-
-
 def check_prs_for_review(
-    repo: str, state: dict, bot_username: str, since_timestamp: str | None = None
+    repo: str,
+    all_prs: list[dict],
+    state: dict,
+    github_username: str,
+    bot_username: str,
+    since_timestamp: str | None = None,
 ) -> list[dict]:
     """Check for PRs from others that need review.
 
     Args:
         repo: Repository in owner/repo format
+        all_prs: Pre-fetched list of all open PRs (to avoid redundant API calls)
         state: State dict with processed_reviews
+        github_username: The user's GitHub username (to exclude their PRs)
         bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
     Returns list of context dicts for PRs needing review.
     """
-    # Get open PRs NOT authored by @me
-    prs = gh_json(
-        [
-            "pr",
-            "list",
-            "--repo",
-            repo,
-            "--state",
-            "open",
-            "--json",
-            "number,title,url,headRefName,baseRefName,author,createdAt,additions,deletions,files",
-        ]
-    )
-
-    if prs is None:
+    if not all_prs:
         return []
 
-    # Filter to PRs from others (not from the bot)
+    # Filter to PRs from others (not from the user or bot)
     excluded_authors = {
+        github_username.lower(),
         bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
     }
 
     other_prs = [
-        p for p in prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
     ]
 
     if not other_prs:
@@ -682,8 +653,9 @@ def main():
     for repo in repos:
         print(f"\n[{repo}]")
 
-        # Get open PRs authored by configured user (for check failures and comments)
-        my_prs = gh_json(
+        # OPTIMIZATION: Fetch ALL open PRs in a single API call, then filter locally
+        # This reduces 3 API calls to 1 per repository
+        all_prs = gh_json(
             [
                 "pr",
                 "list",
@@ -691,25 +663,37 @@ def main():
                 repo,
                 "--state",
                 "open",
-                "--author",
-                github_username,
                 "--json",
-                "number,title,url,headRefName,baseRefName,headRefOid",
+                "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
             ]
         )
 
+        if all_prs is None:
+            print("  Failed to fetch PRs, skipping repository")
+            continue
+
+        print(f"  Fetched {len(all_prs)} open PR(s) total")
+
+        # Filter PRs locally by author
+        my_prs = [
+            p for p in all_prs if p.get("author", {}).get("login", "").lower() == github_username.lower()
+        ]
+
+        # Bot PRs can have author login as either "bot_username" or "bot_username[bot]"
+        # depending on how the GitHub App creates the PR
+        bot_author_variants = {
+            bot_username.lower(),
+            f"{bot_username.lower()}[bot]",
+        }
+        bot_prs = [
+            p for p in all_prs if p.get("author", {}).get("login", "").lower() in bot_author_variants
+        ]
+
+        # Process user's PRs
         if my_prs:
             print(f"  Found {len(my_prs)} open PR(s) authored by {github_username}")
 
             for pr in my_prs:
-                # Check for merge conflicts first (higher priority)
-                conflict_ctx = check_pr_for_merge_conflicts(repo, pr, state)
-                if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
-                    state.setdefault("processed_conflicts", {})[
-                        conflict_ctx["conflict_signature"]
-                    ] = utc_now_iso()
-                    tasks_queued += 1
-
                 # Check for failures
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):
@@ -728,36 +712,12 @@ def main():
         else:
             print(f"  No open PRs authored by {github_username}")
 
-        # Also check PRs authored by the bot (for check failures and comments)
+        # Process bot's PRs (for check failures and comments)
         # The bot creates PRs via GitHub App, so its PRs need monitoring too
-        bot_author = f"{bot_username}[bot]"
-        bot_prs = gh_json(
-            [
-                "pr",
-                "list",
-                "--repo",
-                repo,
-                "--state",
-                "open",
-                "--author",
-                f"app/{bot_username}",
-                "--json",
-                "number,title,url,headRefName,baseRefName,headRefOid",
-            ]
-        )
-
         if bot_prs:
-            print(f"  Found {len(bot_prs)} open PR(s) authored by {bot_author}")
+            print(f"  Found {len(bot_prs)} open PR(s) authored by bot ({bot_username})")
 
             for pr in bot_prs:
-                # Check for merge conflicts first (higher priority)
-                conflict_ctx = check_pr_for_merge_conflicts(repo, pr, state)
-                if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
-                    state.setdefault("processed_conflicts", {})[
-                        conflict_ctx["conflict_signature"]
-                    ] = utc_now_iso()
-                    tasks_queued += 1
-
                 # Check for failures on bot's PRs
                 failure_ctx = check_pr_for_failures(repo, pr, state)
                 if failure_ctx and invoke_jib("check_failure", failure_ctx):
@@ -774,8 +734,10 @@ def main():
                     )
                     tasks_queued += 1
 
-        # Check for PRs from others that need review (filter out bot's PRs)
-        review_contexts = check_prs_for_review(repo, state, bot_username, since_timestamp)
+        # Check for PRs from others that need review (uses pre-fetched all_prs)
+        review_contexts = check_prs_for_review(
+            repo, all_prs, state, github_username, bot_username, since_timestamp
+        )
         for review_ctx in review_contexts:
             if invoke_jib("review_request", review_ctx):
                 state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
