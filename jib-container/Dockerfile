@@ -175,21 +175,52 @@ echo "✓ Git configured to commit as jib <jib@khan.org>"
 # Fix worktree .git files to point to mounted git directories
 # Worktrees have .git files that reference the main repo's .git directory
 # We mount the main .git at ~/.git-main/{repo}/ so we need to rewrite these references
+#
+# IMPORTANT: Only rewrite if the mount exists and target path is valid.
+# If we rewrite to a non-existent path, git becomes completely broken.
 if [ -d "${USER_HOME}/khan" ]; then
-    for repo_dir in "${USER_HOME}/khan"/*; do
-        if [ -f "${repo_dir}/.git" ]; then
-            repo_name=$(basename "$repo_dir")
-            # Read the original gitdir path
-            original_gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
-            # Extract the worktree admin directory name (last component of path)
-            worktree_admin=$(basename "$original_gitdir")
-            # Rewrite .git file to point to the mounted location
-            echo "gitdir: ${USER_HOME}/.git-main/${repo_name}/worktrees/${worktree_admin}" > "${repo_dir}/.git"
-            chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
+    # First, verify ~/.git-main mount exists
+    if [ ! -d "${USER_HOME}/.git-main" ]; then
+        echo "⚠ WARNING: ~/.git-main not mounted - skipping worktree .git rewrite"
+        echo "  Git will use original paths (may fail if paths don't exist)"
+        echo "  This usually means jib didn't mount the git directories properly"
+    else
+        worktrees_configured=0
+        worktrees_skipped=0
+        for repo_dir in "${USER_HOME}/khan"/*; do
+            if [ -f "${repo_dir}/.git" ]; then
+                repo_name=$(basename "$repo_dir")
+                # Read the original gitdir path
+                original_gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
+                # Extract the worktree admin directory name (last component of path)
+                worktree_admin=$(basename "$original_gitdir")
+
+                # Build the target path
+                target_path="${USER_HOME}/.git-main/${repo_name}/worktrees/${worktree_admin}"
+
+                # CRITICAL: Only rewrite if the target path actually exists
+                # Otherwise we'd break git completely
+                if [ -d "$target_path" ]; then
+                    echo "gitdir: ${target_path}" > "${repo_dir}/.git"
+                    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
+                    worktrees_configured=$((worktrees_configured + 1))
+                else
+                    echo "⚠ Skipping ${repo_name}: target worktree path doesn't exist"
+                    echo "  Expected: ${target_path}"
+                    echo "  Keeping original: ${original_gitdir}"
+                    worktrees_skipped=$((worktrees_skipped + 1))
+                fi
+            fi
+        done
+
+        if [ $worktrees_configured -gt 0 ]; then
+            echo "✓ Khan worktrees configured: ${worktrees_configured} repo(s)"
+            echo "  Git metadata mounted read-write from ~/.git-main/"
         fi
-    done
-    echo "✓ Khan worktrees configured (isolated from host)"
-    echo "  Git metadata mounted read-write from ~/.git-main/"
+        if [ $worktrees_skipped -gt 0 ]; then
+            echo "⚠ Skipped ${worktrees_skipped} repo(s) - mount may be incomplete"
+        fi
+    fi
 else
     echo "⚠ Khan workspace not found - check mount configuration"
 fi
