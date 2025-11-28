@@ -67,11 +67,20 @@ def handle_check_failure(context: dict):
     # Build prompt for Claude
     prompt = build_check_failure_prompt(context)
 
-    # Invoke Claude
+    # Invoke Claude with tools enabled
+    # Note: --print mode disables tools by default, so we must explicitly enable them
+    # --dangerously-skip-permissions allows tool use without interactive prompts
     print("Invoking Claude for analysis...")
     try:
         result = subprocess.run(
-            ["claude", "--print", prompt],
+            [
+                "claude",
+                "--print",
+                "--tools",
+                "default",
+                "--dangerously-skip-permissions",
+                prompt,
+            ],
             check=False,
             capture_output=False,
             text=True,
@@ -268,11 +277,20 @@ def handle_comment(context: dict):
     # Build prompt for Claude
     prompt = build_comment_prompt(context)
 
-    # Invoke Claude
+    # Invoke Claude with tools enabled
+    # Note: --print mode disables tools by default, so we must explicitly enable them
+    # --dangerously-skip-permissions allows tool use without interactive prompts
     print("Invoking Claude for response generation...")
     try:
         result = subprocess.run(
-            ["claude", "--print", prompt],
+            [
+                "claude",
+                "--print",
+                "--tools",
+                "default",
+                "--dangerously-skip-permissions",
+                prompt,
+            ],
             check=False,
             capture_output=False,
             text=True,
@@ -398,11 +416,20 @@ def handle_review_request(context: dict):
     # Build prompt for Claude
     prompt = build_review_prompt(context)
 
-    # Invoke Claude
+    # Invoke Claude with tools enabled
+    # Note: --print mode disables tools by default, so we must explicitly enable them
+    # --dangerously-skip-permissions allows tool use without interactive prompts
     print("Invoking Claude for code review...")
     try:
         result = subprocess.run(
-            ["claude", "--print", prompt],
+            [
+                "claude",
+                "--print",
+                "--tools",
+                "default",
+                "--dangerously-skip-permissions",
+                prompt,
+            ],
             check=False,
             capture_output=False,
             text=True,
