@@ -323,21 +323,47 @@ if [ -f "${RULES_DIR}/mission.md" ]; then
 fi
 
 # Set up .claude directory structure
-# Note: ~/.claude is mounted from host at ~/.jib/claude/ (shared across all containers)
-# We just need to ensure subdirectories exist and set permissions
+# NOTE: ~/.claude is now container-local (ephemeral) to prevent history sharing
+# Only auth files are synced from ~/.claude-auth/ (mounted from host)
+# This ensures each container has isolated session history while sharing authentication
 mkdir -p "${USER_HOME}/.claude/commands"
 mkdir -p "${USER_HOME}/.config/claude-code"
 
-# Check authentication status
-if [ -f "${USER_HOME}/.claude/.credentials.json" ]; then
-    chmod 600 "${USER_HOME}/.claude/.credentials.json"
-    echo "✓ Claude credentials found (shared across all containers)"
-    echo "  Location: ~/.jib/claude/ on host"
+# Sync auth files from shared auth directory (mounted at ~/.claude-auth/)
+# These files are the ONLY things shared between containers
+AUTH_DIR="${USER_HOME}/.claude-auth"
+if [ -d "$AUTH_DIR" ]; then
+    # Copy credentials if they exist
+    if [ -f "${AUTH_DIR}/.credentials.json" ]; then
+        cp "${AUTH_DIR}/.credentials.json" "${USER_HOME}/.claude/.credentials.json"
+        chmod 600 "${USER_HOME}/.claude/.credentials.json"
+        echo "✓ Claude credentials loaded from shared auth"
+        echo "  Auth shared via: ~/.claude-auth/ (mounted)"
+        echo "  Session history: container-local (ephemeral)"
+    else
+        echo "ℹ No credentials found - this container will authenticate"
+        echo "  After authentication, credentials will be synced to ~/.claude-auth/"
+        echo "  All future containers will automatically use these credentials"
+    fi
 else
-    echo "ℹ No credentials found - this container will authenticate"
-    echo "  After authentication, credentials will be saved to ~/.jib/claude/"
-    echo "  All future containers will automatically use these credentials"
+    echo "⚠ Auth directory not mounted at ~/.claude-auth/"
+    echo "  Container will authenticate but credentials won't persist"
 fi
+
+# Create credential sync script - copies new credentials back to shared auth dir
+# This runs when Claude Code creates new credentials after authentication
+cat > "${USER_HOME}/.claude/sync-credentials.sh" << 'SYNC_SCRIPT'
+#!/bin/bash
+# Sync credentials from container's .claude to shared auth directory
+AUTH_DIR="$HOME/.claude-auth"
+if [ -d "$AUTH_DIR" ] && [ -f "$HOME/.claude/.credentials.json" ]; then
+    cp "$HOME/.claude/.credentials.json" "$AUTH_DIR/.credentials.json"
+    chmod 600 "$AUTH_DIR/.credentials.json"
+    echo "✓ Credentials synced to shared auth directory"
+fi
+SYNC_SCRIPT
+chmod +x "${USER_HOME}/.claude/sync-credentials.sh"
+chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude/sync-credentials.sh"
 
 # Note: GitHub operations now go through GitHub MCP server (configured above)
 # The gh CLI is kept as fallback but primary access is via MCP
@@ -568,6 +594,18 @@ echo ""
 cleanup_on_exit() {
     echo ""
     echo "🧹 Cleaning up on container exit..."
+
+    # Sync credentials back to shared auth directory if they were created/updated
+    AUTH_DIR="${USER_HOME}/.claude-auth"
+    if [ -d "$AUTH_DIR" ] && [ -f "${USER_HOME}/.claude/.credentials.json" ]; then
+        # Check if credentials are new/updated by comparing
+        if [ ! -f "${AUTH_DIR}/.credentials.json" ] || \
+           ! cmp -s "${USER_HOME}/.claude/.credentials.json" "${AUTH_DIR}/.credentials.json"; then
+            cp "${USER_HOME}/.claude/.credentials.json" "${AUTH_DIR}/.credentials.json"
+            chmod 600 "${AUTH_DIR}/.credentials.json"
+            echo "✓ Credentials synced to shared auth directory"
+        fi
+    fi
 
     # Check and clean git remote URLs one final time
     if [ -d "${USER_HOME}/.git-main" ]; then
