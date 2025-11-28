@@ -300,7 +300,7 @@ Agent should demonstrate L3-L4 behaviors:
            │                                      │
            │ Slack Messages (Mobile)              │ PR Merge (GitHub)
            │                                      │
-┌──────────▼──────────────────┐        ┌─────────▼─────────────────┐
+┌──────────▼────────────────┐        ┌─────────▼───────────────┐
 │                              │        │                            │
 │    Slack Integration         │        │    GitHub                  │
 │  (Bidirectional Messaging)   │◄───────│  (PR Creation & Review)    │
@@ -311,7 +311,7 @@ Agent should demonstrate L3-L4 behaviors:
            │
            │ File-based Notifications
            │
-┌──────────▼──────────────────────────────────────────────────────┐
+┌──────────▼─────────────────────────────────────────────────────┐
 │                                                                   │
 │                  james-in-a-box (Docker Sandbox)                 │
 │                                                                   │
@@ -660,7 +660,7 @@ Engineer (at desk or phone) → Merges: Final merge via GitHub mobile
 🤖 james-in-a-box
 
 PR Ready: Add OAuth2 authentication (#1234)
-─────────────────────────
+─────────────────
 📊 Changes: +234 / -45 lines
 ✅ Tests: 12 passing
 📝 Docs: Updated
@@ -1758,12 +1758,13 @@ Cost Estimate: ~$114/month (see ADR for breakdown)
 This ADR is the foundational document for jib. The following companion ADRs provide detailed specifications for Phase 3 GCP deployment:
 
 | ADR | Purpose |
-|-----|---------|
+|-----|--------|
 | [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) | Cloud Pub/Sub messaging to replace file-based Slack notifications |
 | [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: MCP for Jira/GitHub, keep custom sync for Confluence |
 | [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | MCP for reading Slack, Pub/Sub for sending messages |
 | [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Full slash command interface replacing host-based commands |
 | [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Complete Terraform infrastructure following ADR #889 patterns |
+| [ADR-Internet-Tool-Access-Lockdown](./ADR-Internet-Tool-Access-Lockdown.md) | Gateway sidecar for credential isolation and tool access control |
 
 **Architecture Evolution:**
 ```
@@ -1803,6 +1804,6 @@ Host Commands:                      Slack Slash Commands:
 
 ---
 
-**Last Updated:** 2025-11-25
-**Next Review:** 2025-12-24 (Monthly context strategy assessment)
+**Last Updated:** 2025-11-28
+**Next Review:** 2025-12-28 (Monthly context strategy assessment)
 **Status:** Living Document (updates as implementation progresses)
