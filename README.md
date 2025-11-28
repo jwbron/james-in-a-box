@@ -2,21 +2,20 @@
 
 **Autonomous software engineering agent in a sandboxed Docker container**
 
-jib enables engineers to delegate development tasks to Claude via Slack, with the agent working in a secure, isolated environment. The agent can read code, implement features, run tests, and prepare pull requests—all while you're mobile.
+jib enables engineers to delegate development tasks to Claude via Slack, with the agent working in a secure, isolated environment. The agent can read code, implement features, run tests, and prepare pull requests asynchronously.
 
 ## What is jib?
 
 jib is an **LLM-powered autonomous software engineer** that runs in a Docker sandbox with:
 
-- **Slack-based control**: Send tasks, receive notifications, review work from your phone
+- **Slack-based control**: Send tasks, receive notifications, review work
 - **Secure sandbox**: No credentials, network isolation, human-in-the-loop for all PRs
 - **GitHub PR integration**: Auto-creates PRs, reviews others' PRs, responds to comments
 - **Context-aware**: Syncs Confluence docs, JIRA tickets, and codebase knowledge
 - **Self-improving**: Automated analyzers continuously refine agent behavior and code quality
 - **LLM-optimized documentation**: Structured indexes following the [llms.txt](https://llmstxt.org/) standard help the agent navigate docs efficiently
 - **Persistent memory**: Beads git-backed task system preserves Slack thread context, PR state, and progress across restarts
-- **Mobile-first**: Fully productive workflow from phone (notifications, PR reviews, approvals)
-- **Cultural alignment**: Behavior matches Khan Academy L3-L4 engineering standards
+- **Async workflow**: Fully productive workflow via Slack (notifications, PR reviews, approvals)
 
 ## Why We Built This
 
@@ -26,7 +25,7 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 - Works 24/7 in a secure sandbox
 - Follows team standards and best practices
 - Prepares work for human review and approval
-- Enables full engineering workflow from mobile
+- Enables async engineering workflow via Slack
 - Learns and improves from every interaction
 
 **Key Principle**: The agent **prepares** artifacts (code, tests, PR descriptions). Engineers **review and ship** (merge PRs, deploy). Clear separation of responsibilities.
@@ -35,10 +34,10 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  You (Slack Mobile)                                 │
+│  You (Slack)                                        │
 │  • Send tasks: "Implement OAuth2 for JIRA-1234"     │
 │  • Receive notifications with summaries + threads   │
-│  • Review and approve PRs from phone                │
+│  • Review and approve PRs                           │
 └─────────────────────────────────────────────────────┘
                       ↕
 ┌─────────────────────────────────────────────────────┐
@@ -64,7 +63,7 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 3. Agent implements changes, writes tests, commits to branch `jib-temp-{container-id}`
 4. Container shuts down, worktree directory cleaned up (commits preserved on branch)
 5. Agent sends Slack notification with branch name
-6. You review commits and create PR from phone or desktop
+6. You review commits and create PR
 
 ### Worktree Isolation
 
@@ -98,11 +97,11 @@ Container:
 
 jib continuously improves through automated analysis:
 
-- **Conversation Analyzer** (daily): Evaluates agent interactions for quality, cultural alignment with Khan Academy engineering standards, and identifies prompt improvements
+- **Conversation Analyzer** (daily): Evaluates agent interactions for quality, alignment with engineering standards, and identifies prompt improvements
 - **Codebase Analyzer** (weekly): Scans for code quality issues, security vulnerabilities, structural problems, and generates actionable recommendations
 - **Learning Feedback Loops**: Short-term (session memory), medium-term (prompt evolution), and long-term (capability expansion)
 
-The analyzer system ensures the agent behaves like a Khan Academy L3-L4 engineer: clear communication, systematic problem-solving, thorough testing, and user-focused decisions.
+The analyzer system ensures the agent behaves like an experienced engineer: clear communication, systematic problem-solving, thorough testing, and user-focused decisions.
 
 ### LLM-Optimized Documentation
 
@@ -256,7 +255,7 @@ The bot confirms receipt and queues the task.
 
 ### Receiving Notifications
 
-Claude sends **mobile-optimized notifications**:
+Claude sends **concise notifications**:
 - **Summary** (top-level): Key metrics, priority, 3-5 lines
 - **Detail** (thread): Full report, recommendations, next steps
 
@@ -273,54 +272,7 @@ You: Yes, switch to session caching and update the spec
 
 Your response is automatically linked by timestamp.
 
-### Remote Control Commands
-
-Control jib remotely from Slack:
-```
-/jib restart                     - Restart container
-/jib rebuild                     - Rebuild and restart
-/jib status                      - Check container status
-/jib logs                        - View recent logs
-
-/service restart <name>          - Restart a service
-/service status <name>           - Check service status
-/service list                    - List all services
-
-/pr create [repo]                - Create draft PR for current branch
-/pr create [repo] --ready        - Create ready-for-review PR
-/pr review <num> [repo]          - Generate code review for PR
-
-help                             - Show all commands
-```
-
-Commands execute asynchronously and send results as notifications.
-
-**PR Creation Examples:**
-```
-/pr create                       - Create PR in james-in-a-box
-/pr create webapp                - Create PR in ~/khan/webapp
-/pr create frontend --ready      - Create non-draft PR
-```
-
-PR descriptions are generated using Claude in the jib container following Khan Academy standards. Notifications include repository, source branch, target branch, and PR URL.
-
-**PR Review Examples:**
-```
-review PR 123                    - Generate code review for PR #123
-review PR 123 in webapp          - Review PR in specific repository
-/pr review 456                   - Alternative command syntax
-```
-
-Reviews analyze code changes for:
-- Security concerns (SQL injection, XSS, eval usage)
-- Performance issues
-- Code quality and best practices
-- Testing coverage gaps
-- File-by-file detailed feedback
-
-Reviews are sent as Slack notifications with prioritized findings (high/medium/low severity).
-
-### Beads: Persistent Task Memory
+### Using Beads for Task Tracking
 
 **Beads** is jib's persistent memory system—a git-backed task tracker that enables the agent to remember context across container restarts and coordinate multi-session work.
 
@@ -458,7 +410,7 @@ See [Beads Reference](docs/reference/beads.md) for complete documentation.
 
 1. **Send task** via Slack (from anywhere)
 2. **Receive notification** when work is ready
-3. **Review PR** (from phone or desktop)
+3. **Review PR**
 4. **Approve and merge** (or request changes)
 5. **Deploy** when ready (human controls deployment)
 
@@ -559,9 +511,7 @@ jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly docum
 
 ### Quick References
 
-- [Slack Quick Reference](docs/reference/slack-quick-reference.md) - Common Slack commands
 - [Beads Task Tracking](docs/reference/beads.md) - Persistent memory: Slack thread context, PR state, multi-session work
-- [Khan Academy Culture](docs/reference/khan-academy-culture.md) - L3-L4 engineering standards
 
 ## Roadmap
 
@@ -572,7 +522,7 @@ jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly docum
 - ✅ LLM-optimized documentation structure
 - ✅ GitHub PR automation (create, review, comment response, check failure analysis)
 - ✅ Persistent task memory (Beads)
-- ✅ Mobile-first workflow
+- ✅ Async Slack-based workflow
 
 **Phase 2** (In Progress):
 - Real-time context via MCP servers (Atlassian, GitHub)
@@ -670,7 +620,7 @@ make lint-workflows    # actionlint (GitHub Actions)
 
 ## Contributing
 
-This is an internal Khan Academy tool. For questions or issues:
+For questions or issues:
 
 1. Check component READMEs for specific guidance
 2. Review architecture docs in `docs/`
@@ -678,4 +628,4 @@ This is an internal Khan Academy tool. For questions or issues:
 
 ## License
 
-Internal Khan Academy use only.
+MIT License
