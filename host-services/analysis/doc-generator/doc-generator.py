@@ -79,6 +79,7 @@ class DocumentationGenerator:
     DOC_TYPES = {
         "status-quo": "Descriptive documentation of current implementation",
         "pattern": "Pattern documentation extracted from code",
+        "best-practice": "Best practice documentation (alias for pattern)",
     }
 
     # Topics mapped to keywords for pattern detection
@@ -198,7 +199,7 @@ class DocumentationGenerator:
         """Draft Agent: Generate initial documentation from context."""
         if doc_type == "status-quo":
             return self._draft_status_quo(context)
-        elif doc_type == "pattern":
+        elif doc_type in ("pattern", "best-practice"):
             return self._draft_pattern(context)
         else:
             raise ValueError(f"Unknown doc type: {doc_type}")
@@ -530,7 +531,7 @@ Note: For best practice research, use the adr-researcher tool instead.
 
     parser.add_argument(
         "--type",
-        choices=["status-quo", "pattern"],
+        choices=["status-quo", "pattern", "best-practice"],
         default="status-quo",
         help="Type of documentation to generate (default: status-quo)",
     )
