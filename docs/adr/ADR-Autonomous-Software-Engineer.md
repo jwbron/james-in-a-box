@@ -21,6 +21,7 @@
 - [Decision Permanence](#decision-permanence)
 - [Future Enhancements](#future-enhancements)
 - [Alternatives Considered](#alternatives-considered)
+- [Related ADRs](#related-adrs)
 
 ## Current Implementation Status
 
@@ -52,8 +53,11 @@
 
 **In Progress:**
 - Production hardening
-- MCP server evaluation for context integration
-- GCP read-only service account design
+- MCP server evaluation for context integration (see [ADR-Context-Sync-Strategy](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md))
+- GCP deployment planning (see [Related ADRs](#related-adrs) for detailed specifications):
+  - [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) - Pub/Sub messaging
+  - [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) - Slash command interface
+  - [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) - Terraform infrastructure
 
 **Recently Completed:**
 - ✅ **Automated PR creation** - Agent creates PRs via `gh` CLI after task completion
@@ -1105,22 +1109,45 @@ If agent drifts from Khan Academy engineering culture, analyzer recommends:
 - [ ] Team-based task routing
 
 ### Phase 3: Production Hardening & Cloud Migration
-- [ ] **Cloud Run deployment** via Terraform
-- [ ] Terraform infrastructure as code (same pattern as other services)
-- [ ] Cloud Storage FUSE or NFS for code persistence
-- [ ] Native GCP IAM (no service account key files)
+
+**Detailed specifications in companion ADRs:**
+- [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) - Cloud Pub/Sub for Slack messaging
+- [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) - MCP for Jira/GitHub, custom for Confluence
+- [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) - MCP for reading, Pub/Sub for sending
+- [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) - Full slash command interface
+- [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) - Complete Terraform infrastructure
+
+**Infrastructure:**
+- [ ] **Cloud Run deployment** via Terraform (Pattern A from ADR #889)
+- [ ] Cloud Run services: jib-bot, slack-worker, slack-receiver
+- [ ] Cloud Run jobs: jib-task, jib-sync, jib-analyze
+- [ ] Cloud Storage for context sync and artifacts
+- [ ] Native GCP IAM (Workload Identity, no service account key files)
 - [ ] Multi-engineer support (container instances per engineer)
-- [ ] **DLP integration** (Cloud DLP scanning before Claude API calls)
-- [ ] **Automated redaction** of PII, API keys, sensitive patterns
-- [ ] **Output monitoring** (scan PR descriptions, commits, Slack for leaks)
-- [ ] Advanced security scanning before PR creation
-- [ ] Automated test generation and execution
-- [ ] Performance monitoring integration
-- [ ] Disaster recovery and backup
-- [ ] **Hybrid context strategy:** MCP for real-time, files for bulk, GCP for operational data
+
+**Messaging & State:**
+- [ ] Cloud Pub/Sub for Slack messaging (replace file-based)
+- [ ] Firestore for job tracking, thread state, user auth
+- [ ] Cloud Tasks for job queue management
+
+**Context Evolution:**
+- [ ] **Hybrid context strategy:** MCP for real-time (Jira/GitHub), files for bulk (Confluence)
 - [ ] **GCP read-only integration:** Cloud Logging, Cloud Monitoring, BigQuery (non-sensitive only)
 - [ ] Service account key rotation automation (or Workload Identity)
 - [ ] GCP access audit logging and alerting
+
+**Security:**
+- [ ] **DLP integration** (Cloud DLP scanning before Claude API calls)
+- [ ] **Automated redaction** of PII, API keys, sensitive patterns
+- [ ] **Output monitoring** (scan PR descriptions, commits, Slack for leaks)
+- [ ] User allowlist and rate limiting in Firestore
+- [ ] Advanced security scanning before PR creation
+
+**Operations:**
+- [ ] Automated test generation and execution
+- [ ] Performance monitoring integration
+- [ ] Disaster recovery and backup
+- [ ] Budget alerts (~$114/month estimate per ADR-GCP-Deployment-Terraform)
 
 ### Phase 4: Scale & Optimize
 - [ ] Cross-repo context awareness
@@ -1439,36 +1466,37 @@ Benefits:
 ### Medium-term
 
 **7. Cloud Run Production Deployment**
+
+> **Detailed specification:** See [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) for complete architecture.
+
 ```
-Deploy james-in-a-box to Cloud Run using Terraform:
+Deploy james-in-a-box to Cloud Run using Terraform (Pattern A from ADR #889):
 
-Infrastructure:
-- Cloud Run service or jobs (stateless containers)
-- Cloud Storage FUSE or NFS (code persistence)
-- Cloud Logging (unified logging)
-- Cloud Monitoring (metrics and alerting)
-- Workload Identity (IAM without key files)
-- VPC networking (optional, for private resources)
+Cloud Run Services:
+- jib-bot: Slack slash command handler, job orchestration
+- slack-worker: Outbound message processing with rate limiting
+- slack-receiver: Socket Mode event ingestion
 
-Terraform Components:
-- google_cloud_run_service resource
-- google_service_account with IAM bindings
-- google_storage_bucket for code/context
-- google_monitoring_alert_policy for anomalies
+Cloud Run Jobs:
+- jib-task: Task execution (Claude Code container)
+- jib-sync: Context synchronization (Confluence, Jira, GitHub)
+- jib-analyze: Codebase and conversation analysis
 
-Multi-Engineer Support:
-- One Cloud Run instance per engineer
-- Isolated workspaces (separate buckets/dirs)
-- Shared infrastructure (logging, monitoring)
-- Per-engineer IAM policies
+Supporting Infrastructure:
+- Cloud Pub/Sub: slack-outgoing, slack-incoming, slack-outgoing-dlq
+- Firestore: jobs, threads, contexts, users, beads collections
+- Cloud Tasks: jib-tasks, jib-sync, jib-analyze queues
+- Cloud Storage: context-sync, artifacts buckets
+- Secret Manager: Slack tokens, API keys
+- Cloud Scheduler: Periodic sync jobs (via scheduled-job module)
 
-Benefits:
-- Scales beyond single laptop
-- Always-on availability
-- Native GCP integration (Workload Identity)
-- Standard Terraform deployment (same as other services)
-- Infrastructure as code (reviewable, versioned)
-- Easy disaster recovery (redeploy from Terraform)
+Security:
+- Workload Identity Federation (keyless auth)
+- Dual service accounts (RW main, RO PRs per ADR #889)
+- User allowlist in Firestore
+- Per-command rate limiting
+
+Cost Estimate: ~$114/month (see ADR for breakdown)
 ```
 
 **8. Multi-Repository Awareness**
@@ -1725,6 +1753,43 @@ Benefits:
 
 ---
 
+## Related ADRs
+
+This ADR is the foundational document for jib. The following companion ADRs provide detailed specifications for Phase 3 GCP deployment:
+
+| ADR | Purpose |
+|-----|---------|
+| [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) | Cloud Pub/Sub messaging to replace file-based Slack notifications |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: MCP for Jira/GitHub, keep custom sync for Confluence |
+| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | MCP for reading Slack, Pub/Sub for sending messages |
+| [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Full slash command interface replacing host-based commands |
+| [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Complete Terraform infrastructure following ADR #889 patterns |
+
+**Architecture Evolution:**
+```
+Phase 1 (Current - Laptop)          Phase 3 (Target - GCP)
+─────────────────────────────       ─────────────────────────────
+Host Services:                      Cloud Run Services:
+├── slack-notifier (file-based) →   ├── slack-worker (Pub/Sub)
+├── slack-receiver (Socket Mode) →  ├── slack-receiver (Socket Mode)
+├── context-sync (cron) ────────→   ├── jib-sync (Cloud Scheduler)
+├── github-sync (cron) ─────────→   │   └── via scheduled-job module
+├── codebase-analyzer (timer) ──→   ├── jib-analyze (Cloud Scheduler)
+└── conversation-analyzer ──────→   └── jib-analyze (Cloud Scheduler)
+
+Container (Docker):                 Cloud Run Jobs:
+└── jib-container ──────────────→   ├── jib-task (Claude Code)
+                                    ├── jib-sync (context sync)
+                                    └── jib-analyze (analyzers)
+
+Host Commands:                      Slack Slash Commands:
+├── jib --exec ─────────────────→   ├── /jib task|status|cancel|logs
+├── remote-control.sh ──────────→   ├── /sync confluence|jira|github
+└── systemctl (services) ───────→   ├── /analyze codebase|conversation
+                                    ├── /pr create|status|review
+                                    └── /context save|load|list
+```
+
 ## References
 
 - [Claude Code Documentation](https://docs.anthropic.com/claude-code)
@@ -1733,9 +1798,11 @@ Benefits:
 - [Slack API Documentation](https://api.slack.com/)
 - [GitHub API Documentation](https://docs.github.com/en/rest)
 - [GitHub Mobile Review Workflow](https://github.com/mobile)
+- [ADR #889: Terraform CI/CD Standards](https://khanacademy.atlassian.net/wiki/pages/viewpage.action?pageId=4385800306)
+- [Khan Academy scheduled-job module](https://github.com/Khan/terraform-modules/tree/main/terraform/modules/scheduled-job)
 
 ---
 
-**Last Updated:** 2025-11-24
+**Last Updated:** 2025-11-25
 **Next Review:** 2025-12-24 (Monthly context strategy assessment)
 **Status:** Living Document (updates as implementation progresses)
