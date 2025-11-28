@@ -425,10 +425,12 @@ class TestCaptureContext:
         set_output should not overwrite them with parsed values.
         """
         # JSON output with metadata
-        json_output = json.dumps({
-            "model": "parsed-model",
-            "usage": {"input_tokens": 999, "output_tokens": 888},
-        })
+        json_output = json.dumps(
+            {
+                "model": "parsed-model",
+                "usage": {"input_tokens": 999, "output_tokens": 888},
+            }
+        )
 
         with capture.capture_response() as ctx:
             # Set metadata manually first
