@@ -547,6 +547,22 @@ if [ -f "$jib_secrets_file" ]; then
     else
         print_warning "Slack app token not configured"
     fi
+
+    # Check GitHub token (PAT fallback when GitHub App not configured)
+    if grep -q "^GITHUB_TOKEN=\"gh" "$jib_secrets_file" 2>/dev/null; then
+        print_success "GitHub PAT configured (fallback for GitHub App)"
+    else
+        # Check if GitHub App is configured (primary method)
+        if [ -f "$jib_config_dir/github-app-id" ] && [ -f "$jib_config_dir/github-app-installation-id" ] && [ -f "$jib_config_dir/github-app.pem" ]; then
+            print_info "GitHub auth: App configured (GITHUB_TOKEN generated dynamically)"
+        else
+            print_warning "GitHub auth: Not configured"
+            echo "   Container will not be able to push code or use GitHub MCP"
+            echo "   Configure either:"
+            echo "     1. GitHub App (recommended): Run setup.sh and follow prompts"
+            echo "     2. Personal Access Token: Add GITHUB_TOKEN to $jib_secrets_file"
+        fi
+    fi
 else
     print_warning "No configuration found"
     echo "   Configure secrets in: $jib_secrets_file"
@@ -785,8 +801,12 @@ else
         fi
     else
         print_warning "Skipping GitHub App setup"
-        echo "   Container will NOT have GitHub access until configured"
-        echo "   Run setup.sh again to configure GitHub App"
+        echo ""
+        echo "   To enable GitHub access, choose one option:"
+        echo "   Option 1: Run setup.sh again and configure GitHub App (recommended)"
+        echo "   Option 2: Add GITHUB_TOKEN to ~/.config/jib/secrets.env"
+        echo "             Create a fine-grained PAT at https://github.com/settings/tokens?type=beta"
+        echo "             Required scopes: Contents (R/W), Pull requests (R/W)"
     fi
 fi
 
@@ -812,6 +832,10 @@ else
     echo "   Copy template:  cp $SCRIPT_DIR/config/secrets.template.env ~/.config/jib/secrets.env"
     echo "   Edit secrets:   ~/.config/jib/secrets.env"
     echo "   Add your Slack bot token (xoxb-...) and app token (xapp-...)"
+    echo ""
+    echo "   For GitHub access (if you skipped GitHub App setup):"
+    echo "   Add GITHUB_TOKEN with a fine-grained PAT (ghp_... or github_pat_...)"
+    echo "   Required scopes: Contents (R/W), Pull requests (R/W)"
     echo ""
     echo "   Or migrate from legacy config:"
     echo "   python3 $SCRIPT_DIR/config/host_config.py --migrate"
