@@ -247,7 +247,7 @@ def invoke_jib(task_type: str, context: dict) -> bool:
             capture_output=True,
             text=True,
             check=False,
-            timeout=600,  # 10 minute timeout for complex analysis
+            # No timeout - let the container handle its own timeout via shared/claude/runner.py
         )
 
         if result.returncode == 0:
@@ -264,10 +264,6 @@ def invoke_jib(task_type: str, context: dict) -> bool:
                 stdout_tail = result.stdout[-1000:] if len(result.stdout) > 1000 else result.stdout
                 print(f"  stdout (last 1000 chars): {stdout_tail}")
             return False
-
-    except subprocess.TimeoutExpired:
-        print("  jib timed out after 10 minutes")
-        return False
     except FileNotFoundError:
         print("  jib command not found - is it in PATH?")
         return False
