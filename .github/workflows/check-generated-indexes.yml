@@ -41,8 +41,9 @@ jobs:
         run: |
           echo "Checking if generated files are up to date..."
 
-          # Check if any generated files have changed
-          if git diff --exit-code docs/generated/; then
+          # Check if any generated files have changed (ignoring timestamp line)
+          # The -I option ignores lines matching the regex pattern
+          if git diff --exit-code -I '"generated":' docs/generated/; then
             echo "✅ Generated indexes are up to date"
           else
             echo ""
@@ -50,6 +51,9 @@ jobs:
             echo ""
             echo "The following files need to be regenerated:"
             git diff --name-only docs/generated/
+            echo ""
+            echo "Showing diff (excluding timestamp changes):"
+            git diff -I '"generated":' docs/generated/ | head -100
             echo ""
             echo "To fix this, run:"
             echo "  python3 host-services/analysis/index-generator/index-generator.py"

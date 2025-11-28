@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:08:52.877389+00:00",
+  "generated": "2025-11-28T09:11:09.149037+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -837,7 +837,7 @@
     {
       "name": "main",
       "file": "host-services/analysis/index-generator/index-generator.py",
-      "line": 711,
+      "line": 726,
       "type": "function",
       "description": "CLI entry point."
     },
@@ -923,32 +923,6 @@
       "description": "Main entry point."
     },
     {
-      "name": "SlackReceiver",
-      "file": "host-services/slack/slack-receiver/slack-receiver.py",
-      "line": 36,
-      "type": "class",
-      "description": "Receives Slack messages and writes them to shared directory.",
-      "methods": [
-        "__init__",
-        "_setup_logging",
-        "_load_config",
-        "_save_config",
-        "_load_threads",
-        "_save_threads",
-        "_signal_handler",
-        "_get_bot_user_id",
-        "_is_allowed_user",
-        "_execute_command"
-      ]
-    },
-    {
-      "name": "main",
-      "file": "host-services/slack/slack-receiver/slack-receiver.py",
-      "line": 832,
-      "type": "function",
-      "description": "Main entry point."
-    },
-    {
       "name": "CommandType",
       "file": "host-services/slack/slack-receiver/host_command_handler.py",
       "line": 26,
@@ -992,30 +966,28 @@
       "description": "CLI entry point."
     },
     {
-      "name": "get_all_connectors",
-      "file": "host-services/sync/context-sync/context-sync.py",
-      "line": 40,
-      "type": "function",
-      "description": "Get all available connectors."
-    },
-    {
-      "name": "sync_all_connectors",
-      "file": "host-services/sync/context-sync/context-sync.py",
-      "line": 80,
-      "type": "function",
-      "description": "Sync all configured connectors."
-    },
-    {
-      "name": "print_summary",
-      "file": "host-services/sync/context-sync/context-sync.py",
-      "line": 134,
-      "type": "function",
-      "description": "Print a summary of sync results."
+      "name": "SlackReceiver",
+      "file": "host-services/slack/slack-receiver/slack-receiver.py",
+      "line": 36,
+      "type": "class",
+      "description": "Receives Slack messages and writes them to shared directory.",
+      "methods": [
+        "__init__",
+        "_setup_logging",
+        "_load_config",
+        "_save_config",
+        "_load_threads",
+        "_save_threads",
+        "_signal_handler",
+        "_get_bot_user_id",
+        "_is_allowed_user",
+        "_execute_command"
+      ]
     },
     {
       "name": "main",
-      "file": "host-services/sync/context-sync/context-sync.py",
-      "line": 169,
+      "file": "host-services/slack/slack-receiver/slack-receiver.py",
+      "line": 832,
       "type": "function",
       "description": "Main entry point."
     },
@@ -1161,6 +1133,34 @@
       "description": "Main entry point for running JIRA sync standalone."
     },
     {
+      "name": "get_all_connectors",
+      "file": "host-services/sync/context-sync/context-sync.py",
+      "line": 40,
+      "type": "function",
+      "description": "Get all available connectors."
+    },
+    {
+      "name": "sync_all_connectors",
+      "file": "host-services/sync/context-sync/context-sync.py",
+      "line": 80,
+      "type": "function",
+      "description": "Sync all configured connectors."
+    },
+    {
+      "name": "print_summary",
+      "file": "host-services/sync/context-sync/context-sync.py",
+      "line": 134,
+      "type": "function",
+      "description": "Print a summary of sync results."
+    },
+    {
+      "name": "main",
+      "file": "host-services/sync/context-sync/context-sync.py",
+      "line": 169,
+      "type": "function",
+      "description": "Main entry point."
+    },
+    {
       "name": "load_env_file",
       "file": "host-services/sync/context-sync/utils/config_loader.py",
       "line": 10,
@@ -1244,11 +1244,11 @@
     "total_functions": 174,
     "patterns_detected": [
       "config",
-      "sync",
-      "notification",
-      "event_driven",
       "connector",
-      "processor"
+      "event_driven",
+      "notification",
+      "processor",
+      "sync"
     ]
   }
 }

@@ -580,9 +580,9 @@ class CodebaseIndexer:
         print("  Building directory structure...")
         self.structure = self.build_structure(self.project_root)
 
-        # Analyze Python files
+        # Analyze Python files (sorted for deterministic output)
         print("  Analyzing Python files...")
-        python_files = list(self.project_root.rglob("*.py"))
+        python_files = sorted(self.project_root.rglob("*.py"))
         for py_file in python_files:
             # Skip files in ignored directories
             if any(part in self.SKIP_DIRS for part in py_file.parts):
@@ -613,33 +613,48 @@ class CodebaseIndexer:
         # Generate timestamp (using timezone.utc for Python 3.10 compatibility)
         generated_at = datetime.now(timezone.utc).isoformat()  # noqa: UP017
 
+        # Sort components by file path and line number for deterministic output
+        sorted_components = sorted(
+            self.components, key=lambda c: (c.get("file", ""), c.get("line", 0))
+        )
+
         # Build codebase.json
         codebase_json = {
             "generated": generated_at,
             "project": self.project_name,
             "structure": self.structure,
-            "components": self.components[:100],  # Limit to top 100
+            "components": sorted_components[:100],  # Limit to top 100
             "summary": {
                 "total_python_files": len(python_files),
                 "total_classes": len([c for c in self.components if c.get("type") == "class"]),
                 "total_functions": len([c for c in self.components if c.get("type") == "function"]),
-                "patterns_detected": list(self.patterns_found.keys()),
+                "patterns_detected": sorted(self.patterns_found.keys()),
             },
         }
 
-        # Build patterns.json
+        # Build patterns.json (sorted for deterministic output)
+        sorted_patterns = {}
+        for pattern_name in sorted(self.patterns_found.keys()):
+            pattern_data = self.patterns_found[pattern_name]
+            sorted_patterns[pattern_name] = {
+                "description": pattern_data.get("description", ""),
+                "examples": sorted(pattern_data.get("examples", [])),
+                "conventions": pattern_data.get("conventions", []),
+            }
         patterns_json = {
             "generated": generated_at,
             "project": self.project_name,
-            "patterns": dict(self.patterns_found),
+            "patterns": sorted_patterns,
         }
 
-        # Build dependencies.json
+        # Build dependencies.json (sorted for deterministic output)
+        sorted_internal = {k: sorted(v) for k, v in sorted(self.internal_deps.items())}
+        sorted_external = dict(sorted(self.external_deps.items()))
         dependencies_json = {
             "generated": generated_at,
             "project": self.project_name,
-            "internal": dict(self.internal_deps),
-            "external": self.external_deps,
+            "internal": sorted_internal,
+            "external": sorted_external,
         }
 
         # Write files
