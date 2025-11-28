@@ -19,7 +19,6 @@ Usage:
   python3 incoming-processor.py <message-file>
 """
 
-import logging
 import re
 import subprocess
 import sys
@@ -28,27 +27,16 @@ from datetime import datetime
 from pathlib import Path
 
 
-# Add shared directory to path for enrichment and Claude runner modules
+# Add shared directory to path for enrichment, Claude runner, and jib_logging modules
 sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 
 from claude.runner import run_claude
 from enrichment import enrich_task
+from jib_logging import get_logger
 
 
-# Configure logging
-LOG_DIR = Path.home() / "sharing" / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = LOG_DIR / "incoming-processor.log"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
-logger = logging.getLogger(__name__)
+# Initialize jib_logging logger
+logger = get_logger("incoming-processor")
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
@@ -132,8 +120,7 @@ def process_task(message_file: Path):
     ALWAYS creates a notification back to Slack, whether successful or not.
     """
     start_time = time.time()
-    logger.info(f"{'=' * 60}")
-    logger.info(f"Processing task: {message_file.name}")
+    logger.info("Processing task", file=message_file.name)
 
     # Read full message content
     raw_content = message_file.read_text()
@@ -144,9 +131,7 @@ def process_task(message_file: Path):
     original_task_id = frontmatter.get("task_id", message_file.stem)
     notifications_dir = Path.home() / "sharing" / "notifications"
 
-    logger.info(f"Task ID: {original_task_id}")
-    if thread_ts:
-        logger.info(f"Thread context: {thread_ts}")
+    logger.info("Task metadata", task_id=original_task_id, thread_ts=thread_ts or None)
 
     # Extract task description (after "## Current Message" header)
     task_lines = []
@@ -164,7 +149,7 @@ def process_task(message_file: Path):
     task_content = "\n".join(task_lines).strip()
 
     if not task_content:
-        logger.warning("Empty task content - nothing to process")
+        logger.warning("Empty task content - nothing to process", task_id=original_task_id)
         # Still send a notification about the empty task
         create_notification_with_thread(
             notifications_dir=notifications_dir,
@@ -174,12 +159,12 @@ def process_task(message_file: Path):
         )
         return False
 
-    logger.info(f"Task content: {task_content[:100]}...")
+    logger.info("Task content extracted", preview=task_content[:100])
 
     # Enrich task with relevant documentation context (Phase 3 of LLM Doc Strategy ADR)
     enriched_context = enrich_task(task_content)
     if enriched_context:
-        logger.info("Added documentation context enrichment")
+        logger.info("Added documentation context enrichment", task_id=original_task_id)
 
     # Build thread context section if available
     thread_context_section = ""
@@ -271,16 +256,16 @@ Process this task now."""
     # Run Claude Code via shared runner module
     # This delegates timeout handling to the shared module (default: 30 minutes)
     # and provides consistent behavior across all Claude invocations
-    logger.info("Starting Claude Code via shared runner...")
+    logger.info("Starting Claude Code", task_id=original_task_id)
 
     claude_result = run_claude(
         prompt=prompt,
         cwd=Path.home() / "khan",  # Start in khan directory
         capture_output=True,
     )
-    logger.info(f"Claude exited with return code: {claude_result.returncode}")
+    logger.info("Claude completed", return_code=claude_result.returncode, task_id=original_task_id)
     if claude_result.stderr:
-        logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
+        logger.warning("Claude stderr output", stderr=claude_result.stderr[:500])
 
     # Determine success/failure/timeout status
     timed_out = False
@@ -293,18 +278,20 @@ Process this task now."""
     # Calculate processing time
     elapsed_time = time.time() - start_time
     elapsed_str = f"{elapsed_time:.1f}s" if elapsed_time < 60 else f"{elapsed_time / 60:.1f}m"
-    logger.info(f"Processing completed in {elapsed_str}")
+    logger.info("Processing completed", duration=elapsed_str, task_id=original_task_id)
 
     # ALWAYS create a notification - success, failure, or timeout
     task_summary = task_content[:100] + ("..." if len(task_content) > 100 else "")
 
     if claude_result.returncode == 0:
         # SUCCESS: Include Claude's response
-        logger.info("Task processed successfully")
+        logger.info("Task processed successfully", task_id=original_task_id)
 
         claude_output = claude_result.stdout.strip() if claude_result.stdout else ""
         if not claude_output:
-            logger.warning("Claude returned empty output despite success return code")
+            logger.warning(
+                "Claude returned empty output despite success return code", task_id=original_task_id
+            )
             claude_output = "*Claude completed but produced no output. The task may have been processed - check GitHub for any PRs created.*"
 
         notification_content = f"""# Task Completed
@@ -322,7 +309,7 @@ Process this task now."""
 """
     elif timed_out:
         # TIMEOUT: Notify user with helpful context
-        logger.error("Task timed out")
+        logger.error("Task timed out", task_id=original_task_id, duration=elapsed_str)
         partial_output = ""
         if claude_result.stdout:
             partial_output = (
@@ -351,7 +338,12 @@ The task took too long to complete. This can happen with complex tasks.
         stderr_output = claude_result.stderr[:500] if claude_result.stderr else "None"
         stdout_output = claude_result.stdout[:500] if claude_result.stdout else "None"
 
-        logger.error(f"Task failed: return_code={claude_result.returncode}, error={error_message}")
+        logger.error(
+            "Task failed",
+            task_id=original_task_id,
+            return_code=claude_result.returncode,
+            error=error_message,
+        )
 
         notification_content = f"""# Task Processing Failed
 
@@ -383,9 +375,7 @@ The task took too long to complete. This can happen with complex tasks.
         thread_ts=thread_ts,
         content=notification_content,
     )
-    logger.info(f"Notification created: {notification_file.name}")
-    if thread_ts:
-        logger.info(f"Thread context preserved: {thread_ts}")
+    logger.info("Notification created", file=notification_file.name, thread_ts=thread_ts or None)
 
     return claude_result.returncode == 0
 
@@ -477,8 +467,7 @@ def process_response(message_file: Path):
     ALWAYS creates a notification back to Slack, whether successful or not.
     """
     start_time = time.time()
-    logger.info(f"{'=' * 60}")
-    logger.info(f"Processing response: {message_file.name}")
+    logger.info("Processing response", file=message_file.name)
 
     # Read response content
     raw_content = message_file.read_text()
@@ -489,20 +478,23 @@ def process_response(message_file: Path):
     referenced_notif = frontmatter.get("referenced_notification", "")
     notifications_dir = Path.home() / "sharing" / "notifications"
 
-    logger.info(f"Thread TS: {thread_ts or 'None'}")
-    logger.info(f"Referenced notification: {referenced_notif or 'None'}")
+    logger.info(
+        "Response metadata",
+        thread_ts=thread_ts or None,
+        referenced_notification=referenced_notif or None,
+    )
 
     # CRITICAL: Extract the original task ID from thread context
     # This is the key to preserving memory across Slack thread conversations
     # The original task ID (e.g., "task-20251126-150200") is what beads tasks are labeled with
     original_task_id = extract_original_task_id(content)
     if original_task_id:
-        logger.info(f"Original task ID from thread: {original_task_id}")
+        logger.info("Found original task ID from thread", task_id=original_task_id)
 
     # Extract thread context and PR references from the message
     thread_context_text, pr_refs = extract_thread_context(content)
     if pr_refs:
-        logger.info(f"PR references found: {', '.join(pr_refs)}")
+        logger.info("PR references found", pr_refs=pr_refs)
 
     # Fallback: Extract referenced notification from content if not in frontmatter
     original_notif_content = None
@@ -517,11 +509,11 @@ def process_response(message_file: Path):
 
     # Try to load original notification for context
     if referenced_notif:
-        logger.info(f"Response references: {referenced_notif}")
+        logger.info("Response references notification", referenced_notif=referenced_notif)
         original_file = notifications_dir / f"{referenced_notif}.md"
         if original_file.exists():
             original_notif_content = original_file.read_text()
-            logger.info(f"Loaded original notification: {original_file.name}")
+            logger.info("Loaded original notification", file=original_file.name)
 
     # Extract response content
     response_lines = []
@@ -539,7 +531,7 @@ def process_response(message_file: Path):
     response_content = "\n".join(response_lines).strip()
 
     if not response_content:
-        logger.warning("Empty response content - nothing to process")
+        logger.warning("Empty response content - nothing to process", file=message_file.name)
         # Still send a notification about the empty response
         task_id = referenced_notif if referenced_notif else message_file.stem
         create_notification_with_thread(
@@ -550,12 +542,12 @@ def process_response(message_file: Path):
         )
         return False
 
-    logger.info(f"Response content: {response_content[:100]}...")
+    logger.info("Response content extracted", preview=response_content[:100])
 
     # Enrich response with relevant documentation context (Phase 3 of LLM Doc Strategy ADR)
     enriched_context = enrich_task(response_content)
     if enriched_context:
-        logger.info("Added documentation context enrichment to response")
+        logger.info("Added documentation context enrichment", task_id=task_id_for_search)
 
     # Construct prompt for Claude with full context
     # PRIORITY: original_task_id > referenced_notif > message_file.stem
@@ -654,7 +646,7 @@ Process this response now."""
     # Run Claude Code via shared runner module
     # This delegates timeout handling to the shared module (default: 30 minutes)
     # and provides consistent behavior across all Claude invocations
-    logger.info("Starting Claude Code via shared runner for response...")
+    logger.info("Starting Claude Code for response", task_id=task_id_for_search)
 
     # Determine task_id for notification filename
     # If we have a referenced notification, use that ID so slack-notifier threads correctly
@@ -665,9 +657,11 @@ Process this response now."""
         cwd=Path.home() / "khan",  # Start in khan directory
         capture_output=True,
     )
-    logger.info(f"Claude exited with return code: {claude_result.returncode}")
+    logger.info(
+        "Claude completed", return_code=claude_result.returncode, task_id=task_id_for_search
+    )
     if claude_result.stderr:
-        logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
+        logger.warning("Claude stderr output", stderr=claude_result.stderr[:500])
 
     # Determine success/failure/timeout status
     timed_out = False
@@ -680,18 +674,21 @@ Process this response now."""
     # Calculate processing time
     elapsed_time = time.time() - start_time
     elapsed_str = f"{elapsed_time:.1f}s" if elapsed_time < 60 else f"{elapsed_time / 60:.1f}m"
-    logger.info(f"Response processing completed in {elapsed_str}")
+    logger.info("Response processing completed", duration=elapsed_str, task_id=task_id_for_search)
 
     # ALWAYS create a notification - success, failure, or timeout
     response_summary = response_content[:100] + ("..." if len(response_content) > 100 else "")
 
     if claude_result.returncode == 0:
         # SUCCESS: Include Claude's response
-        logger.info("Response processed successfully")
+        logger.info("Response processed successfully", task_id=task_id_for_search)
 
         claude_output = claude_result.stdout.strip() if claude_result.stdout else ""
         if not claude_output:
-            logger.warning("Claude returned empty output despite success return code")
+            logger.warning(
+                "Claude returned empty output despite success return code",
+                task_id=task_id_for_search,
+            )
             claude_output = "*Claude completed but produced no output. The response may have been processed - check GitHub for any updates.*"
 
         notification_content = f"""# Response Processed
@@ -709,7 +706,9 @@ Process this response now."""
 """
     elif timed_out:
         # TIMEOUT: Notify user with helpful context
-        logger.error("Response processing timed out")
+        logger.error(
+            "Response processing timed out", task_id=task_id_for_search, duration=elapsed_str
+        )
         partial_output = ""
         if claude_result.stdout:
             partial_output = (
@@ -739,7 +738,10 @@ The response took too long to process.
         stdout_output = claude_result.stdout[:500] if claude_result.stdout else "None"
 
         logger.error(
-            f"Response processing failed: return_code={claude_result.returncode}, error={error_message}"
+            "Response processing failed",
+            task_id=task_id_for_search,
+            return_code=claude_result.returncode,
+            error=error_message,
         )
 
         notification_content = f"""# Response Processing Failed
@@ -772,9 +774,7 @@ The response took too long to process.
         thread_ts=thread_ts,
         content=notification_content,
     )
-    logger.info(f"Notification created: {notification_file.name}")
-    if thread_ts:
-        logger.info(f"Thread context preserved: {thread_ts}")
+    logger.info("Notification created", file=notification_file.name, thread_ts=thread_ts or None)
 
     return claude_result.returncode == 0
 
@@ -786,32 +786,32 @@ def main():
         return 1
 
     message_file = Path(sys.argv[1])
-    logger.info(f"Starting incoming-processor with file: {message_file}")
+    logger.info("Starting incoming-processor", file=str(message_file))
 
     if not message_file.exists():
-        logger.error(f"File not found: {message_file}")
+        logger.error("File not found", file=str(message_file))
         return 1
 
     # Determine message type based on parent directory
     if "incoming" in str(message_file.parent):
-        logger.info("Message type: incoming task")
+        logger.info("Processing incoming task", file=message_file.name)
         success = process_task(message_file)
     elif "responses" in str(message_file.parent):
-        logger.info("Message type: response to previous notification")
+        logger.info("Processing response to previous notification", file=message_file.name)
         success = process_response(message_file)
     else:
-        logger.error(f"Unknown message type for {message_file}")
+        logger.error("Unknown message type", file=str(message_file))
         return 1
 
-    logger.info(f"Processing {'succeeded' if success else 'failed'}")
+    logger.info("Processing complete", success=success)
 
     # Stop background services before exiting (PostgreSQL, Redis keep container alive)
     # This ensures ephemeral jib --exec containers exit cleanly
-    logger.info("Stopping background services...")
+    logger.info("Stopping background services")
     subprocess.run(["service", "postgresql", "stop"], check=False, capture_output=True)
     subprocess.run(["service", "redis-server", "stop"], check=False, capture_output=True)
 
-    logger.info("Incoming processor complete")
+    logger.info("Incoming processor complete", success=success)
     return 0 if success else 1
 
 
