@@ -114,7 +114,9 @@ def run_claude(
             stdout=result.stdout if capture_output else "",
             stderr=result.stderr if capture_output else "",
             returncode=result.returncode,
-            error=None if result.returncode == 0 else f"Claude exited with code {result.returncode}",
+            error=None
+            if result.returncode == 0
+            else f"Claude exited with code {result.returncode}",
         )
 
     except subprocess.TimeoutExpired:
