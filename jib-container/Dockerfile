@@ -522,6 +522,22 @@ echo "✓ Beads memory system ready"
 echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
 echo "  Usage: bd --allow-stale create 'task description' --labels feature,important"
 
+# Generate documentation indexes (codebase.json, patterns.json, dependencies.json)
+# These are gitignored and regenerated on container startup to avoid merge conflicts
+INDEX_GENERATOR="${USER_HOME}/khan/james-in-a-box/host-services/analysis/index-generator/index-generator.py"
+if [ -f "$INDEX_GENERATOR" ] && [ -d "${USER_HOME}/khan/james-in-a-box" ]; then
+    echo ""
+    echo "Generating documentation indexes..."
+    if gosu "${RUNTIME_UID}:${RUNTIME_GID}" python3 "$INDEX_GENERATOR" \
+        --project "${USER_HOME}/khan/james-in-a-box" \
+        --output "${USER_HOME}/khan/james-in-a-box/docs/generated" > /dev/null 2>&1; then
+        echo "✓ Documentation indexes generated"
+        echo "  Location: ~/khan/james-in-a-box/docs/generated/"
+    else
+        echo "⚠ Documentation index generation failed (non-critical)"
+    fi
+fi
+
 # NOTE: All analysis uses exec-based pattern (no background processes)
 # Analysis scripts are triggered by host-side systemd services via `jib --exec`
 #
