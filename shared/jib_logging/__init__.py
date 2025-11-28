@@ -64,6 +64,7 @@ from .model_capture import (
     TokenUsage,
     capture_model_response,
     get_model_capture,
+    reset_model_capture,
 )
 
 
@@ -92,6 +93,7 @@ __all__ = [
     "get_logger",
     "get_model_capture",
     "get_or_create_context",
+    "reset_model_capture",
     "set_current_context",
 ]
 

@@ -18,6 +18,7 @@ from jib_logging.model_capture import (
     TokenUsage,
     capture_model_response,
     get_model_capture,
+    reset_model_capture,
 )
 
 
@@ -403,6 +404,43 @@ class TestCaptureContext:
 
         assert ctx.response.model == "claude-3-opus"
 
+    def test_multiple_set_output_overwrites(self, capture):
+        """Test that multiple set_output calls overwrite previous values.
+
+        This documents the expected behavior: later calls to set_output
+        replace the output from earlier calls within the same context.
+        """
+        with capture.capture_response() as ctx:
+            ctx.set_output("First response")
+            ctx.set_output("Second response")
+            ctx.set_output("Final response")
+
+        assert ctx.response.response_preview == "Final response"
+        assert ctx.response.response_length == len("Final response")
+
+    def test_set_output_preserves_manually_set_metadata(self, capture):
+        """Test that set_output doesn't overwrite manually set metadata.
+
+        If token_usage, model, etc. are set before calling set_output,
+        set_output should not overwrite them with parsed values.
+        """
+        # JSON output with metadata
+        json_output = json.dumps({
+            "model": "parsed-model",
+            "usage": {"input_tokens": 999, "output_tokens": 888},
+        })
+
+        with capture.capture_response() as ctx:
+            # Set metadata manually first
+            ctx.set_model("manual-model")
+            ctx.set_token_usage({"input_tokens": 100, "output_tokens": 50})
+            # Now set output with different metadata in JSON
+            ctx.set_output(json_output)
+
+        # Manually set values should be preserved
+        assert ctx.response.model == "manual-model"
+        assert ctx.response.token_usage.input_tokens == 100
+
 
 class TestGlobalCapture:
     """Tests for global capture functions."""
@@ -410,9 +448,7 @@ class TestGlobalCapture:
     def test_get_model_capture_singleton(self):
         """Test that get_model_capture returns singleton."""
         # Reset singleton
-        import jib_logging.model_capture as mc
-
-        mc._model_capture = None
+        reset_model_capture()
 
         capture1 = get_model_capture()
         capture2 = get_model_capture()
@@ -430,11 +466,32 @@ class TestGlobalCapture:
             assert capture._output_dir == Path(tmpdir)
             assert capture._store_full_responses is False
 
+    def test_get_model_capture_with_params_does_not_modify_singleton(self):
+        """Test that creating capture with params doesn't modify singleton.
+
+        When get_model_capture() is called with parameters, it returns a
+        new instance without affecting the global singleton.
+        """
+        reset_model_capture()
+
+        # Get the singleton
+        singleton = get_model_capture()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a custom instance with params
+            custom = get_model_capture(output_dir=tmpdir, store_full_responses=False)
+
+            # Custom instance should be different
+            assert custom is not singleton
+            assert custom._output_dir == Path(tmpdir)
+
+            # Singleton should still be the original
+            same_singleton = get_model_capture()
+            assert same_singleton is singleton
+
     def test_get_model_capture_env_vars(self):
         """Test capture respects environment variables."""
-        import jib_logging.model_capture as mc
-
-        mc._model_capture = None
+        reset_model_capture()
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch.dict(
@@ -445,7 +502,7 @@ class TestGlobalCapture:
                 },
             ):
                 # Reset singleton to pick up env vars
-                mc._model_capture = None
+                reset_model_capture()
                 capture = get_model_capture()
 
                 assert str(capture._output_dir) == tmpdir

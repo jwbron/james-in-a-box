@@ -13,6 +13,7 @@ This module implements Phase 3 of ADR-Standardized-Logging-Interface.
 import hashlib
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -566,8 +567,9 @@ class CaptureContext:
         return self._response
 
 
-# Singleton instance
+# Singleton instance with thread-safe initialization
 _model_capture: ModelOutputCapture | None = None
+_model_capture_lock = threading.Lock()
 
 
 def get_model_capture(
@@ -576,18 +578,38 @@ def get_model_capture(
 ) -> ModelOutputCapture:
     """Get or create the global ModelOutputCapture instance.
 
+    This function provides access to a singleton ModelOutputCapture instance.
+    The singleton is lazily initialized on first call and reused thereafter.
+
+    **Thread Safety**: The singleton initialization is thread-safe.
+
+    **Configuration Behavior**:
+    - If called without parameters: returns the singleton (creates it if needed)
+    - If called with parameters: creates and returns a NEW instance (not the singleton)
+      This allows creating custom instances while preserving the global singleton.
+
+    Example:
+        # Get/create the global singleton
+        capture = get_model_capture()
+
+        # Create a separate instance with custom config (does NOT modify singleton)
+        custom = get_model_capture(output_dir="/custom/path", store_full_responses=False)
+
+        # This still returns the original singleton
+        same_capture = get_model_capture()  # same_capture is capture
+
     Args:
-        output_dir: Override output directory
-        store_full_responses: Override storage setting
+        output_dir: Override output directory. If provided, creates a new instance.
+        store_full_responses: Override storage setting. If provided, creates a new instance.
 
     Returns:
-        ModelOutputCapture instance
+        ModelOutputCapture instance (singleton if no params, new instance otherwise)
     """
     global _model_capture
 
-    # If parameters provided, create new instance
+    # If parameters provided, create new instance (not the singleton)
+    # This allows creating custom-configured instances for specific use cases
     if output_dir is not None or store_full_responses is not None:
-        # Check environment for defaults
         env_dir = os.environ.get("JIB_MODEL_OUTPUT_DIR")
         env_store = os.environ.get("JIB_STORE_MODEL_OUTPUT", "true").lower() == "true"
 
@@ -598,17 +620,31 @@ def get_model_capture(
             else env_store,
         )
 
-    # Return or create singleton
+    # Thread-safe singleton initialization
     if _model_capture is None:
-        env_dir = os.environ.get("JIB_MODEL_OUTPUT_DIR")
-        env_store = os.environ.get("JIB_STORE_MODEL_OUTPUT", "true").lower() == "true"
+        with _model_capture_lock:
+            # Double-checked locking pattern
+            if _model_capture is None:
+                env_dir = os.environ.get("JIB_MODEL_OUTPUT_DIR")
+                env_store = os.environ.get("JIB_STORE_MODEL_OUTPUT", "true").lower() == "true"
 
-        _model_capture = ModelOutputCapture(
-            output_dir=env_dir,
-            store_full_responses=env_store,
-        )
+                _model_capture = ModelOutputCapture(
+                    output_dir=env_dir,
+                    store_full_responses=env_store,
+                )
 
     return _model_capture
+
+
+def reset_model_capture() -> None:
+    """Reset the global ModelOutputCapture singleton.
+
+    This is primarily useful for testing. In production, the singleton
+    should persist for the lifetime of the process.
+    """
+    global _model_capture
+    with _model_capture_lock:
+        _model_capture = None
 
 
 def capture_model_response(
