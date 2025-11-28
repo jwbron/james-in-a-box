@@ -34,14 +34,11 @@ Usage:
 
 import argparse
 import json
-import os
-import re
-import subprocess
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -147,33 +144,63 @@ class ExternalValidator:
     KNOWN_BEST_PRACTICES = {
         "security": [
             {"practice": "Never store secrets in code or version control", "source": "OWASP"},
-            {"practice": "Use environment variables for sensitive configuration", "source": "12 Factor"},
+            {
+                "practice": "Use environment variables for sensitive configuration",
+                "source": "12 Factor",
+            },
             {"practice": "Validate and sanitize all user input", "source": "OWASP"},
             {"practice": "Use parameterized queries to prevent SQL injection", "source": "OWASP"},
-            {"practice": "Implement proper error handling without exposing internals", "source": "OWASP"},
+            {
+                "practice": "Implement proper error handling without exposing internals",
+                "source": "OWASP",
+            },
             {"practice": "Use HTTPS for all communications", "source": "OWASP"},
             {"practice": "Implement rate limiting on APIs", "source": "OWASP"},
-            {"practice": "Keep dependencies updated and scan for vulnerabilities", "source": "NIST"},
+            {
+                "practice": "Keep dependencies updated and scan for vulnerabilities",
+                "source": "NIST",
+            },
         ],
         "auth": [
-            {"practice": "Use strong, adaptive hashing for passwords (bcrypt, Argon2)", "source": "OWASP"},
-            {"practice": "Implement multi-factor authentication for sensitive operations", "source": "NIST"},
-            {"practice": "Use short-lived tokens with secure refresh mechanisms", "source": "OWASP"},
+            {
+                "practice": "Use strong, adaptive hashing for passwords (bcrypt, Argon2)",
+                "source": "OWASP",
+            },
+            {
+                "practice": "Implement multi-factor authentication for sensitive operations",
+                "source": "NIST",
+            },
+            {
+                "practice": "Use short-lived tokens with secure refresh mechanisms",
+                "source": "OWASP",
+            },
             {"practice": "Validate JWT signatures and all claims", "source": "RFC 7519"},
             {"practice": "Implement proper session invalidation on logout", "source": "OWASP"},
-            {"practice": "Use secure, HttpOnly, SameSite cookies for session tokens", "source": "OWASP"},
+            {
+                "practice": "Use secure, HttpOnly, SameSite cookies for session tokens",
+                "source": "OWASP",
+            },
             {"practice": "Implement account lockout after failed attempts", "source": "NIST"},
         ],
         "config": [
-            {"practice": "Store config in environment variables, not in code", "source": "12 Factor"},
+            {
+                "practice": "Store config in environment variables, not in code",
+                "source": "12 Factor",
+            },
             {"practice": "Never commit secrets to version control", "source": "Industry Standard"},
-            {"practice": "Use different config for dev, staging, production", "source": "12 Factor"},
+            {
+                "practice": "Use different config for dev, staging, production",
+                "source": "12 Factor",
+            },
             {"practice": "Validate all configuration on startup", "source": "Best Practice"},
             {"practice": "Provide sensible defaults where appropriate", "source": "Best Practice"},
             {"practice": "Document all configuration options", "source": "Best Practice"},
         ],
         "testing": [
-            {"practice": "Write tests before or alongside code (TDD)", "source": "Industry Standard"},
+            {
+                "practice": "Write tests before or alongside code (TDD)",
+                "source": "Industry Standard",
+            },
             {"practice": "Aim for high coverage on critical paths", "source": "Best Practice"},
             {"practice": "Use fixtures and factories for test data", "source": "pytest"},
             {"practice": "Keep tests fast and independent", "source": "Best Practice"},
@@ -184,14 +211,23 @@ class ExternalValidator:
             {"practice": "Implement rate limiting to avoid API throttling", "source": "Slack API"},
             {"practice": "Use threading for related messages", "source": "Slack Best Practices"},
             {"practice": "Handle API errors gracefully with retries", "source": "Best Practice"},
-            {"practice": "Avoid sending too many notifications (notification fatigue)", "source": "UX Best Practice"},
+            {
+                "practice": "Avoid sending too many notifications (notification fatigue)",
+                "source": "UX Best Practice",
+            },
         ],
         "connector": [
-            {"practice": "Implement retry logic with exponential backoff", "source": "Best Practice"},
+            {
+                "practice": "Implement retry logic with exponential backoff",
+                "source": "Best Practice",
+            },
             {"practice": "Use connection pooling for efficiency", "source": "Best Practice"},
             {"practice": "Handle timeouts gracefully", "source": "Best Practice"},
             {"practice": "Log requests and responses for debugging", "source": "Best Practice"},
-            {"practice": "Use circuit breaker pattern for resilience", "source": "Resilience Patterns"},
+            {
+                "practice": "Use circuit breaker pattern for resilience",
+                "source": "Resilience Patterns",
+            },
         ],
         "sync": [
             {"practice": "Make sync operations idempotent", "source": "Best Practice"},
@@ -249,7 +285,7 @@ class ExternalValidator:
 
         research = ExternalResearch(
             topic=topic,
-            researched_at=datetime.now(timezone.utc).isoformat(),
+            researched_at=datetime.now(UTC).isoformat(),
         )
 
         # Get known best practices
@@ -311,13 +347,12 @@ class ExternalValidator:
             try:
                 # Simple fetch with timeout
                 req = urllib.request.Request(
-                    source["url"],
-                    headers={"User-Agent": "jib-doc-generator/1.0"}
+                    source["url"], headers={"User-Agent": "jib-doc-generator/1.0"}
                 )
                 with urllib.request.urlopen(req, timeout=5) as response:
                     if response.status == 200:
                         source["accessible"] = True
-                        source["last_checked"] = datetime.now(timezone.utc).isoformat()
+                        source["last_checked"] = datetime.now(UTC).isoformat()
             except (urllib.error.URLError, TimeoutError, Exception):
                 source["accessible"] = False
 
@@ -334,7 +369,7 @@ class ExternalValidator:
                 data = json.loads(cache_file.read_text())
                 # Check if cache is less than 7 days old
                 researched_at = datetime.fromisoformat(data.get("researched_at", "2000-01-01"))
-                age = datetime.now(timezone.utc) - researched_at.replace(tzinfo=timezone.utc)
+                age = datetime.now(UTC) - researched_at.replace(tzinfo=UTC)
                 if age.days < 7:
                     return ExternalResearch(**data)
             except (json.JSONDecodeError, ValueError):
@@ -536,7 +571,7 @@ class DocumentationGenerator:
         sections.append(f"# {title}")
         sections.append("")
         sections.append(
-            f"> Auto-generated by jib on {datetime.now(timezone.utc).strftime('%Y-%m-%d')}. "
+            f"> Auto-generated by jib on {datetime.now(UTC).strftime('%Y-%m-%d')}. "
             "Review before relying on."
         )
         sections.append("")
@@ -608,7 +643,7 @@ class DocumentationGenerator:
         sections.append(f"# {title}")
         sections.append("")
         sections.append(
-            f"> Auto-generated by jib on {datetime.now(timezone.utc).strftime('%Y-%m-%d')}. "
+            f"> Auto-generated by jib on {datetime.now(UTC).strftime('%Y-%m-%d')}. "
             "Includes external best practice research."
         )
         sections.append("")
@@ -670,7 +705,7 @@ class DocumentationGenerator:
         sections = []
         sections.append(f"# {title}")
         sections.append("")
-        sections.append(f"> Auto-generated by jib on {datetime.now(timezone.utc).strftime('%Y-%m-%d')}.")
+        sections.append(f"> Auto-generated by jib on {datetime.now(UTC).strftime('%Y-%m-%d')}.")
         sections.append("")
 
         sections.append("## Overview")
@@ -756,20 +791,19 @@ class DocumentationGenerator:
         research = self.external_validator.research(topic)
 
         # Identify gaps between our practices and best practices
-        our_conventions = set(c.lower() for c in context.conventions)
+        our_conventions = {c.lower() for c in context.conventions}
         for bp in research.best_practices:
             practice = bp.get("practice", "").lower()
             # Check if any of our conventions align with this practice
-            aligned = any(
-                conv in practice or practice in conv
-                for conv in our_conventions
-            )
+            aligned = any(conv in practice or practice in conv for conv in our_conventions)
             if not aligned:
                 research.gaps.append(f"Consider: {bp.get('practice')} ({bp.get('source')})")
 
         # Generate recommendations based on gaps
         if research.gaps:
-            research.recommendations.append("Review the identified gaps against current implementation")
+            research.recommendations.append(
+                "Review the identified gaps against current implementation"
+            )
         if research.anti_patterns:
             research.recommendations.append("Audit codebase for listed anti-patterns")
 
@@ -805,8 +839,7 @@ class DocumentationGenerator:
             content = content.replace("{{INDUSTRY_STANDARDS}}", "\n".join(standards_lines))
         else:
             content = content.replace(
-                "{{INDUSTRY_STANDARDS}}",
-                "*No specific industry standards found for this topic.*\n"
+                "{{INDUSTRY_STANDARDS}}", "*No specific industry standards found for this topic.*\n"
             )
 
         # Fill in compliance checklist
@@ -829,7 +862,7 @@ class DocumentationGenerator:
         else:
             content = content.replace(
                 "{{COMPLIANCE_CHECKLIST}}",
-                "*Compliance checklist will be generated after research.*\n"
+                "*Compliance checklist will be generated after research.*\n",
             )
 
         # Fill in recommendations
@@ -851,8 +884,7 @@ class DocumentationGenerator:
             content = content.replace("{{RECOMMENDATIONS}}", "\n".join(rec_lines))
         else:
             content = content.replace(
-                "{{RECOMMENDATIONS}}",
-                "No specific recommendations at this time.\n"
+                "{{RECOMMENDATIONS}}", "No specific recommendations at this time.\n"
             )
 
         # Fill in sources
@@ -870,8 +902,7 @@ class DocumentationGenerator:
             content = content.replace("{{SOURCES}}", "\n".join(source_lines))
         else:
             content = content.replace(
-                "{{SOURCES}}",
-                "- Internal codebase analysis\n- Industry best practices\n"
+                "{{SOURCES}}", "- Internal codebase analysis\n- Industry best practices\n"
             )
 
         # Update sources list
@@ -954,7 +985,9 @@ class DocumentationGenerator:
         # Step 1: Context Agent
         print(f"  [1/{total_steps}] Gathering context...")
         context = self.gather_context(topic)
-        print(f"        Found {len(context.patterns)} patterns, {len(context.components)} components")
+        print(
+            f"        Found {len(context.patterns)} patterns, {len(context.components)} components"
+        )
 
         if not context.patterns and not context.components:
             print(f"  Warning: No patterns or components found for topic '{topic}'")
@@ -979,7 +1012,9 @@ class DocumentationGenerator:
                 "sources": len(research.sources),
                 "gaps": len(research.gaps),
             }
-            print(f"        Found {len(research.best_practices)} best practices, {len(research.gaps)} gaps")
+            print(
+                f"        Found {len(research.best_practices)} best practices, {len(research.gaps)} gaps"
+            )
 
             # Step 5: Revise Agent
             print(f"  [5/{total_steps}] Revising with external feedback...")
@@ -993,7 +1028,7 @@ class DocumentationGenerator:
         result["suggestions"] = review.suggestions
 
         if review.approved:
-            print(f"        Review: APPROVED")
+            print("        Review: APPROVED")
         else:
             print(f"        Review: {len(review.issues)} issues found")
 
@@ -1144,15 +1179,20 @@ Examples:
         research = generator.research_topic(args.research)
 
         if args.json:
-            print(json.dumps({
-                "topic": research.topic,
-                "best_practices": research.best_practices,
-                "anti_patterns": research.anti_patterns,
-                "sources": research.sources,
-                "gaps": research.gaps,
-                "recommendations": research.recommendations,
-                "researched_at": research.researched_at,
-            }, indent=2))
+            print(
+                json.dumps(
+                    {
+                        "topic": research.topic,
+                        "best_practices": research.best_practices,
+                        "anti_patterns": research.anti_patterns,
+                        "sources": research.sources,
+                        "gaps": research.gaps,
+                        "recommendations": research.recommendations,
+                        "researched_at": research.researched_at,
+                    },
+                    indent=2,
+                )
+            )
         else:
             print("## Best Practices")
             for bp in research.best_practices:
