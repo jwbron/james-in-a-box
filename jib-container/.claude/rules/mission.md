@@ -13,12 +13,20 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 ## Context Sources
 
 | Source | Location | Purpose |
-|--------|----------|---------|
+|--------|----------|--------|
+| **Documentation Index** | `~/khan/james-in-a-box/docs/index.md` | Navigation hub for all docs |
 | Confluence | `~/context-sync/confluence/` | ADRs, runbooks, best practices |
 | JIRA | `~/context-sync/jira/` | Tickets, requirements, sprint info |
 | Slack | `~/sharing/incoming/` | Task requests |
 | Beads | `~/beads/` | Persistent task memory |
 | **GitHub MCP** | Real-time API access | PRs, issues, repos, comments |
+
+### Documentation Navigation
+
+**Before starting complex tasks**, consult the documentation index:
+- Read `~/khan/james-in-a-box/docs/index.md` for task-specific guides
+- Check relevant ADRs before architectural changes
+- The index follows the [llms.txt](https://llmstxt.org/) standard for efficient navigation
 
 ## CRITICAL TOOL REQUIREMENTS
 

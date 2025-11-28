@@ -2,6 +2,9 @@
 
 Complete documentation for james-in-a-box: Docker sandbox for Claude Code CLI as an autonomous software engineering agent.
 
+> **For LLMs**: Start with the [Documentation Index](index.md) for efficient navigation.
+> This documentation follows the [llms.txt](https://llmstxt.org/) standard - see [llms.txt](llms.txt).
+
 > **Note**: Documentation should generally live close to code in service directories (e.g., `host-services/slack-notifier/README.md`). This directory is for general, cross-cutting documentation only.
 
 ## Documentation Structure
