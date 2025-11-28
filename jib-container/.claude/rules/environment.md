@@ -96,7 +96,8 @@ Do NOT assume owner from context (e.g., don't assume `Khan/` just because you're
 ## File System
 
 | Path | Access | Purpose |
-|------|--------|---------|n| `~/khan/` | RW | Code workspace (mounted from host) |
+|------|--------|---------|
+| `~/khan/` | RW | Code workspace (mounted from host) |
 | `~/context-sync/confluence/` | RO | ADRs, runbooks, docs |
 | `~/context-sync/jira/` | RO | JIRA tickets |
 | `~/sharing/` | RW | Persistent data (survives rebuilds) |
@@ -108,7 +109,7 @@ Do NOT assume owner from context (e.g., don't assume `Khan/` just because you're
 ## Custom Commands
 
 | Command | Purpose |
-|---------|---------||
+|---------|---------|
 | `@load-context <name>` | Load knowledge from `~/sharing/context/` |
 | `@save-context <name>` | Save learnings to `~/sharing/context/` |
 | `@create-pr [audit] [draft]` | Generate PR description |
