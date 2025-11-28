@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T08:44:23.425883+00:00",
+  "generated": "2025-11-28T09:06:22.514164+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -756,70 +756,125 @@
     {
       "name": "gh_text",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 157,
+      "line": 161,
       "type": "function",
       "description": "Run gh CLI command and return text output with rate limit handling."
     },
     {
       "name": "invoke_jib",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 198,
+      "line": 206,
       "type": "function",
       "description": "Invoke jib container with context via jib --exec."
     },
     {
       "name": "check_pr_for_failures",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 264,
+      "line": 272,
       "type": "function",
       "description": "Check a PR for check failures."
     },
     {
       "name": "fetch_check_logs",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 363,
+      "line": 371,
       "type": "function",
       "description": "Fetch full logs for a failed check."
     },
     {
       "name": "check_pr_for_comments",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 390,
+      "line": 398,
       "type": "function",
       "description": "Check a PR for new comments from others that need response."
     },
     {
       "name": "check_prs_for_review",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 510,
+      "line": 518,
       "type": "function",
       "description": "Check for PRs from others that need review."
     },
     {
       "name": "utc_now_iso",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 591,
+      "line": 599,
       "type": "function",
       "description": "Get current UTC time in ISO format with Z suffix."
     },
     {
       "name": "get_since_timestamp",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 602,
+      "line": 610,
       "type": "function",
       "description": "Get ISO timestamp for 'since' queries based on last run START time."
     },
     {
       "name": "main",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 614,
+      "line": 622,
       "type": "function",
       "description": "Main entry point - scan configured repos and trigger jib as needed."
     },
     {
+      "name": "load_index",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 17,
+      "type": "function",
+      "description": "Load a JSON index file."
+    },
+    {
+      "name": "cmd_component",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 28,
+      "type": "function",
+      "description": "Find component by name."
+    },
+    {
+      "name": "cmd_pattern",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 54,
+      "type": "function",
+      "description": "Show pattern details."
+    },
+    {
+      "name": "cmd_deps",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 89,
+      "type": "function",
+      "description": "Show dependencies."
+    },
+    {
+      "name": "cmd_structure",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 150,
+      "type": "function",
+      "description": "Show project structure."
+    },
+    {
+      "name": "cmd_summary",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 172,
+      "type": "function",
+      "description": "Show codebase summary."
+    },
+    {
+      "name": "cmd_search",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 230,
+      "type": "function",
+      "description": "Search across all indexes."
+    },
+    {
+      "name": "main",
+      "file": "host-services/analysis/index-generator/query-index.py",
+      "line": 268,
+      "type": "function"
+    },
+    {
       "name": "CodebaseIndexer",
       "file": "host-services/analysis/index-generator/index-generator.py",
-      "line": 24,
+      "line": 23,
       "type": "class",
       "description": "Analyzes a codebase and generates structured indexes.",
       "methods": [
@@ -838,64 +893,9 @@
     {
       "name": "main",
       "file": "host-services/analysis/index-generator/index-generator.py",
-      "line": 524,
+      "line": 711,
       "type": "function",
       "description": "CLI entry point."
-    },
-    {
-      "name": "load_index",
-      "file": "host-services/analysis/index-generator/query-index.py",
-      "line": 18,
-      "type": "function",
-      "description": "Load a JSON index file."
-    },
-    {
-      "name": "cmd_component",
-      "file": "host-services/analysis/index-generator/query-index.py",
-      "line": 29,
-      "type": "function",
-      "description": "Find component by name."
-    },
-    {
-      "name": "cmd_pattern",
-      "file": "host-services/analysis/index-generator/query-index.py",
-      "line": 55,
-      "type": "function",
-      "description": "Show pattern details."
-    },
-    {
-      "name": "cmd_deps",
-      "file": "host-services/analysis/index-generator/query-index.py",
-      "line": 90,
-      "type": "function",
-      "description": "Show dependencies."
-    },
-    {
-      "name": "cmd_structure",
-      "file": "host-services/analysis/index-generator/query-index.py",
-      "line": 124,
-      "type": "function",
-      "description": "Show project structure."
-    },
-    {
-      "name": "cmd_summary",
-      "file": "host-services/analysis/index-generator/query-index.py",
-      "line": 147,
-      "type": "function",
-      "description": "Show codebase summary."
-    },
-    {
-      "name": "cmd_search",
-      "file": "host-services/analysis/index-generator/query-index.py",
-      "line": 178,
-      "type": "function",
-      "description": "Search across all indexes."
-    },
-    {
-      "name": "main",
-      "file": "host-services/analysis/index-generator/query-index.py",
-      "line": 216,
-      "type": "function"
     },
     {
       "name": "SlackNotifier",
@@ -920,6 +920,32 @@
       "name": "main",
       "file": "host-services/slack/slack-notifier/slack-notifier.py",
       "line": 588,
+      "type": "function",
+      "description": "Main entry point."
+    },
+    {
+      "name": "SlackReceiver",
+      "file": "host-services/slack/slack-receiver/slack-receiver.py",
+      "line": 36,
+      "type": "class",
+      "description": "Receives Slack messages and writes them to shared directory.",
+      "methods": [
+        "__init__",
+        "_setup_logging",
+        "_load_config",
+        "_save_config",
+        "_load_threads",
+        "_save_threads",
+        "_signal_handler",
+        "_get_bot_user_id",
+        "_is_allowed_user",
+        "_execute_command"
+      ]
+    },
+    {
+      "name": "main",
+      "file": "host-services/slack/slack-receiver/slack-receiver.py",
+      "line": 832,
       "type": "function",
       "description": "Main entry point."
     },
@@ -965,32 +991,6 @@
       "line": 664,
       "type": "function",
       "description": "CLI entry point."
-    },
-    {
-      "name": "SlackReceiver",
-      "file": "host-services/slack/slack-receiver/slack-receiver.py",
-      "line": 36,
-      "type": "class",
-      "description": "Receives Slack messages and writes them to shared directory.",
-      "methods": [
-        "__init__",
-        "_setup_logging",
-        "_load_config",
-        "_save_config",
-        "_load_threads",
-        "_save_threads",
-        "_signal_handler",
-        "_get_bot_user_id",
-        "_is_allowed_user",
-        "_execute_command"
-      ]
-    },
-    {
-      "name": "main",
-      "file": "host-services/slack/slack-receiver/slack-receiver.py",
-      "line": 832,
-      "type": "function",
-      "description": "Main entry point."
     },
     {
       "name": "get_all_connectors",

@@ -4,13 +4,10 @@ Tests for the codebase index query tool.
 
 import json
 from argparse import Namespace
-from io import StringIO
-from pathlib import Path
-from unittest.mock import patch
+from importlib import import_module
 
 import pytest
 
-from importlib import import_module
 
 # Import the module
 query_index = import_module("query-index")
@@ -46,8 +43,18 @@ class TestCmdComponent:
         """Test finding a component by name."""
         codebase = {
             "components": [
-                {"name": "GitHubWatcher", "type": "class", "file": "watchers/github.py", "line": 10},
-                {"name": "SlackConnector", "type": "class", "file": "connectors/slack.py", "line": 5},
+                {
+                    "name": "GitHubWatcher",
+                    "type": "class",
+                    "file": "watchers/github.py",
+                    "line": 10,
+                },
+                {
+                    "name": "SlackConnector",
+                    "type": "class",
+                    "file": "connectors/slack.py",
+                    "line": 5,
+                },
             ]
         }
         (temp_dir / "codebase.json").write_text(json.dumps(codebase))
@@ -62,7 +69,9 @@ class TestCmdComponent:
 
     def test_no_matches_message(self, temp_dir, capsys):
         """Test message when no components match."""
-        codebase = {"components": [{"name": "Other", "type": "class", "file": "other.py", "line": 1}]}
+        codebase = {
+            "components": [{"name": "Other", "type": "class", "file": "other.py", "line": 1}]
+        }
         (temp_dir / "codebase.json").write_text(json.dumps(codebase))
 
         args = Namespace(name="NonExistent")
@@ -102,7 +111,10 @@ class TestCmdPattern:
         """Test listing all patterns when no name specified."""
         patterns = {
             "patterns": {
-                "connector": {"description": "Service connectors", "examples": ["a.py:1", "b.py:2"]},
+                "connector": {
+                    "description": "Service connectors",
+                    "examples": ["a.py:1", "b.py:2"],
+                },
                 "notification": {"description": "Notifications", "examples": ["c.py:3"]},
             }
         }

@@ -12,7 +12,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 
 def load_index(index_path: Path) -> dict:
@@ -28,13 +27,13 @@ def load_index(index_path: Path) -> dict:
 
 def cmd_component(args, indexes_dir: Path):
     """Find component by name."""
-    codebase = load_index(indexes_dir / 'codebase.json')
+    codebase = load_index(indexes_dir / "codebase.json")
 
     name_lower = args.name.lower()
     matches = []
 
-    for component in codebase.get('components', []):
-        if name_lower in component.get('name', '').lower():
+    for component in codebase.get("components", []):
+        if name_lower in component.get("name", "").lower():
             matches.append(component)
 
     if not matches:
@@ -45,24 +44,24 @@ def cmd_component(args, indexes_dir: Path):
     for comp in matches[:10]:  # Limit output
         print(f"  {comp.get('type', 'unknown'):8} {comp['name']}")
         print(f"           File: {comp.get('file', 'unknown')}:{comp.get('line', '?')}")
-        if 'description' in comp:
+        if "description" in comp:
             print(f"           Desc: {comp['description'][:80]}")
-        if 'methods' in comp:
+        if "methods" in comp:
             print(f"           Methods: {', '.join(comp['methods'][:5])}")
         print()
 
 
 def cmd_pattern(args, indexes_dir: Path):
     """Show pattern details."""
-    patterns = load_index(indexes_dir / 'patterns.json')
+    patterns = load_index(indexes_dir / "patterns.json")
 
     if args.name:
         # Show specific pattern
         pattern_name = args.name.lower()
-        pattern_data = patterns.get('patterns', {}).get(pattern_name)
+        pattern_data = patterns.get("patterns", {}).get(pattern_name)
 
         if not pattern_data:
-            available = list(patterns.get('patterns', {}).keys())
+            available = list(patterns.get("patterns", {}).keys())
             print(f"Pattern '{args.name}' not found.")
             print(f"Available patterns: {', '.join(available)}")
             return
@@ -70,18 +69,18 @@ def cmd_pattern(args, indexes_dir: Path):
         print(f"Pattern: {args.name}")
         print(f"Description: {pattern_data.get('description', 'N/A')}")
         print(f"\nExamples ({len(pattern_data.get('examples', []))} total):")
-        for ex in pattern_data.get('examples', [])[:5]:
+        for ex in pattern_data.get("examples", [])[:5]:
             print(f"  - {ex}")
-        if len(pattern_data.get('examples', [])) > 5:
+        if len(pattern_data.get("examples", [])) > 5:
             print(f"  ... and {len(pattern_data['examples']) - 5} more")
-        print(f"\nConventions:")
-        for conv in pattern_data.get('conventions', []):
+        print("\nConventions:")
+        for conv in pattern_data.get("conventions", []):
             print(f"  • {conv}")
     else:
         # List all patterns
         print("Available patterns:\n")
-        for name, data in patterns.get('patterns', {}).items():
-            example_count = len(data.get('examples', []))
+        for name, data in patterns.get("patterns", {}).items():
+            example_count = len(data.get("examples", []))
             print(f"  {name:20} ({example_count} examples)")
             print(f"    {data.get('description', 'N/A')}")
             print()
@@ -89,11 +88,11 @@ def cmd_pattern(args, indexes_dir: Path):
 
 def cmd_deps(args, indexes_dir: Path):
     """Show dependencies."""
-    deps = load_index(indexes_dir / 'dependencies.json')
+    deps = load_index(indexes_dir / "dependencies.json")
 
     if args.component:
         # Show deps for specific file/component
-        internal = deps.get('internal', {})
+        internal = deps.get("internal", {})
         file_deps = internal.get(args.component)
 
         if file_deps:
@@ -105,14 +104,41 @@ def cmd_deps(args, indexes_dir: Path):
             print("Try using a full path like 'config/host_config.py'")
     else:
         # Show external deps summary
-        external = deps.get('external', {})
+        external = deps.get("external", {})
 
         # Separate stdlib from third-party
-        stdlib = {'os', 'sys', 'json', 'pathlib', 'typing', 'logging', 'argparse',
-                  'subprocess', 'tempfile', 'traceback', 'ast', 'hashlib', 're',
-                  'dataclasses', 'datetime', 'enum', 'collections', 'time',
-                  'signal', 'threading', 'pickle', 'abc', 'base64', 'concurrent',
-                  'urllib', 'uuid', 'contextlib', 'importlib', 'unittest', 'html'}
+        stdlib = {
+            "os",
+            "sys",
+            "json",
+            "pathlib",
+            "typing",
+            "logging",
+            "argparse",
+            "subprocess",
+            "tempfile",
+            "traceback",
+            "ast",
+            "hashlib",
+            "re",
+            "dataclasses",
+            "datetime",
+            "enum",
+            "collections",
+            "time",
+            "signal",
+            "threading",
+            "pickle",
+            "abc",
+            "base64",
+            "concurrent",
+            "urllib",
+            "uuid",
+            "contextlib",
+            "importlib",
+            "unittest",
+            "html",
+        }
 
         third_party = {k: v for k, v in external.items() if k not in stdlib}
 
@@ -123,34 +149,33 @@ def cmd_deps(args, indexes_dir: Path):
 
 def cmd_structure(args, indexes_dir: Path):
     """Show project structure."""
-    codebase = load_index(indexes_dir / 'codebase.json')
+    codebase = load_index(indexes_dir / "codebase.json")
 
     def print_tree(node: dict, prefix: str = "", name: str = ""):
         if name:
-            desc = node.get('description', '')
+            desc = node.get("description", "")
             print(f"{prefix}{name:30} {desc}")
 
-        children = node.get('children', {})
+        children = node.get("children", {})
         child_items = list(children.items())
 
         for i, (child_name, child_node) in enumerate(child_items):
-            is_last = (i == len(child_items) - 1)
-            new_prefix = prefix + ("    " if is_last else "│   ")
+            is_last = i == len(child_items) - 1
             connector = "└── " if is_last else "├── "
             print_tree(child_node, prefix + connector, child_name)
 
-    structure = codebase.get('structure', {})
+    structure = codebase.get("structure", {})
     print(f"Project: {codebase.get('project', 'unknown')}\n")
     print_tree(structure)
 
 
 def cmd_summary(args, indexes_dir: Path):
     """Show codebase summary."""
-    codebase = load_index(indexes_dir / 'codebase.json')
-    patterns = load_index(indexes_dir / 'patterns.json')
-    deps = load_index(indexes_dir / 'dependencies.json')
+    codebase = load_index(indexes_dir / "codebase.json")
+    patterns = load_index(indexes_dir / "patterns.json")
+    deps = load_index(indexes_dir / "dependencies.json")
 
-    summary = codebase.get('summary', {})
+    summary = codebase.get("summary", {})
 
     print(f"Codebase Summary: {codebase.get('project', 'unknown')}")
     print(f"Generated: {codebase.get('generated', 'unknown')}")
@@ -160,42 +185,69 @@ def cmd_summary(args, indexes_dir: Path):
     print(f"  Functions:     {summary.get('total_functions', 0)}")
     print()
     print(f"  Patterns detected: {len(patterns.get('patterns', {}))}")
-    for pattern in patterns.get('patterns', {}).keys():
+    for pattern in patterns.get("patterns", {}):
         print(f"    - {pattern}")
     print()
 
     # Count third-party deps
-    stdlib = {'os', 'sys', 'json', 'pathlib', 'typing', 'logging', 'argparse',
-              'subprocess', 'tempfile', 'traceback', 'ast', 'hashlib', 're',
-              'dataclasses', 'datetime', 'enum', 'collections', 'time',
-              'signal', 'threading', 'pickle', 'abc', 'base64', 'concurrent',
-              'urllib', 'uuid', 'contextlib', 'importlib', 'unittest', 'html'}
-    external = deps.get('external', {})
-    third_party = {k for k in external.keys() if k not in stdlib}
+    stdlib = {
+        "os",
+        "sys",
+        "json",
+        "pathlib",
+        "typing",
+        "logging",
+        "argparse",
+        "subprocess",
+        "tempfile",
+        "traceback",
+        "ast",
+        "hashlib",
+        "re",
+        "dataclasses",
+        "datetime",
+        "enum",
+        "collections",
+        "time",
+        "signal",
+        "threading",
+        "pickle",
+        "abc",
+        "base64",
+        "concurrent",
+        "urllib",
+        "uuid",
+        "contextlib",
+        "importlib",
+        "unittest",
+        "html",
+    }
+    external = deps.get("external", {})
+    third_party = {k for k in external if k not in stdlib}
     print(f"  External packages: {len(third_party)}")
 
 
 def cmd_search(args, indexes_dir: Path):
     """Search across all indexes."""
-    codebase = load_index(indexes_dir / 'codebase.json')
-    patterns = load_index(indexes_dir / 'patterns.json')
+    codebase = load_index(indexes_dir / "codebase.json")
+    patterns = load_index(indexes_dir / "patterns.json")
 
     query = args.query.lower()
     results = []
 
     # Search components
-    for comp in codebase.get('components', []):
-        if query in comp.get('name', '').lower():
-            results.append(('component', comp['name'], comp.get('file', '')))
-        if query in comp.get('description', '').lower():
-            results.append(('component', comp['name'], comp.get('description', '')[:60]))
+    for comp in codebase.get("components", []):
+        if query in comp.get("name", "").lower():
+            results.append(("component", comp["name"], comp.get("file", "")))
+        if query in comp.get("description", "").lower():
+            results.append(("component", comp["name"], comp.get("description", "")[:60]))
 
     # Search patterns
-    for pattern_name, pattern_data in patterns.get('patterns', {}).items():
+    for pattern_name, pattern_data in patterns.get("patterns", {}).items():
         if query in pattern_name.lower():
-            results.append(('pattern', pattern_name, pattern_data.get('description', '')))
-        if query in pattern_data.get('description', '').lower():
-            results.append(('pattern', pattern_name, pattern_data.get('description', '')))
+            results.append(("pattern", pattern_name, pattern_data.get("description", "")))
+        if query in pattern_data.get("description", "").lower():
+            results.append(("pattern", pattern_name, pattern_data.get("description", "")))
 
     if not results:
         print(f"No results found for '{args.query}'")
@@ -215,9 +267,9 @@ def cmd_search(args, indexes_dir: Path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Query codebase indexes for LLM navigation',
+        description="Query codebase indexes for LLM navigation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog="""
 Examples:
   %(prog)s summary                    # Show codebase overview
   %(prog)s component GitHubWatcher    # Find component by name
@@ -226,39 +278,40 @@ Examples:
   %(prog)s deps                       # Show external dependencies
   %(prog)s structure                  # Show project structure
   %(prog)s search notification        # Search across all indexes
-        '''
+        """,
     )
 
     parser.add_argument(
-        '--indexes', '-i',
+        "--indexes",
+        "-i",
         type=Path,
-        default=Path(__file__).parent.parent.parent.parent / 'docs' / 'generated',
-        help='Path to indexes directory (default: docs/generated)'
+        default=Path(__file__).parent.parent.parent.parent / "docs" / "generated",
+        help="Path to indexes directory (default: docs/generated)",
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # summary command
-    subparsers.add_parser('summary', help='Show codebase summary')
+    subparsers.add_parser("summary", help="Show codebase summary")
 
     # component command
-    comp_parser = subparsers.add_parser('component', help='Find component by name')
-    comp_parser.add_argument('name', help='Component name (partial match)')
+    comp_parser = subparsers.add_parser("component", help="Find component by name")
+    comp_parser.add_argument("name", help="Component name (partial match)")
 
     # pattern command
-    pattern_parser = subparsers.add_parser('pattern', help='Show patterns')
-    pattern_parser.add_argument('name', nargs='?', help='Pattern name (optional)')
+    pattern_parser = subparsers.add_parser("pattern", help="Show patterns")
+    pattern_parser.add_argument("name", nargs="?", help="Pattern name (optional)")
 
     # deps command
-    deps_parser = subparsers.add_parser('deps', help='Show dependencies')
-    deps_parser.add_argument('component', nargs='?', help='File path for internal deps')
+    deps_parser = subparsers.add_parser("deps", help="Show dependencies")
+    deps_parser.add_argument("component", nargs="?", help="File path for internal deps")
 
     # structure command
-    subparsers.add_parser('structure', help='Show project structure')
+    subparsers.add_parser("structure", help="Show project structure")
 
     # search command
-    search_parser = subparsers.add_parser('search', help='Search all indexes')
-    search_parser.add_argument('query', help='Search query')
+    search_parser = subparsers.add_parser("search", help="Search all indexes")
+    search_parser.add_argument("query", help="Search query")
 
     args = parser.parse_args()
 
@@ -269,12 +322,12 @@ Examples:
     indexes_dir = args.indexes.resolve()
 
     commands = {
-        'summary': cmd_summary,
-        'component': cmd_component,
-        'pattern': cmd_pattern,
-        'deps': cmd_deps,
-        'structure': cmd_structure,
-        'search': cmd_search,
+        "summary": cmd_summary,
+        "component": cmd_component,
+        "pattern": cmd_pattern,
+        "deps": cmd_deps,
+        "structure": cmd_structure,
+        "search": cmd_search,
     }
 
     cmd_func = commands.get(args.command)
@@ -284,5 +337,5 @@ Examples:
         parser.print_help()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
