@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T18:05:12.291388+00:00",
+  "generated": "2025-11-28T18:32:46.102626+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -23,6 +23,9 @@
           "adr/": {
             "description": "adr directory",
             "children": {
+              "implemented/": {
+                "description": "implemented directory"
+              },
               "in-progress/": {
                 "description": "in-progress directory"
               },
@@ -64,6 +67,14 @@
                 "description": "conversation-analyzer directory",
                 "files": [
                   "conversation-analyzer.py",
+                  "setup.sh"
+                ]
+              },
+              "doc-generator/": {
+                "description": "doc-generator directory",
+                "files": [
+                  "doc-generator.py",
+                  "drift-detector.py",
                   "setup.sh"
                 ]
               },
@@ -653,6 +664,115 @@
       "type": "function"
     },
     {
+      "name": "DocContext",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 50,
+      "type": "class",
+      "description": "Context gathered by the Context Agent."
+    },
+    {
+      "name": "DraftDoc",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 62,
+      "type": "class",
+      "description": "Documentation draft from the Draft Agent."
+    },
+    {
+      "name": "ReviewResult",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 73,
+      "type": "class",
+      "description": "Review feedback from the Review Agent."
+    },
+    {
+      "name": "ExternalResearch",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 82,
+      "type": "class",
+      "description": "External research results from the External Validation Agent."
+    },
+    {
+      "name": "ExternalValidator",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 94,
+      "type": "class",
+      "description": "External Validation Agent - Researches best practices from authoritative sources.",
+      "methods": [
+        "__init__",
+        "research",
+        "_normalize_topic",
+        "_enrich_from_sources",
+        "_load_cache",
+        "_save_cache",
+        "generate_research_prompt"
+      ]
+    },
+    {
+      "name": "DocumentationGenerator",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 394,
+      "type": "class",
+      "description": "Full 6-agent documentation generation pipeline.",
+      "methods": [
+        "__init__",
+        "_load_json",
+        "list_available_topics",
+        "gather_context",
+        "_topic_matches",
+        "generate_draft",
+        "_draft_status_quo",
+        "_draft_best_practice_skeleton",
+        "_draft_pattern",
+        "review_draft"
+      ]
+    },
+    {
+      "name": "main",
+      "file": "host-services/analysis/doc-generator/doc-generator.py",
+      "line": 1046,
+      "type": "function",
+      "description": "CLI entry point."
+    },
+    {
+      "name": "DriftIssue",
+      "file": "host-services/analysis/doc-generator/drift-detector.py",
+      "line": 39,
+      "type": "class",
+      "description": "A documentation drift issue."
+    },
+    {
+      "name": "DriftReport",
+      "file": "host-services/analysis/doc-generator/drift-detector.py",
+      "line": 51,
+      "type": "class",
+      "description": "Full drift detection report."
+    },
+    {
+      "name": "DriftDetector",
+      "file": "host-services/analysis/doc-generator/drift-detector.py",
+      "line": 61,
+      "type": "class",
+      "description": "Detects documentation that has drifted from current code.",
+      "methods": [
+        "__init__",
+        "_build_file_cache",
+        "_load_components",
+        "file_exists",
+        "find_similar_file",
+        "check_doc",
+        "check_all_docs",
+        "format_report",
+        "format_json"
+      ]
+    },
+    {
+      "name": "main",
+      "file": "host-services/analysis/doc-generator/drift-detector.py",
+      "line": 370,
+      "type": "function",
+      "description": "CLI entry point."
+    },
+    {
       "name": "load_config",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
       "line": 68,
@@ -1150,89 +1270,12 @@
       "line": 13,
       "type": "function",
       "description": "Get space IDs for configured spaces."
-    },
-    {
-      "name": "find_git_projects",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 13,
-      "type": "function",
-      "description": "Find all git projects under the given path."
-    },
-    {
-      "name": "ensure_gitignore_pattern",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 38,
-      "type": "function",
-      "description": "Ensure the symlink pattern is in the global gitignore."
-    },
-    {
-      "name": "ensure_cursor_rule",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 61,
-      "type": "function",
-      "description": "Ensure Cursor rule exists to guide AI behavior with confluence-docs directories."
-    },
-    {
-      "name": "create_symlinks_for_khan_projects",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 107,
-      "type": "function",
-      "description": "Create symlinks in all Khan Academy git projects."
-    },
-    {
-      "name": "list_khan_projects_with_links",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 197,
-      "type": "function",
-      "description": "List Khan Academy projects that have symlinks to the documentation."
-    },
-    {
-      "name": "main",
-      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
-      "line": 232,
-      "type": "function",
-      "description": "Main function."
-    },
-    {
-      "name": "list_all_spaces",
-      "file": "host-services/sync/context-sync/utils/list_spaces.py",
-      "line": 13,
-      "type": "function",
-      "description": "List all available spaces in Confluence."
-    },
-    {
-      "name": "get_sync_status",
-      "file": "host-services/sync/context-sync/utils/maintenance.py",
-      "line": 13,
-      "type": "function",
-      "description": "Show sync status and statistics."
-    },
-    {
-      "name": "find_orphaned_files",
-      "file": "host-services/sync/context-sync/utils/maintenance.py",
-      "line": 49,
-      "type": "function",
-      "description": "Find orphaned files (files that exist but shouldn't)."
-    },
-    {
-      "name": "main",
-      "file": "host-services/sync/context-sync/utils/maintenance.py",
-      "line": 95,
-      "type": "function",
-      "description": "Main maintenance function."
-    },
-    {
-      "name": "search_documentation",
-      "file": "host-services/sync/context-sync/utils/search.py",
-      "line": 13,
-      "type": "function",
-      "description": "Search through synced documentation."
     }
   ],
   "summary": {
-    "total_python_files": 93,
-    "total_classes": 261,
-    "total_functions": 176,
+    "total_python_files": 95,
+    "total_classes": 270,
+    "total_functions": 178,
     "patterns_detected": [
       "config",
       "connector",
