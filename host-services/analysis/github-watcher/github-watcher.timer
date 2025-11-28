@@ -1,9 +1,9 @@
 [Unit]
-Description=Run GitHub Watcher every 15 minutes
+Description=Run GitHub Watcher every 5 minutes
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=15min
+OnUnitActiveSec=5min
 Persistent=true
 
 [Install]
