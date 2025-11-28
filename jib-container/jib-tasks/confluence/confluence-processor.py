@@ -158,7 +158,7 @@ For each document:
    - Look for action items or required changes
 
 2. **Track in Beads** (for ADRs only):
-   - Create Beads task: `bd add "Review ADR: <title>" --tags adr confluence documentation`
+   - Create Beads task: `bd --allow-stale create "Review ADR: <title>" --labels adr,confluence,documentation`
    - Add notes with: document title, file name, related technologies
    - Only for NEW ADRs (not updates)
 

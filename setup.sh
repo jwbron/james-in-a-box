@@ -608,10 +608,8 @@ else
     if git init; then
         # Initialize beads (allow user input for git hooks prompt)
         if bd init; then
-            # Build SQLite cache for fast queries
-            bd build-cache || true
             print_success "Beads initialized: $beads_dir"
-            echo "   Usage in container: bd add 'task description' --tags feature"
+            echo "   Usage in container: bd --allow-stale create 'task description' --labels feature"
         else
             print_error "Failed to initialize beads"
             exit 1

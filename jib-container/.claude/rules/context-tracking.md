@@ -66,5 +66,6 @@ bd --allow-stale create "Implement PR #123 feedback" --labels pr,PR-123,feature-
 
 ## See Also
 
-- `beads-usage.md` for full Beads command reference
+- `beads-usage.md` for quick Beads command reference
+- `~/khan/james-in-a-box/docs/reference/beads.md` for comprehensive documentation
 - `mission.md` for overall workflow

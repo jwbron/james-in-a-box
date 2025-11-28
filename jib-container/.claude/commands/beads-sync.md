@@ -29,9 +29,8 @@ echo ""
 echo "=== Recent Beads History ==="
 git log --oneline -5 2>/dev/null || echo "No git history yet"
 
-# Rebuild cache to ensure consistency
-bd build-cache 2>/dev/null
-echo "✓ SQLite cache rebuilt"
+# Import any JSONL updates to ensure database consistency
+bd sync --import-only 2>/dev/null && echo "✓ Database synced with JSONL" || echo "✓ Already in sync"
 ```
 
-Note: Beads automatically commits to git when you modify tasks, but this command ensures everything is synced and the cache is up to date.
+Note: Beads automatically commits to git when you modify tasks, but this command ensures everything is synced. The SQLite cache is automatically rebuilt from JSONL when needed.

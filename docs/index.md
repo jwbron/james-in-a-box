@@ -44,6 +44,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | Document | Description |
 |----------|-------------|
 | [Reference Overview](reference/README.md) | Quick reference guides and troubleshooting |
+| [Beads Task Tracking](reference/beads.md) | Persistent task memory system - commands, workflows, best practices |
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Codebase Analyzer](reference/codebase-analyzer.md) | Automated code analysis system |
 | [Claude Authentication](reference/claude-authentication.md) | Claude CLI authentication guide |
@@ -69,6 +70,7 @@ When working on specific tasks, consult these documents first:
 
 | Task Type | Read First | Also Helpful |
 |-----------|------------|--------------|
+| **ANY new task** | [Beads Task Tracking](reference/beads.md) | Check for existing work before starting |
 | **Slack integration changes** | [Slack Integration](architecture/slack-integration.md) | [ADR: Slack Strategy](adr/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) |
 | **Adding new host services** | [Architecture Overview](architecture/README.md) | [ADR: Autonomous SE](adr/ADR-Autonomous-Software-Engineer.md) |
 | **Security-related changes** | [ADR: Internet Lockdown](adr/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/ADR-Autonomous-Software-Engineer.md) |

@@ -387,13 +387,13 @@ chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/beads"
 # Create convenience symlink: ~/beads → ~/sharing/beads
 ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
 
-# Rebuild cache in case it's stale
+# Import JSONL if needed (cache is auto-rebuilt)
 cd "${USER_HOME}/sharing/beads"
-gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd build-cache > /dev/null 2>&1 || true
+gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd sync --import-only > /dev/null 2>&1 || true
 
 echo "✓ Beads memory system ready"
 echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
-echo "  Usage: bd add 'task description' --tags feature,important"
+echo "  Usage: bd --allow-stale create 'task description' --labels feature,important"
 
 # NOTE: All analysis uses exec-based pattern (no background processes)
 # Analysis scripts are triggered by host-side systemd services via `jib --exec`
