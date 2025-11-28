@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:06:22.514164+00:00",
+  "generated": "2025-11-28T09:08:52.877389+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -104,7 +104,6 @@
               "slack-receiver/": {
                 "description": "slack-receiver directory",
                 "files": [
-                  "create-pr.sh",
                   "host_command_handler.py",
                   "setup.sh",
                   "slack-receiver.py"
@@ -817,6 +816,32 @@
       "description": "Main entry point - scan configured repos and trigger jib as needed."
     },
     {
+      "name": "CodebaseIndexer",
+      "file": "host-services/analysis/index-generator/index-generator.py",
+      "line": 23,
+      "type": "class",
+      "description": "Analyzes a codebase and generates structured indexes.",
+      "methods": [
+        "__init__",
+        "should_skip_dir",
+        "get_directory_description",
+        "analyze_python_file",
+        "_categorize_import",
+        "_is_internal_module",
+        "_detect_patterns",
+        "build_structure",
+        "extract_versions_from_requirements",
+        "_update_dep_version"
+      ]
+    },
+    {
+      "name": "main",
+      "file": "host-services/analysis/index-generator/index-generator.py",
+      "line": 711,
+      "type": "function",
+      "description": "CLI entry point."
+    },
+    {
       "name": "load_index",
       "file": "host-services/analysis/index-generator/query-index.py",
       "line": 17,
@@ -870,32 +895,6 @@
       "file": "host-services/analysis/index-generator/query-index.py",
       "line": 268,
       "type": "function"
-    },
-    {
-      "name": "CodebaseIndexer",
-      "file": "host-services/analysis/index-generator/index-generator.py",
-      "line": 23,
-      "type": "class",
-      "description": "Analyzes a codebase and generates structured indexes.",
-      "methods": [
-        "__init__",
-        "should_skip_dir",
-        "get_directory_description",
-        "analyze_python_file",
-        "_categorize_import",
-        "_is_internal_module",
-        "_detect_patterns",
-        "build_structure",
-        "extract_versions_from_requirements",
-        "_update_dep_version"
-      ]
-    },
-    {
-      "name": "main",
-      "file": "host-services/analysis/index-generator/index-generator.py",
-      "line": 711,
-      "type": "function",
-      "description": "CLI entry point."
     },
     {
       "name": "SlackNotifier",
@@ -952,7 +951,7 @@
     {
       "name": "CommandType",
       "file": "host-services/slack/slack-receiver/host_command_handler.py",
-      "line": 27,
+      "line": 26,
       "type": "class",
       "description": "Types of remote commands.",
       "bases": [
@@ -962,14 +961,14 @@
     {
       "name": "CommandResult",
       "file": "host-services/slack/slack-receiver/host_command_handler.py",
-      "line": 37,
+      "line": 35,
       "type": "class",
       "description": "Result of executing a command."
     },
     {
       "name": "HostCommandHandler",
       "file": "host-services/slack/slack-receiver/host_command_handler.py",
-      "line": 45,
+      "line": 43,
       "type": "class",
       "description": "Handles remote control commands for jib system management.",
       "methods": [
@@ -988,7 +987,7 @@
     {
       "name": "main",
       "file": "host-services/slack/slack-receiver/host_command_handler.py",
-      "line": 664,
+      "line": 600,
       "type": "function",
       "description": "CLI entry point."
     },

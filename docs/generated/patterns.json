@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:06:22.514164+00:00",
+  "generated": "2025-11-28T09:08:52.877389+00:00",
   "project": "james-in-a-box",
   "patterns": {
     "config": {
@@ -125,7 +125,7 @@
     "event_driven": {
       "description": "Event-driven architecture with watchers and handlers",
       "examples": [
-        "host-services/slack/slack-receiver/host_command_handler.py:45",
+        "host-services/slack/slack-receiver/host_command_handler.py:43",
         "jib-container/jib-tasks/github/command-handler.py:16",
         "jib-container/jib-tasks/slack/incoming-processor.py:87",
         "jib-container/jib-tools/github-app-token.py:101",
