@@ -30,21 +30,8 @@ from pathlib import Path
 # Add shared directory to path for enrichment and Claude runner modules
 sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 
-try:
-    from enrichment import enrich_task
-except ImportError:
-    # Fallback if shared module not available
-    def enrich_task(task_text: str, project_root: Path | None = None) -> str:
-        """Fallback enrichment - returns empty string."""
-        return ""
-
-
-try:
-    from claude.runner import ClaudeResult, run_claude
-except ImportError:
-    # Fallback: run_claude not available
-    run_claude = None
-    ClaudeResult = None
+from enrichment import enrich_task
+from claude.runner import run_claude
 
 
 # Configure logging
@@ -285,67 +272,22 @@ Process this task now."""
     # and provides consistent behavior across all Claude invocations
     logger.info("Starting Claude Code via shared runner...")
 
-    result = None
-    error_message = None
+    claude_result = run_claude(
+        prompt=prompt,
+        cwd=Path.home() / "khan",  # Start in khan directory
+        capture_output=True,
+    )
+    logger.info(f"Claude exited with return code: {claude_result.returncode}")
+    if claude_result.stderr:
+        logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
+
+    # Determine success/failure/timeout status
     timed_out = False
-
-    if run_claude is not None:
-        # Use shared Claude runner (preferred - no hardcoded timeout)
-        claude_result = run_claude(
-            prompt=prompt,
-            cwd=Path.home() / "khan",  # Start in khan directory
-            capture_output=True,
-        )
-        logger.info(f"Claude exited with return code: {claude_result.returncode}")
-        if claude_result.stderr:
-            logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
-
-        # Convert ClaudeResult to expected format for downstream code
-        result = type(
-            "Result",
-            (),
-            {
-                "stdout": claude_result.stdout,
-                "stderr": claude_result.stderr,
-                "returncode": claude_result.returncode,
-            },
-        )()
-
-        if not claude_result.success:
-            if claude_result.error and "timed out" in claude_result.error.lower():
-                timed_out = True
-                error_message = claude_result.error
-            else:
-                error_message = claude_result.error
-    else:
-        # Fallback if shared module not available (should not happen in normal operation)
-        import subprocess
-
-        logger.warning("Shared Claude runner not available, falling back to direct subprocess")
-        try:
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                timeout=1800,  # 30 minute timeout (matches shared runner default)
-                cwd=str(Path.home() / "khan"),
-            )
-            logger.info(f"Claude exited with return code: {result.returncode}")
-            if result.stderr:
-                logger.warning(f"Claude stderr: {result.stderr[:500]}")
-
-        except subprocess.TimeoutExpired as e:
+    error_message = None
+    if not claude_result.success:
+        if claude_result.error and "timed out" in claude_result.error.lower():
             timed_out = True
-            error_message = "Task processing timed out after 30 minutes"
-            logger.error(error_message)
-            if hasattr(e, "stdout") and e.stdout:
-                result = type("Result", (), {"stdout": e.stdout, "stderr": "", "returncode": -1})()
-
-        except Exception as e:
-            error_message = f"Error running Claude: {e}"
-            logger.error(error_message, exc_info=True)
+        error_message = claude_result.error
 
     # Calculate processing time
     elapsed_time = time.time() - start_time
@@ -355,11 +297,11 @@ Process this task now."""
     # ALWAYS create a notification - success, failure, or timeout
     task_summary = task_content[:100] + ("..." if len(task_content) > 100 else "")
 
-    if result and result.returncode == 0:
+    if claude_result.returncode == 0:
         # SUCCESS: Include Claude's response
         logger.info("Task processed successfully")
 
-        claude_output = result.stdout.strip() if result.stdout else ""
+        claude_output = claude_result.stdout.strip() if claude_result.stdout else ""
         if not claude_output:
             logger.warning("Claude returned empty output despite success return code")
             claude_output = "*Claude completed but produced no output. The task may have been processed - check GitHub for any PRs created.*"
@@ -381,8 +323,8 @@ Process this task now."""
         # TIMEOUT: Notify user with helpful context
         logger.error("Task timed out")
         partial_output = ""
-        if result and result.stdout:
-            partial_output = f"\n\n**Partial output before timeout:**\n{result.stdout[:1000]}"
+        if claude_result.stdout:
+            partial_output = f"\n\n**Partial output before timeout:**\n{claude_result.stdout[:1000]}"
 
         notification_content = f"""# Task Processing Timed Out
 
@@ -403,17 +345,16 @@ The task took too long to complete. This can happen with complex tasks.
 """
     else:
         # FAILURE: Include error details
-        return_code = result.returncode if result else "N/A"
-        stderr_output = result.stderr[:500] if result and result.stderr else "None"
-        stdout_output = result.stdout[:500] if result and result.stdout else "None"
+        stderr_output = claude_result.stderr[:500] if claude_result.stderr else "None"
+        stdout_output = claude_result.stdout[:500] if claude_result.stdout else "None"
 
-        logger.error(f"Task failed: return_code={return_code}, error={error_message}")
+        logger.error(f"Task failed: return_code={claude_result.returncode}, error={error_message}")
 
         notification_content = f"""# Task Processing Failed
 
 **Task:** {task_summary}
 **Processing time:** {elapsed_str}
-**Status:** Failed (exit code: {return_code})
+**Status:** Failed (exit code: {claude_result.returncode})
 
 ## Error Details
 
@@ -443,7 +384,7 @@ The task took too long to complete. This can happen with complex tasks.
     if thread_ts:
         logger.info(f"Thread context preserved: {thread_ts}")
 
-    return result is not None and result.returncode == 0
+    return claude_result.returncode == 0
 
 
 def extract_original_task_id(content: str) -> str | None:
@@ -716,67 +657,22 @@ Process this response now."""
     # If we have a referenced notification, use that ID so slack-notifier threads correctly
     task_id = referenced_notif if referenced_notif else message_file.stem
 
-    result = None
-    error_message = None
+    claude_result = run_claude(
+        prompt=prompt,
+        cwd=Path.home() / "khan",  # Start in khan directory
+        capture_output=True,
+    )
+    logger.info(f"Claude exited with return code: {claude_result.returncode}")
+    if claude_result.stderr:
+        logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
+
+    # Determine success/failure/timeout status
     timed_out = False
-
-    if run_claude is not None:
-        # Use shared Claude runner (preferred - no hardcoded timeout)
-        claude_result = run_claude(
-            prompt=prompt,
-            cwd=Path.home() / "khan",  # Start in khan directory
-            capture_output=True,
-        )
-        logger.info(f"Claude exited with return code: {claude_result.returncode}")
-        if claude_result.stderr:
-            logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
-
-        # Convert ClaudeResult to expected format for downstream code
-        result = type(
-            "Result",
-            (),
-            {
-                "stdout": claude_result.stdout,
-                "stderr": claude_result.stderr,
-                "returncode": claude_result.returncode,
-            },
-        )()
-
-        if not claude_result.success:
-            if claude_result.error and "timed out" in claude_result.error.lower():
-                timed_out = True
-                error_message = claude_result.error
-            else:
-                error_message = claude_result.error
-    else:
-        # Fallback if shared module not available (should not happen in normal operation)
-        import subprocess
-
-        logger.warning("Shared Claude runner not available, falling back to direct subprocess")
-        try:
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                timeout=1800,  # 30 minute timeout (matches shared runner default)
-                cwd=str(Path.home() / "khan"),
-            )
-            logger.info(f"Claude exited with return code: {result.returncode}")
-            if result.stderr:
-                logger.warning(f"Claude stderr: {result.stderr[:500]}")
-
-        except subprocess.TimeoutExpired as e:
+    error_message = None
+    if not claude_result.success:
+        if claude_result.error and "timed out" in claude_result.error.lower():
             timed_out = True
-            error_message = "Response processing timed out after 30 minutes"
-            logger.error(error_message)
-            if hasattr(e, "stdout") and e.stdout:
-                result = type("Result", (), {"stdout": e.stdout, "stderr": "", "returncode": -1})()
-
-        except Exception as e:
-            error_message = f"Error running Claude: {e}"
-            logger.error(error_message, exc_info=True)
+        error_message = claude_result.error
 
     # Calculate processing time
     elapsed_time = time.time() - start_time
@@ -786,11 +682,11 @@ Process this response now."""
     # ALWAYS create a notification - success, failure, or timeout
     response_summary = response_content[:100] + ("..." if len(response_content) > 100 else "")
 
-    if result and result.returncode == 0:
+    if claude_result.returncode == 0:
         # SUCCESS: Include Claude's response
         logger.info("Response processed successfully")
 
-        claude_output = result.stdout.strip() if result.stdout else ""
+        claude_output = claude_result.stdout.strip() if claude_result.stdout else ""
         if not claude_output:
             logger.warning("Claude returned empty output despite success return code")
             claude_output = "*Claude completed but produced no output. The response may have been processed - check GitHub for any updates.*"
@@ -812,8 +708,8 @@ Process this response now."""
         # TIMEOUT: Notify user with helpful context
         logger.error("Response processing timed out")
         partial_output = ""
-        if result and result.stdout:
-            partial_output = f"\n\n**Partial output before timeout:**\n{result.stdout[:1000]}"
+        if claude_result.stdout:
+            partial_output = f"\n\n**Partial output before timeout:**\n{claude_result.stdout[:1000]}"
 
         notification_content = f"""# Response Processing Timed Out
 
@@ -834,19 +730,18 @@ The response took too long to process.
 """
     else:
         # FAILURE: Include error details
-        return_code = result.returncode if result else "N/A"
-        stderr_output = result.stderr[:500] if result and result.stderr else "None"
-        stdout_output = result.stdout[:500] if result and result.stdout else "None"
+        stderr_output = claude_result.stderr[:500] if claude_result.stderr else "None"
+        stdout_output = claude_result.stdout[:500] if claude_result.stdout else "None"
 
         logger.error(
-            f"Response processing failed: return_code={return_code}, error={error_message}"
+            f"Response processing failed: return_code={claude_result.returncode}, error={error_message}"
         )
 
         notification_content = f"""# Response Processing Failed
 
 **Your message:** {response_summary}
 **Processing time:** {elapsed_str}
-**Status:** Failed (exit code: {return_code})
+**Status:** Failed (exit code: {claude_result.returncode})
 
 ## Error Details
 
@@ -876,7 +771,7 @@ The response took too long to process.
     if thread_ts:
         logger.info(f"Thread context preserved: {thread_ts}")
 
-    return result is not None and result.returncode == 0
+    return claude_result.returncode == 0
 
 
 def main():
