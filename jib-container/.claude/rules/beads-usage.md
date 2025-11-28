@@ -1,104 +1,107 @@
-# Beads - Automatic Task Memory System
+# Beads Task Tracking (MANDATORY)
 
-Git-backed persistent memory that **YOU MUST USE AUTOMATICALLY** for all tasks.
+**You MUST use Beads automatically for ALL tasks.** This enables persistent memory across container restarts.
 
-**Location**: `~/beads/` | **Storage**: `~/.jib-sharing/beads/` on host
+> **Full Reference:** `~/khan/james-in-a-box/docs/reference/beads.md`
 
-## Core Rules
+## ALWAYS Do This First
 
-1. **Every task needs a Bead** - Always check/create before starting work
-2. **Always use `--allow-stale`** - Required in ephemeral containers
-3. **Update as you work** - Status and notes should reflect current state
-4. **Mark complete** - Closed status with summary when done
-
-## Quick Reference
+Before ANY work, run these commands:
 
 ```bash
 cd ~/beads
-
-# ALWAYS START HERE
-bd --allow-stale list --status in_progress   # Any unfinished work?
+bd --allow-stale list --status in_progress   # Resume existing work?
 bd --allow-stale search "keywords"           # Related task exists?
-
-# Create task
-bd --allow-stale create "Task title" --labels feature,jira-1234
-
-# Update status
-bd --allow-stale update <id> --status in_progress
-bd --allow-stale update <id> --status blocked
-bd --allow-stale update <id> --status closed
-
-# Add notes (decisions, progress, blockers)
-bd --allow-stale update <id> --notes "Progress: completed X, starting Y"
-
-# View details
-bd --allow-stale show <id>
-
-# Find ready work (no blockers)
-bd --allow-stale ready
 ```
 
-## Status Flow
+**If task exists:** Resume it. **If not:** Create one.
 
-`open` → `in_progress` → `closed`
-                ↓
-            `blocked` (waiting on something)
+## Core Commands
 
-## Task Breakdown
+| Action | Command |
+|--------|---------|
+| **Create task** | `bd --allow-stale create "Title" --labels type,source` |
+| **Start work** | `bd --allow-stale update <id> --status in_progress` |
+| **Add notes** | `bd --allow-stale update <id> --notes "Progress..."` |
+| **Complete** | `bd --allow-stale update <id> --status closed --notes "Summary"` |
+| **Find ready work** | `bd --allow-stale ready` |
+| **Search** | `bd --allow-stale search "text"` |
+| **Show details** | `bd --allow-stale show <id>` |
 
-For multi-step tasks, create subtasks:
+## Status Values
 
+| Status | When to Use |
+|--------|-------------|
+| `open` | Task created, not started |
+| `in_progress` | Actively working |
+| `blocked` | Waiting on external dependency |
+| `closed` | Work complete |
+
+## When to Create Tasks
+
+**ALWAYS create a task for:**
+- New Slack requests (use `task_id` as label)
+- PR work (use `PR-<number>` as label)
+- Multi-step implementations
+- Bugs discovered during other work
+
+**Create discovered tasks:**
 ```bash
-# Parent task
-bd --allow-stale create "Implement auth system" --labels feature
-# Subtasks with dependencies
-bd --allow-stale create "Design schema" --parent bd-a3f8
-bd --allow-stale create "Implement endpoints" --parent bd-a3f8 --deps blocks:bd-b7c2
-bd --allow-stale create "Write tests" --parent bd-a3f8 --deps blocks:bd-d4e9
+bd --allow-stale create "Found: <issue>" --deps discovered-from:$CURRENT_TASK
 ```
 
-## Labeling Conventions
+## When to Update Tasks
 
-| Type | Labels |
-|------|--------|
-| **Source** | `slack`, `jira-1234`, `github-pr-123` |
-| **Type** | `feature`, `bug`, `refactor`, `docs`, `test` |
-| **Priority** | `urgent`, `important` |
-| **Area** | `auth`, `api`, `frontend`, `database` |
+| Event | Action |
+|-------|--------|
+| Starting work | `--status in_progress` |
+| Making decisions | `--notes "Decision: X because Y"` |
+| Hitting blockers | `--status blocked --notes "Waiting on..."` |
+| Creating PR | `--notes "PR #XX created"` |
+| Completing work | `--status closed --notes "Summary"` |
 
-## Standard Workflow
+## Common Labels
+
+- **Source:** `slack`, `slack-thread`, `jira-XXXX`, `github-pr-XX`
+- **Type:** `feature`, `bug`, `refactor`, `docs`, `test`
+- **Priority:** `urgent`, `important`
+
+## Workflow Example
 
 ```bash
 # 1. Check for existing work
 cd ~/beads
 bd --allow-stale list --status in_progress
-bd --allow-stale search "relevant keywords"
+bd --allow-stale search "authentication"
 
-# 2. Create or resume task
-bd --allow-stale create "Task from context" --labels type,source
-bd --allow-stale update <id> --status in_progress
+# 2. Create task (if none found)
+bd --allow-stale create "Implement OAuth flow" --labels feature,jira-1234
 
-# 3. Work and update progress
-bd --allow-stale update <id> --notes "Approach: using X per ADR-042"
+# 3. Start work
+bd --allow-stale update bd-xxxx --status in_progress
 
-# 4. Complete with summary
-bd --allow-stale update <id> --status closed
-bd --allow-stale update <id> --notes "Done: summary, tests passing, PR #123"
+# 4. Note progress
+bd --allow-stale update bd-xxxx --notes "Completed token validation"
+
+# 5. Complete
+bd --allow-stale update bd-xxxx --status closed --notes "Done. PR #42 created."
 ```
 
-## Integration
+## Critical Rules
 
-- **Slack/PR context**: See `context-tracking.md` for thread and PR persistence
-- **Notifications**: Reference Bead ID when sending guidance requests
-- **@save-context**: Include Bead IDs in context docs for tracking
+1. **ALWAYS use `--allow-stale`** - Required in ephemeral containers
+2. **ALWAYS check before creating** - Avoid duplicates
+3. **ALWAYS update when done** - Never leave tasks hanging
+4. **ALWAYS include in notifications** - Reference Beads ID in Slack/PRs
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| Database sync error | Use `--allow-stale` flag |
-| Changes not persisting | Verify `cd ~/beads`, check `git status` |
-| Conflict with other container | Normal - hash IDs prevent conflicts |
+| Problem | Fix |
+|---------|-----|
+| "Database out of sync" | Use `--allow-stale` |
+| Can't find task | `bd --allow-stale search "partial"` |
+| Changes not saving | Verify `cd ~/beads` first |
 
 ---
-**Remember**: Beads is AUTOMATIC. Create/update tasks proactively based on context.
+
+**Remember:** Beads is your persistent memory. Use it proactively.

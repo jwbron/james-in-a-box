@@ -12,7 +12,7 @@ bd ready 2>/dev/null || echo "No ready tasks found"
 
 echo ""
 echo "=== Tasks Currently In Progress ==="
-bd list --status in-progress 2>/dev/null || echo "No tasks in progress"
+bd list --status in_progress 2>/dev/null || echo "No tasks in progress"
 
 echo ""
 echo "=== Blocked Tasks ==="
@@ -20,7 +20,7 @@ bd list --status blocked 2>/dev/null || echo "No blocked tasks"
 
 echo ""
 echo "=== Recently Completed Tasks ==="
-bd list --status done 2>/dev/null | head -5 || echo "No completed tasks"
+bd list --status closed 2>/dev/null | head -5 || echo "No completed tasks"
 ```
 
 After showing the output, provide a brief summary highlighting:

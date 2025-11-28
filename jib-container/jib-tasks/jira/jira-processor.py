@@ -122,7 +122,7 @@ For each ticket:
    - Extract actionable items
 
 2. **Track in Beads**:
-   - Create Beads task: `bd add "<ticket-key>: <title>" --tags <ticket-key> jira <type>`
+   - Create Beads task: `bd --allow-stale create "<ticket-key>: <title>" --labels <ticket-key>,jira,<type>`
    - Add notes with: status, priority, scope estimate, URL
    - For NEW tickets only (not updates)
 

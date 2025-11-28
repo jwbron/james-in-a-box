@@ -491,11 +491,11 @@ Container N: ~/beads/          # All containers coordinate
 **Automatic Workflow Integration:**
 
 Agent automatically (without being asked):
-1. **On startup:** Check for in-progress tasks (`bd list --status in-progress`)
-2. **On new task:** Create Beads entry (`bd add "Implement OAuth2 for JIRA-1234"`)
-3. **During work:** Update status and notes (`bd update bd-a3f8 --status in-progress`)
+1. **On startup:** Check for in-progress tasks (`bd --allow-stale list --status in_progress`)
+2. **On new task:** Create Beads entry (`bd --allow-stale create "Implement OAuth2 for JIRA-1234"`)
+3. **During work:** Update status and notes (`bd --allow-stale update bd-a3f8 --status in_progress`)
 4. **Multi-step tasks:** Break into subtasks with dependencies
-5. **On completion:** Mark done, unblock dependent tasks
+5. **On completion:** Mark closed, update dependent tasks
 
 **Key Features:**
 - **Git-backed:** All changes versioned, can review history
@@ -512,26 +512,26 @@ Agent automatically (without being asked):
 # Agent automatically:
 
 cd ~/beads
-bd list --search "OAuth2 JIRA-1234"  # Check if already exists
-bd add "Implement OAuth2 for JIRA-1234" --tags feature,jira-1234,slack
-bd update bd-a3f8 --status in-progress
+bd --allow-stale search "OAuth2 JIRA-1234"  # Check if already exists
+bd --allow-stale create "Implement OAuth2 for JIRA-1234" --labels feature,jira-1234,slack
+bd --allow-stale update bd-a3f8 --status in_progress
 
 # Break into subtasks
-bd add "Design auth schema" --parent bd-a3f8
-bd add "Implement OAuth2 endpoints" --parent bd-a3f8 --add-blocker bd-b1
-bd add "Write integration tests" --parent bd-a3f8 --add-blocker bd-b2,bd-b3
+bd --allow-stale create "Design auth schema" --parent bd-a3f8
+bd --allow-stale create "Implement OAuth2 endpoints" --parent bd-a3f8 --deps blocks:bd-b1
+bd --allow-stale create "Write integration tests" --parent bd-a3f8 --deps blocks:bd-b2,blocks:bd-b3
 
 # Work on tasks, update progress
-bd update bd-b1 --status done
-bd update bd-b1 --notes "Schema designed per ADR-042, using httpOnly cookies"
-bd update bd-b2 --remove-blocker bd-b1  # Unblock next task
+bd --allow-stale update bd-b1 --status closed
+bd --allow-stale update bd-b1 --notes "Schema designed per ADR-042, using httpOnly cookies"
+bd --allow-stale dep remove bd-b2 bd-b1  # Remove dependency to unblock
 
 # Container crashes/restarts...
 
 # On resume:
-bd list --status in-progress
+bd --allow-stale list --status in_progress
 # Shows: bd-a3f8 "Implement OAuth2..." and remaining subtasks
-bd show bd-a3f8  # Read all previous notes and context
+bd --allow-stale show bd-a3f8  # Read all previous notes and context
 # Continue work seamlessly
 ```
 
