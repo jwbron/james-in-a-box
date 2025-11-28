@@ -23,12 +23,19 @@ Usage:
     bound.info("Processing step 1")
     bound.info("Processing step 2")
 
+    # Tool wrappers (Phase 2)
+    from jib_logging.wrappers import bd, git, gh
+
+    result = git.push("origin", "main")
+    # Automatically logs with timing and context
+
 Features:
     - Structured JSON logs for production/GCP Cloud Logging
     - Human-readable console output for development
     - OpenTelemetry trace context propagation
     - Beads task ID correlation
     - File handler with rotation support
+    - Tool wrappers for bd, git, gh, claude (Phase 2)
 """
 
 from .context import (
