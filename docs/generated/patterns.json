@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:14:22.327511+00:00",
+  "generated": "2025-11-28T09:34:51.514937+00:00",
   "project": "james-in-a-box",
   "patterns": {
     "config": {
@@ -103,7 +103,6 @@
         "shared/notifications/types.py:35",
         "shared/notifications/types.py:56",
         "tests/conftest.py:47",
-        "tests/host_services/test_codebase_analyzer.py:386",
         "tests/host_services/test_conversation_analyzer.py:379",
         "tests/host_services/test_slack_notifier.py:22",
         "tests/host_services/test_slack_notifier.py:248",
