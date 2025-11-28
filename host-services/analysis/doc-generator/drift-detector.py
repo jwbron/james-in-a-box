@@ -247,7 +247,7 @@ class DriftDetector:
             # Check path references
             for match in self.PATTERNS["path_ref"].finditer(line):
                 path_ref = match.group(1)
-                # Only report if it looks like a project path
+                # Only report if it looks like a project path (not a URL)
                 if (
                     "/" in path_ref
                     and not self.file_exists(path_ref)

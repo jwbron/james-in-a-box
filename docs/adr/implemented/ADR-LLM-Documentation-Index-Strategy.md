@@ -829,6 +829,13 @@ The documentation index approach aligns with emerging industry standards (llms.t
 - [DocAider Multi-Agent Documentation](https://techcommunity.microsoft.com/blog/educatordeveloperblog/docaider-automated-documentation-maintenance-for-open-source-github-repositories/4245588) - Microsoft's automated documentation approach
 - [GitBook llms.txt Support](https://www.gitbook.com/blog/what-is-llms-txt) - Industry adoption of llms.txt
 
+### Related ADRs
+
+| ADR | Relationship |
+|-----|--------------|
+| [ADR-LLM-Inefficiency-Reporting](../ADR-LLM-Inefficiency-Reporting.md) | Documentation indexes help detect Tool Discovery Failures (Category 1 in inefficiency taxonomy) |
+| [ADR-Jib-Repo-Onboarding](../not-implemented/ADR-Jib-Repo-Onboarding.md) | Extends this ADR with repository-specific onboarding patterns |
+
 ---
 
 **Last Updated:** 2025-11-28
