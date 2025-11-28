@@ -71,19 +71,19 @@ Each container gets its own ephemeral git worktree, keeping your host repositori
 
 ```
 Host:
-~/khan/webapp/                      # Your working directory (untouched!)
-~/khan/webapp/.git/                 # Git metadata (mounted read-only to containers)
+~/projects/myapp/                   # Your working directory (untouched!)
+~/projects/myapp/.git/              # Git metadata (mounted read-only to containers)
 ~/.jib-worktrees/
   └── jib-20251123-103045-12345/    # Container's isolated workspace
-      └── webapp/                   # Worktree with changes
+      └── myapp/                    # Worktree with changes
 
 Container:
-~/khan/webapp/                      # Mounted from worktree (not host repo)
-~/.git-main/webapp/                 # Read-only git metadata (enables git commands)
+~/projects/myapp/                   # Mounted from worktree (not host repo)
+~/.git-main/myapp/                  # Read-only git metadata (enables git commands)
 ```
 
 **Benefits:**
-- **Host protection**: Your `~/khan/` repos stay clean while you work
+- **Host protection**: Your local repos stay clean while you work
 - **True parallelism**: Multiple containers can work on same repo simultaneously
 - **Isolated branches**: Each container works on `jib-temp-{container-id}` branch
 - **Git commands work**: Full git functionality inside container (status, log, commit, diff)
@@ -144,7 +144,6 @@ jib syncs external context to provide the agent with organizational knowledge:
 
 1. **Clone repository**:
    ```bash
-   cd ~/khan
    git clone <repo-url> james-in-a-box
    cd james-in-a-box
    ```
@@ -199,7 +198,6 @@ jib syncs external context to provide the agent with organizational knowledge:
 
 4. **Start container**:
    ```bash
-   cd ~/khan/james-in-a-box
    bin/jib
    ```
 
