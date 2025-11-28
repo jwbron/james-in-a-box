@@ -10,6 +10,38 @@ This service runs on the host (NOT in the container) and:
 The container should ONLY be called via `jib --exec`. No watching/polling logic lives in the container.
 
 Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analysis with MCP"
+
+## PR and Comment Handling Behavior
+
+### Which PRs are monitored:
+1. **User's PRs** (authored by `github_username` from config):
+   - Check failures: Detects and triggers fixes for failing CI checks
+   - Comments: Responds to comments from others (not from bot)
+
+2. **Bot's PRs** (authored by `bot_username[bot]`):
+   - Check failures: Detects and triggers fixes for failing CI checks
+   - Comments: Responds to comments from the user and others (not from bot itself)
+
+### Which comments are handled:
+- Comments from the configured `github_username` (e.g., jwbron) ARE processed
+- Comments from the `bot_username` and common bots (github-actions, dependabot) are IGNORED
+- Only comments newer than the last watcher run are processed (to avoid re-processing)
+
+### Check failure retry behavior:
+- Each unique (repo, PR, commit SHA, failing check names) combination is tracked
+- If a commit's failures have been processed, they won't be retried for that same commit
+- Pushing a new commit resets the processed state, allowing fresh retry attempts
+
+### What happens when jib is invoked:
+- jib runs Claude with the task context (check failures, comments, or review request)
+- Claude analyzes the issue and takes action (fix code, respond to comments, etc.)
+- Claude uses `gh pr comment` to post responses
+- Claude commits and pushes fixes for check failures
+
+### Configuration (config/repositories.yaml):
+- `github_username`: Your GitHub username (for identifying your PRs)
+- `bot_username`: The bot's GitHub identity (for filtering out its own comments)
+- `writable_repos`: List of repos where jib has write access
 """
 
 import json
@@ -230,8 +262,9 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
         return None
 
     # Create signature to detect if we've already processed this exact failure set
+    # Include head_sha so new commits get a fresh retry opportunity
     failed_names = sorted([c["name"] for c in failed_checks])
-    failure_signature = f"{repo}-{pr_num}:" + ",".join(failed_names)
+    failure_signature = f"{repo}-{pr_num}-{head_sha}:" + ",".join(failed_names)
 
     if failure_signature in state.get("processed_failures", {}):
         processed_at = state["processed_failures"].get(failure_signature, "unknown")
