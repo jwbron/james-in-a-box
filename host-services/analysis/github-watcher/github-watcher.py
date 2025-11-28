@@ -258,7 +258,9 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
     if not failed_checks:
         # Show check status for debugging
         statuses = [c.get("conclusion", "pending") for c in check_runs]
-        print(f"    PR #{pr_num}: {len(check_runs)} check(s), all passing ({', '.join(set(statuses))})")
+        print(
+            f"    PR #{pr_num}: {len(check_runs)} check(s), all passing ({', '.join(set(statuses))})"
+        )
         return None
 
     # Create signature to detect if we've already processed this exact failure set
