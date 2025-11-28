@@ -53,6 +53,7 @@ from pathlib import Path
 
 import yaml
 
+
 # Rate limiting configuration
 RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
 RATE_LIMIT_MAX_RETRIES = 3  # Max retries on rate limit errors
