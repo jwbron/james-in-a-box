@@ -49,8 +49,30 @@ jobs:
           ruff format .
           echo "Auto-fix complete"
 
-      - name: Commit and push fixes
+      - name: Check for branch divergence
         if: (steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure') && github.event_name == 'pull_request'
+        id: check-divergence
+        run: |
+          # Fetch latest remote state
+          git fetch origin ${{ github.head_ref }}
+
+          # Check if local and remote have diverged
+          LOCAL=$(git rev-parse HEAD)
+          REMOTE=$(git rev-parse origin/${{ github.head_ref }})
+          BASE=$(git merge-base HEAD origin/${{ github.head_ref }} 2>/dev/null || echo "")
+
+          if [ "$LOCAL" != "$REMOTE" ] && [ "$BASE" != "$REMOTE" ]; then
+            echo "Branch has diverged - local and remote have different commits"
+            echo "Local HEAD: $LOCAL"
+            echo "Remote HEAD: $REMOTE"
+            echo "Skipping auto-fix to avoid overwriting concurrent changes"
+            echo "diverged=true" >> $GITHUB_OUTPUT
+          else
+            echo "diverged=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push fixes
+        if: (steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure') && github.event_name == 'pull_request' && steps.check-divergence.outputs.diverged != 'true'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "fix: auto-fix Python linting issues (ruff)"
@@ -59,6 +81,13 @@ jobs:
       - name: Fail if issues remain
         if: steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure'
         run: |
+          if [ "${{ steps.check-divergence.outputs.diverged }}" == "true" ]; then
+            echo "::warning::Lint issues found but auto-fix was skipped due to branch divergence"
+            echo "The branch has been updated while the workflow was running."
+            echo "A newer workflow run should handle the auto-fix, or linting will need manual attention."
+            # Don't fail - let the newer workflow handle it
+            exit 0
+          fi
           echo "Re-checking after auto-fix..."
           ruff check .
           ruff format --check .
