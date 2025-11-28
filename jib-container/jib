@@ -527,6 +527,8 @@ def cleanup_worktrees(container_id: str) -> None:
     Args:
         container_id: Unique container identifier
     """
+    import shutil
+
     worktree_dir = Config.WORKTREE_BASE / container_id
 
     if not worktree_dir.exists():
@@ -534,45 +536,67 @@ def cleanup_worktrees(container_id: str) -> None:
 
     info(f"Cleaning up worktrees for {container_id}...")
 
-    # Collect repos that need pruning
-    repos_to_prune = set()
+    # Collect repos and their worktree admin directories
+    # We need to forcibly remove admin dirs because container modified .git files
+    # to point to container-only paths, which breaks git worktree prune
+    repos_to_clean = {}  # repo_path -> list of admin dir names
     for worktree_path in worktree_dir.iterdir():
         if worktree_path.is_dir():
             repo_name = worktree_path.name
             original_repo = Config.KHAN_SOURCE / repo_name
             if original_repo.exists():
-                repos_to_prune.add(original_repo)
+                # Find the admin directory name from the worktree's .git file
+                git_file = worktree_path / ".git"
+                if git_file.is_file():
+                    try:
+                        content = git_file.read_text().strip()
+                        # Format: "gitdir: /path/to/.git/worktrees/NAME" or
+                        # "gitdir: /path/to/.git-main/repo/worktrees/NAME"
+                        if "worktrees/" in content:
+                            admin_name = content.split("worktrees/")[-1]
+                            if original_repo not in repos_to_clean:
+                                repos_to_clean[original_repo] = []
+                            repos_to_clean[original_repo].append(admin_name)
+                    except Exception:
+                        pass
 
-    # Remove container worktree directory
-    # Don't use 'git worktree remove' because:
-    # - Container modified .git files to point to container paths
-    # - Git cannot validate the worktree state from the host
-    # - Commits are already safe in git (on the jib-temp-* branch)
-    # - We just need to clean up the working directory and prune metadata
+    # Remove container worktree directory first
     try:
-        import shutil
         shutil.rmtree(worktree_dir)
         info(f"  ✓ Removed worktree directory")
     except Exception as e:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
-    # Prune stale worktree metadata from each repo
-    # This removes the .git/worktrees/* admin directories
-    # All commits on jib-temp-* branches are preserved
-    for repo_path in repos_to_prune:
+    # Forcibly remove worktree admin directories
+    # Don't rely on git worktree prune - it fails when .git files are corrupted
+    admin_dirs_removed = 0
+    for repo_path, admin_names in repos_to_clean.items():
+        worktrees_dir = repo_path / ".git" / "worktrees"
+        if worktrees_dir.is_dir():
+            for admin_name in admin_names:
+                admin_dir = worktrees_dir / admin_name
+                if admin_dir.exists():
+                    try:
+                        shutil.rmtree(admin_dir)
+                        admin_dirs_removed += 1
+                    except Exception as e:
+                        warn(f"  ✗ Failed to remove admin dir {admin_dir}: {e}")
+
+    # Also run git worktree prune as a fallback for any we missed
+    for repo_path in repos_to_clean.keys():
         try:
             subprocess.run(
                 ["git", "worktree", "prune", "-v"],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
-                check=True
+                check=False  # Don't fail if prune has issues
             )
         except Exception:
-            pass  # Non-critical if pruning fails
+            pass
 
-    if repos_to_prune:
-        info(f"  ✓ Pruned metadata in {len(repos_to_prune)} repo(s)")
+    if admin_dirs_removed > 0:
+        info(f"  ✓ Removed {admin_dirs_removed} worktree admin dir(s)")
         info(f"  💡 Commits preserved on branch: jib-temp-{container_id}")
 
 
