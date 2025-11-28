@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:11:09.149037+00:00",
+  "generated": "2025-11-28T09:25:19.815807+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -59,13 +59,6 @@
             "children": {
               "analyze-pr/": {
                 "description": "analyze-pr directory"
-              },
-              "codebase-analyzer/": {
-                "description": "codebase-analyzer directory",
-                "files": [
-                  "codebase-analyzer.py",
-                  "setup.sh"
-                ]
               },
               "conversation-analyzer/": {
                 "description": "conversation-analyzer directory",
@@ -290,7 +283,6 @@
             "description": "host_services directory",
             "files": [
               "__init__.py",
-              "test_codebase_analyzer.py",
               "test_conversation_analyzer.py",
               "test_github_watcher.py",
               "test_slack_notifier.py",
@@ -550,96 +542,6 @@
       "line": 173,
       "type": "function",
       "description": "CLI interface for shell scripts to query config."
-    },
-    {
-      "name": "AnalysisCategory",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 53,
-      "type": "class",
-      "description": "Categories of analysis the tool performs.",
-      "bases": [
-        "Enum"
-      ]
-    },
-    {
-      "name": "FixResult",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 66,
-      "type": "class",
-      "description": "Result of attempting to fix an issue.",
-      "bases": [
-        "Enum"
-      ]
-    },
-    {
-      "name": "FileInfo",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 82,
-      "type": "class",
-      "description": "Information about a single file gathered during single-pass scan."
-    },
-    {
-      "name": "StructuralInfo",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 97,
-      "type": "class",
-      "description": "Information about codebase structure."
-    },
-    {
-      "name": "AnalysisCache",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 109,
-      "type": "class",
-      "description": "Cache for analysis results to avoid re-analyzing unchanged files."
-    },
-    {
-      "name": "PRResult",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 118,
-      "type": "class",
-      "description": "Result of PR creation attempt."
-    },
-    {
-      "name": "ASTIssueDetector",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 127,
-      "type": "class",
-      "description": "AST-based detector for Python code issues.",
-      "bases": [
-        "ast.NodeVisitor"
-      ],
-      "methods": [
-        "__init__",
-        "visit_ExceptHandler",
-        "visit_FunctionDef",
-        "visit_Import",
-        "visit_Call"
-      ]
-    },
-    {
-      "name": "CodebaseAnalyzer",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 212,
-      "type": "class",
-      "description": "Analyzes codebase for improvements using a single Claude Code call.",
-      "methods": [
-        "__init__",
-        "_check_claude_cli",
-        "_setup_logging",
-        "_load_cache",
-        "_save_cache",
-        "_get_file_hash",
-        "_get_git_tracked_files",
-        "_get_recently_changed_files",
-        "_should_analyze_file",
-        "scan_codebase_single_pass"
-      ]
-    },
-    {
-      "name": "main",
-      "file": "host-services/analysis/codebase-analyzer/codebase-analyzer.py",
-      "line": 1363,
-      "type": "function"
     },
     {
       "name": "SlackThread",
@@ -1236,12 +1138,75 @@
       "line": 107,
       "type": "function",
       "description": "Create symlinks in all Khan Academy git projects."
+    },
+    {
+      "name": "list_khan_projects_with_links",
+      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
+      "line": 197,
+      "type": "function",
+      "description": "List Khan Academy projects that have symlinks to the documentation."
+    },
+    {
+      "name": "main",
+      "file": "host-services/sync/context-sync/utils/link_to_khan_projects.py",
+      "line": 232,
+      "type": "function",
+      "description": "Main function."
+    },
+    {
+      "name": "list_all_spaces",
+      "file": "host-services/sync/context-sync/utils/list_spaces.py",
+      "line": 13,
+      "type": "function",
+      "description": "List all available spaces in Confluence."
+    },
+    {
+      "name": "get_sync_status",
+      "file": "host-services/sync/context-sync/utils/maintenance.py",
+      "line": 13,
+      "type": "function",
+      "description": "Show sync status and statistics."
+    },
+    {
+      "name": "find_orphaned_files",
+      "file": "host-services/sync/context-sync/utils/maintenance.py",
+      "line": 49,
+      "type": "function",
+      "description": "Find orphaned files (files that exist but shouldn't)."
+    },
+    {
+      "name": "main",
+      "file": "host-services/sync/context-sync/utils/maintenance.py",
+      "line": 95,
+      "type": "function",
+      "description": "Main maintenance function."
+    },
+    {
+      "name": "search_documentation",
+      "file": "host-services/sync/context-sync/utils/search.py",
+      "line": 13,
+      "type": "function",
+      "description": "Search through synced documentation."
+    },
+    {
+      "name": "list_spaces",
+      "file": "host-services/sync/context-sync/utils/search.py",
+      "line": 78,
+      "type": "function",
+      "description": "List all available spaces."
+    },
+    {
+      "name": "main",
+      "file": "host-services/sync/context-sync/utils/search.py",
+      "line": 97,
+      "type": "function",
+      "description": "Main search function."
     }
   ],
   "summary": {
-    "total_python_files": 90,
-    "total_classes": 268,
-    "total_functions": 174,
+    "total_python_files": 88,
+    "total_classes": 246,
+    "total_functions": 172,
     "patterns_detected": [
       "config",
       "connector",

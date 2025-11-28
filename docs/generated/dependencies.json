@@ -1,10 +1,7 @@
 {
-  "generated": "2025-11-28T09:11:09.149037+00:00",
+  "generated": "2025-11-28T09:25:19.815807+00:00",
   "project": "james-in-a-box",
   "internal": {
-    "host-services/analysis/codebase-analyzer/codebase-analyzer.py": [
-      "claude"
-    ],
     "host-services/slack/slack-receiver/slack-receiver.py": [
       "host_command_handler"
     ],
