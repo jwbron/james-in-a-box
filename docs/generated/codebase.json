@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:48:35.712748+00:00",
+  "generated": "2025-11-28T09:58:35.136322+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -655,91 +655,98 @@
     {
       "name": "load_config",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 63,
+      "line": 68,
       "type": "function",
       "description": "Load repository configuration."
     },
     {
       "name": "load_state",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 83,
+      "line": 88,
       "type": "function",
       "description": "Load previous notification state to avoid duplicate processing."
     },
     {
       "name": "save_state",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 106,
+      "line": 113,
       "type": "function",
       "description": "Save notification state."
     },
     {
       "name": "gh_json",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 114,
+      "line": 121,
       "type": "function",
       "description": "Run gh CLI command and return JSON output with rate limit handling."
     },
     {
       "name": "gh_text",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 161,
+      "line": 168,
       "type": "function",
       "description": "Run gh CLI command and return text output with rate limit handling."
     },
     {
       "name": "invoke_jib",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 206,
+      "line": 213,
       "type": "function",
       "description": "Invoke jib container with context via jib --exec."
     },
     {
       "name": "check_pr_for_failures",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 272,
+      "line": 279,
       "type": "function",
       "description": "Check a PR for check failures."
     },
     {
       "name": "fetch_check_logs",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 371,
+      "line": 378,
       "type": "function",
       "description": "Fetch full logs for a failed check."
     },
     {
       "name": "check_pr_for_comments",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 398,
+      "line": 405,
       "type": "function",
       "description": "Check a PR for new comments from others that need response."
     },
     {
+      "name": "check_pr_for_merge_conflict",
+      "file": "host-services/analysis/github-watcher/github-watcher.py",
+      "line": 525,
+      "type": "function",
+      "description": "Check a PR for merge conflicts."
+    },
+    {
       "name": "check_prs_for_review",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 518,
+      "line": 586,
       "type": "function",
       "description": "Check for PRs from others that need review."
     },
     {
       "name": "utc_now_iso",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 599,
+      "line": 667,
       "type": "function",
       "description": "Get current UTC time in ISO format with Z suffix."
     },
     {
       "name": "get_since_timestamp",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 610,
+      "line": 678,
       "type": "function",
       "description": "Get ISO timestamp for 'since' queries based on last run START time."
     },
     {
       "name": "main",
       "file": "host-services/analysis/github-watcher/github-watcher.py",
-      "line": 622,
+      "line": 690,
       "type": "function",
       "description": "Main entry point - scan configured repos and trigger jib as needed."
     },
@@ -827,7 +834,7 @@
     {
       "name": "main",
       "file": "host-services/analysis/spec-enricher/spec-enricher.py",
-      "line": 42,
+      "line": 44,
       "type": "function",
       "description": "CLI entry point."
     },
@@ -1220,19 +1227,12 @@
       "line": 13,
       "type": "function",
       "description": "Search through synced documentation."
-    },
-    {
-      "name": "list_spaces",
-      "file": "host-services/sync/context-sync/utils/search.py",
-      "line": 78,
-      "type": "function",
-      "description": "List all available spaces."
     }
   ],
   "summary": {
     "total_python_files": 93,
-    "total_classes": 260,
-    "total_functions": 174,
+    "total_classes": 261,
+    "total_functions": 176,
     "patterns_detected": [
       "config",
       "connector",
