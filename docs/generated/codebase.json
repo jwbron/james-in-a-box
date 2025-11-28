@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:34:51.514937+00:00",
+  "generated": "2025-11-28T09:48:35.712748+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -80,6 +80,18 @@
                   "index-generator.py",
                   "query-index.py",
                   "setup.sh"
+                ]
+              },
+              "spec-enricher/": {
+                "description": "spec-enricher directory",
+                "children": {
+                  "samples/": {
+                    "description": "samples directory"
+                  }
+                },
+                "files": [
+                  "setup.sh",
+                  "spec-enricher.py"
                 ]
               }
             }
@@ -245,6 +257,13 @@
               "runner.py"
             ]
           },
+          "enrichment/": {
+            "description": "enrichment directory",
+            "files": [
+              "__init__.py",
+              "enricher.py"
+            ]
+          },
           "notifications/": {
             "description": "notifications directory",
             "files": [
@@ -332,6 +351,13 @@
               "test_notifications_init.py",
               "test_notifications_slack.py",
               "test_notifications_types.py"
+            ]
+          },
+          "spec_enricher/": {
+            "description": "spec_enricher directory",
+            "files": [
+              "__init__.py",
+              "test_spec_enricher.py"
             ]
           }
         },
@@ -799,6 +825,13 @@
       "type": "function"
     },
     {
+      "name": "main",
+      "file": "host-services/analysis/spec-enricher/spec-enricher.py",
+      "line": 42,
+      "type": "function",
+      "description": "CLI entry point."
+    },
+    {
       "name": "SlackNotifier",
       "file": "host-services/slack/slack-notifier/slack-notifier.py",
       "line": 40,
@@ -1194,19 +1227,12 @@
       "line": 78,
       "type": "function",
       "description": "List all available spaces."
-    },
-    {
-      "name": "main",
-      "file": "host-services/sync/context-sync/utils/search.py",
-      "line": 97,
-      "type": "function",
-      "description": "Main search function."
     }
   ],
   "summary": {
-    "total_python_files": 88,
-    "total_classes": 246,
-    "total_functions": 172,
+    "total_python_files": 93,
+    "total_classes": 260,
+    "total_functions": 174,
     "patterns_detected": [
       "config",
       "connector",
