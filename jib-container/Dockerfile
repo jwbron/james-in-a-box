@@ -369,9 +369,11 @@ chmod 700 "${USER_HOME}/.claude"
 # Create settings.json with:
 # - Autonomous operation (no permission prompts)
 # - Normal editor mode (avoids vim mode stack overflow bug)
+# - Consistent model selection for all Claude invocations (interactive and --exec)
 # Reference: https://github.com/anthropics/claude-code/issues/1992
 cat > "${USER_HOME}/.claude/settings.json" << 'SETTINGS'
 {
+  "model": "opus",
   "alwaysThinkingEnabled": true,
   "defaultPermissionMode": "bypassPermissions",
   "autoApproveEdits": true,
