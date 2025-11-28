@@ -47,6 +47,8 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Codebase Analyzer](reference/codebase-analyzer.md) | Automated code analysis system |
 | [Claude Authentication](reference/claude-authentication.md) | Claude CLI authentication guide |
+| [Khan Academy Culture](reference/khan-academy-culture.md) | L3-L4 engineering behavioral standards |
+| [Conversation Analysis Criteria](reference/conversation-analysis-criteria.md) | Assessment criteria for agent performance |
 
 ### Development
 
