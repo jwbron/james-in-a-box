@@ -12,6 +12,7 @@
 - [Context](#context)
 - [Problem Statement](#problem-statement)
 - [Decision](#decision)
+- [OpenTelemetry Alignment](#opentelemetry-alignment)
 - [High-Level Design](#high-level-design)
 - [Structured Log Format](#structured-log-format)
 - [Tool Wrappers](#tool-wrappers)
@@ -94,6 +95,96 @@ Requirements:
 3. **Tool Transparency**: Wrappers log all critical tool usage
 4. **Human Readable**: Development mode with formatted console output
 5. **GCP Native**: Direct compatibility with Cloud Logging
+6. **OpenTelemetry Aligned**: Compatible with emerging GenAI observability standards
+
+## OpenTelemetry Alignment
+
+### GenAI Semantic Conventions
+
+The OpenTelemetry community has standardized semantic conventions for GenAI/LLM observability. The `jib_logging` library aligns with these conventions to ensure compatibility with the broader observability ecosystem.
+
+**Key Standards:**
+- [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) - Official spec for LLM telemetry
+- [Agent-Specific Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/) - Spans for GenAI agent calls
+- [Logs Specification](https://opentelemetry.io/docs/concepts/signals/logs/) - Structured log format requirements
+
+### MELT Framework Integration
+
+The logging interface is designed as part of a unified MELT (Metrics, Events, Logs, Traces) observability approach:
+
+| Signal | Purpose | jib_logging Support |
+|--------|---------|---------------------|
+| **Metrics** | Quantitative measurements (token counts, latencies) | Extracted from structured logs |
+| **Events** | Discrete occurrences (task started, PR created) | Logged with event-specific fields |
+| **Logs** | Detailed context and debugging | Primary output of this library |
+| **Traces** | Request flow across services | Correlation via traceId/spanId |
+
+### Trace Correlation
+
+All log entries include OpenTelemetry trace context for correlation:
+
+```json
+{
+  "traceId": "0af7651916cd43dd8448eb211c80319c",
+  "spanId": "b7ad6b7169203331",
+  "traceFlags": "01",
+  ...
+}
+```
+
+This enables:
+1. Linking logs to distributed traces
+2. Filtering logs for a specific request/task
+3. Integration with trace-aware observability platforms (Langfuse, Phoenix, etc.)
+
+### Configuration
+
+The library respects OpenTelemetry configuration patterns:
+
+```bash
+# Enable experimental semantic conventions
+export OTEL_SEMCONV_STABILITY_OPT_IN=genai
+
+# Configure trace context propagation
+export OTEL_PROPAGATORS=tracecontext,baggage
+
+# Set service identification
+export OTEL_SERVICE_NAME=jib-github-watcher
+export OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production
+```
+
+### GenAI-Specific Attributes
+
+For LLM operations, logs include standardized GenAI attributes:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `gen_ai.system` | string | LLM provider ("anthropic") |
+| `gen_ai.request.model` | string | Model identifier |
+| `gen_ai.usage.input_tokens` | int | Prompt token count |
+| `gen_ai.usage.output_tokens` | int | Completion token count |
+| `gen_ai.response.finish_reasons` | string[] | Why generation stopped |
+
+Example log entry for Claude interaction:
+
+```json
+{
+  "timestamp": "2025-11-28T12:34:56.789Z",
+  "severity": "INFO",
+  "message": "Claude Code response completed",
+  "traceId": "0af7651916cd43dd8448eb211c80319c",
+  "spanId": "b7ad6b7169203331",
+  "gen_ai.system": "anthropic",
+  "gen_ai.request.model": "claude-sonnet-4-5-20250929",
+  "gen_ai.usage.input_tokens": 1500,
+  "gen_ai.usage.output_tokens": 800,
+  "gen_ai.response.finish_reasons": ["end_turn"],
+  "context": {
+    "task_id": "bd-xyz789",
+    "task_type": "pr_fix"
+  }
+}
+```
 
 ## High-Level Design
 
@@ -159,8 +250,11 @@ All log entries include these fields:
   "message": "Human-readable message",
   "service": "github-watcher",
   "component": "pr_checker",
-  "correlation_id": "abc123-def456",
   "environment": "container",
+
+  "traceId": "0af7651916cd43dd8448eb211c80319c",
+  "spanId": "b7ad6b7169203331",
+  "traceFlags": "01",
 
   "context": {
     "task_id": "bd-xyz789",
@@ -175,6 +269,8 @@ All log entries include these fields:
 }
 ```
 
+**Note:** The `traceId` and `spanId` fields follow the [W3C Trace Context](https://www.w3.org/TR/trace-context/) specification, enabling correlation with distributed traces across services.
+
 ### GCP Cloud Logging Compatibility
 
 The format maps directly to [GCP structured logging](https://cloud.google.com/logging/docs/structured-logging):
@@ -184,9 +280,11 @@ The format maps directly to [GCP structured logging](https://cloud.google.com/lo
 | `severity` | `severity` | Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
 | `message` | `message` | Human-readable text |
 | `timestamp` | `timestamp` | ISO 8601 format |
-| `correlation_id` | `logging.googleapis.com/trace` | Request tracing |
+| `traceId` | `logging.googleapis.com/trace` | Distributed trace ID |
+| `spanId` | `logging.googleapis.com/spanId` | Span within trace |
 | `labels` | `logging.googleapis.com/labels` | Filterable metadata |
 | `context.*` | `jsonPayload.*` | Structured data |
+| `gen_ai.*` | `jsonPayload.gen_ai.*` | OpenTelemetry GenAI attributes |
 
 ### Severity Levels
 
@@ -328,26 +426,43 @@ Capture full Claude Code model output for:
 
 ### Model Output Log Entry
 
+Using OpenTelemetry GenAI semantic conventions for standardized observability:
+
 ```json
 {
   "timestamp": "2025-11-28T12:34:56.789Z",
   "severity": "INFO",
   "message": "Claude Code response captured",
-  "correlation_id": "abc123",
-  "model": {
-    "name": "claude-sonnet-4-5-20250929",
-    "prompt_tokens": 1500,
-    "completion_tokens": 800,
-    "total_tokens": 2300,
-    "response_time_ms": 4500
-  },
+  "traceId": "0af7651916cd43dd8448eb211c80319c",
+  "spanId": "b7ad6b7169203331",
+
+  "gen_ai.system": "anthropic",
+  "gen_ai.request.model": "claude-sonnet-4-5-20250929",
+  "gen_ai.usage.input_tokens": 1500,
+  "gen_ai.usage.output_tokens": 800,
+  "gen_ai.response.finish_reasons": ["end_turn"],
+
+  "duration_ms": 4500,
   "context": {
     "task_id": "bd-xyz789",
     "task_type": "pr_fix"
   },
-  "output_file": "/var/log/jib/model_output/2025-11-28/abc123.json"
+  "output_file": "/var/log/jib/model_output/2025-11-28/0af7651916cd43dd.json"
 }
 ```
+
+### Token Usage Tracking
+
+Detailed token metrics enable cost visibility and optimization:
+
+| Metric | Purpose | Alerting Threshold |
+|--------|---------|-------------------|
+| `gen_ai.usage.input_tokens` | Prompt size tracking | > 100K per request |
+| `gen_ai.usage.output_tokens` | Response size tracking | > 50K per request |
+| Daily token totals | Budget monitoring | Configurable per user |
+| Cost estimates | Financial tracking | Based on model pricing |
+
+Token data flows to cost dashboards and can trigger alerts when usage exceeds thresholds.
 
 ### Full Response Storage
 
