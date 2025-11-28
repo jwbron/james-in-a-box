@@ -135,11 +135,15 @@ def gh_json(args: list[str]) -> dict | list | None:
             if "rate limit" in e.stderr.lower():
                 if attempt < RATE_LIMIT_MAX_RETRIES - 1:
                     wait_time = RATE_LIMIT_BASE_WAIT * (2**attempt)
-                    print(f"  Rate limited, waiting {wait_time}s before retry (attempt {attempt + 1})...")
+                    print(
+                        f"  Rate limited, waiting {wait_time}s before retry (attempt {attempt + 1})..."
+                    )
                     time.sleep(wait_time)
                     continue
                 else:
-                    print(f"  Rate limit exceeded after {RATE_LIMIT_MAX_RETRIES} retries: {' '.join(args)}")
+                    print(
+                        f"  Rate limit exceeded after {RATE_LIMIT_MAX_RETRIES} retries: {' '.join(args)}"
+                    )
                     return None
             else:
                 print(f"  gh command failed: {' '.join(args)}")
@@ -178,11 +182,15 @@ def gh_text(args: list[str]) -> str | None:
             if "rate limit" in e.stderr.lower():
                 if attempt < RATE_LIMIT_MAX_RETRIES - 1:
                     wait_time = RATE_LIMIT_BASE_WAIT * (2**attempt)
-                    print(f"  Rate limited, waiting {wait_time}s before retry (attempt {attempt + 1})...")
+                    print(
+                        f"  Rate limited, waiting {wait_time}s before retry (attempt {attempt + 1})..."
+                    )
                     time.sleep(wait_time)
                     continue
                 else:
-                    print(f"  Rate limit exceeded after {RATE_LIMIT_MAX_RETRIES} retries: {' '.join(args)}")
+                    print(
+                        f"  Rate limit exceeded after {RATE_LIMIT_MAX_RETRIES} retries: {' '.join(args)}"
+                    )
                     return None
             else:
                 print(f"  gh command failed: {' '.join(args)}")
@@ -676,7 +684,9 @@ def main():
 
         # Filter PRs locally by author
         my_prs = [
-            p for p in all_prs if p.get("author", {}).get("login", "").lower() == github_username.lower()
+            p
+            for p in all_prs
+            if p.get("author", {}).get("login", "").lower() == github_username.lower()
         ]
 
         # Bot PRs can have author login in different formats depending on the API:
@@ -689,7 +699,9 @@ def main():
             f"app/{bot_username.lower()}",
         }
         bot_prs = [
-            p for p in all_prs if p.get("author", {}).get("login", "").lower() in bot_author_variants
+            p
+            for p in all_prs
+            if p.get("author", {}).get("login", "").lower() in bot_author_variants
         ]
 
         # Process user's PRs
