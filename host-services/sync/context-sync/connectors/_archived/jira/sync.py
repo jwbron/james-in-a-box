@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 
 import requests
-
 from connectors.jira.config import JIRAConfig
 
 
