@@ -39,7 +39,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && rm -rf /var/lib/apt/lists/*
 
 # Install Khan Academy development tools
-# This includes: Python 3.11, Node.js 20, Go, Java 11, PostgreSQL, etc.
+# This includes: Python 3.13 (via uv), Node.js 20, Go, Java 11, PostgreSQL, etc.
+# Python is installed via uv for consistent version management
 COPY docker-setup.py /tmp/docker-setup.py
 RUN chmod +x /tmp/docker-setup.py && \
     apt-get update && \

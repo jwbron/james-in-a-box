@@ -138,26 +138,65 @@ def install_nodejs(distro: str) -> None:
 
 
 def install_python(distro: str) -> None:
-    """Install Python 3.11"""
-    print("\n=== Installing Python 3.11 ===")
+    """Install Python 3.13 using uv for version management.
 
+    uv is used to install and manage Python versions because:
+    - It provides consistent cross-platform Python installation
+    - It can enforce specific Python versions via .python-version files
+    - It's faster than traditional package managers
+    """
+    print("\n=== Installing Python 3.13 via uv ===")
+
+    # First, install uv (the package manager that handles Python installation)
+    print("Installing uv package manager...")
+    run_shell("curl -LsSf https://astral.sh/uv/install.sh | sh")
+
+    # Add uv to PATH for this session (installer puts it in ~/.local/bin or /root/.local/bin)
+    uv_path = "/root/.local/bin" if os.geteuid() == 0 else str(Path.home() / ".local/bin")
+    os.environ["PATH"] = f"{uv_path}:{os.environ.get('PATH', '')}"
+
+    # Install Python 3.13 via uv
+    print("Installing Python 3.13...")
+    run([f"{uv_path}/uv", "python", "install", "3.13"])
+
+    # Get the path to uv-managed Python 3.13
+    result = run(
+        [f"{uv_path}/uv", "python", "find", "3.13"],
+        capture_output=True,
+        text=True,
+    )
+    python_path = result.stdout.strip()
+    print(f"Python 3.13 installed at: {python_path}")
+
+    # Create symlinks so python3 and python point to 3.13
+    python_dir = Path(python_path).parent
+    run(["ln", "-sf", python_path, "/usr/local/bin/python3.13"])
+    run(["ln", "-sf", python_path, "/usr/local/bin/python3"])
+    run(["ln", "-sf", python_path, "/usr/local/bin/python"])
+
+    # Also symlink uv to /usr/local/bin for global access
+    run(["ln", "-sf", f"{uv_path}/uv", "/usr/local/bin/uv"])
+    run(["ln", "-sf", f"{uv_path}/uvx", "/usr/local/bin/uvx"])
+
+    # Install pip for the uv-managed Python (needed for some tooling)
+    # uv can also replace pip, but we keep pip for compatibility
+    print("Installing pip...")
+    run(["/usr/local/bin/python3", "-m", "ensurepip", "--upgrade"], check=False)
+
+    # Still install some system Python packages for compatibility
+    # These provide headers and dev files that may be needed
     if distro == "ubuntu":
-        # Add deadsnakes PPA for recent Python
         run_shell("add-apt-repository -y ppa:deadsnakes/ppa && apt-get update -qq -y", check=False)
         run(
             [
                 "apt-get",
                 "install",
                 "-y",
-                "python3.11",
-                "python3.11-venv",
-                "python3.11-dev",
                 "python3-dev",
                 "python3-setuptools",
-                "python3-pip",
-                "python3-venv",
                 "python-is-python3",
-            ]
+            ],
+            check=False,
         )
     elif distro == "fedora":
         run(
@@ -165,12 +204,10 @@ def install_python(distro: str) -> None:
                 "dnf",
                 "install",
                 "-y",
-                "python3.11",
-                "python3.11-devel",
                 "python3-devel",
                 "python3-setuptools",
-                "python3-pip",
-            ]
+            ],
+            check=False,
         )
 
 
@@ -514,7 +551,8 @@ def main():
         print("=" * 60)
         print()
         print("Installed:")
-        print("  ✓ Python 3.11")
+        print("  ✓ Python 3.13 (via uv)")
+        print("  ✓ uv (Python package/version manager)")
         print("  ✓ Node.js 20.x")
         print("  ✓ Go")
         print("  ✓ Java 11")
@@ -523,6 +561,12 @@ def main():
         print("  ✓ mkcert (HTTPS)")
         print("  ✓ Watchman (file watching)")
         print("  ✓ Fastly CLI")
+        print()
+        print("Python version management:")
+        print("  - uv is installed at /usr/local/bin/uv")
+        print("  - Python 3.13 is the default (python, python3, python3.13)")
+        print("  - Use 'uv python install <version>' to add more versions")
+        print("  - Use '.python-version' files to pin versions per-project")
         print()
         print("Skipped (not needed in Docker):")
         print("  - SSH key generation")

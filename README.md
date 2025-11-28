@@ -137,8 +137,10 @@ jib syncs external context to provide the agent with organizational knowledge:
 ### Prerequisites
 
 - Docker installed and running
-- Python 3.8+
+- Python 3.13+ (host machine)
 - Slack workspace with bot token
+
+> **Python Version**: The container uses Python 3.13, managed by [uv](https://docs.astral.sh/uv/). The `.python-version` file pins the version for consistency.
 
 ### Setup
 
@@ -575,6 +577,22 @@ bin/jib --rebuild
 4. Check logs: `journalctl --user -u slack-receiver.service -f`
 
 ## Development
+
+### Python Environment
+
+This project uses [uv](https://docs.astral.sh/uv/) for Python version management and package installation:
+
+```bash
+# Python 3.13 is pinned in .python-version
+cat .python-version  # Shows: 3.13
+
+# Inside the container, uv is available for package management
+uv pip install <package>           # Install a package
+uv python install 3.13             # Ensure Python 3.13 is installed
+uv venv --python 3.13              # Create a virtual environment
+```
+
+The container automatically installs Python 3.13 via uv during the Docker build process. This ensures consistent Python versions between the host machine and container.
 
 ### Linting
 
