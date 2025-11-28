@@ -10,15 +10,35 @@
 ## Table of Contents
 
 - [Context](#context)
+  - [Industry Landscape](#industry-landscape)
+  - [Background](#background)
+  - [Problem Statement](#problem-statement)
+  - [What We're Deciding](#what-were-deciding)
+  - [Key Requirements](#key-requirements)
 - [Decision](#decision)
 - [High-Level Design](#high-level-design)
 - [Implementation Details](#implementation-details)
+  - [MCP-First Tool Strategy](#8-mcp-first-tool-strategy)
+  - [Prompt Normalization Layer](#9-prompt-normalization-layer)
+  - [Cross-Model Testing Strategy](#10-cross-model-testing-strategy)
+  - [Observability and Cost Tracking](#11-observability-and-cost-tracking)
+  - [Extended Capability Matching](#12-extended-capability-matching)
 - [Migration Strategy](#migration-strategy)
 - [Consequences](#consequences)
 - [Decision Permanence](#decision-permanence)
 - [Alternatives Considered](#alternatives-considered)
 
 ## Context
+
+### Industry Landscape
+
+The LLM ecosystem has matured significantly, with several established patterns for multi-provider abstraction:
+
+- **[LiteLLM](https://github.com/BerriAI/litellm)**: Industry-leading solution supporting 100+ providers with battle-tested routing, fallback, and load balancing
+- **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)**: Anthropic's provider-agnostic tool protocol, gaining adoption across providers
+- **[Vercel AI SDK](https://sdk.vercel.ai/)**: TypeScript-first abstraction for frontend/Node.js applications
+
+These existing solutions inform our architecture decisions and offer integration opportunities.
 
 ### Background
 
@@ -98,6 +118,8 @@ This ADR proposes architecture to make jib **model-agnostic**, enabling:
 | **Task Routing** | Static config + runtime override | Predictable, auditable, flexible | ML-based routing (complex), No routing (inefficient) |
 | **Fallback Strategy** | Chain with exponential backoff | Resilient, prevents cascade failures | No fallback (brittle), Random selection (unpredictable) |
 | **Tool Integration** | MCP where available, custom adapters elsewhere | Industry standard, provider-agnostic | Claude-only tools, Custom protocols |
+| **Routing Engine** | LiteLLM-based or inspired implementation | Battle-tested, reduces custom code | Fully custom router (reinventing wheel) |
+| **Observability** | Integrated with Standardized Logging ADR | Unified cost/performance tracking | Separate logging per provider |
 
 ## High-Level Design
 
@@ -1091,6 +1113,300 @@ class OpenAIFunctionAdapter(ToolAdapter):
         ]
 ```
 
+### 8. MCP-First Tool Strategy
+
+The **Model Context Protocol (MCP)** is becoming the industry standard for provider-agnostic tool interaction. Our tool abstraction should prioritize MCP:
+
+**Strategy:**
+
+1. **MCP as primary**: All new tools should be implemented as MCP servers
+2. **Fallback adapters**: Use function-calling adapters only for providers without MCP support
+3. **Tool registry**: Centralized registry of available MCP servers and their capabilities
+
+```python
+# shared/llm/tools/mcp_registry.py
+
+from dataclasses import dataclass
+
+@dataclass
+class MCPServer:
+    """MCP server configuration."""
+    name: str
+    url: str
+    tools: list[str]
+    supports_streaming: bool = True
+
+class MCPToolRegistry:
+    """Registry of MCP servers and their tools."""
+
+    def __init__(self):
+        self.servers: dict[str, MCPServer] = {}
+        self._tool_to_server: dict[str, str] = {}
+
+    def register_server(self, server: MCPServer) -> None:
+        """Register an MCP server."""
+        self.servers[server.name] = server
+        for tool in server.tools:
+            self._tool_to_server[tool] = server.name
+
+    def get_server_for_tool(self, tool_name: str) -> MCPServer | None:
+        """Find which server provides a tool."""
+        server_name = self._tool_to_server.get(tool_name)
+        return self.servers.get(server_name) if server_name else None
+
+    def get_all_tools(self) -> list[dict]:
+        """Get all available tools for provider negotiation."""
+        tools = []
+        for server in self.servers.values():
+            # Fetch tool schemas from MCP server
+            tools.extend(self._fetch_tool_schemas(server))
+        return tools
+```
+
+**Benefits of MCP-first approach:**
+- Provider-agnostic by design
+- OpenAI, Google, and others are adding MCP support
+- Reduces custom adapter code as ecosystem matures
+- Single protocol for all tool interactions
+
+### 9. Prompt Normalization Layer
+
+Different models respond differently to the same prompts. A normalization layer helps maintain consistency:
+
+```python
+# shared/llm/prompts/normalizer.py
+
+from dataclasses import dataclass
+from typing import Callable
+
+
+@dataclass
+class PromptTemplate:
+    """Template with provider-specific variations."""
+    base: str
+    variations: dict[str, str]  # provider -> modified prompt
+
+
+class PromptNormalizer:
+    """Adapts prompts for different providers."""
+
+    # Known provider quirks
+    PROVIDER_ADJUSTMENTS: dict[str, Callable[[str], str]] = {
+        "openai": lambda p: p,  # OpenAI works well with standard prompts
+        "claude-code": lambda p: p,  # Claude Code handles prompts natively
+        "google": lambda p: p.replace("```", "```\n"),  # Gemini prefers newlines
+    }
+
+    def __init__(self):
+        self.templates: dict[str, PromptTemplate] = {}
+
+    def normalize(self, prompt: str, provider: str) -> str:
+        """Adjust prompt for provider-specific behavior."""
+        adjuster = self.PROVIDER_ADJUSTMENTS.get(provider, lambda p: p)
+        return adjuster(prompt)
+
+    def get_template(self, name: str, provider: str) -> str:
+        """Get a named template, with provider variation if available."""
+        template = self.templates.get(name)
+        if not template:
+            raise ValueError(f"Unknown template: {name}")
+        return template.variations.get(provider, template.base)
+```
+
+**Considerations:**
+- Start with minimal normalization; add rules based on observed differences
+- Log when normalization is applied for debugging
+- Consider A/B testing prompts across providers
+
+### 10. Cross-Model Testing Strategy
+
+Different models behave differently with the same prompts. Rigorous testing across providers is critical:
+
+**Testing Layers:**
+
+1. **Unit Tests**: Mock providers, test routing logic
+2. **Integration Tests**: Real API calls with test prompts
+3. **Regression Tests**: Golden output comparisons across models
+4. **Quality Benchmarks**: Periodic evaluation of model outputs
+
+```python
+# tests/llm/test_cross_model.py
+
+import pytest
+from shared.llm import get_router, LLMRequest
+
+# Test prompts with expected behaviors
+TEST_CASES = [
+    {
+        "name": "simple_classification",
+        "prompt": "Classify this as bug/feature/question: 'The button is blue instead of green'",
+        "expected_pattern": r"(bug|Bug|BUG)",
+        "task_type": "classification",
+    },
+    {
+        "name": "code_review_basics",
+        "prompt": "Review this code: def add(a,b): return a+b",
+        "expected_pattern": r"(type hint|docstring|documentation)",
+        "task_type": "code_review",
+    },
+]
+
+@pytest.mark.parametrize("provider", ["claude-code", "openai", "google"])
+@pytest.mark.parametrize("test_case", TEST_CASES)
+async def test_cross_model_consistency(provider, test_case):
+    """Verify consistent behavior across providers."""
+    router = get_router()
+
+    # Force specific provider for test
+    response, decision = await router.route(
+        LLMRequest(
+            prompt=test_case["prompt"],
+            task_type=test_case["task_type"],
+        ),
+        force_provider=provider,
+    )
+
+    assert response.success
+    assert re.search(test_case["expected_pattern"], response.content)
+```
+
+**Testing Best Practices:**
+- Run cross-model tests before switching primary providers
+- Track output quality metrics over time
+- Alert on significant quality degradation
+- Maintain provider-specific prompt variations when needed
+
+### 11. Observability and Cost Tracking
+
+Integrated observability is critical for multi-provider systems. This integrates with the [Standardized Logging ADR](./ADR-Standardized-Logging-Interface.md):
+
+```python
+# shared/llm/observability.py
+
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass
+class LLMInvocationMetrics:
+    """Metrics for a single LLM invocation."""
+    timestamp: datetime
+    task_type: str
+    model: str
+    provider: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
+    cost_usd: float
+    success: bool
+    fallback_used: bool
+    error: str | None = None
+
+
+class LLMObserver:
+    """Observability for LLM invocations."""
+
+    def __init__(self):
+        self.logger = logging.getLogger("llm.metrics")
+
+    def record(self, metrics: LLMInvocationMetrics) -> None:
+        """Record metrics for an LLM invocation."""
+        self.logger.info(
+            "llm_invocation",
+            extra={
+                "task_type": metrics.task_type,
+                "model": metrics.model,
+                "provider": metrics.provider,
+                "input_tokens": metrics.input_tokens,
+                "output_tokens": metrics.output_tokens,
+                "latency_ms": metrics.latency_ms,
+                "cost_usd": metrics.cost_usd,
+                "success": metrics.success,
+                "fallback_used": metrics.fallback_used,
+                "error": metrics.error,
+            },
+        )
+
+    def get_cost_summary(self, since: datetime) -> dict:
+        """Get cost summary by provider and task type."""
+        # Implementation would query log aggregation system
+        pass
+```
+
+**Key Observability Requirements:**
+
+| Metric | Purpose | Alert Threshold |
+|--------|---------|-----------------|
+| Cost per task type | Budget tracking | >$X/day per type |
+| Fallback rate | Provider health | >10% fallbacks |
+| Latency p95 | Performance | >5000ms |
+| Error rate | Reliability | >5% errors |
+| Token efficiency | Optimization | Tokens per task trending up |
+
+**Budget Controls:**
+```yaml
+# config/models.yaml (addition)
+budget:
+  daily_limit_usd: 100
+  per_task_limits:
+    code_review: 1.00
+    classification: 0.10
+  alerts:
+    - threshold: 0.8  # 80% of daily limit
+      action: notify
+    - threshold: 1.0  # 100% of limit
+      action: downgrade_models  # Switch to cheaper alternatives
+```
+
+### 12. Extended Capability Matching
+
+Beyond basic capabilities, track operational metrics for intelligent routing:
+
+```python
+# shared/llm/capabilities.py
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ExtendedModelCapabilities:
+    """Extended capability metrics for intelligent routing."""
+
+    # Basic capabilities
+    context_window: int
+    max_output_tokens: int
+    supports_tools: bool
+    supports_vision: bool
+
+    # Operational metrics (updated from observability data)
+    token_efficiency: dict[str, float]  # task_type -> avg tokens used
+    latency_percentiles: dict[str, int]  # p50, p95, p99 in ms
+    error_rate_7d: float  # Rolling 7-day error rate
+    cost_per_success: dict[str, float]  # task_type -> avg cost
+
+    # Quality metrics (from evaluation benchmarks)
+    quality_scores: dict[str, float]  # task_type -> quality score
+
+
+def select_optimal_model(
+    task_type: str,
+    models: list[ExtendedModelCapabilities],
+    optimization_target: str = "cost",  # cost, latency, quality
+) -> str:
+    """Select optimal model based on historical performance."""
+
+    if optimization_target == "cost":
+        # Choose model with lowest cost_per_success for this task
+        return min(models, key=lambda m: m.cost_per_success.get(task_type, float('inf')))
+    elif optimization_target == "latency":
+        # Choose model with lowest p95 latency
+        return min(models, key=lambda m: m.latency_percentiles.get("p95", float('inf')))
+    elif optimization_target == "quality":
+        # Choose model with highest quality score
+        return max(models, key=lambda m: m.quality_scores.get(task_type, 0))
+```
+
 ## Migration Strategy
 
 ### Phase 1: Abstraction Layer (No Behavior Change)
@@ -1264,6 +1580,42 @@ The decision to support multiple providers is **high permanence** - once enginee
 
 **Rejected because:** This provides model flexibility within a provider but doesn't address provider lock-in or cross-provider optimization opportunities.
 
+### Alternative 5: LiteLLM as Routing Engine
+
+**Description:** Use [LiteLLM](https://github.com/BerriAI/litellm) as the core routing and provider abstraction layer instead of custom implementation.
+
+**Pros:**
+- Battle-tested with 100+ provider support
+- Built-in routing strategies (`simple-shuffle`, `least-busy`, `usage-based-routing`, `latency-based-routing`)
+- Context window fallbacks handled automatically
+- Distributed load balancing via Redis
+- Active community and maintenance
+
+**Cons:**
+- Additional dependency
+- May not integrate seamlessly with Claude Code CLI
+- Less control over routing logic
+- Potential overhead for simple use cases
+
+**Status: Under Consideration.** This is a viable hybrid approach where LiteLLM handles API-based providers while Claude Code CLI remains the primary interface for complex tasks. The custom router could delegate to LiteLLM for non-Claude providers:
+
+```python
+# Hybrid approach
+class HybridModelRouter:
+    def __init__(self):
+        self.claude_code = ClaudeCodeProvider()
+        self.litellm_router = litellm.Router(
+            model_list=[...],  # Non-Claude models
+            routing_strategy="latency-based-routing",
+        )
+
+    async def route(self, request: LLMRequest, task_type: str):
+        if self._requires_claude_code_features(request):
+            return await self.claude_code.complete(request)
+        else:
+            return await self.litellm_router.acompletion(...)
+```
+
 ## Related ADRs
 
 | ADR | Relationship |
@@ -1274,10 +1626,25 @@ The decision to support multiple providers is **high permanence** - once enginee
 
 ## References
 
+### Provider Abstraction & Routing
+- [LiteLLM](https://github.com/BerriAI/litellm) - Multi-provider abstraction with 100+ providers
+- [LiteLLM Router Documentation](https://docs.litellm.ai/docs/routing) - Routing strategies and fallback configuration
+- [LiteLLM Proxy Load Balancing](https://docs.litellm.ai/docs/proxy/load_balancing) - Distributed load balancing patterns
+- [Vercel AI SDK](https://sdk.vercel.ai/) - TypeScript-first provider abstraction
+
+### Tool Protocols
 - [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) - Provider-agnostic tool protocol
+- [ToolRegistry Paper](https://arxiv.org/html/2507.10593v1) - Research on tool abstraction patterns
+
+### Provider APIs
 - [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
 - [Google Generative AI](https://ai.google.dev/docs)
 - [Ollama](https://ollama.ai/) - Local model hosting
+
+### Architecture Patterns
+- [LLM Agnostic Architecture (Entrio)](https://www.entrio.io/blog/implementing-llm-agnostic-architecture-generative-ai-module) - Layered architecture approach
+- [LLM Orchestration Frameworks Comparison](https://research.aimultiple.com/llm-orchestration/) - Testing and prompt normalization considerations
+- [TensorWave LLM Agnostic Systems](https://tensorwave.com/blog/llm-agnostic) - Multi-LLM platform patterns
 - [LangChain](https://langchain.com/) - Reference for abstraction patterns
 
 ---
