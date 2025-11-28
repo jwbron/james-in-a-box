@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T08:10:38.232582+00:00",
+  "generated": "2025-11-28T08:44:23.425883+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -21,7 +21,15 @@
         "description": "Documentation",
         "children": {
           "adr/": {
-            "description": "adr directory"
+            "description": "adr directory",
+            "children": {
+              "in-progress/": {
+                "description": "in-progress directory"
+              },
+              "not-implemented/": {
+                "description": "not-implemented directory"
+              }
+            }
           },
           "architecture/": {
             "description": "architecture directory"
@@ -809,6 +817,32 @@
       "description": "Main entry point - scan configured repos and trigger jib as needed."
     },
     {
+      "name": "CodebaseIndexer",
+      "file": "host-services/analysis/index-generator/index-generator.py",
+      "line": 24,
+      "type": "class",
+      "description": "Analyzes a codebase and generates structured indexes.",
+      "methods": [
+        "__init__",
+        "should_skip_dir",
+        "get_directory_description",
+        "analyze_python_file",
+        "_categorize_import",
+        "_is_internal_module",
+        "_detect_patterns",
+        "build_structure",
+        "extract_versions_from_requirements",
+        "_update_dep_version"
+      ]
+    },
+    {
+      "name": "main",
+      "file": "host-services/analysis/index-generator/index-generator.py",
+      "line": 524,
+      "type": "function",
+      "description": "CLI entry point."
+    },
+    {
       "name": "load_index",
       "file": "host-services/analysis/index-generator/query-index.py",
       "line": 18,
@@ -862,32 +896,6 @@
       "file": "host-services/analysis/index-generator/query-index.py",
       "line": 216,
       "type": "function"
-    },
-    {
-      "name": "CodebaseIndexer",
-      "file": "host-services/analysis/index-generator/index-generator.py",
-      "line": 24,
-      "type": "class",
-      "description": "Analyzes a codebase and generates structured indexes.",
-      "methods": [
-        "__init__",
-        "should_skip_dir",
-        "get_directory_description",
-        "analyze_python_file",
-        "_categorize_import",
-        "_is_internal_module",
-        "_detect_patterns",
-        "build_structure",
-        "extract_versions_from_requirements",
-        "_update_dep_version"
-      ]
-    },
-    {
-      "name": "main",
-      "file": "host-services/analysis/index-generator/index-generator.py",
-      "line": 524,
-      "type": "function",
-      "description": "CLI entry point."
     },
     {
       "name": "SlackNotifier",

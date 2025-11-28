@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T08:10:38.232582+00:00",
+  "generated": "2025-11-28T08:44:23.425883+00:00",
   "project": "james-in-a-box",
   "internal": {
     "host-services/analysis/codebase-analyzer/codebase-analyzer.py": [
@@ -58,19 +58,16 @@
       "claude",
       "notifications"
     ],
-    "jib-container/jib-tasks/github/github-processor.py": [
-      "claude"
-    ],
     "jib-container/jib-tasks/github/pr-analyzer.py": [
       "claude"
     ],
     "jib-container/jib-tasks/github/pr-reviewer.py": [
       "notifications"
     ],
-    "jib-container/jib-tasks/jira/jira-processor.py": [
+    "jib-container/jib-tasks/github/github-processor.py": [
       "claude"
     ],
-    "jib-container/jib-tasks/slack/incoming-processor.py": [
+    "jib-container/jib-tasks/jira/jira-processor.py": [
       "claude"
     ],
     "shared/claude/__init__.py": [
