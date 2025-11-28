@@ -78,11 +78,17 @@ This ADR evaluates whether to:
 
 ### MCP Ecosystem Maturity
 
+**Industry Adoption (November 2025):**
+- **OpenAI** adopted MCP in March 2025, integrating across ChatGPT desktop, Agents SDK, and Responses API
+- **Google DeepMind** confirmed MCP support for upcoming Gemini models in April 2025
+- **Anthropic** released OAuth 2.1 and Streamable HTTP Transport in March 2025
+- **MCP Registry** launched in preview September 2025, progressing toward general availability
+
 **Official/Production MCP Servers:**
 
 | Platform | Server | Status | Capabilities |
 |----------|--------|--------|--------------|
-| **Atlassian** | [atlassian-mcp-server](https://github.com/atlassian/atlassian-mcp-server) | Beta (Official) | Jira + Confluence read/write, OAuth 2.0 |
+| **Atlassian** | [atlassian-mcp-server](https://github.com/atlassian/atlassian-mcp-server) | Beta (Official) | Jira + Confluence read/write, OAuth 2.1 |
 | **GitHub** | [github-mcp-server](https://github.com/github/github-mcp-server) | Public Preview | Repos, issues, PRs, search |
 | **Anthropic** | [Reference servers](https://github.com/modelcontextprotocol/servers) | Production | Git, Filesystem, Fetch, Memory |
 
@@ -92,6 +98,11 @@ This ADR evaluates whether to:
 |--------|-------|--------------|
 | [sooperset/mcp-atlassian](https://github.com/sooperset/mcp-atlassian) | 500+ | Confluence + Jira, Cloud & Server/DC |
 | [xuanxt/atlassian-mcp](https://github.com/xuanxt/atlassian-mcp) | 100+ | 51 tools, sprints, boards, backlogs |
+
+**Protocol Enhancements (March 2025):**
+- **OAuth 2.1:** Improved security for agent-server communication
+- **Streamable HTTP Transport:** Better support for stateless container deployments
+- **`.well-known` URLs:** Servers can advertise capabilities without requiring connection first
 
 ## Decision
 
@@ -705,6 +716,92 @@ Initially rejected because "sandbox cannot receive inbound connections." However
 - Over-engineered for use case
 
 **Rejected because:** Adds significant complexity without enabling bi-directional operations.
+
+## Research Updates (November 2025)
+
+Based on external research into MCP adoption and best practices:
+
+### Industry Adoption Momentum
+
+MCP has achieved significant adoption in 2025:
+
+| Company | Adoption Date | Integration |
+|---------|---------------|-------------|
+| **OpenAI** | March 2025 | ChatGPT desktop, Agents SDK, Responses API |
+| **Google DeepMind** | April 2025 | Upcoming Gemini models and infrastructure |
+| **Anthropic** | November 2024 | Claude Code, reference implementations |
+
+**Implication:** MCP is becoming the industry standard for LLM-to-tool integration. Our hybrid approach aligns with this direction.
+
+### Code Execution Pattern
+
+As the number of MCP tools grows, loading all tool definitions upfront increases costs and slows agents. Research suggests a **code execution pattern**:
+
+```python
+# Instead of: Load all tools → Pass to LLM → Execute one-by-one
+# Use: Agent writes code to interact with MCP servers
+
+# Agent generates code like:
+async def complete_task():
+    # Load only needed tools
+    jira = await mcp_connect("atlassian")
+    ticket = await jira.get_issue("INFRA-123")
+
+    # Process data in execution environment
+    summary = extract_key_points(ticket.description)
+
+    # Return minimal context to model
+    return summary
+```
+
+**Benefits:**
+- Load only needed tools on-demand
+- Process data before passing to model (token savings)
+- More efficient for complex multi-tool workflows
+
+**Application:** Consider implementing code execution for complex sync operations in Phase 4.
+
+### Security Considerations
+
+April 2025 security research identified MCP vulnerabilities:
+
+| Vulnerability | Risk | Mitigation |
+|---------------|------|------------|
+| **Prompt Injection** | Malicious data in tool responses | Validate/sanitize MCP responses |
+| **Tool Permissions** | Combining tools can exfiltrate data | Implement RBAC, audit tool combinations |
+| **Lookalike Tools** | Malicious tools can replace trusted ones | Use MCP Registry, verify server identity |
+
+**Recommended Practices:**
+- **RBAC and Encryption:** Not optional—implement role-based access control
+- **Log Audit:** Centralized collection with integrity-protected storage
+- **Server Verification:** Use `.well-known` URLs to verify server identity before connecting
+- **Checksum Validation:** Verify installer integrity to prevent tampering
+
+### MCP Registry
+
+The MCP Registry (preview September 2025) provides:
+- Community-driven platform for discovering MCP servers
+- Stabilizing v0.1 API through real-world integrations
+- Server capability advertising via `.well-known` URLs
+
+**When to use:** Consider MCP Registry for discovering community servers once it reaches GA.
+
+### Streamable HTTP Transport
+
+March 2025 protocol update addresses Cloud Run deployment challenges:
+- Better support for stateless containers
+- Improved server startup and session handling
+- Addresses horizontal scaling challenges
+
+**Application:** Streamable HTTP Transport should simplify our Phase 3 Cloud Run deployment.
+
+### Research Sources
+
+- [Anthropic: Code Execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp)
+- [Anthropic: MCP Courses](https://anthropic.skilljar.com/introduction-to-model-context-protocol)
+- [MCP Security Research (April 2025)](https://arxiv.org/pdf/2503.23278)
+- [MCP Roadmap](https://modelcontextprotocol.io/development/roadmap)
+- [Critical Analysis of MCP](https://sanjmo.medium.com/to-mcp-or-not-to-mcp-part-1-a-critical-analysis-of-anthropics-model-context-protocol-571a51cb9f05)
 
 ## Related ADRs
 
