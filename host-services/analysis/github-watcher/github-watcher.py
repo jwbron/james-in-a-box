@@ -32,6 +32,11 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 - If a commit's failures have been processed, they won't be retried for that same commit
 - Pushing a new commit resets the processed state, allowing fresh retry attempts
 
+### Merge conflict detection:
+- PRs with mergeable=CONFLICTING or mergeStateStatus=DIRTY are detected
+- Each unique (repo, PR, commit SHA) conflict combination is tracked
+- Pushing a new commit resets the processed state, allowing fresh retry
+
 ### What happens when jib is invoked:
 - jib runs Claude with the task context (check failures, comments, or review request)
 - Claude analyzes the issue and takes action (fix code, respond to comments, etc.)
@@ -91,6 +96,7 @@ def load_state() -> dict:
                 state.setdefault("processed_failures", {})
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
+                state.setdefault("processed_conflicts", {})
                 state.setdefault("last_run_start", None)
                 return state
         except Exception:
@@ -99,6 +105,7 @@ def load_state() -> dict:
         "processed_failures": {},
         "processed_comments": {},
         "processed_reviews": {},
+        "processed_conflicts": {},
         "last_run_start": None,
     }
 
@@ -515,6 +522,67 @@ def check_pr_for_comments(
     }
 
 
+def check_pr_for_merge_conflict(repo: str, pr_data: dict, state: dict) -> dict | None:
+    """Check a PR for merge conflicts.
+
+    Returns context dict if merge conflict detected and not already processed.
+    """
+    pr_num = pr_data["number"]
+    head_sha = pr_data.get("headRefOid", "")
+
+    # Get detailed PR info including mergeable status
+    # gh pr list doesn't include mergeable, so we need a separate call
+    pr_details = gh_json(
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "number,title,body,url,headRefName,baseRefName,mergeable,mergeStateStatus",
+        ]
+    )
+
+    if pr_details is None:
+        return None
+
+    # Check mergeable status
+    # mergeable can be: MERGEABLE, CONFLICTING, UNKNOWN
+    # mergeStateStatus can be: BEHIND, BLOCKED, CLEAN, DIRTY, DRAFT, HAS_HOOKS, UNKNOWN, UNSTABLE
+    mergeable = pr_details.get("mergeable", "UNKNOWN")
+    merge_state = pr_details.get("mergeStateStatus", "UNKNOWN")
+
+    # Only trigger on actual conflicts (CONFLICTING or DIRTY state)
+    if mergeable != "CONFLICTING" and merge_state != "DIRTY":
+        return None
+
+    # Create signature including head_sha so new commits get a fresh retry
+    conflict_signature = f"{repo}-{pr_num}-{head_sha}:conflict"
+
+    if conflict_signature in state.get("processed_conflicts", {}):
+        processed_at = state["processed_conflicts"].get(conflict_signature, "unknown")
+        print(
+            f"    PR #{pr_num}: Merge conflict already processed at {processed_at} "
+            f"(commit: {head_sha[:8]})"
+        )
+        return None  # Already processed
+
+    print(f"  PR #{pr_num}: Merge conflict detected (mergeable={mergeable}, state={merge_state})")
+
+    return {
+        "type": "merge_conflict",
+        "repository": repo,
+        "pr_number": pr_num,
+        "pr_title": pr_data.get("title", ""),
+        "pr_url": pr_data.get("url", ""),
+        "pr_branch": pr_data.get("headRefName", ""),
+        "base_branch": pr_data.get("baseRefName", "main"),
+        "pr_body": pr_details.get("body", ""),
+        "conflict_signature": conflict_signature,
+    }
+
+
 def check_prs_for_review(
     repo: str,
     all_prs: list[dict],
@@ -724,6 +792,14 @@ def main():
                         utc_now_iso()
                     )
                     tasks_queued += 1
+
+                # Check for merge conflicts
+                conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
+                if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
+                    state.setdefault("processed_conflicts", {})[
+                        conflict_ctx["conflict_signature"]
+                    ] = utc_now_iso()
+                    tasks_queued += 1
         else:
             print(f"  No open PRs authored by {github_username}")
 
@@ -747,6 +823,14 @@ def main():
                     state.setdefault("processed_comments", {})[comment_ctx["comment_signature"]] = (
                         utc_now_iso()
                     )
+                    tasks_queued += 1
+
+                # Check for merge conflicts on bot's PRs
+                conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
+                if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
+                    state.setdefault("processed_conflicts", {})[
+                        conflict_ctx["conflict_signature"]
+                    ] = utc_now_iso()
                     tasks_queued += 1
 
         # Check for PRs from others that need review (uses pre-fetched all_prs)
