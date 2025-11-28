@@ -41,7 +41,7 @@ CHECK_INTERVAL_SECONDS = 60  # How often to check for changes in daemon mode
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -90,24 +90,31 @@ def reconfigure_mcp(token: str) -> bool:
     with contextlib.suppress(Exception):
         subprocess.run(
             ["claude", "mcp", "remove", "github", "-s", "user"],
-            check=False, capture_output=True,
-            timeout=30
+            check=False,
+            capture_output=True,
+            timeout=30,
         )
 
     # Add new MCP config
     try:
         result = subprocess.run(
             [
-                "claude", "mcp", "add",
-                "--transport", "http",
-                "--scope", "user",
+                "claude",
+                "mcp",
+                "add",
+                "--transport",
+                "http",
+                "--scope",
+                "user",
                 "github",
                 "https://api.githubcopilot.com/mcp/",
-                "--header", f"Authorization: Bearer {token}"
+                "--header",
+                f"Authorization: Bearer {token}",
             ],
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         if result.returncode == 0:
@@ -155,11 +162,13 @@ def check_and_update(force: bool = False) -> bool:
     # Reconfigure MCP
     if reconfigure_mcp(token):
         # Update state
-        write_state({
-            "token_hash": current_hash,
-            "updated_at": token_data.get("generated_at"),
-            "expires_at": token_data.get("expires_at")
-        })
+        write_state(
+            {
+                "token_hash": current_hash,
+                "updated_at": token_data.get("generated_at"),
+                "expires_at": token_data.get("expires_at"),
+            }
+        )
         return True
 
     return False
@@ -190,25 +199,19 @@ def main():
         description="Monitor GitHub token changes and refresh MCP configuration"
     )
     parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Run once and exit (check and update if needed)"
+        "--once", action="store_true", help="Run once and exit (check and update if needed)"
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Force MCP reconfiguration even if token hasn't changed"
+        help="Force MCP reconfiguration even if token hasn't changed",
     )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument(
         "--interval",
         type=int,
         default=CHECK_INTERVAL_SECONDS,
-        help=f"Check interval in seconds for daemon mode (default: {CHECK_INTERVAL_SECONDS})"
+        help=f"Check interval in seconds for daemon mode (default: {CHECK_INTERVAL_SECONDS})",
     )
 
     args = parser.parse_args()

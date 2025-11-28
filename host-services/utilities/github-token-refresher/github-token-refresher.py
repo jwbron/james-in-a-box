@@ -35,13 +35,13 @@ CONFIG_DIR = Path.home() / ".config" / "jib"
 SHARING_DIR = Path.home() / ".jib-sharing"
 TOKEN_FILE = SHARING_DIR / ".github-token"
 REFRESH_INTERVAL_SECONDS = 45 * 60  # 45 minutes
-TOKEN_VALIDITY_SECONDS = 60 * 60    # 1 hour (GitHub's limit)
+TOKEN_VALIDITY_SECONDS = 60 * 60  # 1 hour (GitHub's limit)
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,12 @@ def find_token_script() -> Path | None:
     candidates = [
         script_dir.parent.parent.parent / "jib-container" / "jib-tools" / "github-app-token.py",
         script_dir.parent.parent.parent / "bin" / "jib-tools" / "github-app-token.py",
-        Path.home() / "khan" / "james-in-a-box" / "jib-container" / "jib-tools" / "github-app-token.py",
+        Path.home()
+        / "khan"
+        / "james-in-a-box"
+        / "jib-container"
+        / "jib-tools"
+        / "github-app-token.py",
     ]
 
     for candidate in candidates:
@@ -103,9 +108,10 @@ def generate_token() -> tuple[str | None, str | None]:
     try:
         result = subprocess.run(
             [python_cmd, str(token_script), "--config-dir", str(CONFIG_DIR)],
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         if result.returncode == 0:
@@ -144,7 +150,7 @@ def write_token_file(token: str) -> bool:
         "expires_at_unix": expires_at,
         "expires_at": datetime.fromtimestamp(expires_at, UTC).isoformat(),
         "generated_by": "github-token-refresher",
-        "validity_seconds": TOKEN_VALIDITY_SECONDS
+        "validity_seconds": TOKEN_VALIDITY_SECONDS,
     }
 
     try:
@@ -262,20 +268,14 @@ def main():
         description="Automatically refresh GitHub App installation tokens"
     )
     parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Run once and exit (for testing or cron)"
+        "--once", action="store_true", help="Run once and exit (for testing or cron)"
     )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument(
         "--interval",
         type=int,
         default=REFRESH_INTERVAL_SECONDS,
-        help=f"Refresh interval in seconds (default: {REFRESH_INTERVAL_SECONDS})"
+        help=f"Refresh interval in seconds (default: {REFRESH_INTERVAL_SECONDS})",
     )
 
     args = parser.parse_args()
