@@ -38,7 +38,8 @@ def _run_wrapper(wrapper_class, tool_name: str) -> int:
     # Check for passthrough mode (skip logging entirely)
     if os.environ.get("JIB_LOGGING_PASSTHROUGH") == "1":
         import subprocess
-        result = subprocess.run([tool_name] + sys.argv[1:])
+
+        result = subprocess.run([tool_name] + sys.argv[1:], check=False)
         return result.returncode
 
     # Get arguments (skip the script name)
@@ -59,24 +60,28 @@ def _run_wrapper(wrapper_class, tool_name: str) -> int:
 def bd_main() -> int:
     """Entry point for jib-bd command."""
     from .wrappers.bd import BdWrapper
+
     return _run_wrapper(BdWrapper, "bd")
 
 
 def git_main() -> int:
     """Entry point for jib-git command."""
     from .wrappers.git import GitWrapper
+
     return _run_wrapper(GitWrapper, "git")
 
 
 def gh_main() -> int:
     """Entry point for jib-gh command."""
     from .wrappers.gh import GhWrapper
+
     return _run_wrapper(GhWrapper, "gh")
 
 
 def claude_main() -> int:
     """Entry point for jib-claude command."""
     from .wrappers.claude import ClaudeWrapper
+
     return _run_wrapper(ClaudeWrapper, "claude")
 
 

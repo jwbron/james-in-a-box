@@ -3,13 +3,8 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
 from jib_logging.cli import (
     _run_wrapper,
-    bd_main,
-    claude_main,
-    gh_main,
-    git_main,
     main,
 )
 
