@@ -12,6 +12,8 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 - **Secure sandbox**: No credentials, network isolation, human-in-the-loop for all PRs
 - **GitHub PR integration**: Auto-creates PRs, reviews others' PRs, responds to comments
 - **Context-aware**: Syncs Confluence docs, JIRA tickets, and codebase knowledge
+- **Self-improving**: Automated analyzers continuously refine agent behavior and code quality
+- **LLM-optimized documentation**: Structured indexes following the [llms.txt](https://llmstxt.org/) standard help the agent navigate docs efficiently
 - **Persistent memory**: Beads task tracking survives restarts, enables multi-session work
 - **Mobile-first**: Fully productive workflow from phone (notifications, PR reviews, approvals)
 - **Cultural alignment**: Behavior matches Khan Academy L3-L4 engineering standards
@@ -25,6 +27,7 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 - Follows team standards and best practices
 - Prepares work for human review and approval
 - Enables full engineering workflow from mobile
+- Learns and improves from every interaction
 
 **Key Principle**: The agent **prepares** artifacts (code, tests, PR descriptions). Engineers **review and ship** (merge PRs, deploy). Clear separation of responsibilities.
 
@@ -88,6 +91,47 @@ Container:
 - **Commits preserved**: All commits saved on branch even after container exits
 - **Auto-cleanup**: Worktrees removed when container exits, commits remain accessible
 - **Orphan detection**: Watcher cleans up crashed container worktrees every 15 min
+
+## Key Capabilities
+
+### Self-Improvement System
+
+jib continuously improves through automated analysis:
+
+- **Conversation Analyzer** (daily): Evaluates agent interactions for quality, cultural alignment with Khan Academy engineering standards, and identifies prompt improvements
+- **Codebase Analyzer** (weekly): Scans for code quality issues, security vulnerabilities, structural problems, and generates actionable recommendations
+- **Learning Feedback Loops**: Short-term (session memory), medium-term (prompt evolution), and long-term (capability expansion)
+
+The analyzer system ensures the agent behaves like a Khan Academy L3-L4 engineer: clear communication, systematic problem-solving, thorough testing, and user-focused decisions.
+
+### LLM-Optimized Documentation
+
+jib uses structured documentation following the [llms.txt](https://llmstxt.org/) standard:
+
+- **Navigation Index** (`docs/index.md`): Human and LLM-readable index pointing to all documentation
+- **Machine-Readable Indexes**: Auto-generated `codebase.json`, `patterns.json`, and `dependencies.json` for efficient querying
+- **Task-Specific Guides**: Documentation index maps task types to relevant docs (e.g., "security changes" → security ADR)
+- **Documentation Drift Detection**: Automated checks ensure docs stay synchronized with code
+- **Multi-Agent Documentation Pipeline**: Specialized agents for context analysis, drafting, review, and validation
+
+This approach minimizes context window usage while maximizing relevant information access.
+
+### Context Connectors
+
+jib syncs external context to provide the agent with organizational knowledge:
+
+| Connector | Source | Sync Frequency | Capabilities |
+|-----------|--------|----------------|--------------|
+| **Confluence** | ADRs, runbooks, engineering docs | Hourly | Read-only markdown export |
+| **JIRA** | Open tickets, epics, sprint data | Hourly | Read-only with analysis |
+| **GitHub** | PRs, checks, comments | Every 15 min | Read/write via MCP |
+
+**Post-Sync Analysis**: Each connector triggers intelligent analysis:
+- **JIRA**: Extracts action items, estimates scope, creates Beads tasks
+- **Confluence**: Identifies architectural decisions, detects impacts on current work
+- **GitHub**: Monitors check failures, auto-reviews PRs, suggests comment responses
+
+**Future**: Migration to MCP servers for real-time, bi-directional access (see [ADR: Context Sync Strategy](docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md)).
 
 ## Quick Start
 
@@ -169,78 +213,35 @@ The agent will receive your task, implement the code, and send you a notificatio
 
 ## Architecture
 
-### Host Components (systemd services)
-
-All host components run as systemd user services for reliability and auto-restart:
-
-**Slack:**
-- **[slack-notifier](host-services/slack/slack-notifier/README.md)** - Sends Claude's notifications to Slack (inotify-based, instant)
-- **[slack-receiver](host-services/slack/slack-receiver/README.md)** - Receives your messages and responses from Slack (Socket Mode)
-
-**Sync:**
-- **[context-sync](host-services/sync/context-sync/README.md)** - Syncs Confluence/JIRA to `~/context-sync/` (hourly)
-- **[github-sync](host-services/sync/github-sync/README.md)** - Syncs PR data and check status to `~/context-sync/github/` (every 15 min)
-
-**Analysis:**
-- **[conversation-analyzer](host-services/analysis/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
-
-**Utilities:**
-- **[worktree-watcher](host-services/utilities/worktree-watcher/README.md)** - Cleans up orphaned git worktrees (every 15 minutes)
-
-**CLI:**
-- **[analyze-pr](host-services/analysis/analyze-pr/README.md)** - Analyze GitHub PRs with Claude
-
-### Container Tasks (`jib-tasks/`)
-
-Scripts called via `jib --exec` from host-side systemd services:
-
-- **[github/](jib-container/jib-tasks/github/README.md)** - PR check monitoring, auto-reviews, comment responses
-- **[jira/](jib-container/jib-tasks/jira/)** - JIRA ticket analysis, sprint analysis
-- **[confluence/](jib-container/jib-tasks/confluence/)** - Confluence doc analysis
-- **[slack/](jib-container/jib-tasks/slack/)** - Incoming message processing
-
-### Container Tools (`jib-tools/`)
-
-Interactive utilities used inside the container:
-
-- `discover-tests.py` - Discover test frameworks in a codebase
-
-### Container Config
-
-- **[.claude](jib-container/.claude/README.md)** - Claude Code configuration (rules, commands, prompts)
-- **[beads](https://github.com/steveyegge/beads)** - Persistent task memory system (git-backed, multi-container)
-
-### Shared Directories
+jib separates concerns between the host machine and the sandboxed container:
 
 ```
-~/.jib-sharing/                      # Persists across container rebuilds
-├── notifications/                   # Claude → You (Slack DMs)
-│   ├── YYYYMMDD-HHMMSS-topic.md    # Summary (top-level)
-│   └── RESPONSE-*.md                # Detail (threaded)
-├── incoming/                        # You → Claude (tasks)
-│   └── task-YYYYMMDD-HHMMSS.md
-├── responses/                       # You → Claude (replies)
-│   └── RESPONSE-YYYYMMDD-HHMMSS.md
-├── context/                         # Persistent agent knowledge
-│   └── project-name.md
-└── beads/                          # Persistent task memory (git repo)
-    ├── issues.jsonl                # Task database (source of truth)
-    ├── .git/                       # Git history
-    └── .beads.sqlite               # SQLite cache (auto-rebuilt)
-
-~/.jib-worktrees/                    # Ephemeral (per-container workspaces)
-└── jib-YYYYMMDD-HHMMSS-PID/        # Unique container ID
-    ├── webapp/                      # Isolated worktree for webapp repo
-    └── frontend/                    # Isolated worktree for frontend repo
-
-~/context-sync/                      # Read-only context sources
-├── confluence/                      # Confluence docs (ADRs, runbooks)
-├── jira/                           # JIRA tickets (issues, epics)
-└── github/                         # GitHub PR data (metadata, diffs, checks, comments)
-    ├── prs/                        # PR files and diffs
-    ├── checks/                     # Check status and logs
-    └── comments/                   # PR comments for response tracking
+┌─────────────────────────────────────────────────────────────────────┐
+│  Host Machine (Your Laptop)                                         │
+│  ├── Slack services (bidirectional messaging)                       │
+│  ├── Context sync (Confluence, JIRA, GitHub → markdown)             │
+│  ├── Analyzers (codebase, conversations)                            │
+│  └── Worktree management (isolation, cleanup)                       │
+├─────────────────────────────────────────────────────────────────────┤
+│  Docker Container (Sandbox)                                         │
+│  ├── Claude Code agent with custom rules and commands               │
+│  ├── Access to synced context (read-only)                           │
+│  ├── Code workspace (read-write, isolated worktree)                 │
+│  ├── Beads task memory (persistent, git-backed)                     │
+│  └── GitHub MCP server (PR operations)                              │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+**Key design principles:**
+- Host handles credentials and external API access
+- Container is credential-free and network-isolated
+- Communication via files and Slack (no direct API calls from container)
+- All changes require human review before merge
+
+For detailed component documentation, see:
+- [Architecture Overview](docs/architecture/README.md)
+- [ADR: Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md)
+- [Host services README files](host-services/)
 
 ## Usage Patterns
 
@@ -495,54 +496,48 @@ docker logs -f jib-claude
 
 ## Documentation
 
-### Architecture & Decisions
+jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly documentation. Start with the navigation index:
 
-- **[ADR: Autonomous Software Engineer](docs/adr/adr-autonomous-engineer-session.md)** - Complete architectural decisions
-- **[Slack Integration Architecture](docs/architecture/slack-integration.md)** - Bidirectional Slack communication
+**[Documentation Index](docs/index.md)** - Central hub linking all documentation
 
-### Component READMEs
+### Architecture Decision Records (ADRs)
 
-**Host Services:**
-- [slack-notifier](host-services/slack/slack-notifier/README.md) - Outgoing notifications
-- [slack-receiver](host-services/slack/slack-receiver/README.md) - Incoming messages
-- [github-sync](host-services/sync/github-sync/README.md) - GitHub PR sync
-- [context-sync](host-services/sync/context-sync/README.md) - Confluence/JIRA sync
-- [conversation-analyzer](host-services/analysis/conversation-analyzer/README.md) - Quality analysis
+| ADR | Description |
+|-----|-------------|
+| [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, self-improvement |
+| [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | How documentation is structured for efficient LLM navigation |
+| [Context Sync Strategy](docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Current connectors and MCP migration plan |
+| [ADR Index](docs/adr/README.md) | Full list of all ADRs by status |
 
-**Container Tasks:**
-- [github](jib-container/jib-tasks/github/README.md) - GitHub/PR analysis tasks
-- [.claude rules](jib-container/.claude/rules/README.md) - Agent behavior and standards
+### Quick References
 
-### Guides
-
-- **[Notification Template](jib-container/.claude/rules/notification-template.md)** - How to send notifications from agent
-- **[Slack Quick Reference](docs/reference/slack-quick-reference.md)** - Common Slack commands
+- [Slack Quick Reference](docs/reference/slack-quick-reference.md) - Common Slack commands
+- [Beads Task Tracking](docs/reference/beads.md) - Persistent memory system
+- [Khan Academy Culture](docs/reference/khan-academy-culture.md) - L3-L4 engineering standards
 
 ## Roadmap
 
-**Current (Phase 1)** - Complete:
-- ✅ Docker sandbox with Slack integration
-- ✅ File-based context sync (Confluence, JIRA)
-- ✅ Mobile-first notification system
-- ✅ Automated analyzers (code, conversations)
-- ✅ **GitHub PR integration**:
-  - ✅ Automated PR creation after task completion
-  - ✅ Auto-review of others' PRs
-  - ✅ Comment response suggestions
-  - ✅ Check failure analysis and auto-fix
+**Phase 1** (Complete):
+- ✅ Secure Docker sandbox with Slack bidirectional messaging
+- ✅ Context connectors (Confluence, JIRA, GitHub)
+- ✅ Self-improvement system (conversation and codebase analyzers)
+- ✅ LLM-optimized documentation structure
+- ✅ GitHub PR automation (create, review, comment response, check failure analysis)
+- ✅ Persistent task memory (Beads)
+- ✅ Mobile-first workflow
 
-**Phase 2** (Near-term):
-- Context source filtering (allowlists/blocklists)
-- Content classification (Public/Internal/Confidential)
-- Monitoring infrastructure (API calls, task completion)
-- MCP servers for real-time context access
-- Mobile-optimized PR review workflow
+**Phase 2** (In Progress):
+- Real-time context via MCP servers (Atlassian, GitHub)
+- Bi-directional operations (update JIRA tickets, comment on PRs)
+- Enhanced security filtering (content classification, allowlists)
+- Documentation drift detection and auto-update
 
-**Phase 3** (Future):
-- Cloud Run deployment (multi-engineer)
-- DLP scanning (before Claude API calls)
-- Output monitoring (PR descriptions, commits)
-- Workload Identity (no credential files)
+**Phase 3** (Planned):
+- Cloud Run deployment for multi-engineer support
+- Advanced security (DLP scanning, output monitoring)
+- Expanded self-improvement (automated prompt refinement)
+
+See [ADR: Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) for detailed roadmap.
 
 ## Troubleshooting
 
