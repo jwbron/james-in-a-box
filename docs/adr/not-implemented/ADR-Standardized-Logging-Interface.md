@@ -544,7 +544,8 @@ GROUP BY jsonPayload.tool
 |-----|---------------|
 | [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Defines Cloud Run deployment where logs flow to Cloud Logging |
 | [ADR-Internet-Tool-Access-Lockdown](./ADR-Internet-Tool-Access-Lockdown.md) | Tool wrappers complement gateway audit logging |
-| [ADR-Autonomous-Software-Engineer](./ADR-Autonomous-Software-Engineer.md) | Parent ADR defining debugging and observability needs |
+| [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) | Parent ADR defining debugging and observability needs |
+| [ADR-Model-Agnostic-Architecture](./ADR-Model-Agnostic-Architecture.md) | Logging must support multi-provider LLM outputs for debugging and cost tracking |
 
 ---
 
