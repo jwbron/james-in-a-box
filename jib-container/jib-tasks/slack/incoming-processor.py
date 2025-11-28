@@ -28,6 +28,18 @@ from datetime import datetime
 from pathlib import Path
 
 
+# Add shared directory to path for enrichment module
+sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
+
+try:
+    from enrichment import enrich_task
+except ImportError:
+    # Fallback if shared module not available
+    def enrich_task(task_text: str, project_root: Path | None = None) -> str:
+        """Fallback enrichment - returns empty string."""
+        return ""
+
+
 # Configure logging
 LOG_DIR = Path.home() / "sharing" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -169,6 +181,11 @@ def process_task(message_file: Path):
 
     logger.info(f"Task content: {task_content[:100]}...")
 
+    # Enrich task with relevant documentation context (Phase 3 of LLM Doc Strategy ADR)
+    enriched_context = enrich_task(task_content)
+    if enriched_context:
+        logger.info("Added documentation context enrichment")
+
     # Build thread context section if available
     thread_context_section = ""
     if frontmatter.get("thread_ts"):
@@ -198,6 +215,7 @@ You received a task via Slack. Process it according to the workflow below.
 
 {task_content}
 
+{enriched_context}
 ## Your Workflow
 
 ### 1. FIRST: Check Beads for Existing Context (MANDATORY)
@@ -551,6 +569,11 @@ def process_response(message_file: Path):
 
     logger.info(f"Response content: {response_content[:100]}...")
 
+    # Enrich response with relevant documentation context (Phase 3 of LLM Doc Strategy ADR)
+    enriched_context = enrich_task(response_content)
+    if enriched_context:
+        logger.info("Added documentation context enrichment to response")
+
     # Construct prompt for Claude with full context
     # PRIORITY: original_task_id > referenced_notif > message_file.stem
     # original_task_id is the actual beads label, which is what we need to search for
@@ -605,6 +628,7 @@ bd --allow-stale search "{task_id_for_search}"
 
 {response_content}
 
+{enriched_context}
 ## Your Workflow
 
 ### 1. Load Beads Context (MANDATORY)

@@ -88,8 +88,13 @@ EOF
     # Reload systemd
     systemctl --user daemon-reload
 
-    log_info "Systemd service and timer created"
-    log_info "To enable weekly regeneration: systemctl --user enable --now index-generator.timer"
+    # Auto-enable the timer (per ADR: should update automatically)
+    if systemctl --user enable --now index-generator.timer 2>/dev/null; then
+        log_info "Weekly index regeneration timer enabled and started"
+    else
+        log_warn "Could not auto-enable timer (systemd user session may not be available)"
+        log_info "To enable manually: systemctl --user enable --now index-generator.timer"
+    fi
 }
 
 # Run initial index generation
