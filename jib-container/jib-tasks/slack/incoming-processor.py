@@ -38,8 +38,9 @@ except ImportError:
         """Fallback enrichment - returns empty string."""
         return ""
 
+
 try:
-    from claude.runner import run_claude, ClaudeResult
+    from claude.runner import ClaudeResult, run_claude
 except ImportError:
     # Fallback: run_claude not available
     run_claude = None
@@ -300,11 +301,15 @@ Process this task now."""
             logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
 
         # Convert ClaudeResult to expected format for downstream code
-        result = type("Result", (), {
-            "stdout": claude_result.stdout,
-            "stderr": claude_result.stderr,
-            "returncode": claude_result.returncode
-        })()
+        result = type(
+            "Result",
+            (),
+            {
+                "stdout": claude_result.stdout,
+                "stderr": claude_result.stderr,
+                "returncode": claude_result.returncode,
+            },
+        )()
 
         if not claude_result.success:
             if claude_result.error and "timed out" in claude_result.error.lower():
@@ -315,6 +320,7 @@ Process this task now."""
     else:
         # Fallback if shared module not available (should not happen in normal operation)
         import subprocess
+
         logger.warning("Shared Claude runner not available, falling back to direct subprocess")
         try:
             result = subprocess.run(
@@ -726,11 +732,15 @@ Process this response now."""
             logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
 
         # Convert ClaudeResult to expected format for downstream code
-        result = type("Result", (), {
-            "stdout": claude_result.stdout,
-            "stderr": claude_result.stderr,
-            "returncode": claude_result.returncode
-        })()
+        result = type(
+            "Result",
+            (),
+            {
+                "stdout": claude_result.stdout,
+                "stderr": claude_result.stderr,
+                "returncode": claude_result.returncode,
+            },
+        )()
 
         if not claude_result.success:
             if claude_result.error and "timed out" in claude_result.error.lower():
@@ -741,6 +751,7 @@ Process this response now."""
     else:
         # Fallback if shared module not available (should not happen in normal operation)
         import subprocess
+
         logger.warning("Shared Claude runner not available, falling back to direct subprocess")
         try:
             result = subprocess.run(
