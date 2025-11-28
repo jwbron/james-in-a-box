@@ -71,16 +71,31 @@ cd host-services/analysis/index-generator
 ./setup.sh enable
 ```
 
-## Documentation Authoring (Phase 4)
+## Documentation Authoring (Phases 4 & 5)
 
-Generate documentation from detected patterns:
+The doc-generator uses a **6-agent pipeline** for documentation generation:
+
+1. **Context Agent** - Analyzes code patterns and gathers context
+2. **Draft Agent** - Generates initial documentation
+3. **Review Agent** - Validates accuracy and completeness
+4. **External Validation Agent** - Researches industry best practices
+5. **Revise Agent** - Incorporates external feedback
+6. **Output Agent** - Formats and saves documentation
+
+### Generate Documentation
 
 ```bash
 # List available topics
 bin/generate-docs --list-topics
 
-# Generate status quo docs for a pattern
+# Generate status quo docs (descriptive, no external validation)
 bin/generate-docs --topic notification --type status-quo
+
+# Generate best practice docs (includes external validation)
+bin/generate-docs --topic security --type best-practice
+
+# Skip external validation (faster, works offline)
+bin/generate-docs --topic auth --type best-practice --skip-external
 
 # Generate all pattern documentation
 bin/generate-docs --all
@@ -89,14 +104,24 @@ bin/generate-docs --all
 bin/generate-docs --all --dry-run
 ```
 
-Check for documentation drift:
+### Research Best Practices
+
+```bash
+# Research a topic (standalone, updates cache)
+bin/generate-docs --research security
+
+# Research outputs:
+# - Best practices from authoritative sources
+# - Anti-patterns to avoid
+# - Source references
+# - Research prompt for manual/LLM research
+```
+
+### Check Documentation Drift
 
 ```bash
 # Check all docs for stale references
 bin/check-doc-drift
-
-# Check specific doc
-bin/check-doc-drift --doc docs/architecture/README.md
 
 # Include fix suggestions
 bin/check-doc-drift --suggest-fixes
@@ -105,10 +130,20 @@ bin/check-doc-drift --suggest-fixes
 bin/check-doc-drift --json
 ```
 
-Enable weekly auto-generation:
+### Enable Scheduled Generation
 
 ```bash
+# Enable all timers (research + docs)
 bin/setup-doc-generator enable
+
+# Enable only research timer
+bin/setup-doc-generator enable-research
+
+# Run full pipeline immediately
+bin/setup-doc-generator run
+
+# Check status
+bin/setup-doc-generator status
 ```
 
 ## Generation Schedule
@@ -128,6 +163,7 @@ See [ADR: LLM Documentation Index Strategy](../adr/ADR-LLM-Documentation-Index-S
 **Phase 2 (Complete):** Codebase analyzer with pattern extraction and dependency analysis
 **Phase 3 (Complete):** Spec enrichment workflow
 **Phase 4 (Complete):** LLM documentation authoring and drift detection
+**Phase 5 (Complete):** External best practices integration with 6-agent pipeline
 
 ---
 
