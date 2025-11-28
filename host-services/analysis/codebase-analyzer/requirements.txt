@@ -1,2 +1,0 @@
-# Codebase Analyzer dependencies
-# Uses only Python standard library - no external dependencies required

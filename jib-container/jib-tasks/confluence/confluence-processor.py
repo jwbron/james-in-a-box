@@ -17,7 +17,7 @@ from pathlib import Path
 
 
 # Import shared Claude runner
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 from claude import run_claude
 
 
@@ -192,7 +192,7 @@ For each document:
 Analyze these documents now and take appropriate action."""
 
     # Run Claude Code
-    result = run_claude(prompt, timeout=900, capture_output=False)
+    result = run_claude(prompt, capture_output=False)
 
     if result.success:
         print("✅ Documentation analysis complete")

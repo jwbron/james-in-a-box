@@ -24,15 +24,6 @@ Common Slack operations and commands.
 - Troubleshooting connection issues
 - Managing channels and tokens
 
-### [Codebase Analyzer](codebase-analyzer.md)
-Automated code analysis system reference.
-
-**Information about:**
-- What it analyzes
-- When it runs
-- How to interpret results
-- Configuration options
-
 ### [Claude Authentication](claude-authentication.md)
 Claude CLI authentication and setup.
 

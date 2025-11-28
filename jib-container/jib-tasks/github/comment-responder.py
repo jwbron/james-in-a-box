@@ -688,7 +688,7 @@ Now process the pending comments and take the appropriate actions."""
 
         # Change to repo directory if available
         cwd = repo_dir if repo_dir else Path.home() / "khan"
-        result = run_claude(prompt, timeout=600, cwd=cwd)
+        result = run_claude(prompt, cwd=cwd)
 
         if not result.success:
             print(f"  {result.error}")
@@ -831,7 +831,7 @@ IMPORTANT:
 Return ONLY the JSON, no other text."""
 
         print("  Calling Claude to generate response...")
-        result = run_claude(prompt, timeout=600)
+        result = run_claude(prompt)
 
         if not result.success:
             print(f"  {result.error}")
@@ -1093,7 +1093,7 @@ After making changes, output a JSON summary:
 Make the changes now using the available tools (Read, Edit, Write, Bash for git commands)."""
 
             # Use claude with full tool access for making changes
-            result = run_claude(prompt, timeout=600, cwd=repo_dir)
+            result = run_claude(prompt, cwd=repo_dir)
 
             if not result.success:
                 print(f"  Code change failed: {result.error}")
@@ -1200,7 +1200,7 @@ After making changes, output a JSON summary:
 Make the changes now using the available tools (Read, Edit, Write, Bash for git commands)."""
 
             # Use claude with full tool access for making changes
-            result = run_claude(prompt, timeout=600, cwd=repo_dir)
+            result = run_claude(prompt, cwd=repo_dir)
 
             if not result.success:
                 print(f"  Code change failed: {result.error}")

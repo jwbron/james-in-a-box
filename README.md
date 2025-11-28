@@ -141,10 +141,6 @@ Container:
 
    # Conversation analyzer (optional)
    cd host-services/analysis/conversation-analyzer && ./setup.sh
-
-   # Codebase analyzer (optional)
-   cd host-services/analysis/codebase-analyzer && ./setup.sh
-
    ```
    </details>
 
@@ -186,7 +182,6 @@ All host components run as systemd user services for reliability and auto-restar
 - **[github-sync](host-services/sync/github-sync/README.md)** - Syncs PR data and check status to `~/context-sync/github/` (every 15 min)
 
 **Analysis:**
-- **[codebase-analyzer](host-services/analysis/codebase-analyzer/README.md)** - Weekly automated code review (Mondays 11 AM)
 - **[conversation-analyzer](host-services/analysis/conversation-analyzer/README.md)** - Daily conversation quality analysis (2 AM)
 
 **Utilities:**
@@ -469,13 +464,13 @@ When CI/CD checks fail on your PRs:
 
 ```bash
 # Check all services
-systemctl --user list-timers | grep -E 'conversation|codebase'
+systemctl --user list-timers | grep -E 'conversation|github|worktree'
 systemctl --user status slack-notifier.service
 systemctl --user status slack-receiver.service
 
 # View logs
 journalctl --user -u slack-notifier.service -f
-journalctl --user -u codebase-analyzer.service -f
+journalctl --user -u conversation-analyzer.service -f
 
 # Restart services
 systemctl --user restart slack-notifier.service
@@ -512,7 +507,6 @@ docker logs -f jib-claude
 - [slack-receiver](host-services/slack/slack-receiver/README.md) - Incoming messages
 - [github-sync](host-services/sync/github-sync/README.md) - GitHub PR sync
 - [context-sync](host-services/sync/context-sync/README.md) - Confluence/JIRA sync
-- [codebase-analyzer](host-services/analysis/codebase-analyzer/README.md) - Code review automation
 - [conversation-analyzer](host-services/analysis/conversation-analyzer/README.md) - Quality analysis
 
 **Container Tasks:**

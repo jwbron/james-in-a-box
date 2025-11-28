@@ -57,7 +57,7 @@ def is_claude_available() -> bool:
 def run_claude(
     prompt: str,
     *,
-    timeout: int = 300,
+    timeout: int = 1800,
     cwd: Path | str | None = None,
     capture_output: bool = True,
 ) -> ClaudeResult:
@@ -68,12 +68,7 @@ def run_claude(
 
     Args:
         prompt: The prompt to send to Claude via stdin.
-        timeout: Maximum time in seconds to wait for Claude (default: 300 = 5 min).
-            Common values:
-            - 120: Simple analysis tasks
-            - 300: Standard tasks (default)
-            - 600: Complex tasks (10 min)
-            - 900: Very complex tasks (15 min)
+        timeout: Maximum time in seconds to wait for Claude (default: 1800 = 30 min).
         cwd: Working directory for Claude. If None, uses current directory.
         capture_output: If True, capture stdout/stderr. If False, let them
             pass through to the console.
@@ -84,7 +79,6 @@ def run_claude(
     Example:
         result = run_claude(
             prompt="Analyze this code and fix the bug",
-            timeout=600,
             cwd=Path.home() / "khan" / "my-repo",
         )
 

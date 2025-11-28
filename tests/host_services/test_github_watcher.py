@@ -64,6 +64,7 @@ class TestStateManagement:
                 "processed_failures": {},
                 "processed_comments": {},
                 "processed_reviews": {},
+                "processed_conflicts": {},
                 "last_run_start": None,
             }
 
@@ -428,3 +429,117 @@ class TestCheckPrsForReview:
         )
 
         assert result == []
+
+
+class TestCheckPrForMergeConflict:
+    """Tests for PR merge conflict detection."""
+
+    def test_no_conflict(self):
+        """Test PR with no merge conflict."""
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
+        state = {"processed_conflicts": {}}
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            mock_gh.return_value = {
+                "number": 123,
+                "title": "Fix bug",
+                "body": "PR description",
+                "url": "https://github.com/owner/repo/pull/123",
+                "headRefName": "fix-branch",
+                "baseRefName": "main",
+                "mergeable": "MERGEABLE",
+                "mergeStateStatus": "CLEAN",
+            }
+
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is None
+
+    def test_conflict_detected(self):
+        """Test PR with merge conflict returns context."""
+        pr_data = {
+            "number": 123,
+            "title": "Fix bug",
+            "url": "https://github.com/owner/repo/pull/123",
+            "headRefName": "fix-branch",
+            "baseRefName": "main",
+            "headRefOid": "abc123def456",
+        }
+        state = {"processed_conflicts": {}}
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            mock_gh.return_value = {
+                "number": 123,
+                "title": "Fix bug",
+                "body": "PR description",
+                "url": "https://github.com/owner/repo/pull/123",
+                "headRefName": "fix-branch",
+                "baseRefName": "main",
+                "mergeable": "CONFLICTING",
+                "mergeStateStatus": "DIRTY",
+            }
+
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is not None
+            assert result["type"] == "merge_conflict"
+            assert result["repository"] == "owner/repo"
+            assert result["pr_number"] == 123
+            assert "conflict_signature" in result
+
+    def test_dirty_state_detected(self):
+        """Test PR with DIRTY mergeStateStatus is detected."""
+        pr_data = {
+            "number": 123,
+            "title": "Fix bug",
+            "headRefOid": "abc123",
+        }
+        state = {"processed_conflicts": {}}
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            mock_gh.return_value = {
+                "number": 123,
+                "title": "Fix bug",
+                "body": "",
+                "url": "",
+                "headRefName": "fix-branch",
+                "baseRefName": "main",
+                "mergeable": "UNKNOWN",
+                "mergeStateStatus": "DIRTY",
+            }
+
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is not None
+            assert result["type"] == "merge_conflict"
+
+    def test_already_processed_skipped(self):
+        """Test already processed conflicts are skipped."""
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
+        state = {"processed_conflicts": {"owner/repo-123-abc123:conflict": "2025-01-01"}}
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            mock_gh.return_value = {
+                "number": 123,
+                "title": "Fix bug",
+                "body": "",
+                "url": "",
+                "headRefName": "fix-branch",
+                "baseRefName": "main",
+                "mergeable": "CONFLICTING",
+                "mergeStateStatus": "DIRTY",
+            }
+
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is None
+
+    def test_api_failure_returns_none(self):
+        """Test API failure returns None."""
+        pr_data = {"number": 123, "title": "Fix bug", "headRefOid": "abc123"}
+        state = {"processed_conflicts": {}}
+
+        with patch.object(github_watcher, "gh_json", return_value=None):
+            result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
+
+            assert result is None

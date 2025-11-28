@@ -9,10 +9,14 @@ Convenient symlinks to commonly used commands.
 - `docker-setup.py` - Container setup (runs automatically)
 - `view-logs` - View container logs
 
+**Documentation:**
+- `generate-docs` - Generate documentation from code patterns
+- `check-doc-drift` - Detect documentation drift from code
+- `setup-doc-generator` - Install weekly doc generation timer
+
 **Setup Scripts:**
 - `setup-slack-notifier` - Install Slack notifier service
 - `setup-slack-receiver` - Install Slack receiver service
-- `setup-codebase-analyzer` - Install codebase analyzer timer
 - `setup-conversation-analyzer` - Install conversation analyzer timer
 
 ## Note
