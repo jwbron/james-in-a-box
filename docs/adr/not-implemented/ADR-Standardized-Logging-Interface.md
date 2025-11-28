@@ -675,7 +675,7 @@ GCP-specific functionality (Cloud Logging output handler, log router configurati
 | [ADR-Internet-Tool-Access-Lockdown](./ADR-Internet-Tool-Access-Lockdown.md) | Tool wrappers complement gateway audit logging |
 | [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) | Parent ADR defining debugging and observability needs |
 | [ADR-Model-Agnostic-Architecture](./ADR-Model-Agnostic-Architecture.md) | Logging must support multi-provider LLM outputs for debugging and cost tracking |
-| [ADR-LLM-Inefficiency-Reporting](../ADR-LLM-Inefficiency-Reporting.md) | Structured logging enables trace collection and inefficiency detection described in that ADR |
+| [ADR-LLM-Inefficiency-Reporting](ADR-LLM-Inefficiency-Reporting.md) | Structured logging enables trace collection and inefficiency detection described in that ADR |
 
 ---
 

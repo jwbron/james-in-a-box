@@ -42,5 +42,5 @@ Implementation details of the Slack notification system.
 - Human reviews and approves all changes
 
 ## See Also
-- [ADR: Autonomous Software Engineer](../adr/ADR-Autonomous-Software-Engineer.md) - Full system architecture
+- [ADR: Autonomous Software Engineer](../adr/in-progress/ADR-Autonomous-Software-Engineer.md) - Full system architecture
 - [Setup Guides](../setup/) - Installation and configuration

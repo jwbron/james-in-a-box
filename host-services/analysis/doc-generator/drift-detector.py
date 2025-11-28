@@ -30,7 +30,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -85,6 +85,18 @@ class DriftDetector:
         "venv",
     }
 
+    # Patterns that are intentionally placeholders/templates (should be ignored)
+    IGNORE_PATTERNS = [
+        r"URL$",  # Placeholder URL in markdown templates (also catches paths ending in /URL)
+        r"YYYY-MM-DD",  # Date template files
+        r"task-\d{8}-\d{6}",  # Example task IDs
+        r"RESPONSE-\d{8}-\d{6}",  # Example response files
+        r"\d{8}-\d{6}.*\.md$",  # Timestamp-prefixed example files
+        r"/incoming/",  # Example paths for incoming tasks
+        r"/responses/",  # Example paths for responses
+        r"/notifications/",  # Example paths for notifications
+    ]
+
     def __init__(self, project_root: Path):
         self.project_root = project_root.resolve()
         self.docs_dir = project_root / "docs"
@@ -124,6 +136,13 @@ class DriftDetector:
         path = path.lstrip("./")
         return path in self._file_cache
 
+    def is_placeholder(self, path: str) -> bool:
+        """Check if a path is a placeholder/template that should be ignored."""
+        for pattern in self.IGNORE_PATTERNS:
+            if re.search(pattern, path):
+                return True
+        return False
+
     def find_similar_file(self, missing_path: str) -> str | None:
         """Try to find a similar file that might be the new location."""
         filename = Path(missing_path).name
@@ -161,6 +180,9 @@ class DriftDetector:
             # Check file references
             for match in self.PATTERNS["code_file"].finditer(line):
                 file_ref = match.group(1)
+                # Skip placeholder/template references
+                if self.is_placeholder(file_ref):
+                    continue
                 if not self.file_exists(file_ref):
                     similar = self.find_similar_file(file_ref)
                     suggestion = f"File may have moved to: {similar}" if similar else ""
@@ -179,6 +201,9 @@ class DriftDetector:
             for match in self.PATTERNS["file_line"].finditer(line):
                 file_ref = match.group(1)
                 line_ref = int(match.group(3))
+                # Skip placeholder/template references
+                if self.is_placeholder(file_ref):
+                    continue
                 if not self.file_exists(file_ref):
                     similar = self.find_similar_file(file_ref)
                     suggestion = f"File may have moved to: {similar}" if similar else ""
@@ -220,6 +245,11 @@ class DriftDetector:
                 if link_target.startswith(("http://", "https://", "#", "mailto:")):
                     continue
 
+                # Strip anchor from link target for file existence check
+                anchor = ""
+                if "#" in link_target:
+                    link_target, anchor = link_target.split("#", 1)
+
                 # Resolve relative links from doc location
                 # All relative links (including those without ../) should be
                 # resolved relative to the document's directory
@@ -235,6 +265,10 @@ class DriftDetector:
                     # Check if directory exists or has README/index
                     if (self.project_root / dir_path).is_dir():
                         continue  # Directory exists, link is valid
+
+                # Skip placeholder/template references
+                if self.is_placeholder(link_target):
+                    continue
 
                 if not self.file_exists(link_target):
                     similar = self.find_similar_file(link_target)
@@ -253,6 +287,9 @@ class DriftDetector:
             # Check path references (only report project paths, not URLs)
             for match in self.PATTERNS["path_ref"].finditer(line):
                 path_ref = match.group(1)
+                # Skip placeholder/template references
+                if self.is_placeholder(path_ref):
+                    continue
                 # Only report if it looks like a project path (not a URL)
                 if (
                     "/" in path_ref
@@ -281,7 +318,7 @@ class DriftDetector:
 
         if not self.docs_dir.exists():
             return DriftReport(
-                generated=datetime.now(UTC).isoformat(),
+                generated=datetime.now(timezone.utc).isoformat(),
                 project=self.project_root.name,
                 docs_checked=0,
                 issues_found=0,
@@ -311,7 +348,7 @@ class DriftDetector:
             issues.extend(self.check_doc(claude_md))
 
         return DriftReport(
-            generated=datetime.now(UTC).isoformat(),
+            generated=datetime.now(timezone.utc).isoformat(),
             project=self.project_root.name,
             docs_checked=docs_checked,
             issues_found=len(issues),
@@ -433,7 +470,7 @@ Examples:
             sys.exit(1)
         issues = detector.check_doc(doc_path)
         report = DriftReport(
-            generated=datetime.now(UTC).isoformat(),
+            generated=datetime.now(timezone.utc).isoformat(),
             project=project_root.name,
             docs_checked=1,
             issues_found=len(issues),

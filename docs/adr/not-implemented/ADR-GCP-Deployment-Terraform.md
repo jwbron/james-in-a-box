@@ -1183,7 +1183,7 @@ This ADR is the culmination of a series defining the jib GCP deployment architec
 | ADR | Relationship to This ADR |
 |-----|-------------------------|
 | [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) | Defines Pub/Sub topics, slack-worker service, and Firestore collections deployed here |
-| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Defines what jib-sync jobs execute and MCP configuration for Jira/GitHub |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Defines what jib-sync jobs execute and MCP configuration for Jira/GitHub |
 | [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Defines slack-worker and slack-receiver service requirements |
 | [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Defines jib-bot service, Cloud Tasks queues, and slash command interface |
 

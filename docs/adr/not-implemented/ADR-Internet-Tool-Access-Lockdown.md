@@ -259,7 +259,7 @@ Layer 6: Human Review
 
 ## MCP Considerations
 
-**Related ADR:** [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) (PR #36)
+**Related ADR:** [ADR-Context-Sync-Strategy-Custom-vs-MCP](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) (PR #36)
 
 When MCP is adopted for GitHub operations, the gateway architecture adapts:
 
@@ -311,8 +311,8 @@ The implementation code was developed and reviewed but removed from this ADR to 
 
 | ADR | Relationship |
 |-----|--------------|
-| [ADR-Autonomous-Software-Engineer](./ADR-Autonomous-Software-Engineer.md) | Parent ADR - defines overall security model |
-| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) (PR #36) | MCP strategy affects how gateway integrates |
+| [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) | Parent ADR - defines overall security model |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) (PR #36) | MCP strategy affects how gateway integrates |
 | ADR-GCP-Deployment-Terraform (PR #44 refs) | Gateway must work in Cloud Run |
 
 ---
