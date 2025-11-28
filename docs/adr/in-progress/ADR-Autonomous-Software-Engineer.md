@@ -150,6 +150,12 @@ This ADR establishes the architecture, security model, and operational patterns 
 
 **Rationale:** Maximum security with operational flexibility. Agent can work freely on code but cannot affect production.
 
+**Industry Evolution (November 2025):**
+- **Docker Sandboxes** (Docker Desktop 4.50+): Official product for AI agent isolation with `docker sandbox run <agent>` command
+- **microVM Evolution:** Docker is transitioning sandbox execution from containers to dedicated microVMs for defense-in-depth
+- **gVisor/Kata Containers:** Google's Agent Sandbox uses gVisor with optional Kata Containers for kernel-level isolation in Kubernetes
+- **MCP Gateway:** Docker's Model Context Protocol integration provides access to 200+ curated tools with automatic security auditing
+
 **2. Integration Strategy: Slack as Primary Interface (Mobile-First)**
 - **Bidirectional Slack messaging** for task assignment and updates
 - **Mobile-optimized notifications** with inline previews
@@ -1788,6 +1794,109 @@ Host Commands:                      Slack Slash Commands:
                                     ├── /pr create|status|review
                                     └── /context save|load|list
 ```
+
+## Research Updates (November 2025)
+
+Based on external research into autonomous software engineering agents:
+
+### Multi-Agent Architecture Patterns
+
+**SWE-Agent (Princeton/Stanford)** established key patterns for autonomous software engineering:
+
+| Agent Role | Responsibility |
+|------------|----------------|
+| **Architect Agent** | High-level design, system structure decisions |
+| **Coder Agent** | Implementation, code generation |
+| **Reviewer Agent** | Quality assurance, code review |
+
+**Key Insight:** "LMs require carefully designed agent-computer interfaces (ACIs), similar to how humans like good UI design." Simply connecting an LLM to a vanilla bash terminal does not work well—custom interfaces are critical.
+
+**Application to jib:**
+- Current single-agent approach is sufficient for Phase 1-2
+- Consider multi-agent decomposition for Phase 4 complex tasks
+- Invest in ACI design (custom commands, structured outputs)
+
+### Anthropic's Agent Design Principles
+
+Anthropic distinguishes between:
+- **Workflows:** LLMs and tools orchestrated through predefined code paths
+- **Agents:** LLMs dynamically direct their own processes and tool usage
+
+**When to use agents (per Anthropic):**
+- Open-ended problems where steps can't be predicted
+- Can't hardcode a fixed path
+- Trust in LLM decision-making exists
+- Need to scale tasks in trusted environments
+
+**jib alignment:** Agents are appropriate because software engineering tasks are open-ended, but human review provides the trust boundary.
+
+### Persistent Memory Research
+
+Episodic memory is emerging as critical for long-term LLM agents:
+
+| System | Approach |
+|--------|----------|
+| **MIRIX** (July 2025) | Six memory types (Core, Episodic, Semantic, Procedural, Resource, Knowledge Vault) managed by dedicated agents |
+| **REMEMBERER** | Reinforcement learning with experience memory (RLEM), Q-value tracking per task |
+| **Nemori** (August 2025) | Free-Energy Principle for active prediction-calibration loops |
+| **mem-agent** | 4B LLM trained with GSPO using Python tools and markdown files |
+
+**Key finding:** Memory-augmented agents show +2-4% higher success rates in navigation tasks, up to 26% improvement on LLM judge metrics, and >90% token cost reduction vs. full-context approaches.
+
+**Application to Beads:**
+The Beads persistent memory system aligns with MIRIX's episodic memory pattern. Consider enhancing with:
+- Q-value tracking for task success/failure (like REMEMBERER)
+- Time-stamped event logging for temporal reasoning
+- Utility-based deletion to prevent memory bloat
+
+### Docker Sandboxes Evolution
+
+Docker has released official AI agent isolation features:
+
+```bash
+# Docker Desktop 4.50+ (experimental)
+docker sandbox run <agent-name>
+```
+
+**Key features:**
+- Purpose-built isolated environments mirroring local workspace
+- Agents can execute commands, install packages, modify files safely
+- Syscall restrictions and capability dropping (`--cap-drop=ALL`)
+- Egress control with domain allowlists
+
+**Future direction:** Docker is transitioning to microVMs for stronger isolation, providing defense-in-depth beyond container boundaries.
+
+### Security Best Practices
+
+From enterprise AI agent deployment research:
+
+| Practice | Implementation |
+|----------|----------------|
+| **Non-root execution** | Run agent as unprivileged user in container |
+| **Minimal base images** | Alpine Linux (~5MB) reduces attack surface |
+| **Egress allowlisting** | Block default internet, allow specific domains |
+| **Resource quotas** | CPU/memory limits, wall-clock timeboxing |
+| **Ephemeral workspaces** | Read-only root, ephemeral work directories |
+
+### SWE-Bench Performance Context
+
+SWE-bench has become the standard benchmark for AI software engineering:
+- Built from real GitHub issues
+- Tests ability to resolve complex tasks in large codebases
+- Research surge: 5% in 2022 → 53% in 2024 → 20% YTD 2025
+
+**Implication:** The field is rapidly evolving. Regular reassessment of agent capabilities against benchmarks is warranted.
+
+### Research Sources
+
+- [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
+- [Docker: Sandboxes for AI Agent Safety](https://www.docker.com/blog/docker-sandboxes-a-new-approach-for-coding-agent-safety/)
+- [Docker: Secure AI Agents at Runtime](https://www.docker.com/blog/secure-ai-agents-runtime-security/)
+- [SWE-Agent: Medium Analysis](https://medium.com/@mingyang.heaven/swe-agent-revolutionizing-software-engineering-with-ai-driven-autonomous-agents-489f7b407d1c)
+- [MIRIX: Multi-Agent Memory System](https://arxiv.org/html/2507.07957v1)
+- [Episodic Memory Position Paper](https://arxiv.org/abs/2502.06975)
+- [AI Agentic Programming Survey](https://arxiv.org/html/2508.11126v1)
+- [Google: Agentic AI on Kubernetes](https://cloud.google.com/blog/products/containers-kubernetes/agentic-ai-on-kubernetes-and-gke)
 
 ## References
 
