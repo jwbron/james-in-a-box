@@ -15,8 +15,8 @@ cd ~/beads
 bd --allow-stale list --status in_progress
 bd --allow-stale search "keywords"
 
-# Create task
-bd --allow-stale create "Task title" --labels feature,jira-1234
+# Create task (use searchable title - see "Task Title Best Practices" below)
+bd --allow-stale create "Feature Name (PR #XXX) - repo" --labels feature,repo-name,pr-XXX
 
 # Update status
 bd --allow-stale update <id> --status in_progress
@@ -268,6 +268,73 @@ bd --allow-stale create "PR #$NUMBER: <description>" \
     --labels pr,PR-$NUMBER,$BRANCH_NAME
 ```
 
+## Task Title Best Practices
+
+**Titles must be searchable.** Future sessions will search by keywords, PR numbers, and feature names to find existing work.
+
+**Good titles:**
+- `Phase 2: LLM Documentation Index Generator (PR #141)`
+- `Fix auth token refresh bug (PR #89) - james-in-a-box`
+- `Add Slack notification threading - jira-1234`
+- `Implement user settings API - webapp`
+
+**Bad titles:**
+- `Resolve merge conflicts` (too generic - won't match searches)
+- `Fix bug` (not searchable - no context)
+- `WIP` (meaningless for future discovery)
+- `Update code` (no specifics)
+
+**Include in titles:**
+- Feature/task name (what the work accomplishes)
+- PR number if created: `(PR #XXX)`
+- Repository name for multi-repo work
+- JIRA ticket if applicable: `jira-XXXX`
+
+**Update titles when context changes:**
+```bash
+# After creating a PR, update the title to include the PR number
+bd --allow-stale update <id> --title "Feature Name (PR #141) - repo-name"
+```
+
+## Finding Existing Tasks
+
+**Search strategies for discovering related work:**
+
+```bash
+cd ~/beads
+
+# Search by PR number (most reliable for PR-related work)
+bd --allow-stale search "PR-141"
+bd --allow-stale search "pr-141"
+
+# Search by repository name
+bd --allow-stale search "james-in-a-box"
+bd --allow-stale search "webapp"
+
+# Search by feature/area keywords
+bd --allow-stale search "index-generator"
+bd --allow-stale search "llm-documentation"
+bd --allow-stale search "authentication"
+
+# Search by JIRA ticket
+bd --allow-stale search "jira-1234"
+bd --allow-stale search "JIRA-1234"
+
+# List recent in-progress work
+bd --allow-stale list --status in_progress
+
+# List by label
+bd --allow-stale list --label pr-141
+bd --allow-stale list --label james-in-a-box
+```
+
+**If search finds nothing but you expect a task:**
+- Try different keyword variations (singular/plural, abbreviations)
+- Search for partial terms: `bd --allow-stale search "index"` instead of `index-generator`
+- Check for typos in search terms
+- Use `bd --allow-stale list` to browse all tasks
+- Check `bd --allow-stale list --status closed` for completed work
+
 ## Labeling Conventions
 
 | Category | Labels | Purpose |
@@ -276,13 +343,23 @@ bd --allow-stale create "PR #$NUMBER: <description>" \
 | **Type** | `feature`, `bug`, `refactor`, `docs`, `test` | Categorize work type |
 | **Priority** | `urgent`, `important` | Flag critical items |
 | **Status** | `needs-triage`, `blocked-external`, `waiting-review` | Additional status info |
-| **Project** | `james-in-a-box`, `webapp`, etc. | Multi-project tracking |
+| **Repository** | `james-in-a-box`, `webapp`, `services` | Multi-repo discoverability |
+| **PR Tracking** | `pr-141`, `pr-89` | Searchable PR number format |
+| **Feature Area** | `llm-documentation`, `index-generator`, `auth` | Feature-based search |
+
+**Always include these labels for discoverability:**
+- Repository name (e.g., `james-in-a-box`) - enables finding all work on a repo
+- PR number when created (e.g., `pr-141`) - enables finding work by PR
+- Feature/area keywords (e.g., `index-generator`) - enables finding related work
 
 ## Best Practices
 
 ### DO:
 - ✅ Check for existing tasks before creating new ones
 - ✅ Always use `--allow-stale` in containers
+- ✅ **Use searchable titles** with feature name, PR#, and repo name
+- ✅ **Add labels** for repository, PR number, and feature area
+- ✅ **Update title** when PR is created to include PR number
 - ✅ Update status immediately when starting/finishing work
 - ✅ Add notes with progress, decisions, and context
 - ✅ Include Beads ID in PR descriptions and Slack notifications
@@ -291,6 +368,8 @@ bd --allow-stale create "PR #$NUMBER: <description>" \
 
 ### DON'T:
 - ❌ Skip checking for existing tasks
+- ❌ **Use generic titles** like "Fix bug" or "Resolve conflicts"
+- ❌ **Omit repository labels** when working on multiple repos
 - ❌ Leave tasks in_progress when switching to other work
 - ❌ Forget to update status when completing work
 - ❌ Create duplicate tasks for the same work
