@@ -30,8 +30,9 @@ from pathlib import Path
 
 # Import shared modules
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
 from beads import PRContextManager
+from claude import run_claude
+
 
 # Global PR context manager for beads integration
 pr_context_manager = PRContextManager()

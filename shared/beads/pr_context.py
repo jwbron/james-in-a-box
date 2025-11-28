@@ -18,6 +18,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -278,19 +279,19 @@ class PRContextManager:
 
         return f"""## Beads Context (Persistent Memory)
 
-**Task ID**: {context['task_id']}
+**Task ID**: {context["task_id"]}
 
 This PR has an existing beads task for tracking work across sessions.
 Previous context:
 
 ```
-{context['content'][:2000]}
-{"... (truncated)" if len(context['content']) > 2000 else ""}
+{context["content"][:2000]}
+{"... (truncated)" if len(context["content"]) > 2000 else ""}
 ```
 
 **IMPORTANT**: When you complete your work, update this beads task:
 ```bash
 cd ~/beads
-bd --allow-stale update {context['task_id']} --notes "Your summary of what was done" --status in_progress
+bd --allow-stale update {context["task_id"]} --notes "Your summary of what was done" --status in_progress
 ```
 """

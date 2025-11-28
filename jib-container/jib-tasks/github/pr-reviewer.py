@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 try:
     from beads import PRContextManager
+
     from notifications import NotificationContext, get_slack_service
 except ImportError as e:
     print("=" * 60, file=sys.stderr)
@@ -31,7 +32,10 @@ except ImportError as e:
     )
     print("", file=sys.stderr)
     print("This usually means a shared module is missing.", file=sys.stderr)
-    print("Check that shared/beads/ and shared/notifications/ exist in the repo root.", file=sys.stderr)
+    print(
+        "Check that shared/beads/ and shared/notifications/ exist in the repo root.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 logger = logging.getLogger(__name__)
