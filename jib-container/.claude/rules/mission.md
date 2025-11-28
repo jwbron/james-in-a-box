@@ -53,19 +53,19 @@ bd --allow-stale update <id> --status closed --notes "Summary of what was done"
 
 This is NOT optional. Beads enables persistent memory across container restarts.
 
-### GitHub Operations - USE GITHUB MCP
+### GitHub Operations
 
-All GitHub operations go through the **GitHub MCP server**. See `environment.md` for available tools and configuration.
+**Pushing code**: Use `git push` (authenticated via GitHub App token)
+```bash
+git push origin <branch>
+```
 
-**For PR creation**, use GitHub MCP directly:
+**Creating PRs and other API operations**: Use GitHub MCP
 ```python
 # Use MCP: create_pull_request(owner, repo, title, head, base, body)
 ```
 
-GitHub MCP provides:
-- Direct PR creation
-- Automatic reviewer assignment via API
-- Full GitHub API access
+See `environment.md` for details on git push and MCP tools.
 
 ## Workflow
 
@@ -102,21 +102,25 @@ bd --allow-stale update bd-xyz --status closed --notes "Completed per ADR-042"
 
 Use the discovered test command. Don't assume - every codebase is different!
 
-### 6. Commit & Create PR
+### 6. Commit, Push & Create PR
 
 **CRITICAL**: After making ANY code changes, you MUST create a PR or notify the user via Slack:
-- **Writable repos**: Create PR immediately after committing
+- **Writable repos**: Commit, push, then create PR immediately
 - **Non-writable repos**: Notify user via Slack with commit details so they can create the PR
 
 **NEVER** leave code changes committed without creating a PR or notifying the user. This ensures all work is visible and reviewable.
 
-**MANDATORY**: Use GitHub MCP for PR creation:
+**Workflow for pushing and PR creation:**
 ```bash
+# 1. Commit your changes
 git add <files>
 git commit -m "Brief description
 
 - Details
 - JIRA-1234"
+
+# 2. Push to GitHub (uses GitHub App token automatically)
+git push origin <branch>
 ```
 
 Then use GitHub MCP to create the PR:
@@ -124,10 +128,10 @@ Then use GitHub MCP to create the PR:
 # Use MCP: create_pull_request(owner, repo, title, head, base, body)
 ```
 
-**If you cannot create a PR** (e.g., no write access, MCP failure), you MUST notify the user via Slack with:
+**If you cannot push or create a PR** (e.g., SSH remote, no write access, MCP failure), you MUST notify the user via Slack with:
 - Branch name and repository
 - Summary of changes
-- Request for them to create the PR manually
+- Request for them to push/create the PR manually
 
 ### 6.1. Preventing PR Cross-Contamination (CRITICAL)
 
@@ -177,9 +181,7 @@ git reset --hard HEAD~1      # Only if you backed up!
 
 **Rule of thumb**: When in doubt, run `git branch --show-current` and `git log --oneline -5` to verify you're working in the right context.
 
-**Troubleshooting**: If GitHub MCP fails, check `GITHUB_TOKEN` environment variable.
-
-**REMINDER**: Use GitHub MCP for all GitHub operations.
+**Troubleshooting**: If git push fails, check the remote URL is HTTPS (not SSH). If GitHub MCP fails, check `GITHUB_TOKEN` environment variable.
 
 ### 6.5. PR Lifecycle (IMPORTANT)
 
@@ -194,7 +196,7 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 1. **First**: Check PR is still OPEN (use MCP `get_pull_request`)
 2. Check out that PR's branch locally: `git fetch origin && git checkout <branch>`
 3. Make changes and commit to that branch
-4. Push via MCP `push_files` or local git push
+4. Push via `git push origin <branch>`
 5. Do NOT create a new PR for the same work
 
 **PR approval vs feedback - know the difference:**
@@ -219,7 +221,8 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 git fetch origin && git checkout <pr-branch-name>
 # 3. Make changes...
 git add -A && git commit -m "Add error handling"
-# 4. Push via MCP push_files or git push
+# 4. Push to GitHub
+git push origin <pr-branch-name>
 ```
 
 **Example - closing superseded PR:**

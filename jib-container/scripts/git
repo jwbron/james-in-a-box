@@ -1,62 +1,97 @@
 #!/bin/bash
 #
 # Git wrapper for jib container
-# Blocks commands that modify remote repos and directs to GitHub MCP instead.
+# Intercepts git commands to ensure proper authentication and security.
 #
-# This wrapper is placed in PATH before /usr/bin/git to intercept dangerous commands.
-# Safe local operations (commit, add, diff, log, etc.) pass through to real git.
+# This wrapper is placed in PATH before /usr/bin/git to:
+# 1. Block remote URL modifications (URLs are managed by the host)
+# 2. Allow git push with proper GitHub App token authentication
+#
+# Authentication is handled via git credential helper that reads GITHUB_TOKEN.
 #
 
 REAL_GIT=/usr/bin/git
 
-# Function to show MCP usage message
-show_mcp_message() {
-    local operation="$1"
+# Function to show remote modification blocked message
+show_remote_blocked_message() {
     cat >&2 << 'EOF'
 
 ================================================================================
-  GIT REMOTE OPERATION BLOCKED
+  GIT REMOTE MODIFICATION BLOCKED
 ================================================================================
 
-This container uses the GitHub MCP server for all remote repository operations.
-Direct git push/remote commands are disabled to prevent credential issues.
-
-EOF
-    case "$operation" in
-        push)
-            cat >&2 << 'EOF'
-For PUSHING changes, use GitHub MCP:
-
-  1. Commit locally (allowed):
-     git add <files>
-     git commit -m "Your message"
-
-  2. Push via MCP (use one of these):
-     - mcp__github__push_files(owner, repo, branch, files, message)
-     - mcp__github__create_or_update_file(owner, repo, path, content, message, branch)
-
-  3. Or create a PR directly via MCP:
-     - mcp__github__create_pull_request(owner, repo, title, head, base, body)
-
-EOF
-            ;;
-        remote)
-            cat >&2 << 'EOF'
 Git remote URLs are managed by the HOST and must not be modified.
 
 If you need to interact with a different repository:
-  - Use GitHub MCP tools with the appropriate owner/repo parameters
-  - MCP handles authentication automatically via GITHUB_TOKEN
+  - Clone it fresh or work in a different directory
+  - The host manages remote URLs for security
 
-EOF
-            ;;
-    esac
-    cat >&2 << 'EOF'
-For more info, see ~/CLAUDE.md section on GitHub MCP Server.
 ================================================================================
 
 EOF
     return 1
+}
+
+# Function to check if push target is HTTPS (we don't have SSH keys)
+check_push_remote() {
+    local remote="${1:-origin}"
+
+    # Get the remote URL
+    local url
+    url=$("$REAL_GIT" remote get-url "$remote" 2>/dev/null)
+
+    if [ -z "$url" ]; then
+        echo "ERROR: Remote '$remote' not found" >&2
+        return 1
+    fi
+
+    # Check if it's SSH - we can't push via SSH (no keys in container)
+    if [[ "$url" == git@* ]] || [[ "$url" == ssh://* ]]; then
+        cat >&2 << EOF
+
+================================================================================
+  SSH PUSH NOT SUPPORTED
+================================================================================
+
+Remote '$remote' uses SSH: $url
+
+This container doesn't have SSH keys. To push, you have two options:
+
+1. Change the remote URL on the HOST to HTTPS:
+   git remote set-url $remote https://github.com/OWNER/REPO.git
+
+2. Or push from the host machine directly
+
+================================================================================
+
+EOF
+        return 1
+    fi
+
+    # Check GITHUB_TOKEN is set for HTTPS push
+    if [[ "$url" == https://* ]] && [ -z "$GITHUB_TOKEN" ]; then
+        cat >&2 << 'EOF'
+
+================================================================================
+  GITHUB_TOKEN NOT SET
+================================================================================
+
+Cannot push: GITHUB_TOKEN environment variable is not set.
+
+The container should have received a GitHub App token from the jib launcher.
+This token is required for pushing to GitHub via HTTPS.
+
+Please check:
+  1. GitHub App is configured at ~/.config/jib/github-app-*
+  2. Container was launched via the jib launcher
+
+================================================================================
+
+EOF
+        return 1
+    fi
+
+    return 0
 }
 
 # Parse the git command
@@ -71,8 +106,25 @@ done
 
 case "$cmd" in
     push)
-        show_mcp_message "push"
-        exit 1
+        # Extract remote from push command (git push [remote] [refspec])
+        remote="origin"
+        for arg in "$@"; do
+            if [[ "$arg" == "push" ]]; then
+                continue
+            elif [[ "$arg" != -* ]] && [[ "$arg" != *:* ]]; then
+                # First non-flag, non-refspec arg after "push" is the remote
+                remote="$arg"
+                break
+            fi
+        done
+
+        # Verify we can push to this remote
+        if ! check_push_remote "$remote"; then
+            exit 1
+        fi
+
+        # Push is allowed - pass through to real git
+        exec "$REAL_GIT" "$@"
         ;;
     remote)
         # Check for subcommands that modify remotes
@@ -86,7 +138,7 @@ case "$cmd" in
         done
         case "$subcmd" in
             set-url|add|remove|rm|rename|set-head|set-branches|prune)
-                show_mcp_message "remote"
+                show_remote_blocked_message
                 exit 1
                 ;;
             *)

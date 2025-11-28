@@ -106,18 +106,36 @@ def get_platform() -> str:
 
 
 def get_github_token() -> Optional[str]:
-    """Get GitHub PAT from jib config file (for host use).
+    """Get GitHub PAT using the unified HostConfig system.
+
+    Uses HostConfig to load the token from (in order of precedence):
+    - Environment variable GITHUB_TOKEN (highest priority)
+    - ~/.config/jib/secrets.env (GITHUB_TOKEN=...)
+    - ~/.config/jib/github-token (dedicated file)
+
+    This follows the same configuration pattern as other jib secrets
+    (Slack tokens, Confluence tokens, etc.) via config/host_config.py.
 
     Returns:
         Token string if found and valid, None otherwise
     """
-    if Config.GITHUB_TOKEN_FILE.exists():
-        try:
-            token = Config.GITHUB_TOKEN_FILE.read_text().strip()
-            if token and token.startswith(("ghp_", "github_pat_")):
-                return token
-        except Exception:
-            pass
+    try:
+        # Import HostConfig from project root
+        script_dir = Path(__file__).resolve().parent
+        project_root = script_dir.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
+        from config.host_config import HostConfig
+        config = HostConfig()
+        token = config.github_token
+
+        if token and token.startswith(("ghp_", "github_pat_")):
+            return token
+    except ImportError as e:
+        warn(f"Could not import HostConfig: {e}")
+    except Exception as e:
+        warn(f"Error loading GitHub token from config: {e}")
     return None
 
 
