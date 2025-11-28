@@ -21,14 +21,13 @@ Usage:
 
 import logging
 import re
-import subprocess
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
 
-# Add shared directory to path for enrichment module
+# Add shared directory to path for enrichment and Claude runner modules
 sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 
 try:
@@ -38,6 +37,13 @@ except ImportError:
     def enrich_task(task_text: str, project_root: Path | None = None) -> str:
         """Fallback enrichment - returns empty string."""
         return ""
+
+try:
+    from claude.runner import run_claude, ClaudeResult
+except ImportError:
+    # Fallback: run_claude not available
+    run_claude = None
+    ClaudeResult = None
 
 
 # Configure logging
@@ -273,40 +279,67 @@ Print a clear summary to stdout with:
 
 Process this task now."""
 
-    # Run Claude Code via stdin (not --print which creates restricted session)
-    # This allows full access to tools and filesystem
-    # Important: Start in ~/khan/ and use bypass permissions
-    logger.info("Starting Claude Code subprocess...")
+    # Run Claude Code via shared runner module
+    # This delegates timeout handling to the shared module (default: 30 minutes)
+    # and provides consistent behavior across all Claude invocations
+    logger.info("Starting Claude Code via shared runner...")
 
     result = None
     error_message = None
     timed_out = False
 
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            text=True,
-            capture_output=True,  # Capture output to create notification
-            timeout=600,  # 10 minute timeout
-            cwd=str(Path.home() / "khan"),  # Start in khan directory
+    if run_claude is not None:
+        # Use shared Claude runner (preferred - no hardcoded timeout)
+        claude_result = run_claude(
+            prompt=prompt,
+            cwd=Path.home() / "khan",  # Start in khan directory
+            capture_output=True,
         )
-        logger.info(f"Claude exited with return code: {result.returncode}")
-        if result.stderr:
-            logger.warning(f"Claude stderr: {result.stderr[:500]}")
+        logger.info(f"Claude exited with return code: {claude_result.returncode}")
+        if claude_result.stderr:
+            logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
 
-    except subprocess.TimeoutExpired as e:
-        timed_out = True
-        error_message = "Task processing timed out after 10 minutes"
-        logger.error(error_message)
-        # Try to get partial output if available
-        if hasattr(e, "stdout") and e.stdout:
-            result = type("Result", (), {"stdout": e.stdout, "stderr": "", "returncode": -1})()
+        # Convert ClaudeResult to expected format for downstream code
+        result = type("Result", (), {
+            "stdout": claude_result.stdout,
+            "stderr": claude_result.stderr,
+            "returncode": claude_result.returncode
+        })()
 
-    except Exception as e:
-        error_message = f"Error running Claude: {e}"
-        logger.error(error_message, exc_info=True)
+        if not claude_result.success:
+            if claude_result.error and "timed out" in claude_result.error.lower():
+                timed_out = True
+                error_message = claude_result.error
+            else:
+                error_message = claude_result.error
+    else:
+        # Fallback if shared module not available (should not happen in normal operation)
+        import subprocess
+        logger.warning("Shared Claude runner not available, falling back to direct subprocess")
+        try:
+            result = subprocess.run(
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
+                input=prompt,
+                text=True,
+                capture_output=True,
+                timeout=1800,  # 30 minute timeout (matches shared runner default)
+                cwd=str(Path.home() / "khan"),
+            )
+            logger.info(f"Claude exited with return code: {result.returncode}")
+            if result.stderr:
+                logger.warning(f"Claude stderr: {result.stderr[:500]}")
+
+        except subprocess.TimeoutExpired as e:
+            timed_out = True
+            error_message = "Task processing timed out after 30 minutes"
+            logger.error(error_message)
+            if hasattr(e, "stdout") and e.stdout:
+                result = type("Result", (), {"stdout": e.stdout, "stderr": "", "returncode": -1})()
+
+        except Exception as e:
+            error_message = f"Error running Claude: {e}"
+            logger.error(error_message, exc_info=True)
 
     # Calculate processing time
     elapsed_time = time.time() - start_time
@@ -349,7 +382,7 @@ Process this task now."""
 
 **Task:** {task_summary}
 **Processing time:** {elapsed_str} (timeout)
-**Status:** Timed out after 10 minutes
+**Status:** {error_message or "Timed out"}
 
 The task took too long to complete. This can happen with complex tasks.
 {partial_output}
@@ -668,10 +701,10 @@ Print a clear summary to stdout.
 
 Process this response now."""
 
-    # Run Claude Code via stdin (not --print which creates restricted session)
-    # This allows full access to tools and filesystem
-    # Important: Start in ~/khan/ and use bypass permissions
-    logger.info("Starting Claude Code subprocess for response...")
+    # Run Claude Code via shared runner module
+    # This delegates timeout handling to the shared module (default: 30 minutes)
+    # and provides consistent behavior across all Claude invocations
+    logger.info("Starting Claude Code via shared runner for response...")
 
     # Determine task_id for notification filename
     # If we have a referenced notification, use that ID so slack-notifier threads correctly
@@ -681,31 +714,58 @@ Process this response now."""
     error_message = None
     timed_out = False
 
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            text=True,
-            capture_output=True,  # Capture output to create notification
-            timeout=600,  # 10 minute timeout
-            cwd=str(Path.home() / "khan"),  # Start in khan directory
+    if run_claude is not None:
+        # Use shared Claude runner (preferred - no hardcoded timeout)
+        claude_result = run_claude(
+            prompt=prompt,
+            cwd=Path.home() / "khan",  # Start in khan directory
+            capture_output=True,
         )
-        logger.info(f"Claude exited with return code: {result.returncode}")
-        if result.stderr:
-            logger.warning(f"Claude stderr: {result.stderr[:500]}")
+        logger.info(f"Claude exited with return code: {claude_result.returncode}")
+        if claude_result.stderr:
+            logger.warning(f"Claude stderr: {claude_result.stderr[:500]}")
 
-    except subprocess.TimeoutExpired as e:
-        timed_out = True
-        error_message = "Response processing timed out after 10 minutes"
-        logger.error(error_message)
-        # Try to get partial output if available
-        if hasattr(e, "stdout") and e.stdout:
-            result = type("Result", (), {"stdout": e.stdout, "stderr": "", "returncode": -1})()
+        # Convert ClaudeResult to expected format for downstream code
+        result = type("Result", (), {
+            "stdout": claude_result.stdout,
+            "stderr": claude_result.stderr,
+            "returncode": claude_result.returncode
+        })()
 
-    except Exception as e:
-        error_message = f"Error running Claude: {e}"
-        logger.error(error_message, exc_info=True)
+        if not claude_result.success:
+            if claude_result.error and "timed out" in claude_result.error.lower():
+                timed_out = True
+                error_message = claude_result.error
+            else:
+                error_message = claude_result.error
+    else:
+        # Fallback if shared module not available (should not happen in normal operation)
+        import subprocess
+        logger.warning("Shared Claude runner not available, falling back to direct subprocess")
+        try:
+            result = subprocess.run(
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
+                input=prompt,
+                text=True,
+                capture_output=True,
+                timeout=1800,  # 30 minute timeout (matches shared runner default)
+                cwd=str(Path.home() / "khan"),
+            )
+            logger.info(f"Claude exited with return code: {result.returncode}")
+            if result.stderr:
+                logger.warning(f"Claude stderr: {result.stderr[:500]}")
+
+        except subprocess.TimeoutExpired as e:
+            timed_out = True
+            error_message = "Response processing timed out after 30 minutes"
+            logger.error(error_message)
+            if hasattr(e, "stdout") and e.stdout:
+                result = type("Result", (), {"stdout": e.stdout, "stderr": "", "returncode": -1})()
+
+        except Exception as e:
+            error_message = f"Error running Claude: {e}"
+            logger.error(error_message, exc_info=True)
 
     # Calculate processing time
     elapsed_time = time.time() - start_time
@@ -748,7 +808,7 @@ Process this response now."""
 
 **Your message:** {response_summary}
 **Processing time:** {elapsed_str} (timeout)
-**Status:** Timed out after 10 minutes
+**Status:** {error_message or "Timed out"}
 
 The response took too long to process.
 {partial_output}
