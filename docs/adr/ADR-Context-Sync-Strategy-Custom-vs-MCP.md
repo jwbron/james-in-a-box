@@ -724,3 +724,7 @@ This ADR is part of a series defining the jib GCP deployment architecture:
 - [GitHub MCP Server](https://github.com/github/github-mcp-server)
 - [Anthropic Reference Servers](https://github.com/modelcontextprotocol/servers)
 - [Atlassian MCP Announcement](https://www.atlassian.com/blog/announcements/remote-mcp-server)
+
+---
+
+**Last Updated:** 2025-11-28
