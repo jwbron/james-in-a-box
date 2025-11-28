@@ -53,8 +53,6 @@ def load_state() -> dict:
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
                 state.setdefault("last_run_start", None)
-                # Keep last_run for backwards compatibility
-                state.setdefault("last_run", None)
                 return state
         except Exception:
             pass
@@ -63,7 +61,6 @@ def load_state() -> dict:
         "processed_comments": {},
         "processed_reviews": {},
         "last_run_start": None,
-        "last_run": None,
     }
 
 
@@ -529,12 +526,10 @@ def get_since_timestamp(state: dict) -> str | None:
     Returns None if this is the first run or last_run_start is not set.
 
     We use last_run_start (when the previous watcher run began) rather than
-    last_run (when it ended) to ensure we don't miss any events that occurred
-    during the previous run's execution.
+    when it ended to ensure we don't miss any events that occurred during
+    the previous run's execution.
     """
-    # Use last_run_start if available (preferred - captures events during run)
-    # Fall back to last_run for backwards compatibility with old state files
-    return state.get("last_run_start") or state.get("last_run")
+    return state.get("last_run_start")
 
 
 def main():

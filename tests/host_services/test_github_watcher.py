@@ -65,7 +65,6 @@ class TestStateManagement:
                 "processed_comments": {},
                 "processed_reviews": {},
                 "last_run_start": None,
-                "last_run": None,
             }
 
     def test_load_state_with_file(self, temp_dir):
