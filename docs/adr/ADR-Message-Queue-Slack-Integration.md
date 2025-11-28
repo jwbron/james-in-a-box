@@ -30,9 +30,9 @@ The current Slack notification system uses **file-based communication**:
 │  │ host-notify-slack.py│         │host-receive-slack.py│                │
 │  │  (inotify watcher)  │         │  (Socket Mode)      │                │
 │  │  15s batch window   │         │                     │                │
-│  └──────────┬──────────┘         └──────────┬──────────┘                │
+│  └────────────┬────────┘         └──────────┬──────────┘                │
 │             │ watches                        │ writes                    │
-│  ┌──────────▼────────────────────────────────▼──────────┐               │
+│  ┌──────────▼────────────────────────────▼──────────┐               │
 │  │              ~/.jib-sharing/                          │               │
 │  │  notifications/  incoming/  responses/  tracking/     │               │
 │  └──────────────────────────────────────────────────────┘               │
@@ -115,7 +115,7 @@ This ADR establishes the architecture for **replacing file-based Slack communica
 │  │              │     │  :8085       │     │                          │ │
 │  └──────────────┘     └──────────────┘     └──────────────────────────┘ │
 │                                                      │                   │
-└──────────────────────────────────────────────────────┼───────────────────┘
+└────────────────────────────────────────────────────┼───────────────────┘
                                                        │
                                                        ▼
                                                    Slack API
@@ -136,7 +136,7 @@ This ADR establishes the architecture for **replacing file-based Slack communica
 │                              ▼                       │                   │
 │                       Dead Letter Topic              │                   │
 │                       (failed messages)              │                   │
-└──────────────────────────────────────────────────────┼───────────────────┘
+└────────────────────────────────────────────────────┼───────────────────┘
                                                        │
                                                        ▼
                                                    Slack API
@@ -594,3 +594,7 @@ This ADR is the foundation for a series defining the jib GCP deployment architec
 - [Cloud Run Push Subscriptions](https://cloud.google.com/run/docs/triggering/pubsub-push)
 - [Firestore Documentation](https://cloud.google.com/firestore/docs)
 - [Current Slack Integration Architecture](../architecture/slack-integration.md)
+
+---
+
+**Last Updated:** 2025-11-28
