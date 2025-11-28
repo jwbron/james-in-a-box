@@ -5,6 +5,7 @@ This module provides functions for running Claude in non-interactive (stdin) mod
 which allows full access to tools and filesystem unlike the --print flag.
 """
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,6 +99,10 @@ def run_claude(
     # Normalize cwd to string if provided
     cwd_str = str(cwd) if cwd else None
 
+    # Set up environment with auto-update disabled to prevent prompts in automation
+    env = os.environ.copy()
+    env["DISABLE_AUTOUPDATER"] = "1"
+
     try:
         result = subprocess.run(
             ["claude", "--dangerously-skip-permissions"],
@@ -107,6 +112,7 @@ def run_claude(
             capture_output=capture_output,
             timeout=timeout,
             cwd=cwd_str,
+            env=env,
         )
 
         return ClaudeResult(
