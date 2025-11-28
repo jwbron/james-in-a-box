@@ -16,10 +16,9 @@ import os
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 
 class Colors:
@@ -460,35 +459,6 @@ def generate_container_id() -> str:
     return f"jib-{timestamp}-{pid}"
 
 
-def _create_single_worktree(args: Tuple[Path, Path, str]) -> Tuple[str, Optional[Path], Optional[str]]:
-    """Create a single worktree (helper for parallel execution).
-
-    Args:
-        args: Tuple of (repo_path, worktree_path, branch_name)
-
-    Returns:
-        Tuple of (repo_name, worktree_path or None, error message or None)
-    """
-    repo_path, worktree_path, branch_name = args
-    repo_name = repo_path.name
-
-    try:
-        result = subprocess.run(
-            ["git", "worktree", "add", str(worktree_path), "-b", branch_name],
-            cwd=repo_path,
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode == 0:
-            return (repo_name, worktree_path, None)
-        else:
-            return (repo_name, None, result.stderr.strip())
-
-    except Exception as e:
-        return (repo_name, None, str(e))
-
-
 def create_worktrees(container_id: str) -> dict:
     """Create git worktrees for all repos in ~/khan/
 
@@ -504,10 +474,7 @@ def create_worktrees(container_id: str) -> dict:
         warn(f"Khan source directory not found: {Config.KHAN_SOURCE}")
         return worktrees
 
-    # Collect repos to process
-    repos_to_process = []
-    branch_name = f"jib-temp-{container_id}"
-
+    # Iterate through all repos in ~/khan/
     for repo_path in Config.KHAN_SOURCE.iterdir():
         if not repo_path.is_dir():
             continue
@@ -519,25 +486,29 @@ def create_worktrees(container_id: str) -> dict:
 
         repo_name = repo_path.name
         worktree_path = worktree_dir / repo_name
-        repos_to_process.append((repo_path, worktree_path, branch_name))
 
-    if not repos_to_process:
-        return worktrees
+        try:
+            info(f"Creating worktree for {repo_name}...")
 
-    # OPTIMIZATION: Create worktrees in parallel (up to 8 concurrent)
-    info(f"Creating {len(repos_to_process)} worktree(s) in parallel...")
+            # Create temporary branch for this container
+            branch_name = f"jib-temp-{container_id}"
 
-    with ThreadPoolExecutor(max_workers=min(8, len(repos_to_process))) as executor:
-        futures = {executor.submit(_create_single_worktree, args): args[0].name
-                   for args in repos_to_process}
+            # Create worktree
+            result = subprocess.run(
+                ["git", "worktree", "add", str(worktree_path), "-b", branch_name],
+                cwd=repo_path,
+                capture_output=True,
+                text=True
+            )
 
-        for future in as_completed(futures):
-            repo_name, worktree_path, error_msg = future.result()
-            if worktree_path:
+            if result.returncode == 0:
                 worktrees[repo_name] = worktree_path
-                success(f"  ✓ {repo_name}")
+                success(f"  ✓ {repo_name} -> {worktree_path}")
             else:
-                warn(f"  ✗ {repo_name}: {error_msg}")
+                warn(f"  ✗ Failed to create worktree for {repo_name}: {result.stderr}")
+
+        except Exception as e:
+            warn(f"  ✗ Error creating worktree for {repo_name}: {e}")
 
     return worktrees
 
