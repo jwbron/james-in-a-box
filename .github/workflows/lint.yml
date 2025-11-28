@@ -6,12 +6,22 @@ on:
   pull_request:
     branches: [main]
 
+# For auto-fix commits to work, the workflow needs write permissions
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   ruff:
     name: Ruff (Python)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Checkout the PR branch directly (not the merge commit)
+          ref: ${{ github.head_ref }}
+          # Need full history for commits
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -22,10 +32,36 @@ jobs:
         run: pip install ruff
 
       - name: Run ruff check
+        id: ruff-check
+        continue-on-error: true
         run: ruff check .
 
       - name: Run ruff format check
+        id: ruff-format
+        continue-on-error: true
         run: ruff format --check .
+
+      - name: Auto-fix with ruff
+        if: (steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure') && github.event_name == 'pull_request'
+        run: |
+          echo "Running ruff auto-fix..."
+          ruff check --fix --unsafe-fixes . || true
+          ruff format .
+          echo "Auto-fix complete"
+
+      - name: Commit and push fixes
+        if: (steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure') && github.event_name == 'pull_request'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "fix: auto-fix Python linting issues (ruff)"
+          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+
+      - name: Fail if issues remain
+        if: steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure'
+        run: |
+          echo "Re-checking after auto-fix..."
+          ruff check .
+          ruff format --check .
 
   bashate:
     name: Bashate (Shell)
