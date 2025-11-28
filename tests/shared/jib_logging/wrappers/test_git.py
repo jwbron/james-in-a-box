@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from jib_logging.wrappers.git import GitWrapper
 
 
