@@ -52,7 +52,7 @@
 │  │ • Thread management     │      │ • Command handling (/jib, etc.)  │  │
 │  └───────────┬──────────────┘      └─────────────┬────────────────────┘  │
 │              │                                   │                        │
-└──────────────┼───────────────────────────────────┼────────────────────────┘
+└──────────────┼─────────────────────────────────┼────────────────────────┘
                │                                   │
                ▼                                   ▼
          Slack API (send)                  Slack API (receive)
@@ -140,7 +140,7 @@ This ADR evaluates three approaches:
 ### Rationale
 
 | Operation | Approach | Why |
-|-----------|----------|-----|
+|-----------|----------|-----------|
 | **Reading** (history, threads, search) | Slack MCP Server | Direct access, richer capabilities |
 | **Sending** (notifications, replies) | Enhanced service (Pub/Sub → Slack) | Better control, rate limiting, audit |
 | **Receiving** (human → agent) | Keep Socket Mode receiver | Real-time, established pattern |
@@ -178,7 +178,7 @@ This ADR evaluates three approaches:
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                    Container (jib / Claude Code)                          │
 │                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
 │  │                         Claude Code                                  │ │
 │  │                                                                      │ │
 │  │  ┌─────────────────────┐         ┌─────────────────────────────┐   │ │
@@ -192,8 +192,8 @@ This ADR evaluates three approaches:
 │  │  │  • get_user_profile │         │  Publishes to Pub/Sub       │   │ │
 │  │  └──────────┬──────────┘         └──────────────┬──────────────┘   │ │
 │  │             │                                    │                  │ │
-│  └─────────────┼────────────────────────────────────┼──────────────────┘ │
-└────────────────┼────────────────────────────────────┼────────────────────┘
+│  └─────────────┼──────────────────────────────────┼──────────────────┘ │
+└────────────────┼──────────────────────────────────┼────────────────────┘
                  │                                    │
                  │ Direct API                         │ Pub/Sub
                  ▼                                    ▼
@@ -580,11 +580,24 @@ The receiver service writes to Pub/Sub instead of files, but the message format 
 
 **Rejected because:** Community servers work now. Can evaluate official server when released and migrate if beneficial.
 
+## Related ADRs
+
+This ADR is part of a series defining the jib GCP deployment architecture:
+
+| ADR | Relationship to This ADR |
+|-----|-------------------------|
+| [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) | Defines Pub/Sub transport for outbound messages (complementary to MCP for reading) |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Parallel decision using MCP for Jira/GitHub |
+| [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Defines slash commands that trigger Slack-related operations |
+| [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Terraform definitions for slack-worker and slack-receiver services |
+
 ## References
 
-- [ADR: Message Queue for Slack Integration](./ADR-Message-Queue-Slack-Integration.md)
-- [ADR: Context Sync Strategy - Custom vs MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md)
 - [Slack MCP Server (archived)](https://github.com/modelcontextprotocol/servers-archived/tree/main/src/slack)
 - [korotovsky/slack-mcp-server](https://github.com/korotovsky/slack-mcp-server)
 - [Slack MCP Announcement](https://slack.dev/secure-data-connectivity-for-the-modern-ai-era/)
 - [Current Slack Integration Architecture](../architecture/slack-integration.md)
+
+---
+
+**Last Updated:** 2025-11-28
