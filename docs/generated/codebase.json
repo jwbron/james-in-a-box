@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T09:48:35.712748+00:00",
+  "generated": "2025-11-28T10:05:10.727067+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -827,7 +827,7 @@
     {
       "name": "main",
       "file": "host-services/analysis/spec-enricher/spec-enricher.py",
-      "line": 42,
+      "line": 44,
       "type": "function",
       "description": "CLI entry point."
     },
