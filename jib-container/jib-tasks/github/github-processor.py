@@ -28,9 +28,14 @@ from datetime import datetime
 from pathlib import Path
 
 
-# Import shared Claude runner
+# Import shared modules
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+from beads import PRContextManager
 from claude import run_claude
+
+
+# Global PR context manager for beads integration
+pr_context_manager = PRContextManager()
 
 
 def create_notification(title: str, body: str):
@@ -64,13 +69,28 @@ def handle_check_failure(context: dict):
     """
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", f"PR #{pr_num}")
     failed_checks = context.get("failed_checks", [])
 
     print(f"Handling check failure for PR #{pr_num} in {repo}")
     print(f"  Failed checks: {[c.get('name', 'unknown') for c in failed_checks]}")
 
-    # Build prompt for Claude
-    prompt = build_check_failure_prompt(context)
+    # Get or create beads task for this PR (persistent context across sessions)
+    beads_id = pr_context_manager.get_or_create_context(
+        repo, pr_num, pr_title, task_type="github-pr"
+    )
+    if beads_id:
+        print(f"  Beads task: {beads_id}")
+        # Update beads to track this check failure handling
+        check_names = [c.get("name", "unknown") for c in failed_checks]
+        pr_context_manager.update_context(
+            beads_id,
+            f"Handling check failures: {', '.join(check_names)}",
+            status="in_progress",
+        )
+
+    # Build prompt for Claude (includes beads context if available)
+    prompt = build_check_failure_prompt(context, beads_id)
 
     # Get repo path for working directory
     repo_name = repo.split("/")[-1]
@@ -92,7 +112,7 @@ def handle_check_failure(context: dict):
             print(f"Error: {result.stderr[:500]}")
 
 
-def build_check_failure_prompt(context: dict) -> str:
+def build_check_failure_prompt(context: dict, beads_id: str | None = None) -> str:
     """Build the prompt for Claude to analyze check failures."""
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
@@ -102,6 +122,11 @@ def build_check_failure_prompt(context: dict) -> str:
     base_branch = context.get("base_branch", "main")
     pr_body = context.get("pr_body", "")
     failed_checks = context.get("failed_checks", [])
+
+    # Get beads context summary if available
+    beads_context = ""
+    if beads_id:
+        beads_context = pr_context_manager.get_context_summary(repo, pr_num)
 
     # Detect make targets for the repository
     repo_name = repo.split("/")[-1]
@@ -221,6 +246,8 @@ make test   # Run tests
 
 Review the output carefully. Note which failures match the CI logs vs new/different failures.
 
+{beads_context}
+
 ## Your Task
 
 1. **CHECKOUT PR BRANCH FIRST** (see above) - do NOT skip this step
@@ -237,6 +264,7 @@ Review the output carefully. Note which failures match the CI logs vs new/differ
 9. **Commit** - Commit fixes with clear message
 10. **Push** - Push to the PR branch: `git push origin {pr_branch}`
 11. **Comment** - Add PR comment explaining fixes
+12. **Update beads** - Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
 
 Begin by checking out the PR branch now.
 """
@@ -290,12 +318,27 @@ def handle_comment(context: dict):
     """
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", f"PR #{pr_num}")
     comments = context.get("comments", [])
 
     print(f"Handling {len(comments)} comment(s) for PR #{pr_num} in {repo}")
 
-    # Build prompt for Claude
-    prompt = build_comment_prompt(context)
+    # Get or create beads task for this PR (persistent context across sessions)
+    beads_id = pr_context_manager.get_or_create_context(
+        repo, pr_num, pr_title, task_type="github-pr"
+    )
+    if beads_id:
+        print(f"  Beads task: {beads_id}")
+        # Update beads to track this comment handling
+        comment_authors = list({c.get("author", "unknown") for c in comments})
+        pr_context_manager.update_context(
+            beads_id,
+            f"Handling comments from: {', '.join(comment_authors)}",
+            status="in_progress",
+        )
+
+    # Build prompt for Claude (includes beads context if available)
+    prompt = build_comment_prompt(context, beads_id)
 
     # Get repo path for working directory
     repo_name = repo.split("/")[-1]
@@ -317,7 +360,7 @@ def handle_comment(context: dict):
             print(f"Error: {result.stderr[:500]}")
 
 
-def build_comment_prompt(context: dict) -> str:
+def build_comment_prompt(context: dict, beads_id: str | None = None) -> str:
     """Build the prompt for Claude to respond to comments."""
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
@@ -325,6 +368,11 @@ def build_comment_prompt(context: dict) -> str:
     pr_url = context.get("pr_url", "")
     pr_branch = context.get("pr_branch", "")
     comments = context.get("comments", [])
+
+    # Get beads context summary if available
+    beads_context = ""
+    if beads_id:
+        beads_context = pr_context_manager.get_context_summary(repo, pr_num)
 
     repo_name = repo.split("/")[-1]
 
@@ -373,6 +421,8 @@ git branch --show-current  # VERIFY this shows: {pr_branch}
 **WARNING**: Your container starts on a temporary branch (jib-temp-*), NOT the PR branch!
 If you commit without checking out `{pr_branch}` first, your changes will go to the WRONG branch.
 
+{beads_context}
+
 ## Your Task
 
 Review the comments above and:
@@ -389,6 +439,7 @@ Review the comments above and:
    - Acknowledge their feedback
    - Explain what you've done or will do
    - Ask clarifying questions if needed
+5. **Update beads** - Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
 
 Sign your response with: "— Authored by jib"
 
@@ -453,6 +504,7 @@ def handle_review_request(context: dict):
     """
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", f"PR #{pr_num}")
     author = context.get("author", "unknown")
 
     print(f"Handling review request for PR #{pr_num} by @{author} in {repo}")
@@ -462,8 +514,20 @@ def handle_review_request(context: dict):
         print(f"  PR #{pr_num} already has a review from jib, skipping duplicate review")
         return
 
-    # Build prompt for Claude
-    prompt = build_review_prompt(context)
+    # Get or create beads task for this PR (persistent context across sessions)
+    beads_id = pr_context_manager.get_or_create_context(
+        repo, pr_num, pr_title, task_type="github-pr"
+    )
+    if beads_id:
+        print(f"  Beads task: {beads_id}")
+        pr_context_manager.update_context(
+            beads_id,
+            f"Performing code review for PR by @{author}",
+            status="in_progress",
+        )
+
+    # Build prompt for Claude (includes beads context if available)
+    prompt = build_review_prompt(context, beads_id)
 
     # Get repo path for working directory
     repo_name = repo.split("/")[-1]
@@ -485,13 +549,18 @@ def handle_review_request(context: dict):
             print(f"Error: {result.stderr[:500]}")
 
 
-def build_review_prompt(context: dict) -> str:
+def build_review_prompt(context: dict, beads_id: str | None = None) -> str:
     """Build the prompt for Claude to review a PR."""
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
     pr_title = context.get("pr_title", "")
     pr_url = context.get("pr_url", "")
     pr_branch = context.get("pr_branch", "")
+
+    # Get beads context summary if available
+    beads_context = ""
+    if beads_id:
+        beads_context = pr_context_manager.get_context_summary(repo, pr_num)
     base_branch = context.get("base_branch", "main")
     author = context.get("author", "unknown")
     additions = context.get("additions", 0)
@@ -520,6 +589,8 @@ def build_review_prompt(context: dict) -> str:
 {"...(truncated)" if diff and len(diff) > 30000 else ""}
 ```
 
+{beads_context}
+
 ## Your Task
 
 Review this PR and provide constructive feedback:
@@ -535,6 +606,7 @@ Review this PR and provide constructive feedback:
    - Be constructive and specific
    - Suggest improvements where appropriate
    - Acknowledge good patterns you see
+4. **Update beads** - Update the beads task with your review summary{f" (task: {beads_id})" if beads_id else ""}
 
 Sign your review with: "— Reviewed by jib"
 
@@ -558,14 +630,27 @@ def handle_merge_conflict(context: dict):
     """
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", f"PR #{pr_num}")
     pr_branch = context.get("pr_branch", "")
     base_branch = context.get("base_branch", "main")
 
     print(f"Handling merge conflict for PR #{pr_num} in {repo}")
     print(f"  Branch: {pr_branch} has conflicts with {base_branch}")
 
-    # Build prompt for Claude
-    prompt = build_merge_conflict_prompt(context)
+    # Get or create beads task for this PR (persistent context across sessions)
+    beads_id = pr_context_manager.get_or_create_context(
+        repo, pr_num, pr_title, task_type="github-pr"
+    )
+    if beads_id:
+        print(f"  Beads task: {beads_id}")
+        pr_context_manager.update_context(
+            beads_id,
+            f"Handling merge conflict: {pr_branch} vs {base_branch}",
+            status="in_progress",
+        )
+
+    # Build prompt for Claude (includes beads context if available)
+    prompt = build_merge_conflict_prompt(context, beads_id)
 
     # Get repo path for working directory
     repo_name = repo.split("/")[-1]
@@ -586,7 +671,7 @@ def handle_merge_conflict(context: dict):
             print(f"Error: {result.stderr[:500]}")
 
 
-def build_merge_conflict_prompt(context: dict) -> str:
+def build_merge_conflict_prompt(context: dict, beads_id: str | None = None) -> str:
     """Build the prompt for Claude to resolve merge conflicts."""
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
@@ -595,6 +680,11 @@ def build_merge_conflict_prompt(context: dict) -> str:
     pr_branch = context.get("pr_branch", "")
     base_branch = context.get("base_branch", "main")
     pr_body = context.get("pr_body", "")
+
+    # Get beads context summary if available
+    beads_context = ""
+    if beads_id:
+        beads_context = pr_context_manager.get_context_summary(repo, pr_num)
 
     repo_name = repo.split("/")[-1]
 
@@ -674,6 +764,11 @@ Use `gh pr comment {pr_num} --repo {repo}` to explain:
 - Any decisions you made
 
 Sign with: "— Authored by jib"
+
+### Step 9: Update beads
+Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
+
+{beads_context}
 
 ## Important Notes
 

@@ -1193,3 +1193,9 @@ This ADR is the culmination of a series defining the jib GCP deployment architec
 - [terraform-modules/scheduled-job](https://github.com/Khan/terraform-modules/tree/main/terraform/modules/scheduled-job)
 - [Cloud Run Documentation](https://cloud.google.com/run/docs)
 - [Cloud Run Jobs Documentation](https://cloud.google.com/run/docs/create-jobs)
+
+---
+
+**Last Updated:** 2025-11-28
+**Next Review:** 2025-12-28 (Monthly)
+**Status:** Proposed

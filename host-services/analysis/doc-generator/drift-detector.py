@@ -221,14 +221,20 @@ class DriftDetector:
                     continue
 
                 # Resolve relative links from doc location
-                if link_target.startswith("../"):
-                    resolved = (doc_path.parent / link_target).resolve()
-                    try:
-                        link_target = str(resolved.relative_to(self.project_root))
-                    except ValueError:
-                        continue  # Link points outside project
-                else:
-                    link_target = link_target.lstrip("./")
+                # All relative links (including those without ../) should be
+                # resolved relative to the document's directory
+                resolved = (doc_path.parent / link_target).resolve()
+                try:
+                    link_target = str(resolved.relative_to(self.project_root))
+                except ValueError:
+                    continue  # Link points outside project
+
+                # Handle directory links (ending with /) - check for index files
+                if link_target.endswith("/") or (self.project_root / link_target).is_dir():
+                    dir_path = link_target.rstrip("/")
+                    # Check if directory exists or has README/index
+                    if (self.project_root / dir_path).is_dir():
+                        continue  # Directory exists, link is valid
 
                 if not self.file_exists(link_target):
                     similar = self.find_similar_file(link_target)
@@ -247,6 +253,7 @@ class DriftDetector:
             # Check path references (only report project paths, not URLs)
             for match in self.PATTERNS["path_ref"].finditer(line):
                 path_ref = match.group(1)
+                # Only report if it looks like a project path (not a URL)
                 if (
                     "/" in path_ref
                     and not self.file_exists(path_ref)
