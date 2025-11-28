@@ -122,7 +122,7 @@ fi
 # Set up environment
 export HOME="${USER_HOME}"
 export USER="${RUNTIME_USER}"
-# Add jib scripts to PATH for create-pr-helper.py and other tools
+# Add jib scripts to PATH for comment-pr-helper.py and other tools
 export PATH="${USER_HOME}/khan/james-in-a-box/jib-container/scripts:/usr/local/bin:${PATH}"
 # Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
 export PYTHONDONTWRITEBYTECODE=1

@@ -64,7 +64,6 @@ This file controls:
 **Usage:**
 - Python: `from config.repo_config import get_writable_repos, is_writable_repo`
 - CLI: `python config/repo_config.py --list-writable`
-- PR Helper: `create-pr-helper.py --list-writable`
 
 **To add a new repo with write access:**
 1. Edit `repositories.yaml` and add to `writable_repos` list

@@ -426,16 +426,15 @@ Agent should demonstrate L3-L4 behaviors:
 - **Comment Responder:** Analyzes PR comments on your PRs, suggests contextual responses
 - **Scope:** All PRs in configured repository (reviews others' PRs, responds to comments on your PRs)
 
-**PR Creation Helper** (`jib-container/scripts/create-pr-helper.py`)
+**PR Creation via GitHub MCP**
 - **Purpose:** Enables jib to create PRs after completing tasks
-- **Invocation:** `create-pr-helper.py --auto --reviewer <username>`
 - **Capabilities:**
   - Auto-generates PR title/body from git commits
-  - Pushes branch to remote (uses `gh auth setup-git` for HTTPS auth)
-  - Creates PR via `gh pr create`
+  - Pushes branch to remote via GitHub MCP
+  - Creates PR via GitHub MCP `create_pull_request`
   - Requests review from configured reviewer
   - Creates Slack notification with PR URL
-- **Integration:** Called by `incoming-processor.py` after task completion
+- **Integration:** Uses GitHub MCP server directly
 
 **Sprint Analysis** (`jib-container/scripts/analyze-sprint.py`)
 - **On-Demand:** Execute via `bin/jib --exec`

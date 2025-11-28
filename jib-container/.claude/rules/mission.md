@@ -49,17 +49,15 @@ This is NOT optional. Beads enables persistent memory across container restarts.
 
 All GitHub operations go through the **GitHub MCP server**. See `environment.md` for available tools and configuration.
 
-**For PR creation with notifications**, use `create-pr-helper.py`:
-```bash
-# Creates PR via MCP and sends Slack notification
-create-pr-helper.py --auto --no-notify
+**For PR creation**, use GitHub MCP directly:
+```python
+# Use MCP: create_pull_request(owner, repo, title, head, base, body)
 ```
 
-The helper provides:
-- PR creation via GitHub MCP
-- Proper notifications with thread context
-- Automatic reviewer assignment
-- Consistent PR formatting
+GitHub MCP provides:
+- Direct PR creation
+- Automatic reviewer assignment via API
+- Full GitHub API access
 
 ## Workflow
 
@@ -104,19 +102,16 @@ Use the discovered test command. Don't assume - every codebase is different!
 
 **NEVER** leave code changes committed without creating a PR or notifying the user. This ensures all work is visible and reviewable.
 
-**MANDATORY**: Always use the PR helpers - they handle both writable and non-writable repos:
+**MANDATORY**: Use GitHub MCP for PR creation:
 ```bash
 git add <files>
 git commit -m "Brief description
 
 - Details
 - JIRA-1234"
-
-# ✅ ALWAYS use the helper - NEVER use `gh pr create` directly
-create-pr-helper.py --auto --no-notify
 ```
 
-If the helper fails or is unavailable, use GitHub MCP directly:
+Then use GitHub MCP to create the PR:
 ```python
 # Use MCP: create_pull_request(owner, repo, title, head, base, body)
 ```
@@ -174,20 +169,9 @@ git reset --hard HEAD~1      # Only if you backed up!
 
 **Rule of thumb**: When in doubt, run `git branch --show-current` and `git log --oneline -5` to verify you're working in the right context.
 
-**How the helpers handle repo access:**
-- **Writable repos**: Creates PR on GitHub and sends Slack notification
-- **Non-writable repos**: Automatically sends Slack notification with full PR context,
-  prompting manual PR creation (no GitHub operations attempted)
-
-Check writable repos: `create-pr-helper.py --list-writable`
-
-**For PR comments**, use `comment-pr-helper.py`:
-- **Writable repos**: Posts comment to GitHub and notifies via Slack
-- **Non-writable repos**: Sends comment content via Slack for manual posting
-
 **Troubleshooting**: If GitHub MCP fails, check `GITHUB_TOKEN` environment variable.
 
-**REMINDER**: Use GitHub MCP for all GitHub operations. Use `create-pr-helper.py` for PRs with Slack notifications.
+**REMINDER**: Use GitHub MCP for all GitHub operations.
 
 ### 6.5. PR Lifecycle (IMPORTANT)
 

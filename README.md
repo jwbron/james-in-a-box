@@ -208,8 +208,6 @@ Scripts called via `jib --exec` from host-side systemd services:
 
 Interactive utilities used inside the container:
 
-- `create-pr-helper.py` - Create PRs with auto-generated descriptions
-- `comment-pr-helper.py` - Post PR comments
 - `discover-tests.py` - Discover test frameworks in a codebase
 
 ### Container Config
@@ -429,15 +427,9 @@ jib provides comprehensive GitHub PR automation:
 
 ### PR Creation (After Task Completion)
 
-When jib completes a task with code changes, it can automatically create a PR:
+When jib completes a task with code changes, it creates a PR using GitHub MCP:
 
-```bash
-# Inside container (automatic after task completion)
-create-pr-helper.py --auto
-```
-
-This:
-1. Pushes the branch to remote (via HTTPS using `gh` CLI)
+1. Pushes the branch to remote
 2. Creates PR with auto-generated title/body from commits
 3. Requests review from configured reviewer
 4. Sends Slack notification with PR URL

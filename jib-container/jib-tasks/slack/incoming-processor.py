@@ -186,11 +186,10 @@ bd --allow-stale update <id> --status in_progress
    - Commit changes with clear messages
 
 ### 4. Create PR (if code changes were made)
-   - Use the PR helper: `~/khan/james-in-a-box/jib-container/scripts/create-pr-helper.py`
-   - Run: `create-pr-helper.py --auto --reviewer jwiesebron --no-notify`
-   - Or with custom title: `create-pr-helper.py --title "Your PR title" --body "Description" --no-notify`
-   - The script will push the branch and create a PR automatically
-   - IMPORTANT: Always use `--no-notify` flag - your output will be captured and threaded correctly
+   - Use GitHub MCP to create the PR: `create_pull_request(owner, repo, title, head, base, body)`
+   - Push the branch first using MCP `push_files` if needed
+   - Request review from @jwiesebron
+   - Your output will be captured and threaded correctly
 
 ### 5. Update Beads with Results (MANDATORY)
 ```bash
@@ -213,7 +212,7 @@ Print a clear summary to stdout with:
 - **Create a PR after completing code changes** - this lets the user review on GitHub
 - **Beads is your persistent memory** - ALWAYS check and update beads
 - Working directory: You can access all repos in `~/khan/`
-- The PR helper automatically requests review from @jwiesebron
+- Use GitHub MCP to create PRs and request review from @jwiesebron
 - **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack notification automatically
 
 Process this task now."""
