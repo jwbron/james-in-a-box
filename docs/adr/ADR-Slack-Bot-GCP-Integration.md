@@ -299,18 +299,18 @@ Response (in-channel when complete):
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                  Slack                                       │
 │                                                                              │
-│  Slash Commands ──────────────────────────────────────────────────────────┐ │
-│  Events API (messages, reactions) ─────────────────────────────────────┐  │ │
+│  Slash Commands ────────────────────────────────────────────────────────┐ │
+│  Events API (messages, reactions) ──────────────────────────────────────┐  │ │
 │                                                                        │  │ │
-└────────────────────────────────────────────────────────────────────────┼──┼─┘
+└────────────────────────────────────────────────────────────────────┼──┼─┘
                                                                          │  │
                         HTTPS (slash command payload)                    │  │
                         HTTPS (events webhook)                           │  │
                                                                          │  │
-┌────────────────────────────────────────────────────────────────────────┼──┼─┐
+┌────────────────────────────────────────────────────────────────────┼──┼─┐
 │                                  GCP                                   │  │ │
 │                                                                        │  │ │
-│  ┌─────────────────────────────────────────────────────────────────┐  │  │ │
+│  ┌─────────────────────────────────────────────────────────────┐  │  │ │
 │  │                    Cloud Run: jib-bot                            │  │  │ │
 │  │                                                                  │◀─┘  │ │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │◀────┘ │
@@ -325,7 +325,7 @@ Response (in-channel when complete):
 │  └─────────┼─────────────────┼─────────────────────┼───────────────┘       │
 │            │                 │                     │                        │
 │            ▼                 ▼                     ▼                        │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │                         Cloud Tasks                                   │  │
 │  │                                                                       │  │
 │  │  Queue: jib-tasks        Queue: jib-sync        Queue: jib-analyze   │  │
@@ -346,22 +346,22 @@ Response (in-channel when complete):
 │              └─────────────────────┴─────────────────────┘                  │
 │                                    │                                        │
 │                                    ▼                                        │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │                          Firestore                                    │  │
 │  │                                                                       │  │
 │  │  jobs/              threads/            contexts/         beads/      │  │
 │  │  • Job state        • Thread mapping    • Saved contexts  • Tasks    │  │
 │  │  • Progress         • Conversation      • Project data    • Notes    │  │
 │  │  • Results          • User mapping      • Learnings       • Status   │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
+│  └──────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │                        Cloud Pub/Sub                                  │  │
 │  │                                                                       │  │
 │  │  slack-outgoing     slack-incoming      job-updates                  │  │
 │  │  • Notifications    • User messages     • Progress updates           │  │
 │  │  • Results          • Commands          • Completion events          │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
+│  └──────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -908,11 +908,23 @@ The specific commands can evolve, but the Slack bot as control plane is a founda
 
 **Rejected because:** Optimized for CI/CD, not interactive agent control.
 
+## Related ADRs
+
+This ADR is part of a series defining the jib GCP deployment architecture:
+
+| ADR | Relationship to This ADR |
+|-----|-------------------------|
+| [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) | Defines Pub/Sub messaging used by slash commands for async responses |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Defines sync jobs triggered by `/sync` commands |
+| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Defines MCP for reading Slack context |
+| [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Terraform definitions for jib-bot service and Cloud Tasks queues |
+
 ## References
 
 - [Slack Slash Commands Documentation](https://api.slack.com/interactivity/slash-commands)
 - [Cloud Tasks Documentation](https://cloud.google.com/tasks/docs)
 - [Cloud Run Jobs Documentation](https://cloud.google.com/run/docs/create-jobs)
-- [ADR: Message Queue for Slack Integration](./ADR-Message-Queue-Slack-Integration.md)
-- [ADR: Slack Integration Strategy - MCP vs Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md)
-- [ADR: Context Sync Strategy - Custom vs MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md)
+
+---
+
+**Last Updated:** 2025-11-28
