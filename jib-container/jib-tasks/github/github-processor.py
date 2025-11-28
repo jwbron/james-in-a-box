@@ -13,6 +13,7 @@ Task types:
     - check_failure: PR check failures -> analyzes and fixes CI issues
     - comment: New PR comments -> generates appropriate responses
     - review_request: New PR needing review -> performs code review
+    - merge_conflict: PR has merge conflicts -> resolves conflicts with base branch
 
 Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B":
     - Host-side watcher queries GitHub and triggers container
@@ -189,14 +190,17 @@ def build_check_failure_prompt(context: dict) -> str:
                 prompt += f"- `make {t}`\n"
         prompt += "\n"
 
-    prompt += f"""## CRITICAL: Branch Verification (MUST DO FIRST)
+    prompt += f"""## CRITICAL: Branch Verification and Setup (MUST DO FIRST)
 
 **Target PR Branch**: `{pr_branch}`
+**Base Branch**: `{base_branch}`
 
 Before making ANY changes, you MUST:
+
+### Step 1: Checkout PR branch
 ```bash
 cd ~/khan/{repo_name}
-git fetch origin {pr_branch}
+git fetch origin {pr_branch} {base_branch}
 git checkout {pr_branch}
 git branch --show-current  # VERIFY this shows: {pr_branch}
 ```
@@ -205,20 +209,45 @@ git branch --show-current  # VERIFY this shows: {pr_branch}
 If you commit without checking out `{pr_branch}` first, your changes will go to the WRONG branch
 and may contaminate other PRs. This has caused issues before.
 
+### Step 2: Pull in latest {base_branch} (IMPORTANT)
+The failures may be due to the PR branch being out of sync with {base_branch}. Merge it in:
+```bash
+git merge origin/{base_branch} --no-edit
+```
+
+If there are merge conflicts:
+- Resolve them first (see files with `git diff --name-only --diff-filter=U`)
+- Complete the merge before proceeding
+
+### Step 3: Run checks locally BEFORE attempting fixes
+This helps identify whether failures are:
+- Real issues in the PR code (need fixing)
+- Flaky tests (may pass on retry)
+- Issues introduced by merging {base_branch} (need careful resolution)
+
+```bash
+make lint   # Check lint status
+make test   # Run tests
+```
+
+Review the output carefully. Note which failures match the CI logs vs new/different failures.
+
 ## Your Task
 
 1. **CHECKOUT PR BRANCH FIRST** (see above) - do NOT skip this step
 2. **Verify branch**: Run `git branch --show-current` and confirm it shows `{pr_branch}`
-3. **Analyze** the failures - understand root cause from logs
-4. **Fix** - implement fixes on the PR branch:
+3. **Merge {base_branch}**: Pull in latest changes from {base_branch}
+4. **Run checks locally**: Execute lint and test commands to reproduce failures
+5. **Analyze** the failures - compare local output with CI logs
+6. **Fix** - implement fixes on the PR branch:
    - For lint errors: Try `make fix` or `make lint-fix` first (auto-fix)
    - For test failures: Examine and fix tests
    - For build errors: Check dependencies, imports
-5. **Verify fixes** - Run `make lint` and `make test` to verify
-6. **Verify branch again**: Run `git branch --show-current` - confirm still on `{pr_branch}`
-7. **Commit** - Commit fixes with clear message
-8. **Push** - Push to the PR branch: `git push origin {pr_branch}`
-9. **Comment** - Add PR comment explaining fixes
+7. **Verify fixes** - Run `make lint` and `make test` again to confirm fixes work
+8. **Verify branch again**: Run `git branch --show-current` - confirm still on `{pr_branch}`
+9. **Commit** - Commit fixes with clear message
+10. **Push** - Push to the PR branch: `git push origin {pr_branch}`
+11. **Comment** - Add PR comment explaining fixes
 
 Begin by checking out the PR branch now.
 """
@@ -514,6 +543,165 @@ Begin review now.
     return prompt
 
 
+def handle_merge_conflict(context: dict):
+    """Handle PR merge conflicts by invoking Claude to resolve them.
+
+    Context expected:
+        - repository: str (e.g., "jwbron/james-in-a-box")
+        - pr_number: int
+        - pr_title: str
+        - pr_url: str
+        - pr_branch: str
+        - base_branch: str
+        - pr_body: str
+    """
+    repo = context.get("repository", "unknown")
+    pr_num = context.get("pr_number", 0)
+    pr_branch = context.get("pr_branch", "")
+    base_branch = context.get("base_branch", "main")
+
+    print(f"Handling merge conflict for PR #{pr_num} in {repo}")
+    print(f"  Branch: {pr_branch} has conflicts with {base_branch}")
+
+    # Build prompt for Claude
+    prompt = build_merge_conflict_prompt(context)
+
+    # Get repo path for working directory
+    repo_name = repo.split("/")[-1]
+    repo_path = Path.home() / "khan" / repo_name
+
+    # Run Claude Code via stdin
+    print("Invoking Claude for conflict resolution...")
+    try:
+        result = subprocess.run(
+            ["claude", "--dangerously-skip-permissions"],
+            check=False,
+            input=prompt,
+            text=True,
+            capture_output=True,
+            timeout=900,  # 15 minute timeout
+            cwd=str(repo_path) if repo_path.exists() else str(Path.home() / "khan"),
+        )
+
+        if result.returncode == 0:
+            print("Claude conflict resolution completed successfully")
+            if result.stdout:
+                print(f"Output: {result.stdout[:500]}...")
+        else:
+            print(f"Claude exited with code {result.returncode}")
+            if result.stderr:
+                print(f"Error: {result.stderr[:500]}")
+
+    except subprocess.TimeoutExpired:
+        print("Claude conflict resolution timed out after 15 minutes")
+    except FileNotFoundError:
+        print("Claude CLI not found - is it installed?")
+    except Exception as e:
+        print(f"Error invoking Claude: {e}")
+
+
+def build_merge_conflict_prompt(context: dict) -> str:
+    """Build the prompt for Claude to resolve merge conflicts."""
+    repo = context.get("repository", "unknown")
+    pr_num = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", "")
+    pr_url = context.get("pr_url", "")
+    pr_branch = context.get("pr_branch", "")
+    base_branch = context.get("base_branch", "main")
+    pr_body = context.get("pr_body", "")
+
+    repo_name = repo.split("/")[-1]
+
+    prompt = f"""# GitHub PR Merge Conflict Resolution
+
+## PR Information
+- **Repository**: {repo}
+- **PR Number**: #{pr_num}
+- **Title**: {pr_title}
+- **URL**: {pr_url}
+- **Branch**: {pr_branch} -> {base_branch}
+
+## PR Description
+{pr_body[:2000] if pr_body else "No description provided"}
+
+## Problem
+
+This PR has **merge conflicts** with the `{base_branch}` branch. GitHub cannot automatically merge it.
+
+## CRITICAL: Steps to Resolve
+
+You MUST follow these steps exactly:
+
+### Step 1: Checkout the PR branch
+```bash
+cd ~/khan/{repo_name}
+git fetch origin {pr_branch} {base_branch}
+git checkout {pr_branch}
+git branch --show-current  # VERIFY: must show {pr_branch}
+```
+
+### Step 2: Merge the base branch to surface conflicts
+```bash
+git merge origin/{base_branch}
+```
+
+This will show which files have conflicts.
+
+### Step 3: Identify conflicting files
+```bash
+git diff --name-only --diff-filter=U
+```
+
+### Step 4: Resolve each conflict
+For each conflicting file:
+1. Open the file and look for conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
+2. Understand what both sides changed
+3. Decide the correct resolution:
+   - Keep PR changes if they're the right approach
+   - Keep base changes if they should take precedence
+   - Combine both if needed
+4. Remove ALL conflict markers
+5. Ensure the code is syntactically correct
+
+### Step 5: Stage and verify
+```bash
+git add <resolved_files>
+git diff --cached  # Review what you're committing
+```
+
+### Step 6: Complete the merge
+```bash
+git commit -m "Merge {base_branch} into {pr_branch} and resolve conflicts
+
+Resolved merge conflicts to integrate latest {base_branch} changes."
+```
+
+### Step 7: Push the resolution
+```bash
+git push origin {pr_branch}
+```
+
+### Step 8: Comment on the PR
+Use `gh pr comment {pr_num} --repo {repo}` to explain:
+- What conflicts were found
+- How you resolved them
+- Any decisions you made
+
+Sign with: "— Authored by jib"
+
+## Important Notes
+
+- **Preserve PR intent**: The PR changes should still work as intended after resolution
+- **Don't lose changes**: Make sure no important code is accidentally removed
+- **Test after**: If possible, run tests to verify the resolution is correct
+- **Be conservative**: When in doubt, keep both changes and adjust
+
+Begin conflict resolution now.
+"""
+
+    return prompt
+
+
 def main():
     """Main entry point - parse arguments and dispatch to handler."""
     parser = argparse.ArgumentParser(
@@ -522,7 +710,7 @@ def main():
     parser.add_argument(
         "--task",
         required=True,
-        choices=["check_failure", "comment", "review_request"],
+        choices=["check_failure", "comment", "review_request", "merge_conflict"],
         help="Type of task to process",
     )
     parser.add_argument(
@@ -550,6 +738,7 @@ def main():
         "check_failure": handle_check_failure,
         "comment": handle_comment,
         "review_request": handle_review_request,
+        "merge_conflict": handle_merge_conflict,
     }
 
     handler = handlers.get(args.task)
