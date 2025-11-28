@@ -29,22 +29,15 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
   - GitHub MCP server configuration
   - File system layout and access
   - Services and package installation
-  - Error handling patterns
 
 - **beads-usage.md** - Persistent task tracking (MANDATORY)
-  - Automatic task management workflow
-  - Commands and common patterns
-  - Integration with Slack and GitHub
+  - Quick reference for beads commands
+  - Status flow and labeling conventions
 
-### Context Tracking
-
-- **slack-thread-context.md** - Slack message memory
-  - Using task IDs for persistent context
-  - Thread continuity across containers
-
-- **github-pr-context.md** - PR context tracking
-  - PR lifecycle in Beads
-  - Maintaining context across PR events
+- **context-tracking.md** - Persistent context for Slack/PR work
+  - Slack thread context via task_id
+  - GitHub PR context tracking
+  - Integration with Beads
 
 ### Khan Academy Standards
 
@@ -52,37 +45,41 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
   - Technologies (Python, React, TypeScript)
   - Code style guidelines
   - Common commands
-  - File organization
-
-- **khan-academy-culture.md** - Engineering culture
-  - Engineering principles (quality, nurturing, collaboration)
-  - L3-L4 competency framework
-  - Behavioral guidelines for the agent
 
 ### Quality & Communication
 
 - **pr-descriptions.md** - PR writing guidelines
   - Khan Academy PR format
-  - Content guidelines and examples
+  - Length targets
 
 - **test-workflow.md** - Test discovery and execution
   - Dynamic test discovery
   - Testing workflow integration
 
 - **notification-template.md** - Async notification formatting
-  - Guidance requests
-  - Automated reports with threading
-  - Work completed notifications
+  - When to send notifications
+  - Template and threading
 
-- **conversation-analysis-criteria.md** - Performance assessment
-  - Assessment dimensions
-  - Scoring criteria
+## Reference Documentation
+
+The following content has been moved to `docs/reference/` for on-demand access:
+
+- **khan-academy-culture.md** - L3-L4 engineering behavioral standards
+- **conversation-analysis-criteria.md** - Performance assessment dimensions
+
+See `~/khan/james-in-a-box/docs/index.md` for navigation to all documentation.
+
+## Design Principles
+
+These rules follow the [LLM Documentation Index Strategy](../../docs/adr/ADR-LLM-Documentation-Index-Strategy.md):
+
+- **Index, Don't Dump** - Rules are concise; detailed docs are referenced
+- **Pull, Don't Push** - Agent fetches relevant docs on-demand
+- **Avoid Redundancy** - Each concept documented once, referenced elsewhere
 
 ## Maintenance
 
 When updating rules:
-- Keep files focused on their specific domain
-- Avoid redundancy across files
-- Use markdown for consistency
+- Keep files focused and concise
+- Reference docs instead of duplicating content
 - Rebuild container to apply changes: `./jib`
-

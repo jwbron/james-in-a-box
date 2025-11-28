@@ -4,15 +4,6 @@ Technical design and system architecture.
 
 ## Documents
 
-### [Integration Summary](integration-summary.md)
-High-level overview of james-in-a-box architecture.
-
-**Covers:**
-- Component overview
-- Data flows
-- Integration points
-- Security model
-
 ### [Slack Integration](slack-integration.md)
 Detailed Slack bidirectional messaging design.
 
@@ -51,5 +42,5 @@ Implementation details of the Slack notification system.
 - Human reviews and approves all changes
 
 ## See Also
-- [ADR: Autonomous Software Engineer](../../../sharing/adr-autonomous-software-engineer.md) (planned)
-- [Security Model](integration-summary.md)
+- [ADR: Autonomous Software Engineer](../adr/ADR-Autonomous-Software-Engineer.md) - Full system architecture
+- [Setup Guides](../setup/) - Installation and configuration
