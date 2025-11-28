@@ -37,7 +37,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -133,7 +133,7 @@ def gh_text(args: list[str]) -> str | None:
 
 def utc_now_iso() -> str:
     """Get current UTC time in ISO format."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class ADRResearcher:
@@ -194,7 +194,10 @@ class ADRResearcher:
             for pr in prs:
                 files = pr.get("files", [])
                 adr_files = [
-                    f for f in files if f.get("path", "").startswith("docs/adr/") and f.get("path", "").endswith(".md")
+                    f
+                    for f in files
+                    if f.get("path", "").startswith("docs/adr/")
+                    and f.get("path", "").endswith(".md")
                 ]
                 if adr_files:
                     for adr_file in adr_files:
@@ -276,7 +279,9 @@ class ADRResearcher:
         context_json = json.dumps(context)
 
         # Container path is fixed - jib always mounts to /home/jwies/khan/
-        processor_path = "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/adr/adr-processor.py"
+        processor_path = (
+            "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/adr/adr-processor.py"
+        )
 
         cmd = [
             "jib",
@@ -634,7 +639,10 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
             results = {"prs": researcher.research_open_prs()}
         else:
             adrs = researcher.find_open_adr_prs()
-            results = {"prs": [{"title": a.title, "pr": a.pr_number} for a in adrs], "status": "dry_run"}
+            results = {
+                "prs": [{"title": a.title, "pr": a.pr_number} for a in adrs],
+                "status": "dry_run",
+            }
 
     elif args.scope == "merged":
         print("\nResearching implemented ADRs...")
@@ -642,7 +650,10 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
             results = {"adrs": researcher.research_merged_adrs()}
         else:
             adrs = researcher.find_adrs_by_status("implemented")
-            results = {"adrs": [{"title": a.title, "path": str(a.path)} for a in adrs], "status": "dry_run"}
+            results = {
+                "adrs": [{"title": a.title, "path": str(a.path)} for a in adrs],
+                "status": "dry_run",
+            }
 
     elif args.scope == "topic":
         print(f"\nResearching topic: {args.query}")
@@ -658,24 +669,23 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
 
     if args.json:
         print(json.dumps(results, indent=2, default=str))
+    # Pretty print summary
+    elif "prs" in results:
+        pr_results = results["prs"]
+        print(f"Processed {len(pr_results)} PR(s)")
+        for r in pr_results:
+            status = r.get("status", "unknown")
+            print(f"  - {r.get('adr', 'Unknown')}: {status}")
+    elif "adrs" in results:
+        adr_results = results["adrs"]
+        print(f"Processed {len(adr_results)} ADR(s)")
+        for r in adr_results:
+            status = r.get("status", "unknown")
+            print(f"  - {r.get('adr', 'Unknown')}: {status}")
     else:
-        # Pretty print summary
-        if "prs" in results:
-            pr_results = results["prs"]
-            print(f"Processed {len(pr_results)} PR(s)")
-            for r in pr_results:
-                status = r.get("status", "unknown")
-                print(f"  - {r.get('adr', 'Unknown')}: {status}")
-        elif "adrs" in results:
-            adr_results = results["adrs"]
-            print(f"Processed {len(adr_results)} ADR(s)")
-            for r in adr_results:
-                status = r.get("status", "unknown")
-                print(f"  - {r.get('adr', 'Unknown')}: {status}")
-        else:
-            print(f"Status: {results.get('status', 'unknown')}")
-            if results.get("result", {}).get("pr_url"):
-                print(f"PR: {results['result']['pr_url']}")
+        print(f"Status: {results.get('status', 'unknown')}")
+        if results.get("result", {}).get("pr_url"):
+            print(f"PR: {results['result']['pr_url']}")
 
     return 0
 

@@ -24,7 +24,7 @@ Per ADR-LLM-Documentation-Index-Strategy Phase 6:
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -35,7 +35,7 @@ from claude import run_claude
 
 def utc_now_iso() -> str:
     """Get current UTC time in ISO format."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def handle_research_adr(context: dict) -> dict:
@@ -50,7 +50,7 @@ def handle_research_adr(context: dict) -> dict:
         - output_mode: "pr_comment" | "update_pr" | "report"
     """
     adr_title = context.get("adr_title", "Untitled ADR")
-    adr_content = context.get("adr_content", "")
+    context.get("adr_content", "")
     topics = context.get("topics", [])
     pr_number = context.get("pr_number")
     output_mode = context.get("output_mode", "report")
@@ -101,7 +101,7 @@ def build_research_prompt(context: dict) -> str:
 ## ADR Information
 - **Title**: {adr_title}
 - **Path**: {adr_path or "Not specified"}
-- **Topics**: {', '.join(topics) if topics else 'General'}
+- **Topics**: {", ".join(topics) if topics else "General"}
 {f"- **PR**: #{pr_number} ({pr_url})" if pr_number else ""}
 
 ## ADR Content (Excerpt)
@@ -467,7 +467,7 @@ def handle_review_adr(context: dict) -> dict:
     """
     adr_title = context.get("adr_title", "Untitled ADR")
     adr_path = context.get("adr_path", "")
-    topics = context.get("topics", [])
+    context.get("topics", [])
     pr_number = context.get("pr_number")
     output_mode = context.get("output_mode", "report")
 
@@ -516,7 +516,7 @@ def build_review_prompt(context: dict) -> str:
 ## ADR Information
 - **Title**: {adr_title}
 - **Path**: {adr_path}
-- **Topics**: {', '.join(topics) if topics else 'General'}
+- **Topics**: {", ".join(topics) if topics else "General"}
 {f"- **PR**: #{pr_number} ({pr_url})" if pr_number else ""}
 
 ## ADR Content
