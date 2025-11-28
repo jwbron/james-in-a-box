@@ -94,6 +94,7 @@ check_installation_status() {
         "worktree-watcher.timer"
         "codebase-analyzer.timer"
         "conversation-analyzer.timer"
+        "github-token-refresher.service"
     )
 
     for service in "${services[@]}"; do
@@ -357,6 +358,7 @@ declare -A component_descriptions=(
     ["worktree-watcher"]="Worktree Watcher (cleanup orphaned worktrees)"
     ["codebase-analyzer"]="Codebase Analyzer (weekly)"
     ["conversation-analyzer"]="Conversation Analyzer (daily)"
+    ["github-token-refresher"]="GitHub Token Refresher (auto-refresh App tokens)"
 )
 
 # Desired installation order (optional components will be skipped if not found)
@@ -366,6 +368,7 @@ component_order=(
     "sync/context-sync"
     "analysis/github-watcher"
     "utilities/worktree-watcher"
+    "utilities/github-token-refresher"
     "analysis/codebase-analyzer"
     "analysis/conversation-analyzer"
 )
@@ -449,6 +452,7 @@ if [ "$UPDATE_MODE" = true ]; then
         "context-sync.timer"
         "github-watcher.timer"
         "worktree-watcher.timer"
+        "github-token-refresher.service"
         "codebase-analyzer.timer"
         "conversation-analyzer.timer"
     )
@@ -484,6 +488,7 @@ services=(
     "context-sync.timer:Context Sync"
     "github-watcher.timer:GitHub Watcher"
     "worktree-watcher.timer:Worktree Watcher"
+    "github-token-refresher.service:GitHub Token Refresher"
     "codebase-analyzer.timer:Codebase Analyzer"
     "conversation-analyzer.timer:Conversation Analyzer"
 )

@@ -320,7 +320,39 @@ echo ""
 # GitHub MCP provides bi-directional access: repos, issues, PRs, comments, file operations
 # This replaces direct gh CLI usage for all GitHub operations
 # NOTE: Use --scope user to make it available in ALL projects (not just current dir)
-if [ -n "${GITHUB_TOKEN:-}" ]; then
+#
+# Token sources (in priority order):
+# 1. ~/sharing/.github-token file (auto-refreshed by github-token-refresher)
+# 2. GITHUB_TOKEN environment variable (set at container start)
+
+# Function to get the current GitHub token
+get_github_token() {
+    local TOKEN_FILE="${USER_HOME}/sharing/.github-token"
+    local token=""
+
+    # Try to read from token file first (this is refreshed by host service)
+    if [ -f "$TOKEN_FILE" ]; then
+        token=$(python3 -c "
+import json
+try:
+    with open('$TOKEN_FILE') as f:
+        data = json.load(f)
+    print(data.get('token', ''))
+except:
+    pass
+" 2>/dev/null)
+    fi
+
+    # Fall back to environment variable
+    if [ -z "$token" ]; then
+        token="${GITHUB_TOKEN:-}"
+    fi
+
+    echo "$token"
+}
+
+CURRENT_TOKEN=$(get_github_token)
+if [ -n "$CURRENT_TOKEN" ]; then
     # Remove any existing github MCP config to ensure clean state
     # This handles upgrades from old configs (e.g., local scope → user scope)
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local 2>/dev/null || true
@@ -332,8 +364,16 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
         --scope user \
         github \
         "https://api.githubcopilot.com/mcp/" \
-        --header "Authorization: Bearer ${GITHUB_TOKEN}"
-    echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
+        --header "Authorization: Bearer ${CURRENT_TOKEN}"
+
+    # Check if token came from file (auto-refresh enabled)
+    if [ -f "${USER_HOME}/sharing/.github-token" ]; then
+        echo "✓ GitHub MCP server configured (auto-refresh enabled)"
+        echo "  Token read from ~/sharing/.github-token"
+        echo "  MCP token watcher will refresh config when token changes"
+    else
+        echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
+    fi
     echo "  All GitHub operations go through MCP: PRs, issues, repos, comments"
 else
     echo "ℹ GitHub token not provided - GitHub MCP server not configured"
@@ -515,6 +555,19 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "======================================================================"
     echo ""
+
+    # Start MCP token watcher in background for auto-refresh support
+    # This watches ~/sharing/.github-token and reconfigures MCP when token changes
+    MCP_WATCHER="${USER_HOME}/khan/james-in-a-box/jib-container/scripts/mcp-token-watcher.py"
+    if [ -f "$MCP_WATCHER" ] && [ -f "${USER_HOME}/sharing/.github-token" ]; then
+        echo "Starting MCP token watcher in background..."
+        nohup gosu "${RUNTIME_UID}:${RUNTIME_GID}" python3 "$MCP_WATCHER" \
+            --interval 60 > /dev/null 2>&1 &
+        echo "✓ MCP token watcher started (PID: $!)"
+        echo "  Will refresh GitHub MCP config when token changes"
+        echo ""
+    fi
+
     # Start in khan directory
     cd "${USER_HOME}/khan" 2>/dev/null || cd "${USER_HOME}"
     # Auto-start Claude Code (bypasses permissions since we're in a sandbox)
