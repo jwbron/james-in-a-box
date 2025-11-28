@@ -91,7 +91,7 @@ class TestRunWrapper:
         # Wrapper should not be instantiated
         mock_wrapper_class.assert_not_called()
         # subprocess.run should be called directly
-        mock_subprocess.assert_called_once_with(["git", "status"])
+        mock_subprocess.assert_called_once_with(["git", "status"], check=False)
         assert result == 0
 
 
