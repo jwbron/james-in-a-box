@@ -30,7 +30,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -138,10 +138,7 @@ class DriftDetector:
 
     def is_placeholder(self, path: str) -> bool:
         """Check if a path is a placeholder/template that should be ignored."""
-        for pattern in self.IGNORE_PATTERNS:
-            if re.search(pattern, path):
-                return True
-        return False
+        return any(re.search(pattern, path) for pattern in self.IGNORE_PATTERNS)
 
     def find_similar_file(self, missing_path: str) -> str | None:
         """Try to find a similar file that might be the new location."""
@@ -246,9 +243,8 @@ class DriftDetector:
                     continue
 
                 # Strip anchor from link target for file existence check
-                anchor = ""
                 if "#" in link_target:
-                    link_target, anchor = link_target.split("#", 1)
+                    link_target, _anchor = link_target.split("#", 1)
 
                 # Resolve relative links from doc location
                 # All relative links (including those without ../) should be
@@ -318,7 +314,7 @@ class DriftDetector:
 
         if not self.docs_dir.exists():
             return DriftReport(
-                generated=datetime.now(timezone.utc).isoformat(),
+                generated=datetime.now(UTC).isoformat(),
                 project=self.project_root.name,
                 docs_checked=0,
                 issues_found=0,
@@ -348,7 +344,7 @@ class DriftDetector:
             issues.extend(self.check_doc(claude_md))
 
         return DriftReport(
-            generated=datetime.now(timezone.utc).isoformat(),
+            generated=datetime.now(UTC).isoformat(),
             project=self.project_root.name,
             docs_checked=docs_checked,
             issues_found=len(issues),
@@ -470,7 +466,7 @@ Examples:
             sys.exit(1)
         issues = detector.check_doc(doc_path)
         report = DriftReport(
-            generated=datetime.now(timezone.utc).isoformat(),
+            generated=datetime.now(UTC).isoformat(),
             project=project_root.name,
             docs_checked=1,
             issues_found=len(issues),

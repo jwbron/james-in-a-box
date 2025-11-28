@@ -80,7 +80,15 @@ class DocLinkFixer:
 
     def _build_file_cache(self):
         """Build cache of all files in the project."""
-        skip_dirs = {"__pycache__", ".git", ".pytest_cache", "node_modules", ".mypy_cache", ".venv", "venv"}
+        skip_dirs = {
+            "__pycache__",
+            ".git",
+            ".pytest_cache",
+            "node_modules",
+            ".mypy_cache",
+            ".venv",
+            "venv",
+        }
         for path in self.project_root.rglob("*"):
             if path.is_file() and not any(skip in path.parts for skip in skip_dirs):
                 rel_path = str(path.relative_to(self.project_root))
@@ -101,10 +109,7 @@ class DocLinkFixer:
 
     def is_template_path(self, path: str) -> bool:
         """Check if a path is an example/template that should be ignored."""
-        for pattern in self.TEMPLATE_PATTERNS:
-            if re.search(pattern, path):
-                return True
-        return False
+        return any(re.search(pattern, path) for pattern in self.TEMPLATE_PATTERNS)
 
     def get_relocation(self, old_path: str, from_doc: Path) -> str | None:
         """Get the new location for a file that has moved."""
@@ -177,7 +182,7 @@ class DocLinkFixer:
 
                 # Find common prefix
                 common_len = 0
-                for i, (d, n) in enumerate(zip(doc_parts, new_parts)):
+                for i, (d, n) in enumerate(zip(doc_parts, new_parts, strict=False)):
                     if d != n:
                         break
                     common_len = i + 1
@@ -199,7 +204,6 @@ class DocLinkFixer:
             print(f"Warning: Could not read {doc_path}: {e}")
             return "", 0
 
-        original_content = content
         changes = 0
 
         # Fix markdown links
@@ -250,10 +254,12 @@ class DocLinkFixer:
             if changes > 0:
                 results["files_modified"] += 1
                 results["total_fixes"] += changes
-                results["details"].append({
-                    "file": rel_path,
-                    "fixes": changes,
-                })
+                results["details"].append(
+                    {
+                        "file": rel_path,
+                        "fixes": changes,
+                    }
+                )
 
                 if apply:
                     md_file.write_text(new_content)
