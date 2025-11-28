@@ -647,11 +647,12 @@ GROUP BY jsonPayload.tool
 
 ### Phase 4: Migration
 
-1. Update github-watcher to use new logging
-2. Update slack-receiver
-3. Update context-sync
-4. Update container scripts
-5. Documentation
+1. Update github-watcher to use new logging ✅ (PR #TBD)
+2. Update slack-receiver ✅ (PR #TBD)
+3. Update incoming-processor (container) ✅ (PR #TBD)
+4. Update context-sync (future PR)
+5. Update remaining container scripts (future PR)
+6. Documentation updates (inline with migrations)
 
 ### Phase 5: GCP Cloud Logging Integration
 
