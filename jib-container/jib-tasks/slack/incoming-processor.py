@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 
 from claude.runner import run_claude
 from enrichment import enrich_task
-from jib_logging import get_logger, ContextScope
+from jib_logging import get_logger
 
 
 # Initialize jib_logging logger
@@ -289,7 +289,9 @@ Process this task now."""
 
         claude_output = claude_result.stdout.strip() if claude_result.stdout else ""
         if not claude_output:
-            logger.warning("Claude returned empty output despite success return code", task_id=original_task_id)
+            logger.warning(
+                "Claude returned empty output despite success return code", task_id=original_task_id
+            )
             claude_output = "*Claude completed but produced no output. The task may have been processed - check GitHub for any PRs created.*"
 
         notification_content = f"""# Task Completed
@@ -336,7 +338,12 @@ The task took too long to complete. This can happen with complex tasks.
         stderr_output = claude_result.stderr[:500] if claude_result.stderr else "None"
         stdout_output = claude_result.stdout[:500] if claude_result.stdout else "None"
 
-        logger.error("Task failed", task_id=original_task_id, return_code=claude_result.returncode, error=error_message)
+        logger.error(
+            "Task failed",
+            task_id=original_task_id,
+            return_code=claude_result.returncode,
+            error=error_message,
+        )
 
         notification_content = f"""# Task Processing Failed
 
@@ -471,7 +478,11 @@ def process_response(message_file: Path):
     referenced_notif = frontmatter.get("referenced_notification", "")
     notifications_dir = Path.home() / "sharing" / "notifications"
 
-    logger.info("Response metadata", thread_ts=thread_ts or None, referenced_notification=referenced_notif or None)
+    logger.info(
+        "Response metadata",
+        thread_ts=thread_ts or None,
+        referenced_notification=referenced_notif or None,
+    )
 
     # CRITICAL: Extract the original task ID from thread context
     # This is the key to preserving memory across Slack thread conversations
@@ -646,7 +657,9 @@ Process this response now."""
         cwd=Path.home() / "khan",  # Start in khan directory
         capture_output=True,
     )
-    logger.info("Claude completed", return_code=claude_result.returncode, task_id=task_id_for_search)
+    logger.info(
+        "Claude completed", return_code=claude_result.returncode, task_id=task_id_for_search
+    )
     if claude_result.stderr:
         logger.warning("Claude stderr output", stderr=claude_result.stderr[:500])
 
@@ -672,7 +685,10 @@ Process this response now."""
 
         claude_output = claude_result.stdout.strip() if claude_result.stdout else ""
         if not claude_output:
-            logger.warning("Claude returned empty output despite success return code", task_id=task_id_for_search)
+            logger.warning(
+                "Claude returned empty output despite success return code",
+                task_id=task_id_for_search,
+            )
             claude_output = "*Claude completed but produced no output. The response may have been processed - check GitHub for any updates.*"
 
         notification_content = f"""# Response Processed
@@ -690,7 +706,9 @@ Process this response now."""
 """
     elif timed_out:
         # TIMEOUT: Notify user with helpful context
-        logger.error("Response processing timed out", task_id=task_id_for_search, duration=elapsed_str)
+        logger.error(
+            "Response processing timed out", task_id=task_id_for_search, duration=elapsed_str
+        )
         partial_output = ""
         if claude_result.stdout:
             partial_output = (
@@ -719,7 +737,12 @@ The response took too long to process.
         stderr_output = claude_result.stderr[:500] if claude_result.stderr else "None"
         stdout_output = claude_result.stdout[:500] if claude_result.stdout else "None"
 
-        logger.error("Response processing failed", task_id=task_id_for_search, return_code=claude_result.returncode, error=error_message)
+        logger.error(
+            "Response processing failed",
+            task_id=task_id_for_search,
+            return_code=claude_result.returncode,
+            error=error_message,
+        )
 
         notification_content = f"""# Response Processing Failed
 

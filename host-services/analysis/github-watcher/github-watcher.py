@@ -62,7 +62,8 @@ import yaml
 # Add shared directory to path for jib_logging
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 
-from jib_logging import get_logger, ContextScope
+from jib_logging import ContextScope, get_logger
+
 
 # Initialize logger
 logger = get_logger("github-watcher")
@@ -914,9 +915,9 @@ def main():
             )
             for review_ctx in review_contexts:
                 if invoke_jib("review_request", review_ctx):
-                    state.setdefault("processed_reviews", {})[
-                        review_ctx["review_signature"]
-                    ] = utc_now_iso()
+                    state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
+                        utc_now_iso()
+                    )
                     tasks_queued += 1
 
     # Update last run START timestamp and save state

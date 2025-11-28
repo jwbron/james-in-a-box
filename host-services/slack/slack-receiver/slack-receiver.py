@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+
 # Add shared directory to path for jib_logging module
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 from jib_logging import get_logger
@@ -493,7 +494,9 @@ class SlackReceiver:
             if msg_type == "task" and metadata.get("thread_ts"):
                 self.threads[task_id] = metadata["thread_ts"]
                 self._save_threads()
-                self.logger.info("Saved thread mapping", task_id=task_id, thread_ts=metadata["thread_ts"])
+                self.logger.info(
+                    "Saved thread mapping", task_id=task_id, thread_ts=metadata["thread_ts"]
+                )
 
             return filepath
         except Exception as e:
@@ -618,7 +621,9 @@ class SlackReceiver:
                         }
                     )
 
-                self.logger.info("Fetched thread messages", message_count=len(messages), thread_ts=thread_ts)
+                self.logger.info(
+                    "Fetched thread messages", message_count=len(messages), thread_ts=thread_ts
+                )
                 return messages
 
         except Exception as e:
@@ -659,7 +664,13 @@ class SlackReceiver:
         except:
             user_name = "Unknown"
 
-        self.logger.info("Received message", user_name=user_name, user_id=user_id, preview=text[:100], thread_ts=thread_ts or None)
+        self.logger.info(
+            "Received message",
+            user_name=user_name,
+            user_id=user_id,
+            preview=text[:100],
+            thread_ts=thread_ts or None,
+        )
 
         # If this is a thread reply, get full thread context
         referenced_notif = None
@@ -676,7 +687,9 @@ class SlackReceiver:
                 match = re.search(timestamp_pattern, parent_text)
                 if match:
                     referenced_notif = match.group(0)
-                    self.logger.info("Extracted notification timestamp", referenced_notif=referenced_notif)
+                    self.logger.info(
+                        "Extracted notification timestamp", referenced_notif=referenced_notif
+                    )
 
         # Parse message
         parsed = self._parse_message(text, thread_ts=thread_ts, channel=channel)
@@ -760,7 +773,11 @@ class SlackReceiver:
         # Get bot user ID
         self._get_bot_user_id()
 
-        self.logger.info("Directories configured", incoming_dir=str(self.incoming_dir), responses_dir=str(self.responses_dir))
+        self.logger.info(
+            "Directories configured",
+            incoming_dir=str(self.incoming_dir),
+            responses_dir=str(self.responses_dir),
+        )
 
         if self.self_dm_channel:
             self.logger.info("Self-DM channel configured", channel=self.self_dm_channel)
