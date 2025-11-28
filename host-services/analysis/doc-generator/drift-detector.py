@@ -101,10 +101,9 @@ class DriftDetector:
     def _build_file_cache(self):
         """Build cache of all files in the project."""
         for path in self.project_root.rglob("*"):
-            if path.is_file():
-                if not any(skip in path.parts for skip in self.SKIP_DIRS):
-                    rel_path = str(path.relative_to(self.project_root))
-                    self._file_cache.add(rel_path)
+            if path.is_file() and not any(skip in path.parts for skip in self.SKIP_DIRS):
+                rel_path = str(path.relative_to(self.project_root))
+                self._file_cache.add(rel_path)
 
     def _load_components(self):
         """Load components from codebase.json if available."""
@@ -248,21 +247,24 @@ class DriftDetector:
             # Check path references
             for match in self.PATTERNS["path_ref"].finditer(line):
                 path_ref = match.group(1)
-                if "/" in path_ref and not self.file_exists(path_ref):
-                    # Only report if it looks like a project path
-                    if not path_ref.startswith(("http", "www", "//")):
-                        similar = self.find_similar_file(path_ref)
-                        suggestion = f"Path may have changed to: {similar}" if similar else ""
-                        issues.append(
-                            DriftIssue(
-                                doc_path=rel_doc_path,
-                                line_number=line_num,
-                                issue_type="stale_path",
-                                description="Path reference may be outdated",
-                                referenced=path_ref,
-                                suggestion=suggestion,
-                            )
+                # Only report if it looks like a project path (not URLs)
+                if (
+                    "/" in path_ref
+                    and not self.file_exists(path_ref)
+                    and not path_ref.startswith(("http", "www", "//"))
+                ):
+                    similar = self.find_similar_file(path_ref)
+                    suggestion = f"Path may have changed to: {similar}" if similar else ""
+                    issues.append(
+                        DriftIssue(
+                            doc_path=rel_doc_path,
+                            line_number=line_num,
+                            issue_type="stale_path",
+                            description="Path reference may be outdated",
+                            referenced=path_ref,
+                            suggestion=suggestion,
                         )
+                    )
 
         return issues
 
