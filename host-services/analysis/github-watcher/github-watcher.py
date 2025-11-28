@@ -52,7 +52,7 @@ def load_state() -> dict:
                 state.setdefault("processed_failures", {})
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
-                state.setdefault("last_run", None)
+                state.setdefault("last_run_start", None)
                 return state
         except Exception:
             pass
@@ -60,7 +60,7 @@ def load_state() -> dict:
         "processed_failures": {},
         "processed_comments": {},
         "processed_reviews": {},
-        "last_run": None,
+        "last_run_start": None,
     }
 
 
@@ -224,6 +224,9 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
     ]
 
     if not failed_checks:
+        # Show check status for debugging
+        statuses = [c.get("conclusion", "pending") for c in check_runs]
+        print(f"    PR #{pr_num}: {len(check_runs)} check(s), all passing ({', '.join(set(statuses))})")
         return None
 
     # Create signature to detect if we've already processed this exact failure set
@@ -231,9 +234,14 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
     failure_signature = f"{repo}-{pr_num}:" + ",".join(failed_names)
 
     if failure_signature in state.get("processed_failures", {}):
+        processed_at = state["processed_failures"].get(failure_signature, "unknown")
+        print(
+            f"    PR #{pr_num}: {len(failed_checks)} check(s) failing but already processed "
+            f"at {processed_at}: {', '.join(failed_names)}"
+        )
         return None  # Already processed
 
-    print(f"  PR #{pr_num}: {len(failed_checks)} check(s) failing")
+    print(f"  PR #{pr_num}: {len(failed_checks)} check(s) failing: {', '.join(failed_names)}")
 
     # Fetch logs for failed checks
     for check in failed_checks:
@@ -358,6 +366,9 @@ def check_pr_for_comments(
     if not all_comments:
         return None
 
+    # Debug: show comment count
+    print(f"    PR #{pr_num}: Found {len(all_comments)} total comment(s)")
+
     # Filter to comments from the bot itself or common bots
     # Build list of authors to exclude (case-insensitive)
     # Include both the base username and the [bot] suffix variant
@@ -371,12 +382,19 @@ def check_pr_for_comments(
     other_comments = [c for c in all_comments if c["author"].lower() not in excluded_authors]
 
     if not other_comments:
+        print(f"    PR #{pr_num}: No comments from others (all from bot/excluded authors)")
         return None
 
     # Filter by since_timestamp if provided (only show comments newer than last run)
+    # Use >= to avoid missing comments that occur at exactly the same timestamp
     if since_timestamp:
-        other_comments = [c for c in other_comments if c.get("created_at", "") > since_timestamp]
+        pre_filter_count = len(other_comments)
+        other_comments = [c for c in other_comments if c.get("created_at", "") >= since_timestamp]
         if not other_comments:
+            print(
+                f"    PR #{pr_num}: {pre_filter_count} comment(s) filtered out "
+                f"(all before {since_timestamp})"
+            )
             return None  # No new comments since last run
 
     # Create signature based on latest comment timestamp
@@ -384,6 +402,11 @@ def check_pr_for_comments(
     comment_signature = f"{repo}-{pr_num}:{latest_comment['id']}"
 
     if comment_signature in state.get("processed_comments", {}):
+        processed_at = state["processed_comments"].get(comment_signature, "unknown")
+        print(
+            f"    PR #{pr_num}: Latest comment already processed at {processed_at} "
+            f"(author: {latest_comment['author']})"
+        )
         return None  # Already processed
 
     print(f"  PR #{pr_num}: {len(other_comments)} new comment(s) from others")
@@ -443,8 +466,9 @@ def check_prs_for_review(
         return []
 
     # Filter by since_timestamp if provided (only show PRs created after last run)
+    # Use >= to avoid missing PRs that occur at exactly the same timestamp
     if since_timestamp:
-        other_prs = [p for p in other_prs if p.get("createdAt", "") > since_timestamp]
+        other_prs = [p for p in other_prs if p.get("createdAt", "") >= since_timestamp]
         if not other_prs:
             return []  # No new PRs since last run
 
@@ -497,24 +521,26 @@ def utc_now_iso() -> str:
 
 
 def get_since_timestamp(state: dict) -> str | None:
-    """Get ISO timestamp for 'since' queries based on last run time.
+    """Get ISO timestamp for 'since' queries based on last run START time.
 
-    Returns None if this is the first run or last_run is not set.
+    Returns None if this is the first run or last_run_start is not set.
+
+    We use last_run_start (when the previous watcher run began) rather than
+    when it ended to ensure we don't miss any events that occurred during
+    the previous run's execution.
     """
-    last_run = state.get("last_run")
-    if last_run:
-        return last_run
-    return None
+    return state.get("last_run_start")
 
 
 def main():
     """Main entry point - scan configured repos and trigger jib as needed."""
-    current_run_time = utc_now_iso()
+    # Record when this run STARTS - this is what we'll use for next run's "since"
+    current_run_start = utc_now_iso()
 
     print("=" * 60)
     print("GitHub Watcher - Host-side monitoring service")
     print(f"Local time: {datetime.now().isoformat()}")
-    print(f"UTC time:   {current_run_time}")
+    print(f"UTC time:   {current_run_start}")
     print("=" * 60)
 
     # Load config
@@ -533,12 +559,13 @@ def main():
     # Load state
     state = load_state()
 
-    # Get the timestamp from last run for filtering queries
+    # Get the timestamp from when the PREVIOUS run started (for comment filtering)
     since_timestamp = get_since_timestamp(state)
     if since_timestamp:
-        print(f"Checking for events since last run: {since_timestamp}")
+        print(f"Checking for comments since last run start: {since_timestamp}")
     else:
         print("First run - checking all open items")
+    print("PR check failures: checking ALL open PRs unconditionally")
 
     print(f"Scanning {len(repos)} repository(ies)...")
 
@@ -632,13 +659,14 @@ def main():
                 )
                 tasks_queued += 1
 
-    # Update last run timestamp and save state
-    state["last_run"] = current_run_time
+    # Update last run START timestamp and save state
+    # We store when this run STARTED so next run checks for comments since then
+    state["last_run_start"] = current_run_start
     save_state(state)
 
     print("\n" + "=" * 60)
     print(f"GitHub Watcher completed - {tasks_queued} task(s) triggered")
-    print(f"Next run will check for events since: {current_run_time}")
+    print(f"Next run will check for comments since: {current_run_start}")
     print("=" * 60)
 
     return 0
