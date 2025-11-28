@@ -43,6 +43,11 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+# Import shared Claude runner
+# Path: host-services/analysis/codebase-analyzer/codebase-analyzer.py -> repo-root/shared
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+from claude import is_claude_available, run_claude
+
 
 class AnalysisCategory(Enum):
     """Categories of analysis the tool performs."""
@@ -244,13 +249,7 @@ class CodebaseAnalyzer:
 
     def _check_claude_cli(self) -> bool:
         """Check if claude CLI is available."""
-        try:
-            result = subprocess.run(
-                ["claude", "--version"], check=False, capture_output=True, text=True, timeout=5
-            )
-            return result.returncode == 0
-        except (subprocess.SubprocessError, FileNotFoundError):
-            return False
+        return is_claude_available()
 
     def _setup_logging(self) -> logging.Logger:
         """Configure logging."""
@@ -839,77 +838,62 @@ Return ONLY the JSON array, no other text."""
 
         self.logger.info("Calling Claude for analysis (single call)...")
 
-        try:
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minute timeout for large analysis
-            )
+        result = run_claude(prompt, timeout=300)
 
-            if result.returncode != 0:
-                self.logger.error(f"Claude returned error: {result.stderr}")
-                # Return pre-detected issues even if Claude fails
-                return ast_issues + readme_issues
-
-            response = result.stdout.strip()
-
-            # Extract JSON from response
-            try:
-                start_idx = response.find("[")
-                end_idx = response.rfind("]") + 1
-                if start_idx != -1 and end_idx > start_idx:
-                    json_str = response[start_idx:end_idx]
-                    claude_issues = json.loads(json_str)
-
-                    # Merge all issues (deduplicate by file+description)
-                    all_issues = ast_issues + readme_issues
-                    existing = {(i.get("file"), i.get("description")[:50]) for i in all_issues}
-
-                    for issue in claude_issues:
-                        key = (issue.get("file"), issue.get("description", "")[:50])
-                        if key not in existing:
-                            all_issues.append(issue)
-                            existing.add(key)
-
-                    # Add broken symlink issues
-                    for broken_link in structural_info.broken_symlinks:
-                        key = (broken_link, "Broken symlink")
-                        if key not in existing:
-                            all_issues.append(
-                                {
-                                    "file": broken_link,
-                                    "line_hint": "symlink",
-                                    "priority": "HIGH",
-                                    "category": "symlinks",
-                                    "description": "Broken symlink: target does not exist",
-                                    "suggestion": "Fix or remove broken symlink",
-                                    "auto_fixable": False,
-                                }
-                            )
-
-                    self.logger.info(f"Found {len(all_issues)} total issues")
-
-                    # Save to cache
-                    self._save_cache(all_issues)
-
-                    return all_issues
-                else:
-                    self.logger.warning("No JSON array found in response")
-                    return ast_issues + readme_issues
-
-            except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse JSON: {e}")
-                self.logger.debug(f"Response was: {response[:500]}")
-                return ast_issues + readme_issues
-
-        except subprocess.TimeoutExpired:
-            self.logger.error("Claude call timed out")
+        if not result.success:
+            self.logger.error(f"Claude error: {result.error}")
+            # Return pre-detected issues even if Claude fails
             return ast_issues + readme_issues
-        except Exception as e:
-            self.logger.error(f"Error calling Claude: {e}")
+
+        response = result.stdout.strip()
+
+        # Extract JSON from response
+        try:
+            start_idx = response.find("[")
+            end_idx = response.rfind("]") + 1
+            if start_idx != -1 and end_idx > start_idx:
+                json_str = response[start_idx:end_idx]
+                claude_issues = json.loads(json_str)
+
+                # Merge all issues (deduplicate by file+description)
+                all_issues = ast_issues + readme_issues
+                existing = {(i.get("file"), i.get("description")[:50]) for i in all_issues}
+
+                for issue in claude_issues:
+                    key = (issue.get("file"), issue.get("description", "")[:50])
+                    if key not in existing:
+                        all_issues.append(issue)
+                        existing.add(key)
+
+                # Add broken symlink issues
+                for broken_link in structural_info.broken_symlinks:
+                    key = (broken_link, "Broken symlink")
+                    if key not in existing:
+                        all_issues.append(
+                            {
+                                "file": broken_link,
+                                "line_hint": "symlink",
+                                "priority": "HIGH",
+                                "category": "symlinks",
+                                "description": "Broken symlink: target does not exist",
+                                "suggestion": "Fix or remove broken symlink",
+                                "auto_fixable": False,
+                            }
+                        )
+
+                self.logger.info(f"Found {len(all_issues)} total issues")
+
+                # Save to cache
+                self._save_cache(all_issues)
+
+                return all_issues
+            else:
+                self.logger.warning("No JSON array found in response")
+                return ast_issues + readme_issues
+
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse JSON: {e}")
+            self.logger.debug(f"Response was: {response[:500]}")
             return ast_issues + readme_issues
 
     def _detect_meta_commentary(self, content: str, file_ext: str) -> tuple[bool, str | None]:
@@ -1038,18 +1022,11 @@ OUTPUT REQUIREMENTS:
 
 Output the fixed file content now:"""
 
-            result = subprocess.run(
-                ["claude", "--dangerously-skip-permissions"],
-                check=False,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
+            result = run_claude(prompt, timeout=timeout_seconds)
 
-            if result.returncode != 0:
-                self.logger.error(f"Claude error for {issue['file']}: {result.stderr}")
-                return (FixResult.CLAUDE_ERROR, result.stderr[:200] if result.stderr else None)
+            if not result.success:
+                self.logger.error(f"Claude error for {issue['file']}: {result.error}")
+                return (FixResult.CLAUDE_ERROR, result.error[:200] if result.error else None)
 
             fixed_content = result.stdout.strip()
 
@@ -1089,10 +1066,6 @@ Output the fixed file content now:"""
             self.logger.info(f"Fixed: {issue['file']} ({issue['category']})")
             return (FixResult.SUCCESS, None)
 
-        except subprocess.TimeoutExpired:
-            detail = f"exceeded {timeout_seconds}s timeout"
-            self.logger.error(f"Timeout fixing {issue['file']}: {detail}")
-            return (FixResult.TIMEOUT, detail)
         except Exception as e:
             self.logger.error(f"Error fixing {issue['file']}: {e}")
             return (FixResult.OTHER_ERROR, str(e)[:200])

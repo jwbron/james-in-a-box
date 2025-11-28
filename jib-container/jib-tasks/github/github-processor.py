@@ -22,10 +22,13 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B":
 
 import argparse
 import json
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+# Import shared Claude runner
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "shared"))
+from claude import run_claude
 
 
 def create_notification(title: str, body: str):
@@ -74,32 +77,17 @@ def handle_check_failure(context: dict):
     # Run Claude Code via stdin (not --print which creates restricted session)
     # This allows full access to tools and filesystem
     print("Invoking Claude for analysis...")
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=900,  # 15 minute timeout
-            cwd=str(repo_path) if repo_path.exists() else str(Path.home() / "khan"),
-        )
+    cwd = repo_path if repo_path.exists() else Path.home() / "khan"
+    result = run_claude(prompt, timeout=900, cwd=cwd)
 
-        if result.returncode == 0:
-            print("Claude analysis completed successfully")
-            if result.stdout:
-                print(f"Output: {result.stdout[:500]}...")
-        else:
-            print(f"Claude exited with code {result.returncode}")
-            if result.stderr:
-                print(f"Error: {result.stderr[:500]}")
-
-    except subprocess.TimeoutExpired:
-        print("Claude analysis timed out after 15 minutes")
-    except FileNotFoundError:
-        print("Claude CLI not found - is it installed?")
-    except Exception as e:
-        print(f"Error invoking Claude: {e}")
+    if result.success:
+        print("Claude analysis completed successfully")
+        if result.stdout:
+            print(f"Output: {result.stdout[:500]}...")
+    else:
+        print(f"{result.error}")
+        if result.stderr:
+            print(f"Error: {result.stderr[:500]}")
 
 
 def build_check_failure_prompt(context: dict) -> str:
@@ -286,32 +274,17 @@ def handle_comment(context: dict):
     # Run Claude Code via stdin (not --print which creates restricted session)
     # This allows full access to tools and filesystem
     print("Invoking Claude for response generation...")
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=600,  # 10 minute timeout
-            cwd=str(repo_path) if repo_path.exists() else str(Path.home() / "khan"),
-        )
+    cwd = repo_path if repo_path.exists() else Path.home() / "khan"
+    result = run_claude(prompt, timeout=600, cwd=cwd)
 
-        if result.returncode == 0:
-            print("Claude response generation completed")
-            if result.stdout:
-                print(f"Output: {result.stdout[:500]}...")
-        else:
-            print(f"Claude exited with code {result.returncode}")
-            if result.stderr:
-                print(f"Error: {result.stderr[:500]}")
-
-    except subprocess.TimeoutExpired:
-        print("Claude response generation timed out")
-    except FileNotFoundError:
-        print("Claude CLI not found")
-    except Exception as e:
-        print(f"Error invoking Claude: {e}")
+    if result.success:
+        print("Claude response generation completed")
+        if result.stdout:
+            print(f"Output: {result.stdout[:500]}...")
+    else:
+        print(f"{result.error}")
+        if result.stderr:
+            print(f"Error: {result.stderr[:500]}")
 
 
 def build_comment_prompt(context: dict) -> str:
@@ -427,32 +400,17 @@ def handle_review_request(context: dict):
     # Run Claude Code via stdin (not --print which creates restricted session)
     # This allows full access to tools and filesystem
     print("Invoking Claude for code review...")
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=900,  # 15 minute timeout
-            cwd=str(repo_path) if repo_path.exists() else str(Path.home() / "khan"),
-        )
+    cwd = repo_path if repo_path.exists() else Path.home() / "khan"
+    result = run_claude(prompt, timeout=900, cwd=cwd)
 
-        if result.returncode == 0:
-            print("Claude code review completed")
-            if result.stdout:
-                print(f"Output: {result.stdout[:500]}...")
-        else:
-            print(f"Claude exited with code {result.returncode}")
-            if result.stderr:
-                print(f"Error: {result.stderr[:500]}")
-
-    except subprocess.TimeoutExpired:
-        print("Claude review timed out")
-    except FileNotFoundError:
-        print("Claude CLI not found")
-    except Exception as e:
-        print(f"Error invoking Claude: {e}")
+    if result.success:
+        print("Claude code review completed")
+        if result.stdout:
+            print(f"Output: {result.stdout[:500]}...")
+    else:
+        print(f"{result.error}")
+        if result.stderr:
+            print(f"Error: {result.stderr[:500]}")
 
 
 def build_review_prompt(context: dict) -> str:
