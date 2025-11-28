@@ -111,7 +111,7 @@ This ADR addresses:
 ### Component Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────────────────────┐
 │                              GCP Project: khan-jib                               │
 │                                                                                  │
 │  ┌────────────────────────────────────────────────────────────────────────────┐ │
@@ -184,10 +184,10 @@ This ADR addresses:
                                         │
                                         │ HTTPS
                                         ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────────────────────┐
 │                              Cloud Load Balancer                               │
 │                           (managed by Cloud Run)                               │
-└───────────────────────────────────────┬───────────────────────────────────────┘
+└─────────────────────────────────────┬─────────────────────────────────────┘
                                         │
                     ┌───────────────────┼───────────────────┐
                     │                   │                   │
@@ -202,7 +202,7 @@ This ADR addresses:
             ┌─────────────────────────────────────────────────────┐
             │                    VPC Connector                     │
             │              (for internal services)                 │
-            └───────────────────────────────────────────────────────┘
+            └─────────────────────────────────────────────────────┘
                                         │
                                         ▼
                               ┌───────────────────┐
@@ -504,7 +504,7 @@ module "analyze_codebase" {
 ### Scheduled Jobs Summary
 
 | Job | Schedule | Purpose | Timeout | Resources |
-|-----|----------|---------|---------|-----------|
+|-----|----------|---------|---------|------------|
 | `sync-confluence` | Hourly | Sync documentation | 30m | 1 CPU, 2GB |
 | `sync-jira` | Hourly | Sync tickets | 30m | 1 CPU, 2GB |
 | `sync-github` | Every 15m | Sync PRs, checks | 15m | 1 CPU, 2GB |
@@ -539,7 +539,7 @@ module "analyze_codebase" {
 │     ┌──────────────┐                                                            │
 │     │ jib-task     │──── API keys from Secrets ─▶ Anthropic, GitHub, Atlassian │
 │     └──────────────┘                                                            │
-└──────────────────────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Authorization Model
@@ -806,7 +806,7 @@ resource "google_secret_manager_secret_iam_member" "secret_accessors" {
 ### Monthly Cost Estimate (Typical Usage)
 
 | Component | Usage Estimate | Unit Cost | Monthly Cost |
-|-----------|---------------|-----------|--------------|
+|-----------|---------------|-----------|---------------|
 | **Cloud Run Services** | | | |
 | jib-bot | 10K requests, 100 CPU-hours | $0.00002/req + $0.08/CPU-hr | ~$10 |
 | slack-worker | 5K requests, 50 CPU-hours | $0.00002/req + $0.08/CPU-hr | ~$5 |
@@ -1193,3 +1193,7 @@ This ADR is the culmination of a series defining the jib GCP deployment architec
 - [terraform-modules/scheduled-job](https://github.com/Khan/terraform-modules/tree/main/terraform/modules/scheduled-job)
 - [Cloud Run Documentation](https://cloud.google.com/run/docs)
 - [Cloud Run Jobs Documentation](https://cloud.google.com/run/docs/create-jobs)
+
+---
+
+**Last Updated:** 2025-11-28
