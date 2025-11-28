@@ -62,3 +62,9 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Generated documentation indexes (regenerated on container startup)
+# These files contain volatile data (timestamps, line numbers) that causes merge conflicts
+docs/generated/codebase.json
+docs/generated/patterns.json
+docs/generated/dependencies.json

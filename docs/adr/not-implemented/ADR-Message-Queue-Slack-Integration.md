@@ -594,3 +594,9 @@ This ADR is the foundation for a series defining the jib GCP deployment architec
 - [Cloud Run Push Subscriptions](https://cloud.google.com/run/docs/triggering/pubsub-push)
 - [Firestore Documentation](https://cloud.google.com/firestore/docs)
 - [Current Slack Integration Architecture](../architecture/slack-integration.md)
+
+---
+
+**Last Updated:** 2025-11-28
+**Next Review:** 2025-12-28 (Monthly)
+**Status:** Proposed

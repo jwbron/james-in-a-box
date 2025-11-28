@@ -13,7 +13,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [ADR Overview](adr/README.md) | Index of all ADRs and their status |
 | [Autonomous Software Engineer](adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, and design decisions |
-| [LLM Documentation Index Strategy](adr/in-progress/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation (this index) |
+| [LLM Documentation Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation (this index) |
 | [Context Sync Strategy](adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | How external data (Confluence, JIRA, GitHub) is synced |
 | [Slack Integration Strategy](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Bidirectional Slack communication approach |
 | [Message Queue Integration](adr/not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub migration plan for Slack |
@@ -75,7 +75,7 @@ When working on specific tasks, consult these documents first:
 | **Security-related changes** | [ADR: Internet Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Context sync modifications** | [ADR: Context Sync](adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |
 | **GCP deployment changes** | [ADR: GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | [ADR: Slack GCP](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) |
-| **Documentation updates** | [ADR: Doc Index Strategy](adr/in-progress/ADR-LLM-Documentation-Index-Strategy.md) | This file |
+| **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
 
 ## Machine-Readable Indexes
 

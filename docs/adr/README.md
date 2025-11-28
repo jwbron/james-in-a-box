@@ -16,18 +16,18 @@ ADRs are organized by implementation status:
 
 ## ADR Index
 
+### Implemented
+
+| ADR | Summary |
+|-----|---------|
+| [LLM Documentation Index Strategy](implemented/ADR-LLM-Documentation-Index-Strategy.md) | LLM-navigable documentation with 6-agent pipeline |
+
 ### In Progress
 
 | ADR | Summary |
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
 | [Context Sync Strategy](in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Custom sync vs MCP for Confluence/JIRA/GitHub |
-
-### Implemented
-
-| ADR | Summary |
-|-----|---------|
-| [LLM Documentation Index Strategy](implemented/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation |
 
 ### Not Implemented
 
