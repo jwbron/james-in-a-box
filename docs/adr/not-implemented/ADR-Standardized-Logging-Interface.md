@@ -507,7 +507,7 @@ GROUP BY jsonPayload.tool
 
 ## Implementation Plan
 
-### Phase 1: Core Library (Week 1)
+### Phase 1: Core Library
 
 1. Create `shared/jib_logging/` directory structure
 2. Implement `JibLogger` with JSON formatting
@@ -515,7 +515,7 @@ GROUP BY jsonPayload.tool
 4. Add file handler for local deployment
 5. Basic tests
 
-### Phase 2: Tool Wrappers (Week 2)
+### Phase 2: Tool Wrappers
 
 1. Implement `bd` wrapper
 2. Implement `git` wrapper
@@ -523,20 +523,34 @@ GROUP BY jsonPayload.tool
 4. Implement `claude` wrapper (basic)
 5. Integration tests
 
-### Phase 3: Model Capture (Week 3)
+### Phase 3: Model Capture
 
 1. Implement model output capture
 2. Add token tracking
 3. Add response storage
 4. Add performance metrics
 
-### Phase 4: Migration (Week 4+)
+### Phase 4: Migration
 
 1. Update github-watcher to use new logging
 2. Update slack-receiver
 3. Update context-sync
 4. Update container scripts
 5. Documentation
+
+### Phase 5: GCP Cloud Logging Integration
+
+GCP-specific functionality (Cloud Logging output handler, log router configuration, BigQuery export) will be implemented as part of the GCP migration per [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md). This ensures:
+
+1. GCP infrastructure is available before adding Cloud Logging integration
+2. Logging changes are tested alongside other GCP components
+3. Terraform configuration for log sinks can be added atomically
+
+**Deferred to GCP Migration:**
+- Cloud Logging output handler activation
+- Log router/sink Terraform configuration
+- BigQuery export for log analytics
+- Production monitoring dashboards
 
 ## Related ADRs
 
