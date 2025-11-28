@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T18:32:46.102626+00:00",
+  "generated": "2025-11-28T19:07:28.951556+00:00",
   "project": "james-in-a-box",
   "patterns": {
     "config": {
@@ -13,8 +13,8 @@
         "config/repo_config.py:37",
         "config/repo_config.py:66",
         "host-services/analysis/github-watcher/github-watcher.py:68",
+        "host-services/sync/context-sync/connectors/_archived/jira/config.py:8",
         "host-services/sync/context-sync/connectors/confluence/config.py:8",
-        "host-services/sync/context-sync/connectors/jira/config.py:8",
         "jib-container/docker-setup.py:450",
         "jib-container/jib-tasks/github/comment-responder.py:242",
         "jib-container/jib-tools/github-app-token.py:134",
@@ -42,11 +42,11 @@
     "connector": {
       "description": "External service integration via connectors",
       "examples": [
+        "host-services/sync/context-sync/connectors/_archived/jira/connector.py:26",
         "host-services/sync/context-sync/connectors/base.py:14",
         "host-services/sync/context-sync/connectors/confluence/connector.py:15",
-        "host-services/sync/context-sync/connectors/jira/connector.py:26",
-        "host-services/sync/context-sync/context-sync.py:40",
-        "host-services/sync/context-sync/context-sync.py:80",
+        "host-services/sync/context-sync/context-sync.py:41",
+        "host-services/sync/context-sync/context-sync.py:75",
         "tests/context_sync/test_base_connector.py:14",
         "tests/context_sync/test_base_connector.py:306",
         "tests/context_sync/test_base_connector.py:328",
@@ -152,9 +152,9 @@
       "examples": [
         "config/repo_config.py:146",
         "config/repo_config.py:159",
+        "host-services/sync/context-sync/connectors/_archived/jira/sync.py:19",
         "host-services/sync/context-sync/connectors/confluence/sync.py:20",
-        "host-services/sync/context-sync/connectors/jira/sync.py:19",
-        "host-services/sync/context-sync/context-sync.py:80",
+        "host-services/sync/context-sync/context-sync.py:75",
         "host-services/sync/context-sync/utils/maintenance.py:13",
         "tests/config/test_repo_config.py:203",
         "tests/config/test_repo_config.py:224",

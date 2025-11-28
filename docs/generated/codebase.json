@@ -1,5 +1,5 @@
 {
-  "generated": "2025-11-28T18:32:46.102626+00:00",
+  "generated": "2025-11-28T19:07:28.951556+00:00",
   "project": "james-in-a-box",
   "structure": {
     "description": "james-in-a-box directory",
@@ -136,17 +136,14 @@
                   "connectors/": {
                     "description": "External service connectors",
                     "children": {
+                      "_archived/": {
+                        "description": "_archived directory",
+                        "children": {
+                          "jira/": {}
+                        }
+                      },
                       "confluence/": {
                         "description": "confluence directory",
-                        "files": [
-                          "__init__.py",
-                          "config.py",
-                          "connector.py",
-                          "sync.py"
-                        ]
-                      },
-                      "jira/": {
-                        "description": "jira directory",
                         "files": [
                           "__init__.py",
                           "config.py",
@@ -212,6 +209,18 @@
           "jib-tasks/": {
             "description": "Tasks executed inside the container",
             "children": {
+              "_archived/": {
+                "description": "_archived directory",
+                "children": {
+                  "jira/": {
+                    "description": "jira directory",
+                    "files": [
+                      "analyze-sprint.py",
+                      "jira-processor.py"
+                    ]
+                  }
+                }
+              },
               "confluence/": {
                 "description": "confluence directory",
                 "files": [
@@ -226,13 +235,6 @@
                   "github-processor.py",
                   "pr-analyzer.py",
                   "pr-reviewer.py"
-                ]
-              },
-              "jira/": {
-                "description": "jira directory",
-                "files": [
-                  "analyze-sprint.py",
-                  "jira-processor.py"
                 ]
               },
               "slack/": {
@@ -1054,6 +1056,66 @@
       "description": "Main entry point."
     },
     {
+      "name": "JIRAConfig",
+      "file": "host-services/sync/context-sync/connectors/_archived/jira/config.py",
+      "line": 8,
+      "type": "class",
+      "description": "Configuration for JIRA instance.",
+      "methods": [
+        "validate",
+        "get_validation_errors"
+      ]
+    },
+    {
+      "name": "JIRAConnector",
+      "file": "host-services/sync/context-sync/connectors/_archived/jira/connector.py",
+      "line": 26,
+      "type": "class",
+      "description": "JIRA connector that syncs tickets and comments.",
+      "bases": [
+        "BaseConnector"
+      ],
+      "methods": [
+        "__init__",
+        "validate_config",
+        "sync",
+        "get_sync_metadata"
+      ]
+    },
+    {
+      "name": "main",
+      "file": "host-services/sync/context-sync/connectors/_archived/jira/connector.py",
+      "line": 105,
+      "type": "function",
+      "description": "Main entry point for running JIRA connector standalone."
+    },
+    {
+      "name": "JIRASync",
+      "file": "host-services/sync/context-sync/connectors/_archived/jira/sync.py",
+      "line": 19,
+      "type": "class",
+      "description": "Sync JIRA tickets to local files.",
+      "methods": [
+        "__init__",
+        "_setup_auth",
+        "_load_sync_state",
+        "_save_sync_state",
+        "_get_ticket_hash",
+        "_sanitize_filename",
+        "search_issues",
+        "format_issue_as_markdown",
+        "_format_adf_content",
+        "_format_adf_node"
+      ]
+    },
+    {
+      "name": "main",
+      "file": "host-services/sync/context-sync/connectors/_archived/jira/sync.py",
+      "line": 398,
+      "type": "function",
+      "description": "Main entry point for running JIRA sync standalone."
+    },
+    {
       "name": "BaseConnector",
       "file": "host-services/sync/context-sync/connectors/base.py",
       "line": 14,
@@ -1135,90 +1197,30 @@
       "description": "Main function with single page and format support."
     },
     {
-      "name": "JIRAConfig",
-      "file": "host-services/sync/context-sync/connectors/jira/config.py",
-      "line": 8,
-      "type": "class",
-      "description": "Configuration for JIRA instance.",
-      "methods": [
-        "validate",
-        "get_validation_errors"
-      ]
-    },
-    {
-      "name": "JIRAConnector",
-      "file": "host-services/sync/context-sync/connectors/jira/connector.py",
-      "line": 26,
-      "type": "class",
-      "description": "JIRA connector that syncs tickets and comments.",
-      "bases": [
-        "BaseConnector"
-      ],
-      "methods": [
-        "__init__",
-        "validate_config",
-        "sync",
-        "get_sync_metadata"
-      ]
-    },
-    {
-      "name": "main",
-      "file": "host-services/sync/context-sync/connectors/jira/connector.py",
-      "line": 105,
-      "type": "function",
-      "description": "Main entry point for running JIRA connector standalone."
-    },
-    {
-      "name": "JIRASync",
-      "file": "host-services/sync/context-sync/connectors/jira/sync.py",
-      "line": 19,
-      "type": "class",
-      "description": "Sync JIRA tickets to local files.",
-      "methods": [
-        "__init__",
-        "_setup_auth",
-        "_load_sync_state",
-        "_save_sync_state",
-        "_get_ticket_hash",
-        "_sanitize_filename",
-        "search_issues",
-        "format_issue_as_markdown",
-        "_format_adf_content",
-        "_format_adf_node"
-      ]
-    },
-    {
-      "name": "main",
-      "file": "host-services/sync/context-sync/connectors/jira/sync.py",
-      "line": 398,
-      "type": "function",
-      "description": "Main entry point for running JIRA sync standalone."
-    },
-    {
       "name": "get_all_connectors",
       "file": "host-services/sync/context-sync/context-sync.py",
-      "line": 40,
+      "line": 41,
       "type": "function",
       "description": "Get all available connectors."
     },
     {
       "name": "sync_all_connectors",
       "file": "host-services/sync/context-sync/context-sync.py",
-      "line": 80,
+      "line": 75,
       "type": "function",
       "description": "Sync all configured connectors."
     },
     {
       "name": "print_summary",
       "file": "host-services/sync/context-sync/context-sync.py",
-      "line": 134,
+      "line": 129,
       "type": "function",
       "description": "Print a summary of sync results."
     },
     {
       "name": "main",
       "file": "host-services/sync/context-sync/context-sync.py",
-      "line": 169,
+      "line": 164,
       "type": "function",
       "description": "Main entry point."
     },
