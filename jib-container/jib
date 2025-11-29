@@ -601,8 +601,56 @@ def generate_container_id() -> str:
     return f"jib-{timestamp}-{pid}"
 
 
+def get_default_branch(repo_path: Path) -> str:
+    """Get the default branch (main or master) for a git repository.
+
+    Args:
+        repo_path: Path to the git repository
+
+    Returns:
+        The default branch name ('main' or 'master'), or 'main' as fallback
+    """
+    # Try to get the default branch from git config (set by clone)
+    result = subprocess.run(
+        ["git", "config", "--get", "init.defaultBranch"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+
+    # Check if origin/HEAD exists and points to a branch
+    result = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        # Format: refs/remotes/origin/main -> main
+        return result.stdout.strip().split("/")[-1]
+
+    # Fall back to checking which branches exist
+    for branch in ["main", "master"]:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/{branch}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            return branch
+
+    # Default to 'main' if nothing found
+    return "main"
+
+
 def create_worktrees(container_id: str) -> dict:
     """Create git worktrees for all repos in ~/khan/
+
+    Worktrees are always based on the default branch (main or master),
+    regardless of what branch is currently checked out on the host.
 
     Returns:
         Dictionary mapping repo names to worktree paths
@@ -638,15 +686,18 @@ def create_worktrees(container_id: str) -> dict:
         worktree_path = worktree_dir / repo_name
 
         try:
-            if not _quiet_mode:
-                info(f"Creating worktree for {repo_name}...")
+            # Determine the default branch for this repo
+            default_branch = get_default_branch(repo_path)
 
-            # Create temporary branch for this container
+            if not _quiet_mode:
+                info(f"Creating worktree for {repo_name} (from {default_branch})...")
+
+            # Create temporary branch for this container, starting from the default branch
             branch_name = f"jib-temp-{container_id}"
 
-            # Create worktree
+            # Create worktree based on the default branch (not current HEAD)
             result = subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), "-b", branch_name],
+                ["git", "worktree", "add", str(worktree_path), "-b", branch_name, default_branch],
                 cwd=repo_path,
                 capture_output=True,
                 text=True
