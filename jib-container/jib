@@ -20,6 +20,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from statusbar import StatusBar, init_statusbar, status, status_success, status_error, status_warn, status_finish
+
+
+# Global quiet mode flag
+_quiet_mode = False
+
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -32,19 +38,35 @@ class Colors:
 
 
 def info(msg: str) -> None:
-    print(f"{Colors.BLUE}[INFO]{Colors.NC} {msg}")
+    """Show info message. In quiet mode, updates statusbar instead."""
+    if _quiet_mode:
+        status(msg)
+    else:
+        print(f"{Colors.BLUE}[INFO]{Colors.NC} {msg}")
 
 
 def success(msg: str) -> None:
-    print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {msg}")
+    """Show success message. In quiet mode, shows as persistent success."""
+    if _quiet_mode:
+        status_success(msg)
+    else:
+        print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {msg}")
 
 
 def warn(msg: str) -> None:
-    print(f"{Colors.YELLOW}[WARNING]{Colors.NC} {msg}")
+    """Show warning message. Always visible."""
+    if _quiet_mode:
+        status_warn(msg)
+    else:
+        print(f"{Colors.YELLOW}[WARNING]{Colors.NC} {msg}")
 
 
 def error(msg: str) -> None:
-    print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
+    """Show error message. Always visible."""
+    if _quiet_mode:
+        status_error(msg)
+    else:
+        print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
 
 
 def check_claude_credentials() -> bool:
@@ -599,7 +621,8 @@ def create_worktrees(container_id: str) -> dict:
         worktree_path = worktree_dir / repo_name
 
         try:
-            info(f"Creating worktree for {repo_name}...")
+            if not _quiet_mode:
+                info(f"Creating worktree for {repo_name}...")
 
             # Create temporary branch for this container
             branch_name = f"jib-temp-{container_id}"
@@ -614,7 +637,8 @@ def create_worktrees(container_id: str) -> dict:
 
             if result.returncode == 0:
                 worktrees[repo_name] = worktree_path
-                success(f"  ✓ {repo_name} -> {worktree_path}")
+                if not _quiet_mode:
+                    success(f"  ✓ {repo_name} -> {worktree_path}")
             else:
                 warn(f"  ✗ Failed to create worktree for {repo_name}: {result.stderr}")
 
@@ -637,7 +661,8 @@ def cleanup_worktrees(container_id: str) -> None:
     if not worktree_dir.exists():
         return
 
-    info(f"Cleaning up worktrees for {container_id}...")
+    if not _quiet_mode:
+        info(f"Cleaning up worktrees for {container_id}...")
 
     # Collect repos and their worktree admin directories
     # We need to forcibly remove admin dirs because container modified .git files
@@ -666,7 +691,8 @@ def cleanup_worktrees(container_id: str) -> None:
     # Remove container worktree directory first
     try:
         shutil.rmtree(worktree_dir)
-        info(f"  ✓ Removed worktree directory")
+        if not _quiet_mode:
+            info(f"  ✓ Removed worktree directory")
     except Exception as e:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
@@ -698,9 +724,9 @@ def cleanup_worktrees(container_id: str) -> None:
         except Exception:
             pass
 
-    if admin_dirs_removed > 0:
+    if admin_dirs_removed > 0 and not _quiet_mode:
         info(f"  ✓ Removed {admin_dirs_removed} worktree admin dir(s)")
-        info(f"  💡 Commits preserved on branch: jib-temp-{container_id}")
+        info(f"  Commits preserved on branch: jib-temp-{container_id}")
 
 
 def setup() -> bool:
@@ -1014,17 +1040,20 @@ def run_claude() -> bool:
     container_id = generate_container_id()
 
     info("Launching sandboxed Claude Code environment...")
-    print()
+    if not _quiet_mode:
+        print()
 
     info(f"Container ID: {container_id}")
-    print()
+    if not _quiet_mode:
+        print()
 
     # Create worktrees for repos (isolates container from host repos)
     info("Creating isolated worktrees...")
-    print()
+    if not _quiet_mode:
+        print()
     worktrees = create_worktrees(container_id)
 
-    if worktrees:
+    if worktrees and not _quiet_mode:
         print()
         info(f"Created {len(worktrees)} worktree(s)")
         print()
@@ -1064,9 +1093,10 @@ def run_claude() -> bool:
             mode = f"{mode},z"
 
         mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
-        mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
-        display_path = container_path if container_path != mount_path else mount_path
-        print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
+        if not _quiet_mode:
+            mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
+            display_path = container_path if container_path != mount_path else mount_path
+            print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
 
     # Add worktree mounts
     # Also track which main repos need their .git directories mounted
@@ -1074,7 +1104,8 @@ def run_claude() -> bool:
     for repo_name, worktree_path in worktrees.items():
         container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
-        print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
+        if not _quiet_mode:
+            print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
         main_repos_needed.add(repo_name)
 
     # Mount main repo .git directories (read-write) so worktrees can commit changes
@@ -1086,7 +1117,8 @@ def run_claude() -> bool:
             # Worktree .git files will be rewritten to point here
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
-            print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
+            if not _quiet_mode:
+                print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
         elif git_path.is_file():
             # .git is a file = host repo is itself a worktree
             # This is an unsupported configuration for jib
@@ -1097,9 +1129,11 @@ def run_claude() -> bool:
     # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
-    print(f"  • ~/.jib-worktrees/ (worktree base directory)")
+    if not _quiet_mode:
+        print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
-    print()
+    if not _quiet_mode:
+        print()
 
     # Remove old container if exists (cleanup any previous runs)
     subprocess.run(["docker", "rm", "-f", container_id],
@@ -1128,11 +1162,13 @@ def run_claude() -> bool:
         # Write token to shared file for auto-refresh support
         if write_github_token_file(github_app_token):
             info("GitHub auth: App installation token (auto-refresh enabled)")
-            print("  Token written to ~/.jib-sharing/.github-token")
-            print("  github-token-refresher service will keep it fresh")
+            if not _quiet_mode:
+                print("  Token written to ~/.jib-sharing/.github-token")
+                print("  github-token-refresher service will keep it fresh")
         else:
             info("GitHub auth: App installation token (1-hour expiry)")
-        print("  Full GitHub API access including Checks API")
+        if not _quiet_mode:
+            print("  Full GitHub API access including Checks API")
     else:
         # Fall back to PAT if App not configured
         github_token = get_github_token()
@@ -1141,24 +1177,31 @@ def run_claude() -> bool:
             # Also write PAT to shared file (won't be auto-refreshed but provides consistency)
             write_github_token_file(github_token)
             info("GitHub auth: Personal Access Token (fallback)")
-            warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
+            if not _quiet_mode:
+                warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
         else:
             warn("GitHub auth: Not configured (GitHub operations disabled)")
-            print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
+            if not _quiet_mode:
+                print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
 
-    info("Network mode: Bridge (isolated from host, outbound HTTP only)")
-    print("  Container can: Access Claude API, download packages")
-    print("  Container cannot: Access host services, accept inbound connections")
-    print()
+    if not _quiet_mode:
+        info("Network mode: Bridge (isolated from host, outbound HTTP only)")
+        print("  Container can: Access Claude API, download packages")
+        print("  Container cannot: Access host services, accept inbound connections")
+        print()
 
-    info("Claude authentication: Will authenticate with browser on first run")
-    print()
+        info("Claude authentication: Will authenticate with browser on first run")
+        print()
 
     # Add mount arguments
     cmd.extend(mount_args)
 
     # Add image name
     cmd.append(Config.IMAGE_NAME)
+
+    # Finish statusbar before running container
+    if _quiet_mode:
+        status_finish("Container ready, launching Claude...")
 
     # Run container
     try:
@@ -1339,7 +1382,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  jib                                      # Run Claude Code (auto-setup if needed)
+  jib                                      # Run Claude Code (progress bar by default, auto-setup if needed)
+  jib -v                                   # Run in verbose mode (detailed output)
   jib --setup                              # Run full setup (delegates to setup.sh)
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
@@ -1348,6 +1392,7 @@ Examples:
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
       Default timeout is 30 minutes, configurable via --timeout
       If setup is incomplete, jib will prompt to run setup automatically
+      Default shows progress bar; use -v for verbose output
         """
     )
     parser.add_argument(
@@ -1372,8 +1417,24 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         nargs=argparse.REMAINDER,
         help="Execute a command in a new ephemeral container (automatic cleanup)"
     )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)"
+    )
 
     args = parser.parse_args()
+
+    # Initialize quiet mode globally
+    # Quiet is the default; verbose (-v) overrides it
+    global _quiet_mode
+    _quiet_mode = not args.verbose
+    if _quiet_mode:
+        # Initialize statusbar with estimated steps for interactive mode
+        # Steps: check docker, check permissions, check host, build image,
+        #        generate id, create worktrees, parse mounts, add worktree mounts,
+        #        get github token, run container
+        init_statusbar(total_steps=10, enabled=True)
 
 
     # Handle reset
