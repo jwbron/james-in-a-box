@@ -108,9 +108,30 @@ def load_state() -> dict:
                 state.setdefault("processed_reviews", {})
                 state.setdefault("processed_conflicts", {})
                 state.setdefault("last_run_start", None)
+                logger.debug(
+                    "State loaded successfully",
+                    state_file=str(state_file),
+                    processed_failures_count=len(state["processed_failures"]),
+                    processed_comments_count=len(state["processed_comments"]),
+                    last_run_start=state["last_run_start"],
+                )
                 return state
-        except Exception:
-            pass
+        except json.JSONDecodeError as e:
+            logger.error(
+                "Failed to parse state file (JSON decode error)",
+                state_file=str(state_file),
+                error=str(e),
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to load state file",
+                state_file=str(state_file),
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+    else:
+        logger.debug("No existing state file found, starting fresh", state_file=str(state_file))
+
     return {
         "processed_failures": {},
         "processed_comments": {},
@@ -265,11 +286,33 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         context_json,
     ]
 
-    logger.info(
-        "Invoking jib",
-        task_type=task_type,
-        repository=context.get("repository", "unknown"),
-    )
+    # Build detailed context for logging based on task type
+    log_extra = {
+        "task_type": task_type,
+        "repository": context.get("repository", "unknown"),
+    }
+
+    if task_type == "check_failure":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["failed_checks"] = [c.get("name") for c in context.get("failed_checks", [])]
+    elif task_type == "comment":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["comment_count"] = len(context.get("comments", []))
+        if context.get("comments"):
+            log_extra["comment_authors"] = list({c.get("author") for c in context["comments"]})
+    elif task_type == "merge_conflict":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["pr_branch"] = context.get("pr_branch")
+        log_extra["base_branch"] = context.get("base_branch")
+    elif task_type == "review_request":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["author"] = context.get("author")
+
+    logger.info("Invoking jib", **log_extra)
 
     try:
         result = subprocess.run(
@@ -281,25 +324,56 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         )
 
         if result.returncode == 0:
-            logger.info("jib completed successfully", task_type=task_type)
+            logger.info(
+                "jib completed successfully",
+                task_type=task_type,
+                repository=context.get("repository", "unknown"),
+                pr_number=context.get("pr_number"),
+            )
             return True
         else:
             # Show last 2000 chars of stderr to capture actual error (not just Docker build progress)
             stderr_tail = result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr
             stdout_tail = result.stdout[-1000:] if len(result.stdout) > 1000 else result.stdout
+
+            # Try to extract the most relevant error message from stderr
+            error_summary = None
+            if stderr_tail:
+                # Look for common error patterns
+                for line in stderr_tail.split("\n"):
+                    line_lower = line.lower()
+                    if any(kw in line_lower for kw in ["error:", "failed:", "exception:", "traceback"]):
+                        error_summary = line.strip()[:200]
+                        break
+
             logger.error(
                 "jib failed",
                 task_type=task_type,
+                repository=context.get("repository", "unknown"),
+                pr_number=context.get("pr_number"),
                 return_code=result.returncode,
+                error_summary=error_summary,
                 stderr=stderr_tail if stderr_tail else None,
                 stdout=stdout_tail if stdout_tail else None,
             )
             return False
     except FileNotFoundError:
-        logger.error("jib command not found - is it in PATH?")
+        logger.error(
+            "jib command not found - is it in PATH?",
+            task_type=task_type,
+            repository=context.get("repository", "unknown"),
+            pr_number=context.get("pr_number"),
+        )
         return False
     except Exception as e:
-        logger.error("Error invoking jib", error=str(e), task_type=task_type)
+        logger.error(
+            "Error invoking jib",
+            error=str(e),
+            error_type=type(e).__name__,
+            task_type=task_type,
+            repository=context.get("repository", "unknown"),
+            pr_number=context.get("pr_number"),
+        )
         return False
 
 
@@ -373,11 +447,24 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
         )
         return None  # Already processed
 
+    # Extract failure reasons for more informative logging
+    failure_details = []
+    for check in failed_checks:
+        detail = check["name"]
+        if check.get("workflow"):
+            detail = f"{check['workflow']}/{check['name']}"
+        state = check.get("state", "FAILED")
+        if state:
+            detail = f"{detail} ({state})"
+        failure_details.append(detail)
+
     logger.info(
         "PR has failing checks",
         pr_number=pr_num,
+        pr_title=pr_data.get("title", "")[:80],
         failed_count=len(failed_checks),
         failed_checks=failed_names,
+        failure_details=failure_details,
     )
 
     # Fetch logs for failed checks
@@ -553,10 +640,22 @@ def check_pr_for_comments(
         )
         return None  # Already processed
 
+    # Extract comment details for more informative logging
+    comment_authors = list({c["author"] for c in other_comments})
+    # Get a preview of the latest comment
+    latest_comment_preview = latest_comment.get("body", "")[:100]
+    if len(latest_comment.get("body", "")) > 100:
+        latest_comment_preview += "..."
+
     logger.info(
         "New comments from others on PR",
         pr_number=pr_num,
+        pr_title=pr_data.get("title", "")[:80],
         comment_count=len(other_comments),
+        comment_authors=comment_authors,
+        latest_comment_author=latest_comment["author"],
+        latest_comment_preview=latest_comment_preview,
+        latest_comment_type=latest_comment.get("type", "comment"),
     )
 
     return {
@@ -622,8 +721,12 @@ def check_pr_for_merge_conflict(repo: str, pr_data: dict, state: dict) -> dict |
     logger.info(
         "Merge conflict detected",
         pr_number=pr_num,
+        pr_title=pr_data.get("title", "")[:80],
+        pr_branch=pr_data.get("headRefName", ""),
+        base_branch=pr_details.get("baseRefName", "main"),
         mergeable=mergeable,
         merge_state=merge_state,
+        commit=head_sha[:8] if head_sha else "unknown",
     )
 
     return {
@@ -695,7 +798,13 @@ def check_prs_for_review(
         logger.info(
             "New PR needs review",
             pr_number=pr_num,
+            pr_title=pr.get("title", "")[:80],
             author=pr.get("author", {}).get("login", "unknown"),
+            pr_branch=pr.get("headRefName", ""),
+            base_branch=pr.get("baseRefName", ""),
+            additions=pr.get("additions", 0),
+            deletions=pr.get("deletions", 0),
+            files_changed=len(pr.get("files", [])),
         )
 
         # Get PR diff
@@ -771,6 +880,7 @@ def main():
         github_username=github_username,
         bot_username=bot_username,
         repo_count=len(repos),
+        repositories=repos,
     )
 
     # Load state
@@ -925,10 +1035,14 @@ def main():
     state["last_run_start"] = current_run_start
     save_state(state)
 
+    # Summary statistics for completed run
     logger.info(
         "GitHub Watcher completed",
         tasks_triggered=tasks_queued,
+        repositories_scanned=len(repos),
         next_check_since=current_run_start,
+        processed_failures_count=len(state.get("processed_failures", {})),
+        processed_comments_count=len(state.get("processed_comments", {})),
     )
 
     return 0

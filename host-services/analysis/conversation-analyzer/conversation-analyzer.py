@@ -26,7 +26,6 @@ Example:
 
 import argparse
 import json
-import logging
 import os
 import re
 import sys
@@ -37,12 +36,22 @@ from pathlib import Path
 from typing import Any
 
 
+# Add shared directory to path for jib_logging
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+
+from jib_logging import get_logger
+
+
 try:
     import requests
 except ImportError:
     print("Error: requests module not found.", file=sys.stderr)
     print("Run 'uv sync' from host-services/ or run setup.sh", file=sys.stderr)
     sys.exit(1)
+
+
+# Initialize logger
+logger = get_logger("conversation-analyzer")
 
 
 # Constants
@@ -331,7 +340,12 @@ class GitHubPRFetcher:
                         prs.append(pr_data)
 
             except Exception as e:
-                print(f"WARNING: Failed to fetch PRs from {repo}: {e}", file=sys.stderr)
+                logger.warning(
+                    "Failed to fetch PRs from repository",
+                    repository=repo,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
                 continue
 
         return prs
@@ -400,7 +414,13 @@ class GitHubPRFetcher:
             )
 
         except Exception as e:
-            print(f"WARNING: Failed to get PR details for {repo}#{pr_number}: {e}", file=sys.stderr)
+            logger.warning(
+                "Failed to get PR details",
+                repository=repo,
+                pr_number=pr_number,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return None
 
     def _is_jib_commit(self, commit: dict[str, Any]) -> bool:
@@ -446,12 +466,12 @@ class ConversationAnalyzer:
         try:
             self.slack_fetcher = SlackThreadFetcher(self.config)
         except ValueError as e:
-            print(f"WARNING: Slack fetcher disabled: {e}", file=sys.stderr)
+            logger.warning("Slack fetcher disabled", error=str(e))
 
         try:
             self.github_fetcher = GitHubPRFetcher(self.config)
         except ValueError as e:
-            print(f"WARNING: GitHub fetcher disabled: {e}", file=sys.stderr)
+            logger.warning("GitHub fetcher disabled", error=str(e))
 
     def _load_config(self) -> dict[str, Any]:
         """Load configuration from ~/.config/jib/."""
@@ -868,47 +888,55 @@ Period: Last {self.days} days
 
     def run_analysis(self) -> str | None:
         """Run full analysis and generate report."""
-        print(f"Analyzing jib communications from last {self.days} days...")
+        logger.info("Starting conversation analysis", days=self.days)
 
         # Fetch Slack threads
         threads = []
         if self.slack_fetcher:
-            print("Fetching Slack threads...")
+            logger.info("Fetching Slack threads")
             try:
                 threads = self.slack_fetcher.fetch_threads(self.days)
-                print(f"  Found {len(threads)} threads with jib participation")
+                logger.info("Slack threads fetched", thread_count=len(threads))
             except Exception as e:
-                print(f"  WARNING: Failed to fetch Slack threads: {e}", file=sys.stderr)
+                logger.warning(
+                    "Failed to fetch Slack threads",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
         # Fetch GitHub PRs
         prs = []
         if self.github_fetcher:
-            print("Fetching GitHub PRs...")
+            logger.info("Fetching GitHub PRs")
             try:
                 prs = self.github_fetcher.fetch_prs(self.days)
-                print(f"  Found {len(prs)} PRs with jib contribution")
+                logger.info("GitHub PRs fetched", pr_count=len(prs))
             except Exception as e:
-                print(f"  WARNING: Failed to fetch GitHub PRs: {e}", file=sys.stderr)
+                logger.warning(
+                    "Failed to fetch GitHub PRs",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
         if not threads and not prs:
-            print("WARNING: No data found for analysis", file=sys.stderr)
+            logger.warning("No data found for analysis")
             return None
 
         # Calculate metrics
-        print("Calculating metrics...")
+        logger.info("Calculating metrics")
         slack_metrics = self.calculate_slack_metrics(threads)
         github_metrics = self.calculate_github_metrics(prs)
 
         # Identify patterns
-        print("Identifying patterns...")
+        logger.info("Identifying patterns")
         patterns = self.identify_patterns(threads, prs)
 
         # Generate recommendations
-        print("Generating recommendations...")
+        logger.info("Generating recommendations")
         recommendations = self.generate_recommendations(slack_metrics, github_metrics, patterns)
 
         # Generate report
-        print("Generating report...")
+        logger.info("Generating report")
         report = self.generate_report(
             threads, prs, slack_metrics, github_metrics, patterns, recommendations
         )
@@ -946,10 +974,14 @@ Period: Last {self.days} days
         latest_report.symlink_to(report_file.name)
         latest_metrics.symlink_to(metrics_file.name)
 
-        print("\n✓ Analysis complete!")
-        print(f"  Report: {report_file}")
-        print(f"  Metrics: {metrics_file}")
-        print(f"  Latest: {latest_report}")
+        logger.info(
+            "Analysis complete",
+            report_file=str(report_file),
+            metrics_file=str(metrics_file),
+            thread_count=slack_metrics["total_threads"],
+            pr_count=github_metrics["total_prs"],
+            recommendation_count=len(recommendations),
+        )
 
         # Send notification if there are recommendations
         if recommendations:
@@ -1000,14 +1032,18 @@ Period: Last {self.days} days
         with open(summary_file, "w") as f:
             f.write(summary)
 
-        print(f"  Summary notification: {summary_file}")
-
         # Create detailed report (thread reply)
         detail_file = notification_dir / f"RESPONSE-{task_id}.md"
         with open(detail_file, "w") as f:
             f.write(full_report)
 
-        print(f"  Detailed report (thread): {detail_file}")
+        logger.info(
+            "Notifications created",
+            summary_file=str(summary_file),
+            detail_file=str(detail_file),
+            priority=priority,
+            recommendation_count=len(recommendations),
+        )
 
 
 def check_last_run(analysis_dir: Path) -> datetime | None:
@@ -1021,30 +1057,40 @@ def check_last_run(analysis_dir: Path) -> datetime | None:
         most_recent = reports[0]
         return datetime.fromtimestamp(most_recent.stat().st_mtime)
     except Exception as e:
-        logging.error(f"Error checking last run: {e}")
+        logger.error(
+            "Error checking last run",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return None
 
 
 def should_run_analysis(analysis_dir: Path, force: bool = False) -> bool:
     """Determine if analysis should run based on weekly schedule."""
     if force:
-        print("Force flag set - running analysis")
+        logger.info("Force flag set - running analysis")
         return True
 
     last_run = check_last_run(analysis_dir)
 
     if last_run is None:
-        print("No previous analysis found - running analysis")
+        logger.info("No previous analysis found - running analysis")
         return True
 
     days_since_last_run = (datetime.now() - last_run).days
 
     if days_since_last_run >= 7:
-        print(f"Last analysis was {days_since_last_run} days ago - running analysis")
+        logger.info(
+            "Running analysis - sufficient time elapsed",
+            days_since_last_run=days_since_last_run,
+        )
         return True
     else:
-        print(f"Last analysis was {days_since_last_run} days ago (< 7 days) - skipping")
-        print("Use --force to run anyway")
+        logger.info(
+            "Skipping analysis - run recently",
+            days_since_last_run=days_since_last_run,
+            min_days_required=7,
+        )
         return False
 
 
