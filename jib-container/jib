@@ -1287,22 +1287,25 @@ def main():
         description="Run Claude Code CLI in an isolated Docker container (james-in-a-box)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+First-time setup:
+  cd ~/khan/james-in-a-box && ./setup.sh  # Complete host and container setup
+
 Examples:
   jib                                      # Run Claude Code (setup on first use)
-  jib --setup                              # Reconfigure mounts
+  jib --setup                              # Reconfigure Docker mounts only
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
-  jib --exec python3 /home/jwies/khan/james-in-a-box/jib-container/components/incoming-processor.py /home/jwies/sharing/incoming/task.md
   jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
       Default timeout is 30 minutes, configurable via --timeout
+      For complete setup (services, config, Docker), use ./setup.sh
         """
     )
     parser.add_argument(
         "--setup",
         action="store_true",
-        help="Force setup/reconfiguration"
+        help="Configure Docker mounts only (for full setup, run ./setup.sh)"
     )
     parser.add_argument(
         "--reset",
@@ -1368,6 +1371,11 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
 
     # Handle setup
     if args.setup:
+        # Note: setup.sh is the primary setup method and calls jib --setup
+        # This flag still works for users who need to reconfigure Docker mounts only
+        warn("NOTE: For complete jib setup, run ./setup.sh from the repo root")
+        warn("      jib --setup only configures Docker mounts and builds the image")
+        print()
         if not setup():
             return 1
         return 0

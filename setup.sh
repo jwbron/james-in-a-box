@@ -305,6 +305,155 @@ if ! docker ps &> /dev/null; then
 fi
 print_success "Docker is running"
 
+# ============================================================================
+# REQUIRED CONFIGURATION VALIDATION
+# Setup will fail if critical configuration is missing
+# ============================================================================
+print_header "Validating Required Configuration"
+
+jib_config_dir="$HOME/.config/jib"
+jib_secrets_file="$jib_config_dir/secrets.env"
+validation_errors=()
+
+# Create config directory if it doesn't exist
+mkdir -p "$jib_config_dir"
+chmod 700 "$jib_config_dir"
+
+# Check for secrets file - create template if missing
+if [ ! -f "$jib_secrets_file" ]; then
+    print_warning "Secrets file not found: $jib_secrets_file"
+    print_info "Creating template secrets file..."
+
+    # Create template secrets file
+    cat > "$jib_secrets_file" << 'SECRETS_TEMPLATE'
+# jib Secrets Configuration
+# This file contains sensitive credentials - DO NOT COMMIT
+#
+# REQUIRED: At minimum, configure Slack tokens for core functionality
+#
+
+# Slack (REQUIRED for notifications and receiving messages)
+# Get these from https://api.slack.com/apps - see docs/setup/slack-app-setup.md
+SLACK_TOKEN=""
+SLACK_APP_TOKEN=""
+
+# GitHub (OPTIONAL - prefer GitHub App config below)
+# Only needed if NOT using GitHub App authentication
+# GITHUB_TOKEN=""
+
+# Confluence (OPTIONAL - for context sync)
+# CONFLUENCE_BASE_URL=""
+# CONFLUENCE_USERNAME=""
+# CONFLUENCE_API_TOKEN=""
+# CONFLUENCE_SPACE_KEYS=""
+
+# JIRA (OPTIONAL - for context sync)
+# JIRA_BASE_URL=""
+# JIRA_USERNAME=""
+# JIRA_API_TOKEN=""
+# JIRA_JQL_QUERY=""
+SECRETS_TEMPLATE
+
+    chmod 600 "$jib_secrets_file"
+    print_success "Created template: $jib_secrets_file"
+fi
+
+# Validate Slack configuration (REQUIRED)
+print_info "Checking Slack configuration..."
+slack_token_configured=false
+slack_app_token_configured=false
+
+if grep -q '^SLACK_TOKEN="xoxb-' "$jib_secrets_file" 2>/dev/null; then
+    slack_token_configured=true
+    print_success "Slack bot token configured"
+else
+    print_warning "Slack bot token not configured"
+fi
+
+if grep -q '^SLACK_APP_TOKEN="xapp-' "$jib_secrets_file" 2>/dev/null; then
+    slack_app_token_configured=true
+    print_success "Slack app token configured"
+else
+    print_warning "Slack app token not configured"
+fi
+
+if [ "$slack_token_configured" = false ] || [ "$slack_app_token_configured" = false ]; then
+    echo ""
+    print_warning "Slack tokens are required for jib to function properly."
+    echo ""
+    echo "To configure Slack:"
+    echo "  1. Create a Slack app: https://api.slack.com/apps"
+    echo "  2. See docs/setup/slack-app-setup.md for detailed instructions"
+    echo "  3. Add tokens to: $jib_secrets_file"
+    echo ""
+    echo "Required tokens:"
+    echo "  SLACK_TOKEN=\"xoxb-...\"     (Bot User OAuth Token)"
+    echo "  SLACK_APP_TOKEN=\"xapp-...\" (App-Level Token with connections:write)"
+    echo ""
+
+    read -p "Continue setup without Slack? Services will not work until configured. (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_error "Setup cancelled. Configure Slack tokens and try again."
+        exit 1
+    fi
+    validation_errors+=("Slack tokens not configured - services will not start")
+fi
+
+# Validate GitHub configuration (REQUIRED - either App or PAT)
+print_info "Checking GitHub configuration..."
+github_configured=false
+
+# Check for GitHub App config (preferred)
+github_app_id_file="$jib_config_dir/github-app-id"
+github_app_installation_file="$jib_config_dir/github-app-installation-id"
+github_app_pem_file="$jib_config_dir/github-app.pem"
+
+if [ -f "$github_app_id_file" ] && [ -f "$github_app_installation_file" ] && [ -f "$github_app_pem_file" ]; then
+    github_configured=true
+    print_success "GitHub App configured"
+    echo "   App ID: $(cat "$github_app_id_file")"
+    echo "   Installation ID: $(cat "$github_app_installation_file")"
+fi
+
+# Check for GitHub PAT (fallback)
+if [ "$github_configured" = false ]; then
+    if grep -q '^GITHUB_TOKEN="gh' "$jib_secrets_file" 2>/dev/null || \
+       grep -q '^GITHUB_TOKEN="github_pat_' "$jib_secrets_file" 2>/dev/null; then
+        github_configured=true
+        print_success "GitHub PAT configured (fallback)"
+        print_warning "Note: PAT has limited API access. Consider configuring GitHub App."
+    fi
+fi
+
+if [ "$github_configured" = false ]; then
+    echo ""
+    print_warning "GitHub authentication not configured."
+    echo ""
+    echo "GitHub auth is required for:"
+    echo "  • Creating pull requests"
+    echo "  • Pushing code from containers"
+    echo "  • GitHub MCP server access"
+    echo ""
+    echo "Options:"
+    echo "  1. GitHub App (RECOMMENDED): Will be configured later in setup"
+    echo "  2. Personal Access Token: Add GITHUB_TOKEN to $jib_secrets_file"
+    echo ""
+    validation_errors+=("GitHub auth not configured - will be prompted later")
+fi
+
+# Summary of validation
+echo ""
+if [ ${#validation_errors[@]} -gt 0 ]; then
+    print_warning "Setup will continue with ${#validation_errors[@]} warning(s):"
+    for err in "${validation_errors[@]}"; do
+        echo "  ⚠ $err"
+    done
+    echo ""
+else
+    print_success "All required configuration validated"
+fi
+
 # Skip confirmation in update mode
 if [ "$UPDATE_MODE" = false ]; then
     echo ""
@@ -357,9 +506,13 @@ declare -A component_descriptions=(
     ["worktree-watcher"]="Worktree Watcher (cleanup orphaned worktrees)"
     ["conversation-analyzer"]="Conversation Analyzer (daily)"
     ["github-token-refresher"]="GitHub Token Refresher (auto-refresh App tokens)"
+    ["doc-generator"]="Doc Generator (weekly documentation updates)"
+    ["index-generator"]="Index Generator (codebase indexing)"
+    ["spec-enricher"]="Spec Enricher (specification enrichment)"
 )
 
-# Desired installation order (optional components will be skipped if not found)
+# Desired installation order - ALL components are listed explicitly
+# Core services (required for basic functionality)
 component_order=(
     "slack/slack-notifier"
     "slack/slack-receiver"
@@ -368,6 +521,14 @@ component_order=(
     "utilities/worktree-watcher"
     "utilities/github-token-refresher"
     "analysis/conversation-analyzer"
+)
+
+# Optional components with special setup commands
+# These have different setup.sh interfaces (require arguments)
+declare -A optional_components=(
+    ["analysis/doc-generator"]="enable"
+    ["analysis/index-generator"]="install"
+    ["analysis/spec-enricher"]=""
 )
 
 # Find all setup scripts dynamically as a fallback
@@ -400,15 +561,58 @@ for component_path in "${component_order[@]}"; do
     fi
 done
 
+# Process optional components with special setup arguments
+for component_path in "${!optional_components[@]}"; do
+    setup_arg="${optional_components[$component_path]}"
+    component_name=$(basename "$component_path")
+    setup_script="$SCRIPT_DIR/host-services/$component_path/setup.sh"
+
+    if [ ! -f "$setup_script" ]; then
+        print_warning "Optional setup script not found (skipping): $component_path"
+        continue
+    fi
+
+    description="${component_descriptions[$component_name]:-$component_name}"
+
+    echo ""
+    print_info "Setting up: $description (optional)"
+
+    component_dir=$(dirname "$setup_script")
+    cd "$component_dir"
+
+    if [ -n "$setup_arg" ]; then
+        # Component requires specific argument
+        if bash setup.sh "$setup_arg" 2>/dev/null; then
+            print_success "$description configured"
+        else
+            # Don't fail on optional components
+            print_warning "$description setup failed (optional, continuing)"
+        fi
+    else
+        # Component doesn't require arguments (like spec-enricher)
+        if bash setup.sh 2>/dev/null; then
+            print_success "$description configured"
+        else
+            print_warning "$description setup failed (optional, continuing)"
+        fi
+    fi
+done
+
 # Process any components not in the order list (newly added components)
 for setup_script in "${all_setup_scripts[@]}"; do
     component_dir=$(dirname "$setup_script")
     component_name=$(basename "$component_dir")
 
-    # Check if this component was already processed
+    # Check if this component was already processed (in ordered or optional lists)
     already_processed=false
     for ordered_path in "${component_order[@]}"; do
         if [[ "$setup_script" == *"$ordered_path/setup.sh" ]]; then
+            already_processed=true
+            break
+        fi
+    done
+    for optional_path in "${!optional_components[@]}"; do
+        if [[ "$setup_script" == *"$optional_path/setup.sh" ]]; then
             already_processed=true
             break
         fi
@@ -512,11 +716,10 @@ for service_info in "${services[@]}"; do
     fi
 done
 
-# Check for Slack configuration
-print_header "Configuration Status"
+# Configuration summary (validation was done earlier)
+print_header "Configuration Summary"
 
-jib_config_dir="$HOME/.config/jib"
-jib_secrets_file="$jib_config_dir/secrets.env"
+# Variables already set earlier in validation section
 jib_repos_file="$jib_config_dir/repositories.yaml"
 
 # Check for legacy configs that need migration
@@ -525,49 +728,14 @@ legacy_context_sync="$HOME/.config/context-sync/.env"
 
 if [ -f "$legacy_notifier" ] || [ -f "$legacy_context_sync" ]; then
     if [ ! -f "$jib_secrets_file" ]; then
-        print_warning "Legacy configs found - migration required!"
+        print_warning "Legacy configs found - migration available"
         echo "   Run: python3 $SCRIPT_DIR/config/host_config.py --migrate"
         echo ""
     fi
 fi
 
-# Check consolidated config
-if [ -f "$jib_secrets_file" ]; then
-    print_success "Config directory: $jib_config_dir/"
-
-    # Check if tokens are set
-    if grep -q "^SLACK_TOKEN=\"xoxb-" "$jib_secrets_file" 2>/dev/null; then
-        print_success "Slack bot token configured"
-    else
-        print_warning "Slack bot token not configured"
-    fi
-
-    if grep -q "^SLACK_APP_TOKEN=\"xapp-" "$jib_secrets_file" 2>/dev/null; then
-        print_success "Slack app token configured"
-    else
-        print_warning "Slack app token not configured"
-    fi
-
-    # Check GitHub token (PAT fallback when GitHub App not configured)
-    if grep -q "^GITHUB_TOKEN=\"gh" "$jib_secrets_file" 2>/dev/null; then
-        print_success "GitHub PAT configured (fallback for GitHub App)"
-    else
-        # Check if GitHub App is configured (primary method)
-        if [ -f "$jib_config_dir/github-app-id" ] && [ -f "$jib_config_dir/github-app-installation-id" ] && [ -f "$jib_config_dir/github-app.pem" ]; then
-            print_info "GitHub auth: App configured (GITHUB_TOKEN generated dynamically)"
-        else
-            print_warning "GitHub auth: Not configured"
-            echo "   Container will not be able to push code or use GitHub MCP"
-            echo "   Configure either:"
-            echo "     1. GitHub App (recommended): Run setup.sh and follow prompts"
-            echo "     2. Personal Access Token: Add GITHUB_TOKEN to $jib_secrets_file"
-        fi
-    fi
-else
-    print_warning "No configuration found"
-    echo "   Configure secrets in: $jib_secrets_file"
-    echo "   Templates available in: $SCRIPT_DIR/config/"
-fi
+print_success "Config directory: $jib_config_dir/"
+print_info "Secrets file: $jib_secrets_file"
 
 # Copy repositories.yaml to host config if not present
 if [ ! -f "$jib_repos_file" ]; then
@@ -805,6 +973,41 @@ else
         echo "   Option 2: Add GITHUB_TOKEN to ~/.config/jib/secrets.env"
         echo "             Create a fine-grained PAT at https://github.com/settings/tokens?type=beta"
         echo "             Required scopes: Contents (R/W), Pull requests (R/W)"
+    fi
+fi
+
+# ============================================================================
+# BUILD DOCKER IMAGE
+# Pre-build the Docker image so first 'jib' run is fast
+# ============================================================================
+print_header "Building Docker Image"
+
+print_info "Building jib Docker image (this may take a few minutes on first run)..."
+echo ""
+
+# Check if Docker image exists
+if docker image inspect james-in-a-box &>/dev/null; then
+    print_success "Docker image 'james-in-a-box' already exists"
+    echo ""
+    read -p "Rebuild the image? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Skipping image rebuild"
+    else
+        print_info "Rebuilding Docker image..."
+        if cd "$SCRIPT_DIR" && bin/jib --setup <<< "yes"; then
+            print_success "Docker image rebuilt successfully"
+        else
+            print_warning "Docker image build failed - you can rebuild later with: bin/jib --setup"
+        fi
+    fi
+else
+    print_info "Building Docker image for the first time..."
+    # Run jib --setup non-interactively by accepting defaults
+    if cd "$SCRIPT_DIR" && bin/jib --setup <<< "yes"; then
+        print_success "Docker image built successfully"
+    else
+        print_warning "Docker image build failed - you can build later with: bin/jib --setup"
     fi
 fi
 
