@@ -90,7 +90,7 @@ def run_claude(
     timeout: int = 1800,
     cwd: Path | str | None = None,
     capture_output: bool = True,
-    stream: bool = False,
+    stream: bool = True,
     stream_to: TextIO | None = None,
     stream_prefix: str = "",
     on_output: Callable[[str], None] | None = None,
@@ -100,14 +100,19 @@ def run_claude(
     Runs Claude with input via stdin (not --print flag which creates a restricted
     session). This allows full access to tools and filesystem.
 
+    By default, output is streamed line-by-line to stdout as it arrives, which
+    provides visibility into long-running tasks. Output is always captured in
+    ClaudeResult regardless of streaming.
+
     Args:
         prompt: The prompt to send to Claude via stdin.
         timeout: Maximum time in seconds to wait for Claude (default: 1800 = 30 min).
         cwd: Working directory for Claude. If None, uses current directory.
         capture_output: If True, capture stdout/stderr. If False, let them
             pass through to the console (ignored if stream=True).
-        stream: If True, stream output line-by-line as it arrives.
+        stream: If True (default), stream output line-by-line as it arrives.
             Output is still captured in ClaudeResult.stdout/stderr.
+            Set to False for buffered (silent) mode.
         stream_to: Where to stream output. Defaults to sys.stdout if stream=True.
             Can be any file-like object (e.g., sys.stderr, open file).
         stream_prefix: Optional prefix to add to each line when streaming.
@@ -119,37 +124,36 @@ def run_claude(
         ClaudeResult with success status, output, and any error information.
 
     Example:
-        # Basic usage - buffered output
+        # Default usage - streams to stdout in real-time
         result = run_claude(
             prompt="Analyze this code and fix the bug",
             cwd=Path.home() / "khan" / "my-repo",
         )
 
         if result.success:
-            print(f"Claude output: {result.stdout}")
+            print(f"Claude completed successfully")
         else:
             print(f"Error: {result.error}")
 
-        # Streaming output to stdout
+        # Silent/buffered mode (no streaming)
         result = run_claude(
             prompt="Fix the bug in main.py",
-            stream=True,  # See output in real-time
+            stream=False,  # Buffer output, don't print
         )
+        print(result.stdout)  # Access output after completion
 
         # Streaming with prefix
         result = run_claude(
             prompt="Analyze the codebase",
-            stream=True,
             stream_prefix="[claude] ",  # Prefix each line
         )
 
-        # Custom callback for each line
+        # Custom callback for each line (e.g., for logging)
         def log_line(line: str):
             logger.info("Claude output", line=line.strip())
 
         result = run_claude(
             prompt="Run tests",
-            stream=True,
             on_output=log_line,
         )
 
@@ -319,63 +323,3 @@ def _run_claude_streaming(
     )
 
 
-def run_claude_with_logging(
-    prompt: str,
-    *,
-    timeout: int = 1800,
-    cwd: Path | str | None = None,
-    logger_name: str = "claude",
-    log_level: str = "INFO",
-) -> ClaudeResult:
-    """Run Claude CLI with output streamed to the jib_logging framework.
-
-    This is a convenience wrapper that integrates with jib_logging to provide
-    structured logging of Claude output.
-
-    Args:
-        prompt: The prompt to send to Claude via stdin.
-        timeout: Maximum time in seconds to wait for Claude (default: 1800 = 30 min).
-        cwd: Working directory for Claude. If None, uses current directory.
-        logger_name: Name for the logger (default: "claude").
-        log_level: Log level for output lines (default: "INFO").
-
-    Returns:
-        ClaudeResult with success status, output, and any error information.
-
-    Example:
-        from shared.claude import run_claude_with_logging
-
-        result = run_claude_with_logging(
-            prompt="Fix the bug in main.py",
-            cwd=Path.home() / "khan" / "my-repo",
-        )
-
-    Note:
-        This function requires jib_logging to be available. If it's not installed,
-        it falls back to streaming to stdout without structured logging.
-    """
-    try:
-        from jib_logging import get_logger
-
-        logger = get_logger(logger_name)
-        level = getattr(__import__("logging"), log_level.upper(), 20)  # Default to INFO
-
-        def log_output(line: str) -> None:
-            # Strip trailing newline for cleaner log output
-            logger._log(level, line.rstrip())
-
-        return run_claude(
-            prompt=prompt,
-            timeout=timeout,
-            cwd=cwd,
-            stream=True,
-            on_output=log_output,
-        )
-    except ImportError:
-        # Fall back to simple streaming if jib_logging is not available
-        return run_claude(
-            prompt=prompt,
-            timeout=timeout,
-            cwd=cwd,
-            stream=True,
-        )
