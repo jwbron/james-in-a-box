@@ -323,19 +323,18 @@ Common issues:
 
 - **Sharing**: `~/.jib-sharing/` (container: `~/sharing/`)
 
-## Integration with Container Watcher
+## Integration with Container
 
-This host-side notifier works alongside the container-based context watcher:
+This host-side notifier works alongside container tasks:
 
-**Container Watcher** (`context-watcher.sh`):
-- Runs inside the Docker container
-- Watches `~/context-sync/` for upstream data changes
-- Uses Claude to analyze changes
-- Writes outputs to `~/sharing/notifications/`
+**Container Tasks** (in `jib-container/jib-tasks/`):
+- Run inside the Docker container via `jib --exec`
+- Process incoming Slack messages, GitHub events, etc.
+- Write outputs to `~/sharing/notifications/`
 
-**Host Notifier** (`host-notify-slack.sh`):
-- Runs on the host machine
-- Watches `~/.jib-sharing/` for outputs
+**Host Notifier** (`host-services/slack/slack-notifier/slack-notifier.py`):
+- Runs on the host machine as a systemd service
+- Watches `~/.jib-sharing/notifications/` for outputs
 - Sends Slack DMs when Claude creates notifications
 - Provides immediate awareness of Claude's work
 

@@ -170,7 +170,7 @@ After=network.target
 [Service]
 Type=oneshot
 WorkingDirectory=${PROJECT_ROOT}
-ExecStart=/bin/bash -c 'python3 ${SCRIPT_DIR}/doc-generator.py --all --type status-quo && python3 ${SCRIPT_DIR}/drift-detector.py && ${SCRIPT_DIR}/setup.sh create-pr'
+ExecStart=/bin/bash -c 'python3 ${SCRIPT_DIR}/doc-generator.py --all --type status-quo && (python3 ${SCRIPT_DIR}/drift-detector.py --suggest-fixes || true) && ${SCRIPT_DIR}/setup.sh create-pr'
 StandardOutput=journal
 StandardError=journal
 
@@ -299,7 +299,8 @@ EOF
 }
 
 # Main
-case "${1:-help}" in
+# Default to 'enable' when called without arguments (for integration with root setup.sh)
+case "${1:-enable}" in
     enable)
         enable_timer
         ;;

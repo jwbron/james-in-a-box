@@ -94,6 +94,7 @@ check_installation_status() {
         "worktree-watcher.timer"
         "conversation-analyzer.timer"
         "github-token-refresher.service"
+        "jib-doc-generator.timer"
     )
 
     for service in "${services[@]}"; do
@@ -357,6 +358,7 @@ declare -A component_descriptions=(
     ["worktree-watcher"]="Worktree Watcher (cleanup orphaned worktrees)"
     ["conversation-analyzer"]="Conversation Analyzer (daily)"
     ["github-token-refresher"]="GitHub Token Refresher (auto-refresh App tokens)"
+    ["doc-generator"]="Documentation Generator (weekly docs + drift check)"
 )
 
 # Desired installation order (optional components will be skipped if not found)
@@ -368,6 +370,7 @@ component_order=(
     "utilities/worktree-watcher"
     "utilities/github-token-refresher"
     "analysis/conversation-analyzer"
+    "analysis/doc-generator"
 )
 
 # Find all setup scripts dynamically as a fallback
@@ -451,6 +454,7 @@ if [ "$UPDATE_MODE" = true ]; then
         "worktree-watcher.timer"
         "github-token-refresher.service"
         "conversation-analyzer.timer"
+        "jib-doc-generator.timer"
     )
 
     for service in "${services_to_restart[@]}"; do
@@ -486,6 +490,7 @@ services=(
     "worktree-watcher.timer:Worktree Watcher"
     "github-token-refresher.service:GitHub Token Refresher"
     "conversation-analyzer.timer:Conversation Analyzer"
+    "jib-doc-generator.timer:Documentation Generator"
 )
 
 echo "Active services:"
