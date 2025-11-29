@@ -88,13 +88,23 @@ class DriftDetector:
     # Patterns that are intentionally placeholders/templates (should be ignored)
     IGNORE_PATTERNS = [
         r"URL$",  # Placeholder URL in markdown templates (also catches paths ending in /URL)
-        r"YYYY-MM-DD",  # Date template files
+        r"YYYY",  # Date/time template files (YYYYMMDD, YYYY-MM-DD, etc.)
+        r"HHMMSS",  # Time template files
         r"task-\d{8}-\d{6}",  # Example task IDs
-        r"RESPONSE-\d{8}-\d{6}",  # Example response files
+        r"RESPONSE-",  # Example response files
         r"\d{8}-\d{6}.*\.md$",  # Timestamp-prefixed example files
         r"/incoming/",  # Example paths for incoming tasks
         r"/responses/",  # Example paths for responses
         r"/notifications/",  # Example paths for notifications
+        r"^<",  # XML/template placeholders like <service-name>
+        r"\.\.\.?$",  # Paths ending with ellipsis (examples)
+        r"src/",  # Example paths starting with src/ (common convention example)
+        r"^path/to/",  # Example paths
+    ]
+
+    # Directories/file patterns that contain mostly example/illustrative content
+    LENIENT_DOCS = [
+        r"docs/adr/",  # ADRs often have illustrative examples
     ]
 
     def __init__(self, project_root: Path):
@@ -140,6 +150,21 @@ class DriftDetector:
         """Check if a path is a placeholder/template that should be ignored."""
         return any(re.search(pattern, path) for pattern in self.IGNORE_PATTERNS)
 
+    def is_lenient_doc(self, doc_path: str) -> bool:
+        """Check if a document should be treated leniently (skip most checks)."""
+        return any(re.search(pattern, doc_path) for pattern in self.LENIENT_DOCS)
+
+    def is_in_table_or_code(self, line: str, in_code_block: bool) -> bool:
+        """Check if a line is inside a markdown table or code block."""
+        # Skip if in code block
+        if in_code_block:
+            return True
+        # Skip markdown table rows (start with | or contain | ... |)
+        stripped = line.strip()
+        if stripped.startswith("|") or ("|" in stripped and stripped.count("|") >= 2):
+            return True
+        return False
+
     def find_similar_file(self, missing_path: str) -> str | None:
         """Try to find a similar file that might be the new location."""
         filename = Path(missing_path).name
@@ -171,14 +196,32 @@ class DriftDetector:
             ]
 
         rel_doc_path = str(doc_path.relative_to(self.project_root))
+
+        # Skip lenient docs (like ADRs) - they contain too many illustrative examples
+        if self.is_lenient_doc(rel_doc_path):
+            return []
+
         lines = content.split("\n")
+        in_code_block = False
 
         for line_num, line in enumerate(lines, 1):
+            # Track code block state
+            if line.strip().startswith("```"):
+                in_code_block = not in_code_block
+                continue
+
+            # Skip lines in code blocks or markdown tables
+            if self.is_in_table_or_code(line, in_code_block):
+                continue
+
             # Check file references
             for match in self.PATTERNS["code_file"].finditer(line):
                 file_ref = match.group(1)
                 # Skip placeholder/template references
                 if self.is_placeholder(file_ref):
+                    continue
+                # Skip if line contains "e.g." - it's an example
+                if "e.g." in line.lower() or "for example" in line.lower():
                     continue
                 if not self.file_exists(file_ref):
                     similar = self.find_similar_file(file_ref)
@@ -200,6 +243,9 @@ class DriftDetector:
                 line_ref = int(match.group(3))
                 # Skip placeholder/template references
                 if self.is_placeholder(file_ref):
+                    continue
+                # Skip if line contains "e.g." - it's an example
+                if "e.g." in line.lower() or "for example" in line.lower():
                     continue
                 if not self.file_exists(file_ref):
                     similar = self.find_similar_file(file_ref)
@@ -286,12 +332,19 @@ class DriftDetector:
                 # Skip placeholder/template references
                 if self.is_placeholder(path_ref):
                     continue
+                # Skip if line contains "e.g." - it's an example
+                if "e.g." in line.lower() or "for example" in line.lower():
+                    continue
                 # Only report if it looks like a project path (not a URL)
                 if (
                     "/" in path_ref
                     and not self.file_exists(path_ref)
                     and not path_ref.startswith(("http", "www", "//"))
                 ):
+                    # Check if it's a valid directory
+                    dir_path = path_ref.rstrip("/")
+                    if (self.project_root / dir_path).is_dir():
+                        continue  # Directory exists, path is valid
                     similar = self.find_similar_file(path_ref)
                     suggestion = f"Path may have changed to: {similar}" if similar else ""
                     issues.append(
