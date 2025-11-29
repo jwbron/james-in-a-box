@@ -270,13 +270,12 @@ class ADRResearcher:
         print(f"  Invoking jib: {task_type}")
 
         try:
-            # 30-minute timeout to match Claude runner default
+            # No explicit timeout - rely on jib/Claude's internal timeout handling
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=1800,
             )
 
             if result.returncode == 0:
@@ -299,9 +298,6 @@ class ADRResearcher:
                 return None
         except FileNotFoundError:
             print("  jib command not found - is it in PATH?")
-            return None
-        except subprocess.TimeoutExpired:
-            print("  jib timed out after 30 minutes")
             return None
 
     def research_open_prs(self) -> list[dict]:
