@@ -36,7 +36,7 @@ import json
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -46,6 +46,71 @@ import yaml
 
 # Rate limiting configuration
 RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
+
+
+@dataclass
+class ResearchSource:
+    """A source reference from research."""
+
+    url: str
+    title: str
+    summary: str = ""
+    date: str | None = None  # When the source was published
+
+
+@dataclass
+class KeyFinding:
+    """A key finding from research."""
+
+    topic: str
+    finding: str
+    confidence: Literal["high", "medium", "low"] = "medium"
+    sources: list[str] = field(default_factory=list)  # URLs supporting this finding
+
+
+@dataclass
+class IndustryAdoption:
+    """Industry adoption information for a technology/approach."""
+
+    organization: str
+    approach: str
+    notes: str = ""
+    source_url: str | None = None
+
+
+@dataclass
+class Recommendation:
+    """An actionable recommendation from research."""
+
+    recommendation: str
+    rationale: str
+    priority: Literal["high", "medium", "low"] = "medium"
+    effort: Literal["low", "medium", "high"] | None = None
+
+
+@dataclass
+class ResearchResult:
+    """Structured result from ADR research.
+
+    This dataclass provides typed, validated output from Claude's research
+    operations. It enables:
+    - IDE autocomplete for downstream consumers
+    - Runtime validation of research quality
+    - Consistent output format guarantees across all research task types
+    """
+
+    success: bool
+    query: str  # The research query or ADR title
+    summary: str = ""  # 2-3 sentence overview
+    sources: list[ResearchSource] = field(default_factory=list)
+    key_findings: list[KeyFinding] = field(default_factory=list)
+    industry_adoption: list[IndustryAdoption] = field(default_factory=list)
+    recommendations: list[Recommendation] = field(default_factory=list)
+    anti_patterns: list[str] = field(default_factory=list)
+    raw_output: str = ""  # Full Claude output for debugging
+    error: str | None = None
+    pr_url: str | None = None  # If a PR was created
+    pr_number: int | None = None  # If commenting on a PR
 
 
 @dataclass
@@ -235,6 +300,323 @@ class ADRResearcher:
 
         return topics[:10]  # Limit to 10 topics
 
+    def _parse_research_result(self, raw_result: dict, query: str) -> ResearchResult:
+        """Parse raw jib output into structured ResearchResult.
+
+        This method extracts structured data from Claude's markdown output,
+        parsing sections like Sources, Key Findings, Recommendations, etc.
+
+        Args:
+            raw_result: Raw dict from jib subprocess (contains 'success', 'output', etc.)
+            query: The research query or ADR title for context
+
+        Returns:
+            ResearchResult with parsed structured fields
+        """
+        if not raw_result or not raw_result.get("success"):
+            return ResearchResult(
+                success=False,
+                query=query,
+                error=raw_result.get("error", "Research failed") if raw_result else "No result",
+                raw_output=raw_result.get("output", "") if raw_result else "",
+            )
+
+        output = raw_result.get("output", "")
+
+        # Extract PR info if present
+        pr_url = raw_result.get("pr_url")
+        pr_number = raw_result.get("pr_number")
+
+        # Parse structured content from markdown output
+        sources = self._parse_sources(output)
+        key_findings = self._parse_key_findings(output)
+        industry_adoption = self._parse_industry_adoption(output)
+        recommendations = self._parse_recommendations(output)
+        anti_patterns = self._parse_anti_patterns(output)
+        summary = self._parse_summary(output)
+
+        return ResearchResult(
+            success=True,
+            query=query,
+            summary=summary,
+            sources=sources,
+            key_findings=key_findings,
+            industry_adoption=industry_adoption,
+            recommendations=recommendations,
+            anti_patterns=anti_patterns,
+            raw_output=output,
+            pr_url=pr_url,
+            pr_number=pr_number,
+        )
+
+    def _parse_sources(self, content: str) -> list[ResearchSource]:
+        """Parse source references from markdown content.
+
+        Looks for patterns like:
+        - [Title](URL) - Description
+        - **Source:** [URL]
+        """
+        import re
+
+        sources = []
+        # Match markdown links: [Title](URL)
+        # Optional: followed by " - description"
+        link_pattern = re.compile(
+            r'\[([^\]]+)\]\((https?://[^\)]+)\)(?:\s*[-–—]\s*(.+?))?(?:\n|$)',
+            re.IGNORECASE
+        )
+
+        for match in link_pattern.finditer(content):
+            title = match.group(1).strip()
+            url = match.group(2).strip()
+            summary = match.group(3).strip() if match.group(3) else ""
+
+            # Skip internal/anchor links
+            if url.startswith("#"):
+                continue
+
+            sources.append(ResearchSource(
+                title=title,
+                url=url,
+                summary=summary,
+            ))
+
+        # Deduplicate by URL
+        seen_urls = set()
+        unique_sources = []
+        for source in sources:
+            if source.url not in seen_urls:
+                seen_urls.add(source.url)
+                unique_sources.append(source)
+
+        return unique_sources[:20]  # Limit to 20 sources
+
+    def _parse_key_findings(self, content: str) -> list[KeyFinding]:
+        """Parse key findings from markdown content.
+
+        Looks for patterns in "Key Findings" or similar sections.
+        """
+        import re
+
+        findings = []
+
+        # Find the Key Findings section
+        findings_section = self._extract_section(content, [
+            "Key Findings",
+            "Findings",
+            "Main Findings",
+            "Research Findings",
+        ])
+
+        if not findings_section:
+            return findings
+
+        # Parse bullet points or numbered items
+        # Match: ### [Topic]\n[Finding text]
+        # Or: - **Topic:** Finding text
+        # Or: 1. **Topic:** Finding text
+        topic_pattern = re.compile(
+            r'(?:^|\n)(?:#{1,4}\s+|\d+\.\s+|\*\s+|-\s+)(?:\*\*)?([^*\n:]+)(?:\*\*)?:?\s*([^\n]+)',
+            re.MULTILINE
+        )
+
+        for match in topic_pattern.finditer(findings_section):
+            topic = match.group(1).strip()
+            finding = match.group(2).strip()
+
+            if topic and finding and len(finding) > 10:  # Skip very short findings
+                findings.append(KeyFinding(
+                    topic=topic,
+                    finding=finding,
+                    confidence="medium",  # Default; could be parsed if in content
+                ))
+
+        return findings[:15]  # Limit to 15 findings
+
+    def _parse_industry_adoption(self, content: str) -> list[IndustryAdoption]:
+        """Parse industry adoption table from markdown content.
+
+        Looks for tables with Organization/Project, Approach, Notes columns.
+        """
+        import re
+
+        adoptions = []
+
+        # Find the Industry Adoption section
+        adoption_section = self._extract_section(content, [
+            "Industry Adoption",
+            "Adoption",
+            "Industry Examples",
+            "Real-World Examples",
+        ])
+
+        if not adoption_section:
+            return adoptions
+
+        # Parse markdown tables
+        # Format: | Organization | Approach | Notes |
+        table_row_pattern = re.compile(
+            r'\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|',
+            re.MULTILINE
+        )
+
+        for match in table_row_pattern.finditer(adoption_section):
+            org = match.group(1).strip()
+            approach = match.group(2).strip()
+            notes = match.group(3).strip()
+
+            # Skip header rows and separator rows
+            if org.startswith("-") or org.lower() in ("organization", "project", "company"):
+                continue
+
+            if org and approach:
+                adoptions.append(IndustryAdoption(
+                    organization=org,
+                    approach=approach,
+                    notes=notes if notes != "..." else "",
+                ))
+
+        return adoptions[:10]  # Limit to 10 examples
+
+    def _parse_recommendations(self, content: str) -> list[Recommendation]:
+        """Parse recommendations from markdown content."""
+        import re
+
+        recommendations = []
+
+        # Find the Recommendations section
+        rec_section = self._extract_section(content, [
+            "Recommendations",
+            "Suggested Actions",
+            "Action Items",
+            "Next Steps",
+        ])
+
+        if not rec_section:
+            return recommendations
+
+        # Parse bullet points
+        # Format: - Recommendation text
+        # Or: 1. Recommendation text
+        bullet_pattern = re.compile(
+            r'(?:^|\n)(?:\d+\.\s+|\*\s+|-\s+)(.+?)(?=\n(?:\d+\.|\*|-)|$)',
+            re.MULTILINE | re.DOTALL
+        )
+
+        for match in bullet_pattern.finditer(rec_section):
+            rec_text = match.group(1).strip()
+
+            # Clean up the recommendation
+            rec_text = re.sub(r'\n\s+', ' ', rec_text)
+
+            if rec_text and len(rec_text) > 10:
+                recommendations.append(Recommendation(
+                    recommendation=rec_text[:500],  # Limit length
+                    rationale="",  # Could be parsed from sub-bullets
+                    priority="medium",
+                ))
+
+        return recommendations[:10]  # Limit to 10 recommendations
+
+    def _parse_anti_patterns(self, content: str) -> list[str]:
+        """Parse anti-patterns from markdown content."""
+        import re
+
+        anti_patterns = []
+
+        # Find the Anti-Patterns section
+        ap_section = self._extract_section(content, [
+            "Anti-Patterns",
+            "Anti-Patterns to Avoid",
+            "Pitfalls",
+            "Common Mistakes",
+            "What to Avoid",
+        ])
+
+        if not ap_section:
+            return anti_patterns
+
+        # Parse bullet points
+        bullet_pattern = re.compile(
+            r'(?:^|\n)(?:\d+\.\s+|\*\s+|-\s+)(.+?)(?=\n(?:\d+\.|\*|-)|$)',
+            re.MULTILINE
+        )
+
+        for match in bullet_pattern.finditer(ap_section):
+            ap_text = match.group(1).strip()
+            if ap_text and len(ap_text) > 5:
+                anti_patterns.append(ap_text[:300])
+
+        return anti_patterns[:10]  # Limit to 10 anti-patterns
+
+    def _parse_summary(self, content: str) -> str:
+        """Parse summary from markdown content."""
+        import re
+
+        # Find the Summary section
+        summary_section = self._extract_section(content, [
+            "Summary",
+            "Overview",
+            "Executive Summary",
+            "TL;DR",
+        ])
+
+        if summary_section:
+            # Get first paragraph
+            paragraphs = summary_section.strip().split("\n\n")
+            if paragraphs:
+                return paragraphs[0].strip()[:1000]
+
+        # Fallback: try to get first substantial paragraph from content
+        paragraphs = content.strip().split("\n\n")
+        for para in paragraphs:
+            para = para.strip()
+            # Skip headers, code blocks, tables
+            if para.startswith("#") or para.startswith("`") or para.startswith("|"):
+                continue
+            if len(para) > 50:
+                return para[:1000]
+
+        return ""
+
+    def _extract_section(self, content: str, section_names: list[str]) -> str | None:
+        """Extract a section from markdown content by header name.
+
+        Args:
+            content: Full markdown content
+            section_names: List of possible section header names (case-insensitive)
+
+        Returns:
+            Section content (between this header and next header), or None
+        """
+        import re
+
+        for section_name in section_names:
+            # Match headers like ## Section Name or ### Section Name
+            pattern = re.compile(
+                rf'^(#{1,4})\s*{re.escape(section_name)}\s*$',
+                re.MULTILINE | re.IGNORECASE
+            )
+
+            match = pattern.search(content)
+            if match:
+                start = match.end()
+                header_level = len(match.group(1))
+
+                # Find the next header of same or higher level
+                next_header = re.compile(
+                    rf'^#{{{1},{header_level}}}\s+',
+                    re.MULTILINE
+                )
+                next_match = next_header.search(content, start)
+
+                if next_match:
+                    return content[start:next_match.start()]
+                else:
+                    return content[start:]
+
+        return None
+
     def invoke_jib_research(
         self,
         task_type: str,
@@ -300,13 +682,16 @@ class ADRResearcher:
             print("  jib command not found - is it in PATH?")
             return None
 
-    def research_open_prs(self) -> list[dict]:
+    def research_open_prs(self) -> list[ResearchResult]:
         """Research all open ADR PRs and post comments.
 
         Workflow:
         1. Find open PRs that modify ADR files
         2. For each ADR, invoke jib to research the topic
         3. Post research findings as PR comment
+
+        Returns:
+            List of ResearchResult objects with typed, structured research findings.
         """
         results = []
         adrs = self.find_open_adr_prs()
@@ -327,26 +712,23 @@ class ADRResearcher:
                 "output_mode": "pr_comment",
             }
 
-            result = self.invoke_jib_research("research_adr", context)
-            if result:
-                results.append(
-                    {
-                        "adr": adr.title,
-                        "pr_number": adr.pr_number,
-                        "status": "comment_posted" if result.get("success") else "failed",
-                        "result": result,
-                    }
-                )
+            raw_result = self.invoke_jib_research("research_adr", context)
+            research_result = self._parse_research_result(raw_result, adr.title)
+            research_result.pr_number = adr.pr_number
+            results.append(research_result)
 
         return results
 
-    def research_merged_adrs(self) -> list[dict]:
+    def research_merged_adrs(self) -> list[ResearchResult]:
         """Research all merged/implemented ADRs and create update PRs.
 
         Workflow:
         1. Find ADRs in implemented/ directory
         2. For each ADR, invoke jib to research for updates
         3. If updates found, create PR with Research Updates section
+
+        Returns:
+            List of ResearchResult objects with typed, structured research findings.
         """
         results = []
         adrs = self.find_adrs_by_status("implemented")
@@ -366,26 +748,22 @@ class ADRResearcher:
                 "output_mode": "update_pr",
             }
 
-            result = self.invoke_jib_research("research_adr", context)
-            if result:
-                results.append(
-                    {
-                        "adr": adr.title,
-                        "path": str(adr.path),
-                        "status": "pr_created" if result.get("pr_url") else "no_updates",
-                        "result": result,
-                    }
-                )
+            raw_result = self.invoke_jib_research("research_adr", context)
+            research_result = self._parse_research_result(raw_result, adr.title)
+            results.append(research_result)
 
         return results
 
-    def generate_adr(self, topic: str) -> dict:
+    def generate_adr(self, topic: str) -> ResearchResult:
         """Generate a new ADR from research on a topic.
 
         Workflow:
         1. Research the topic via web search
         2. Generate complete ADR with research-backed content
         3. Create PR with new ADR in docs/adr/proposed/
+
+        Returns:
+            ResearchResult with typed, structured research findings.
         """
         print(f"Generating ADR for topic: {topic}")
 
@@ -396,23 +774,26 @@ class ADRResearcher:
             "output_mode": "new_pr",
         }
 
-        result = self.invoke_jib_research("generate_adr", context)
-        return {
-            "topic": topic,
-            "status": "pr_created" if result and result.get("pr_url") else "failed",
-            "result": result,
-        }
+        raw_result = self.invoke_jib_research("generate_adr", context)
+        return self._parse_research_result(raw_result, topic)
 
-    def review_adr(self, adr_path: Path) -> dict:
+    def review_adr(self, adr_path: Path) -> ResearchResult:
         """Review and validate an ADR against current research.
 
         Workflow:
         1. Read the ADR content
         2. Research each claim/assertion in the ADR
         3. Post review findings as PR comment (if PR exists) or markdown report
+
+        Returns:
+            ResearchResult with typed, structured research findings.
         """
         if not adr_path.exists():
-            return {"error": f"ADR not found: {adr_path}"}
+            return ResearchResult(
+                success=False,
+                query=str(adr_path),
+                error=f"ADR not found: {adr_path}",
+            )
 
         content = adr_path.read_text()
         title = self._extract_title(content)
@@ -436,14 +817,10 @@ class ADRResearcher:
             "output_mode": "pr_comment" if pr_info else "report",
         }
 
-        result = self.invoke_jib_research("review_adr", context)
-        return {
-            "adr": title,
-            "path": str(adr_path),
-            "has_pr": pr_info is not None,
-            "status": "review_posted" if result and result.get("success") else "failed",
-            "result": result,
-        }
+        raw_result = self.invoke_jib_research("review_adr", context)
+        research_result = self._parse_research_result(raw_result, title)
+        research_result.pr_number = pr_info.get("number") if pr_info else None
+        return research_result
 
     def _find_pr_for_file(self, file_path: str) -> dict | None:
         """Find an open PR that modifies a specific file."""
@@ -470,7 +847,7 @@ class ADRResearcher:
 
         return None
 
-    def research_topic(self, query: str, report_only: bool = False) -> dict:
+    def research_topic(self, query: str, report_only: bool = False) -> ResearchResult:
         """Research a specific topic and output findings.
 
         Args:
@@ -478,7 +855,7 @@ class ADRResearcher:
             report_only: If True, output as markdown report only (no PR/commit)
 
         Returns:
-            Research results dict
+            ResearchResult with typed, structured research findings.
         """
         print(f"Researching topic: {query}")
 
@@ -488,12 +865,8 @@ class ADRResearcher:
             "output_mode": "report" if report_only else "pr",
         }
 
-        result = self.invoke_jib_research("research_topic", context)
-        return {
-            "query": query,
-            "status": "completed" if result else "failed",
-            "result": result,
-        }
+        raw_result = self.invoke_jib_research("research_topic", context)
+        return self._parse_research_result(raw_result, query)
 
 
 def main():
@@ -590,7 +963,7 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
     if args.dry_run:
         print("\n[DRY RUN MODE - No changes will be made]\n")
 
-    results = {}
+    results: dict | ResearchResult | list[ResearchResult] = {}
 
     # Execute requested action
     if args.generate:
@@ -610,7 +983,7 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
     elif args.scope == "open-prs":
         print("\nResearching open ADR PRs...")
         if not args.dry_run:
-            results = {"prs": researcher.research_open_prs()}
+            results = researcher.research_open_prs()
         else:
             adrs = researcher.find_open_adr_prs()
             results = {
@@ -621,7 +994,7 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
     elif args.scope == "merged":
         print("\nResearching implemented ADRs...")
         if not args.dry_run:
-            results = {"adrs": researcher.research_merged_adrs()}
+            results = researcher.research_merged_adrs()
         else:
             adrs = researcher.find_adrs_by_status("implemented")
             results = {
@@ -641,25 +1014,68 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
     print("Results")
     print("=" * 60)
 
+    # Convert ResearchResult objects to dicts for output
+    def to_output(obj):
+        """Convert ResearchResult or list of ResearchResult to JSON-serializable dict."""
+        if isinstance(obj, ResearchResult):
+            return asdict(obj)
+        elif isinstance(obj, list):
+            return [asdict(item) if isinstance(item, ResearchResult) else item for item in obj]
+        return obj
+
     if args.json:
-        print(json.dumps(results, indent=2, default=str))
+        output = to_output(results)
+        print(json.dumps(output, indent=2, default=str))
     # Pretty print summary
-    elif "prs" in results:
-        pr_results = results["prs"]
-        print(f"Processed {len(pr_results)} PR(s)")
-        for r in pr_results:
-            status = r.get("status", "unknown")
-            print(f"  - {r.get('adr', 'Unknown')}: {status}")
-    elif "adrs" in results:
-        adr_results = results["adrs"]
-        print(f"Processed {len(adr_results)} ADR(s)")
-        for r in adr_results:
-            status = r.get("status", "unknown")
-            print(f"  - {r.get('adr', 'Unknown')}: {status}")
-    else:
+    elif isinstance(results, list):
+        # List of ResearchResult objects
+        print(f"Processed {len(results)} item(s)")
+        for r in results:
+            status = "success" if r.success else "failed"
+            print(f"  - {r.query}: {status}")
+            if r.sources:
+                print(f"      Sources: {len(r.sources)}")
+            if r.key_findings:
+                print(f"      Key findings: {len(r.key_findings)}")
+            if r.recommendations:
+                print(f"      Recommendations: {len(r.recommendations)}")
+            if r.pr_url:
+                print(f"      PR: {r.pr_url}")
+    elif isinstance(results, ResearchResult):
+        # Single ResearchResult
+        print(f"Query: {results.query}")
+        print(f"Status: {'success' if results.success else 'failed'}")
+        if results.error:
+            print(f"Error: {results.error}")
+        if results.summary:
+            print(f"\nSummary: {results.summary[:200]}...")
+        if results.sources:
+            print(f"\nSources ({len(results.sources)}):")
+            for source in results.sources[:5]:
+                print(f"  - {source.title}: {source.url}")
+            if len(results.sources) > 5:
+                print(f"  ... and {len(results.sources) - 5} more")
+        if results.key_findings:
+            print(f"\nKey Findings ({len(results.key_findings)}):")
+            for finding in results.key_findings[:3]:
+                print(f"  - {finding.topic}: {finding.finding[:100]}...")
+            if len(results.key_findings) > 3:
+                print(f"  ... and {len(results.key_findings) - 3} more")
+        if results.recommendations:
+            print(f"\nRecommendations ({len(results.recommendations)}):")
+            for rec in results.recommendations[:3]:
+                print(f"  - {rec.recommendation[:100]}...")
+            if len(results.recommendations) > 3:
+                print(f"  ... and {len(results.recommendations) - 3} more")
+        if results.pr_url:
+            print(f"\nPR: {results.pr_url}")
+    elif isinstance(results, dict):
+        # Dry run or fallback dict
         print(f"Status: {results.get('status', 'unknown')}")
-        if results.get("result", {}).get("pr_url"):
-            print(f"PR: {results['result']['pr_url']}")
+        if "prs" in results:
+            print(f"PRs to process: {len(results['prs'])}")
+        if "adrs" in results:
+            print(f"ADRs to process: {len(results['adrs'])}")
 
     return 0
 
