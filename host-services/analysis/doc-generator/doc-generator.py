@@ -504,8 +504,8 @@ Note: For best practice research, use the adr-researcher tool instead.
         "--project",
         "-p",
         type=Path,
-        default=Path(__file__).resolve().parent.parent.parent.parent,
-        help="Project root (default: james-in-a-box)",
+        default=Path.cwd(),
+        help="Project root (default: current working directory)",
     )
 
     parser.add_argument(
