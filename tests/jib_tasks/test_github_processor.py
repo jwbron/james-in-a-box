@@ -338,14 +338,21 @@ class TestHandlers:
             "failed_checks": [{"name": "test", "state": "FAILURE"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Mock run_claude to return a successful result
+        mock_claude_result = MagicMock()
+        mock_claude_result.success = True
+        mock_claude_result.returncode = 0
+        mock_claude_result.stdout = "Check failure analyzed!"
+        mock_claude_result.stderr = ""
+        mock_claude_result.error = None
+
+        with patch.object(
+            github_processor, "run_claude", return_value=mock_claude_result
+        ) as mock_run_claude:
             github_processor.handle_check_failure(context)
 
-            # Should invoke claude
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            # Should invoke Claude
+            mock_run_claude.assert_called_once()
 
     def test_handle_comment_invokes_claude(self, temp_dir):
         """Test comment handler invokes Claude."""
@@ -357,13 +364,21 @@ class TestHandlers:
             "comments": [{"author": "user", "body": "Please fix", "type": "comment"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Mock run_claude to return a successful result
+        mock_claude_result = MagicMock()
+        mock_claude_result.success = True
+        mock_claude_result.returncode = 0
+        mock_claude_result.stdout = "Comment handled!"
+        mock_claude_result.stderr = ""
+        mock_claude_result.error = None
+
+        with patch.object(
+            github_processor, "run_claude", return_value=mock_claude_result
+        ) as mock_run_claude:
             github_processor.handle_comment(context)
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            # Should invoke Claude
+            mock_run_claude.assert_called_once()
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
         """Test review handler invokes Claude."""
@@ -381,13 +396,23 @@ class TestHandlers:
             "diff": "diff content",
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_review_request(context)
+        # Mock run_claude to return a successful result
+        mock_claude_result = MagicMock()
+        mock_claude_result.success = True
+        mock_claude_result.returncode = 0
+        mock_claude_result.stdout = "Review completed!"
+        mock_claude_result.stderr = ""
+        mock_claude_result.error = None
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+        # Also mock check_existing_review to allow the review to proceed
+        with patch.object(github_processor, "check_existing_review", return_value=False):
+            with patch.object(
+                github_processor, "run_claude", return_value=mock_claude_result
+            ) as mock_run_claude:
+                github_processor.handle_review_request(context)
+
+                # Should invoke Claude
+                mock_run_claude.assert_called_once()
 
 
 class TestMain:

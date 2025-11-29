@@ -342,7 +342,9 @@ def invoke_jib(task_type: str, context: dict) -> bool:
                 # Look for common error patterns
                 for line in stderr_tail.split("\n"):
                     line_lower = line.lower()
-                    if any(kw in line_lower for kw in ["error:", "failed:", "exception:", "traceback"]):
+                    if any(
+                        kw in line_lower for kw in ["error:", "failed:", "exception:", "traceback"]
+                    ):
                         error_summary = line.strip()[:200]
                         break
 

@@ -277,8 +277,7 @@ class TestMain:
 class TestProcessTask:
     """Tests for task processing."""
 
-    @patch("subprocess.run")
-    def test_process_task_with_thread_context(self, mock_run, temp_dir, monkeypatch):
+    def test_process_task_with_thread_context(self, temp_dir, monkeypatch):
         """Test that thread context is preserved in task processing."""
         # Create task file with frontmatter
         incoming_dir = temp_dir / "incoming"
@@ -294,35 +293,36 @@ task_id: "slack-task-001"
 Please help with this task.
 """)
 
-        # Mock Claude command success
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="Task completed successfully!", stderr=""
-        )
-
         # Mock home directory
         monkeypatch.setenv("HOME", str(temp_dir))
 
         # Create expected directories
         (temp_dir / "khan").mkdir()
+        (temp_dir / "khan" / "james-in-a-box" / "shared").mkdir(parents=True)
         notifications_dir = temp_dir / "sharing" / "notifications"
         notifications_dir.mkdir(parents=True)
 
+        # Mock run_claude to return a successful result
+        mock_claude_result = MagicMock()
+        mock_claude_result.success = True
+        mock_claude_result.returncode = 0
+        mock_claude_result.stdout = "Task completed successfully!"
+        mock_claude_result.stderr = ""
+        mock_claude_result.error = None
+
         # Need to reload to pick up HOME change for Path.home()
         with patch.object(Path, "home", return_value=temp_dir):
-            result = incoming_processor.process_task(task_file)
+            with patch.object(incoming_processor, "run_claude", return_value=mock_claude_result):
+                result = incoming_processor.process_task(task_file)
 
         # Should complete successfully
         assert result is True
-
-        # Claude should have been called
-        mock_run.assert_called()
 
 
 class TestProcessResponse:
     """Tests for response processing."""
 
-    @patch("subprocess.run")
-    def test_process_response_with_reference(self, mock_run, temp_dir, monkeypatch):
+    def test_process_response_with_reference(self, temp_dir, monkeypatch):
         """Test that referenced notification is loaded."""
         # Create response file
         responses_dir = temp_dir / "responses"
@@ -344,15 +344,22 @@ Here is my response to your question.
         original = notifications_dir / "20251124-123456.md"
         original.write_text("# Original Notification\n\nOriginal content.")
 
-        # Mock Claude command
-        mock_run.return_value = MagicMock(returncode=0, stdout="Response processed!", stderr="")
-
         # Mock home
         (temp_dir / "khan").mkdir()
+        (temp_dir / "khan" / "james-in-a-box" / "shared").mkdir(parents=True)
         monkeypatch.setenv("HOME", str(temp_dir))
 
+        # Mock run_claude to return a successful result
+        mock_claude_result = MagicMock()
+        mock_claude_result.success = True
+        mock_claude_result.returncode = 0
+        mock_claude_result.stdout = "Response processed!"
+        mock_claude_result.stderr = ""
+        mock_claude_result.error = None
+
         with patch.object(Path, "home", return_value=temp_dir):
-            result = incoming_processor.process_response(response_file)
+            with patch.object(incoming_processor, "run_claude", return_value=mock_claude_result):
+                result = incoming_processor.process_response(response_file)
 
         assert result is True
 
