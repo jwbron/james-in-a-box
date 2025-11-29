@@ -161,9 +161,7 @@ class DriftDetector:
             return True
         # Skip markdown table rows (start with | or contain | ... |)
         stripped = line.strip()
-        if stripped.startswith("|") or ("|" in stripped and stripped.count("|") >= 2):
-            return True
-        return False
+        return stripped.startswith("|") or ("|" in stripped and stripped.count("|") >= 2)
 
     def find_similar_file(self, missing_path: str) -> str | None:
         """Try to find a similar file that might be the new location."""
