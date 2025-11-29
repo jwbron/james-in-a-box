@@ -48,9 +48,14 @@ def get_all_connectors() -> list:
         if connector.validate_config():
             connectors.append(connector)
         else:
-            logger.warning("Confluence connector configuration invalid, skipping")
+            logger.warning("Connector configuration invalid", connector="Confluence")
     except Exception as e:
-        logger.error(f"Failed to initialize Confluence connector: {e}")
+        logger.error(
+            "Failed to initialize connector",
+            connector="Confluence",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     # JIRA connector
     try:
@@ -58,9 +63,14 @@ def get_all_connectors() -> list:
         if connector.validate_config():
             connectors.append(connector)
         else:
-            logger.warning("JIRA connector configuration invalid, skipping")
+            logger.warning("Connector configuration invalid", connector="JIRA")
     except Exception as e:
-        logger.error(f"Failed to initialize JIRA connector: {e}")
+        logger.error(
+            "Failed to initialize connector",
+            connector="JIRA",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     # Add more connectors here as they are implemented
     # Example:
@@ -98,12 +108,10 @@ def sync_all_connectors(incremental: bool = True) -> dict:
         logger.warning("No connectors configured or available")
         return results
 
-    logger.info(f"Running sync for {len(connectors)} connector(s)")
+    logger.info("Running sync", connector_count=len(connectors))
 
     for connector in connectors:
-        logger.info(f"{'=' * 60}")
-        logger.info(f"Syncing: {connector.name}")
-        logger.info(f"{'=' * 60}")
+        logger.info("Starting connector sync", connector=connector.name)
 
         try:
             success = connector.sync(incremental=incremental)
@@ -119,7 +127,12 @@ def sync_all_connectors(incremental: bool = True) -> dict:
                 results["failure_count"] += 1
 
         except Exception as e:
-            logger.error(f"Error syncing {connector.name}: {e}")
+            logger.error(
+                "Error syncing connector",
+                connector=connector.name,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             results["connectors"][connector.name] = {"success": False, "error": str(e)}
             results["failure_count"] += 1
 
@@ -184,17 +197,31 @@ def main():
 
         # Return exit code based on results
         if results["failure_count"] > 0:
-            logger.error(f"{results['failure_count']} connector(s) failed")
+            logger.error(
+                "Context-sync completed with failures",
+                failure_count=results["failure_count"],
+                success_count=results["success_count"],
+            )
             return 1
 
-        logger.info("Context-sync completed successfully")
+        logger.info(
+            "Context-sync completed successfully",
+            success_count=results["success_count"],
+            total_files=results["total_files"],
+            total_size_mb=results["total_size"] / (1024 * 1024),
+        )
         return 0
 
     except KeyboardInterrupt:
         logger.info("Sync interrupted by user")
         return 130
     except Exception as e:
-        logger.error(f"Sync failed: {e}", exc_info=True)
+        logger.error(
+            "Sync failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
         return 1
 
 
