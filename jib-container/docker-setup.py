@@ -166,8 +166,16 @@ def install_python(distro: str) -> None:
         )
 
         # Set Python 3.13 as the default python3
-        run(["update-alternatives", "--install", "/usr/bin/python3", "python3",
-             "/usr/bin/python3.13", "1"])
+        run(
+            [
+                "update-alternatives",
+                "--install",
+                "/usr/bin/python3",
+                "python3",
+                "/usr/bin/python3.13",
+                "1",
+            ]
+        )
         run(["update-alternatives", "--set", "python3", "/usr/bin/python3.13"], check=False)
 
         # Create symlinks for consistency
@@ -202,8 +210,17 @@ def install_python(distro: str) -> None:
             run(["dnf", "install", "-y", "python3", "python3-devel"])
         else:
             # Set up alternatives for Python 3.13
-            run(["alternatives", "--install", "/usr/bin/python3", "python3",
-                 "/usr/bin/python3.13", "1"], check=False)
+            run(
+                [
+                    "alternatives",
+                    "--install",
+                    "/usr/bin/python3",
+                    "python3",
+                    "/usr/bin/python3.13",
+                    "1",
+                ],
+                check=False,
+            )
 
         # Install pip
         run(["dnf", "install", "-y", "python3-pip"], check=False)
