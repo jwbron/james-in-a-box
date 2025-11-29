@@ -47,6 +47,7 @@ def get_all_connectors() -> list:
         connector = ConfluenceConnector()
         if connector.validate_config():
             connectors.append(connector)
+            logger.debug("Initialized connector", connector_name="confluence")
         else:
             logger.warning("Connector configuration invalid", connector="Confluence")
     except Exception as e:
@@ -62,6 +63,7 @@ def get_all_connectors() -> list:
         connector = JIRAConnector()
         if connector.validate_config():
             connectors.append(connector)
+            logger.debug("Initialized connector", connector_name="jira")
         else:
             logger.warning("Connector configuration invalid", connector="JIRA")
     except Exception as e:
@@ -123,8 +125,19 @@ def sync_all_connectors(incremental: bool = True) -> dict:
                 results["success_count"] += 1
                 results["total_files"] += metadata["file_count"]
                 results["total_size"] += metadata["total_size"]
+                logger.info(
+                    "Connector sync completed successfully",
+                    connector_name=connector.name,
+                    file_count=metadata["file_count"],
+                    total_size_bytes=metadata["total_size"],
+                    output_dir=metadata.get("output_dir"),
+                )
             else:
                 results["failure_count"] += 1
+                logger.warning(
+                    "Connector sync completed with failures",
+                    connector_name=connector.name,
+                )
 
         except Exception as e:
             logger.error(
@@ -189,7 +202,10 @@ def main():
     log_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        logger.info("Starting context-sync")
+        logger.info(
+            "Starting context-sync",
+            mode="full" if args.full else "incremental",
+        )
         results = sync_all_connectors(incremental=not args.full)
 
         if not args.quiet:
@@ -220,7 +236,6 @@ def main():
             "Sync failed",
             error=str(e),
             error_type=type(e).__name__,
-            exc_info=True,
         )
         return 1
 

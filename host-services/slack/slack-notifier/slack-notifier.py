@@ -185,6 +185,7 @@ class SlackNotifier:
                     error_type=type(e).__name__,
                 )
                 return {}
+        logger.debug("No existing threads file found", threads_file=str(self.threads_file))
         return {}
 
     def _save_threads(self):
@@ -194,6 +195,11 @@ class SlackNotifier:
             with open(self.threads_file, "w") as f:
                 json.dump(self.threads, f, indent=2)
             os.chmod(self.threads_file, 0o600)
+            logger.debug(
+                "Saved thread mappings",
+                threads_file=str(self.threads_file),
+                thread_count=len(self.threads),
+            )
         except Exception as e:
             logger.error(
                 "Failed to save threads file",
@@ -648,7 +654,6 @@ class SlackNotifier:
                 "Error in main loop",
                 error=str(e),
                 error_type=type(e).__name__,
-                exc_info=True,
             )
         finally:
             logger.info(
@@ -666,6 +671,7 @@ class SlackNotifier:
 def main():
     """Main entry point."""
     config_dir = Path.home() / ".config" / "jib-notifier"
+    logger = get_logger("slack-notifier")
 
     try:
         notifier = SlackNotifier(config_dir)
@@ -678,7 +684,6 @@ def main():
             "Fatal error",
             error=str(e),
             error_type=type(e).__name__,
-            exc_info=True,
         )
         sys.exit(1)
 
