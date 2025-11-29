@@ -5,9 +5,8 @@ Provides a single-line status display that updates in place,
 showing current step and overall progress.
 """
 
-import sys
 import shutil
-from typing import Optional
+import sys
 
 
 class StatusBar:
@@ -37,10 +36,10 @@ class StatusBar:
         if not self.enabled:
             return
         # Move to beginning and clear the line
-        sys.stdout.write('\r' + ' ' * self._last_message_len + '\r')
+        sys.stdout.write("\r" + " " * self._last_message_len + "\r")
         sys.stdout.flush()
 
-    def update(self, message: str, step: Optional[int] = None) -> None:
+    def update(self, message: str, step: int | None = None) -> None:
         """Update the status bar with a new message.
 
         Args:
@@ -65,18 +64,18 @@ class StatusBar:
             pct = min(self.current_step / self.total_steps, 1.0)
             bar_width = 20
             filled = int(bar_width * pct)
-            bar = '\033[32m' + '=' * filled + '\033[0m' + '-' * (bar_width - filled)
+            bar = "\033[32m" + "=" * filled + "\033[0m" + "-" * (bar_width - filled)
             prefix = f"\033[1m{progress}\033[0m [{bar}] "
         else:
             # No progress tracking, just show spinner
-            spinners = ['|', '/', '-', '\\']
+            spinners = ["|", "/", "-", "\\"]
             spinner = spinners[self.current_step % len(spinners)]
             prefix = f"\033[1m[{spinner}]\033[0m "
 
         # Truncate message if needed
         available_width = width - len(prefix) - 1
         if len(message) > available_width:
-            message = message[:available_width - 3] + '...'
+            message = message[: available_width - 3] + "..."
 
         line = prefix + message
 
@@ -106,7 +105,7 @@ class StatusBar:
             print(f"\033[33m!\033[0m {message}")
         self._last_message_len = 0
 
-    def finish(self, message: Optional[str] = None) -> None:
+    def finish(self, message: str | None = None) -> None:
         """Finish the status bar and optionally show a final message."""
         self._clear_line()
         if message and self.enabled:
@@ -115,7 +114,7 @@ class StatusBar:
 
 
 # Global instance for convenience
-_status_bar: Optional[StatusBar] = None
+_status_bar: StatusBar | None = None
 
 
 def init_statusbar(total_steps: int = 0, enabled: bool = True) -> StatusBar:
@@ -133,12 +132,12 @@ def init_statusbar(total_steps: int = 0, enabled: bool = True) -> StatusBar:
     return _status_bar
 
 
-def get_statusbar() -> Optional[StatusBar]:
+def get_statusbar() -> StatusBar | None:
     """Get the global status bar instance."""
     return _status_bar
 
 
-def status(message: str, step: Optional[int] = None) -> None:
+def status(message: str, step: int | None = None) -> None:
     """Update the global status bar.
 
     Args:
@@ -167,7 +166,7 @@ def status_warn(message: str) -> None:
         _status_bar.warn(message)
 
 
-def status_finish(message: Optional[str] = None) -> None:
+def status_finish(message: str | None = None) -> None:
     """Finish the status bar."""
     if _status_bar:
         _status_bar.finish(message)
