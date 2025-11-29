@@ -101,12 +101,15 @@ RUNTIME_GID="${RUNTIME_GID:-1000}"
 JIB_QUIET="${JIB_QUIET:-0}"
 
 # Helper functions for quiet mode
+# Note: Must use if/fi pattern (not && shorthand) to ensure return code 0
+# The && pattern returns 1 when the test fails, which breaks chains like:
+#   service start && log_success "ok" || log_warn "failed"
 log_info() {
-    [ "$JIB_QUIET" = "0" ] && echo "$@"
+    if [ "$JIB_QUIET" = "0" ]; then echo "$@"; fi
 }
 
 log_success() {
-    [ "$JIB_QUIET" = "0" ] && echo "✓ $@"
+    if [ "$JIB_QUIET" = "0" ]; then echo "✓ $@"; fi
 }
 
 log_warn() {
