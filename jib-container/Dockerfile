@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y \
     # Development
     strace ltrace gdb \
     # Other useful tools
-    jq tree watch tmux screen \
+    jq tree watch tmux screen inotify-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI (gh)
@@ -676,6 +676,37 @@ if [ $# -eq 0 ]; then
             --interval 60 > /dev/null 2>&1 &
         log_success "MCP token watcher started (PID: $!)"
         log_info "  Will refresh GitHub MCP config when token changes"
+        log_info ""
+    fi
+
+    # Start credential sync watcher in background
+    # This watches ~/.claude/.credentials.json and syncs to ~/.claude-auth/ when it changes
+    # Fixes the issue where /login updates local creds but jib --exec containers read from shared
+    AUTH_DIR="${USER_HOME}/.claude-auth"
+    CREDS_FILE="${USER_HOME}/.claude/.credentials.json"
+    if [ -d "$AUTH_DIR" ]; then
+        log_info "Starting credential sync watcher..."
+        (
+            while true; do
+                # Wait for credential file changes using inotifywait if available, else poll
+                if command -v inotifywait >/dev/null 2>&1; then
+                    inotifywait -q -e modify -e create "$CREDS_FILE" 2>/dev/null || sleep 5
+                else
+                    sleep 5
+                fi
+                # Sync if credentials changed
+                if [ -f "$CREDS_FILE" ]; then
+                    if [ ! -f "${AUTH_DIR}/.credentials.json" ] || \
+                       ! cmp -s "$CREDS_FILE" "${AUTH_DIR}/.credentials.json"; then
+                        cp "$CREDS_FILE" "${AUTH_DIR}/.credentials.json"
+                        chmod 600 "${AUTH_DIR}/.credentials.json"
+                        echo "✓ Credentials synced to shared auth ($(date +%H:%M:%S))"
+                    fi
+                fi
+            done
+        ) &
+        log_success "Credential sync watcher started"
+        log_info "  Syncs to ~/.claude-auth/ immediately after /login"
         log_info ""
     fi
 
