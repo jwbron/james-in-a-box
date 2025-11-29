@@ -306,12 +306,15 @@ class ADRResearcher:
         This method extracts structured data from Claude's markdown output,
         parsing sections like Sources, Key Findings, Recommendations, etc.
 
+        If parsing fails for any section, the raw output is preserved to ensure
+        no data is lost.
+
         Args:
             raw_result: Raw dict from jib subprocess (contains 'success', 'output', etc.)
             query: The research query or ADR title for context
 
         Returns:
-            ResearchResult with parsed structured fields
+            ResearchResult with parsed structured fields (raw_output always preserved)
         """
         if not raw_result or not raw_result.get("success"):
             return ResearchResult(
@@ -328,12 +331,48 @@ class ADRResearcher:
         pr_number = raw_result.get("pr_number")
 
         # Parse structured content from markdown output
-        sources = self._parse_sources(output)
-        key_findings = self._parse_key_findings(output)
-        industry_adoption = self._parse_industry_adoption(output)
-        recommendations = self._parse_recommendations(output)
-        anti_patterns = self._parse_anti_patterns(output)
-        summary = self._parse_summary(output)
+        # Each parser is wrapped in try/except to ensure we don't lose data if parsing fails
+        parse_errors = []
+
+        try:
+            sources = self._parse_sources(output)
+        except Exception as e:
+            sources = []
+            parse_errors.append(f"sources: {e}")
+
+        try:
+            key_findings = self._parse_key_findings(output)
+        except Exception as e:
+            key_findings = []
+            parse_errors.append(f"key_findings: {e}")
+
+        try:
+            industry_adoption = self._parse_industry_adoption(output)
+        except Exception as e:
+            industry_adoption = []
+            parse_errors.append(f"industry_adoption: {e}")
+
+        try:
+            recommendations = self._parse_recommendations(output)
+        except Exception as e:
+            recommendations = []
+            parse_errors.append(f"recommendations: {e}")
+
+        try:
+            anti_patterns = self._parse_anti_patterns(output)
+        except Exception as e:
+            anti_patterns = []
+            parse_errors.append(f"anti_patterns: {e}")
+
+        try:
+            summary = self._parse_summary(output)
+        except Exception as e:
+            summary = ""
+            parse_errors.append(f"summary: {e}")
+
+        # Log parse errors but don't fail - raw_output is always preserved
+        if parse_errors:
+            print(f"  Warning: Some parsing failed (raw output preserved): {parse_errors}")
 
         return ResearchResult(
             success=True,
