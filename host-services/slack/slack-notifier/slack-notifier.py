@@ -371,6 +371,10 @@ class SlackNotifier:
                 continue
 
             # Read file content
+            # Add small delay to ensure filesystem sync is complete
+            # (IN_CLOSE_WRITE should handle this, but extra safety for NFS/network mounts)
+            time.sleep(0.1)
+
             try:
                 with open(path) as f:
                     raw_content = f.read().strip()
@@ -572,8 +576,13 @@ class SlackNotifier:
         watches_added = 0
         for watch_dir in self.watch_dirs:
             try:
+                # Use IN_CLOSE_WRITE instead of IN_CREATE to ensure file is fully written
+                # before we try to read it. IN_CREATE triggers when file is created but
+                # before content is written, causing race conditions where frontmatter
+                # (including thread_ts) isn't available yet.
                 i.add_watch(
-                    str(watch_dir), mask=inotify.constants.IN_CREATE | inotify.constants.IN_MOVED_TO
+                    str(watch_dir),
+                    mask=inotify.constants.IN_CLOSE_WRITE | inotify.constants.IN_MOVED_TO,
                 )
                 watches_added += 1
                 self.logger.debug("Added inotify watch", watch_dir=str(watch_dir))
@@ -585,7 +594,7 @@ class SlackNotifier:
                             try:
                                 i.add_watch(
                                     subdir,
-                                    mask=inotify.constants.IN_CREATE
+                                    mask=inotify.constants.IN_CLOSE_WRITE
                                     | inotify.constants.IN_MOVED_TO,
                                 )
                             except Exception as e:
