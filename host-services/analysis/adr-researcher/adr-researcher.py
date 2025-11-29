@@ -362,8 +362,7 @@ class ADRResearcher:
         # Match markdown links: [Title](URL)
         # Optional: followed by " - description"
         link_pattern = re.compile(
-            r'\[([^\]]+)\]\((https?://[^\)]+)\)(?:\s*[-–—]\s*(.+?))?(?:\n|$)',
-            re.IGNORECASE
+            r"\[([^\]]+)\]\((https?://[^\)]+)\)(?:\s*[-–—]\s*(.+?))?(?:\n|$)", re.IGNORECASE
         )
 
         for match in link_pattern.finditer(content):
@@ -375,11 +374,13 @@ class ADRResearcher:
             if url.startswith("#"):
                 continue
 
-            sources.append(ResearchSource(
-                title=title,
-                url=url,
-                summary=summary,
-            ))
+            sources.append(
+                ResearchSource(
+                    title=title,
+                    url=url,
+                    summary=summary,
+                )
+            )
 
         # Deduplicate by URL
         seen_urls = set()
@@ -401,12 +402,15 @@ class ADRResearcher:
         findings = []
 
         # Find the Key Findings section
-        findings_section = self._extract_section(content, [
-            "Key Findings",
-            "Findings",
-            "Main Findings",
-            "Research Findings",
-        ])
+        findings_section = self._extract_section(
+            content,
+            [
+                "Key Findings",
+                "Findings",
+                "Main Findings",
+                "Research Findings",
+            ],
+        )
 
         if not findings_section:
             return findings
@@ -416,8 +420,8 @@ class ADRResearcher:
         # Or: - **Topic:** Finding text
         # Or: 1. **Topic:** Finding text
         topic_pattern = re.compile(
-            r'(?:^|\n)(?:#{1,4}\s+|\d+\.\s+|\*\s+|-\s+)(?:\*\*)?([^*\n:]+)(?:\*\*)?:?\s*([^\n]+)',
-            re.MULTILINE
+            r"(?:^|\n)(?:#{1,4}\s+|\d+\.\s+|\*\s+|-\s+)(?:\*\*)?([^*\n:]+)(?:\*\*)?:?\s*([^\n]+)",
+            re.MULTILINE,
         )
 
         for match in topic_pattern.finditer(findings_section):
@@ -425,11 +429,13 @@ class ADRResearcher:
             finding = match.group(2).strip()
 
             if topic and finding and len(finding) > 10:  # Skip very short findings
-                findings.append(KeyFinding(
-                    topic=topic,
-                    finding=finding,
-                    confidence="medium",  # Default; could be parsed if in content
-                ))
+                findings.append(
+                    KeyFinding(
+                        topic=topic,
+                        finding=finding,
+                        confidence="medium",  # Default; could be parsed if in content
+                    )
+                )
 
         return findings[:15]  # Limit to 15 findings
 
@@ -443,12 +449,15 @@ class ADRResearcher:
         adoptions = []
 
         # Find the Industry Adoption section
-        adoption_section = self._extract_section(content, [
-            "Industry Adoption",
-            "Adoption",
-            "Industry Examples",
-            "Real-World Examples",
-        ])
+        adoption_section = self._extract_section(
+            content,
+            [
+                "Industry Adoption",
+                "Adoption",
+                "Industry Examples",
+                "Real-World Examples",
+            ],
+        )
 
         if not adoption_section:
             return adoptions
@@ -456,8 +465,7 @@ class ADRResearcher:
         # Parse markdown tables
         # Format: | Organization | Approach | Notes |
         table_row_pattern = re.compile(
-            r'\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|',
-            re.MULTILINE
+            r"\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|", re.MULTILINE
         )
 
         for match in table_row_pattern.finditer(adoption_section):
@@ -470,11 +478,13 @@ class ADRResearcher:
                 continue
 
             if org and approach:
-                adoptions.append(IndustryAdoption(
-                    organization=org,
-                    approach=approach,
-                    notes=notes if notes != "..." else "",
-                ))
+                adoptions.append(
+                    IndustryAdoption(
+                        organization=org,
+                        approach=approach,
+                        notes=notes if notes != "..." else "",
+                    )
+                )
 
         return adoptions[:10]  # Limit to 10 examples
 
@@ -485,12 +495,15 @@ class ADRResearcher:
         recommendations = []
 
         # Find the Recommendations section
-        rec_section = self._extract_section(content, [
-            "Recommendations",
-            "Suggested Actions",
-            "Action Items",
-            "Next Steps",
-        ])
+        rec_section = self._extract_section(
+            content,
+            [
+                "Recommendations",
+                "Suggested Actions",
+                "Action Items",
+                "Next Steps",
+            ],
+        )
 
         if not rec_section:
             return recommendations
@@ -499,22 +512,23 @@ class ADRResearcher:
         # Format: - Recommendation text
         # Or: 1. Recommendation text
         bullet_pattern = re.compile(
-            r'(?:^|\n)(?:\d+\.\s+|\*\s+|-\s+)(.+?)(?=\n(?:\d+\.|\*|-)|$)',
-            re.MULTILINE | re.DOTALL
+            r"(?:^|\n)(?:\d+\.\s+|\*\s+|-\s+)(.+?)(?=\n(?:\d+\.|\*|-)|$)", re.MULTILINE | re.DOTALL
         )
 
         for match in bullet_pattern.finditer(rec_section):
             rec_text = match.group(1).strip()
 
             # Clean up the recommendation
-            rec_text = re.sub(r'\n\s+', ' ', rec_text)
+            rec_text = re.sub(r"\n\s+", " ", rec_text)
 
             if rec_text and len(rec_text) > 10:
-                recommendations.append(Recommendation(
-                    recommendation=rec_text[:500],  # Limit length
-                    rationale="",  # Could be parsed from sub-bullets
-                    priority="medium",
-                ))
+                recommendations.append(
+                    Recommendation(
+                        recommendation=rec_text[:500],  # Limit length
+                        rationale="",  # Could be parsed from sub-bullets
+                        priority="medium",
+                    )
+                )
 
         return recommendations[:10]  # Limit to 10 recommendations
 
@@ -525,21 +539,23 @@ class ADRResearcher:
         anti_patterns = []
 
         # Find the Anti-Patterns section
-        ap_section = self._extract_section(content, [
-            "Anti-Patterns",
-            "Anti-Patterns to Avoid",
-            "Pitfalls",
-            "Common Mistakes",
-            "What to Avoid",
-        ])
+        ap_section = self._extract_section(
+            content,
+            [
+                "Anti-Patterns",
+                "Anti-Patterns to Avoid",
+                "Pitfalls",
+                "Common Mistakes",
+                "What to Avoid",
+            ],
+        )
 
         if not ap_section:
             return anti_patterns
 
         # Parse bullet points
         bullet_pattern = re.compile(
-            r'(?:^|\n)(?:\d+\.\s+|\*\s+|-\s+)(.+?)(?=\n(?:\d+\.|\*|-)|$)',
-            re.MULTILINE
+            r"(?:^|\n)(?:\d+\.\s+|\*\s+|-\s+)(.+?)(?=\n(?:\d+\.|\*|-)|$)", re.MULTILINE
         )
 
         for match in bullet_pattern.finditer(ap_section):
@@ -551,15 +567,17 @@ class ADRResearcher:
 
     def _parse_summary(self, content: str) -> str:
         """Parse summary from markdown content."""
-        import re
 
         # Find the Summary section
-        summary_section = self._extract_section(content, [
-            "Summary",
-            "Overview",
-            "Executive Summary",
-            "TL;DR",
-        ])
+        summary_section = self._extract_section(
+            content,
+            [
+                "Summary",
+                "Overview",
+                "Executive Summary",
+                "TL;DR",
+            ],
+        )
 
         if summary_section:
             # Get first paragraph
@@ -572,7 +590,7 @@ class ADRResearcher:
         for para in paragraphs:
             para = para.strip()
             # Skip headers, code blocks, tables
-            if para.startswith("#") or para.startswith("`") or para.startswith("|"):
+            if para.startswith(("#", "`", "|")):
                 continue
             if len(para) > 50:
                 return para[:1000]
@@ -594,8 +612,7 @@ class ADRResearcher:
         for section_name in section_names:
             # Match headers like ## Section Name or ### Section Name
             pattern = re.compile(
-                rf'^(#{1,4})\s*{re.escape(section_name)}\s*$',
-                re.MULTILINE | re.IGNORECASE
+                rf"^(#{1, 4})\s*{re.escape(section_name)}\s*$", re.MULTILINE | re.IGNORECASE
             )
 
             match = pattern.search(content)
@@ -604,14 +621,11 @@ class ADRResearcher:
                 header_level = len(match.group(1))
 
                 # Find the next header of same or higher level
-                next_header = re.compile(
-                    rf'^#{{{1},{header_level}}}\s+',
-                    re.MULTILINE
-                )
+                next_header = re.compile(rf"^#{{{1},{header_level}}}\s+", re.MULTILINE)
                 next_match = next_header.search(content, start)
 
                 if next_match:
-                    return content[start:next_match.start()]
+                    return content[start : next_match.start()]
                 else:
                     return content[start:]
 
