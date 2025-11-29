@@ -141,8 +141,18 @@ def load_state() -> dict:
     }
 
 
-def save_state(state: dict):
-    """Save notification state."""
+def save_state(state: dict, update_last_run: bool = False):
+    """Save notification state.
+
+    Args:
+        state: The state dict to save
+        update_last_run: If True, also update last_run_start to current time.
+                        This creates a checkpoint so if the process is killed,
+                        the next run resumes from a reasonable point.
+    """
+    if update_last_run:
+        state["last_run_start"] = utc_now_iso()
+
     state_file = Path.home() / ".local" / "share" / "github-watcher" / "state.json"
     state_file.parent.mkdir(parents=True, exist_ok=True)
     with state_file.open("w") as f:
@@ -1002,6 +1012,7 @@ def main():
                             failure_ctx["failure_signature"]
                         ] = utc_now_iso()
                         tasks_queued += 1
+                        save_state(state, update_last_run=True)  # Checkpoint after each jib
 
                     # Check for comments (filter out bot's own comments, not human's)
                     comment_ctx = check_pr_for_comments(
@@ -1012,6 +1023,7 @@ def main():
                             comment_ctx["comment_signature"]
                         ] = utc_now_iso()
                         tasks_queued += 1
+                        save_state(state, update_last_run=True)  # Checkpoint after each jib
 
                     # Check for merge conflicts
                     conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
@@ -1020,6 +1032,7 @@ def main():
                             conflict_ctx["conflict_signature"]
                         ] = utc_now_iso()
                         tasks_queued += 1
+                        save_state(state, update_last_run=True)  # Checkpoint after each jib
             else:
                 logger.debug("No open PRs authored by user", username=github_username)
 
@@ -1040,6 +1053,7 @@ def main():
                             failure_ctx["failure_signature"]
                         ] = utc_now_iso()
                         tasks_queued += 1
+                        save_state(state, update_last_run=True)  # Checkpoint after each jib
 
                     # Check for comments on bot's PRs (filter out bot's own comments)
                     comment_ctx = check_pr_for_comments(
@@ -1050,6 +1064,7 @@ def main():
                             comment_ctx["comment_signature"]
                         ] = utc_now_iso()
                         tasks_queued += 1
+                        save_state(state, update_last_run=True)  # Checkpoint after each jib
 
                     # Check for merge conflicts on bot's PRs
                     conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
@@ -1058,6 +1073,7 @@ def main():
                             conflict_ctx["conflict_signature"]
                         ] = utc_now_iso()
                         tasks_queued += 1
+                        save_state(state, update_last_run=True)  # Checkpoint after each jib
 
             # Check for PRs from others that need review (uses pre-fetched all_prs)
             review_contexts = check_prs_for_review(
@@ -1069,6 +1085,7 @@ def main():
                         utc_now_iso()
                     )
                     tasks_queued += 1
+                    save_state(state, update_last_run=True)  # Checkpoint after each jib
 
     # Update last run START timestamp and save state
     # We store when this run STARTED so next run checks for comments since then
