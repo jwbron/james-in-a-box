@@ -515,9 +515,11 @@ def create_dockerfile() -> None:
         if commands_dest.exists():
             shutil.rmtree(commands_dest)
         shutil.copytree(commands_src, commands_dest)
-        info("Claude commands copied to build context")
+        if not _quiet_mode:
+            info("Claude commands copied to build context")
     else:
-        warn("claude-commands directory not found")
+        if not _quiet_mode:
+            warn("claude-commands directory not found")
 
     # Copy claude-rules directory to build context
     rules_src = script_dir / "claude-rules"
@@ -526,20 +528,24 @@ def create_dockerfile() -> None:
         if rules_dest.exists():
             shutil.rmtree(rules_dest)
         shutil.copytree(rules_src, rules_dest)
-        info("Claude rules directory copied to build context")
+        if not _quiet_mode:
+            info("Claude rules directory copied to build context")
     else:
-        warn("claude-rules directory not found, skipping agent rules")
+        if not _quiet_mode:
+            warn("claude-rules directory not found, skipping agent rules")
 
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
     # Avoids issues with stale/revoked OAuth tokens from previous builds
-    info("Claude credentials will be mounted from host at runtime (see setup output above)")
+    if not _quiet_mode:
+        info("Claude credentials will be mounted from host at runtime (see setup output above)")
 
     # Copy Dockerfile from script directory
     dockerfile_src = script_dir / "Dockerfile"
     if dockerfile_src.exists():
         shutil.copy(dockerfile_src, Config.DOCKERFILE)
-        success("Build context prepared")
+        if not _quiet_mode:
+            success("Build context prepared")
     else:
         error(f"Dockerfile not found at {dockerfile_src}")
         error("Cannot build without Dockerfile")
@@ -561,8 +567,19 @@ def build_image() -> bool:
             str(Config.CONFIG_DIR)
         ]
 
-        # Docker automatically uses cache for unchanged layers
-        subprocess.run(cmd, check=True)
+        # In quiet mode, suppress Docker build output
+        if _quiet_mode:
+            cmd.insert(2, "--quiet")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                # Show error output if build failed
+                error("Docker build failed")
+                if result.stderr:
+                    print(result.stderr, file=sys.stderr)
+                return False
+        else:
+            # Docker automatically uses cache for unchanged layers
+            subprocess.run(cmd, check=True)
         return True
     except subprocess.CalledProcessError:
         error("Docker build failed")
@@ -961,6 +978,8 @@ def setup() -> bool:
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     # Check if image exists
+    if _quiet_mode:
+        status("Checking Docker image...")
     if not image_exists():
         info("Docker image not found. Running initial setup...")
         if not setup():
@@ -973,6 +992,8 @@ def run_claude() -> bool:
             return False
 
     # Ensure shared authentication directory exists
+    if _quiet_mode:
+        status("Checking authentication...")
     Config.CLAUDE_AUTH_DIR.mkdir(parents=True, exist_ok=True)
     claude_json_file = Config.CONFIG_DIR / "claude.json"
     if not claude_json_file.exists():
@@ -994,62 +1015,67 @@ def run_claude() -> bool:
         print()
 
     # Check Claude Code authentication in shared auth directory
-    print()
-    print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
+    if not _quiet_mode:
+        print()
+        print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
-    shared_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
+        shared_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
 
-    if shared_creds.exists():
-        try:
-            with open(shared_creds, 'r') as f:
-                creds = json.load(f)
+        if shared_creds.exists():
+            try:
+                with open(shared_creds, 'r') as f:
+                    creds = json.load(f)
 
-            scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
-            required_scopes = {
-                "user:inference",
-                "user:profile",
-                "user:sessions:claude_code"
-            }
+                scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
+                required_scopes = {
+                    "user:inference",
+                    "user:profile",
+                    "user:sessions:claude_code"
+                }
 
-            if required_scopes.issubset(set(scopes)):
-                success("Claude Code authenticated with full scopes")
-                print(f"  Auth shared via: {Config.CLAUDE_AUTH_DIR}")
-                print(f"  Session history: ephemeral (per-container)")
-            else:
-                warn("Claude Code credentials found but missing required scopes")
-                warn("  Container will work with limited functionality (--print mode only)")
-                print(f"  Location: {Config.CLAUDE_AUTH_DIR}")
-        except Exception as e:
-            warn(f"Could not read shared credentials: {e}")
-            warn("Container will prompt for authentication on first run")
-    else:
-        info("Claude Code not yet authenticated")
-        info("Container will prompt for authentication on first launch")
-        info("Credentials will be saved and shared across all containers")
-        info("Session history is NOT shared (each container has its own)")
-        print(f"  Auth location: {Config.CLAUDE_AUTH_DIR}")
+                if required_scopes.issubset(set(scopes)):
+                    success("Claude Code authenticated with full scopes")
+                    print(f"  Auth shared via: {Config.CLAUDE_AUTH_DIR}")
+                    print(f"  Session history: ephemeral (per-container)")
+                else:
+                    warn("Claude Code credentials found but missing required scopes")
+                    warn("  Container will work with limited functionality (--print mode only)")
+                    print(f"  Location: {Config.CLAUDE_AUTH_DIR}")
+            except Exception as e:
+                warn(f"Could not read shared credentials: {e}")
+                warn("Container will prompt for authentication on first run")
+        else:
+            info("Claude Code not yet authenticated")
+            info("Container will prompt for authentication on first launch")
+            info("Credentials will be saved and shared across all containers")
+            info("Session history is NOT shared (each container has its own)")
+            print(f"  Auth location: {Config.CLAUDE_AUTH_DIR}")
 
-    print()
+        print()
 
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
+    if _quiet_mode:
+        status("Building Docker image...")
     if not build_image():
         error("Docker build failed")
         return False
 
     # Generate unique container ID
+    if _quiet_mode:
+        status("Preparing container...")
     container_id = generate_container_id()
 
-    info("Launching sandboxed Claude Code environment...")
     if not _quiet_mode:
+        info("Launching sandboxed Claude Code environment...")
         print()
-
-    info(f"Container ID: {container_id}")
-    if not _quiet_mode:
+        info(f"Container ID: {container_id}")
         print()
 
     # Create worktrees for repos (isolates container from host repos)
-    info("Creating isolated worktrees...")
-    if not _quiet_mode:
+    if _quiet_mode:
+        status("Creating isolated worktrees...")
+    else:
+        info("Creating isolated worktrees...")
         print()
     worktrees = create_worktrees(container_id)
 
@@ -1065,6 +1091,8 @@ def run_claude() -> bool:
     atexit.register(cleanup_on_exit)
 
     # Parse mount configuration
+    if _quiet_mode:
+        status("Configuring mounts...")
     mount_args = []
     mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
     for mount in mounts:
@@ -1151,23 +1179,23 @@ def run_claude() -> bool:
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
+        "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
     # Add GitHub token for container (prefer App token, fall back to PAT)
     # Also write token to shared file for long-running container support
+    if _quiet_mode:
+        status("Configuring GitHub access...")
     github_app_token = get_github_app_token()
     if github_app_token:
         cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
         # Write token to shared file for auto-refresh support
-        if write_github_token_file(github_app_token):
-            info("GitHub auth: App installation token (auto-refresh enabled)")
-            if not _quiet_mode:
-                print("  Token written to ~/.jib-sharing/.github-token")
-                print("  github-token-refresher service will keep it fresh")
-        else:
-            info("GitHub auth: App installation token (1-hour expiry)")
+        write_github_token_file(github_app_token)
         if not _quiet_mode:
+            info("GitHub auth: App installation token (auto-refresh enabled)")
+            print("  Token written to ~/.jib-sharing/.github-token")
+            print("  github-token-refresher service will keep it fresh")
             print("  Full GitHub API access including Checks API")
     else:
         # Fall back to PAT if App not configured
@@ -1176,12 +1204,13 @@ def run_claude() -> bool:
             cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
             # Also write PAT to shared file (won't be auto-refreshed but provides consistency)
             write_github_token_file(github_token)
-            info("GitHub auth: Personal Access Token (fallback)")
             if not _quiet_mode:
+                info("GitHub auth: Personal Access Token (fallback)")
                 warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
         else:
-            warn("GitHub auth: Not configured (GitHub operations disabled)")
+            # Only warn if not in quiet mode - GitHub access is optional
             if not _quiet_mode:
+                warn("GitHub auth: Not configured (GitHub operations disabled)")
                 print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
 
     if not _quiet_mode:
@@ -1199,9 +1228,9 @@ def run_claude() -> bool:
     # Add image name
     cmd.append(Config.IMAGE_NAME)
 
-    # Finish statusbar before running container
+    # Final status update before launching
     if _quiet_mode:
-        status_finish("Container ready, launching Claude...")
+        status("Launching Claude...")
 
     # Run container
     try:
