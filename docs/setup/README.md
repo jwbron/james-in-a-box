@@ -17,7 +17,7 @@ This single command handles:
 - Docker image building
 - All component setup
 
-**Important:** `./setup.sh` is the primary and only setup command you need. The `jib --setup` command only handles Docker mounts and is called automatically by setup.sh.
+**Note:** You can also run `jib --setup` which delegates to `./setup.sh`. If jib detects incomplete setup when you run it, it will prompt to run setup automatically.
 
 ## Setup Requirements
 

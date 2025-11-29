@@ -282,6 +282,53 @@ def check_docker_permissions() -> bool:
     return False
 
 
+def get_setup_script_path() -> Optional[Path]:
+    """Find the setup.sh script relative to the jib launcher location"""
+    # Try to find setup.sh relative to the jib script
+    jib_script = Path(__file__).resolve()
+
+    # jib is at jib-container/jib, setup.sh is at repo root
+    repo_root = jib_script.parent.parent
+    setup_script = repo_root / "setup.sh"
+
+    if setup_script.exists():
+        return setup_script
+
+    # Fallback: check ~/khan/james-in-a-box/setup.sh
+    fallback = Path.home() / "khan" / "james-in-a-box" / "setup.sh"
+    if fallback.exists():
+        return fallback
+
+    return None
+
+
+def run_setup_script() -> bool:
+    """Run the setup.sh script to configure jib"""
+    setup_script = get_setup_script_path()
+
+    if not setup_script:
+        error("Could not find setup.sh script")
+        print()
+        print("Please run setup manually:")
+        print("  cd ~/khan/james-in-a-box")
+        print("  ./setup.sh")
+        return False
+
+    info(f"Running setup: {setup_script}")
+    print()
+
+    try:
+        # Run setup.sh in its directory
+        result = subprocess.run(
+            ["bash", str(setup_script)],
+            cwd=setup_script.parent
+        )
+        return result.returncode == 0
+    except Exception as e:
+        error(f"Failed to run setup.sh: {e}")
+        return False
+
+
 def check_host_setup() -> bool:
     """Check if host setup is complete (services installed, directories exist)"""
     # Critical systemd services that should be installed
@@ -322,7 +369,7 @@ def check_host_setup() -> bool:
     if not config_file.exists():
         config_warning = f"Configuration file not found: {config_file}"
 
-    # Report findings
+    # Report findings and offer to run setup automatically
     if issues_found or config_warning:
         warn("Host setup appears incomplete")
         print()
@@ -341,16 +388,35 @@ def check_host_setup() -> bool:
         print("  • Slack integration (notifier and receiver)")
         print("  • Shared directories for notifications and task communication")
         print()
-        print("To set up the host:")
-        print("  cd ~/khan/james-in-a-box")
-        print("  ./setup.sh")
-        print()
 
         if issues_found:
-            response = input("Continue anyway? (yes/no): ").strip().lower()
-            if response != "yes":
-                info("Please run ./setup.sh to configure the host first")
-                return False
+            # Offer to run setup automatically
+            setup_script = get_setup_script_path()
+            if setup_script:
+                print("Would you like to run setup now?")
+                response = input("Run setup.sh? (yes/no/skip): ").strip().lower()
+                if response == "yes":
+                    print()
+                    if run_setup_script():
+                        success("Setup completed!")
+                        return True
+                    else:
+                        error("Setup failed")
+                        return False
+                elif response == "skip":
+                    warn("Skipping setup - some features may not work")
+                    return True
+                else:
+                    info("Please run ./setup.sh to configure the host first")
+                    return False
+            else:
+                print("To set up the host:")
+                print("  cd ~/khan/james-in-a-box")
+                print("  ./setup.sh")
+                print()
+                response = input("Continue anyway? (yes/no): ").strip().lower()
+                if response != "yes":
+                    return False
 
     return True
 
@@ -1287,25 +1353,22 @@ def main():
         description="Run Claude Code CLI in an isolated Docker container (james-in-a-box)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-First-time setup:
-  cd ~/khan/james-in-a-box && ./setup.sh  # Complete host and container setup
-
 Examples:
-  jib                                      # Run Claude Code (setup on first use)
-  jib --setup                              # Reconfigure Docker mounts only
+  jib                                      # Run Claude Code (auto-setup if needed)
+  jib --setup                              # Run full setup (delegates to setup.sh)
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
   jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
       Default timeout is 30 minutes, configurable via --timeout
-      For complete setup (services, config, Docker), use ./setup.sh
+      If setup is incomplete, jib will prompt to run setup automatically
         """
     )
     parser.add_argument(
         "--setup",
         action="store_true",
-        help="Configure Docker mounts only (for full setup, run ./setup.sh)"
+        help="Run full jib setup (services, config, Docker image)"
     )
     parser.add_argument(
         "--reset",
@@ -1369,14 +1432,11 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     if not check_host_setup():
         return 1
 
-    # Handle setup
+    # Handle setup - delegate to setup.sh
     if args.setup:
-        # Note: setup.sh is the primary setup method and calls jib --setup
-        # This flag still works for users who need to reconfigure Docker mounts only
-        warn("NOTE: For complete jib setup, run ./setup.sh from the repo root")
-        warn("      jib --setup only configures Docker mounts and builds the image")
+        info("Delegating to setup.sh for complete jib configuration...")
         print()
-        if not setup():
+        if not run_setup_script():
             return 1
         return 0
 
