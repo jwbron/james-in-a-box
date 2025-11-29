@@ -33,7 +33,6 @@ System design and technical details.
 Quick reference guides and troubleshooting.
 
 - **[Slack Quick Reference](reference/slack-quick-reference.md)** - Common Slack operations
-- **[Claude Authentication](reference/claude-authentication.md)** - Claude CLI authentication
 
 ### [Development](development/)
 For contributors and developers.

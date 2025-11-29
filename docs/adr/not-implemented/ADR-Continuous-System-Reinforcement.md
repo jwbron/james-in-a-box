@@ -598,7 +598,6 @@ Based on emerging research:
 
 ## Related Documents
 
-- [CLAUDE.md](../../CLAUDE.md) - jib operating instructions
 - [ADR-Autonomous-Software-Engineer.md](../in-progress/ADR-Autonomous-Software-Engineer.md) - jib architecture
 - [ADR-Standardized-Logging-Interface.md](./ADR-Standardized-Logging-Interface.md) - Structured logging is essential for detecting and analyzing breakages
 - [ADR-LLM-Inefficiency-Reporting.md](ADR-LLM-Inefficiency-Reporting.md) - Complementary self-improvement mechanism; forms unified learning system with this ADR

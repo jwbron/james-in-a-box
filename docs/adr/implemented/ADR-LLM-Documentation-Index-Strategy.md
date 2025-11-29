@@ -160,26 +160,26 @@ Detailed index following llms.txt conventions:
 ```markdown
 # Documentation Index
 
-> James-in-a-box: LLM-powered autonomous software engineering agent
+> Project-name: Brief project description
 
 ## Core Documentation
-- [Architecture ADR](../in-progress/ADR-Autonomous-Software-Engineer.md): System architecture and design decisions
-- [Context Sync Strategy](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md): How external data is synced
-- [Security Model](./security/model.md): Isolation, permissions, data handling
+- [Architecture ADR](#architecture): System architecture and design decisions
+- [Context Sync Strategy](#context-sync): How external data is synced
+- [Security Model](#security): Isolation, permissions, data handling
 
 ## Development Guides
-- [Testing Guide](./testing/guide.md): Test frameworks, patterns, fixtures
-- [API Conventions](./api/conventions.md): REST design, error handling, versioning
-- [Code Style](./style/guide.md): Formatting, naming, documentation
+- [Testing Guide](#testing): Test frameworks, patterns, fixtures
+- [API Conventions](#api): REST design, error handling, versioning
+- [Code Style](#style): Formatting, naming, documentation
 
 ## Operational Runbooks
-- [Deployment](./runbooks/deployment.md): How to deploy changes
-- [Troubleshooting](./runbooks/troubleshooting.md): Common issues and fixes
-- [Monitoring](./runbooks/monitoring.md): Metrics, alerts, dashboards
+- [Deployment](#deployment): How to deploy changes
+- [Troubleshooting](#troubleshooting): Common issues and fixes
+- [Monitoring](#monitoring): Metrics, alerts, dashboards
 
 ## Machine-Readable
-- [codebase.json](../../generated/codebase.json): Structured codebase analysis
-- [patterns.json](../../generated/patterns.json): Extracted code patterns
+- [codebase.json](#codebase): Structured codebase analysis
+- [patterns.json](#patterns): Extracted code patterns
 ```
 
 ### 2. Codebase Index (Machine-Readable)
@@ -1252,7 +1252,6 @@ The documentation index approach aligns with emerging industry standards (llms.t
 | ADR | Relationship |
 |-----|--------------|
 | [ADR-LLM-Inefficiency-Reporting](../not-implemented/ADR-LLM-Inefficiency-Reporting.md) | Documentation indexes help detect Tool Discovery Failures (Category 1 in inefficiency taxonomy) |
-| [ADR-Jib-Repo-Onboarding](../not-implemented/ADR-Jib-Repo-Onboarding.md) | Extends this ADR with repository-specific onboarding patterns |
 
 ---
 
