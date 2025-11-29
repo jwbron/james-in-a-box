@@ -304,6 +304,53 @@ def check_docker_permissions() -> bool:
     return False
 
 
+def get_setup_script_path() -> Optional[Path]:
+    """Find the setup.sh script relative to the jib launcher location"""
+    # Try to find setup.sh relative to the jib script
+    jib_script = Path(__file__).resolve()
+
+    # jib is at jib-container/jib, setup.sh is at repo root
+    repo_root = jib_script.parent.parent
+    setup_script = repo_root / "setup.sh"
+
+    if setup_script.exists():
+        return setup_script
+
+    # Fallback: check ~/khan/james-in-a-box/setup.sh
+    fallback = Path.home() / "khan" / "james-in-a-box" / "setup.sh"
+    if fallback.exists():
+        return fallback
+
+    return None
+
+
+def run_setup_script() -> bool:
+    """Run the setup.sh script to configure jib"""
+    setup_script = get_setup_script_path()
+
+    if not setup_script:
+        error("Could not find setup.sh script")
+        print()
+        print("Please run setup manually:")
+        print("  cd ~/khan/james-in-a-box")
+        print("  ./setup.sh")
+        return False
+
+    info(f"Running setup: {setup_script}")
+    print()
+
+    try:
+        # Run setup.sh in its directory
+        result = subprocess.run(
+            ["bash", str(setup_script)],
+            cwd=setup_script.parent
+        )
+        return result.returncode == 0
+    except Exception as e:
+        error(f"Failed to run setup.sh: {e}")
+        return False
+
+
 def check_host_setup() -> bool:
     """Check if host setup is complete (services installed, directories exist)"""
     # Critical systemd services that should be installed
@@ -344,16 +391,15 @@ def check_host_setup() -> bool:
     if not config_file.exists():
         config_warning = f"Configuration file not found: {config_file}"
 
-    # Report findings
-    if issues_found or config_warning:
+    # If critical issues found, automatically run setup
+    if issues_found:
         warn("Host setup appears incomplete")
         print()
 
-        if issues_found:
-            error("Critical issues found:")
-            for issue in issues_found:
-                print(f"  ✗ {issue}")
-            print()
+        error("Critical issues found:")
+        for issue in issues_found:
+            print(f"  ✗ {issue}")
+        print()
 
         if config_warning:
             warn(config_warning)
@@ -363,16 +409,21 @@ def check_host_setup() -> bool:
         print("  • Slack integration (notifier and receiver)")
         print("  • Shared directories for notifications and task communication")
         print()
-        print("To set up the host:")
-        print("  cd ~/khan/james-in-a-box")
-        print("  ./setup.sh")
-        print()
 
-        if issues_found:
-            response = input("Continue anyway? (yes/no): ").strip().lower()
-            if response != "yes":
-                info("Please run ./setup.sh to configure the host first")
-                return False
+        # Auto-run setup.sh when config is missing
+        info("Running setup.sh to configure jib...")
+        print()
+        if run_setup_script():
+            success("Setup completed!")
+            return True
+        else:
+            error("Setup failed")
+            return False
+
+    # Config warning only (not critical) - just warn and continue
+    if config_warning:
+        warn(config_warning)
+        print()
 
     return True
 
@@ -464,9 +515,11 @@ def create_dockerfile() -> None:
         if commands_dest.exists():
             shutil.rmtree(commands_dest)
         shutil.copytree(commands_src, commands_dest)
-        info("Claude commands copied to build context")
+        if not _quiet_mode:
+            info("Claude commands copied to build context")
     else:
-        warn("claude-commands directory not found")
+        if not _quiet_mode:
+            warn("claude-commands directory not found")
 
     # Copy claude-rules directory to build context
     rules_src = script_dir / "claude-rules"
@@ -475,20 +528,24 @@ def create_dockerfile() -> None:
         if rules_dest.exists():
             shutil.rmtree(rules_dest)
         shutil.copytree(rules_src, rules_dest)
-        info("Claude rules directory copied to build context")
+        if not _quiet_mode:
+            info("Claude rules directory copied to build context")
     else:
-        warn("claude-rules directory not found, skipping agent rules")
+        if not _quiet_mode:
+            warn("claude-rules directory not found, skipping agent rules")
 
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
     # Avoids issues with stale/revoked OAuth tokens from previous builds
-    info("Claude credentials will be mounted from host at runtime (see setup output above)")
+    if not _quiet_mode:
+        info("Claude credentials will be mounted from host at runtime (see setup output above)")
 
     # Copy Dockerfile from script directory
     dockerfile_src = script_dir / "Dockerfile"
     if dockerfile_src.exists():
         shutil.copy(dockerfile_src, Config.DOCKERFILE)
-        success("Build context prepared")
+        if not _quiet_mode:
+            success("Build context prepared")
     else:
         error(f"Dockerfile not found at {dockerfile_src}")
         error("Cannot build without Dockerfile")
@@ -510,8 +567,19 @@ def build_image() -> bool:
             str(Config.CONFIG_DIR)
         ]
 
-        # Docker automatically uses cache for unchanged layers
-        subprocess.run(cmd, check=True)
+        # In quiet mode, suppress Docker build output
+        if _quiet_mode:
+            cmd.insert(2, "--quiet")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                # Show error output if build failed
+                error("Docker build failed")
+                if result.stderr:
+                    print(result.stderr, file=sys.stderr)
+                return False
+        else:
+            # Docker automatically uses cache for unchanged layers
+            subprocess.run(cmd, check=True)
         return True
     except subprocess.CalledProcessError:
         error("Docker build failed")
@@ -533,8 +601,56 @@ def generate_container_id() -> str:
     return f"jib-{timestamp}-{pid}"
 
 
+def get_default_branch(repo_path: Path) -> str:
+    """Get the default branch (main or master) for a git repository.
+
+    Args:
+        repo_path: Path to the git repository
+
+    Returns:
+        The default branch name ('main' or 'master'), or 'main' as fallback
+    """
+    # Try to get the default branch from git config (set by clone)
+    result = subprocess.run(
+        ["git", "config", "--get", "init.defaultBranch"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+
+    # Check if origin/HEAD exists and points to a branch
+    result = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        # Format: refs/remotes/origin/main -> main
+        return result.stdout.strip().split("/")[-1]
+
+    # Fall back to checking which branches exist
+    for branch in ["main", "master"]:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/{branch}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            return branch
+
+    # Default to 'main' if nothing found
+    return "main"
+
+
 def create_worktrees(container_id: str) -> dict:
     """Create git worktrees for all repos in ~/khan/
+
+    Worktrees are always based on the default branch (main or master),
+    regardless of what branch is currently checked out on the host.
 
     Returns:
         Dictionary mapping repo names to worktree paths
@@ -561,24 +677,24 @@ def create_worktrees(container_id: str) -> dict:
 
         repo_name = repo_path.name
 
-        if git_dir.is_file():
-            # Host repo is a worktree - skip it with a warning
-            warn(f"  ⚠ Skipping {repo_name}: host repo is a worktree (.git is a file)")
-            warn(f"    jib requires host repos to be normal git repos")
-            continue
-
+        # Note: git worktree add works even when source repo is a worktree
+        # It creates a new worktree of the same underlying main repository
         worktree_path = worktree_dir / repo_name
+        is_source_worktree = git_dir.is_file()
 
         try:
-            if not _quiet_mode:
-                info(f"Creating worktree for {repo_name}...")
+            # Determine the default branch for this repo
+            default_branch = get_default_branch(repo_path)
 
-            # Create temporary branch for this container
+            if not _quiet_mode:
+                info(f"Creating worktree for {repo_name} (from {default_branch})...")
+
+            # Create temporary branch for this container, starting from the default branch
             branch_name = f"jib-temp-{container_id}"
 
-            # Create worktree
+            # Create worktree based on the default branch (not current HEAD)
             result = subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), "-b", branch_name],
+                ["git", "worktree", "add", str(worktree_path), "-b", branch_name, default_branch],
                 cwd=repo_path,
                 capture_output=True,
                 text=True
@@ -910,6 +1026,8 @@ def setup() -> bool:
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     # Check if image exists
+    if _quiet_mode:
+        status("Checking Docker image...")
     if not image_exists():
         info("Docker image not found. Running initial setup...")
         if not setup():
@@ -922,6 +1040,8 @@ def run_claude() -> bool:
             return False
 
     # Ensure shared authentication directory exists
+    if _quiet_mode:
+        status("Checking authentication...")
     Config.CLAUDE_AUTH_DIR.mkdir(parents=True, exist_ok=True)
     claude_json_file = Config.CONFIG_DIR / "claude.json"
     if not claude_json_file.exists():
@@ -943,62 +1063,67 @@ def run_claude() -> bool:
         print()
 
     # Check Claude Code authentication in shared auth directory
-    print()
-    print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
+    if not _quiet_mode:
+        print()
+        print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
-    shared_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
+        shared_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
 
-    if shared_creds.exists():
-        try:
-            with open(shared_creds, 'r') as f:
-                creds = json.load(f)
+        if shared_creds.exists():
+            try:
+                with open(shared_creds, 'r') as f:
+                    creds = json.load(f)
 
-            scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
-            required_scopes = {
-                "user:inference",
-                "user:profile",
-                "user:sessions:claude_code"
-            }
+                scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
+                required_scopes = {
+                    "user:inference",
+                    "user:profile",
+                    "user:sessions:claude_code"
+                }
 
-            if required_scopes.issubset(set(scopes)):
-                success("Claude Code authenticated with full scopes")
-                print(f"  Auth shared via: {Config.CLAUDE_AUTH_DIR}")
-                print(f"  Session history: ephemeral (per-container)")
-            else:
-                warn("Claude Code credentials found but missing required scopes")
-                warn("  Container will work with limited functionality (--print mode only)")
-                print(f"  Location: {Config.CLAUDE_AUTH_DIR}")
-        except Exception as e:
-            warn(f"Could not read shared credentials: {e}")
-            warn("Container will prompt for authentication on first run")
-    else:
-        info("Claude Code not yet authenticated")
-        info("Container will prompt for authentication on first launch")
-        info("Credentials will be saved and shared across all containers")
-        info("Session history is NOT shared (each container has its own)")
-        print(f"  Auth location: {Config.CLAUDE_AUTH_DIR}")
+                if required_scopes.issubset(set(scopes)):
+                    success("Claude Code authenticated with full scopes")
+                    print(f"  Auth shared via: {Config.CLAUDE_AUTH_DIR}")
+                    print(f"  Session history: ephemeral (per-container)")
+                else:
+                    warn("Claude Code credentials found but missing required scopes")
+                    warn("  Container will work with limited functionality (--print mode only)")
+                    print(f"  Location: {Config.CLAUDE_AUTH_DIR}")
+            except Exception as e:
+                warn(f"Could not read shared credentials: {e}")
+                warn("Container will prompt for authentication on first run")
+        else:
+            info("Claude Code not yet authenticated")
+            info("Container will prompt for authentication on first launch")
+            info("Credentials will be saved and shared across all containers")
+            info("Session history is NOT shared (each container has its own)")
+            print(f"  Auth location: {Config.CLAUDE_AUTH_DIR}")
 
-    print()
+        print()
 
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
+    if _quiet_mode:
+        status("Building Docker image...")
     if not build_image():
         error("Docker build failed")
         return False
 
     # Generate unique container ID
+    if _quiet_mode:
+        status("Preparing container...")
     container_id = generate_container_id()
 
-    info("Launching sandboxed Claude Code environment...")
     if not _quiet_mode:
+        info("Launching sandboxed Claude Code environment...")
         print()
-
-    info(f"Container ID: {container_id}")
-    if not _quiet_mode:
+        info(f"Container ID: {container_id}")
         print()
 
     # Create worktrees for repos (isolates container from host repos)
-    info("Creating isolated worktrees...")
-    if not _quiet_mode:
+    if _quiet_mode:
+        status("Creating isolated worktrees...")
+    else:
+        info("Creating isolated worktrees...")
         print()
     worktrees = create_worktrees(container_id)
 
@@ -1014,6 +1139,8 @@ def run_claude() -> bool:
     atexit.register(cleanup_on_exit)
 
     # Parse mount configuration
+    if _quiet_mode:
+        status("Configuring mounts...")
     mount_args = []
     mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
     for mount in mounts:
@@ -1062,18 +1189,36 @@ def run_claude() -> bool:
         main_repo = Config.KHAN_SOURCE / repo_name
         git_path = main_repo / ".git"
         if git_path.is_dir():
-            # Mount the main repo's .git directory at a special location
-            # Worktree .git files will be rewritten to point here
+            # Normal repo - mount .git directory directly
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             if not _quiet_mode:
                 print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
         elif git_path.is_file():
-            # .git is a file = host repo is itself a worktree
-            # This is an unsupported configuration for jib
-            warn(f"Host repo {repo_name} is a worktree (.git is a file)")
-            warn(f"  jib requires host repos to be normal git repos, not worktrees")
-            warn(f"  Git operations may fail for this repo")
+            # Host repo is a worktree - read .git file to find actual git directory
+            # Format is: "gitdir: /path/to/repo.git/worktrees/name"
+            try:
+                gitdir_content = git_path.read_text().strip()
+                if gitdir_content.startswith("gitdir:"):
+                    gitdir_path = Path(gitdir_content[7:].strip())
+                    # Navigate up from worktrees/<name> to the main .git directory
+                    # e.g., /path/.git/worktrees/foo -> /path/.git
+                    if "worktrees" in gitdir_path.parts:
+                        worktrees_idx = gitdir_path.parts.index("worktrees")
+                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
+                        if main_git_path.is_dir():
+                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
+                            if not _quiet_mode:
+                                print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
+                        else:
+                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
+                    else:
+                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
+                else:
+                    warn(f"Invalid .git file format for {repo_name}")
+            except Exception as e:
+                warn(f"Error reading .git file for {repo_name}: {e}")
 
     # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
@@ -1100,23 +1245,23 @@ def run_claude() -> bool:
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
+        "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
     # Add GitHub token for container (prefer App token, fall back to PAT)
     # Also write token to shared file for long-running container support
+    if _quiet_mode:
+        status("Configuring GitHub access...")
     github_app_token = get_github_app_token()
     if github_app_token:
         cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
         # Write token to shared file for auto-refresh support
-        if write_github_token_file(github_app_token):
-            info("GitHub auth: App installation token (auto-refresh enabled)")
-            if not _quiet_mode:
-                print("  Token written to ~/.jib-sharing/.github-token")
-                print("  github-token-refresher service will keep it fresh")
-        else:
-            info("GitHub auth: App installation token (1-hour expiry)")
+        write_github_token_file(github_app_token)
         if not _quiet_mode:
+            info("GitHub auth: App installation token (auto-refresh enabled)")
+            print("  Token written to ~/.jib-sharing/.github-token")
+            print("  github-token-refresher service will keep it fresh")
             print("  Full GitHub API access including Checks API")
     else:
         # Fall back to PAT if App not configured
@@ -1125,12 +1270,13 @@ def run_claude() -> bool:
             cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
             # Also write PAT to shared file (won't be auto-refreshed but provides consistency)
             write_github_token_file(github_token)
-            info("GitHub auth: Personal Access Token (fallback)")
             if not _quiet_mode:
+                info("GitHub auth: Personal Access Token (fallback)")
                 warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
         else:
-            warn("GitHub auth: Not configured (GitHub operations disabled)")
+            # Only warn if not in quiet mode - GitHub access is optional
             if not _quiet_mode:
+                warn("GitHub auth: Not configured (GitHub operations disabled)")
                 print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
 
     if not _quiet_mode:
@@ -1148,9 +1294,9 @@ def run_claude() -> bool:
     # Add image name
     cmd.append(Config.IMAGE_NAME)
 
-    # Finish statusbar before running container
+    # Final status update before launching
     if _quiet_mode:
-        status_finish("Container ready, launching Claude...")
+        status("Launching Claude...")
 
     # Run container
     try:
@@ -1261,13 +1407,31 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
         main_repo = Config.KHAN_SOURCE / repo_name
         git_path = main_repo / ".git"
         if git_path.is_dir():
+            # Normal repo - mount .git directory directly
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
         elif git_path.is_file():
-            # .git is a file = host repo is itself a worktree
-            warn(f"Host repo {repo_name} is a worktree (.git is a file)")
-            warn(f"  Git operations may fail for this repo")
+            # Host repo is a worktree - read .git file to find actual git directory
+            try:
+                gitdir_content = git_path.read_text().strip()
+                if gitdir_content.startswith("gitdir:"):
+                    gitdir_path = Path(gitdir_content[7:].strip())
+                    if "worktrees" in gitdir_path.parts:
+                        worktrees_idx = gitdir_path.parts.index("worktrees")
+                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
+                        if main_git_path.is_dir():
+                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
+                            print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
+                        else:
+                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
+                    else:
+                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
+                else:
+                    warn(f"Invalid .git file format for {repo_name}")
+            except Exception as e:
+                warn(f"Error reading .git file for {repo_name}: {e}")
 
     print()
 
@@ -1331,22 +1495,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  jib                                      # Run Claude Code (progress bar by default)
+  jib                                      # Run Claude Code (progress bar by default, auto-setup if needed)
   jib -v                                   # Run in verbose mode (detailed output)
-  jib --setup                              # Reconfigure mounts
+  jib --setup                              # Run full setup (delegates to setup.sh)
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
   jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
       Default timeout is 30 minutes, configurable via --timeout
+      If setup is incomplete, jib will prompt to run setup automatically
       Default shows progress bar; use -v for verbose output
         """
     )
     parser.add_argument(
         "--setup",
         action="store_true",
-        help="Force setup/reconfiguration"
+        help="Run full jib setup (services, config, Docker image)"
     )
     parser.add_argument(
         "--reset",
@@ -1426,9 +1591,11 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     if not check_host_setup():
         return 1
 
-    # Handle setup
+    # Handle setup - delegate to setup.sh
     if args.setup:
-        if not setup():
+        info("Delegating to setup.sh for complete jib configuration...")
+        print()
+        if not run_setup_script():
             return 1
         return 0
 
