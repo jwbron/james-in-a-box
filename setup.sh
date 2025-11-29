@@ -95,6 +95,7 @@ check_installation_status() {
         "conversation-analyzer.timer"
         "github-token-refresher.service"
         "jib-doc-generator.timer"
+        "adr-researcher.timer"
     )
 
     for service in "${services[@]}"; do
@@ -478,7 +479,7 @@ if [ "$UPDATE_MODE" = true ]; then
         if [ ! -e "$symlink" ]; then
             service_name=$(basename "$symlink")
             # Only remove jib-related services (safety check)
-            if [[ "$service_name" =~ (slack|github|context|codebase|conversation|worktree) ]]; then
+            if [[ "$service_name" =~ (slack|github|context|codebase|conversation|worktree|adr-researcher) ]]; then
                 print_info "Removing broken symlink: $service_name"
                 rm -f "$symlink"
                 broken_count=$((broken_count + 1))
@@ -510,6 +511,7 @@ declare -A component_descriptions=(
     ["doc-generator"]="Documentation Generator (weekly docs + drift check)"
     ["index-generator"]="Index Generator (codebase indexing)"
     ["spec-enricher"]="Spec Enricher (specification enrichment)"
+    ["adr-researcher"]="ADR Researcher (weekly ADR research)"
 )
 
 # Desired installation order - ALL components are listed explicitly
@@ -523,6 +525,7 @@ component_order=(
     "utilities/github-token-refresher"
     "analysis/conversation-analyzer"
     "analysis/doc-generator"
+    "analysis/adr-researcher"
 )
 
 # Optional components with special setup commands
@@ -658,6 +661,7 @@ if [ "$UPDATE_MODE" = true ]; then
         "github-token-refresher.service"
         "conversation-analyzer.timer"
         "jib-doc-generator.timer"
+        "adr-researcher.timer"
     )
 
     for service in "${services_to_restart[@]}"; do
@@ -694,6 +698,7 @@ services=(
     "github-token-refresher.service:GitHub Token Refresher"
     "conversation-analyzer.timer:Conversation Analyzer"
     "jib-doc-generator.timer:Documentation Generator"
+    "adr-researcher.timer:ADR Researcher"
 )
 
 echo "Active services:"
@@ -1028,7 +1033,7 @@ if [ "$UPDATE_MODE" = true ]; then
     echo ""
     echo "To verify:"
     echo "  systemctl --user status slack-notifier.service"
-    echo "  systemctl --user list-timers | grep -E 'conversation|github|worktree'"
+    echo "  systemctl --user list-timers | grep -E 'conversation|github|worktree|adr-researcher'"
     echo ""
 else
     echo "Host setup complete! Next steps:"
@@ -1054,7 +1059,7 @@ else
     echo ""
     echo "4. Monitor services:"
     echo "   systemctl --user status slack-notifier.service"
-    echo "   systemctl --user list-timers | grep -E 'conversation|codebase|worktree'"
+    echo "   systemctl --user list-timers | grep -E 'conversation|codebase|worktree|adr-researcher'"
     echo ""
     echo "5. View logs:"
     echo "   journalctl --user -u slack-notifier.service -f"
