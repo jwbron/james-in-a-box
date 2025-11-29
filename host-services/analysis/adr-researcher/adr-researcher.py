@@ -399,9 +399,10 @@ class ADRResearcher:
 
         sources = []
         # Match markdown links: [Title](URL)
-        # Optional: followed by " - description"
+        # Optional: followed by " - description" (handles hyphen, en dash, em dash)
         link_pattern = re.compile(
-            r"\[([^\]]+)\]\((https?://[^\)]+)\)(?:\s*[-–—]\s*(.+?))?(?:\n|$)", re.IGNORECASE
+            r"\[([^\]]+)\]\((https?://[^\)]+)\)(?:\s*[-\u2013\u2014]\s*(.+?))?(?:\n|$)",
+            re.IGNORECASE,
         )
 
         for match in link_pattern.finditer(content):
