@@ -23,8 +23,8 @@ from typing import List, Optional
 from statusbar import StatusBar, init_statusbar, status, status_success, status_error, status_warn, status_finish
 
 
-# Global quiet mode flag - defaults to True (use -v for verbose)
-_quiet_mode = True
+# Global quiet mode flag
+_quiet_mode = False
 
 
 class Colors:
@@ -1100,7 +1100,6 @@ def run_claude() -> bool:
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
-        "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
@@ -1332,8 +1331,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  jib                                      # Run Claude Code (quiet mode, progress bar)
-  jib -v                                   # Run in verbose mode (full output)
+  jib                                      # Run Claude Code (progress bar by default)
+  jib -v                                   # Run in verbose mode (detailed output)
   jib --setup                              # Reconfigure mounts
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
@@ -1341,7 +1340,7 @@ Examples:
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
       Default timeout is 30 minutes, configurable via --timeout
-      Use -v/--verbose for full output (quiet mode is the default)
+      Default shows progress bar; use -v for verbose output
         """
     )
     parser.add_argument(
@@ -1369,12 +1368,13 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
-        help="Verbose mode: show full output instead of progress bar (quiet is default)"
+        help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)"
     )
 
     args = parser.parse_args()
 
-    # Initialize quiet mode globally (default is quiet, -v disables it)
+    # Initialize quiet mode globally
+    # Quiet is the default; verbose (-v) overrides it
     global _quiet_mode
     _quiet_mode = not args.verbose
     if _quiet_mode:
