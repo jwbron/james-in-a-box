@@ -540,10 +540,16 @@ def check_pr_for_comments(
         since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
+
+    Note: There are THREE types of comments on a PR:
+    1. Issue comments (comments field) - general PR discussion
+    2. Review body comments (reviews field) - summary text when submitting a review
+    3. Line-level review comments - comments on specific lines of code in the diff
+       These are NOT included in gh pr view output, must use gh api separately.
     """
     pr_num = pr_data["number"]
 
-    # Get PR comments
+    # Get PR issue comments and review body comments
     comments = gh_json(
         [
             "pr",
@@ -561,7 +567,7 @@ def check_pr_for_comments(
 
     all_comments = []
 
-    # Regular comments
+    # Regular issue comments (general PR discussion)
     for c in comments.get("comments", []):
         all_comments.append(
             {
@@ -573,7 +579,7 @@ def check_pr_for_comments(
             }
         )
 
-    # Review comments
+    # Review body comments (summary text when submitting a review)
     for r in comments.get("reviews", []):
         if r.get("body"):
             all_comments.append(
@@ -587,11 +593,45 @@ def check_pr_for_comments(
                 }
             )
 
+    # Line-level review comments (comments on specific lines of code)
+    # These are NOT included in gh pr view, must fetch via API separately
+    review_comments = gh_json(
+        [
+            "api",
+            f"repos/{repo}/pulls/{pr_num}/comments",
+        ]
+    )
+
+    if review_comments:
+        for rc in review_comments:
+            # Note: API returns created_at (snake_case), not createdAt (camelCase)
+            all_comments.append(
+                {
+                    "id": str(rc.get("id", "")),
+                    "author": rc.get("user", {}).get("login", "unknown"),
+                    "body": rc.get("body", ""),
+                    "created_at": rc.get("created_at", ""),
+                    "type": "review_comment",
+                    "path": rc.get("path", ""),
+                    "line": rc.get("line"),
+                    "diff_hunk": rc.get("diff_hunk", ""),
+                }
+            )
+
     if not all_comments:
         return None
 
-    # Debug: show comment count
-    logger.debug("Found comments on PR", pr_number=pr_num, comment_count=len(all_comments))
+    # Debug: show comment count by type
+    comment_types = {}
+    for c in all_comments:
+        ctype = c.get("type", "unknown")
+        comment_types[ctype] = comment_types.get(ctype, 0) + 1
+    logger.debug(
+        "Found comments on PR",
+        pr_number=pr_num,
+        comment_count=len(all_comments),
+        comment_types=comment_types,
+    )
 
     # Filter to comments from the bot itself or common bots
     # Build list of authors to exclude (case-insensitive)
