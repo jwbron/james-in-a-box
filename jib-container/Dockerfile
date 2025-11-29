@@ -98,7 +98,7 @@ set -euo pipefail
 RUNTIME_USER="${RUNTIME_USER:-sandboxed}"
 RUNTIME_UID="${RUNTIME_UID:-1000}"
 RUNTIME_GID="${RUNTIME_GID:-1000}"
-JIB_QUIET="${JIB_QUIET:-0}"
+JIB_QUIET="${JIB_QUIET:-1}"
 
 # Statusbar implementation for quiet mode
 # In quiet mode, we show a single updating line with progress

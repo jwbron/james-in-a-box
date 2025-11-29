@@ -14,10 +14,7 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 
 | Source | Location | Purpose |
 |--------|----------|---------|
-| **Quick Reference** | `~/docs/index.md` | How to work with any repo |
-| **Full Documentation** | `~/khan/james-in-a-box/docs/index.md` | Complete jib docs |
-| **Tools** | `~/tools/` | discover-tests.py, etc. |
-| **Libraries** | `~/lib/` | notifications, jib_logging, etc. |
+| **Documentation Index** | `~/khan/james-in-a-box/docs/index.md` | Navigation hub for all docs |
 | Confluence | `~/context-sync/confluence/` | ADRs, runbooks, best practices |
 | JIRA | `~/context-sync/jira/` | Tickets, requirements, sprint info |
 | Slack | `~/sharing/incoming/` | Task requests |
@@ -83,7 +80,7 @@ bd --allow-stale create "Task description" --labels feature,jira-1234  # New tas
 ### 2. Gather Context
 ```bash
 @load-context <project-name>                    # Load accumulated knowledge
-~/tools/discover-tests.py ~/khan/<repo>         # Find test framework
+discover-tests.py ~/khan/<repo>                 # Find test framework
 ```
 
 ### 3. Git Worktrees (IMPORTANT)
@@ -285,7 +282,10 @@ If you lose commits: `git reflog` → `git cherry-pick <hash>`
 
 When human isn't available, use the **notifications library** (preferred):
 ```python
-# Python - use the notifications library (installed in ~/lib/)
+# Python - use the notifications library
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "jib-container" / "shared"))
 from notifications import slack_notify, NotificationContext
 
 # Simple notification

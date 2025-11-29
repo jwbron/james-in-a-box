@@ -23,8 +23,8 @@ from typing import List, Optional
 from statusbar import StatusBar, init_statusbar, status, status_success, status_error, status_warn, status_finish
 
 
-# Global quiet mode flag
-_quiet_mode = False
+# Global quiet mode flag - defaults to True (use -v for verbose)
+_quiet_mode = True
 
 
 class Colors:
@@ -1332,8 +1332,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  jib                                      # Run Claude Code (setup on first use)
-  jib -q                                   # Run in quiet mode (progress bar only)
+  jib                                      # Run Claude Code (quiet mode, progress bar)
+  jib -v                                   # Run in verbose mode (full output)
   jib --setup                              # Reconfigure mounts
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
@@ -1341,7 +1341,7 @@ Examples:
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
       Default timeout is 30 minutes, configurable via --timeout
-      Use -q/--quiet for minimal output with progress bar
+      Use -v/--verbose for full output (quiet mode is the default)
         """
     )
     parser.add_argument(
@@ -1367,16 +1367,16 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         help="Execute a command in a new ephemeral container (automatic cleanup)"
     )
     parser.add_argument(
-        "-q", "--quiet",
+        "-v", "--verbose",
         action="store_true",
-        help="Quiet mode: show progress bar instead of verbose output"
+        help="Verbose mode: show full output instead of progress bar (quiet is default)"
     )
 
     args = parser.parse_args()
 
-    # Initialize quiet mode globally
+    # Initialize quiet mode globally (default is quiet, -v disables it)
     global _quiet_mode
-    _quiet_mode = args.quiet
+    _quiet_mode = not args.verbose
     if _quiet_mode:
         # Initialize statusbar with estimated steps for interactive mode
         # Steps: check docker, check permissions, check host, build image,
