@@ -50,7 +50,6 @@ def handle_research_adr(context: dict) -> dict:
         - output_mode: "pr_comment" | "update_pr" | "report"
     """
     adr_title = context.get("adr_title", "Untitled ADR")
-    context.get("adr_content", "")
     topics = context.get("topics", [])
     pr_number = context.get("pr_number")
     output_mode = context.get("output_mode", "report")
@@ -467,7 +466,6 @@ def handle_review_adr(context: dict) -> dict:
     """
     adr_title = context.get("adr_title", "Untitled ADR")
     adr_path = context.get("adr_path", "")
-    context.get("topics", [])
     pr_number = context.get("pr_number")
     output_mode = context.get("output_mode", "report")
 

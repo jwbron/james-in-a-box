@@ -61,18 +61,6 @@ class ADRInfo:
     content: str = ""
 
 
-@dataclass
-class ResearchResult:
-    """Results from web research."""
-
-    topic: str
-    sources: list[dict] = field(default_factory=list)  # {"url": ..., "title": ..., "summary": ...}
-    key_findings: list[str] = field(default_factory=list)
-    industry_adoption: list[dict] = field(default_factory=list)
-    recommendations: list[str] = field(default_factory=list)
-    research_date: str = ""
-
-
 def load_config() -> dict:
     """Load repository configuration.
 
@@ -87,8 +75,12 @@ def load_config() -> dict:
 
     for config_path in config_paths:
         if config_path.exists():
-            with open(config_path) as f:
-                return yaml.safe_load(f)
+            try:
+                with open(config_path) as f:
+                    return yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                print(f"Warning: Failed to parse {config_path}: {e}")
+                continue
 
     return {"writable_repos": [], "github_username": "jib"}
 
@@ -106,25 +98,6 @@ def gh_json(args: list[str]) -> dict | list | None:
         )
         return json.loads(result.stdout)
     except (subprocess.CalledProcessError, json.JSONDecodeError, subprocess.TimeoutExpired) as e:
-        print(f"  gh command failed: {' '.join(args)}")
-        if hasattr(e, "stderr"):
-            print(f"  stderr: {e.stderr}")
-        return None
-
-
-def gh_text(args: list[str]) -> str | None:
-    """Run gh CLI command and return text output."""
-    time.sleep(RATE_LIMIT_DELAY)
-    try:
-        result = subprocess.run(
-            ["gh"] + args,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=120,
-        )
-        return result.stdout
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         print(f"  gh command failed: {' '.join(args)}")
         if hasattr(e, "stderr"):
             print(f"  stderr: {e.stderr}")
@@ -297,11 +270,13 @@ class ADRResearcher:
         print(f"  Invoking jib: {task_type}")
 
         try:
+            # 30-minute timeout to match Claude runner default
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=1800,
             )
 
             if result.returncode == 0:
@@ -324,6 +299,9 @@ class ADRResearcher:
                 return None
         except FileNotFoundError:
             print("  jib command not found - is it in PATH?")
+            return None
+        except subprocess.TimeoutExpired:
+            print("  jib timed out after 30 minutes")
             return None
 
     def research_open_prs(self) -> list[dict]:
