@@ -269,6 +269,7 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         "Invoking jib",
         task_type=task_type,
         repository=context.get("repository", "unknown"),
+        pr_number=context.get("pr_number", "unknown"),
     )
 
     try:
@@ -281,7 +282,11 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         )
 
         if result.returncode == 0:
-            logger.info("jib completed successfully", task_type=task_type)
+            logger.info(
+                "jib completed successfully",
+                task_type=task_type,
+                pr_number=context.get("pr_number", "unknown"),
+            )
             return True
         else:
             # Show last 2000 chars of stderr to capture actual error (not just Docker build progress)
@@ -290,6 +295,7 @@ def invoke_jib(task_type: str, context: dict) -> bool:
             logger.error(
                 "jib failed",
                 task_type=task_type,
+                pr_number=context.get("pr_number", "unknown"),
                 return_code=result.returncode,
                 stderr=stderr_tail if stderr_tail else None,
                 stdout=stdout_tail if stdout_tail else None,
@@ -347,9 +353,9 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
     ]
 
     if not failed_checks:
-        # Show check status for debugging
+        # Show check status at INFO level for visibility
         statuses = [c.get("conclusion", "pending") for c in check_runs]
-        logger.debug(
+        logger.info(
             "PR checks all passing",
             pr_number=pr_num,
             check_count=len(check_runs),
@@ -364,7 +370,7 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
 
     if failure_signature in state.get("processed_failures", {}):
         processed_at = state["processed_failures"].get(failure_signature, "unknown")
-        logger.debug(
+        logger.info(
             "PR check failures already processed",
             pr_number=pr_num,
             failed_count=len(failed_checks),
@@ -501,10 +507,17 @@ def check_pr_for_comments(
             )
 
     if not all_comments:
+        logger.info("PR has no comments", pr_number=pr_num)
         return None
 
-    # Debug: show comment count
-    logger.debug("Found comments on PR", pr_number=pr_num, comment_count=len(all_comments))
+    # Log comment count and authors at INFO level for visibility
+    comment_authors = list({c["author"] for c in all_comments})
+    logger.info(
+        "PR has comments",
+        pr_number=pr_num,
+        total_comments=len(all_comments),
+        authors=comment_authors,
+    )
 
     # Filter to comments from the bot itself or common bots
     # Build list of authors to exclude (case-insensitive)
@@ -519,25 +532,48 @@ def check_pr_for_comments(
     other_comments = [c for c in all_comments if c["author"].lower() not in excluded_authors]
 
     if not other_comments:
-        logger.debug(
-            "No comments from others (all from bot/excluded)",
+        logger.info(
+            "PR comments all from bot/excluded authors",
             pr_number=pr_num,
+            excluded_authors=list(excluded_authors),
         )
         return None
+
+    # Log who commented (non-bot) for visibility
+    non_bot_authors = list({c["author"] for c in other_comments})
+    logger.info(
+        "PR has comments from non-bot users",
+        pr_number=pr_num,
+        comment_count=len(other_comments),
+        authors=non_bot_authors,
+    )
 
     # Filter by since_timestamp if provided (only show comments newer than last run)
     # Use >= to avoid missing comments that occur at exactly the same timestamp
     if since_timestamp:
         pre_filter_count = len(other_comments)
+        # Log what comments exist and their timestamps for debugging
+        comment_times = [(c["author"], c.get("created_at", "")) for c in other_comments]
         other_comments = [c for c in other_comments if c.get("created_at", "") >= since_timestamp]
         if not other_comments:
-            logger.debug(
-                "Comments filtered out (all before last run)",
+            logger.info(
+                "PR comments filtered out (all before last run)",
                 pr_number=pr_num,
                 filtered_count=pre_filter_count,
                 since=since_timestamp,
+                comment_times=comment_times,
             )
             return None  # No new comments since last run
+        else:
+            # Log that comments passed the timestamp filter
+            new_comment_authors = list({c["author"] for c in other_comments})
+            logger.info(
+                "PR has new comments since last run",
+                pr_number=pr_num,
+                new_count=len(other_comments),
+                since=since_timestamp,
+                authors=new_comment_authors,
+            )
 
     # Create signature based on latest comment timestamp
     latest_comment = max(other_comments, key=lambda c: c.get("created_at", ""))
@@ -545,18 +581,22 @@ def check_pr_for_comments(
 
     if comment_signature in state.get("processed_comments", {}):
         processed_at = state["processed_comments"].get(comment_signature, "unknown")
-        logger.debug(
-            "Latest comment already processed",
+        logger.info(
+            "PR comment already processed",
             pr_number=pr_num,
             processed_at=processed_at,
-            author=latest_comment["author"],
+            latest_author=latest_comment["author"],
+            comment_id=latest_comment["id"],
         )
         return None  # Already processed
 
+    # New comments found that need processing!
     logger.info(
-        "New comments from others on PR",
+        "PR has NEW comments requiring response",
         pr_number=pr_num,
         comment_count=len(other_comments),
+        latest_author=latest_comment["author"],
+        latest_time=latest_comment.get("created_at", ""),
     )
 
     return {
@@ -838,13 +878,18 @@ def main():
 
             # Process user's PRs
             if my_prs:
+                pr_numbers = [p["number"] for p in my_prs]
                 logger.info(
                     "Found user's open PRs",
                     count=len(my_prs),
                     username=github_username,
+                    pr_numbers=pr_numbers,
                 )
 
                 for pr in my_prs:
+                    pr_num = pr["number"]
+                    logger.info("Checking user's PR", pr_number=pr_num, title=pr.get("title", "")[:50])
+
                     # Check for failures
                     failure_ctx = check_pr_for_failures(repo, pr, state)
                     if failure_ctx and invoke_jib("check_failure", failure_ctx):
@@ -876,13 +921,17 @@ def main():
             # Process bot's PRs (for check failures and comments)
             # The bot creates PRs via GitHub App, so its PRs need monitoring too
             if bot_prs:
+                bot_pr_numbers = [p["number"] for p in bot_prs]
                 logger.info(
                     "Found bot's open PRs",
                     count=len(bot_prs),
                     bot_username=bot_username,
+                    pr_numbers=bot_pr_numbers,
                 )
 
                 for pr in bot_prs:
+                    pr_num = pr["number"]
+                    logger.info("Checking bot's PR", pr_number=pr_num, title=pr.get("title", "")[:50])
                     # Check for failures on bot's PRs
                     failure_ctx = check_pr_for_failures(repo, pr, state)
                     if failure_ctx and invoke_jib("check_failure", failure_ctx):
