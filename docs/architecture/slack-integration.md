@@ -481,12 +481,12 @@ tail -f ~/sharing/tracking/incoming-watcher.log  # Incoming messages watcher
 
 ### Using systemd (Recommended)
 
-Already implemented in `slack-notifier/manage_notifier.sh`:
+Already implemented via systemd services:
 
 ```bash
-# Enable notifier (already done)
-cd ~/khan/james-in-a-box/jib-notifier
-./manage_notifier.sh enable
+# Enable both notifier and receiver (done by setup.sh)
+cd ~/khan/james-in-a-box
+./setup.sh
 
 # Enable receiver (NEW)
 # Create ~/.config/systemd/user/slack-receiver.service
@@ -737,9 +737,9 @@ CLAUDE: refactor auth service
 
 ## References
 
-- **Slack App Setup**: `slack-notifier/SLACK-APP-SETUP.md` - Detailed token creation guide
-- **Quick Setup**: `slack-notifier/BIDIRECTIONAL-SETUP.md` - Fast setup checklist
-- **Outgoing notifications**: `HOST-SLACK-NOTIFIER.md`
-- **Claude notification system**: `claude-rules/notification-template.md`
+- **Slack Notifier**: `host-services/slack/slack-notifier/README.md` - Outgoing notifications
+- **Slack Receiver**: `host-services/slack/slack-receiver/README.md` - Incoming messages
+- **Slack App Manifest**: `host-services/slack/slack-notifier/slack-app-manifest.yaml` - App configuration
+- **Claude notification rules**: `jib-container/.claude/rules/notification-template.md`
 - **Slack Socket Mode docs**: https://api.slack.com/apis/connections/socket
 - **Slack SDK for Python**: https://slack.dev/python-slack-sdk/
