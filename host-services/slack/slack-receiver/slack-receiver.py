@@ -632,9 +632,8 @@ class SlackReceiver:
             # Wait for the process to complete (with timeout)
             # Most tasks should complete within 45 minutes
             timeout_seconds = 45 * 60
-            stdout, stderr = process.communicate(timeout=timeout_seconds)
+            _, stderr = process.communicate(timeout=timeout_seconds)
 
-            stdout_str = stdout.decode("utf-8", errors="replace") if stdout else ""
             stderr_str = stderr.decode("utf-8", errors="replace") if stderr else ""
 
             if process.returncode != 0:
@@ -675,7 +674,7 @@ class SlackReceiver:
             process.kill()
             # Try to get any output
             try:
-                stdout, stderr = process.communicate(timeout=5)
+                _, stderr = process.communicate(timeout=5)
                 stderr_str = stderr.decode("utf-8", errors="replace") if stderr else ""
             except:
                 stderr_str = ""
@@ -696,7 +695,7 @@ class SlackReceiver:
             self._create_failure_notification(
                 task_id=task_id,
                 thread_ts=thread_ts,
-                error_message=f"Monitor error: {str(e)}",
+                error_message=f"Monitor error: {e!s}",
                 stderr_output="",
             )
 
@@ -748,7 +747,7 @@ class SlackReceiver:
             self._create_failure_notification(
                 task_id=task_id,
                 thread_ts=thread_ts,
-                error_message=f"Failed to start container: {str(e)}",
+                error_message=f"Failed to start container: {e!s}",
                 stderr_output="",
             )
 
