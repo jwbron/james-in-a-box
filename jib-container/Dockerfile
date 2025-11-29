@@ -377,7 +377,7 @@ if [ -d "$AUTH_DIR" ]; then
         log_info "  All future containers will automatically use these credentials"
     fi
 else
-    log_warn "Auth directory not mounted at ~/.claude-auth/"
+    log_info "Auth directory not mounted at ~/.claude-auth/"
     log_info "  Container will authenticate but credentials won't persist"
 fi
 
@@ -495,8 +495,8 @@ if [ -n "$CURRENT_TOKEN" ]; then
     else
         # Remove any existing github MCP config to ensure clean state
         # This handles upgrades from old configs (e.g., local scope → user scope)
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local 2>/dev/null || true
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user 2>/dev/null || true
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local >/dev/null 2>&1 || true
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user >/dev/null 2>&1 || true
 
         # Add fresh config with user scope
         # Suppress output to avoid logging the Authorization header/token
