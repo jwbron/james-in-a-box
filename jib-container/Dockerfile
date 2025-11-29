@@ -377,7 +377,7 @@ if [ -d "$AUTH_DIR" ]; then
         log_info "  All future containers will automatically use these credentials"
     fi
 else
-    log_info "Auth directory not mounted at ~/.claude-auth/"
+    log_warn "Auth directory not mounted at ~/.claude-auth/"
     log_info "  Container will authenticate but credentials won't persist"
 fi
 
