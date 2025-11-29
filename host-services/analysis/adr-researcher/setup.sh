@@ -39,7 +39,7 @@ systemctl --user daemon-reload
 echo ""
 echo "Setup complete!"
 echo ""
-echo "To enable automated daily research:"
+echo "To enable automated weekly research (Mondays at 11am):"
 echo "  systemctl --user enable --now adr-researcher.timer"
 echo ""
 echo "To run manually:"

@@ -1,9 +1,8 @@
 [Unit]
-Description=Run ADR Researcher daily to update implemented ADRs
+Description=Run ADR Researcher weekly to update implemented ADRs
 
 [Timer]
-OnBootSec=15min
-OnCalendar=daily
+OnCalendar=Mon *-*-* 11:00:00
 Persistent=true
 
 [Install]

@@ -117,7 +117,7 @@ Based on external research into [topic]:
 
 ## Systemd Service
 
-ADR Researcher can run as a systemd user service on a daily schedule.
+ADR Researcher can run as a systemd user service on a weekly schedule (Mondays at 11am).
 
 ### Setup
 
@@ -127,10 +127,10 @@ ADR Researcher can run as a systemd user service on a daily schedule.
 
 This creates symlinks for the systemd service and timer files.
 
-### Enable Daily Research
+### Enable Weekly Research
 
 ```bash
-# Enable the timer to run daily
+# Enable the timer to run weekly (Mondays at 11am)
 systemctl --user enable --now adr-researcher.timer
 ```
 
@@ -165,7 +165,7 @@ By default, the service runs `--scope merged` to update implemented ADRs with cu
 |------|---------|
 | `adr-researcher.py` | Host-side CLI and orchestrator |
 | `adr-researcher.service` | Systemd service unit |
-| `adr-researcher.timer` | Systemd timer (daily) |
+| `adr-researcher.timer` | Systemd timer (weekly, Mondays at 11am) |
 | `setup.sh` | Setup script for systemd integration |
 | `../../jib-container/jib-tasks/adr/adr-processor.py` | Container-side research processor |
 
