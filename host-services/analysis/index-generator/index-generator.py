@@ -611,7 +611,7 @@ class CodebaseIndexer:
         self._add_pattern_conventions()
 
         # Generate timestamp (using timezone.utc for Python 3.10 compatibility)
-        generated_at = datetime.now(timezone.utc).isoformat()  # noqa: UP017
+        generated_at = datetime.now(timezone.utc).isoformat()
 
         # Sort components by file path and line number for deterministic output
         sorted_components = sorted(

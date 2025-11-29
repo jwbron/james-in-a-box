@@ -30,7 +30,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -314,7 +314,7 @@ class DriftDetector:
 
         if not self.docs_dir.exists():
             return DriftReport(
-                generated=datetime.now(UTC).isoformat(),
+                generated=datetime.now(timezone.utc).isoformat(),
                 project=self.project_root.name,
                 docs_checked=0,
                 issues_found=0,
@@ -344,7 +344,7 @@ class DriftDetector:
             issues.extend(self.check_doc(claude_md))
 
         return DriftReport(
-            generated=datetime.now(UTC).isoformat(),
+            generated=datetime.now(timezone.utc).isoformat(),
             project=self.project_root.name,
             docs_checked=docs_checked,
             issues_found=len(issues),
@@ -466,7 +466,7 @@ Examples:
             sys.exit(1)
         issues = detector.check_doc(doc_path)
         report = DriftReport(
-            generated=datetime.now(UTC).isoformat(),
+            generated=datetime.now(timezone.utc).isoformat(),
             project=project_root.name,
             docs_checked=1,
             issues_found=len(issues),

@@ -37,7 +37,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -171,7 +171,7 @@ def gh_json(args: list[str]) -> dict | list | None:
 
 def utc_now_iso() -> str:
     """Get current UTC time in ISO format."""
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class ADRResearcher:

@@ -24,7 +24,7 @@ Per ADR-LLM-Documentation-Index-Strategy Phase 6:
 import argparse
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -35,7 +35,7 @@ from claude import run_claude
 
 def utc_now_iso() -> str:
     """Get current UTC time in ISO format."""
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def handle_research_adr(context: dict) -> dict:

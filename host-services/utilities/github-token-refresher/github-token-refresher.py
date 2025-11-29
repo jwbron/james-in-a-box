@@ -26,7 +26,7 @@ import logging
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -141,14 +141,14 @@ def write_token_file(token: str) -> bool:
     # Ensure sharing directory exists
     SHARING_DIR.mkdir(parents=True, exist_ok=True)
 
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     expires_at = now.timestamp() + TOKEN_VALIDITY_SECONDS
 
     data = {
         "token": token,
         "generated_at": now.isoformat(),
         "expires_at_unix": expires_at,
-        "expires_at": datetime.fromtimestamp(expires_at, UTC).isoformat(),
+        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
         "generated_by": "github-token-refresher",
         "validity_seconds": TOKEN_VALIDITY_SECONDS,
     }
@@ -187,7 +187,7 @@ def token_needs_refresh(token_data: dict | None) -> bool:
 
     # Refresh if token expires within the next 20 minutes
     # This gives us a safety margin
-    now = datetime.now(UTC).timestamp()
+    now = datetime.now(timezone.utc).timestamp()
     return now > (expires_at - 20 * 60)
 
 
