@@ -82,11 +82,6 @@ RUN mkdir -p /opt/claude-rules
 COPY claude-rules/*.md /opt/claude-rules/
 RUN chmod 644 /opt/claude-rules/*.md
 
-# Create directories for jib libraries and tools
-# These will be populated at container startup from mounted repo
-# This ensures the latest versions are always used
-RUN mkdir -p /opt/jib/lib /opt/jib/tools /opt/jib/docs
-
 
 
 # Create tmp directory in image (not mounted - container-only scratch space)
@@ -103,8 +98,78 @@ set -euo pipefail
 RUNTIME_USER="${RUNTIME_USER:-sandboxed}"
 RUNTIME_UID="${RUNTIME_UID:-1000}"
 RUNTIME_GID="${RUNTIME_GID:-1000}"
+JIB_QUIET="${JIB_QUIET:-0}"
 
-echo "Setting up sandboxed environment for user: ${RUNTIME_USER} (uid=${RUNTIME_UID}, gid=${RUNTIME_GID})"
+# Statusbar implementation for quiet mode
+# In quiet mode, we show a single updating line with progress
+STEP_CURRENT=0
+STEP_TOTAL=12  # Total steps in container initialization
+
+# Output helper functions
+log_step() {
+    # Update statusbar in quiet mode, print in verbose mode
+    local msg="$1"
+    STEP_CURRENT=$((STEP_CURRENT + 1))
+    if [ "$JIB_QUIET" = "1" ]; then
+        local pct=$((STEP_CURRENT * 100 / STEP_TOTAL))
+        local bar_width=20
+        local filled=$((bar_width * STEP_CURRENT / STEP_TOTAL))
+        local empty=$((bar_width - filled))
+        local bar=$(printf '=%.0s' $(seq 1 $filled 2>/dev/null) || true)
+        local spaces=$(printf -- '-%.0s' $(seq 1 $empty 2>/dev/null) || true)
+        printf "\r\033[K\033[1m[%d/%d]\033[0m [\033[32m%s\033[0m%s] %s" \
+            "$STEP_CURRENT" "$STEP_TOTAL" "$bar" "$spaces" "$msg"
+    else
+        echo "$msg"
+    fi
+}
+
+log_success() {
+    # Show success message (always visible in quiet mode too)
+    local msg="$1"
+    if [ "$JIB_QUIET" = "1" ]; then
+        printf "\r\033[K\033[32m✓\033[0m %s\n" "$msg"
+    else
+        echo "✓ $msg"
+    fi
+}
+
+log_error() {
+    # Show error message (always visible)
+    local msg="$1"
+    if [ "$JIB_QUIET" = "1" ]; then
+        printf "\r\033[K\033[31m✗\033[0m %s\n" "$msg" >&2
+    else
+        echo "✗ $msg" >&2
+    fi
+}
+
+log_warn() {
+    # Show warning message (always visible)
+    local msg="$1"
+    if [ "$JIB_QUIET" = "1" ]; then
+        printf "\r\033[K\033[33m!\033[0m %s\n" "$msg"
+    else
+        echo "⚠ $msg"
+    fi
+}
+
+log_info() {
+    # Show info message (hidden in quiet mode)
+    local msg="$1"
+    if [ "$JIB_QUIET" != "1" ]; then
+        echo "$msg"
+    fi
+}
+
+log_finish() {
+    # Clear statusbar line
+    if [ "$JIB_QUIET" = "1" ]; then
+        printf "\r\033[K"
+    fi
+}
+
+log_step "Setting up sandboxed environment..."
 
 # Create user's home directory and ensure correct ownership
 USER_HOME="/home/${RUNTIME_USER}"
@@ -123,13 +188,15 @@ if ! getent passwd "${RUNTIME_UID}" >/dev/null 2>&1; then
 fi
 
 # Start PostgreSQL in container
+log_step "Starting PostgreSQL..."
 if ! pgrep -x postgres > /dev/null; then
-    service postgresql start >/dev/null 2>&1 && echo "✓ PostgreSQL started" || echo "⚠ PostgreSQL failed to start"
+    service postgresql start >/dev/null 2>&1 && log_success "PostgreSQL started" || log_warn "PostgreSQL failed to start"
 fi
 
 # Start Redis in container
+log_step "Starting Redis..."
 if ! pgrep -x redis-server > /dev/null; then
-    service redis-server start >/dev/null 2>&1 && echo "✓ Redis started" || echo "⚠ Redis failed to start"
+    service redis-server start >/dev/null 2>&1 && log_success "Redis started" || log_warn "Redis failed to start"
 fi
 
 # Set up environment
@@ -146,12 +213,14 @@ export DISABLE_AUTOUPDATER=1
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.name "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.org"
 
+log_step "Configuring git..."
+
 # Configure git credential helper for GitHub authentication
 # Uses GITHUB_TOKEN environment variable (set by jib launcher from GitHub App)
 # This allows git push over HTTPS without embedding tokens in remote URLs
 if [ -n "${GITHUB_TOKEN:-}" ]; then
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper "${USER_HOME}/khan/james-in-a-box/jib-container/scripts/git-credential-github-token"
-    echo "✓ Git credential helper configured for GitHub push"
+    log_info "✓ Git credential helper configured for GitHub push"
 else
     # No token - disable credential helper (will fail on push attempts)
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper ""
@@ -174,16 +243,18 @@ if [ -d "${USER_HOME}/.git-main" ]; then
             # If they do, strip them out (tokens belong in env vars, not URLs)
             remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
             if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
-                echo "⚠ WARNING: Found token in git remote URL, cleaning it up..."
+                log_warn "Found token in git remote URL, cleaning it up..."
                 # Extract the GitHub repo path (owner/repo.git)
                 clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
                 git config -f "$repo_config" remote.origin.url "$clean_url"
-                echo "  Cleaned: $remote_url -> $clean_url"
+                log_info "  Cleaned: $remote_url -> $clean_url"
             fi
         fi
     done
 fi
-echo "✓ Git configured to commit as jib <jib@khan.org>"
+log_success "Git configured to commit as jib"
+
+log_step "Configuring worktrees..."
 
 # Fix worktree .git files to point to mounted git directories
 # Worktrees have .git files that reference the main repo's .git directory
@@ -206,14 +277,14 @@ if [ -d "${USER_HOME}/khan" ]; then
     if [ "$has_worktrees" = true ]; then
         # First, verify ~/.git-main mount exists
         if [ ! -d "${USER_HOME}/.git-main" ]; then
-            echo "✗ FATAL: ~/.git-main not mounted but worktrees exist"
-            echo "  This means jib failed to mount the git directories."
-            echo "  Container cannot start with broken git configuration."
-            echo ""
-            echo "  Possible causes:"
-            echo "    - Docker mount failed"
-            echo "    - Host .git directories don't exist"
-            echo "    - Permission issues on host"
+            log_error "FATAL: ~/.git-main not mounted but worktrees exist"
+            log_info "  This means jib failed to mount the git directories."
+            log_info "  Container cannot start with broken git configuration."
+            log_info ""
+            log_info "  Possible causes:"
+            log_info "    - Docker mount failed"
+            log_info "    - Host .git directories don't exist"
+            log_info "    - Permission issues on host"
             worktree_setup_failed=true
         else
             worktrees_configured=0
@@ -237,9 +308,9 @@ if [ -d "${USER_HOME}/khan" ]; then
                         chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
                         worktrees_configured=$((worktrees_configured + 1))
                     else
-                        echo "✗ FATAL: Worktree path doesn't exist for ${repo_name}"
-                        echo "  Expected: ${target_path}"
-                        echo "  Original: ${original_gitdir}"
+                        log_error "FATAL: Worktree path doesn't exist for ${repo_name}"
+                        log_info "  Expected: ${target_path}"
+                        log_info "  Original: ${original_gitdir}"
                         worktrees_failed=$((worktrees_failed + 1))
                         failed_repos="${failed_repos} ${repo_name}"
                     fi
@@ -247,32 +318,32 @@ if [ -d "${USER_HOME}/khan" ]; then
             done
 
             if [ $worktrees_failed -gt 0 ]; then
-                echo ""
-                echo "✗ FATAL: ${worktrees_failed} worktree(s) failed to configure:${failed_repos}"
-                echo "  Container cannot start with broken git configuration."
-                echo ""
-                echo "  Possible causes:"
-                echo "    - Worktree was deleted on host"
-                echo "    - Git metadata corrupted"
-                echo "    - Mount configuration mismatch"
+                log_error "FATAL: ${worktrees_failed} worktree(s) failed to configure:${failed_repos}"
+                log_info "  Container cannot start with broken git configuration."
+                log_info ""
+                log_info "  Possible causes:"
+                log_info "    - Worktree was deleted on host"
+                log_info "    - Git metadata corrupted"
+                log_info "    - Mount configuration mismatch"
                 worktree_setup_failed=true
             elif [ $worktrees_configured -gt 0 ]; then
-                echo "✓ Khan worktrees configured: ${worktrees_configured} repo(s)"
-                echo "  Git metadata mounted read-write from ~/.git-main/"
+                log_success "Khan worktrees configured: ${worktrees_configured} repo(s)"
+                log_info "  Git metadata mounted read-write from ~/.git-main/"
             fi
         fi
     fi
 else
-    echo "⚠ Khan workspace not found - check mount configuration"
+    log_warn "Khan workspace not found - check mount configuration"
 fi
 
 # Exit if worktree setup failed - don't start a broken container
 if [ "$worktree_setup_failed" = true ]; then
-    echo ""
-    echo "Container startup aborted due to worktree configuration failure."
-    echo "Please check your jib setup and try again."
+    log_error "Container startup aborted due to worktree configuration failure."
+    log_info "Please check your jib setup and try again."
     exit 1
 fi
+
+log_step "Configuring shared directories..."
 
 # Create convenience symlink to ~/sharing/tmp
 # All shared data is now under ~/sharing/ for cleaner host organization
@@ -287,14 +358,16 @@ if [ -d "${USER_HOME}/sharing" ]; then
     mkdir -p "${USER_HOME}/sharing/tracking"
 
     chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing"
-    echo "✓ Shared directories configured:"
-    echo "  ~/sharing/tmp/           (mounted from ~/.jib-sharing/tmp/)"
-    echo "  ~/sharing/notifications/ (mounted from ~/.jib-sharing/notifications/)"
-    echo "  ~/sharing/context/       (mounted from ~/.jib-sharing/context/)"
-    echo "  Convenience symlink: ~/tmp → ~/sharing/tmp"
+    log_success "Shared directories configured"
+    log_info "  ~/sharing/tmp/           (mounted from ~/.jib-sharing/tmp/)"
+    log_info "  ~/sharing/notifications/ (mounted from ~/.jib-sharing/notifications/)"
+    log_info "  ~/sharing/context/       (mounted from ~/.jib-sharing/context/)"
+    log_info "  Convenience symlink: ~/tmp → ~/sharing/tmp"
 else
-    echo "⚠ Sharing directory not found - check mount configuration"
+    log_warn "Sharing directory not found - check mount configuration"
 fi
+
+log_step "Installing agent rules..."
 
 # Set up agent rules for AI guidance using CLAUDE.md format
 # Combine all rules into one file in logical order (per LLM Documentation Index Strategy ADR)
@@ -330,154 +403,12 @@ if [ -f "${RULES_DIR}/mission.md" ]; then
     done
 
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/CLAUDE.md"
-    echo "✓ AI agent rules installed: ~/CLAUDE.md"
-    echo "  Combined ${#RULES_ORDER[@]} rule files (index-based per LLM Doc ADR)"
-    echo "  Note: Reference docs in ~/khan/james-in-a-box/docs/ (fetched on-demand)"
+    log_success "AI agent rules installed"
+    log_info "  Combined ${#RULES_ORDER[@]} rule files (index-based per LLM Doc ADR)"
+    log_info "  Note: Reference docs in ~/khan/james-in-a-box/docs/ (fetched on-demand)"
 fi
 
-# Copy jib libraries and tools to home directory for local access
-# This ensures tools are available even if mounted paths are read-only
-JIB_SRC="${USER_HOME}/khan/james-in-a-box"
-if [ -d "$JIB_SRC" ]; then
-    # Copy shared Python libraries to ~/lib/
-    mkdir -p "${USER_HOME}/lib"
-    if [ -d "${JIB_SRC}/shared" ]; then
-        cp -r "${JIB_SRC}/shared"/* "${USER_HOME}/lib/" 2>/dev/null || true
-        chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/lib"
-        echo "✓ Python libraries installed: ~/lib/"
-        echo "  Includes: notifications, jib_logging, beads, claude, enrichment"
-    fi
-
-    # Copy jib-tools to ~/tools/
-    mkdir -p "${USER_HOME}/tools"
-    if [ -d "${JIB_SRC}/jib-container/jib-tools" ]; then
-        cp "${JIB_SRC}/jib-container/jib-tools"/*.py "${USER_HOME}/tools/" 2>/dev/null || true
-        chmod +x "${USER_HOME}/tools"/*.py 2>/dev/null || true
-        chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/tools"
-        echo "✓ Tools installed: ~/tools/"
-        echo "  Includes: discover-tests.py, github-app-token.py"
-    fi
-
-    # Create tailored documentation index for working with other repos
-    mkdir -p "${USER_HOME}/docs"
-    cat > "${USER_HOME}/docs/index.md" << 'REPO_DOCS'
-# Working with Repositories
-
-Quick reference for working with ANY codebase in ~/khan/.
-
-## Before Starting Work
-
-1. **Discover the test framework**:
-   ```bash
-   ~/tools/discover-tests.py ~/khan/<repo>
-   ```
-
-2. **Check for existing work**:
-   ```bash
-   cd ~/beads && bd --allow-stale search "<repo-name>"
-   ```
-
-3. **Load previous context** (if available):
-   ```bash
-   @load-context <repo-name>
-   ```
-
-## Working with Git
-
-You're in a **git worktree** with a temporary branch. Just commit directly:
-
-```bash
-git add <files>
-git commit -m "Description"
-git push origin HEAD
-```
-
-**NEVER** use `git checkout main` (fails in worktrees). Use:
-```bash
-git checkout -b new-branch origin/main
-```
-
-## Running Tests
-
-Use the command discovered by `discover-tests.py`:
-
-| Framework | Command |
-|-----------|---------|
-| pytest | `pytest` |
-| jest | `npm test` |
-| go | `go test ./...` |
-| make | `make test` |
-
-## Creating PRs
-
-After committing and pushing:
-```python
-# Use GitHub MCP
-create_pull_request(owner, repo, title, head, base, body)
-```
-
-## Sending Notifications
-
-```python
-from lib.notifications import slack_notify
-slack_notify("Title", "Body text")
-```
-
-Or via file:
-```bash
-cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-topic.md << 'EOF'
-# Title
-Content here
-EOF
-```
-
-## Directory Reference
-
-| Path | Purpose |
-|------|---------|
-| `~/khan/<repo>/` | The repository you're working in |
-| `~/tools/` | Utility scripts (discover-tests.py) |
-| `~/lib/` | Python libraries (notifications, etc.) |
-| `~/beads/` | Persistent task memory |
-| `~/sharing/` | Persistent data (notifications, context) |
-| `~/context-sync/` | Confluence docs, JIRA tickets |
-
-## Common Patterns by Language
-
-### Python
-- Tests: `pytest` or `python -m unittest discover`
-- Lint: `make lint` or `flake8`
-- Config: `pytest.ini`, `pyproject.toml`
-
-### JavaScript/TypeScript
-- Tests: `npm test` or `jest`
-- Lint: `npm run lint`
-- Config: `package.json`, `jest.config.js`
-
-### Go
-- Tests: `go test ./...`
-- Lint: `golangci-lint run`
-- Config: `go.mod`
-
-## Tips
-
-- **Read before modifying**: Always read a file before editing
-- **Run tests early**: Check baseline before making changes
-- **Commit often**: Small commits are easier to review
-- **Update beads**: Track progress for context persistence
-REPO_DOCS
-    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/docs/index.md"
-
-    # Create Python path helper script
-    cat > "${USER_HOME}/lib/setup_path.sh" << 'PATHSETUP'
-# Source this to add jib libraries to Python path
-export PYTHONPATH="${HOME}/lib:${PYTHONPATH}"
-PATHSETUP
-    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/lib/setup_path.sh"
-
-    echo "✓ Documentation index created: ~/docs/index.md"
-    echo "  Tailored for working with any repository"
-fi
+log_step "Loading Claude credentials..."
 
 # Set up .claude directory structure
 # NOTE: ~/.claude is now container-local (ephemeral) to prevent history sharing
@@ -494,17 +425,17 @@ if [ -d "$AUTH_DIR" ]; then
     if [ -f "${AUTH_DIR}/.credentials.json" ]; then
         cp "${AUTH_DIR}/.credentials.json" "${USER_HOME}/.claude/.credentials.json"
         chmod 600 "${USER_HOME}/.claude/.credentials.json"
-        echo "✓ Claude credentials loaded from shared auth"
-        echo "  Auth shared via: ~/.claude-auth/ (mounted)"
-        echo "  Session history: container-local (ephemeral)"
+        log_success "Claude credentials loaded"
+        log_info "  Auth shared via: ~/.claude-auth/ (mounted)"
+        log_info "  Session history: container-local (ephemeral)"
     else
-        echo "ℹ No credentials found - this container will authenticate"
-        echo "  After authentication, credentials will be synced to ~/.claude-auth/"
-        echo "  All future containers will automatically use these credentials"
+        log_info "No credentials found - this container will authenticate"
+        log_info "  After authentication, credentials will be synced to ~/.claude-auth/"
+        log_info "  All future containers will automatically use these credentials"
     fi
 else
-    echo "⚠ Auth directory not mounted at ~/.claude-auth/"
-    echo "  Container will authenticate but credentials won't persist"
+    log_warn "Auth directory not mounted at ~/.claude-auth/"
+    log_info "  Container will authenticate but credentials won't persist"
 fi
 
 # Create credential sync script - copies new credentials back to shared auth dir
@@ -525,12 +456,12 @@ chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude/sync-credentials.sh"
 # Note: GitHub operations now go through GitHub MCP server (configured above)
 # The gh CLI is kept as fallback but primary access is via MCP
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-    echo "✓ GitHub access configured via MCP server"
-    echo "  All GitHub operations (PRs, issues, comments) go through MCP"
+    log_info "GitHub access configured via MCP server"
+    log_info "  All GitHub operations (PRs, issues, comments) go through MCP"
 else
-    echo "ℹ No GitHub token provided"
-    echo "  GitHub MCP server not available"
-    echo "  Add token with: ./setup.sh --update (on host)"
+    log_info "No GitHub token provided"
+    log_info "  GitHub MCP server not available"
+    log_info "  Add token with: ./setup.sh --update (on host)"
 fi
 
 # Copy custom commands to where Claude Code looks for them
@@ -541,8 +472,10 @@ if [ -d "/usr/local/share/claude-commands" ]; then
             cp "$cmd" "${USER_HOME}/.claude/commands/"
         fi
     done
-    echo "✓ Custom commands installed:"
-    ls -1 "${USER_HOME}/.claude/commands/" | sed 's/.md$//' | sed 's/^/    @/'
+    log_success "Custom commands installed"
+    if [ "$JIB_QUIET" != "1" ]; then
+        ls -1 "${USER_HOME}/.claude/commands/" | sed 's/.md$//' | sed 's/^/    @/'
+    fi
 fi
 
 chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude"
@@ -564,9 +497,11 @@ cat > "${USER_HOME}/.claude/settings.json" << 'SETTINGS'
 }
 SETTINGS
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude/settings.json"
-echo "✓ Claude settings created: ${USER_HOME}/.claude/settings.json"
-cat "${USER_HOME}/.claude/settings.json"
-echo ""
+log_success "Claude settings created"
+if [ "$JIB_QUIET" != "1" ]; then
+    cat "${USER_HOME}/.claude/settings.json"
+    echo ""
+fi
 
 # Add the GitHub MCP server using the claude mcp add command
 # GitHub MCP provides bi-directional access: repos, issues, PRs, comments, file operations
@@ -603,6 +538,8 @@ except:
     echo "$token"
 }
 
+log_step "Configuring GitHub MCP..."
+
 CURRENT_TOKEN=$(get_github_token)
 if [ -n "$CURRENT_TOKEN" ]; then
     # OPTIMIZATION: Skip reconfiguration if already configured with same token
@@ -615,7 +552,7 @@ if [ -n "$CURRENT_TOKEN" ]; then
     # Check if MCP is already configured with same token
     if [ -f "$MCP_SETTINGS" ] && [ "$TOKEN_HASH" = "$CACHED_HASH" ] && \
        grep -q '"github"' "$MCP_SETTINGS" 2>/dev/null; then
-        echo "✓ GitHub MCP server already configured (skipped)"
+        log_success "GitHub MCP server already configured"
     else
         # Remove any existing github MCP config to ensure clean state
         # This handles upgrades from old configs (e.g., local scope → user scope)
@@ -637,34 +574,28 @@ if [ -n "$CURRENT_TOKEN" ]; then
 
         # Check if token came from file (auto-refresh enabled)
         if [ -f "${USER_HOME}/sharing/.github-token" ]; then
-            echo "✓ GitHub MCP server configured (auto-refresh enabled)"
-            echo "  Token read from ~/sharing/.github-token"
-            echo "  MCP token watcher will refresh config when token changes"
+            log_success "GitHub MCP server configured (auto-refresh enabled)"
+            log_info "  Token read from ~/sharing/.github-token"
+            log_info "  MCP token watcher will refresh config when token changes"
         else
-            echo "✓ GitHub MCP server configured (api.githubcopilot.com)"
+            log_success "GitHub MCP server configured"
         fi
     fi
-    echo "  All GitHub operations go through MCP: PRs, issues, repos, comments"
+    log_info "  All GitHub operations go through MCP: PRs, issues, repos, comments"
 else
-    echo "ℹ GitHub token not provided - GitHub MCP server not configured"
-    echo "  Add GITHUB_TOKEN to enable GitHub MCP server"
+    log_info "GitHub token not provided - GitHub MCP server not configured"
+    log_info "  Add GITHUB_TOKEN to enable GitHub MCP server"
 fi
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
-# Also add jib-container/scripts and ~/tools to PATH, ~/lib to PYTHONPATH
+# Also add jib-container/scripts to PATH
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
 alias claude='claude --dangerously-skip-permissions'
 export PS1='\[\033[01;32m\]\u@sandboxed\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-export PATH="${HOME}/tools:${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
-export PYTHONPATH="${HOME}/lib:${PYTHONPATH}"
-# Alias for discover-tests
-alias discover-tests='python3 ~/tools/discover-tests.py'
+export PATH="${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
 BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
-echo "✓ Claude alias created (bypasses permissions in sandbox)"
-echo "✓ Environment configured:"
-echo "  PATH includes: ~/tools/, jib-container/scripts/"
-echo "  PYTHONPATH includes: ~/lib/"
+log_info "Claude alias created (bypasses permissions in sandbox)"
 
 # Ensure tracking directory exists for processor state
 if [ -d "${USER_HOME}/sharing" ]; then
@@ -672,28 +603,30 @@ if [ -d "${USER_HOME}/sharing" ]; then
     chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing/tracking"
 fi
 
+log_step "Validating Beads memory system..."
+
 # Validate Beads persistent memory system (initialized by setup.sh)
 if [ ! -d "${USER_HOME}/sharing/beads" ]; then
-    echo "❌ ERROR: Beads directory not found"
-    echo ""
-    echo "Beads must be initialized before starting the container."
-    echo "Please run setup.sh on the host:"
-    echo ""
-    echo "  cd ~/khan/james-in-a-box"
-    echo "  ./setup.sh"
-    echo ""
+    log_error "ERROR: Beads directory not found"
+    log_info ""
+    log_info "Beads must be initialized before starting the container."
+    log_info "Please run setup.sh on the host:"
+    log_info ""
+    log_info "  cd ~/khan/james-in-a-box"
+    log_info "  ./setup.sh"
+    log_info ""
     exit 1
 fi
 
 if [ ! -f "${USER_HOME}/sharing/beads/.beads/issues.jsonl" ]; then
-    echo "❌ ERROR: Beads not initialized"
-    echo ""
-    echo "Beads repository exists but is not properly initialized."
-    echo "Please run setup.sh on the host:"
-    echo ""
-    echo "  cd ~/khan/james-in-a-box"
-    echo "  ./setup.sh"
-    echo ""
+    log_error "ERROR: Beads not initialized"
+    log_info ""
+    log_info "Beads repository exists but is not properly initialized."
+    log_info "Please run setup.sh on the host:"
+    log_info ""
+    log_info "  cd ~/khan/james-in-a-box"
+    log_info "  ./setup.sh"
+    log_info ""
     exit 1
 fi
 
@@ -707,23 +640,23 @@ ln -sf "${USER_HOME}/sharing/beads" "${USER_HOME}/beads"
 cd "${USER_HOME}/sharing/beads"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd sync --import-only > /dev/null 2>&1 || true
 
-echo "✓ Beads memory system ready"
-echo "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
-echo "  Usage: bd --allow-stale create 'task description' --labels feature,important"
+log_success "Beads memory system ready"
+log_info "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
+log_info "  Usage: bd --allow-stale create 'task description' --labels feature,important"
+
+log_step "Generating documentation indexes..."
 
 # Generate documentation indexes (codebase.json, patterns.json, dependencies.json)
 # These are gitignored and regenerated on container startup to avoid merge conflicts
 INDEX_GENERATOR="${USER_HOME}/khan/james-in-a-box/host-services/analysis/index-generator/index-generator.py"
 if [ -f "$INDEX_GENERATOR" ] && [ -d "${USER_HOME}/khan/james-in-a-box" ]; then
-    echo ""
-    echo "Generating documentation indexes..."
     if gosu "${RUNTIME_UID}:${RUNTIME_GID}" python3 "$INDEX_GENERATOR" \
         --project "${USER_HOME}/khan/james-in-a-box" \
         --output "${USER_HOME}/khan/james-in-a-box/docs/generated" > /dev/null 2>&1; then
-        echo "✓ Documentation indexes generated"
-        echo "  Location: ~/khan/james-in-a-box/docs/generated/"
+        log_success "Documentation indexes generated"
+        log_info "  Location: ~/khan/james-in-a-box/docs/generated/"
     else
-        echo "⚠ Documentation index generation failed (non-critical)"
+        log_warn "Documentation index generation failed (non-critical)"
     fi
 fi
 
@@ -746,17 +679,18 @@ fi
 #   - github/github-processor.py (triggered by github-sync)
 #   - slack/incoming-processor.py (triggered by slack-receiver)
 
-echo ""
-echo "📊 Analysis Pattern: Exec-based (triggered by host services)"
-echo "  - Context analysis: Triggered after context-sync"
-echo "  - GitHub analysis: Triggered after github-sync"
-echo "  - Message processing: Triggered by slack-receiver"
-echo ""
+log_info ""
+log_info "Analysis Pattern: Exec-based (triggered by host services)"
+log_info "  - Context analysis: Triggered after context-sync"
+log_info "  - GitHub analysis: Triggered after github-sync"
+log_info "  - Message processing: Triggered by slack-receiver"
+log_info ""
 
 # Setup cleanup trap for container shutdown
+# NOTE: Cleanup always uses echo since log functions may not work at exit
 cleanup_on_exit() {
     echo ""
-    echo "🧹 Cleaning up on container exit..."
+    echo "Cleaning up on container exit..."
 
     # Sync credentials back to shared auth directory if they were created/updated
     AUTH_DIR="${USER_HOME}/.claude-auth"
@@ -766,7 +700,7 @@ cleanup_on_exit() {
            ! cmp -s "${USER_HOME}/.claude/.credentials.json" "${AUTH_DIR}/.credentials.json"; then
             cp "${USER_HOME}/.claude/.credentials.json" "${AUTH_DIR}/.credentials.json"
             chmod 600 "${AUTH_DIR}/.credentials.json"
-            echo "✓ Credentials synced to shared auth directory"
+            echo "Credentials synced to shared auth directory"
         fi
     fi
 
@@ -776,103 +710,114 @@ cleanup_on_exit() {
             if [ -f "$repo_config" ]; then
                 remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
                 if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
-                    echo "⚠ WARNING: Git remote URL was modified during session!"
+                    echo "WARNING: Git remote URL was modified during session!"
                     echo "  Found token in: $repo_config"
                     # Clean it up
                     clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
                     git config -f "$repo_config" remote.origin.url "$clean_url"
-                    echo "  ✓ Cleaned: $remote_url -> $clean_url"
-                    echo "  Note: This should not happen. Git remote URLs should never contain tokens."
+                    echo "  Cleaned: $remote_url -> $clean_url"
                 fi
             fi
         done
     fi
 
-    echo "✓ Cleanup complete"
+    echo "Cleanup complete"
 }
 
 # Register cleanup trap
 trap cleanup_on_exit EXIT SIGTERM SIGINT
 
+# Clear statusbar and finish initialization
+log_finish
+
 # Drop privileges and start shell or run claude
 if [ $# -eq 0 ]; then
-    echo ""
-    echo "======================================================================"
-    echo "  🤖 Autonomous Software Engineering Agent"
-    echo "======================================================================"
-    echo ""
-    echo "Role: Autonomous engineer working with minimal supervision"
-    echo "Mission: Plan, implement, test, document, and create PRs"
-    echo "Human: Reviews and ships your work"
-    echo ""
-    echo "📋 Your Instructions:"
-    echo "  • ~/CLAUDE.md                      (concise rules: mission, beads, context, etc.)"
-    echo "  • ~/khan/james-in-a-box/docs/      (reference docs - fetch on demand)"
-    echo "  Note: ~/khan/ is mounted from host - all code changes persist immediately"
-    echo ""
-    echo "🚀 Quick Start:"
-    echo "  Claude starts automatically when container launches!"
-    echo "  1. @load-context <project>         # Load accumulated knowledge"
-    echo "  2. [work on task]"
-    echo "  3. @create-pr audit                # Create PR for review"
-    echo "  4. @save-context <project>         # Save learnings"
-    echo ""
-    echo "📚 Available Resources:"
-    echo "  • Workspace: ~/khan/                      (code repos, MOUNTED rw)"
-    echo "  • Tools: ~/tools/                         (discover-tests.py, etc.)"
-    echo "  • Libraries: ~/lib/                       (notifications, jib_logging, etc.)"
-    echo "  • Docs: ~/docs/index.md                   (quick ref for working with repos)"
-    echo "  • Context: ~/context-sync/                (context sources, MOUNTED ro)"
-    echo "    - ~/context-sync/confluence/            (ADRs, runbooks, docs)"
-    echo "    - ~/context-sync/jira/                  (JIRA tickets, issues)"
-    echo "  • Sharing: ~/sharing/                     (ALL persistent data, MOUNTED rw)"
-    echo "    - ~/sharing/tmp/                        (persistent scratch, symlinked to ~/tmp/)"
-    echo "    - ~/sharing/notifications/              (Claude → You via Slack)"
-    echo "    - ~/sharing/incoming/                   (You → Claude via Slack)"
-    echo "    - ~/sharing/responses/                  (Your replies via Slack)"
-    echo "    - ~/sharing/context/                    (context docs)"
-    echo "    - ~/sharing/beads/                      (persistent task memory)"
-    echo "    - ~/sharing/tracking/                   (background service logs)"
-    echo "  • Beads: ~/beads/ → ~/sharing/beads/      (persistent task/session memory)"
-    echo "  • Tmp: ~/tmp/ → ~/sharing/tmp/            (symlink for convenience)"
-    echo ""
-    echo "📖 Custom Commands (type to use):"
-    echo "  • @load-context <file>             Load previous sessions"
-    echo "  • @save-context <file>             Save current session"
-    echo "  • @create-pr [audit] [draft]       Create pull request"
-    echo "  (Installed in ~/.claude/commands/)"
-    echo ""
-    echo "💡 Tips:"
-    echo "  • ~/khan/ is READ-WRITE - make changes directly, commit to git"
-    echo "  • Run 'discover-tests ~/khan/<repo>' to find how to run tests"
-    echo "  • Human reviews commits - you can push directly via git push"
-    echo "  • Check context-sync/ for Confluence docs, JIRA tickets, etc."
-    echo "  • Send notifications to ~/sharing/notifications/ to get Slack DM"
-    echo "  • Check ~/sharing/incoming/ for tasks sent via Slack"
-    echo "  • Check ~/sharing/responses/ for replies to your notifications"
-    echo "  • Save context after significant work to build knowledge"
-    echo "  • Use ~/sharing/ for ANYTHING that must persist across rebuilds"
-    echo ""
-    echo "🔒 Security:"
-    echo "  • Bridge network (isolated from host services)"
-    echo "  • Outbound HTTP only (for Claude API and packages)"
-    echo "  • No inbound ports (cannot accept connections)"
-    echo "  • GitHub App token for git push (HTTPS only, no SSH keys)"
-    echo "  • No cloud credentials (cannot deploy to GCP/AWS)"
-    echo ""
-    echo "======================================================================"
-    echo ""
+    # Only show the full banner in verbose mode
+    if [ "$JIB_QUIET" != "1" ]; then
+        echo ""
+        echo "======================================================================"
+        echo "  Autonomous Software Engineering Agent"
+        echo "======================================================================"
+        echo ""
+        echo "Role: Autonomous engineer working with minimal supervision"
+        echo "Mission: Plan, implement, test, document, and create PRs"
+        echo "Human: Reviews and ships your work"
+        echo ""
+        echo "Your Instructions:"
+        echo "  - ~/CLAUDE.md                      (concise rules: mission, beads, context, etc.)"
+        echo "  - ~/khan/james-in-a-box/docs/      (reference docs - fetch on demand)"
+        echo "  Note: ~/khan/ is mounted from host - all code changes persist immediately"
+        echo ""
+        echo "Quick Start:"
+        echo "  Claude starts automatically when container launches!"
+        echo "  1. @load-context <project>         # Load accumulated knowledge"
+        echo "  2. [work on task]"
+        echo "  3. @create-pr audit                # Create PR for review"
+        echo "  4. @save-context <project>         # Save learnings"
+        echo ""
+        echo "Available Resources:"
+        echo "  - Workspace: ~/khan/                      (code reference, MOUNTED ro)"
+        echo "  - Context: ~/context-sync/                (context sources, MOUNTED ro)"
+        echo "    - ~/context-sync/confluence/            (ADRs, runbooks, docs)"
+        echo "    - ~/context-sync/jira/                  (JIRA tickets, issues)"
+        echo "  - Sharing: ~/sharing/                     (ALL persistent data, MOUNTED rw)"
+        echo "    - ~/sharing/tmp/                        (persistent scratch, symlinked to ~/tmp/)"
+        echo "    - ~/sharing/notifications/              (Claude -> You via Slack)"
+        echo "    - ~/sharing/incoming/                   (You -> Claude via Slack)"
+        echo "    - ~/sharing/responses/                  (Your replies via Slack)"
+        echo "    - ~/sharing/context/                    (context docs)"
+        echo "    - ~/sharing/beads/                      (persistent task memory)"
+        echo "    - ~/sharing/tracking/                   (background service logs)"
+        echo "  - Beads: ~/beads/ -> ~/sharing/beads/     (persistent task/session memory)"
+        echo "  - Tmp: ~/tmp/ -> ~/sharing/tmp/           (symlink for convenience)"
+        echo ""
+        echo "Custom Commands (type to use):"
+        echo "  - @load-context <file>             Load previous sessions"
+        echo "  - @save-context <file>             Save current session"
+        echo "  - @create-pr [audit] [draft]       Create pull request"
+        echo "  (Installed in ~/.claude/commands/)"
+        echo ""
+        echo "Tips:"
+        echo "  - ~/khan/ is READ-WRITE - make changes directly, commit to git"
+        echo "  - Human reviews commits - you can push directly via git push"
+        echo "  - Check context-sync/ for Confluence docs, JIRA tickets, etc."
+        echo "  - Send notifications to ~/sharing/notifications/ to get Slack DM"
+        echo "  - Check ~/sharing/incoming/ for tasks sent via Slack"
+        echo "  - Check ~/sharing/responses/ for replies to your notifications"
+        echo "  - Save context after significant work to build knowledge"
+        echo "  - Use ~/sharing/ for ANYTHING that must persist across rebuilds"
+        echo "  - All shared data under ~/sharing/ (tmp, notifications, context, etc.)"
+        echo ""
+        echo "Security:"
+        echo "  - Bridge network (isolated from host services)"
+        echo "  - Outbound HTTP only (for Claude API and packages)"
+        echo "  - No inbound ports (cannot accept connections)"
+        echo "  - GitHub App token for git push (HTTPS only, no SSH keys)"
+        echo "  - No cloud credentials (cannot deploy to GCP/AWS)"
+        echo ""
+        echo "======================================================================"
+        echo ""
+    else
+        # In quiet mode, just show a minimal ready message
+        echo ""
+        echo "Ready. Type /help for available commands."
+        echo ""
+    fi
 
     # Start MCP token watcher in background for auto-refresh support
     # This watches ~/sharing/.github-token and reconfigures MCP when token changes
     MCP_WATCHER="${USER_HOME}/khan/james-in-a-box/jib-container/scripts/mcp-token-watcher.py"
     if [ -f "$MCP_WATCHER" ] && [ -f "${USER_HOME}/sharing/.github-token" ]; then
-        echo "Starting MCP token watcher in background..."
+        if [ "$JIB_QUIET" != "1" ]; then
+            echo "Starting MCP token watcher in background..."
+        fi
         nohup gosu "${RUNTIME_UID}:${RUNTIME_GID}" python3 "$MCP_WATCHER" \
             --interval 60 > /dev/null 2>&1 &
-        echo "✓ MCP token watcher started (PID: $!)"
-        echo "  Will refresh GitHub MCP config when token changes"
-        echo ""
+        if [ "$JIB_QUIET" != "1" ]; then
+            echo "MCP token watcher started (PID: $!)"
+            echo "  Will refresh GitHub MCP config when token changes"
+            echo ""
+        fi
     fi
 
     # Start in khan directory
