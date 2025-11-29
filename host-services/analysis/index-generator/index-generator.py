@@ -742,8 +742,8 @@ Examples:
         "--project",
         "-p",
         type=Path,
-        default=Path(__file__).parent.parent.parent.parent,  # james-in-a-box root
-        help="Project root to analyze (default: james-in-a-box)",
+        default=Path.cwd(),
+        help="Project root to analyze (default: current working directory)",
     )
 
     parser.add_argument(

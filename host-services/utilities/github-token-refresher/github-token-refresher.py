@@ -33,7 +33,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 from jib_logging import get_logger
 
-
 # Configuration
 CONFIG_DIR = Path.home() / ".config" / "jib"
 SHARING_DIR = Path.home() / ".jib-sharing"

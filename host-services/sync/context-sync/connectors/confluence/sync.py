@@ -14,13 +14,11 @@ from pathlib import Path
 
 import requests
 
-
 # Add shared directory to path for jib_logging
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent / "shared"))
 from jib_logging import get_logger
 
 from connectors.confluence.config import ConfluenceConfig
-
 
 # Initialize logger
 logger = get_logger("confluence-sync")
@@ -936,9 +934,7 @@ class ConfluenceSync:
                 )
                 content = self.get_page_content(page_id)
                 if content is None:
-                    logger.error(
-                        "Failed to get content", page_id=page_id, page_title=page_title[:60]
-                    )
+                    logger.error("Failed to get content", page_id=page_id, page_title=page_title[:60])
                     return
                 if output_format == "markdown":
                     content = self.convert_html_to_markdown(content)
