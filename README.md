@@ -140,7 +140,7 @@ jib syncs external context to provide the agent with organizational knowledge:
 - Python 3.13+ (host machine)
 - Slack workspace with bot token
 
-> **Python Version**: The container uses Python 3.13, managed by [uv](https://docs.astral.sh/uv/). The `.python-version` file pins the version for consistency.
+> **Python Version**: The host machine uses [uv](https://docs.astral.sh/uv/) for Python version management. The `.python-version` file pins the version (3.13) for consistency. Inside the Docker container, Python 3.13 is installed directly via apt-get.
 
 ### Setup
 
@@ -580,19 +580,22 @@ bin/jib --rebuild
 
 ### Python Environment
 
-This project uses [uv](https://docs.astral.sh/uv/) for Python version management and package installation:
+This project requires Python 3.13+.
+
+**Host machine** (for running jib and host services):
+- Uses [uv](https://docs.astral.sh/uv/) for Python version management
+- The `.python-version` file pins the version to 3.13
 
 ```bash
-# Python 3.13 is pinned in .python-version
+# On host machine
 cat .python-version  # Shows: 3.13
-
-# Inside the container, uv is available for package management
-uv pip install <package>           # Install a package
-uv python install 3.13             # Ensure Python 3.13 is installed
+uv python install 3.13             # Install Python 3.13 via uv
 uv venv --python 3.13              # Create a virtual environment
 ```
 
-The container automatically installs Python 3.13 via uv during the Docker build process. This ensures consistent Python versions between the host machine and container.
+**Docker container**:
+- Python 3.13 is installed via apt-get from the deadsnakes PPA
+- No uv inside the container - use pip directly for package installation
 
 ### Linting
 
