@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from schemas import (
+    TOOL_CATEGORIES,
     EventType,
     SessionMetadata,
     ToolCallParams,
@@ -48,7 +49,6 @@ from schemas import (
     ToolResult,
     TraceEvent,
     TraceIndex,
-    TOOL_CATEGORIES,
 )
 
 
@@ -131,6 +131,7 @@ class TraceCollector:
         try:
             result = subprocess.run(
                 ["git", "remote", "get-url", "origin"],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -150,6 +151,7 @@ class TraceCollector:
         try:
             result = subprocess.run(
                 ["git", "branch", "--show-current"],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -224,7 +226,9 @@ class TraceCollector:
             if "matches" in tool_result:
                 match_count = tool_result["matches"]
             elif "files" in tool_result:
-                file_count = len(tool_result["files"]) if isinstance(tool_result["files"], list) else None
+                file_count = (
+                    len(tool_result["files"]) if isinstance(tool_result["files"], list) else None
+                )
 
             # No matches might indicate search failure
             if match_count == 0 or file_count == 0:
@@ -316,8 +320,9 @@ class TraceCollector:
                 self.metadata.tool_call_breakdown.get(tool_name, 0) + 1
             )
             self.metadata.total_tokens_generated += tokens_generated
-            if tokens_in_context > self.metadata.peak_context_size:
-                self.metadata.peak_context_size = tokens_in_context
+            self.metadata.peak_context_size = max(
+                self.metadata.peak_context_size, tokens_in_context
+            )
 
         return event
 

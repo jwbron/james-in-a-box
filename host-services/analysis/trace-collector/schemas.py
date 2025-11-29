@@ -196,7 +196,9 @@ class TraceEvent:
             turn_number=data["turn_number"],
             event_type=EventType(data["event_type"]),
             tool_name=data.get("tool_name"),
-            tool_category=ToolCategory(data["tool_category"]) if data.get("tool_category") else None,
+            tool_category=ToolCategory(data["tool_category"])
+            if data.get("tool_category")
+            else None,
             tool_params=tool_params,
             tool_result=tool_result,
             tokens_in_context=data.get("tokens_in_context", 0),
@@ -317,5 +319,7 @@ class TraceIndex:
         """Create TraceIndex from dictionary."""
         return cls(
             sessions=data.get("sessions", []),
-            last_updated=datetime.fromisoformat(data["last_updated"]) if data.get("last_updated") else datetime.now(),
+            last_updated=datetime.fromisoformat(data["last_updated"])
+            if data.get("last_updated")
+            else datetime.now(),
         )

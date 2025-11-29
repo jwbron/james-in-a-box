@@ -30,6 +30,7 @@ See ADR-LLM-Inefficiency-Reporting.md for design details.
 """
 
 from schemas import (
+    TOOL_CATEGORIES,
     EventType,
     SessionMetadata,
     ToolCallParams,
@@ -37,21 +38,21 @@ from schemas import (
     ToolResult,
     TraceEvent,
     TraceIndex,
-    TOOL_CATEGORIES,
 )
 from trace_collector import TraceCollector, get_collector, record_tool_call
 from trace_reader import TraceReader
 
+
 __all__ = [
+    "TOOL_CATEGORIES",
     "EventType",
     "SessionMetadata",
     "ToolCallParams",
     "ToolCategory",
     "ToolResult",
+    "TraceCollector",
     "TraceEvent",
     "TraceIndex",
-    "TOOL_CATEGORIES",
-    "TraceCollector",
     "TraceReader",
     "get_collector",
     "record_tool_call",
