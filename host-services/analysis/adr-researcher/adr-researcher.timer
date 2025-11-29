@@ -1,0 +1,10 @@
+[Unit]
+Description=Run ADR Researcher daily to update implemented ADRs
+
+[Timer]
+OnBootSec=15min
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

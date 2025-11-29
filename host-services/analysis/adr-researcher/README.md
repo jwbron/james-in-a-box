@@ -115,6 +115,44 @@ Based on external research into [topic]:
 - [Source Title](URL) - Brief description
 ```
 
+## Systemd Service
+
+ADR Researcher can run as a systemd user service on a daily schedule.
+
+### Setup
+
+```bash
+./setup.sh
+```
+
+This creates symlinks for the systemd service and timer files.
+
+### Enable Daily Research
+
+```bash
+# Enable the timer to run daily
+systemctl --user enable --now adr-researcher.timer
+```
+
+### Manual Trigger
+
+```bash
+# Run immediately
+systemctl --user start adr-researcher.service
+```
+
+### Check Status
+
+```bash
+# Timer status
+systemctl --user status adr-researcher.timer
+
+# Service logs
+journalctl --user -u adr-researcher.service -f
+```
+
+By default, the service runs `--scope merged` to update implemented ADRs with current industry research.
+
 ## Requirements
 
 - `jib` command must be in PATH (for invoking research container)
@@ -126,6 +164,9 @@ Based on external research into [topic]:
 | File | Purpose |
 |------|---------|
 | `adr-researcher.py` | Host-side CLI and orchestrator |
+| `adr-researcher.service` | Systemd service unit |
+| `adr-researcher.timer` | Systemd timer (daily) |
+| `setup.sh` | Setup script for systemd integration |
 | `../../jib-container/jib-tasks/adr/adr-processor.py` | Container-side research processor |
 
 ## Related
