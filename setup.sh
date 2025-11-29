@@ -95,6 +95,7 @@ check_installation_status() {
         "conversation-analyzer.timer"
         "github-token-refresher.service"
         "jib-doc-generator.timer"
+        "adr-researcher.timer"
     )
 
     for service in "${services[@]}"; do
@@ -359,6 +360,7 @@ declare -A component_descriptions=(
     ["conversation-analyzer"]="Conversation Analyzer (daily)"
     ["github-token-refresher"]="GitHub Token Refresher (auto-refresh App tokens)"
     ["doc-generator"]="Documentation Generator (weekly docs + drift check)"
+    ["adr-researcher"]="ADR Researcher (weekly ADR updates)"
 )
 
 # Desired installation order (optional components will be skipped if not found)
@@ -371,6 +373,7 @@ component_order=(
     "utilities/github-token-refresher"
     "analysis/conversation-analyzer"
     "analysis/doc-generator"
+    "analysis/adr-researcher"
 )
 
 # Find all setup scripts dynamically as a fallback
@@ -455,6 +458,7 @@ if [ "$UPDATE_MODE" = true ]; then
         "github-token-refresher.service"
         "conversation-analyzer.timer"
         "jib-doc-generator.timer"
+        "adr-researcher.timer"
     )
 
     for service in "${services_to_restart[@]}"; do
@@ -491,6 +495,7 @@ services=(
     "github-token-refresher.service:GitHub Token Refresher"
     "conversation-analyzer.timer:Conversation Analyzer"
     "jib-doc-generator.timer:Documentation Generator"
+    "adr-researcher.timer:ADR Researcher"
 )
 
 echo "Active services:"
