@@ -138,7 +138,7 @@ def install_nodejs(distro: str) -> None:
 
 
 def install_python(distro: str) -> None:
-    """Install Python 3.11"""
+    """Install Python 3.11 and set it as the default python3"""
     print("\n=== Installing Python 3.11 ===")
 
     if distro == "ubuntu":
@@ -159,6 +159,17 @@ def install_python(distro: str) -> None:
                 "python-is-python3",
             ]
         )
+        # Set Python 3.11 as the default python3
+        # This is required because Ubuntu 22.04 ships with Python 3.10 as default
+        # and we need Python 3.11 features (e.g., datetime.UTC)
+        run_shell(
+            "update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1",
+            check=False,
+        )
+        run_shell(
+            "update-alternatives --set python3 /usr/bin/python3.11",
+            check=False,
+        )
     elif distro == "fedora":
         run(
             [
@@ -171,6 +182,15 @@ def install_python(distro: str) -> None:
                 "python3-setuptools",
                 "python3-pip",
             ]
+        )
+        # Set Python 3.11 as the default on Fedora
+        run_shell(
+            "alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1",
+            check=False,
+        )
+        run_shell(
+            "alternatives --set python3 /usr/bin/python3.11",
+            check=False,
         )
 
 
