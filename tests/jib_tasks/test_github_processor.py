@@ -340,12 +340,26 @@ class TestHandlers:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_check_failure(context)
+            with patch("subprocess.Popen") as mock_popen:
+                # Mock Popen for streaming mode (used by run_claude)
+                mock_process = MagicMock()
+                mock_process.stdout = iter([])
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_process.returncode = 0
+                mock_popen.return_value = mock_process
 
-            # Should invoke claude
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                github_processor.handle_check_failure(context)
+
+                # Should invoke claude via Popen (streaming mode)
+                mock_popen.assert_called()
+                # Check that at least one call has "claude" in the command
+                all_calls = mock_popen.call_args_list + mock_run.call_args_list
+                claude_calls = [
+                    call for call in all_calls
+                    if call[0] and "claude" in call[0][0]
+                ]
+                assert len(claude_calls) > 0, "Expected at least one call to claude"
 
     def test_handle_comment_invokes_claude(self, temp_dir):
         """Test comment handler invokes Claude."""
@@ -359,11 +373,26 @@ class TestHandlers:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_comment(context)
+            with patch("subprocess.Popen") as mock_popen:
+                # Mock Popen for streaming mode (used by run_claude)
+                mock_process = MagicMock()
+                mock_process.stdout = iter([])
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_process.returncode = 0
+                mock_popen.return_value = mock_process
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                github_processor.handle_comment(context)
+
+                # Should invoke claude via Popen (streaming mode)
+                mock_popen.assert_called()
+                # Check that at least one call has "claude" in the command
+                all_calls = mock_popen.call_args_list + mock_run.call_args_list
+                claude_calls = [
+                    call for call in all_calls
+                    if call[0] and "claude" in call[0][0]
+                ]
+                assert len(claude_calls) > 0, "Expected at least one call to claude"
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
         """Test review handler invokes Claude."""
@@ -383,11 +412,26 @@ class TestHandlers:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_review_request(context)
+            with patch("subprocess.Popen") as mock_popen:
+                # Mock Popen for streaming mode (used by run_claude)
+                mock_process = MagicMock()
+                mock_process.stdout = iter([])
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_process.returncode = 0
+                mock_popen.return_value = mock_process
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                github_processor.handle_review_request(context)
+
+                # Should invoke claude via Popen (streaming mode)
+                mock_popen.assert_called()
+                # Check that at least one call has "claude" in the command
+                all_calls = mock_popen.call_args_list + mock_run.call_args_list
+                claude_calls = [
+                    call for call in all_calls
+                    if call[0] and "claude" in call[0][0]
+                ]
+                assert len(claude_calls) > 0, "Expected at least one call to claude"
 
 
 class TestMain:
