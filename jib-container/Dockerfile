@@ -82,6 +82,11 @@ RUN mkdir -p /opt/claude-rules
 COPY claude-rules/*.md /opt/claude-rules/
 RUN chmod 644 /opt/claude-rules/*.md
 
+# Create directories for jib libraries and tools
+# These will be populated at container startup from mounted repo
+# This ensures the latest versions are always used
+RUN mkdir -p /opt/jib/lib /opt/jib/tools /opt/jib/docs
+
 
 
 # Create tmp directory in image (not mounted - container-only scratch space)
@@ -330,6 +335,150 @@ if [ -f "${RULES_DIR}/mission.md" ]; then
     echo "  Note: Reference docs in ~/khan/james-in-a-box/docs/ (fetched on-demand)"
 fi
 
+# Copy jib libraries and tools to home directory for local access
+# This ensures tools are available even if mounted paths are read-only
+JIB_SRC="${USER_HOME}/khan/james-in-a-box"
+if [ -d "$JIB_SRC" ]; then
+    # Copy shared Python libraries to ~/lib/
+    mkdir -p "${USER_HOME}/lib"
+    if [ -d "${JIB_SRC}/shared" ]; then
+        cp -r "${JIB_SRC}/shared"/* "${USER_HOME}/lib/" 2>/dev/null || true
+        chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/lib"
+        echo "✓ Python libraries installed: ~/lib/"
+        echo "  Includes: notifications, jib_logging, beads, claude, enrichment"
+    fi
+
+    # Copy jib-tools to ~/tools/
+    mkdir -p "${USER_HOME}/tools"
+    if [ -d "${JIB_SRC}/jib-container/jib-tools" ]; then
+        cp "${JIB_SRC}/jib-container/jib-tools"/*.py "${USER_HOME}/tools/" 2>/dev/null || true
+        chmod +x "${USER_HOME}/tools"/*.py 2>/dev/null || true
+        chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/tools"
+        echo "✓ Tools installed: ~/tools/"
+        echo "  Includes: discover-tests.py, github-app-token.py"
+    fi
+
+    # Create tailored documentation index for working with other repos
+    mkdir -p "${USER_HOME}/docs"
+    cat > "${USER_HOME}/docs/index.md" << 'REPO_DOCS'
+# Working with Repositories
+
+Quick reference for working with ANY codebase in ~/khan/.
+
+## Before Starting Work
+
+1. **Discover the test framework**:
+   ```bash
+   ~/tools/discover-tests.py ~/khan/<repo>
+   ```
+
+2. **Check for existing work**:
+   ```bash
+   cd ~/beads && bd --allow-stale search "<repo-name>"
+   ```
+
+3. **Load previous context** (if available):
+   ```bash
+   @load-context <repo-name>
+   ```
+
+## Working with Git
+
+You're in a **git worktree** with a temporary branch. Just commit directly:
+
+```bash
+git add <files>
+git commit -m "Description"
+git push origin HEAD
+```
+
+**NEVER** use `git checkout main` (fails in worktrees). Use:
+```bash
+git checkout -b new-branch origin/main
+```
+
+## Running Tests
+
+Use the command discovered by `discover-tests.py`:
+
+| Framework | Command |
+|-----------|---------|
+| pytest | `pytest` |
+| jest | `npm test` |
+| go | `go test ./...` |
+| make | `make test` |
+
+## Creating PRs
+
+After committing and pushing:
+```python
+# Use GitHub MCP
+create_pull_request(owner, repo, title, head, base, body)
+```
+
+## Sending Notifications
+
+```python
+from lib.notifications import slack_notify
+slack_notify("Title", "Body text")
+```
+
+Or via file:
+```bash
+cat > ~/sharing/notifications/$(date +%Y%m%d-%H%M%S)-topic.md << 'EOF'
+# Title
+Content here
+EOF
+```
+
+## Directory Reference
+
+| Path | Purpose |
+|------|---------|
+| `~/khan/<repo>/` | The repository you're working in |
+| `~/tools/` | Utility scripts (discover-tests.py) |
+| `~/lib/` | Python libraries (notifications, etc.) |
+| `~/beads/` | Persistent task memory |
+| `~/sharing/` | Persistent data (notifications, context) |
+| `~/context-sync/` | Confluence docs, JIRA tickets |
+
+## Common Patterns by Language
+
+### Python
+- Tests: `pytest` or `python -m unittest discover`
+- Lint: `make lint` or `flake8`
+- Config: `pytest.ini`, `pyproject.toml`
+
+### JavaScript/TypeScript
+- Tests: `npm test` or `jest`
+- Lint: `npm run lint`
+- Config: `package.json`, `jest.config.js`
+
+### Go
+- Tests: `go test ./...`
+- Lint: `golangci-lint run`
+- Config: `go.mod`
+
+## Tips
+
+- **Read before modifying**: Always read a file before editing
+- **Run tests early**: Check baseline before making changes
+- **Commit often**: Small commits are easier to review
+- **Update beads**: Track progress for context persistence
+REPO_DOCS
+    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/docs/index.md"
+
+    # Create Python path helper script
+    cat > "${USER_HOME}/lib/setup_path.sh" << 'PATHSETUP'
+# Source this to add jib libraries to Python path
+export PYTHONPATH="${HOME}/lib:${PYTHONPATH}"
+PATHSETUP
+    chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/lib/setup_path.sh"
+
+    echo "✓ Documentation index created: ~/docs/index.md"
+    echo "  Tailored for working with any repository"
+fi
+
 # Set up .claude directory structure
 # NOTE: ~/.claude is now container-local (ephemeral) to prevent history sharing
 # Only auth files are synced from ~/.claude-auth/ (mounted from host)
@@ -502,14 +651,20 @@ else
 fi
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
-# Also add jib-container/scripts to PATH
+# Also add jib-container/scripts and ~/tools to PATH, ~/lib to PYTHONPATH
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
 alias claude='claude --dangerously-skip-permissions'
 export PS1='\[\033[01;32m\]\u@sandboxed\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-export PATH="${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
+export PATH="${HOME}/tools:${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
+export PYTHONPATH="${HOME}/lib:${PYTHONPATH}"
+# Alias for discover-tests
+alias discover-tests='python3 ~/tools/discover-tests.py'
 BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
 echo "✓ Claude alias created (bypasses permissions in sandbox)"
+echo "✓ Environment configured:"
+echo "  PATH includes: ~/tools/, jib-container/scripts/"
+echo "  PYTHONPATH includes: ~/lib/"
 
 # Ensure tracking directory exists for processor state
 if [ -d "${USER_HOME}/sharing" ]; then
@@ -663,7 +818,10 @@ if [ $# -eq 0 ]; then
     echo "  4. @save-context <project>         # Save learnings"
     echo ""
     echo "📚 Available Resources:"
-    echo "  • Workspace: ~/khan/                      (code reference, MOUNTED ro)"
+    echo "  • Workspace: ~/khan/                      (code repos, MOUNTED rw)"
+    echo "  • Tools: ~/tools/                         (discover-tests.py, etc.)"
+    echo "  • Libraries: ~/lib/                       (notifications, jib_logging, etc.)"
+    echo "  • Docs: ~/docs/index.md                   (quick ref for working with repos)"
     echo "  • Context: ~/context-sync/                (context sources, MOUNTED ro)"
     echo "    - ~/context-sync/confluence/            (ADRs, runbooks, docs)"
     echo "    - ~/context-sync/jira/                  (JIRA tickets, issues)"
@@ -686,6 +844,7 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "💡 Tips:"
     echo "  • ~/khan/ is READ-WRITE - make changes directly, commit to git"
+    echo "  • Run 'discover-tests ~/khan/<repo>' to find how to run tests"
     echo "  • Human reviews commits - you can push directly via git push"
     echo "  • Check context-sync/ for Confluence docs, JIRA tickets, etc."
     echo "  • Send notifications to ~/sharing/notifications/ to get Slack DM"
@@ -693,7 +852,6 @@ if [ $# -eq 0 ]; then
     echo "  • Check ~/sharing/responses/ for replies to your notifications"
     echo "  • Save context after significant work to build knowledge"
     echo "  • Use ~/sharing/ for ANYTHING that must persist across rebuilds"
-    echo "  • All shared data under ~/sharing/ (tmp, notifications, context, etc.)"
     echo ""
     echo "🔒 Security:"
     echo "  • Bridge network (isolated from host services)"
