@@ -108,7 +108,7 @@ The analyzer system ensures the agent behaves like an experienced engineer: clea
 jib uses structured documentation following the [llms.txt](https://llmstxt.org/) standard:
 
 - **Navigation Index** (`docs/index.md`): Human and LLM-readable index pointing to all documentation
-- **Machine-Readable Indexes**: Auto-generated `codebase.json`, `patterns.json`, and `dependencies.json` for efficient querying
+- **Machine-Readable Indexes**: Auto-generated `docs/generated/codebase.json`, `docs/generated/patterns.json`, and `docs/generated/dependencies.json` for efficient querying
 - **Task-Specific Guides**: Documentation index maps task types to relevant docs (e.g., "security changes" → security ADR)
 - **Documentation Drift Detection**: Automated checks ensure docs stay synchronized with code
 - **Multi-Agent Documentation Pipeline**: Specialized agents for context analysis, drafting, review, and validation
