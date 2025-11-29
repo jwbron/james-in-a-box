@@ -4,7 +4,7 @@
 
 .PHONY: help \
         test test-quick test-python test-bash \
-        check check-fix \
+        check check-fix check-python check-bash \
         lint lint-fix lint-fix-jib \
         lint-python lint-python-fix \
         lint-shell lint-shell-fix \
@@ -18,8 +18,10 @@ help:
 	@echo "===================================="
 	@echo ""
 	@echo "Pre-push Checks (mirrors CI):"
-	@echo "  make check             - Run checks that mirror GitHub Actions"
+	@echo "  make check             - Run all pre-push checks"
 	@echo "  make check-fix         - Run checks with auto-fix"
+	@echo "  make check-python      - Python checks only"
+	@echo "  make check-bash        - Bash checks only"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test              - Run all tests (pytest)"
@@ -51,31 +53,19 @@ help:
 # Run all checks that mirror GitHub Actions workflows
 # Use these before pushing to catch CI issues locally
 check:
-	@echo "==> Running pre-push checks (mirrors CI)..."
-	@echo ""
-	./scripts/lint-python.sh --check-only
-	@echo ""
-	./scripts/lint-shell.sh
-	@echo ""
-	./scripts/syntax-check.sh
-	@echo ""
-	./scripts/run-tests.sh
-	@echo ""
-	@echo "All pre-push checks passed!"
+	@python scripts/pre-push-checks.py
 
 # Run checks with auto-fix where possible
 check-fix:
-	@echo "==> Running pre-push checks with auto-fix..."
-	@echo ""
-	./scripts/lint-python.sh --fix
-	@echo ""
-	./scripts/lint-shell.sh
-	@echo ""
-	./scripts/syntax-check.sh
-	@echo ""
-	./scripts/run-tests.sh
-	@echo ""
-	@echo "All pre-push checks passed!"
+	@python scripts/pre-push-checks.py --fix
+
+# Python checks only
+check-python:
+	@python scripts/pre-push-checks.py --python
+
+# Bash checks only
+check-bash:
+	@python scripts/pre-push-checks.py --bash
 
 # ============================================================================
 # Testing Targets
@@ -83,7 +73,7 @@ check-fix:
 
 # Run all tests using pytest
 test:
-	./scripts/run-tests.sh
+	@python scripts/pre-push-checks.py --test
 
 # Quick syntax-only check (no pytest overhead)
 test-quick:

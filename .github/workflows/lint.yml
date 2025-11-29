@@ -34,11 +34,11 @@ jobs:
       - name: Run ruff check
         id: ruff-check
         continue-on-error: true
-        run: ./scripts/lint-python.sh --check-only
+        run: python scripts/pre-push-checks.py --python --no-test
 
       - name: Auto-fix with ruff
         if: steps.ruff-check.outcome == 'failure' && github.event_name == 'pull_request'
-        run: ./scripts/lint-python.sh --fix
+        run: python scripts/pre-push-checks.py --python --fix --no-test
 
       - name: Commit and push fixes
         if: steps.ruff-check.outcome == 'failure' && github.event_name == 'pull_request'
@@ -49,7 +49,7 @@ jobs:
 
       - name: Fail if issues remain
         if: steps.ruff-check.outcome == 'failure'
-        run: ./scripts/lint-python.sh --check-only
+        run: python scripts/pre-push-checks.py --python --no-test
 
   bashate:
     name: Bashate (Shell)
@@ -66,4 +66,4 @@ jobs:
         run: pip install bashate
 
       - name: Find and lint shell scripts
-        run: ./scripts/lint-shell.sh
+        run: python scripts/pre-push-checks.py --bash --no-test
