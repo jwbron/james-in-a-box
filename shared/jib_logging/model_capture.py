@@ -16,7 +16,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -99,7 +99,7 @@ class ModelResponse:
     finish_reasons: list[str] = field(default_factory=list)
     session_id: str | None = None
     error: str | None = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     trace_id: str | None = None
     span_id: str | None = None
     task_id: str | None = None
@@ -200,7 +200,7 @@ class ModelOutputCapture:
 
     def _get_output_dir(self) -> Path:
         """Get the output directory, creating date-based subdirectory."""
-        today = datetime.now(UTC).strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         output_dir = self._output_dir / today
         if self._store_full_responses:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -208,7 +208,7 @@ class ModelOutputCapture:
 
     def _generate_output_filename(self, trace_id: str | None) -> str:
         """Generate a unique filename for the response."""
-        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
         if trace_id:
             # Use first 8 chars of trace_id for identification
             return f"{timestamp}_{trace_id[:8]}.json"
