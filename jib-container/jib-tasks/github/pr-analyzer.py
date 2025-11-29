@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 # Import shared Claude runner
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 from claude import run_claude
 
 
