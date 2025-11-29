@@ -79,7 +79,7 @@ RATE_LIMIT_MAX_RETRIES = 3  # Max retries on rate limit errors
 RATE_LIMIT_BASE_WAIT = 60  # Base wait time in seconds for exponential backoff
 
 # Parallel execution configuration
-MAX_PARALLEL_JIB = 3  # Max concurrent jib containers (be gentle on system resources)
+MAX_PARALLEL_JIB = 10  # Max concurrent jib containers
 
 
 @dataclass
