@@ -369,16 +369,15 @@ def check_host_setup() -> bool:
     if not config_file.exists():
         config_warning = f"Configuration file not found: {config_file}"
 
-    # Report findings and offer to run setup automatically
-    if issues_found or config_warning:
+    # If critical issues found, automatically run setup
+    if issues_found:
         warn("Host setup appears incomplete")
         print()
 
-        if issues_found:
-            error("Critical issues found:")
-            for issue in issues_found:
-                print(f"  ✗ {issue}")
-            print()
+        error("Critical issues found:")
+        for issue in issues_found:
+            print(f"  ✗ {issue}")
+        print()
 
         if config_warning:
             warn(config_warning)
@@ -389,34 +388,20 @@ def check_host_setup() -> bool:
         print("  • Shared directories for notifications and task communication")
         print()
 
-        if issues_found:
-            # Offer to run setup automatically
-            setup_script = get_setup_script_path()
-            if setup_script:
-                print("Would you like to run setup now?")
-                response = input("Run setup.sh? (yes/no/skip): ").strip().lower()
-                if response == "yes":
-                    print()
-                    if run_setup_script():
-                        success("Setup completed!")
-                        return True
-                    else:
-                        error("Setup failed")
-                        return False
-                elif response == "skip":
-                    warn("Skipping setup - some features may not work")
-                    return True
-                else:
-                    info("Please run ./setup.sh to configure the host first")
-                    return False
-            else:
-                print("To set up the host:")
-                print("  cd ~/khan/james-in-a-box")
-                print("  ./setup.sh")
-                print()
-                response = input("Continue anyway? (yes/no): ").strip().lower()
-                if response != "yes":
-                    return False
+        # Auto-run setup.sh when config is missing
+        info("Running setup.sh to configure jib...")
+        print()
+        if run_setup_script():
+            success("Setup completed!")
+            return True
+        else:
+            error("Setup failed")
+            return False
+
+    # Config warning only (not critical) - just warn and continue
+    if config_warning:
+        warn(config_warning)
+        print()
 
     return True
 
