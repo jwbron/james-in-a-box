@@ -14,11 +14,13 @@ from pathlib import Path
 
 import requests
 
+
 # Add shared directory to path for jib_logging
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent / "shared"))
 from jib_logging import get_logger
 
 from connectors.confluence.config import ConfluenceConfig
+
 
 # Initialize logger
 logger = get_logger("confluence-sync")
