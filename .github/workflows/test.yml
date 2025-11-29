@@ -29,12 +29,7 @@ jobs:
           fi
 
       - name: Run pytest
-        run: |
-          if [ -d tests ]; then
-            pytest tests/ -v --tb=short
-          else
-            echo "No tests directory found, skipping pytest"
-          fi
+        run: ./scripts/run-tests.sh
 
   syntax-check:
     name: Syntax Check
@@ -47,16 +42,5 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Check Python syntax
-        run: |
-          echo "Checking Python syntax..."
-          find . -name "*.py" -type f ! -path "./.git/*" -print0 | xargs -0 -r python -m py_compile
-          echo "All Python files have valid syntax"
-
-      - name: Check Bash syntax
-        run: |
-          echo "Checking Bash syntax..."
-          find . -name "*.sh" -type f ! -path "./.git/*" -print0 | while IFS= read -r -d '' file; do
-            bash -n "$file" || exit 1
-          done
-          echo "All Bash files have valid syntax"
+      - name: Check Python and Bash syntax
+        run: ./scripts/syntax-check.sh

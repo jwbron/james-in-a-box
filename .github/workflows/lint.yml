@@ -34,34 +34,22 @@ jobs:
       - name: Run ruff check
         id: ruff-check
         continue-on-error: true
-        run: ruff check .
-
-      - name: Run ruff format check
-        id: ruff-format
-        continue-on-error: true
-        run: ruff format --check .
+        run: ./scripts/lint-python.sh --check-only
 
       - name: Auto-fix with ruff
-        if: (steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure') && github.event_name == 'pull_request'
-        run: |
-          echo "Running ruff auto-fix..."
-          ruff check --fix --unsafe-fixes . || true
-          ruff format .
-          echo "Auto-fix complete"
+        if: steps.ruff-check.outcome == 'failure' && github.event_name == 'pull_request'
+        run: ./scripts/lint-python.sh --fix
 
       - name: Commit and push fixes
-        if: (steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure') && github.event_name == 'pull_request'
+        if: steps.ruff-check.outcome == 'failure' && github.event_name == 'pull_request'
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "fix: auto-fix Python linting issues (ruff)"
           commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
 
       - name: Fail if issues remain
-        if: steps.ruff-check.outcome == 'failure' || steps.ruff-format.outcome == 'failure'
-        run: |
-          echo "Re-checking after auto-fix..."
-          ruff check .
-          ruff format --check .
+        if: steps.ruff-check.outcome == 'failure'
+        run: ./scripts/lint-python.sh --check-only
 
   bashate:
     name: Bashate (Shell)
@@ -78,8 +66,4 @@ jobs:
         run: pip install bashate
 
       - name: Find and lint shell scripts
-        run: |
-          # Find all .sh files and run bashate
-          # Ignoring: E003 (indent not multiple of 4), E006 (long lines), E042 (local hides errors)
-          find . -name "*.sh" -type f ! -path "./.git/*" -print0 | \
-            xargs -0 -r bashate -i E003,E006,E042
+        run: ./scripts/lint-shell.sh

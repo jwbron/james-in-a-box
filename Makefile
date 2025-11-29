@@ -4,6 +4,7 @@
 
 .PHONY: help \
         test test-quick test-python test-bash \
+        check check-fix \
         lint lint-fix lint-fix-jib \
         lint-python lint-python-fix \
         lint-shell lint-shell-fix \
@@ -15,6 +16,10 @@
 help:
 	@echo "james-in-a-box Development Commands"
 	@echo "===================================="
+	@echo ""
+	@echo "Pre-push Checks (mirrors CI):"
+	@echo "  make check             - Run checks that mirror GitHub Actions"
+	@echo "  make check-fix         - Run checks with auto-fix"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test              - Run all tests (pytest)"
@@ -40,12 +45,45 @@ help:
 	@echo "  make check-linters     - Check if linting tools are installed"
 
 # ============================================================================
+# Pre-push Checks (mirrors GitHub Actions CI)
+# ============================================================================
+
+# Run all checks that mirror GitHub Actions workflows
+# Use these before pushing to catch CI issues locally
+check:
+	@echo "==> Running pre-push checks (mirrors CI)..."
+	@echo ""
+	./scripts/lint-python.sh --check-only
+	@echo ""
+	./scripts/lint-shell.sh
+	@echo ""
+	./scripts/syntax-check.sh
+	@echo ""
+	./scripts/run-tests.sh
+	@echo ""
+	@echo "All pre-push checks passed!"
+
+# Run checks with auto-fix where possible
+check-fix:
+	@echo "==> Running pre-push checks with auto-fix..."
+	@echo ""
+	./scripts/lint-python.sh --fix
+	@echo ""
+	./scripts/lint-shell.sh
+	@echo ""
+	./scripts/syntax-check.sh
+	@echo ""
+	./scripts/run-tests.sh
+	@echo ""
+	@echo "All pre-push checks passed!"
+
+# ============================================================================
 # Testing Targets
 # ============================================================================
 
 # Run all tests using pytest
 test:
-	python -m pytest tests/ -v
+	./scripts/run-tests.sh
 
 # Quick syntax-only check (no pytest overhead)
 test-quick:
