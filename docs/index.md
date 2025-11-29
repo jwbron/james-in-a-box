@@ -75,6 +75,7 @@ When working on specific tasks, consult these documents first:
 | **Context sync modifications** | [ADR: Context Sync](adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |
 | **GCP deployment changes** | [ADR: GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | [ADR: Slack GCP](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) |
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
+| **ADR research/generation** | [ADR Researcher](../host-services/analysis/adr-researcher/README.md) | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) |
 
 ## Machine-Readable Indexes
 
@@ -107,4 +108,4 @@ These files are auto-generated and provide structured data for programmatic acce
 ---
 
 *This index follows the [llms.txt](https://llmstxt.org/) convention for LLM-friendly documentation.*
-*Last updated: 2024-11-28*
+*Last updated: 2025-11-28*
