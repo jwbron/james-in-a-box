@@ -3,12 +3,18 @@ Claude CLI runner for non-interactive mode.
 
 This module provides functions for running Claude in non-interactive (stdin) mode,
 which allows full access to tools and filesystem unlike the --print flag.
+
+Supports both buffered and streaming output modes.
 """
 
 import os
 import subprocess
+import sys
+import threading
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
+from typing import Callable, TextIO
 
 
 @dataclass
@@ -54,12 +60,40 @@ def is_claude_available() -> bool:
         return False
 
 
+def _stream_pipe(
+    pipe: TextIO,
+    buffer: StringIO,
+    output_stream: TextIO | None,
+    prefix: str = "",
+) -> None:
+    """Read from a pipe and write to buffer and optionally to an output stream.
+
+    Args:
+        pipe: Input pipe to read from (stdout or stderr from process)
+        buffer: StringIO buffer to capture output
+        output_stream: Optional stream to write to (e.g., sys.stdout)
+        prefix: Optional prefix to add to each line when streaming
+    """
+    for line in pipe:
+        buffer.write(line)
+        if output_stream is not None:
+            if prefix:
+                output_stream.write(f"{prefix}{line}")
+            else:
+                output_stream.write(line)
+            output_stream.flush()
+
+
 def run_claude(
     prompt: str,
     *,
     timeout: int = 1800,
     cwd: Path | str | None = None,
     capture_output: bool = True,
+    stream: bool = False,
+    stream_to: TextIO | None = None,
+    stream_prefix: str = "",
+    on_output: Callable[[str], None] | None = None,
 ) -> ClaudeResult:
     """Run Claude CLI in non-interactive mode.
 
@@ -71,12 +105,21 @@ def run_claude(
         timeout: Maximum time in seconds to wait for Claude (default: 1800 = 30 min).
         cwd: Working directory for Claude. If None, uses current directory.
         capture_output: If True, capture stdout/stderr. If False, let them
-            pass through to the console.
+            pass through to the console (ignored if stream=True).
+        stream: If True, stream output line-by-line as it arrives.
+            Output is still captured in ClaudeResult.stdout/stderr.
+        stream_to: Where to stream output. Defaults to sys.stdout if stream=True.
+            Can be any file-like object (e.g., sys.stderr, open file).
+        stream_prefix: Optional prefix to add to each line when streaming.
+            Useful for distinguishing Claude output, e.g., "[claude] ".
+        on_output: Optional callback function called for each line of stdout.
+            Receives the line as a string. Useful for custom processing/logging.
 
     Returns:
         ClaudeResult with success status, output, and any error information.
 
     Example:
+        # Basic usage - buffered output
         result = run_claude(
             prompt="Analyze this code and fix the bug",
             cwd=Path.home() / "khan" / "my-repo",
@@ -86,6 +129,29 @@ def run_claude(
             print(f"Claude output: {result.stdout}")
         else:
             print(f"Error: {result.error}")
+
+        # Streaming output to stdout
+        result = run_claude(
+            prompt="Fix the bug in main.py",
+            stream=True,  # See output in real-time
+        )
+
+        # Streaming with prefix
+        result = run_claude(
+            prompt="Analyze the codebase",
+            stream=True,
+            stream_prefix="[claude] ",  # Prefix each line
+        )
+
+        # Custom callback for each line
+        def log_line(line: str):
+            logger.info("Claude output", line=line.strip())
+
+        result = run_claude(
+            prompt="Run tests",
+            stream=True,
+            on_output=log_line,
+        )
 
     Raises:
         No exceptions are raised. All errors are captured in ClaudeResult.error.
@@ -97,27 +163,44 @@ def run_claude(
     env = os.environ.copy()
     env["DISABLE_AUTOUPDATER"] = "1"
 
-    try:
-        result = subprocess.run(
-            ["claude", "--dangerously-skip-permissions"],
-            check=False,
-            input=prompt,
-            text=True,
-            capture_output=capture_output,
-            timeout=timeout,
-            cwd=cwd_str,
-            env=env,
-        )
+    # Determine output stream for streaming mode
+    if stream and stream_to is None:
+        stream_to = sys.stdout
 
-        return ClaudeResult(
-            success=result.returncode == 0,
-            stdout=result.stdout if capture_output else "",
-            stderr=result.stderr if capture_output else "",
-            returncode=result.returncode,
-            error=None
-            if result.returncode == 0
-            else f"Claude exited with code {result.returncode}",
-        )
+    try:
+        if stream:
+            # Streaming mode: use Popen for real-time output
+            return _run_claude_streaming(
+                prompt=prompt,
+                timeout=timeout,
+                cwd_str=cwd_str,
+                env=env,
+                stream_to=stream_to,
+                stream_prefix=stream_prefix,
+                on_output=on_output,
+            )
+        else:
+            # Buffered mode: use subprocess.run
+            result = subprocess.run(
+                ["claude", "--dangerously-skip-permissions"],
+                check=False,
+                input=prompt,
+                text=True,
+                capture_output=capture_output,
+                timeout=timeout,
+                cwd=cwd_str,
+                env=env,
+            )
+
+            return ClaudeResult(
+                success=result.returncode == 0,
+                stdout=result.stdout if capture_output else "",
+                stderr=result.stderr if capture_output else "",
+                returncode=result.returncode,
+                error=None
+                if result.returncode == 0
+                else f"Claude exited with code {result.returncode}",
+            )
 
     except subprocess.TimeoutExpired:
         return ClaudeResult(
@@ -144,4 +227,155 @@ def run_claude(
             stderr="",
             returncode=-1,
             error=f"Error running Claude: {e}",
+        )
+
+
+def _run_claude_streaming(
+    prompt: str,
+    timeout: int,
+    cwd_str: str | None,
+    env: dict[str, str],
+    stream_to: TextIO | None,
+    stream_prefix: str,
+    on_output: Callable[[str], None] | None,
+) -> ClaudeResult:
+    """Internal implementation for streaming mode.
+
+    Uses Popen to read output line-by-line as it arrives.
+    """
+    stdout_buffer = StringIO()
+    stderr_buffer = StringIO()
+
+    process = subprocess.Popen(
+        ["claude", "--dangerously-skip-permissions"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=cwd_str,
+        env=env,
+    )
+
+    # Send prompt to stdin and close it
+    if process.stdin:
+        process.stdin.write(prompt)
+        process.stdin.close()
+
+    # Create threads to read stdout and stderr concurrently
+    def read_stdout():
+        if process.stdout:
+            for line in process.stdout:
+                stdout_buffer.write(line)
+                if stream_to is not None:
+                    if stream_prefix:
+                        stream_to.write(f"{stream_prefix}{line}")
+                    else:
+                        stream_to.write(line)
+                    stream_to.flush()
+                if on_output is not None:
+                    on_output(line)
+
+    def read_stderr():
+        if process.stderr:
+            for line in process.stderr:
+                stderr_buffer.write(line)
+                # Optionally stream stderr too (to stderr)
+                if stream_to is not None:
+                    sys.stderr.write(line)
+                    sys.stderr.flush()
+
+    stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+    stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+
+    stdout_thread.start()
+    stderr_thread.start()
+
+    # Wait for process to complete with timeout
+    try:
+        returncode = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        # Wait for threads to finish reading any remaining output
+        stdout_thread.join(timeout=1)
+        stderr_thread.join(timeout=1)
+        return ClaudeResult(
+            success=False,
+            stdout=stdout_buffer.getvalue(),
+            stderr=stderr_buffer.getvalue(),
+            returncode=-1,
+            error=f"Claude timed out after {timeout} seconds",
+        )
+
+    # Wait for reader threads to complete
+    stdout_thread.join()
+    stderr_thread.join()
+
+    return ClaudeResult(
+        success=returncode == 0,
+        stdout=stdout_buffer.getvalue(),
+        stderr=stderr_buffer.getvalue(),
+        returncode=returncode,
+        error=None if returncode == 0 else f"Claude exited with code {returncode}",
+    )
+
+
+def run_claude_with_logging(
+    prompt: str,
+    *,
+    timeout: int = 1800,
+    cwd: Path | str | None = None,
+    logger_name: str = "claude",
+    log_level: str = "INFO",
+) -> ClaudeResult:
+    """Run Claude CLI with output streamed to the jib_logging framework.
+
+    This is a convenience wrapper that integrates with jib_logging to provide
+    structured logging of Claude output.
+
+    Args:
+        prompt: The prompt to send to Claude via stdin.
+        timeout: Maximum time in seconds to wait for Claude (default: 1800 = 30 min).
+        cwd: Working directory for Claude. If None, uses current directory.
+        logger_name: Name for the logger (default: "claude").
+        log_level: Log level for output lines (default: "INFO").
+
+    Returns:
+        ClaudeResult with success status, output, and any error information.
+
+    Example:
+        from shared.claude import run_claude_with_logging
+
+        result = run_claude_with_logging(
+            prompt="Fix the bug in main.py",
+            cwd=Path.home() / "khan" / "my-repo",
+        )
+
+    Note:
+        This function requires jib_logging to be available. If it's not installed,
+        it falls back to streaming to stdout without structured logging.
+    """
+    try:
+        from jib_logging import get_logger
+
+        logger = get_logger(logger_name)
+        level = getattr(__import__("logging"), log_level.upper(), 20)  # Default to INFO
+
+        def log_output(line: str) -> None:
+            # Strip trailing newline for cleaner log output
+            logger._log(level, line.rstrip())
+
+        return run_claude(
+            prompt=prompt,
+            timeout=timeout,
+            cwd=cwd,
+            stream=True,
+            on_output=log_output,
+        )
+    except ImportError:
+        # Fall back to simple streaming if jib_logging is not available
+        return run_claude(
+            prompt=prompt,
+            timeout=timeout,
+            cwd=cwd,
+            stream=True,
         )
