@@ -1,0 +1,9 @@
+[Unit]
+Description=Run ADR Researcher weekly to update implemented ADRs
+
+[Timer]
+OnCalendar=Mon *-*-* 11:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
