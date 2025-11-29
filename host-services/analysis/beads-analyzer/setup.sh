@@ -46,3 +46,4 @@ echo "  systemctl --user list-timers | grep beads  # Check timer"
 echo "  systemctl --user start $SERVICE_NAME       # Run now"
 echo "  systemctl --user status $SERVICE_NAME      # Check last run"
 echo "  journalctl --user -u $SERVICE_NAME -f      # View logs"
+

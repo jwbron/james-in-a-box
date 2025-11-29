@@ -31,11 +31,9 @@ import argparse
 import json
 import subprocess
 import sys
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 
 # Constants
@@ -121,6 +119,7 @@ class BeadsFetcher:
         try:
             result = subprocess.run(
                 ["bd", "--allow-stale", "list", "--json"],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.beads_dir,
@@ -141,11 +140,9 @@ class BeadsFetcher:
                 updated_at = self._parse_datetime(task_data.get("updated_at"))
                 closed_at = self._parse_datetime(task_data.get("closed_at"))
 
-                # Filter by date range
-                if created_at and created_at < cutoff:
-                    # Include if updated within range
-                    if not updated_at or updated_at < cutoff:
-                        continue
+                # Filter by date range - skip if created before cutoff AND not updated within range
+                if created_at and created_at < cutoff and (not updated_at or updated_at < cutoff):
+                    continue
 
                 task = BeadsTask(
                     id=task_data.get("id", ""),
@@ -269,30 +266,22 @@ class BeadsAnalyzer:
             for label in labels_lower:
                 if "slack" in label or label.startswith("task-"):
                     metrics.slack_linked_tasks += 1
-                    metrics.tasks_by_source["slack"] = (
-                        metrics.tasks_by_source.get("slack", 0) + 1
-                    )
+                    metrics.tasks_by_source["slack"] = metrics.tasks_by_source.get("slack", 0) + 1
                     source_found = True
                     break
                 elif label.startswith("pr-") or "github-pr" in label:
                     metrics.pr_linked_tasks += 1
-                    metrics.tasks_by_source["github"] = (
-                        metrics.tasks_by_source.get("github", 0) + 1
-                    )
+                    metrics.tasks_by_source["github"] = metrics.tasks_by_source.get("github", 0) + 1
                     source_found = True
                     break
                 elif "jira" in label:
                     metrics.jira_linked_tasks += 1
-                    metrics.tasks_by_source["jira"] = (
-                        metrics.tasks_by_source.get("jira", 0) + 1
-                    )
+                    metrics.tasks_by_source["jira"] = metrics.tasks_by_source.get("jira", 0) + 1
                     source_found = True
                     break
 
             if not source_found:
-                metrics.tasks_by_source["unknown"] = (
-                    metrics.tasks_by_source.get("unknown", 0) + 1
-                )
+                metrics.tasks_by_source["unknown"] = metrics.tasks_by_source.get("unknown", 0) + 1
 
             # Orphan detection
             if not task.labels and not task.description:
@@ -313,9 +302,7 @@ class BeadsAnalyzer:
             if t.status == "closed" and t.notes  # Has progress notes
         )
         if metrics.tasks_closed > 0:
-            metrics.proper_lifecycle_rate = (
-                properly_managed / metrics.tasks_closed
-            ) * 100
+            metrics.proper_lifecycle_rate = (properly_managed / metrics.tasks_closed) * 100
 
         # Detect duplicates (similar titles)
         metrics.duplicate_tasks = self._count_duplicates(tasks)
@@ -331,16 +318,11 @@ class BeadsAnalyzer:
             return True
 
         # Check for repo names (common patterns)
-        if any(
-            repo in title_lower
-            for repo in ["james-in-a-box", "webapp", "services", "jib"]
-        ):
+        if any(repo in title_lower for repo in ["james-in-a-box", "webapp", "services", "jib"]):
             return True
 
         # Check for JIRA tickets
-        if any(
-            pattern in title_lower for pattern in ["jira-", "project-", "issue-"]
-        ):
+        if any(pattern in title_lower for pattern in ["jira-", "project-", "issue-"]):
             return True
 
         # Check for meaningful prefixes
@@ -357,10 +339,7 @@ class BeadsAnalyzer:
             "todo",
             "task",
         ]
-        if len(title) > 20 and title_lower not in generic_titles:
-            return True
-
-        return False
+        return bool(len(title) > 20 and title_lower not in generic_titles)
 
     def _count_duplicates(self, tasks: list[BeadsTask]) -> int:
         """Count tasks with very similar titles."""
@@ -378,9 +357,7 @@ class BeadsAnalyzer:
 
         return duplicates
 
-    def identify_issues(
-        self, tasks: list[BeadsTask], metrics: BeadsMetrics
-    ) -> list[BeadsIssue]:
+    def identify_issues(self, tasks: list[BeadsTask], metrics: BeadsMetrics) -> list[BeadsIssue]:
         """Identify issues with Beads usage."""
         issues = []
 
@@ -404,9 +381,7 @@ class BeadsAnalyzer:
 
         # High: Low notes coverage
         notes_rate = (
-            (metrics.tasks_with_notes / metrics.total_tasks * 100)
-            if metrics.total_tasks
-            else 0
+            (metrics.tasks_with_notes / metrics.total_tasks * 100) if metrics.total_tasks else 0
         )
         if notes_rate < 50 and metrics.total_tasks >= 5:
             no_notes = [t.id for t in tasks if not t.notes]
@@ -422,9 +397,7 @@ class BeadsAnalyzer:
 
         # Medium: Low label coverage
         label_rate = (
-            (metrics.tasks_with_labels / metrics.total_tasks * 100)
-            if metrics.total_tasks
-            else 0
+            (metrics.tasks_with_labels / metrics.total_tasks * 100) if metrics.total_tasks else 0
         )
         if label_rate < 70 and metrics.total_tasks >= 5:
             no_labels = [t.id for t in tasks if not t.labels]
@@ -527,14 +500,10 @@ class BeadsAnalyzer:
 
         # Calculate rates
         notes_rate = (
-            (metrics.tasks_with_notes / metrics.total_tasks * 100)
-            if metrics.total_tasks
-            else 0
+            (metrics.tasks_with_notes / metrics.total_tasks * 100) if metrics.total_tasks else 0
         )
         label_rate = (
-            (metrics.tasks_with_labels / metrics.total_tasks * 100)
-            if metrics.total_tasks
-            else 0
+            (metrics.tasks_with_labels / metrics.total_tasks * 100) if metrics.total_tasks else 0
         )
         searchable_rate = (
             (metrics.tasks_with_searchable_title / metrics.total_tasks * 100)
@@ -583,9 +552,7 @@ Period: Last {self.days} days
 """
         # Source bar chart
         max_count = max(metrics.tasks_by_source.values()) if metrics.tasks_by_source else 1
-        for source, count in sorted(
-            metrics.tasks_by_source.items(), key=lambda x: -x[1]
-        ):
+        for source, count in sorted(metrics.tasks_by_source.items(), key=lambda x: -x[1]):
             bar_len = int((count / max_count) * 20)
             bar = "█" * bar_len
             report += f"{source:15} {bar:20} {count}\n"
@@ -622,9 +589,7 @@ Period: Last {self.days} days
 """
         if issues:
             for issue in issues:
-                severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}[
-                    issue.severity
-                ]
+                severity_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}[issue.severity]
                 report += f"""### {severity_emoji} [{issue.severity.upper()}] {issue.category}
 
 **Issue**: {issue.description}
@@ -650,7 +615,7 @@ Period: Last {self.days} days
         for i, rec in enumerate(recommendations, 1):
             report += f"{i}. {rec}\n"
 
-        report += f"""
+        report += """
 ## Recent Tasks
 
 | ID | Title | Status | Source | Updated |
@@ -682,9 +647,7 @@ Period: Last {self.days} days
 """
         return report
 
-    def _calculate_health_score(
-        self, metrics: BeadsMetrics, issues: list[BeadsIssue]
-    ) -> int:
+    def _calculate_health_score(self, metrics: BeadsMetrics, issues: list[BeadsIssue]) -> int:
         """Calculate overall health score (0-100)."""
         if metrics.total_tasks == 0:
             return 100  # No tasks = nothing wrong
@@ -741,26 +704,20 @@ Period: Last {self.days} days
             )
 
         # Based on metrics
-        notes_rate = (
-            metrics.tasks_with_notes / metrics.total_tasks if metrics.total_tasks else 0
-        )
+        notes_rate = metrics.tasks_with_notes / metrics.total_tasks if metrics.total_tasks else 0
         if notes_rate < 0.8:
             recommendations.append(
                 "Add progress notes when updating tasks to maintain context across sessions"
             )
 
-        label_rate = (
-            metrics.tasks_with_labels / metrics.total_tasks if metrics.total_tasks else 0
-        )
+        label_rate = metrics.tasks_with_labels / metrics.total_tasks if metrics.total_tasks else 0
         if label_rate < 0.9:
             recommendations.append(
                 "Add labels to all tasks: source (slack/github), type (feature/bug), repo name"
             )
 
         searchable_rate = (
-            metrics.tasks_with_searchable_title / metrics.total_tasks
-            if metrics.total_tasks
-            else 0
+            metrics.tasks_with_searchable_title / metrics.total_tasks if metrics.total_tasks else 0
         )
         if searchable_rate < 0.6:
             recommendations.append(
@@ -989,9 +946,7 @@ Examples:
         "--output", type=Path, help="Output directory (default: ~/sharing/analysis/beads)"
     )
     parser.add_argument("--print", action="store_true", help="Print report to stdout")
-    parser.add_argument(
-        "--force", action="store_true", help="Force analysis even if run recently"
-    )
+    parser.add_argument("--force", action="store_true", help="Force analysis even if run recently")
 
     args = parser.parse_args()
 
