@@ -56,8 +56,10 @@ class TraceCollector:
     """
     Collects and stores LLM tool call traces.
 
-    Thread-safe and designed for minimal overhead. Writes are batched
-    and flushed periodically or on session end.
+    Designed for minimal overhead. Each hook invocation is a separate process,
+    so this collector does not maintain state across calls. Session correlation
+    is achieved through session_id passed via CLAUDE_SESSION_ID environment
+    variable or hook input.
     """
 
     def __init__(
@@ -165,13 +167,21 @@ class TraceCollector:
     def _write_metadata(self) -> None:
         """Write session metadata to file."""
         if self.metadata:
-            with open(self.meta_file, "w") as f:
-                json.dump(self.metadata.to_dict(), f, indent=2)
+            try:
+                with open(self.meta_file, "w") as f:
+                    json.dump(self.metadata.to_dict(), f, indent=2)
+            except OSError:
+                # Fail silently - don't let metadata write failures break collection
+                pass
 
     def _append_event(self, event: TraceEvent) -> None:
         """Append event to trace file."""
-        with open(self.trace_file, "a") as f:
-            f.write(json.dumps(event.to_dict()) + "\n")
+        try:
+            with open(self.trace_file, "a") as f:
+                f.write(json.dumps(event.to_dict()) + "\n")
+        except OSError:
+            # Fail silently - don't let write failures break the hook
+            pass
 
     def _extract_params(self, tool_name: str, tool_input: dict[str, Any]) -> ToolCallParams:
         """Extract normalized parameters from tool input."""
@@ -401,8 +411,12 @@ class TraceCollector:
             index.add_session(self.metadata)
 
         # Write updated index
-        with open(index_file, "w") as f:
-            json.dump(index.to_dict(), f, indent=2)
+        try:
+            with open(index_file, "w") as f:
+                json.dump(index.to_dict(), f, indent=2)
+        except OSError:
+            # Fail silently - don't let index write failures break collection
+            pass
 
     def get_events(self) -> list[TraceEvent]:
         """Get all events from this session."""

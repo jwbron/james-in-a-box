@@ -61,6 +61,9 @@ except ImportError:
 
 
 # Session collectors by session_id
+# NOTE: This dict does not persist across hook invocations (each is a separate process).
+# Session correlation is achieved through session_id stored in trace files - all events
+# with the same session_id are part of the same session regardless of process boundaries.
 _collectors: dict[str, TraceCollector] = {}
 
 
@@ -80,7 +83,12 @@ def handle_post_tool_use(hook_input: dict) -> dict:
 
     Records the tool call in the trace collector.
     """
-    session_id = hook_input.get("session_id", f"unknown-{datetime.now().strftime('%Y%m%d%H%M%S')}")
+    # Prefer session_id from hook input, fall back to CLAUDE_SESSION_ID env var
+    session_id = (
+        hook_input.get("session_id")
+        or os.environ.get("CLAUDE_SESSION_ID")
+        or f"unknown-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    )
     tool_name = hook_input.get("tool_name", "unknown")
     tool_input = hook_input.get("tool_input", {})
     tool_result = hook_input.get("tool_result")
@@ -123,7 +131,8 @@ def handle_session_end(hook_input: dict) -> dict:
 
     Finalizes the trace session and updates the index.
     """
-    session_id = hook_input.get("session_id")
+    # Prefer session_id from hook input, fall back to CLAUDE_SESSION_ID env var
+    session_id = hook_input.get("session_id") or os.environ.get("CLAUDE_SESSION_ID")
 
     if session_id and session_id in _collectors:
         collector = _collectors[session_id]
