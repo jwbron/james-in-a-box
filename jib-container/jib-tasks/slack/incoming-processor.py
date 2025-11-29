@@ -80,7 +80,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
 
 
 def create_notification_with_thread(
-    notifications_dir: Path, task_id: str, thread_ts: str, content: str, channel: str = ""
+    notifications_dir: Path, task_id: str, thread_ts: str, content: str
 ) -> Path:
     """Create a notification file with YAML frontmatter for threading.
 
@@ -89,8 +89,6 @@ def create_notification_with_thread(
         task_id: Task ID for filename and thread lookup
         thread_ts: Slack thread timestamp for threading
         content: Notification content (markdown)
-        channel: Slack channel ID where the original message was received.
-                 CRITICAL for threading: thread_ts is only valid within its original channel.
 
     Returns:
         Path to created notification file
@@ -100,15 +98,12 @@ def create_notification_with_thread(
     notification_file = notifications_dir / f"{task_id}.md"
 
     # Build frontmatter
-    # IMPORTANT: Include channel so slack-notifier can send threaded replies to the correct channel
     frontmatter_lines = [
         "---",
         f'task_id: "{task_id}"',
     ]
     if thread_ts:
         frontmatter_lines.append(f'thread_ts: "{thread_ts}"')
-    if channel:
-        frontmatter_lines.append(f'channel: "{channel}"')
     frontmatter_lines.append("---")
     frontmatter_lines.append("")
 
@@ -133,11 +128,10 @@ def process_task(message_file: Path):
     # Parse frontmatter to extract thread context
     frontmatter, content = parse_frontmatter(raw_content)
     thread_ts = frontmatter.get("thread_ts", "")
-    channel = frontmatter.get("channel", "")  # Channel where original message was received
     original_task_id = frontmatter.get("task_id", message_file.stem)
     notifications_dir = Path.home() / "sharing" / "notifications"
 
-    logger.info("Task metadata", task_id=original_task_id, thread_ts=thread_ts or None, channel=channel or None)
+    logger.info("Task metadata", task_id=original_task_id, thread_ts=thread_ts or None)
 
     # Extract task description (after "## Current Message" header)
     task_lines = []
@@ -162,7 +156,6 @@ def process_task(message_file: Path):
             task_id=original_task_id,
             thread_ts=thread_ts,
             content="# Task Processing Issue\n\nReceived an empty task with no content to process.\n",
-            channel=channel,
         )
         return False
 
@@ -381,9 +374,8 @@ The task took too long to complete. This can happen with complex tasks.
         task_id=original_task_id,
         thread_ts=thread_ts,
         content=notification_content,
-        channel=channel,
     )
-    logger.info("Notification created", file=notification_file.name, thread_ts=thread_ts or None, channel=channel or None)
+    logger.info("Notification created", file=notification_file.name, thread_ts=thread_ts or None)
 
     return claude_result.returncode == 0
 
@@ -483,14 +475,12 @@ def process_response(message_file: Path):
     # Parse frontmatter to extract thread context
     frontmatter, content = parse_frontmatter(raw_content)
     thread_ts = frontmatter.get("thread_ts", "")
-    channel = frontmatter.get("channel", "")  # Channel where original message was received
     referenced_notif = frontmatter.get("referenced_notification", "")
     notifications_dir = Path.home() / "sharing" / "notifications"
 
     logger.info(
         "Response metadata",
         thread_ts=thread_ts or None,
-        channel=channel or None,
         referenced_notification=referenced_notif or None,
     )
 
@@ -549,7 +539,6 @@ def process_response(message_file: Path):
             task_id=task_id,
             thread_ts=thread_ts,
             content="# Response Processing Issue\n\nReceived an empty response with no content to process.\n",
-            channel=channel,
         )
         return False
 
@@ -784,9 +773,8 @@ The response took too long to process.
         task_id=task_id,
         thread_ts=thread_ts,
         content=notification_content,
-        channel=channel,
     )
-    logger.info("Notification created", file=notification_file.name, thread_ts=thread_ts or None, channel=channel or None)
+    logger.info("Notification created", file=notification_file.name, thread_ts=thread_ts or None)
 
     return claude_result.returncode == 0
 

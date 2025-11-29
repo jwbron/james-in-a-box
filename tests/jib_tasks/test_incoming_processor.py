@@ -231,7 +231,8 @@ class TestMain:
         captured = capfd.readouterr()
         assert "not found" in captured.err.lower()
 
-    def test_incoming_file_routing(self, temp_dir, monkeypatch):
+    @patch("subprocess.run")
+    def test_incoming_file_routing(self, mock_run, temp_dir, monkeypatch):
         """Test that incoming directory triggers process_task."""
         incoming_dir = temp_dir / "incoming"
         incoming_dir.mkdir()
@@ -244,7 +245,8 @@ class TestMain:
 
             mock_task.assert_called_once_with(task_file)
 
-    def test_response_file_routing(self, temp_dir, monkeypatch):
+    @patch("subprocess.run")
+    def test_response_file_routing(self, mock_run, temp_dir, monkeypatch):
         """Test that responses directory triggers process_response."""
         responses_dir = temp_dir / "responses"
         responses_dir.mkdir()

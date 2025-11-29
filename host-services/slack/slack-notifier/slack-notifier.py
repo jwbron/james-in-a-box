@@ -377,10 +377,6 @@ class SlackNotifier:
             frontmatter, content = self._parse_frontmatter(raw_content)
             frontmatter_thread_ts = frontmatter.get("thread_ts")
             frontmatter_task_id = frontmatter.get("task_id")
-            # CRITICAL: Channel where original message was received
-            # thread_ts is only valid within its original channel, so we must
-            # send threaded replies to the same channel where the thread started
-            frontmatter_channel = frontmatter.get("channel")
 
             # Extract task ID from filename (fallback)
             filename_task_id = self._extract_task_id(path.name)
@@ -403,16 +399,6 @@ class SlackNotifier:
             else:
                 self.logger.info(f"No thread context found for: {task_id} (will create new thread)")
 
-            # Determine target channel:
-            # - If threading (thread_ts exists) and we have the original channel, use that channel
-            #   because thread_ts is only valid within its original channel
-            # - Otherwise use the configured default channel
-            if thread_ts and frontmatter_channel:
-                target_channel = frontmatter_channel
-                self.logger.info(f"Using channel from frontmatter for threading: {frontmatter_channel}")
-            else:
-                target_channel = self.slack_channel
-
             # Split content into chunks if too long
             chunks = self._chunk_message(content)
             self.logger.info(f"Sending {len(chunks)} chunk(s) for {path.name}")
@@ -421,14 +407,14 @@ class SlackNotifier:
             first_chunk = True
             for chunk_idx, chunk in enumerate(chunks):
                 # Prepare message payload
-                payload = {"channel": target_channel, "text": chunk, "mrkdwn": True}
+                payload = {"channel": self.slack_channel, "text": chunk, "mrkdwn": True}
 
                 # If we have an existing thread, reply in that thread
                 # For multi-chunk messages, subsequent chunks reply to first chunk
                 if thread_ts:
                     payload["thread_ts"] = thread_ts
                     if first_chunk:
-                        self.logger.info(f"Replying in thread {thread_ts} for task {task_id} in channel {target_channel}")
+                        self.logger.info(f"Replying in thread {thread_ts} for task {task_id}")
 
                 # Send to Slack
                 try:
