@@ -544,15 +544,15 @@ def process_response(message_file: Path):
 
     logger.info("Response content extracted", preview=response_content[:100])
 
+    # Construct task_id for search BEFORE using it
+    # PRIORITY: original_task_id > referenced_notif > message_file.stem
+    # original_task_id is the actual beads label, which is what we need to search for
+    task_id_for_search = original_task_id or referenced_notif or message_file.stem
+
     # Enrich response with relevant documentation context (Phase 3 of LLM Doc Strategy ADR)
     enriched_context = enrich_task(response_content)
     if enriched_context:
         logger.info("Added documentation context enrichment", task_id=task_id_for_search)
-
-    # Construct prompt for Claude with full context
-    # PRIORITY: original_task_id > referenced_notif > message_file.stem
-    # original_task_id is the actual beads label, which is what we need to search for
-    task_id_for_search = original_task_id or referenced_notif or message_file.stem
 
     # Build PR context warning if we found PR references
     pr_context_warning = ""
