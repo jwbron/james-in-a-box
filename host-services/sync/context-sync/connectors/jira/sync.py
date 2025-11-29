@@ -13,7 +13,14 @@ from pathlib import Path
 
 import requests
 
+# Add shared directory to path for jib_logging
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent / "shared"))
+from jib_logging import get_logger
+
 from connectors.jira.config import JIRAConfig
+
+# Initialize logger
+logger = get_logger("jira-sync")
 
 
 class JIRASync:
@@ -51,9 +58,22 @@ class JIRASync:
         if self.sync_state_file.exists():
             try:
                 with open(self.sync_state_file, "rb") as f:
-                    return pickle.load(f)
-            except:
-                pass
+                    state = pickle.load(f)
+                    logger.debug(
+                        "Loaded sync state",
+                        state_file=str(self.sync_state_file),
+                        issue_count=len(state),
+                    )
+                    return state
+            except Exception as e:
+                logger.error(
+                    "Failed to load sync state",
+                    state_file=str(self.sync_state_file),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+        else:
+            logger.debug("No existing sync state file found", state_file=str(self.sync_state_file))
         return {}
 
     def _save_sync_state(self, state: dict):
@@ -88,8 +108,9 @@ class JIRASync:
         issues = []
         start_at = 0
         max_results = 50
+        api_calls = 0
 
-        print(f"Searching JIRA with JQL: {jql}")
+        logger.info("Searching JIRA issues", jql=jql[:100] if len(jql) > 100 else jql)
 
         while True:
             url = f"{self.config.BASE_URL}/rest/api/3/search/jql"
@@ -107,8 +128,14 @@ class JIRASync:
                 data = response.json()
                 new_issues = data.get("issues", [])
                 issues.extend(new_issues)
+                api_calls += 1
 
-                print(f"  Fetched {len(new_issues)} issues (total: {len(issues)})")
+                logger.debug(
+                    "Fetched issue batch",
+                    batch_size=len(new_issues),
+                    total_issues=len(issues),
+                    api_calls=api_calls,
+                )
 
                 # Check if we have more results
                 total = data.get("total", 0)
@@ -120,15 +147,24 @@ class JIRASync:
                     float("inf") != self.config.MAX_TICKETS
                     and len(issues) >= self.config.MAX_TICKETS
                 ):
-                    print(f"  Reached limit of {self.config.MAX_TICKETS} issues")
+                    logger.info("Reached issue limit", limit=self.config.MAX_TICKETS)
                     break
 
                 start_at += max_results
 
             except requests.exceptions.RequestException as e:
-                print(f"Error searching issues: {e}")
+                logger.error(
+                    "Error searching issues",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
                 break
 
+        logger.info(
+            "Issue search completed",
+            total_issues=len(issues),
+            api_calls=api_calls,
+        )
         if float("inf") != self.config.MAX_TICKETS:
             return issues[: int(self.config.MAX_TICKETS)]
         return issues
@@ -341,7 +377,11 @@ class JIRASync:
 
     def sync_all_issues(self, incremental: bool = True):
         """Sync all issues matching the JQL query."""
-        print(f"Syncing JIRA issues to: {self.config.OUTPUT_DIR}")
+        logger.info(
+            "Starting JIRA issue sync",
+            output_dir=str(self.config.OUTPUT_DIR),
+            incremental=incremental,
+        )
 
         # Create output directory
         output_dir = Path(self.config.OUTPUT_DIR)
@@ -352,10 +392,11 @@ class JIRASync:
 
         # Get all issues
         issues = self.search_issues()
-        print(f"Found {len(issues)} issues")
+        logger.info("Found issues to process", issue_count=len(issues))
 
         updated_count = 0
         new_count = 0
+        skipped_count = 0
 
         for issue in issues:
             issue_key = issue.get("key", "")
@@ -363,11 +404,11 @@ class JIRASync:
 
             # Check if issue needs updating
             if incremental and issue_key in sync_state and sync_state[issue_key] == issue_hash:
-                print(f"  - {issue_key} (no changes)")
+                skipped_count += 1
+                logger.debug("Issue unchanged, skipping", issue_key=issue_key)
                 continue
 
             # Format and write issue
-            print(f"  Processing: {issue_key}")
             content = self.format_issue_as_markdown(issue)
 
             # Create filename
@@ -379,20 +420,27 @@ class JIRASync:
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            # Update sync state
+            # Determine if new or updated
+            was_existing = issue_key in sync_state
             sync_state[issue_key] = issue_hash
 
-            if issue_key in sync_state and sync_state[issue_key] != issue_hash:
+            if was_existing:
                 updated_count += 1
-                print(f"  - {issue_key} (updated)")
+                logger.debug("Issue updated", issue_key=issue_key)
             else:
                 new_count += 1
-                print(f"  - {issue_key} (new)")
+                logger.debug("New issue synced", issue_key=issue_key)
 
         # Save sync state
         self._save_sync_state(sync_state)
 
-        print(f"Sync complete: {new_count} new issues, {updated_count} updated issues")
+        logger.info(
+            "JIRA sync completed",
+            new_issues=new_count,
+            updated_issues=updated_count,
+            skipped_issues=skipped_count,
+            total_issues=len(issues),
+        )
 
 
 def main():
@@ -416,7 +464,11 @@ def main():
 
         return 0
     except Exception as e:
-        print(f"Sync failed: {e}")
+        logger.error(
+            "Sync failed",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return 1
 
 

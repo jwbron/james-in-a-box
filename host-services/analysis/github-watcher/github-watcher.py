@@ -52,9 +52,13 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 import json
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 import yaml
 
@@ -73,6 +77,46 @@ logger = get_logger("github-watcher")
 RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
 RATE_LIMIT_MAX_RETRIES = 3  # Max retries on rate limit errors
 RATE_LIMIT_BASE_WAIT = 60  # Base wait time in seconds for exponential backoff
+
+# Parallel execution configuration
+MAX_PARALLEL_JIB = 10  # Max concurrent jib containers
+
+
+@dataclass
+class JibTask:
+    """A task to be executed by jib."""
+
+    task_type: str  # 'check_failure', 'comment', 'merge_conflict', 'review_request'
+    context: dict
+    signature_key: str  # Key for processed_* dict (e.g., 'processed_failures')
+    signature_value: str  # The signature to mark as processed
+
+
+class ThreadSafeState:
+    """Thread-safe wrapper for state management."""
+
+    def __init__(self, state: dict):
+        self._state = state
+        self._lock = threading.Lock()
+
+    def mark_processed(self, key: str, signature: str) -> None:
+        """Mark a task as processed (thread-safe)."""
+        with self._lock:
+            self._state.setdefault(key, {})[signature] = utc_now_iso()
+            self._save()
+
+    def _save(self) -> None:
+        """Save state to disk (must be called with lock held)."""
+        self._state["last_run_start"] = utc_now_iso()
+        state_file = Path.home() / ".local" / "share" / "github-watcher" / "state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        with state_file.open("w") as f:
+            json.dump(self._state, f, indent=2)
+
+    def get_state(self) -> dict:
+        """Get a copy of current state (for reading)."""
+        with self._lock:
+            return self._state.copy()
 
 
 def load_config() -> dict:
@@ -108,9 +152,30 @@ def load_state() -> dict:
                 state.setdefault("processed_reviews", {})
                 state.setdefault("processed_conflicts", {})
                 state.setdefault("last_run_start", None)
+                logger.debug(
+                    "State loaded successfully",
+                    state_file=str(state_file),
+                    processed_failures_count=len(state["processed_failures"]),
+                    processed_comments_count=len(state["processed_comments"]),
+                    last_run_start=state["last_run_start"],
+                )
                 return state
-        except Exception:
-            pass
+        except json.JSONDecodeError as e:
+            logger.error(
+                "Failed to parse state file (JSON decode error)",
+                state_file=str(state_file),
+                error=str(e),
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to load state file",
+                state_file=str(state_file),
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+    else:
+        logger.debug("No existing state file found, starting fresh", state_file=str(state_file))
+
     return {
         "processed_failures": {},
         "processed_comments": {},
@@ -120,8 +185,18 @@ def load_state() -> dict:
     }
 
 
-def save_state(state: dict):
-    """Save notification state."""
+def save_state(state: dict, update_last_run: bool = False):
+    """Save notification state.
+
+    Args:
+        state: The state dict to save
+        update_last_run: If True, also update last_run_start to current time.
+                        This creates a checkpoint so if the process is killed,
+                        the next run resumes from a reasonable point.
+    """
+    if update_last_run:
+        state["last_run_start"] = utc_now_iso()
+
     state_file = Path.home() / ".local" / "share" / "github-watcher" / "state.json"
     state_file.parent.mkdir(parents=True, exist_ok=True)
     with state_file.open("w") as f:
@@ -265,11 +340,33 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         context_json,
     ]
 
-    logger.info(
-        "Invoking jib",
-        task_type=task_type,
-        repository=context.get("repository", "unknown"),
-    )
+    # Build detailed context for logging based on task type
+    log_extra = {
+        "task_type": task_type,
+        "repository": context.get("repository", "unknown"),
+    }
+
+    if task_type == "check_failure":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["failed_checks"] = [c.get("name") for c in context.get("failed_checks", [])]
+    elif task_type == "comment":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["comment_count"] = len(context.get("comments", []))
+        if context.get("comments"):
+            log_extra["comment_authors"] = list({c.get("author") for c in context["comments"]})
+    elif task_type == "merge_conflict":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["pr_branch"] = context.get("pr_branch")
+        log_extra["base_branch"] = context.get("base_branch")
+    elif task_type == "review_request":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["author"] = context.get("author")
+
+    logger.info("Invoking jib", **log_extra)
 
     try:
         result = subprocess.run(
@@ -281,26 +378,125 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         )
 
         if result.returncode == 0:
-            logger.info("jib completed successfully", task_type=task_type)
+            logger.info(
+                "jib completed successfully",
+                task_type=task_type,
+                repository=context.get("repository", "unknown"),
+                pr_number=context.get("pr_number"),
+            )
             return True
         else:
             # Show last 2000 chars of stderr to capture actual error (not just Docker build progress)
             stderr_tail = result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr
             stdout_tail = result.stdout[-1000:] if len(result.stdout) > 1000 else result.stdout
+
+            # Try to extract the most relevant error message from stderr
+            error_summary = None
+            if stderr_tail:
+                # Look for common error patterns
+                for line in stderr_tail.split("\n"):
+                    line_lower = line.lower()
+                    if any(kw in line_lower for kw in ["error:", "failed:", "exception:", "traceback"]):
+                        error_summary = line.strip()[:200]
+                        break
+
             logger.error(
                 "jib failed",
                 task_type=task_type,
+                repository=context.get("repository", "unknown"),
+                pr_number=context.get("pr_number"),
                 return_code=result.returncode,
+                error_summary=error_summary,
                 stderr=stderr_tail if stderr_tail else None,
                 stdout=stdout_tail if stdout_tail else None,
             )
             return False
     except FileNotFoundError:
-        logger.error("jib command not found - is it in PATH?")
+        logger.error(
+            "jib command not found - is it in PATH?",
+            task_type=task_type,
+            repository=context.get("repository", "unknown"),
+            pr_number=context.get("pr_number"),
+        )
         return False
     except Exception as e:
-        logger.error("Error invoking jib", error=str(e), task_type=task_type)
+        logger.error(
+            "Error invoking jib",
+            error=str(e),
+            error_type=type(e).__name__,
+            task_type=task_type,
+            repository=context.get("repository", "unknown"),
+            pr_number=context.get("pr_number"),
+        )
         return False
+
+
+def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
+    """Execute a single jib task and update state (thread-safe).
+
+    Args:
+        task: The JibTask to execute
+        safe_state: Thread-safe state manager
+
+    Returns:
+        True if task completed successfully
+    """
+    success = invoke_jib(task.task_type, task.context)
+    if success:
+        safe_state.mark_processed(task.signature_key, task.signature_value)
+    return success
+
+
+def execute_tasks_parallel(tasks: list[JibTask], safe_state: ThreadSafeState) -> int:
+    """Execute multiple jib tasks in parallel.
+
+    Args:
+        tasks: List of JibTask objects to execute
+        safe_state: Thread-safe state manager
+
+    Returns:
+        Number of successfully completed tasks
+    """
+    if not tasks:
+        return 0
+
+    completed = 0
+    max_workers = min(MAX_PARALLEL_JIB, len(tasks))
+
+    logger.info(
+        "Executing tasks in parallel",
+        task_count=len(tasks),
+        max_workers=max_workers,
+    )
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_task = {
+            executor.submit(execute_task, task, safe_state): task for task in tasks
+        }
+
+        # Process completed tasks as they finish
+        for future in as_completed(future_to_task):
+            task = future_to_task[future]
+            try:
+                if future.result():
+                    completed += 1
+            except Exception as e:
+                logger.error(
+                    "Task execution failed with exception",
+                    task_type=task.task_type,
+                    repository=task.context.get("repository", "unknown"),
+                    pr_number=task.context.get("pr_number"),
+                    error=str(e),
+                )
+
+    logger.info(
+        "Parallel execution completed",
+        completed=completed,
+        total=len(tasks),
+    )
+
+    return completed
 
 
 def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
@@ -373,11 +569,24 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
         )
         return None  # Already processed
 
+    # Extract failure reasons for more informative logging
+    failure_details = []
+    for check in failed_checks:
+        detail = check["name"]
+        if check.get("workflow"):
+            detail = f"{check['workflow']}/{check['name']}"
+        state = check.get("state", "FAILED")
+        if state:
+            detail = f"{detail} ({state})"
+        failure_details.append(detail)
+
     logger.info(
         "PR has failing checks",
         pr_number=pr_num,
+        pr_title=pr_data.get("title", "")[:80],
         failed_count=len(failed_checks),
         failed_checks=failed_names,
+        failure_details=failure_details,
     )
 
     # Fetch logs for failed checks
@@ -453,10 +662,16 @@ def check_pr_for_comments(
         since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
+
+    Note: There are THREE types of comments on a PR:
+    1. Issue comments (comments field) - general PR discussion
+    2. Review body comments (reviews field) - summary text when submitting a review
+    3. Line-level review comments - comments on specific lines of code in the diff
+       These are NOT included in gh pr view output, must use gh api separately.
     """
     pr_num = pr_data["number"]
 
-    # Get PR comments
+    # Get PR issue comments and review body comments
     comments = gh_json(
         [
             "pr",
@@ -474,7 +689,7 @@ def check_pr_for_comments(
 
     all_comments = []
 
-    # Regular comments
+    # Regular issue comments (general PR discussion)
     for c in comments.get("comments", []):
         all_comments.append(
             {
@@ -486,7 +701,7 @@ def check_pr_for_comments(
             }
         )
 
-    # Review comments
+    # Review body comments (summary text when submitting a review)
     for r in comments.get("reviews", []):
         if r.get("body"):
             all_comments.append(
@@ -500,11 +715,45 @@ def check_pr_for_comments(
                 }
             )
 
+    # Line-level review comments (comments on specific lines of code)
+    # These are NOT included in gh pr view, must fetch via API separately
+    review_comments = gh_json(
+        [
+            "api",
+            f"repos/{repo}/pulls/{pr_num}/comments",
+        ]
+    )
+
+    if review_comments:
+        for rc in review_comments:
+            # Note: API returns created_at (snake_case), not createdAt (camelCase)
+            all_comments.append(
+                {
+                    "id": str(rc.get("id", "")),
+                    "author": rc.get("user", {}).get("login", "unknown"),
+                    "body": rc.get("body", ""),
+                    "created_at": rc.get("created_at", ""),
+                    "type": "review_comment",
+                    "path": rc.get("path", ""),
+                    "line": rc.get("line"),
+                    "diff_hunk": rc.get("diff_hunk", ""),
+                }
+            )
+
     if not all_comments:
         return None
 
-    # Debug: show comment count
-    logger.debug("Found comments on PR", pr_number=pr_num, comment_count=len(all_comments))
+    # Debug: show comment count by type
+    comment_types = {}
+    for c in all_comments:
+        ctype = c.get("type", "unknown")
+        comment_types[ctype] = comment_types.get(ctype, 0) + 1
+    logger.debug(
+        "Found comments on PR",
+        pr_number=pr_num,
+        comment_count=len(all_comments),
+        comment_types=comment_types,
+    )
 
     # Filter to comments from the bot itself or common bots
     # Build list of authors to exclude (case-insensitive)
@@ -553,10 +802,22 @@ def check_pr_for_comments(
         )
         return None  # Already processed
 
+    # Extract comment details for more informative logging
+    comment_authors = list({c["author"] for c in other_comments})
+    # Get a preview of the latest comment
+    latest_comment_preview = latest_comment.get("body", "")[:100]
+    if len(latest_comment.get("body", "")) > 100:
+        latest_comment_preview += "..."
+
     logger.info(
         "New comments from others on PR",
         pr_number=pr_num,
+        pr_title=pr_data.get("title", "")[:80],
         comment_count=len(other_comments),
+        comment_authors=comment_authors,
+        latest_comment_author=latest_comment["author"],
+        latest_comment_preview=latest_comment_preview,
+        latest_comment_type=latest_comment.get("type", "comment"),
     )
 
     return {
@@ -622,8 +883,12 @@ def check_pr_for_merge_conflict(repo: str, pr_data: dict, state: dict) -> dict |
     logger.info(
         "Merge conflict detected",
         pr_number=pr_num,
+        pr_title=pr_data.get("title", "")[:80],
+        pr_branch=pr_data.get("headRefName", ""),
+        base_branch=pr_details.get("baseRefName", "main"),
         mergeable=mergeable,
         merge_state=merge_state,
+        commit=head_sha[:8] if head_sha else "unknown",
     )
 
     return {
@@ -695,7 +960,13 @@ def check_prs_for_review(
         logger.info(
             "New PR needs review",
             pr_number=pr_num,
+            pr_title=pr.get("title", "")[:80],
             author=pr.get("author", {}).get("login", "unknown"),
+            pr_branch=pr.get("headRefName", ""),
+            base_branch=pr.get("baseRefName", ""),
+            additions=pr.get("additions", 0),
+            deletions=pr.get("deletions", 0),
+            files_changed=len(pr.get("files", [])),
         )
 
         # Get PR diff
@@ -746,7 +1017,10 @@ def get_since_timestamp(state: dict) -> str | None:
 
 
 def main():
-    """Main entry point - scan configured repos and trigger jib as needed."""
+    """Main entry point - scan configured repos and trigger jib as needed.
+
+    Tasks are collected first, then executed in parallel for faster processing.
+    """
     # Record when this run STARTS - this is what we'll use for next run's "since"
     current_run_start = utc_now_iso()
 
@@ -754,6 +1028,7 @@ def main():
         "GitHub Watcher starting",
         local_time=datetime.now().isoformat(),
         utc_time=current_run_start,
+        max_parallel=MAX_PARALLEL_JIB,
     )
 
     # Load config
@@ -771,6 +1046,7 @@ def main():
         github_username=github_username,
         bot_username=bot_username,
         repo_count=len(repos),
+        repositories=repos,
     )
 
     # Load state
@@ -786,7 +1062,8 @@ def main():
 
     logger.info("Scanning repositories", count=len(repos))
 
-    tasks_queued = 0
+    # Collect all tasks first, then execute in parallel
+    all_tasks: list[JibTask] = []
 
     for repo in repos:
         # Use ContextScope to automatically include repository in all logs within this block
@@ -836,7 +1113,7 @@ def main():
                 if p.get("author", {}).get("login", "").lower() in bot_author_variants
             ]
 
-            # Process user's PRs
+            # Collect tasks from user's PRs
             if my_prs:
                 logger.info(
                     "Found user's open PRs",
@@ -847,34 +1124,45 @@ def main():
                 for pr in my_prs:
                     # Check for failures
                     failure_ctx = check_pr_for_failures(repo, pr, state)
-                    if failure_ctx and invoke_jib("check_failure", failure_ctx):
-                        state.setdefault("processed_failures", {})[
-                            failure_ctx["failure_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
+                    if failure_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="check_failure",
+                                context=failure_ctx,
+                                signature_key="processed_failures",
+                                signature_value=failure_ctx["failure_signature"],
+                            )
+                        )
 
                     # Check for comments (filter out bot's own comments, not human's)
                     comment_ctx = check_pr_for_comments(
                         repo, pr, state, bot_username, since_timestamp
                     )
-                    if comment_ctx and invoke_jib("comment", comment_ctx):
-                        state.setdefault("processed_comments", {})[
-                            comment_ctx["comment_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
+                    if comment_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="comment",
+                                context=comment_ctx,
+                                signature_key="processed_comments",
+                                signature_value=comment_ctx["comment_signature"],
+                            )
+                        )
 
                     # Check for merge conflicts
                     conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-                    if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
-                        state.setdefault("processed_conflicts", {})[
-                            conflict_ctx["conflict_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
+                    if conflict_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="merge_conflict",
+                                context=conflict_ctx,
+                                signature_key="processed_conflicts",
+                                signature_value=conflict_ctx["conflict_signature"],
+                            )
+                        )
             else:
                 logger.debug("No open PRs authored by user", username=github_username)
 
-            # Process bot's PRs (for check failures and comments)
-            # The bot creates PRs via GitHub App, so its PRs need monitoring too
+            # Collect tasks from bot's PRs
             if bot_prs:
                 logger.info(
                     "Found bot's open PRs",
@@ -885,50 +1173,89 @@ def main():
                 for pr in bot_prs:
                     # Check for failures on bot's PRs
                     failure_ctx = check_pr_for_failures(repo, pr, state)
-                    if failure_ctx and invoke_jib("check_failure", failure_ctx):
-                        state.setdefault("processed_failures", {})[
-                            failure_ctx["failure_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
+                    if failure_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="check_failure",
+                                context=failure_ctx,
+                                signature_key="processed_failures",
+                                signature_value=failure_ctx["failure_signature"],
+                            )
+                        )
 
                     # Check for comments on bot's PRs (filter out bot's own comments)
                     comment_ctx = check_pr_for_comments(
                         repo, pr, state, bot_username, since_timestamp
                     )
-                    if comment_ctx and invoke_jib("comment", comment_ctx):
-                        state.setdefault("processed_comments", {})[
-                            comment_ctx["comment_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
+                    if comment_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="comment",
+                                context=comment_ctx,
+                                signature_key="processed_comments",
+                                signature_value=comment_ctx["comment_signature"],
+                            )
+                        )
 
                     # Check for merge conflicts on bot's PRs
                     conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-                    if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
-                        state.setdefault("processed_conflicts", {})[
-                            conflict_ctx["conflict_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
+                    if conflict_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="merge_conflict",
+                                context=conflict_ctx,
+                                signature_key="processed_conflicts",
+                                signature_value=conflict_ctx["conflict_signature"],
+                            )
+                        )
 
-            # Check for PRs from others that need review (uses pre-fetched all_prs)
+            # Collect review tasks for PRs from others
             review_contexts = check_prs_for_review(
                 repo, all_prs, state, github_username, bot_username, since_timestamp
             )
             for review_ctx in review_contexts:
-                if invoke_jib("review_request", review_ctx):
-                    state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
-                        utc_now_iso()
+                all_tasks.append(
+                    JibTask(
+                        task_type="review_request",
+                        context=review_ctx,
+                        signature_key="processed_reviews",
+                        signature_value=review_ctx["review_signature"],
                     )
-                    tasks_queued += 1
+                )
+
+    # Log task summary
+    if all_tasks:
+        task_types = {}
+        for task in all_tasks:
+            task_types[task.task_type] = task_types.get(task.task_type, 0) + 1
+        logger.info(
+            "Tasks collected",
+            total=len(all_tasks),
+            by_type=task_types,
+        )
+
+        # Execute all tasks in parallel
+        safe_state = ThreadSafeState(state)
+        tasks_completed = execute_tasks_parallel(all_tasks, safe_state)
+        state = safe_state.get_state()
+    else:
+        logger.info("No tasks to execute")
+        tasks_completed = 0
 
     # Update last run START timestamp and save state
     # We store when this run STARTED so next run checks for comments since then
     state["last_run_start"] = current_run_start
     save_state(state)
 
+    # Summary statistics for completed run
     logger.info(
         "GitHub Watcher completed",
-        tasks_triggered=tasks_queued,
+        tasks_completed=tasks_completed,
+        tasks_collected=len(all_tasks),
+        repositories_scanned=len(repos),
         next_check_since=current_run_start,
+        processed_failures_count=len(state.get("processed_failures", {})),
+        processed_comments_count=len(state.get("processed_comments", {})),
     )
 
     return 0
