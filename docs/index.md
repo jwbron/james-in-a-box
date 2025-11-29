@@ -55,6 +55,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Development Overview](development/README.md) | Contributing and development guidelines |
 | [Project Structure](development/STRUCTURE.md) | Directory conventions and organization |
+| [Local CI Checks](development/local-ci-checks.md) | Running GitHub Actions locally before pushing |
 
 ### User Guide
 
@@ -69,6 +70,7 @@ When working on specific tasks, consult these documents first:
 | Task Type | Read First | Also Helpful |
 |-----------|------------|--------------|
 | **ANY new task** | [Beads Task Tracking](reference/beads.md) | Check for existing work before starting |
+| **Before pushing code** | [Local CI Checks](development/local-ci-checks.md) | Run `make check` before pushing |
 | **Slack integration changes** | [Slack Integration](architecture/slack-integration.md) | [ADR: Slack Strategy](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) |
 | **Adding new host services** | [Architecture Overview](architecture/README.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Security-related changes** | [ADR: Internet Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |

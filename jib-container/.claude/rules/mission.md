@@ -102,6 +102,39 @@ bd --allow-stale update bd-xyz --status closed --notes "Completed per ADR-042"
 
 Use the discovered test command. Don't assume - every codebase is different!
 
+### 5.5. Pre-Push Checks (MANDATORY for james-in-a-box repo)
+
+**BEFORE pushing code to james-in-a-box**, run pre-push checks to catch issues before CI:
+
+```bash
+cd ~/khan/james-in-a-box
+
+# Run all pre-push checks (Python linting, Bash syntax, tests)
+make check
+
+# OR with auto-fix for Python issues
+make check-fix
+```
+
+**What this checks (mirrors GitHub Actions):**
+- Python syntax validation
+- Ruff linting and formatting
+- Bash syntax validation
+- Bashate shell linting
+- Pytest (if tests directory exists)
+
+**Why this matters:**
+- Catches 90% of CI failures locally
+- Auto-fixes many Python style issues
+- Faster feedback than waiting for GitHub Actions
+- Saves time and keeps CI green
+
+**If checks fail:**
+1. Run `make check-fix` to auto-fix Python issues
+2. Review remaining errors and fix manually
+3. Re-run `make check` to verify all pass
+4. Then proceed to commit and push
+
 ### 6. Commit, Push & Create PR
 
 **CRITICAL**: After making ANY code changes, you MUST create a PR or notify the user via Slack:

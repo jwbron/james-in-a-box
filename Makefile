@@ -4,17 +4,30 @@
 
 .PHONY: help \
         test test-quick test-python test-bash \
+        check check-fix check-python check-bash \
         lint lint-fix lint-fix-jib \
         lint-python lint-python-fix \
         lint-shell lint-shell-fix \
         lint-yaml lint-yaml-fix \
         lint-docker lint-workflows \
-        install-linters check-linters
+        install-linters check-linters \
+        act act-lint act-test
 
 # Default target
 help:
 	@echo "james-in-a-box Development Commands"
 	@echo "===================================="
+	@echo ""
+	@echo "Pre-Push Checks (run before pushing code):"
+	@echo "  make check             - Run all pre-push checks (works in jib container)"
+	@echo "  make check-fix         - Run checks with auto-fix"
+	@echo "  make check-python      - Python checks only"
+	@echo "  make check-bash        - Bash checks only"
+	@echo ""
+	@echo "Local GitHub Actions (requires Docker on host):"
+	@echo "  make act               - Run all GH Actions locally with act"
+	@echo "  make act-lint          - Run lint workflow with act"
+	@echo "  make act-test          - Run test workflow with act"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test              - Run all tests (pytest)"
@@ -22,7 +35,7 @@ help:
 	@echo "  make test-python       - Run Python syntax tests only"
 	@echo "  make test-bash         - Run Bash syntax tests only"
 	@echo ""
-	@echo "Linting:"
+	@echo "Linting (host-side, requires full tool installation):"
 	@echo "  make lint              - Run all linters"
 	@echo "  make lint-fix          - Run all linters with auto-fix"
 	@echo "  make lint-fix-jib      - Fix remaining issues with jib"
@@ -38,6 +51,57 @@ help:
 	@echo "Setup:"
 	@echo "  make install-linters   - Install all linting tools"
 	@echo "  make check-linters     - Check if linting tools are installed"
+
+# ============================================================================
+# Pre-Push Check Targets (work inside jib container without Docker)
+# ============================================================================
+
+# Run all pre-push checks - USE THIS BEFORE PUSHING CODE
+check:
+	@echo "Running pre-push checks..."
+	@python scripts/pre-push-checks.py
+
+# Run checks with auto-fix enabled
+check-fix:
+	@echo "Running pre-push checks with auto-fix..."
+	@python scripts/pre-push-checks.py --fix
+
+# Python checks only
+check-python:
+	@python scripts/pre-push-checks.py --python
+
+# Bash checks only
+check-bash:
+	@python scripts/pre-push-checks.py --bash
+
+# ============================================================================
+# Local GitHub Actions with act (requires Docker on host)
+# ============================================================================
+
+# Run all GitHub Actions workflows locally using act
+# This requires Docker to be running on the HOST (not in jib container)
+act:
+	@echo "Running all GitHub Actions workflows with act..."
+	@if ! command -v act >/dev/null 2>&1; then \
+		echo "Error: 'act' is not installed."; \
+		echo "Install with: brew install act (macOS) or curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash"; \
+		exit 1; \
+	fi
+	@if ! docker info >/dev/null 2>&1; then \
+		echo "Error: Docker is not running. act requires Docker."; \
+		exit 1; \
+	fi
+	act push --platform ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Run lint workflow only with act
+act-lint:
+	@echo "Running lint workflow with act..."
+	act push --platform ubuntu-latest=catthehacker/ubuntu:act-latest -W .github/workflows/lint.yml
+
+# Run test workflow only with act
+act-test:
+	@echo "Running test workflow with act..."
+	act push --platform ubuntu-latest=catthehacker/ubuntu:act-latest -W .github/workflows/test.yml
 
 # ============================================================================
 # Testing Targets

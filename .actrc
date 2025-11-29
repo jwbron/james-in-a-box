@@ -1,0 +1,12 @@
+# act configuration for running GitHub Actions locally
+# See: https://github.com/nektos/act
+
+# Use medium-size image by default (good balance of size vs. tools)
+# Options: micro (~200MB), medium (~500MB), large (~17GB)
+--platform ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Don't run pull_request workflows on push (they share triggers)
+--eventpath /dev/null
+
+# Cache Docker images to speed up subsequent runs
+--action-offline-mode
