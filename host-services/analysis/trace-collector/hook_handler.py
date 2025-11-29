@@ -52,9 +52,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 try:
-    from trace_collector import TraceCollector
     from schemas import EventType
-except ImportError as e:
+    from trace_collector import TraceCollector
+except ImportError:
     # Fail silently to not block Claude Code
     print(json.dumps({"continue": True, "suppress": True}))
     sys.exit(0)
