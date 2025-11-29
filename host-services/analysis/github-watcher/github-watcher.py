@@ -52,9 +52,13 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 import json
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 import yaml
 
@@ -73,6 +77,46 @@ logger = get_logger("github-watcher")
 RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
 RATE_LIMIT_MAX_RETRIES = 3  # Max retries on rate limit errors
 RATE_LIMIT_BASE_WAIT = 60  # Base wait time in seconds for exponential backoff
+
+# Parallel execution configuration
+MAX_PARALLEL_JIB = 3  # Max concurrent jib containers (be gentle on system resources)
+
+
+@dataclass
+class JibTask:
+    """A task to be executed by jib."""
+
+    task_type: str  # 'check_failure', 'comment', 'merge_conflict', 'review_request'
+    context: dict
+    signature_key: str  # Key for processed_* dict (e.g., 'processed_failures')
+    signature_value: str  # The signature to mark as processed
+
+
+class ThreadSafeState:
+    """Thread-safe wrapper for state management."""
+
+    def __init__(self, state: dict):
+        self._state = state
+        self._lock = threading.Lock()
+
+    def mark_processed(self, key: str, signature: str) -> None:
+        """Mark a task as processed (thread-safe)."""
+        with self._lock:
+            self._state.setdefault(key, {})[signature] = utc_now_iso()
+            self._save()
+
+    def _save(self) -> None:
+        """Save state to disk (must be called with lock held)."""
+        self._state["last_run_start"] = utc_now_iso()
+        state_file = Path.home() / ".local" / "share" / "github-watcher" / "state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        with state_file.open("w") as f:
+            json.dump(self._state, f, indent=2)
+
+    def get_state(self) -> dict:
+        """Get a copy of current state (for reading)."""
+        with self._lock:
+            return self._state.copy()
 
 
 def load_config() -> dict:
@@ -385,6 +429,74 @@ def invoke_jib(task_type: str, context: dict) -> bool:
             pr_number=context.get("pr_number"),
         )
         return False
+
+
+def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
+    """Execute a single jib task and update state (thread-safe).
+
+    Args:
+        task: The JibTask to execute
+        safe_state: Thread-safe state manager
+
+    Returns:
+        True if task completed successfully
+    """
+    success = invoke_jib(task.task_type, task.context)
+    if success:
+        safe_state.mark_processed(task.signature_key, task.signature_value)
+    return success
+
+
+def execute_tasks_parallel(tasks: list[JibTask], safe_state: ThreadSafeState) -> int:
+    """Execute multiple jib tasks in parallel.
+
+    Args:
+        tasks: List of JibTask objects to execute
+        safe_state: Thread-safe state manager
+
+    Returns:
+        Number of successfully completed tasks
+    """
+    if not tasks:
+        return 0
+
+    completed = 0
+    max_workers = min(MAX_PARALLEL_JIB, len(tasks))
+
+    logger.info(
+        "Executing tasks in parallel",
+        task_count=len(tasks),
+        max_workers=max_workers,
+    )
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_task = {
+            executor.submit(execute_task, task, safe_state): task for task in tasks
+        }
+
+        # Process completed tasks as they finish
+        for future in as_completed(future_to_task):
+            task = future_to_task[future]
+            try:
+                if future.result():
+                    completed += 1
+            except Exception as e:
+                logger.error(
+                    "Task execution failed with exception",
+                    task_type=task.task_type,
+                    repository=task.context.get("repository", "unknown"),
+                    pr_number=task.context.get("pr_number"),
+                    error=str(e),
+                )
+
+    logger.info(
+        "Parallel execution completed",
+        completed=completed,
+        total=len(tasks),
+    )
+
+    return completed
 
 
 def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
@@ -905,7 +1017,10 @@ def get_since_timestamp(state: dict) -> str | None:
 
 
 def main():
-    """Main entry point - scan configured repos and trigger jib as needed."""
+    """Main entry point - scan configured repos and trigger jib as needed.
+
+    Tasks are collected first, then executed in parallel for faster processing.
+    """
     # Record when this run STARTS - this is what we'll use for next run's "since"
     current_run_start = utc_now_iso()
 
@@ -913,6 +1028,7 @@ def main():
         "GitHub Watcher starting",
         local_time=datetime.now().isoformat(),
         utc_time=current_run_start,
+        max_parallel=MAX_PARALLEL_JIB,
     )
 
     # Load config
@@ -946,7 +1062,8 @@ def main():
 
     logger.info("Scanning repositories", count=len(repos))
 
-    tasks_queued = 0
+    # Collect all tasks first, then execute in parallel
+    all_tasks: list[JibTask] = []
 
     for repo in repos:
         # Use ContextScope to automatically include repository in all logs within this block
@@ -996,7 +1113,7 @@ def main():
                 if p.get("author", {}).get("login", "").lower() in bot_author_variants
             ]
 
-            # Process user's PRs
+            # Collect tasks from user's PRs
             if my_prs:
                 logger.info(
                     "Found user's open PRs",
@@ -1007,37 +1124,45 @@ def main():
                 for pr in my_prs:
                     # Check for failures
                     failure_ctx = check_pr_for_failures(repo, pr, state)
-                    if failure_ctx and invoke_jib("check_failure", failure_ctx):
-                        state.setdefault("processed_failures", {})[
-                            failure_ctx["failure_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
-                        save_state(state, update_last_run=True)  # Checkpoint after each jib
+                    if failure_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="check_failure",
+                                context=failure_ctx,
+                                signature_key="processed_failures",
+                                signature_value=failure_ctx["failure_signature"],
+                            )
+                        )
 
                     # Check for comments (filter out bot's own comments, not human's)
                     comment_ctx = check_pr_for_comments(
                         repo, pr, state, bot_username, since_timestamp
                     )
-                    if comment_ctx and invoke_jib("comment", comment_ctx):
-                        state.setdefault("processed_comments", {})[
-                            comment_ctx["comment_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
-                        save_state(state, update_last_run=True)  # Checkpoint after each jib
+                    if comment_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="comment",
+                                context=comment_ctx,
+                                signature_key="processed_comments",
+                                signature_value=comment_ctx["comment_signature"],
+                            )
+                        )
 
                     # Check for merge conflicts
                     conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-                    if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
-                        state.setdefault("processed_conflicts", {})[
-                            conflict_ctx["conflict_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
-                        save_state(state, update_last_run=True)  # Checkpoint after each jib
+                    if conflict_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="merge_conflict",
+                                context=conflict_ctx,
+                                signature_key="processed_conflicts",
+                                signature_value=conflict_ctx["conflict_signature"],
+                            )
+                        )
             else:
                 logger.debug("No open PRs authored by user", username=github_username)
 
-            # Process bot's PRs (for check failures and comments)
-            # The bot creates PRs via GitHub App, so its PRs need monitoring too
+            # Collect tasks from bot's PRs
             if bot_prs:
                 logger.info(
                     "Found bot's open PRs",
@@ -1048,44 +1173,74 @@ def main():
                 for pr in bot_prs:
                     # Check for failures on bot's PRs
                     failure_ctx = check_pr_for_failures(repo, pr, state)
-                    if failure_ctx and invoke_jib("check_failure", failure_ctx):
-                        state.setdefault("processed_failures", {})[
-                            failure_ctx["failure_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
-                        save_state(state, update_last_run=True)  # Checkpoint after each jib
+                    if failure_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="check_failure",
+                                context=failure_ctx,
+                                signature_key="processed_failures",
+                                signature_value=failure_ctx["failure_signature"],
+                            )
+                        )
 
                     # Check for comments on bot's PRs (filter out bot's own comments)
                     comment_ctx = check_pr_for_comments(
                         repo, pr, state, bot_username, since_timestamp
                     )
-                    if comment_ctx and invoke_jib("comment", comment_ctx):
-                        state.setdefault("processed_comments", {})[
-                            comment_ctx["comment_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
-                        save_state(state, update_last_run=True)  # Checkpoint after each jib
+                    if comment_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="comment",
+                                context=comment_ctx,
+                                signature_key="processed_comments",
+                                signature_value=comment_ctx["comment_signature"],
+                            )
+                        )
 
                     # Check for merge conflicts on bot's PRs
                     conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-                    if conflict_ctx and invoke_jib("merge_conflict", conflict_ctx):
-                        state.setdefault("processed_conflicts", {})[
-                            conflict_ctx["conflict_signature"]
-                        ] = utc_now_iso()
-                        tasks_queued += 1
-                        save_state(state, update_last_run=True)  # Checkpoint after each jib
+                    if conflict_ctx:
+                        all_tasks.append(
+                            JibTask(
+                                task_type="merge_conflict",
+                                context=conflict_ctx,
+                                signature_key="processed_conflicts",
+                                signature_value=conflict_ctx["conflict_signature"],
+                            )
+                        )
 
-            # Check for PRs from others that need review (uses pre-fetched all_prs)
+            # Collect review tasks for PRs from others
             review_contexts = check_prs_for_review(
                 repo, all_prs, state, github_username, bot_username, since_timestamp
             )
             for review_ctx in review_contexts:
-                if invoke_jib("review_request", review_ctx):
-                    state.setdefault("processed_reviews", {})[review_ctx["review_signature"]] = (
-                        utc_now_iso()
+                all_tasks.append(
+                    JibTask(
+                        task_type="review_request",
+                        context=review_ctx,
+                        signature_key="processed_reviews",
+                        signature_value=review_ctx["review_signature"],
                     )
-                    tasks_queued += 1
-                    save_state(state, update_last_run=True)  # Checkpoint after each jib
+                )
+
+    # Log task summary
+    if all_tasks:
+        task_types = {}
+        for task in all_tasks:
+            task_types[task.task_type] = task_types.get(task.task_type, 0) + 1
+        logger.info(
+            "Tasks collected",
+            total=len(all_tasks),
+            by_type=task_types,
+        )
+
+        # Execute all tasks in parallel
+        safe_state = ThreadSafeState(state)
+        tasks_completed = execute_tasks_parallel(all_tasks, safe_state)
+        state = safe_state.get_state()
+    else:
+        logger.info("No tasks to execute")
+        tasks_completed = 0
 
     # Update last run START timestamp and save state
     # We store when this run STARTED so next run checks for comments since then
@@ -1095,7 +1250,8 @@ def main():
     # Summary statistics for completed run
     logger.info(
         "GitHub Watcher completed",
-        tasks_triggered=tasks_queued,
+        tasks_completed=tasks_completed,
+        tasks_collected=len(all_tasks),
         repositories_scanned=len(repos),
         next_check_since=current_run_start,
         processed_failures_count=len(state.get("processed_failures", {})),
