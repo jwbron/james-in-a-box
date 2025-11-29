@@ -25,9 +25,10 @@ Usage:
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta
+from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from schemas import SessionMetadata, TraceEvent, TraceIndex
 
@@ -167,7 +168,7 @@ class TraceReader:
                     try:
                         data = json.loads(line)
                         yield TraceEvent.from_dict(data)
-                    except (json.JSONDecodeError, KeyError) as e:
+                    except (json.JSONDecodeError, KeyError):
                         # Skip malformed lines
                         continue
 

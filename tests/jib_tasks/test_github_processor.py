@@ -338,14 +338,26 @@ class TestHandlers:
             "failed_checks": [{"name": "test", "state": "FAILURE"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Mock run_claude to return success
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.stdout = "Fixed!"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+
+        with (
+            patch.object(github_processor, "run_claude", return_value=mock_result) as mock_claude,
+            patch.object(
+                github_processor.pr_context_manager,
+                "get_or_create_context",
+                return_value="beads-test",
+            ),
+            patch.object(github_processor.pr_context_manager, "update_context", return_value=True),
+        ):
             github_processor.handle_check_failure(context)
 
             # Should invoke claude
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            mock_claude.assert_called_once()
 
     def test_handle_comment_invokes_claude(self, temp_dir):
         """Test comment handler invokes Claude."""
@@ -357,13 +369,25 @@ class TestHandlers:
             "comments": [{"author": "user", "body": "Please fix", "type": "comment"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Mock run_claude to return success
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.stdout = "Responded!"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+
+        with (
+            patch.object(github_processor, "run_claude", return_value=mock_result) as mock_claude,
+            patch.object(
+                github_processor.pr_context_manager,
+                "get_or_create_context",
+                return_value="beads-test",
+            ),
+            patch.object(github_processor.pr_context_manager, "update_context", return_value=True),
+        ):
             github_processor.handle_comment(context)
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            mock_claude.assert_called_once()
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
         """Test review handler invokes Claude."""
@@ -381,13 +405,25 @@ class TestHandlers:
             "diff": "diff content",
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Mock run_claude to return success
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.stdout = "Review complete!"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+
+        with (
+            patch.object(github_processor, "run_claude", return_value=mock_result) as mock_claude,
+            patch.object(
+                github_processor.pr_context_manager,
+                "get_or_create_context",
+                return_value="beads-test",
+            ),
+            patch.object(github_processor.pr_context_manager, "update_context", return_value=True),
+        ):
             github_processor.handle_review_request(context)
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            mock_claude.assert_called_once()
 
 
 class TestMain:
