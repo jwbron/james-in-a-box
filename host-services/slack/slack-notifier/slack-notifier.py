@@ -11,13 +11,17 @@ Threading support:
 """
 
 import json
-import logging
 import os
 import re
 import signal
 import sys
 import time
 from pathlib import Path
+
+
+# Add shared directory to path for jib_logging module
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from jib_logging import get_logger
 
 
 # Check for required dependencies
@@ -53,8 +57,8 @@ class SlackNotifier:
         self.config_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.config_dir, 0o700)
 
-        # Set up logging
-        self._setup_logging()
+        # Initialize jib_logging logger
+        self.logger = get_logger("slack-notifier")
 
         # Load configuration
         self.config = self._load_config()
@@ -87,29 +91,6 @@ class SlackNotifier:
         # Set up signal handlers
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
-
-    def _setup_logging(self):
-        """Configure logging to file and console."""
-        self.logger = logging.getLogger("jib-notifier")
-        self.logger.setLevel(logging.INFO)
-
-        # File handler
-        fh = logging.FileHandler(self.log_file)
-        fh.setLevel(logging.INFO)
-
-        # Console handler
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-
-        # Formatter
-        formatter = logging.Formatter(
-            "[%(asctime)s] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-
-        self.logger.addHandler(fh)
-        self.logger.addHandler(ch)
 
     def _load_config(self) -> dict:
         """Load configuration from ~/.config/jib/.
@@ -174,17 +155,36 @@ class SlackNotifier:
         with open(self.config_file, "w") as f:
             json.dump(config, f, indent=2)
         os.chmod(self.config_file, 0o600)
-        self.logger.info(f"Configuration saved to {self.config_file}")
+        self.logger.info("Configuration saved", config_file=str(self.config_file))
 
     def _load_threads(self) -> dict:
         """Load thread state mapping task IDs to Slack thread_ts."""
         if self.threads_file.exists():
             try:
                 with open(self.threads_file) as f:
-                    return json.load(f)
-            except Exception as e:
-                self.logger.error(f"Failed to load threads file: {e}")
+                    threads = json.load(f)
+                    self.logger.debug(
+                        "Loaded thread mappings",
+                        threads_file=str(self.threads_file),
+                        thread_count=len(threads),
+                    )
+                    return threads
+            except json.JSONDecodeError as e:
+                self.logger.error(
+                    "Failed to parse threads file (JSON decode error)",
+                    threads_file=str(self.threads_file),
+                    error=str(e),
+                )
                 return {}
+            except Exception as e:
+                self.logger.error(
+                    "Failed to load threads file",
+                    threads_file=str(self.threads_file),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                return {}
+        self.logger.debug("No existing threads file found", threads_file=str(self.threads_file))
         return {}
 
     def _save_threads(self):
@@ -194,12 +194,22 @@ class SlackNotifier:
             with open(self.threads_file, "w") as f:
                 json.dump(self.threads, f, indent=2)
             os.chmod(self.threads_file, 0o600)
+            self.logger.debug(
+                "Saved thread mappings",
+                threads_file=str(self.threads_file),
+                thread_count=len(self.threads),
+            )
         except Exception as e:
-            self.logger.error(f"Failed to save threads file: {e}")
+            self.logger.error(
+                "Failed to save threads file",
+                threads_file=str(self.threads_file),
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
-        self.logger.info(f"Received signal {signum}, shutting down...")
+        self.logger.info("Received shutdown signal", signal=signum)
         self.running = False
 
     def _should_ignore(self, path: str) -> bool:
@@ -366,11 +376,16 @@ class SlackNotifier:
                     raw_content = f.read().strip()
 
                 if not raw_content:
-                    self.logger.warning(f"Empty file: {path}")
+                    self.logger.warning("Empty notification file", file=path.name)
                     continue
 
             except Exception as e:
-                self.logger.error(f"Failed to read {path}: {e}")
+                self.logger.error(
+                    "Failed to read notification file",
+                    file=path.name,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
                 continue
 
             # Parse frontmatter for thread context
@@ -393,15 +408,35 @@ class SlackNotifier:
             thread_ts = frontmatter_thread_ts or self.threads.get(task_id)
 
             if frontmatter_thread_ts:
-                self.logger.info(f"Using thread_ts from frontmatter: {frontmatter_thread_ts}")
+                self.logger.info(
+                    "Using thread_ts from frontmatter",
+                    task_id=task_id,
+                    thread_ts=frontmatter_thread_ts,
+                    file=path.name,
+                )
             elif thread_ts:
-                self.logger.info(f"Found thread mapping: {task_id} → {thread_ts}")
+                self.logger.info(
+                    "Found thread mapping",
+                    task_id=task_id,
+                    thread_ts=thread_ts,
+                    file=path.name,
+                )
             else:
-                self.logger.info(f"No thread context found for: {task_id} (will create new thread)")
+                self.logger.info(
+                    "No thread context found, creating new thread",
+                    task_id=task_id,
+                    file=path.name,
+                )
 
             # Split content into chunks if too long
             chunks = self._chunk_message(content)
-            self.logger.info(f"Sending {len(chunks)} chunk(s) for {path.name}")
+            self.logger.info(
+                "Sending notification",
+                file=path.name,
+                task_id=task_id,
+                chunk_count=len(chunks),
+                content_length=len(content),
+            )
 
             # Send each chunk
             first_chunk = True
@@ -414,7 +449,11 @@ class SlackNotifier:
                 if thread_ts:
                     payload["thread_ts"] = thread_ts
                     if first_chunk:
-                        self.logger.info(f"Replying in thread {thread_ts} for task {task_id}")
+                        self.logger.debug(
+                            "Replying in existing thread",
+                            task_id=task_id,
+                            thread_ts=thread_ts,
+                        )
 
                 # Send to Slack
                 try:
@@ -432,7 +471,12 @@ class SlackNotifier:
 
                     if result.get("ok"):
                         if first_chunk:
-                            self.logger.info(f"Sent notification: {path.name}")
+                            self.logger.info(
+                                "Notification sent successfully",
+                                file=path.name,
+                                task_id=task_id,
+                                thread_ts=result.get("ts"),
+                            )
                             success_count += 1
 
                             # Store thread_ts for future replies if this is a new thread
@@ -441,11 +485,16 @@ class SlackNotifier:
                                 self.threads[task_id] = result["ts"]
                                 self._save_threads()
                                 self.logger.info(
-                                    f"Created new thread for task {task_id}: {result['ts']}"
+                                    "Created new thread mapping",
+                                    task_id=task_id,
+                                    thread_ts=result["ts"],
                                 )
                         else:
-                            self.logger.info(
-                                f"Sent chunk {chunk_idx + 1}/{len(chunks)} for {path.name}"
+                            self.logger.debug(
+                                "Sent message chunk",
+                                file=path.name,
+                                chunk=chunk_idx + 1,
+                                total_chunks=len(chunks),
                             )
 
                         first_chunk = False
@@ -457,15 +506,31 @@ class SlackNotifier:
                     else:
                         error = result.get("error", "unknown error")
                         self.logger.error(
-                            f"Failed to send {path.name} chunk {chunk_idx + 1}: {error}"
+                            "Failed to send notification to Slack",
+                            file=path.name,
+                            task_id=task_id,
+                            chunk=chunk_idx + 1,
+                            total_chunks=len(chunks),
+                            error=error,
                         )
                         break  # Don't send remaining chunks if one fails
 
                 except Exception as e:
-                    self.logger.error(f"Exception sending {path.name} chunk {chunk_idx + 1}: {e}")
+                    self.logger.error(
+                        "Exception sending notification",
+                        file=path.name,
+                        task_id=task_id,
+                        chunk=chunk_idx + 1,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
                     break  # Don't send remaining chunks if one fails
 
-        self.logger.info(f"Sent {success_count}/{len(changes)} notifications")
+        self.logger.info(
+            "Batch send completed",
+            success_count=success_count,
+            total_count=len(changes),
+        )
         return success_count > 0
 
     def _process_batch(self):
@@ -474,7 +539,7 @@ class SlackNotifier:
             return
 
         changes = sorted(self.pending_changes)
-        self.logger.info(f"Processing batch of {len(changes)} change(s)")
+        self.logger.info("Processing notification batch", change_count=len(changes))
 
         self._send_slack_message(changes)
 
@@ -487,16 +552,18 @@ class SlackNotifier:
         # Validate watch directories exist
         for watch_dir in self.watch_dirs:
             if not watch_dir.exists():
-                self.logger.warning(f"Watch directory does not exist: {watch_dir}")
+                self.logger.warning("Watch directory does not exist", watch_dir=str(watch_dir))
                 watch_dir.mkdir(parents=True, exist_ok=True)
-                self.logger.info(f"Created watch directory: {watch_dir}")
+                self.logger.info("Created watch directory", watch_dir=str(watch_dir))
 
-        self.logger.info(f"Starting Slack notifier (PID: {os.getpid()})")
-        self.logger.info(f"Watching {len(self.watch_dirs)} directories:")
-        for watch_dir in self.watch_dirs:
-            self.logger.info(f"  - {watch_dir}")
-        self.logger.info(f"Batch window: {self.batch_window} seconds")
-        self.logger.info(f"Slack channel: {self.slack_channel}")
+        self.logger.info(
+            "Starting Slack notifier",
+            pid=os.getpid(),
+            watch_dir_count=len(self.watch_dirs),
+            watch_dirs=[str(d) for d in self.watch_dirs],
+            batch_window_seconds=self.batch_window,
+            slack_channel=self.slack_channel,
+        )
 
         # Create inotify watcher
         i = inotify.adapters.Inotify()
@@ -509,7 +576,7 @@ class SlackNotifier:
                     str(watch_dir), mask=inotify.constants.IN_CREATE | inotify.constants.IN_MOVED_TO
                 )
                 watches_added += 1
-                self.logger.info(f"Added watch for: {watch_dir}")
+                self.logger.debug("Added inotify watch", watch_dir=str(watch_dir))
                 # Also watch subdirectories
                 for root, dirs, _files in os.walk(watch_dir):
                     for d in dirs:
@@ -522,17 +589,26 @@ class SlackNotifier:
                                     | inotify.constants.IN_MOVED_TO,
                                 )
                             except Exception as e:
-                                self.logger.debug(f"Could not watch {subdir}: {e}")
+                                self.logger.debug(
+                                    "Could not watch subdirectory",
+                                    subdir=subdir,
+                                    error=str(e),
+                                )
             except Exception as e:
-                self.logger.error(f"Failed to watch {watch_dir}: {e}")
+                self.logger.error(
+                    "Failed to watch directory",
+                    watch_dir=str(watch_dir),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
-        self.logger.info(f"Total watches added: {watches_added}")
+        self.logger.info("Inotify watches initialized", watches_added=watches_added)
         if watches_added == 0:
             self.logger.error("No watches were added - cannot monitor for changes")
             return
 
         # Main event loop
-        self.logger.info("Starting main event loop...")
+        self.logger.info("Starting main event loop")
         event_count = 0
         try:
             while self.running:
@@ -542,7 +618,7 @@ class SlackNotifier:
 
                     event_count += 1
                     if event_count % 100 == 0:
-                        self.logger.debug(f"Processed {event_count} events...")
+                        self.logger.debug("Event loop progress", events_processed=event_count)
 
                     if not self.running:
                         self.logger.info("Received shutdown signal, exiting loop")
@@ -562,7 +638,12 @@ class SlackNotifier:
 
                     # Add to pending changes
                     self.pending_changes.add(full_path)
-                    self.logger.debug(f"Change detected: {full_path} ({', '.join(type_names)})")
+                    self.logger.debug(
+                        "File change detected",
+                        file=filename,
+                        path=path,
+                        event_types=type_names,
+                    )
 
                     # Check if batch window has elapsed
                     if time.time() - self.last_batch_time >= self.batch_window:
@@ -575,9 +656,17 @@ class SlackNotifier:
         except KeyboardInterrupt:
             self.logger.info("Interrupted by user")
         except Exception as e:
-            self.logger.error(f"Error in main loop: {e}", exc_info=True)
+            self.logger.error(
+                "Error in main event loop",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
         finally:
-            self.logger.info(f"Event loop exited after {event_count} events")
+            self.logger.info(
+                "Event loop exited",
+                events_processed=event_count,
+                pending_changes=len(self.pending_changes),
+            )
             # Process any remaining changes
             if self.pending_changes:
                 self._process_batch()
@@ -588,16 +677,20 @@ class SlackNotifier:
 def main():
     """Main entry point."""
     config_dir = Path.home() / ".config" / "jib-notifier"
+    logger = get_logger("slack-notifier")
 
     try:
         notifier = SlackNotifier(config_dir)
         notifier.watch()
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        logger.info("Shutting down (keyboard interrupt)")
         sys.exit(0)
     except Exception as e:
-        print(f"Fatal error: {e}", file=sys.stderr)
-        logging.exception("Fatal error")
+        logger.error(
+            "Fatal error starting slack-notifier",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         sys.exit(1)
 
 
