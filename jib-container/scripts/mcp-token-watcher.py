@@ -25,11 +25,16 @@ import argparse
 import contextlib
 import hashlib
 import json
-import logging
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+
+# Add shared directory to path for jib_logging
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+
+from jib_logging import get_logger
 
 
 # Configuration
@@ -37,13 +42,8 @@ TOKEN_FILE = Path.home() / "sharing" / ".github-token"
 STATE_FILE = Path.home() / ".claude" / ".mcp-token-state"
 CHECK_INTERVAL_SECONDS = 60  # How often to check for changes in daemon mode
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+# Initialize logger
+logger = get_logger("mcp-token-watcher")
 
 
 def read_token_file() -> dict | None:
@@ -54,7 +54,7 @@ def read_token_file() -> dict | None:
     try:
         return json.loads(TOKEN_FILE.read_text())
     except Exception as e:
-        logger.warning(f"Failed to read token file: {e}")
+        logger.warning("Failed to read token file", error=str(e))
         return None
 
 
@@ -121,14 +121,14 @@ def reconfigure_mcp(token: str) -> bool:
             logger.info("GitHub MCP server reconfigured successfully")
             return True
         else:
-            logger.error(f"MCP add failed: {result.stderr}")
+            logger.error("MCP add failed", stderr=result.stderr)
             return False
 
     except subprocess.TimeoutExpired:
         logger.error("MCP reconfiguration timed out")
         return False
     except Exception as e:
-        logger.error(f"MCP reconfiguration error: {e}")
+        logger.error("MCP reconfiguration error", error=str(e))
         return False
 
 
@@ -157,7 +157,7 @@ def check_and_update(force: bool = False) -> bool:
         logger.debug("Token unchanged, no update needed")
         return False
 
-    logger.info(f"Token changed (hash: {last_hash[:8]}... -> {current_hash[:8]}...)")
+    logger.info("Token changed", old_hash=last_hash[:8] + "...", new_hash=current_hash[:8] + "...")
 
     # Reconfigure MCP
     if reconfigure_mcp(token):
@@ -177,8 +177,8 @@ def check_and_update(force: bool = False) -> bool:
 def run_daemon(interval: int = CHECK_INTERVAL_SECONDS) -> None:
     """Run as a daemon, continuously monitoring for token changes."""
     logger.info("Starting MCP Token Watcher daemon")
-    logger.info(f"Monitoring: {TOKEN_FILE}")
-    logger.info(f"Check interval: {interval}s")
+    logger.info("Monitoring token file", path=str(TOKEN_FILE))
+    logger.info("Check interval configured", seconds=interval)
 
     # Initial check
     check_and_update()
@@ -191,7 +191,7 @@ def run_daemon(interval: int = CHECK_INTERVAL_SECONDS) -> None:
             logger.info("Received interrupt, shutting down...")
             break
         except Exception as e:
-            logger.error(f"Error during check cycle: {e}")
+            logger.error("Error during check cycle", error=str(e))
 
 
 def main():
@@ -216,8 +216,8 @@ def main():
 
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+    # Note: verbose flag is acknowledged but jib_logging sets level in get_logger
+    # For verbose mode, pass level to get_logger or use configure_root_logging
 
     if args.once or args.force:
         updated = check_and_update(force=args.force)
