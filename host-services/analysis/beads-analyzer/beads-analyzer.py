@@ -12,8 +12,8 @@ Metrics tracked:
 4. Integration Coverage - What percentage of work is tracked?
 5. Abandonment Patterns - How many tasks are left hanging?
 
-Reports: Committed to docs/analysis/beads/ in the repo for version control and
-         analyzer accessibility. Also sends Slack notifications for high-severity issues.
+Reports: Creates PRs with reports committed to docs/analysis/beads/ in the repo.
+         Keeps only the last 5 reports (deletes older ones when creating PR #6).
 
 Runs on host (not in container) via systemd timer:
 - Weekly (checks if last run was within 7 days)
@@ -831,69 +831,163 @@ Period: Last {self.days} days
         print(f"  Metrics: {metrics_file}")
         print(f"  Latest: {latest_report}")
 
-        # Send notification if there are high-severity issues
-        high_issues = [i for i in issues if i.severity == "high"]
-        if high_issues or metrics.tasks_abandoned > 0:
-            self._send_notification(metrics, issues, report_file, report)
+        # Create PR with reports
+        self._create_pr_with_reports(metrics, issues, report_file, timestamp)
 
         return report
 
-    def _send_notification(
+    def _cleanup_old_reports(self, max_reports: int = 5) -> list[Path]:
+        """Keep only the last N reports, return files to be deleted."""
+        # Find all report files (both .md and .json)
+        report_files = sorted(
+            self.analysis_dir.glob("beads-health-*.md"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        metrics_files = sorted(
+            self.analysis_dir.glob("beads-metrics-*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+
+        to_delete = []
+
+        # Keep only the last max_reports
+        if len(report_files) > max_reports:
+            to_delete.extend(report_files[max_reports:])
+        if len(metrics_files) > max_reports:
+            to_delete.extend(metrics_files[max_reports:])
+
+        return to_delete
+
+    def _create_pr_with_reports(
         self,
         metrics: BeadsMetrics,
         issues: list[BeadsIssue],
         report_file: Path,
-        full_report: str,
+        timestamp: str,
     ):
-        """Send notification about analysis results."""
-        notification_dir = Path.home() / "sharing" / "notifications"
-        notification_dir.mkdir(parents=True, exist_ok=True)
+        """Create a PR with the health reports."""
+        print("\nPreparing to create PR with health reports...")
 
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        task_id = f"{timestamp}-beads-analysis"
+        # Cleanup old reports (keep only last 5)
+        to_delete = self._cleanup_old_reports(max_reports=5)
 
-        # Determine priority
-        high_count = len([i for i in issues if i.severity == "high"])
-        if high_count >= 2 or metrics.tasks_abandoned >= 3:
-            priority = "HIGH"
-        elif high_count >= 1 or metrics.tasks_abandoned >= 1:
-            priority = "MEDIUM"
-        else:
-            priority = "LOW"
+        # Determine branch name
+        branch_name = f"beads-health-report-{timestamp}"
 
-        health_score = self._calculate_health_score(metrics, issues)
+        try:
+            # Create new branch
+            subprocess.run(
+                ["git", "checkout", "-b", branch_name, "origin/main"],
+                check=True,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            print(f"✓ Created branch: {branch_name}")
 
-        summary_file = notification_dir / f"{task_id}.md"
-        summary = f"""# 📊 Beads Integration Health Report
+            # Delete old reports if any
+            if to_delete:
+                for file_path in to_delete:
+                    subprocess.run(
+                        ["git", "rm", str(file_path)],
+                        check=True,
+                        cwd=REPO_ROOT,
+                        capture_output=True,
+                        text=True,
+                    )
+                print(f"✓ Removed {len(to_delete)} old report(s)")
 
-**Priority**: {priority}
+            # Stage the new report files
+            subprocess.run(
+                ["git", "add", str(self.analysis_dir)],
+                check=True,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+
+            # Commit
+            health_score = self._calculate_health_score(metrics, issues)
+            commit_message = f"""chore: Add Beads health report {timestamp}
+
+Health Score: {health_score}/100
+- Total Tasks: {metrics.total_tasks}
+- Closed: {metrics.tasks_closed}
+- Abandoned: {metrics.tasks_abandoned}
+
+High-severity issues: {len([i for i in issues if i.severity == "high"])}
+"""
+            subprocess.run(
+                ["git", "commit", "-m", commit_message],
+                check=True,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            print(f"✓ Committed changes")
+
+            # Push branch
+            subprocess.run(
+                ["git", "push", "origin", branch_name],
+                check=True,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            print(f"✓ Pushed to origin/{branch_name}")
+
+            # Create PR using gh CLI
+            pr_title = f"Beads Health Report - {timestamp}"
+            pr_body = f"""## Beads Integration Health Report
+
 **Health Score**: {health_score}/100 {self._get_health_emoji(health_score)}
 
-**Quick Stats:**
+### Quick Stats
 - 📝 Total Tasks: {metrics.total_tasks}
 - ✅ Closed: {metrics.tasks_closed}
 - ⏳ In Progress: {metrics.tasks_in_progress}
 - ⚠️ Abandoned: {metrics.tasks_abandoned}
 
-**Issues Found:**
+### Issues Summary
 - 🔴 High: {len([i for i in issues if i.severity == "high"])}
 - 🟡 Medium: {len([i for i in issues if i.severity == "medium"])}
 - 🟢 Low: {len([i for i in issues if i.severity == "low"])}
 
-📄 Full report in thread below
+### Files in this PR
+- `docs/analysis/beads/beads-health-{timestamp}.md` - Full health report
+- `docs/analysis/beads/beads-metrics-{timestamp}.json` - Machine-readable metrics
+- Symlinks updated to point to latest reports
+
+{f"### Cleanup\n- Removed {len(to_delete)} old report(s) to maintain max 5 reports" if to_delete else ""}
+
+See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for detailed analysis.
 """
 
-        with open(summary_file, "w") as f:
-            f.write(summary)
+            result = subprocess.run(
+                ["gh", "pr", "create", "--title", pr_title, "--body", pr_body, "--base", "main", "--head", branch_name],
+                check=True,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            pr_url = result.stdout.strip()
+            print(f"✓ Created PR: {pr_url}")
 
-        print(f"  Summary notification: {summary_file}")
-
-        # Create detailed report (thread reply)
-        detail_file = notification_dir / f"RESPONSE-{task_id}.md"
-        with open(detail_file, "w") as f:
-            f.write(full_report)
-
-        print(f"  Detailed report (thread): {detail_file}")
+        except subprocess.CalledProcessError as e:
+            print(f"ERROR creating PR: {e}", file=sys.stderr)
+            print(f"  stdout: {e.stdout}", file=sys.stderr)
+            print(f"  stderr: {e.stderr}", file=sys.stderr)
+            # Try to return to main branch
+            try:
+                subprocess.run(
+                    ["git", "checkout", "main"],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                )
+            except:
+                pass
 
 
 def check_last_run(analysis_dir: Path) -> datetime | None:

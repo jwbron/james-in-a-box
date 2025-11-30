@@ -33,17 +33,21 @@ The analyzer produces a health score (0-100) based on:
 
 ## Reports
 
-Reports are **committed to version control** at `docs/analysis/beads/` in the repository:
+Reports are submitted via **Pull Requests** with files at `docs/analysis/beads/` in the repository:
 - `beads-health-YYYYMMDD-HHMMSS.md` - Full markdown report
 - `beads-metrics-YYYYMMDD-HHMMSS.json` - Machine-readable metrics
 - `latest-report.md` / `latest-metrics.json` - Symlinks to most recent
 
-**Why version control?** Committing reports to the repo provides:
-- Historical tracking of task tracking quality over time
-- Accessible context for all analyzers and LLM agents
-- Transparency into how well beads is being used for persistent memory
+**Report Management:**
+- Each analysis creates a new PR with the latest health report
+- Only the last **5 reports** are kept in the repository
+- When creating the 6th report, the oldest report is automatically deleted in the same PR
+- This keeps the repository clean while maintaining recent history
 
-High-severity issues also trigger Slack notifications for immediate attention.
+**Why PRs?** Opening PRs for reports provides:
+- Review-friendly format for stakeholders to review health trends
+- Clear changelog of beads integration quality over time
+- Automated merge via human review when ready
 
 ## Usage
 

@@ -4,8 +4,9 @@ This directory contains automated health analysis reports for the Beads task tra
 
 ## Purpose
 
-Reports are committed to version control to provide:
-- Historical tracking of task tracking quality over time
+Reports are submitted via Pull Requests to provide:
+- Review-friendly format for stakeholders to review health trends
+- Historical tracking of task tracking quality over time (last 5 reports)
 - Accessible context for all analyzers and LLM agents
 - Transparency into how well beads is being used for persistent memory
 
@@ -23,7 +24,7 @@ Reports are generated weekly via systemd timer on the host:
 beads-analyzer.py --force  # Force run
 ```
 
-High-severity issues also trigger Slack notifications.
+Each run creates a new PR with the health report. Only the last **5 reports** are kept - when the 6th report is generated, the oldest is automatically removed in the same PR.
 
 ## Metrics Tracked
 
