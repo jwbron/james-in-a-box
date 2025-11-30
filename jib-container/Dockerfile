@@ -804,6 +804,18 @@ if [ $# -eq 0 ]; then
         echo ""
     fi
 
+    # Start MCP token watcher daemon if GitHub token is available
+    # This monitors ~/sharing/.github-token and reconfigures MCP when token refreshes
+    # Tokens expire after 1 hour, so this ensures MCP stays authenticated
+    if [ -f "${USER_HOME}/sharing/.github-token" ]; then
+        MCP_WATCHER="${USER_HOME}/khan/james-in-a-box/jib-container/scripts/mcp-token-watcher.py"
+        if [ -f "$MCP_WATCHER" ]; then
+            # Start watcher in background (--interval 60 checks every minute)
+            gosu "${RUNTIME_UID}:${RUNTIME_GID}" python3 "$MCP_WATCHER" --interval 60 > /dev/null 2>&1 &
+            log_success "MCP token watcher started (monitors token refresh)"
+        fi
+    fi
+
     # Start in khan directory
     cd "${USER_HOME}/khan" 2>/dev/null || cd "${USER_HOME}"
     # Auto-start Claude Code (bypasses permissions since we're in a sandbox)
