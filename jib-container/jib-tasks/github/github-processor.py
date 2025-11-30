@@ -387,7 +387,10 @@ def build_comment_prompt(context: dict, beads_id: str | None = None) -> str:
     if beads_id:
         beads_context = pr_context_manager.get_context_summary(repo, pr_num)
 
-    repo_name = repo.split("/")[-1]
+    # Extract owner and repo name for use in f-strings
+    repo_parts = repo.split("/")
+    owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
+    repo_name = repo_parts[-1]
 
     prompt = f"""# PR Comment Response
 
@@ -452,7 +455,7 @@ Review the comments above and respond appropriately:
 If a comment contains a GitHub suggestion (```suggestion blocks), you can commit it directly using the GitHub MCP:
 
 ```python
-# Use MCP: mcp__github__get_pull_request(owner="{repo.split('/')[0]}", repo="{repo.split('/')[1]}", pullNumber={pr_num}, method="get_review_comments")
+# Use MCP: mcp__github__pull_request_read(owner="{owner}", repo="{repo_name}", pullNumber={pr_num}, method="get_review_comments")
 # This will show you all review comments including suggestions
 ```
 
@@ -655,6 +658,11 @@ def build_review_prompt(context: dict, beads_id: str | None = None) -> str:
     files = context.get("files", [])
     diff = context.get("diff", "")
 
+    # Extract owner and repo name for use in f-strings
+    repo_parts = repo.split("/")
+    owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
+    repo_name = repo_parts[-1]
+
     prompt = f"""# PR Code Review
 
 ## PR Information
@@ -686,7 +694,7 @@ Review this PR and provide constructive feedback using **inline comments with su
 
 Use the GitHub MCP tool to create a pending review:
 ```python
-# Use MCP: pull_request_review_write(method="create", owner="{repo.split('/')[0]}", repo="{repo.split('/')[1]}", pullNumber={pr_num})
+# Use MCP: mcp__github__pull_request_review_write(method="create", owner="{owner}", repo="{repo_name}", pullNumber={pr_num})
 ```
 
 ### Step 2: Add Inline Comments with Suggested Fixes
@@ -694,9 +702,9 @@ Use the GitHub MCP tool to create a pending review:
 For each issue you find, add inline comments using the GitHub MCP tool:
 
 ```python
-# Use MCP: add_comment_to_pending_review(
-#     owner="{repo.split('/')[0]}",
-#     repo="{repo.split('/')[1]}",
+# Use MCP: mcp__github__add_comment_to_pending_review(
+#     owner="{owner}",
+#     repo="{repo_name}",
 #     pullNumber={pr_num},
 #     path="path/to/file.py",
 #     body="Comment with suggested fix",
@@ -731,10 +739,10 @@ The `suggestion` code fence will render as a suggested change that can be commit
 
 After adding all inline comments, submit the review:
 ```python
-# Use MCP: pull_request_review_write(
+# Use MCP: mcp__github__pull_request_review_write(
 #     method="submit_pending",
-#     owner="{repo.split('/')[0]}",
-#     repo="{repo.split('/')[1]}",
+#     owner="{owner}",
+#     repo="{repo_name}",
 #     pullNumber={pr_num},
 #     body="Overall review summary here. — Reviewed by jib",
 #     event="COMMENT"  # or "APPROVE" or "REQUEST_CHANGES"
