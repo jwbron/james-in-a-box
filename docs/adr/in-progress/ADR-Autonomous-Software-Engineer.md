@@ -208,19 +208,19 @@ This ADR establishes the architecture, security model, and operational patterns 
 
 **Rationale:** Start on laptop to validate quickly, evolve to cloud-native infrastructure for production scale and multi-engineer support.
 
-**7. Agent Demeanor and Cultural Alignment: your organization Engineering Standards**
+**7. Agent Demeanor and Cultural Alignment: Engineering Standards**
 - **Current approach:** Agent behavior defined by `jib-container/.claude/rules/` configuration files
 - **Core principle:** Agent should embody engineering best practices and expectations
 - **Implementation:**
-  - Load your organization engineering guidelines from Confluence docs
+  - Load engineering guidelines from organizational documentation (e.g., Confluence)
   - Software Engineer level expectations (L3, L4, L5 criteria)
   - Code quality standards and best practices
   - Communication style (clarity, precision, collaboration)
   - Problem-solving approach (systematic, data-driven, user-focused)
 - **Continuous refinement:** Conversation analyzer evaluates tone, collaboration quality, technical communication
-- **Configuration location:** `jib-container/.claude/rules/engineering-culture.md` references Confluence guidelines
+- **Configuration location:** `jib-container/.claude/rules/engineering-culture.md` references organizational guidelines
 
-**Rationale:** Agent effectiveness depends on cultural fit, not just technical capability. your organization has specific expectations for engineers (thoroughness, clarity, user empathy, collaborative problem-solving). Agent should demonstrate these values in all interactions. Using Confluence-documented standards ensures alignment with actual organizational expectations.
+**Rationale:** Agent effectiveness depends on cultural fit, not just technical capability. Organizations have specific expectations for engineers (thoroughness, clarity, user empathy, collaborative problem-solving). Agent should demonstrate these values in all interactions. Using documented standards ensures alignment with actual organizational expectations.
 
 **Example Integration:**
 ```markdown
@@ -1117,7 +1117,7 @@ If agent drifts from your organization engineering culture, analyzer recommends:
 - [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) - Complete Terraform infrastructure
 
 **Infrastructure:**
-- [ ] **Cloud Run deployment** via Terraform (Pattern A from ADR #889)
+- [ ] **Cloud Run deployment** via Terraform
 - [ ] Cloud Run services: jib-bot, slack-worker, slack-receiver
 - [ ] Cloud Run jobs: jib-task, jib-sync, jib-analyze
 - [ ] Cloud Storage for context sync and artifacts
@@ -1469,7 +1469,7 @@ Benefits:
 > **Detailed specification:** See [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) for complete architecture.
 
 ```
-Deploy james-in-a-box to Cloud Run using Terraform (Pattern A from ADR #889):
+Deploy james-in-a-box to Cloud Run using Terraform:
 
 Cloud Run Services:
 - jib-bot: Slack slash command handler, job orchestration
@@ -1491,7 +1491,7 @@ Supporting Infrastructure:
 
 Security:
 - Workload Identity Federation (keyless auth)
-- Dual service accounts (RW main, RO PRs per ADR #889)
+- Dual service accounts (RW for main operations, RO for PR reviews)
 - User allowlist in Firestore
 - Per-command rate limiting
 
@@ -1762,7 +1762,7 @@ This ADR is the foundational document for jib. The following companion ADRs prov
 | [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: MCP for Jira/GitHub, keep custom sync for Confluence |
 | [ADR-Slack-Integration-Strategy-MCP-vs-Custom](../not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | MCP for reading Slack, Pub/Sub for sending messages |
 | [ADR-Slack-Bot-GCP-Integration](../not-implemented/ADR-Slack-Bot-GCP-Integration.md) | Full slash command interface replacing host-based commands |
-| [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) | Complete Terraform infrastructure following ADR #889 patterns |
+| [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) | Complete Terraform infrastructure for GCP deployment |
 
 **Architecture Evolution:**
 ```
@@ -1797,8 +1797,6 @@ Host Commands:                      Slack Slash Commands:
 - [Slack API Documentation](https://api.slack.com/)
 - [GitHub API Documentation](https://docs.github.com/en/rest)
 - [GitHub Mobile Review Workflow](https://github.com/mobile)
-- [ADR #889: Terraform CI/CD Standards](https://khanacademy.atlassian.net/wiki/pages/viewpage.action?pageId=4385800306)
-- [your organization scheduled-job module](https://github.com/YourOrg/terraform-modules/tree/main/terraform/modules/scheduled-job)
 
 ---
 

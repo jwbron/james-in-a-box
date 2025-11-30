@@ -24,8 +24,8 @@ Common Slack operations and commands.
 - Troubleshooting connection issues
 - Managing channels and tokens
 
-### [your organization Culture](engineering-culture.md)
-Engineering culture standards from the your organization Career Ladder.
+### [Engineering Culture](engineering-culture.md)
+Engineering culture standards and behavioral expectations.
 
 **Information about:**
 - L3-L4 (Senior Software Engineer) behavioral expectations

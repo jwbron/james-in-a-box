@@ -87,7 +87,7 @@ prune_stale_worktree_references() {
 
     # Prune worktree references in all workspace repos
     local repos_pruned=0
-    for repo in "$HOME/khan"/*; do
+    for repo in "$HOME/workspace"/*; do
         if [ ! -d "$repo/.git" ]; then
             continue
         fi
@@ -118,7 +118,7 @@ cleanup_orphaned_branches() {
     local total_branches_skipped=0
 
     # Iterate through all repos in ~/workspace/
-    for repo in "$HOME/khan"/*; do
+    for repo in "$HOME/workspace"/*; do
         if [ ! -d "$repo/.git" ]; then
             continue
         fi
