@@ -1,6 +1,6 @@
 [Unit]
-Description=JIB Conversation Analyzer
-Documentation=https://github.com/jwbron/james-in-a-box
+Description=JIB Conversation Analyzer - Analyze conversation patterns
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/conversation-analyzer/README.md
 After=network-online.target
 Wants=network-online.target
 OnFailure=service-failure-notify@%n.service
@@ -16,8 +16,12 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=conversation-analyzer
 
-# Restart behavior
+# Restart behavior (oneshot - no restart)
 Restart=no
+
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
 
 [Install]
 WantedBy=default.target

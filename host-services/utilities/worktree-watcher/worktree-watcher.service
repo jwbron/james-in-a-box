@@ -1,15 +1,18 @@
 [Unit]
 Description=JIB Worktree Watcher - Clean up orphaned git worktrees
 Documentation=file://%h/khan/james-in-a-box/host-services/utilities/worktree-watcher/README.md
-After=network.target
+# No network needed - local git worktree operations only
 
 [Service]
 Type=oneshot
 ExecStart=%h/khan/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
+
+# Logging
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=worktree-watcher
 
-# Security settings
+# Security (baseline)
 PrivateTmp=yes
 NoNewPrivileges=yes
 

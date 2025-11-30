@@ -1,10 +1,12 @@
 [Unit]
-Description=Run GitHub Watcher every 5 minutes
+Description=GitHub Watcher Timer - Monitor every 5 minutes
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/github-watcher/README.md
 
 [Timer]
 OnBootSec=1min
 OnUnitActiveSec=5min
 Persistent=true
+RandomizedDelaySec=30s
 
 [Install]
 WantedBy=timers.target
