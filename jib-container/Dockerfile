@@ -256,12 +256,16 @@ if [ -d "${USER_HOME}/sharing" ]; then
     mkdir -p "${USER_HOME}/sharing/notifications"
     mkdir -p "${USER_HOME}/sharing/context"
     mkdir -p "${USER_HOME}/sharing/tracking"
+    mkdir -p "${USER_HOME}/sharing/traces"
+    mkdir -p "${USER_HOME}/sharing/logs"
 
     chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing"
     log_success "Shared directories configured:"
     log_info "  ~/sharing/tmp/           (mounted from ~/.jib-sharing/tmp/)"
     log_info "  ~/sharing/notifications/ (mounted from ~/.jib-sharing/notifications/)"
     log_info "  ~/sharing/context/       (mounted from ~/.jib-sharing/context/)"
+    log_info "  ~/sharing/traces/        (LLM trace collection)"
+    log_info "  ~/sharing/logs/          (trace collector logs)"
     log_info "  Convenience symlink: ~/tmp → ~/sharing/tmp"
 else
     log_warn "Sharing directory not found - check mount configuration"
@@ -379,15 +383,31 @@ chmod 700 "${USER_HOME}/.claude"
 # Create settings.json with:
 # - Autonomous operation (no permission prompts)
 # - Normal editor mode (avoids vim mode stack overflow bug)
+# - Trace collector hooks for LLM analysis
 # Reference: https://github.com/anthropics/claude-code/issues/1992
-cat > "${USER_HOME}/.claude/settings.json" << 'SETTINGS'
+TRACE_COLLECTOR="${USER_HOME}/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py"
+cat > "${USER_HOME}/.claude/settings.json" << SETTINGS
 {
   "alwaysThinkingEnabled": true,
   "defaultPermissionMode": "bypassPermissions",
   "autoApproveEdits": true,
   "editorMode": "normal",
   "autoUpdate": false,
-  "outputStyle": "default"
+  "outputStyle": "default",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "python3 ${TRACE_COLLECTOR} post-tool-use"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "python3 ${TRACE_COLLECTOR} session-end"
+      }
+    ]
+  }
 }
 SETTINGS
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude/settings.json"
