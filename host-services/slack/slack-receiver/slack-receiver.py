@@ -616,10 +616,12 @@ class SlackReceiver:
         task_id: str,
         thread_ts: str | None,
         filepath: Path,
+        log_file: Path,
     ):
         """Monitor a container process in a background thread and notify on failure.
 
         This runs in a separate thread to avoid blocking the main event loop.
+        Streams stdout to log_file in real-time for visibility.
         If the process exits with a non-zero code, creates a failure notification.
 
         Args:
@@ -627,14 +629,55 @@ class SlackReceiver:
             task_id: Task ID for notifications
             thread_ts: Slack thread timestamp for threading
             filepath: Original message file path
+            log_file: Path to write real-time Claude output
         """
-        try:
-            # Wait for the process to complete (with timeout)
-            # Most tasks should complete within 45 minutes
-            timeout_seconds = 45 * 60
-            _, stderr = process.communicate(timeout=timeout_seconds)
+        stderr_lines = []
+        timeout_seconds = 45 * 60
 
-            stderr_str = stderr.decode("utf-8", errors="replace") if stderr else ""
+        try:
+            # Stream both stdout and stderr to log file in real-time
+            self.logger.info(
+                "Streaming container output",
+                log_file=str(log_file),
+                task_id=task_id,
+            )
+
+            with open(log_file, "w") as f:
+                f.write(f"=== Container output for {task_id} ===\n")
+                f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 50 + "\n\n")
+                f.flush()
+
+                # Thread to read stderr and stream to log file
+                def read_stderr():
+                    if process.stderr:
+                        for line in process.stderr:
+                            stderr_lines.append(line)
+                            # Stream stderr to log file too (prefixed for clarity)
+                            f.write(f"[stderr] {line}")
+                            f.flush()
+
+                stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+                stderr_thread.start()
+
+                if process.stdout:
+                    for line in process.stdout:
+                        # Write to log file immediately (real-time streaming)
+                        f.write(line)
+                        f.flush()
+
+                # Wait for process to complete
+                process.wait(timeout=timeout_seconds)
+
+                # Wait for stderr thread to finish
+                stderr_thread.join(timeout=5)
+
+                f.write("\n" + "=" * 50 + "\n")
+                f.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Exit code: {process.returncode}\n")
+                f.flush()
+
+            stderr_str = "".join(stderr_lines)
 
             if process.returncode != 0:
                 self.logger.error(
@@ -663,6 +706,7 @@ class SlackReceiver:
                 self.logger.info(
                     "Container process completed successfully",
                     file=filepath.name,
+                    log_file=str(log_file),
                 )
 
         except subprocess.TimeoutExpired:
@@ -672,12 +716,7 @@ class SlackReceiver:
                 timeout_minutes=timeout_seconds // 60,
             )
             process.kill()
-            # Try to get any output
-            try:
-                _, stderr = process.communicate(timeout=5)
-                stderr_str = stderr.decode("utf-8", errors="replace") if stderr else ""
-            except:
-                stderr_str = ""
+            stderr_str = "".join(stderr_lines)
 
             self._create_failure_notification(
                 task_id=task_id,
@@ -702,6 +741,10 @@ class SlackReceiver:
     def _trigger_processing(self, filepath: Path, task_id: str, thread_ts: str | None):
         """Trigger message processing in jib container via jib --exec.
 
+        Claude output is streamed to a log file at ~/.jib-sharing/logs/{task_id}.log
+        You can tail this file to see Claude's output in real-time:
+            tail -f ~/.jib-sharing/logs/{task_id}.log
+
         Args:
             filepath: Path to the message file
             task_id: Task ID for tracking and notifications
@@ -719,24 +762,40 @@ class SlackReceiver:
             # Container path to processor script (james-in-a-box mounted at ~/khan/james-in-a-box/)
             container_processor = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/jib-tasks/slack/incoming-processor.py"
 
-            self.logger.info("Triggering processing", file=filepath.name, task_id=task_id)
+            # Create log file for streaming Claude output
+            logs_dir = Path.home() / ".jib-sharing" / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_file = logs_dir / f"{task_id}.log"
 
-            # Execute in background but monitor the process
-            # We still use start_new_session=True to detach, but capture output
+            self.logger.info(
+                "Triggering processing",
+                file=filepath.name,
+                task_id=task_id,
+                log_file=str(log_file),
+            )
+
+            # Execute in background but stream output to log file
+            # Use text=True for string output instead of bytes
             process = subprocess.Popen(
                 [str(jib_script), "--exec", "python3", container_processor, container_message_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                text=True,  # Text mode for string output
                 start_new_session=True,  # Detach from parent
             )
 
-            self.logger.info("Processing triggered", file=filepath.name, pid=process.pid)
+            self.logger.info(
+                "Processing triggered - stream to log file",
+                file=filepath.name,
+                pid=process.pid,
+                log_file=str(log_file),
+            )
 
-            # Start a background thread to monitor the process
-            # This allows us to detect failures and send notifications
+            # Start a background thread to monitor the process and stream output
+            # This allows us to detect failures, send notifications, and stream Claude logs
             monitor_thread = threading.Thread(
                 target=self._monitor_container_process,
-                args=(process, task_id, thread_ts, filepath),
+                args=(process, task_id, thread_ts, filepath, log_file),
                 daemon=True,  # Don't block shutdown
             )
             monitor_thread.start()
@@ -912,18 +971,25 @@ class SlackReceiver:
         filepath = self._write_message(msg_type, parsed["content"], metadata)
 
         if filepath:
-            # Send acknowledgment
-            if msg_type == "response":
-                ack_msg = (
-                    f"✅ Response received and forwarded to Claude\n📁 Saved to: `{filepath.name}`"
-                )
-            else:
-                ack_msg = f"✅ Task received and queued for Claude\n📁 Saved to: `{filepath.name}`"
-
-            self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
-
             # Extract task_id from filename (e.g., "task-20251124-112705.md" -> "task-20251124-112705")
             task_id = filepath.stem
+
+            # Send acknowledgment with log file path for real-time monitoring
+            log_file_path = f"~/.jib-sharing/logs/{task_id}.log"
+            if msg_type == "response":
+                ack_msg = (
+                    f"✅ Response received and forwarded to Claude\n"
+                    f"📁 Saved to: `{filepath.name}`\n"
+                    f"📋 Stream logs: `tail -f {log_file_path}`"
+                )
+            else:
+                ack_msg = (
+                    f"✅ Task received and queued for Claude\n"
+                    f"📁 Saved to: `{filepath.name}`\n"
+                    f"📋 Stream logs: `tail -f {log_file_path}`"
+                )
+
+            self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
 
             # Trigger processing in jib container
             # Pass task_id and thread_ts for failure notification purposes

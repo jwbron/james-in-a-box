@@ -5,7 +5,7 @@
 **Contributors:** James Wiesebron, Claude (AI Pair Programming)
 **Informed:** Engineering teams
 **Proposed:** November 2025
-**Status:** Draft
+**Status:** In Progress
 
 ## Table of Contents
 
@@ -752,7 +752,60 @@ Week N+2 (Monday):
 
 ## Implementation Details
 
-### Phase 1: Trace Collection
+### Implementation Status Summary
+
+| Phase | Status | PR/Reference |
+|-------|--------|--------------|
+| Phase 1a: Beads Integration Analyzer | ✅ Implemented | [PR #211](https://github.com/jwbron/james-in-a-box/pull/211) |
+| Phase 1b: Trace Collection | 🔲 Not Started | - |
+| Phase 2: Inefficiency Detection | 🔲 Not Started | - |
+| Phase 3: Report Generation | 🔲 Not Started | - |
+| Phase 4: Self-Improvement Loop | 🔲 Not Started | - |
+
+### Phase 1a: Beads Integration Analyzer (IMPLEMENTED)
+
+**Status:** ✅ Implemented in [PR #211](https://github.com/jwbron/james-in-a-box/pull/211)
+
+The Beads Integration Analyzer provides a foundation for understanding how well the task tracking system supports LLM workflow efficiency. While not directly analyzing LLM traces, it measures task tracking health which directly impacts the LLM's ability to maintain context across sessions.
+
+**Implemented Components:**
+- [x] `host-services/analysis/beads-analyzer/beads-analyzer.py` - Main analyzer
+- [x] `host-services/analysis/beads-analyzer/README.md` - Documentation
+- [x] `host-services/analysis/beads-analyzer/setup.sh` - Installation script
+- [x] Systemd timer for weekly automated analysis
+- [x] Health score calculation (0-100)
+- [x] Issue detection across 8 severity-categorized issue types
+- [x] Slack notifications for high-severity issues
+
+**Metrics Tracked:**
+| Category | Metrics |
+|----------|---------|
+| Volume | total, created, closed, abandoned, in-progress, blocked |
+| Quality | notes coverage, label coverage, searchable titles |
+| Lifecycle | avg time to close, proper lifecycle rate |
+| Integration | source tracking by Slack/GitHub/JIRA |
+| Patterns | duplicates, orphans |
+
+**Issue Types Detected:**
+| Severity | Issue | Description |
+|----------|-------|-------------|
+| High | Task Abandonment | Tasks in_progress for >24h without updates |
+| High | Missing Context | <50% of tasks have notes |
+| Medium | Poor Discoverability | <70% of tasks have labels |
+| Medium | Unsearchable Titles | <60% of tasks have searchable titles |
+| Medium | Unknown Source | >30% of tasks have no source labels |
+| Low | Orphan Tasks | Tasks with no labels or description |
+| Low | Duplicate Tasks | Tasks with similar titles |
+| Low | Slow Closure | Average close time >48 hours |
+
+**Reports Generated:**
+- `~/sharing/analysis/beads/beads-analysis-YYYYMMDD-HHMMSS.md` - Full markdown report
+- `~/sharing/analysis/beads/beads-metrics-YYYYMMDD-HHMMSS.json` - Machine-readable metrics
+- `latest-report.md` / `latest-metrics.json` - Symlinks to most recent
+
+**Schedule:** Weekly on Monday at 10:00 AM (before conversation-analyzer at 11:00 AM)
+
+### Phase 1b: Trace Collection (NOT STARTED)
 
 **Deliverables:**
 - [ ] Define trace event schema
@@ -827,7 +880,7 @@ The existing `conversation-analyzer.py` will be extended to:
 3. Track impact of previous changes
 
 **Beads Integration:**
-Each detected inefficiency can optionally create a Beads task:
+The Beads Integration Analyzer ([PR #211](https://github.com/jwbron/james-in-a-box/pull/211)) provides foundational metrics for task tracking health. Each detected inefficiency can optionally create a Beads task:
 ```bash
 bd add "Investigate high retry rate in auth tasks" \
   --tags inefficiency,tool-execution \
@@ -972,14 +1025,14 @@ Weekly codebase analysis can include:
 
 | ADR | Relationship |
 |-----|--------------|
-| [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) | Parent ADR; defines conversation analyzer |
-| [ADR-Context-Sync-Strategy](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Context availability affects tool discovery |
+| [ADR-Autonomous-Software-Engineer](./ADR-Autonomous-Software-Engineer.md) | Parent ADR; defines conversation analyzer |
+| [ADR-Context-Sync-Strategy](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Context availability affects tool discovery |
 | [ADR-LLM-Documentation-Index-Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | Documentation indexes directly address Tool Discovery Failures (Category 1); well-indexed docs reduce navigation inefficiencies |
-| [ADR-Standardized-Logging-Interface](ADR-Standardized-Logging-Interface.md) | Structured logging enables trace collection and inefficiency detection described in this ADR |
-| [ADR-Continuous-System-Reinforcement](ADR-Continuous-System-Reinforcement.md) | Complementary self-improvement mechanism; Reinforcement learns from breakages, Inefficiency learns from processing patterns |
+| [ADR-Standardized-Logging-Interface](../not-implemented/ADR-Standardized-Logging-Interface.md) | Structured logging enables trace collection and inefficiency detection described in this ADR |
+| [ADR-Continuous-System-Reinforcement](../not-implemented/ADR-Continuous-System-Reinforcement.md) | Complementary self-improvement mechanism; Reinforcement learns from breakages, Inefficiency learns from processing patterns |
 
 ---
 
-**Last Updated:** 2025-11-28
+**Last Updated:** 2025-11-30
 **Next Review:** 2025-12-28 (Monthly review)
-**Status:** Draft - Awaiting Review
+**Status:** In Progress - Phase 1a (Beads Integration Analyzer) implemented via [PR #211](https://github.com/jwbron/james-in-a-box/pull/211)

@@ -105,13 +105,12 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
 
-        # Add source location for debugging
-        if record.levelno >= logging.WARNING:
-            log_entry["sourceLocation"] = {
-                "file": record.pathname,
-                "line": record.lineno,
-                "function": record.funcName,
-            }
+        # Add source location for all logs
+        log_entry["sourceLocation"] = {
+            "file": record.pathname,
+            "line": record.lineno,
+            "function": record.funcName,
+        }
 
         return json.dumps(log_entry, default=str, ensure_ascii=False)
 
@@ -187,6 +186,7 @@ class ConsoleFormatter(logging.Formatter):
         service: str = "jib",
         use_colors: bool | None = None,
         show_context: bool = True,
+        show_source_location: bool = True,
     ):
         """Initialize the console formatter.
 
@@ -194,11 +194,13 @@ class ConsoleFormatter(logging.Formatter):
             service: Service name for logs
             use_colors: Whether to use ANSI colors (auto-detected if None)
             show_context: Whether to show context fields
+            show_source_location: Whether to show source file and line number
         """
         super().__init__()
         self.service = service
         self.use_colors = use_colors if use_colors is not None else self._detect_color_support()
         self.show_context = show_context
+        self.show_source_location = show_source_location
 
     def _detect_color_support(self) -> bool:
         """Detect if the terminal supports colors."""
@@ -251,6 +253,15 @@ class ConsoleFormatter(logging.Formatter):
                 else:
                     context_str = f"({context_str})"
                 parts.append(f" {context_str}")
+
+        # Add source location if enabled
+        if self.show_source_location:
+            location = f"{record.pathname}:{record.lineno}"
+            if self.use_colors:
+                location = f"\033[90m[{location}]\033[0m"
+            else:
+                location = f"[{location}]"
+            parts.append(f" {location}")
 
         message = "".join(parts)
 
