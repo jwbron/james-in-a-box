@@ -84,8 +84,8 @@ RUN chmod 644 /opt/claude-rules/*.md
 
 # Copy Claude hooks directory
 RUN mkdir -p /opt/claude-hooks
-COPY .claude/hooks/*.sh /opt/claude-hooks/
-RUN chmod 755 /opt/claude-hooks/*.sh
+COPY .claude/hooks/ /opt/claude-hooks/
+RUN chmod 755 /opt/claude-hooks/*.sh 2>/dev/null || true
 
 # Create tmp directory in image (not mounted - container-only scratch space)
 RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp

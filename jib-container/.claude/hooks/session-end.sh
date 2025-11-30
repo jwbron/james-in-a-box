@@ -39,7 +39,7 @@ fi
 
 # 3. Sync database
 echo "Syncing beads database..."
-if bd sync --flush-only 2>&1 | grep -q "error\|Error\|ERROR" 2>/dev/null; then
+if bd sync --flush-only 2>&1 | grep -iq "error" 2>/dev/null; then
     echo "⚠️  WARNING: Beads sync failed - changes may be lost"
     echo "   Manual sync: cd ~/beads && bd sync"
 else

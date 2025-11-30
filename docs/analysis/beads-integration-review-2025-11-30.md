@@ -527,6 +527,60 @@ The jib beads integration is **fundamentally sound** but **missing best practice
 
 **Risk if unchanged:** Agent "forgets" to update beads at session end, leading to lost context and duplicate work across container restarts.
 
+## Testing the SessionEnd Hook
+
+To verify the SessionEnd hook works correctly:
+
+### 1. Create Test Tasks
+```bash
+cd ~/beads
+bd --allow-stale create "Test task 1" --labels test
+bd --allow-stale create "Test task 2" --labels test
+bd --allow-stale update <task1-id> --status in_progress
+```
+
+### 2. Exit Claude Code Session
+- End your Claude Code session normally
+- Watch for the SessionEnd hook output
+
+### 3. Expected Output
+```
+🧹 Beads Session-Ending Protocol
+
+⚠️  WARNING: 1 task(s) still in progress
+   Consider closing or updating them before exit:
+
+beads-xxxx [P2] [task] in_progress [test] - Test task 1
+
+   To close a task:
+   bd --allow-stale update <id> --status closed --notes "Summary"
+
+ℹ️  INFO: 1 open task(s) (not started)
+
+Syncing beads database...
+✓ Beads database synced
+
+Session cleanup complete.
+```
+
+### 4. Verify Sync Occurred
+```bash
+# In next session, check tasks are still there
+cd ~/beads
+bd --allow-stale list --label test
+```
+
+### 5. Clean Up Test Tasks
+```bash
+bd --allow-stale update <task-id> --status closed --notes "Test complete"
+```
+
+**Success criteria:**
+- ✅ Hook output appears at session end
+- ✅ In-progress tasks are listed
+- ✅ Database sync completes without errors
+- ✅ Tasks persist across container restarts
+
 ---
 
 **Generated:** 2025-11-30
