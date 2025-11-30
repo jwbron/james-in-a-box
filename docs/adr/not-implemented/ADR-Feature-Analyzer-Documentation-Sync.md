@@ -38,9 +38,9 @@ Currently, ADR implementation and documentation updates are disconnected process
 
 james-in-a-box has:
 - ADRs organized by status (`not-implemented/`, `in-progress/`, `implemented/`)
-- Feature list in `docs/FEATURES.md` (added in PR #259)
 - Documentation index in `docs/index.md`
 - No automated link between ADR implementation and documentation updates
+- No structured feature-to-source mapping (FEATURES.md will be created as part of this ADR's implementation)
 
 ### What We're Deciding
 
@@ -72,21 +72,22 @@ This ADR establishes an automated workflow where:
 
 ```
 ADR Lifecycle:
-1. ADR proposed → opened as PR in docs/adr/not-implemented/
-2. ADR reviewed → feedback, iterations
-3. ADR approved → human approves PR
-4. ADR implemented → code changes made, ADR moved to in-progress/
-5. Implementation merged → ADR moved to implemented/
-6. **Feature Analyzer triggered** → detects doc sync needed
-7. Doc updates proposed → new PR with documentation changes
-8. Doc updates reviewed → human reviews and merges
+1. ADR proposed → drafted and reviewed
+2. ADR approved → merged to docs/adr/not-implemented/, FEATURES.md entry created
+3. Implementation begins → ADR moved to in-progress/, FEATURES.md status updated
+4. Implementation merged → ADR moved to implemented/, FEATURES.md status updated
+5. **Feature Analyzer triggered** → detects doc sync needed
+6. Doc updates proposed → new PR with documentation changes
+7. Doc updates reviewed → human reviews and merges
 ```
+
+**Note on FEATURES.md:** Any time an ADR changes status directories, the corresponding feature entry in FEATURES.md should be updated with a standardized status flag matching the ADR's location (not-implemented, in-progress, implemented).
 
 ### Feature Analyzer Responsibilities
 
-The feature analyzer (introduced in PR #259) will:
+The feature analyzer will:
 
-1. **Detect ADR merge events** via GitHub webhook or scheduled check
+1. **Detect ADR status changes** via systemd-scheduled polling (see Implementation Roadmap)
 2. **Parse ADR content** to identify affected systems/features
 3. **Map to documentation** using docs index and feature list
 4. **Generate doc updates** with LLM assistance
@@ -106,6 +107,77 @@ The feature analyzer (introduced in PR #259) will:
 
 ## Implementation Details
 
+### Implementation Roadmap
+
+This ADR will be implemented in progressive phases to manage complexity and validate approach:
+
+**Prerequisites:**
+1. Create `docs/FEATURES.md` with initial feature-to-source mapping
+2. Establish standardized feature status flags (not-implemented, in-progress, implemented)
+3. Set up systemd service infrastructure for host-services
+
+**Phase 1: MVP - Manual Trigger (Weeks 1-2)**
+- **Goal:** Prove the concept with manual invocation
+- **Components:**
+  - CLI tool: `feature-analyzer sync-docs --adr [path]`
+  - Single doc update capability
+  - Basic validation (link checking, diff bounds)
+  - Manual PR creation
+- **Success criteria:** Successfully update one doc for one ADR with human review
+- **Complexity:** Low - no automation, proves LLM generation quality
+
+**Phase 2: Automated Detection - Polling (Weeks 3-4)**
+- **Goal:** Automatic detection of ADR status changes
+- **Components:**
+  - Systemd timer (15-minute interval)
+  - ADR directory watcher service
+  - State persistence (last-checked timestamp)
+  - Auto-trigger on `implemented/` moves
+- **Success criteria:** Automatically detects and processes newly implemented ADRs
+- **Complexity:** Medium - adds scheduling, state management
+- **External dependencies:** None (runs locally)
+
+**Phase 3: Multi-Doc Updates (Weeks 5-6)**
+- **Goal:** Update multiple affected docs per ADR
+- **Components:**
+  - FEATURES.md querying logic
+  - Batch update generation
+  - Validation per-doc with failure handling
+  - Consolidated PR with all changes
+- **Success criteria:** One PR updates 3-5 related docs correctly
+- **Complexity:** Medium - coordination across files
+
+**Phase 4: Enhanced Validation & Rollback (Weeks 7-8)**
+- **Goal:** Production-ready quality gates
+- **Components:**
+  - Full validation suite (all 6 checks)
+  - HTML comment metadata injection
+  - Git tagging for traceability
+  - Rollback documentation and tooling
+- **Success criteria:** Failed validations caught, easy rollback demonstrated
+- **Complexity:** Medium - testing edge cases
+
+**Phase 5 (Future): Real-time Webhooks (TBD)**
+- **Goal:** Near-instant response to ADR merges
+- **Components:**
+  - GitHub webhook receiver (requires GCP deployment)
+  - Authentication/security for webhook endpoint
+  - Fallback to polling if webhook unavailable
+- **Success criteria:** <1 minute latency from merge to PR creation
+- **Complexity:** High - requires cloud infrastructure
+- **External dependencies:** GCP deployment, ADR-GCP-Deployment
+- **Decision:** Defer until local polling proves valuable
+
+**Estimated Total Effort:**
+- MVP to Phase 4: ~8 weeks part-time
+- Maintenance: ~2 hours/week ongoing
+
+**Risk Mitigation:**
+- Start with MVP to validate LLM generation quality before investing in automation
+- Polling approach (Phase 2) avoids cloud dependencies, keeps everything local
+- Each phase builds incrementally on previous work
+- Can stop after any phase if value doesn't justify further investment
+
 ### Phase 1: ADR Merge Detection
 
 **Trigger mechanism:**
@@ -124,9 +196,14 @@ def on_pr_merged(pr_data):
 ```
 
 **Detection criteria:**
-- PR modifies file in `docs/adr/`
-- PR moves ADR from `in-progress/` to `implemented/`
-- PR merge is the implementation completion (not just proposal merge)
+- ADR file moved from `in-progress/` to `implemented/` directory
+- Polling detects the directory change via git status tracking
+- Trigger fires on detection of newly implemented ADRs
+
+**Polling implementation:**
+- Systemd timer runs every 15 minutes
+- Service checks for ADRs moved to `implemented/` since last check
+- Persists last-checked timestamp in state file
 
 ### Phase 2: Documentation Mapping
 
@@ -223,6 +300,41 @@ def generate_doc_updates(mapping):
     return updates
 ```
 
+**Update Validation:**
+
+The `validate_update()` function ensures auto-generated updates meet quality standards:
+
+1. **Non-destructive checks:**
+   - No complete removal of major sections
+   - Critical content preserved (setup instructions, code examples, warnings)
+   - Document length doesn't shrink by >50%
+
+2. **Link preservation:**
+   - All original links still present or intentionally updated
+   - No broken internal references
+
+3. **Concept retention:**
+   - Key concepts from original doc still mentioned
+   - Technical terms not accidentally removed
+
+4. **Diff bounds:**
+   - Changes within reasonable limits (e.g., max 40% of doc changed)
+   - No complete rewrites
+
+5. **Structure preservation:**
+   - Major headings still exist
+   - Document hierarchy maintained
+
+6. **Traceability:**
+   - All new claims traceable to the ADR
+   - No hallucinated features or capabilities
+
+**Validation failure handling:**
+- Failed docs skipped with warning logged
+- Notification created for human review
+- PR includes comment: "⚠️ Auto-validation failed for [file], manual review required"
+- Link to validation failure details in PR description
+
 ### Phase 4: PR Creation
 
 **Automated PR workflow:**
@@ -240,7 +352,15 @@ def create_documentation_sync_pr(mapping, updates):
         write_file(update['path'], update['updated'])
         git_add(update['path'])
 
-    git_commit(f"docs: Sync documentation with {mapping['adr']['filename']}")
+    # Commit with traceability markers
+    commit_msg = f"""docs: Sync with {mapping['adr']['filename']} (auto-generated)
+
+Auto-updated documentation to reflect implemented ADR.
+
+ADR: {mapping['adr']['path']}
+Generated: {datetime.now().isoformat()}
+"""
+    git_commit(commit_msg)
 
     # Push and create PR
     git_push(branch_name)
@@ -333,6 +453,68 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 | **Overwhelming PR volume** | Batch updates per ADR, clear PR descriptions |
 | **Analyzer bugs** | Extensive testing, gradual rollout, fail-safe defaults |
 | **LLM hallucinations** | Validation checks, diff review, cite ADR as source |
+
+### Rollback Strategy
+
+Auto-generated documentation updates are traceable and reversible:
+
+**Traceability mechanisms:**
+
+1. **Commit message convention:**
+   - Format: `docs: Sync with [ADR-filename] (auto-generated)`
+   - Includes ADR path and generation timestamp in commit body
+   - Example:
+     ```
+     docs: Sync with ADR-Feature-Analyzer-Documentation-Sync (auto-generated)
+
+     Auto-updated documentation to reflect implemented ADR.
+
+     ADR: docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md
+     Generated: 2025-11-30T14:23:45Z
+     ```
+
+2. **HTML metadata in updated docs:**
+   - Add HTML comments to modified sections:
+   - `<!-- Auto-updated from ADR-XYZ on YYYY-MM-DD -->`
+   - Enables filtering: `grep -r "Auto-updated from" docs/`
+
+3. **Git tags for audit:**
+   - Tag commits containing auto-generated content: `auto-doc-sync-YYYYMMDD`
+   - Query all auto-updates: `git log --tags='auto-doc-sync-*'`
+
+**Rollback procedures:**
+
+1. **Single doc revert:**
+   ```bash
+   # Find the auto-generated commit
+   git log --grep="auto-generated" --oneline -- path/to/doc.md
+
+   # Revert specific file
+   git checkout [commit-before-auto-gen]~1 -- path/to/doc.md
+   ```
+
+2. **Batch revert (all updates from one ADR):**
+   ```bash
+   # Find commits for specific ADR
+   git log --grep="ADR-Feature-Analyzer" --grep="auto-generated"
+
+   # Revert the PR merge
+   git revert -m 1 [merge-commit-sha]
+   ```
+
+3. **Audit auto-generated changes:**
+   ```bash
+   # Show all auto-generated doc commits from last week
+   git log --since="1 week ago" --grep="auto-generated" --oneline
+
+   # Show files modified by auto-generation
+   git log --grep="auto-generated" --name-only --pretty=format:
+   ```
+
+**Quality gates prevent bad rollbacks:**
+- All auto-generated PRs reviewed by human before merge
+- If mistakes found post-merge, create corrective PR (not force-push)
+- Maintain audit trail of what was auto-generated vs manually fixed
 
 ## Decision Permanence
 
