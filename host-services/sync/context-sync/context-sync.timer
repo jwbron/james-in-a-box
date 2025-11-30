@@ -1,6 +1,6 @@
 [Unit]
 Description=Context Sync Timer - Run hourly
-Documentation=file:///home/jwies/khan/confluence-cursor-sync/README.md
+Documentation=file://%h/khan/james-in-a-box/host-services/sync/context-sync/README.md
 
 [Timer]
 # Run every hour (change this to customize frequency)
