@@ -118,7 +118,7 @@ The CLAUDE.md file is ideally positioned - it loads before user input, so it's a
 
 When working on the same repository or task:
 - Use `@load-context <name>` to load previously saved context
-- Keep working directory consistent (`cd ~/khan/<repo>`)
+- Keep working directory consistent (`cd ~/workspace/<repo>`)
 - Resume conversations with `claude --continue` when possible
 
 ### 3. Minimize Context Thrashing

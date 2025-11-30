@@ -2,7 +2,7 @@
 # Setup shell aliases for transparent jib_logging wrappers.
 #
 # Source this file to replace bd, git, gh, and claude with logged versions:
-#   source ~/khan/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
+#   source ~/workspace/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
 #
 # The aliases are transparent - they accept all the same arguments and
 # produce the same output as the original commands.

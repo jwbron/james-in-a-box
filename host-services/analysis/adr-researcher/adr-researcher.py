@@ -134,7 +134,7 @@ def load_config() -> dict:
         - github_username: Configured GitHub username
     """
     config_paths = [
-        Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml",
+        Path.home() / "workspace" / "james-in-a-box" / "config" / "repositories.yaml",
         Path(__file__).parent.parent.parent.parent / "config" / "repositories.yaml",
     ]
 
@@ -687,9 +687,9 @@ class ADRResearcher:
         """
         context_json = json.dumps(context)
 
-        # Container path is fixed - jib always mounts to /home/jwies/khan/
+        # Container path is fixed - jib always mounts to /home/jwies/workspace/
         processor_path = (
-            "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/adr/adr-processor.py"
+            "/home/jwies/workspace/james-in-a-box/jib-container/jib-tasks/adr/adr-processor.py"
         )
 
         cmd = [

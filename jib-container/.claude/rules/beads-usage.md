@@ -2,7 +2,7 @@
 
 **You MUST use Beads automatically for ALL tasks.** This enables persistent memory across container restarts.
 
-> **Full Reference:** `~/khan/james-in-a-box/docs/reference/beads.md`
+> **Full Reference:** `~/workspace/james-in-a-box/docs/reference/beads.md`
 
 ## ALWAYS Do This First
 

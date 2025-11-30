@@ -751,7 +751,7 @@ class SlackReceiver:
             thread_ts: Slack thread timestamp for threading (if available)
         """
         try:
-            jib_script = Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
+            jib_script = Path.home() / "workspace" / "james-in-a-box" / "bin" / "jib"
 
             # Convert host paths to container paths
             # Host: ~/.jib-sharing/incoming/task.md → Container: ~/sharing/incoming/task.md
@@ -759,8 +759,8 @@ class SlackReceiver:
                 str(Path.home() / ".jib-sharing"), f"/home/{os.environ['USER']}/sharing"
             )
 
-            # Container path to processor script (james-in-a-box mounted at ~/khan/james-in-a-box/)
-            container_processor = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/jib-tasks/slack/incoming-processor.py"
+            # Container path to processor script (james-in-a-box mounted at ~/workspace/james-in-a-box/)
+            container_processor = f"/home/{os.environ['USER']}/workspace/james-in-a-box/jib-container/jib-tasks/slack/incoming-processor.py"
 
             # Create log file for streaming Claude output
             logs_dir = Path.home() / ".jib-sharing" / "logs"

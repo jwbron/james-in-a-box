@@ -395,7 +395,7 @@ class TestExtractThreadContext:
 Full conversation history:
 
 **1. James in a box:**
-# PR Analysis: Khan/terraform-modules#29
+# PR Analysis: yourorg/terraform-modules#29
 
 Some analysis content
 
@@ -405,7 +405,7 @@ User message here
 """
         thread_ctx, pr_refs = extract_thread_context(content)
 
-        assert "Khan/terraform-modules#29" in pr_refs
+        assert "yourorg/terraform-modules#29" in pr_refs
         assert len(pr_refs) == 1
         assert "PR Analysis" in thread_ctx
 
@@ -414,7 +414,7 @@ User message here
         content = """
 ## Thread Context
 
-See https://github.com/Khan/webapp/pull/12345 for details.
+See https://github.com/yourorg/webapp/pull/12345 for details.
 
 ## Current Message
 
@@ -422,7 +422,7 @@ Do the thing
 """
         _thread_ctx, pr_refs = extract_thread_context(content)
 
-        assert "Khan/webapp#12345" in pr_refs
+        assert "yourorg/webapp#12345" in pr_refs
 
     def test_extracts_shorthand_reference(self):
         """Test extraction of owner/repo#number shorthand."""
@@ -444,9 +444,9 @@ Update needed
         content = """
 ## Thread Context
 
-# PR Analysis: Khan/webapp#100
+# PR Analysis: yourorg/webapp#100
 
-Also see https://github.com/Khan/other-repo/pull/200
+Also see https://github.com/yourorg/other-repo/pull/200
 
 ## Current Message
 
@@ -454,8 +454,8 @@ Fix both
 """
         _thread_ctx, pr_refs = extract_thread_context(content)
 
-        assert "Khan/webapp#100" in pr_refs
-        assert "Khan/other-repo#200" in pr_refs
+        assert "yourorg/webapp#100" in pr_refs
+        assert "yourorg/other-repo#200" in pr_refs
         assert len(pr_refs) == 2
 
     def test_deduplicates_references(self):
@@ -463,9 +463,9 @@ Fix both
         content = """
 ## Thread Context
 
-# PR Analysis: Khan/webapp#100
+# PR Analysis: yourorg/webapp#100
 
-PR: https://github.com/Khan/webapp/pull/100
+PR: https://github.com/yourorg/webapp/pull/100
 
 ## Current Message
 
@@ -473,7 +473,7 @@ Same PR mentioned twice
 """
         _thread_ctx, pr_refs = extract_thread_context(content)
 
-        assert pr_refs.count("Khan/webapp#100") == 1
+        assert pr_refs.count("yourorg/webapp#100") == 1
 
     def test_thread_context_stops_at_next_section(self):
         """Test that thread context extraction stops at ## Current Message."""

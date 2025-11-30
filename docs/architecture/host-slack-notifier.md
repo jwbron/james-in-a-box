@@ -138,7 +138,7 @@ The script automatically filters out:
 
 ### Change Watched Directories
 
-Edit `~/khan/james-in-a-box/internal/host-notify-slack.sh`:
+Edit `~/workspace/james-in-a-box/internal/host-notify-slack.sh`:
 
 ```bash
 WATCH_DIRS=(
@@ -182,7 +182,7 @@ After=network.target
 Type=simple
 User=jwies
 Environment="SLACK_TOKEN=xoxb-your-token-here"
-ExecStart=/home/jwies/khan/james-in-a-box/internal/host-notify-slack.sh
+ExecStart=/home/jwies/workspace/james-in-a-box/internal/host-notify-slack.sh
 Restart=on-failure
 RestartSec=10
 
@@ -210,7 +210,7 @@ After=network.target
 [Service]
 Type=simple
 Environment="SLACK_TOKEN=xoxb-your-token-here"
-ExecStart=%h/khan/james-in-a-box/internal/host-notify-slack.sh
+ExecStart=%h/workspace/james-in-a-box/internal/host-notify-slack.sh
 Restart=on-failure
 RestartSec=10
 
@@ -313,7 +313,7 @@ Common issues:
 
 ### Host Machine
 
-- **Main Script**: `~/khan/james-in-a-box/internal/host-notify-slack.sh`
+- **Main Script**: `~/workspace/james-in-a-box/internal/host-notify-slack.sh`
 - **Control Script**: `systemctl --user`
 - **State Directory**: `~/.jib-notify/`
 - **Log File**: `~/.jib-notify/notify.log`

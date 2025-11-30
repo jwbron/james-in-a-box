@@ -2,7 +2,7 @@
 
 Concise, informative PR summaries for reviewers.
 
-## Format (Khan Academy Standard)
+## Format (your organization Standard)
 
 ```
 <one-line summary - 50 chars max>

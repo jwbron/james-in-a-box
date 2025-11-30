@@ -414,7 +414,7 @@ alias gh='jib-gh'
 alias claude='jib-claude'
 
 # Or source the setup script
-source ~/khan/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
+source ~/workspace/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
 ```
 
 **Setup Option 2: PATH Override**
@@ -422,8 +422,8 @@ source ~/khan/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
 ```bash
 # Create symlinks earlier in PATH
 mkdir -p ~/.local/bin
-ln -sf ~/khan/james-in-a-box/shared/jib_logging/bin/jib-bd ~/.local/bin/bd
-ln -sf ~/khan/james-in-a-box/shared/jib_logging/bin/jib-git ~/.local/bin/git
+ln -sf ~/workspace/james-in-a-box/shared/jib_logging/bin/jib-bd ~/.local/bin/bd
+ln -sf ~/workspace/james-in-a-box/shared/jib_logging/bin/jib-git ~/.local/bin/git
 # ... etc
 ```
 

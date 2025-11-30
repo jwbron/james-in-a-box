@@ -143,19 +143,19 @@ docs-link: deps
 docs-list-links: deps
 	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from utils.create_symlink import list_projects_with_symlinks; list_projects_with_symlinks()"
 
-.PHONY: docs-link-khan
-docs-link-khan: deps
-	@echo "Creating symlinks to Confluence documentation in all Khan Academy projects..."
-	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from utils.link_to_khan_projects import create_symlinks_for_khan_projects; import sys; dry_run = '--execute' not in sys.argv; link_name = 'confluence-docs'; create_symlinks_for_khan_projects(link_name, dry_run)"
+.PHONY: docs-link-workspace
+docs-link-workspace: deps
+	@echo "Creating symlinks to Confluence documentation in all workspace projects..."
+	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from utils.link_to_khan_projects import create_symlinks_for_workspace_projects; import sys; dry_run = '--execute' not in sys.argv; link_name = 'confluence-docs'; create_symlinks_for_workspace_projects(link_name, dry_run)"
 
-.PHONY: docs-link-khan-execute
-docs-link-khan-execute: deps
-	@echo "Creating symlinks to Confluence documentation in all Khan Academy projects..."
-	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from utils.link_to_khan_projects import create_symlinks_for_khan_projects; link_name = 'confluence-docs'; create_symlinks_for_khan_projects(link_name, False)"
+.PHONY: docs-link-workspace-execute
+docs-link-workspace-execute: deps
+	@echo "Creating symlinks to Confluence documentation in all workspace projects..."
+	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from utils.link_to_khan_projects import create_symlinks_for_workspace_projects; link_name = 'confluence-docs'; create_symlinks_for_workspace_projects(link_name, False)"
 
-.PHONY: docs-list-khan-links
-docs-list-khan-links: deps
-	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from utils.link_to_khan_projects import list_khan_projects_with_links; list_khan_projects_with_links()"
+.PHONY: docs-list-workspace-links
+docs-list-workspace-links: deps
+	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from utils.link_to_khan_projects import list_workspace_projects_with_links; list_workspace_projects_with_links()"
 
 .PHONY: docs-setup-cursor
 docs-setup-cursor: deps
@@ -164,7 +164,7 @@ docs-setup-cursor: deps
 
 .PHONY: docs-bootstrap
 docs-bootstrap: deps
-	@echo "Bootstrapping Confluence documentation sync for Khan Academy..."
+	@echo "Bootstrapping Confluence documentation sync for organization..."
 	@echo ""
 	@echo "Step 1: Setting up configuration..."
 	@if [ ! -f .env ]; then \
@@ -178,12 +178,12 @@ docs-bootstrap: deps
 	@echo "Step 2: Running full sync of Confluence documentation (all pages)..."
 	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from connectors.confluence.sync import main; exit(main())"
 	@echo ""
-	@echo "Step 3: Creating symlinks in all Khan Academy projects..."
+	@echo "Step 3: Creating symlinks in all organization projects..."
 	${VENV}/bin/python -c "from utils.config_loader import load_env_file; load_env_file(); from utils.link_to_khan_projects import create_symlinks_for_khan_projects; link_name = 'confluence-docs'; create_symlinks_for_khan_projects(link_name, False)"
 	@echo ""
 	@echo "Bootstrap complete! Your Confluence documentation is now:"
 	@echo "   - Synced locally in confluence-docs/"
-	@echo "   - Available in all Khan Academy projects via symlinks"
+	@echo "   - Available in all organization projects via symlinks"
 	@echo "   - Ready for Cursor to index and search"
 	@echo ""
 	@echo "Next steps:"
@@ -226,7 +226,7 @@ help:
 	@echo "  make sync-all        - Sync all connectors (Confluence + JIRA)"
 	@echo ""
 	@echo "Confluence documentation:"
-	@echo "  make docs-bootstrap  - Complete setup for Khan Academy users"
+	@echo "  make docs-bootstrap  - Complete setup for organization users"
 	@echo "  make docs-setup      - Interactive configuration setup"
 	@echo "  make docs-test       - Test Confluence connection"
 	@echo "  make docs-sync       - Sync documentation from Confluence (incremental)"
@@ -246,9 +246,9 @@ help:
 	@echo "  make docs-clean       - Clean all synced documentation"
 	@echo "  make docs-link PROJECT=\"/path\" - Create symlink in another project"
 	@echo "  make docs-list-links  - List projects with symlinks"
-	@echo "  make docs-link-khan   - Create symlinks in all Khan Academy projects (dry run)"
-	@echo "  make docs-link-khan-execute - Create symlinks in all Khan Academy projects"
-	@echo "  make docs-list-khan-links - List Khan Academy projects with symlinks"
+	@echo "  make docs-link-workspace   - Create symlinks in all workspace projects (dry run)"
+	@echo "  make docs-link-workspace-execute - Create symlinks in all workspace projects"
+	@echo "  make docs-list-workspace-links - List workspace projects with symlinks"
 	@echo "  make docs-setup-cursor   - Set up Cursor rule for confluence-docs"
 	@echo ""
 	@echo "JIRA tickets:"
@@ -265,4 +265,4 @@ help:
 	@echo ""
 	@echo "Linking options:"
 	@echo "  make docs-link PROJECT=\"/path\" LINK_NAME=\"docs\" - Create symlink with custom name"
-	@echo "  make docs-link-khan - Link to all Khan Academy git projects" 
+	@echo "  make docs-link-workspace - Link to all workspace git projects" 

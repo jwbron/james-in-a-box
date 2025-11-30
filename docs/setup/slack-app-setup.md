@@ -125,7 +125,7 @@ chmod 600 ~/.config/jib-notifier/config.json
 
 ```bash
 # Using main setup script (recommended)
-cd ~/khan/james-in-a-box
+cd ~/workspace/james-in-a-box
 ./setup.sh
 
 # Or manually

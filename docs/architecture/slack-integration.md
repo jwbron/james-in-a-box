@@ -276,7 +276,7 @@ Claude picks up task when you start conversation
 
 ```bash
 # Install dependencies using uv (recommended - run setup.sh to install uv first)
-cd ~/khan/james-in-a-box/host-services
+cd ~/workspace/james-in-a-box/host-services
 uv sync
 ```
 
@@ -485,7 +485,7 @@ Already implemented via systemd services:
 
 ```bash
 # Enable both notifier and receiver (done by setup.sh)
-cd ~/khan/james-in-a-box
+cd ~/workspace/james-in-a-box
 ./setup.sh
 
 # Enable receiver (NEW)
@@ -499,7 +499,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/internal/host-receive-slack.py
+ExecStart=/usr/bin/python3 %h/workspace/james-in-a-box/internal/host-receive-slack.py
 Restart=on-failure
 RestartSec=30s
 Nice=10
@@ -530,7 +530,7 @@ systemctl --user status slack-receiver  # Incoming messages
 **Check dependencies**:
 ```bash
 python3 -c "import slack_sdk"
-# If error: cd ~/khan/james-in-a-box/host-services && uv sync
+# If error: cd ~/workspace/james-in-a-box/host-services && uv sync
 ```
 
 **Check config**:

@@ -45,5 +45,5 @@ github_sync:
 
 # Future: Repositories with read-only access
 # readable_repos:
-#   - khan/webapp
-#   - khan/mobile
+#   - workspace/webapp
+#   - workspace/mobile

@@ -72,7 +72,7 @@ Query and analysis utilities:
 The trace collector is automatically configured when you run the main jib setup:
 
 ```bash
-cd ~/khan/james-in-a-box
+cd ~/workspace/james-in-a-box
 ./setup.sh
 ```
 
@@ -86,7 +86,7 @@ If you need to set up manually (e.g., without running full setup):
 
 ```bash
 # Run the trace-collector setup script
-cd ~/khan/james-in-a-box/host-services/analysis/trace-collector
+cd ~/workspace/james-in-a-box/host-services/analysis/trace-collector
 ./setup.sh
 ```
 
@@ -100,13 +100,13 @@ Or configure manually:
     "PostToolUse": [
       {
         "type": "command",
-        "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
+        "command": "python3 ~/workspace/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
       }
     ],
     "SessionEnd": [
       {
         "type": "command",
-        "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
+        "command": "python3 ~/workspace/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
       }
     ]
   }

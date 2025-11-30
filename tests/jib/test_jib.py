@@ -101,9 +101,9 @@ class TestConfig:
         """Test container name."""
         assert Config.CONTAINER_NAME == "jib"
 
-    def test_khan_source_path(self):
-        """Test Khan source directory path."""
-        assert Path.home() / "khan" == Config.KHAN_SOURCE
+    def test_workspace_source_path(self):
+        """Test workspace source directory path."""
+        assert Path.home() / "workspace" == Config.WORKSPACE_SOURCE
 
     def test_sharing_dir_path(self):
         """Test sharing directory path."""
@@ -243,10 +243,10 @@ class TestIsDangerousDir:
         safe_dir.mkdir()
         assert jib.is_dangerous_dir(safe_dir) is False
 
-    def test_khan_dir_is_safe(self):
-        """Test khan directory is safe."""
-        khan_dir = Path.home() / "khan"
-        assert jib.is_dangerous_dir(khan_dir) is False
+    def test_workspace_dir_is_safe(self):
+        """Test workspace directory is safe."""
+        workspace_dir = Path.home() / "workspace"
+        assert jib.is_dangerous_dir(workspace_dir) is False
 
 
 class TestCheckClaudeCredentials:
@@ -363,7 +363,7 @@ class TestWorktreeHelpers:
     def test_cleanup_worktrees_no_dir(self, temp_dir, monkeypatch):
         """Test cleanup when worktree directory doesn't exist."""
         monkeypatch.setattr(Config, "WORKTREE_BASE", temp_dir / "worktrees")
-        monkeypatch.setattr(Config, "KHAN_SOURCE", temp_dir / "khan")
+        monkeypatch.setattr(Config, "WORKSPACE_SOURCE", temp_dir / "workspace")
 
         # Should not raise
         jib.cleanup_worktrees("test-container-id")
@@ -379,13 +379,13 @@ class TestWorktreeHelpers:
         repo_worktree = container_dir / "test-repo"
         repo_worktree.mkdir()
 
-        # Create matching khan source repo
-        khan_source = temp_dir / "khan"
-        khan_repo = khan_source / "test-repo"
-        khan_repo.mkdir(parents=True)
+        # Create matching workspace source repo
+        workspace_source = temp_dir / "workspace"
+        workspace_repo = workspace_source / "test-repo"
+        workspace_repo.mkdir(parents=True)
 
         monkeypatch.setattr(Config, "WORKTREE_BASE", worktree_base)
-        monkeypatch.setattr(Config, "KHAN_SOURCE", khan_source)
+        monkeypatch.setattr(Config, "WORKSPACE_SOURCE", workspace_source)
 
         # Mock git worktree prune
         mock_run.return_value = MagicMock(returncode=0)

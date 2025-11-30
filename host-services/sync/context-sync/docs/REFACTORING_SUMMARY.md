@@ -40,7 +40,7 @@ confluence-cursor-sync/
 │   ├── setup.py                  # Interactive setup
 │   ├── maintenance.py            # Maintenance utilities
 │   ├── create_symlink.py         # Symlink management
-│   ├── link_to_khan_projects.py # Khan-specific linking
+│   ├── link_to_khan_projects.py # Workspace-specific linking
 │   ├── list_spaces.py            # List Confluence spaces
 │   └── get_space_ids.py          # Get space IDs
 │

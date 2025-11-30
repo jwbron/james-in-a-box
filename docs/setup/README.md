@@ -7,7 +7,7 @@ Installation and configuration documentation.
 Run the main setup script to configure everything:
 
 ```bash
-cd ~/khan/james-in-a-box
+cd ~/workspace/james-in-a-box
 ./setup.sh
 ```
 

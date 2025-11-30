@@ -1,4 +1,4 @@
-# Khan Academy Development Standards
+# Engineering Best Practices
 
 ## Tech Stack
 
@@ -54,7 +54,7 @@ make migrate                  # Run migrations
 ## File Organization
 
 ```
-~/khan/
+~/workspace/
 ├── dev/            # Dev tools and scripts
 ├── services/       # Microservices/backend
 ├── webapp/         # Main application

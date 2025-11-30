@@ -158,7 +158,7 @@ All existing commands still work:
 ```bash
 make docs-sync          # Uses new output location
 make docs-search        # Still works
-make docs-link-khan     # Still works
+make docs-link-workspace     # Still works
 python -m sync.confluence_sync  # Direct sync still works
 ```
 

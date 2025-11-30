@@ -36,7 +36,7 @@ No watching/polling logic lives in the container.
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/analysis/github-watcher
+cd ~/workspace/james-in-a-box/host-services/analysis/github-watcher
 ./setup.sh
 ```
 
@@ -145,7 +145,7 @@ gh auth login  # Re-authenticate if needed
 # Ensure jib is in PATH
 which jib
 # Or use full path
-~/khan/james-in-a-box/bin/jib --help
+~/workspace/james-in-a-box/bin/jib --help
 ```
 
 **Container analysis fails**:

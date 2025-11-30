@@ -46,7 +46,7 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
     update-alternatives --set python3 /usr/bin/python3.11
 
-# Install Khan Academy development tools
+# Install development tools
 # This includes: Node.js 20, Go, Java 11, PostgreSQL, etc.
 COPY docker-setup.py /tmp/docker-setup.py
 RUN chmod +x /tmp/docker-setup.py && \

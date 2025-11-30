@@ -10,13 +10,13 @@ When starting work on a new codebase or repository, run the test discovery tool:
 
 ```bash
 # Discover test configuration in current directory
-~/khan/james-in-a-box/jib-container/scripts/discover-tests.py
+~/workspace/james-in-a-box/jib-container/scripts/discover-tests.py
 
 # Discover tests in a specific project
-~/khan/james-in-a-box/jib-container/scripts/discover-tests.py ~/khan/<repo>
+~/workspace/james-in-a-box/jib-container/scripts/discover-tests.py ~/workspace/<repo>
 
 # Get JSON output for programmatic use
-~/khan/james-in-a-box/jib-container/scripts/discover-tests.py --json
+~/workspace/james-in-a-box/jib-container/scripts/discover-tests.py --json
 ```
 
 The tool scans for:
@@ -49,7 +49,7 @@ Run tests frequently as you make changes:
 
 ```bash
 # Run tests related to changed files (if supported)
-~/khan/james-in-a-box/jib-container/scripts/discover-tests.py --run --files "src/foo.py,src/bar.py"
+~/workspace/james-in-a-box/jib-container/scripts/discover-tests.py --run --files "src/foo.py,src/bar.py"
 
 # Or run specific test file
 pytest path/to/test_file.py
@@ -186,10 +186,10 @@ This test workflow integrates with the overall development process:
 
 ```bash
 # Discovery
-~/khan/james-in-a-box/jib-container/scripts/discover-tests.py
+~/workspace/james-in-a-box/jib-container/scripts/discover-tests.py
 
 # Run discovered tests
-~/khan/james-in-a-box/jib-container/scripts/discover-tests.py --run
+~/workspace/james-in-a-box/jib-container/scripts/discover-tests.py --run
 
 # Common direct commands (use discovered command when possible)
 make test           # Makefile-based projects

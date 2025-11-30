@@ -29,14 +29,14 @@ The jib container provides a secure, isolated environment for the Claude agent t
 ├── confluence/             # Confluence documentation
 └── jira/                   # JIRA tickets
 
-~/khan/james-in-a-box/      # This repository (mounted from host)
+~/workspace/james-in-a-box/      # This repository (mounted from host)
 ```
 
 ## Container Lifecycle
 
 **Start container** (interactive mode - auto-starts Claude):
 ```bash
-cd ~/khan/james-in-a-box
+cd ~/workspace/james-in-a-box
 ./jib
 # Claude Code starts automatically in sandboxed environment
 ```
@@ -72,7 +72,7 @@ No manual setup required inside the container.
 - Limited GitHub token (scoped to specific repos only)
 
 **What the agent CAN do**:
-- Read/write code in `~/khan/` (isolated git worktree)
+- Read/write code in `~/workspace/` (isolated git worktree)
 - Git commits locally
 - Create/manage PRs via GitHub MCP
 - Query issues, repos, comments via GitHub MCP

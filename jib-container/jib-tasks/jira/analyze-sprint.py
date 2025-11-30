@@ -8,10 +8,10 @@ Analyzes tickets in the active sprint and suggests:
 
 Usage:
   # From host
-  bin/jib --exec /home/jwies/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
+  bin/jib --exec /home/jwies/workspace/james-in-a-box/jib-container/scripts/analyze-sprint.py
 
   # From inside container
-  ~/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
+  ~/workspace/james-in-a-box/jib-container/scripts/analyze-sprint.py
 """
 
 import re
@@ -399,7 +399,7 @@ class SprintAnalyzer:
 ---
 
 📅 {date}
-🔄 Run again with: bin/jib --exec ~/khan/james-in-a-box/jib-container/scripts/analyze-sprint.py
+🔄 Run again with: bin/jib --exec ~/workspace/james-in-a-box/jib-container/scripts/analyze-sprint.py
 """.format(date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         detail_file.write_text(detail_content)

@@ -1,7 +1,7 @@
 # Conversation Analysis Criteria
 
 > Reference document defining assessment criteria for the conversation analyzer.
-> Used to evaluate agent performance against Khan Academy L3-L4 standards.
+> Used to evaluate agent performance against your organization L3-L4 standards.
 
 ## Assessment Dimensions
 

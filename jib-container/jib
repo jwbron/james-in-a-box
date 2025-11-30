@@ -95,7 +95,7 @@ class Config:
     GITHUB_TOKEN_FILE = USER_CONFIG_DIR / "github-token"
     IMAGE_NAME = "james-in-a-box"
     CONTAINER_NAME = "jib"
-    KHAN_SOURCE = Path.home() / "khan"
+    WORKSPACE_SOURCE = Path.home() / "workspace"
     # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
     TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
@@ -107,7 +107,7 @@ class Config:
     WORKTREE_BASE = Path.home() / ".jib-worktrees"
 
     # Note: Each container gets its own worktree to isolate changes
-    # Host repos (~/khan/) stay clean while containers work independently
+    # Host repos (~/workspace/) stay clean while containers work independently
 
     # Directories that are dangerous to mount (contain credentials)
     DANGEROUS_DIRS = [
@@ -320,8 +320,8 @@ def get_setup_script_path() -> Optional[Path]:
     if setup_script.exists():
         return setup_script
 
-    # Fallback: check ~/khan/james-in-a-box/setup.sh
-    fallback = Path.home() / "khan" / "james-in-a-box" / "setup.sh"
+    # Fallback: check ~/workspace/james-in-a-box/setup.sh
+    fallback = Path.home() / "workspace" / "james-in-a-box" / "setup.sh"
     if fallback.exists():
         return fallback
 
@@ -336,7 +336,7 @@ def run_setup_script() -> bool:
         error("Could not find setup.sh script")
         print()
         print("Please run setup manually:")
-        print("  cd ~/khan/james-in-a-box")
+        print("  cd ~/workspace/james-in-a-box")
         print("  ./setup.sh")
         return False
 
@@ -931,7 +931,7 @@ def get_default_branch(repo_path: Path) -> str:
 
 
 def create_worktrees(container_id: str) -> dict:
-    """Create git worktrees for all repos in ~/khan/
+    """Create git worktrees for all repos in ~/workspace/
 
     Worktrees are always based on the default branch (main or master),
     regardless of what branch is currently checked out on the host.
@@ -944,12 +944,12 @@ def create_worktrees(container_id: str) -> dict:
 
     worktrees = {}
 
-    if not Config.KHAN_SOURCE.exists():
-        warn(f"Khan source directory not found: {Config.KHAN_SOURCE}")
+    if not Config.WORKSPACE_SOURCE.exists():
+        warn(f"Workspace source directory not found: {Config.WORKSPACE_SOURCE}")
         return worktrees
 
-    # Iterate through all repos in ~/khan/
-    for repo_path in Config.KHAN_SOURCE.iterdir():
+    # Iterate through all repos in ~/workspace/
+    for repo_path in Config.WORKSPACE_SOURCE.iterdir():
         if not repo_path.is_dir():
             continue
 
@@ -1020,7 +1020,7 @@ def cleanup_worktrees(container_id: str) -> None:
     for worktree_path in worktree_dir.iterdir():
         if worktree_path.is_dir():
             repo_name = worktree_path.name
-            original_repo = Config.KHAN_SOURCE / repo_name
+            original_repo = Config.WORKSPACE_SOURCE / repo_name
             if original_repo.exists():
                 # Find the admin directory name from the worktree's .git file
                 git_file = worktree_path / ".git"
@@ -1093,7 +1093,7 @@ def setup() -> bool:
     print("  • Human: Reviews, approves, deploys")
     print()
     print("AGENT CAPABILITIES:")
-    print("  ✓ Edit code and create commits in ~/khan/")
+    print("  ✓ Edit code and create commits in ~/workspace/")
     print("  ✓ Run tests, linters, development servers")
     print("  ✓ Access Confluence docs (ADRs, runbooks, best practices)")
     print("  ✓ Create pull requests with @create-pr command")
@@ -1131,16 +1131,16 @@ def setup() -> bool:
     mounts = []
 
     # Khan directory - mount READ-WRITE so agent can work directly
-    if Config.KHAN_SOURCE.exists():
+    if Config.WORKSPACE_SOURCE.exists():
         khan_container_path = f"/home/{os.environ['USER']}/khan"
         # Mount as read-write with SELinux relabeling
-        mounts.append(f"{Config.KHAN_SOURCE}:{khan_container_path}:rw,z")
-        info(f"Khan workspace: {Config.KHAN_SOURCE}")
-        print(f"    Mounted as: ~/khan/ (READ-WRITE, SELinux relabeled)")
+        mounts.append(f"{Config.WORKSPACE_SOURCE}:{khan_container_path}:rw,z")
+        info(f"Workspace: {Config.WORKSPACE_SOURCE}")
+        print(f"    Mounted as: ~/workspace/ (READ-WRITE, SELinux relabeled)")
         print(f"    Purpose: Agent works directly on code, makes commits")
         print(f"    Changes: Agent modifies files in place - you review and push")
     else:
-        warn(f"{Config.KHAN_SOURCE} not found - workspace will not be available")
+        warn(f"{Config.WORKSPACE_SOURCE} not found - workspace will not be available")
 
     # Add context-sync directory (read-only) - includes Confluence, JIRA, and more
     print()
@@ -1444,7 +1444,7 @@ def run_claude() -> bool:
             continue
 
         # Check if this is a khan repo mount - replace with worktree
-        if Config.KHAN_SOURCE and mount_path.startswith(str(Config.KHAN_SOURCE)):
+        if Config.WORKSPACE_SOURCE and mount_path.startswith(str(Config.WORKSPACE_SOURCE)):
             # This is a khan repo - skip it, we'll add worktrees instead
             continue
 
@@ -1465,12 +1465,12 @@ def run_claude() -> bool:
         container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         if not _quiet_mode:
-            print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
+            print(f"  • ~/workspace/{repo_name} (WORKTREE, isolated from host)")
         main_repos_needed.add(repo_name)
 
     # Mount main repo .git directories (read-write) so worktrees can commit changes
     for repo_name in main_repos_needed:
-        main_repo = Config.KHAN_SOURCE / repo_name
+        main_repo = Config.WORKSPACE_SOURCE / repo_name
         git_path = main_repo / ".git"
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
@@ -1692,7 +1692,7 @@ def exec_in_new_container(
             continue
 
         # Check if this is a khan repo mount - skip it, we'll add worktrees instead
-        if Config.KHAN_SOURCE and mount_path.startswith(str(Config.KHAN_SOURCE)):
+        if Config.WORKSPACE_SOURCE and mount_path.startswith(str(Config.WORKSPACE_SOURCE)):
             continue
 
         # Ensure SELinux label
@@ -1706,12 +1706,12 @@ def exec_in_new_container(
     for repo_name, worktree_path in worktrees.items():
         container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
-        print(f"  • ~/khan/{repo_name} (WORKTREE, isolated)")
+        print(f"  • ~/workspace/{repo_name} (WORKTREE, isolated)")
         main_repos_needed.add(repo_name)
 
     # Mount main repo .git directories (read-write) so worktrees can commit changes
     for repo_name in main_repos_needed:
-        main_repo = Config.KHAN_SOURCE / repo_name
+        main_repo = Config.WORKSPACE_SOURCE / repo_name
         git_path = main_repo / ".git"
         if git_path.is_dir():
             # Normal repo - mount .git directory directly

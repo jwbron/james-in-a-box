@@ -11,13 +11,13 @@ Usage in ~/.claude/settings.json:
     "PostToolUse": [
       {
         "type": "command",
-        "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
+        "command": "python3 ~/workspace/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
       }
     ],
     "SessionEnd": [
       {
         "type": "command",
-        "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
+        "command": "python3 ~/workspace/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
       }
     ]
   }

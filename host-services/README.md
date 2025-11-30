@@ -26,13 +26,13 @@ All services follow these conventions for consistency.
 ```ini
 [Unit]
 Description=JIB <Component Name> - <Brief description>
-Documentation=file://%h/khan/james-in-a-box/host-services/<path>/README.md
+Documentation=file://%h/workspace/james-in-a-box/host-services/<path>/README.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=<oneshot|simple>
-WorkingDirectory=%h/khan/james-in-a-box
+WorkingDirectory=%h/workspace/james-in-a-box
 ExecStart=<command>
 
 # Logging
@@ -57,7 +57,7 @@ WantedBy=default.target
 ```ini
 [Unit]
 Description=<Timer description>
-Documentation=file://%h/khan/james-in-a-box/host-services/<path>/README.md
+Documentation=file://%h/workspace/james-in-a-box/host-services/<path>/README.md
 
 [Timer]
 # Choose one scheduling approach:
@@ -76,7 +76,7 @@ WantedBy=timers.target
 
 ### Key Standards
 
-1. **Documentation paths**: Use `%h` specifier instead of hardcoded paths (e.g., `file://%h/khan/...` not `file:///home/user/khan/...`)
+1. **Documentation paths**: Use `%h` specifier instead of hardcoded paths (e.g., `file://%h/workspace/...` not `file:///home/user/workspace/...`)
 
 2. **WantedBy target**: Use `default.target` for services (user session), `timers.target` for timers
 

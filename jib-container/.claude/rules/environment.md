@@ -72,14 +72,14 @@ Before any GitHub MCP operation, check the actual remote to get the correct owne
 ```bash
 git remote -v   # e.g., origin https://github.com/jwbron/james-in-a-box.git
 ```
-Do NOT assume owner from context (e.g., don't assume `Khan/` just because you're working on Khan Academy code). The local repo knows its origin - use that.
+Do NOT assume owner from context (e.g., don't assume a specific organization name). The local repo knows its origin - use that.
 
 **Authentication**: Configured automatically via `GITHUB_TOKEN` environment variable.
 
 ## Capabilities
 
 **CAN do:**
-- Read/edit code in `~/khan/`
+- Read/edit code in `~/workspace/`
 - Run tests, dev servers, install packages
 - Git commits and push via `git push` (HTTPS only)
 - Create/manage PRs via GitHub MCP
@@ -97,7 +97,7 @@ Do NOT assume owner from context (e.g., don't assume `Khan/` just because you're
 
 | Path | Access | Purpose |
 |------|--------|---------|
-| `~/khan/` | RW | Code workspace (mounted from host) |
+| `~/workspace/` | RW | Code workspace (mounted from host) |
 | `~/context-sync/confluence/` | RO | ADRs, runbooks, docs |
 | `~/context-sync/jira/` | RO | JIRA tickets |
 | `~/sharing/` | RW | Persistent data (survives rebuilds) |

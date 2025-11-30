@@ -247,7 +247,7 @@ Print a clear summary to stdout with:
 - All work should be committed to git
 - **Create a PR after completing code changes** - this lets the user review on GitHub
 - **Beads is your persistent memory** - ALWAYS check and update beads
-- Working directory: You can access all repos in `~/khan/`
+- Working directory: You can access all repos in `~/workspace/`
 - Use GitHub MCP to create PRs and request review from @jwiesebron
 - **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack notification automatically
 
@@ -260,7 +260,7 @@ Process this task now."""
 
     claude_result = run_claude(
         prompt=prompt,
-        cwd=Path.home() / "khan",  # Start in khan directory
+        cwd=Path.home() / "workspace",  # Start in workspace directory
         capture_output=True,
     )
     logger.info("Claude completed", return_code=claude_result.returncode, task_id=original_task_id)
@@ -430,7 +430,7 @@ def extract_thread_context(content: str) -> tuple[str, list[str]]:
 
     # Extract PR references from the full content
     # Patterns to match:
-    # - "PR Analysis: Khan/terraform-modules#29"
+    # - "PR Analysis: yourorg/terraform-modules#29"
     # - "https://github.com/owner/repo/pull/123"
     # - "owner/repo#123"
     pr_analysis_pattern = r"PR Analysis:\s*([^#\s]+)#(\d+)"
@@ -654,7 +654,7 @@ Process this response now."""
 
     claude_result = run_claude(
         prompt=prompt,
-        cwd=Path.home() / "khan",  # Start in khan directory
+        cwd=Path.home() / "workspace",  # Start in workspace directory
         capture_output=True,
     )
     logger.info(

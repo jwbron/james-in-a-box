@@ -3,7 +3,7 @@
 [project]
 name = "james-in-a-box"
 version = "0.1.0"
-description = "Autonomous software engineering agent for Khan Academy"
+description = "Autonomous software engineering agent powered by Claude"
 requires-python = ">=3.11"
 
 [tool.ruff]

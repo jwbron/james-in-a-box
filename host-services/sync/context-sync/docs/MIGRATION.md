@@ -40,7 +40,7 @@ confluence-cursor-sync/  # Code only, no output files
 
 Pull the latest changes:
 ```bash
-cd ~/khan/confluence-cursor-sync
+cd ~/workspace/confluence-cursor-sync
 git pull
 ```
 
@@ -96,7 +96,7 @@ If you created symlinks to `confluence-docs/` in other projects, update them:
 **Option 1: Update existing symlinks**
 ```bash
 # For each project with a symlink
-cd ~/khan/some-project
+cd ~/workspace/some-project
 rm confluence-docs
 ln -s ~/context-sync/confluence confluence-docs
 ```
@@ -107,7 +107,7 @@ The existing linking tools still work, but point them to the new location:
 
 ```bash
 # This will work automatically with the new default location
-make docs-link-khan-execute
+make docs-link-workspace-execute
 ```
 
 ### Step 7: Clean Up Old Data (Optional)
@@ -134,7 +134,7 @@ All existing Makefile commands still work:
 ```bash
 make docs-sync          # Still works, uses new location
 make docs-search        # Still works
-make docs-link-khan     # Still works
+make docs-link-workspace     # Still works
 # etc.
 ```
 
@@ -218,7 +218,7 @@ If you have symlinks pointing to `confluence-docs/`, they need to be updated:
 
 ```bash
 # Find all symlinks pointing to old location
-find ~/khan -type l -lname "*confluence-docs*"
+find ~/workspace -type l -lname "*confluence-docs*"
 
 # Update each one
 cd <project-directory>

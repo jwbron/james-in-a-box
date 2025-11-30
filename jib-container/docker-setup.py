@@ -2,7 +2,7 @@
 """
 Docker Development Environment Setup
 
-Installs Khan Academy development tools in the Docker container.
+Installs your organization development tools in the Docker container.
 Skips authentication (SSH, gcloud) and interactive steps.
 """
 
@@ -472,7 +472,7 @@ def main():
         sys.exit(1)
 
     print("=" * 60)
-    print("Khan Academy Docker Development Environment Setup")
+    print("your organization Docker Development Environment Setup")
     print("=" * 60)
     print()
     print("This script installs development tools WITHOUT:")

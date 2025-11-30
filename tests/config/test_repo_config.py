@@ -25,7 +25,7 @@ class TestGetConfigPath:
         assert config_file.exists()
 
     def test_finds_config_in_khan_directory(self, temp_dir, monkeypatch):
-        """Test finding config in ~/khan/james-in-a-box/config/."""
+        """Test finding config in ~/workspace/james-in-a-box/config/."""
         monkeypatch.setenv("HOME", str(temp_dir))
 
         config_path = temp_dir / "khan" / "james-in-a-box" / "config"

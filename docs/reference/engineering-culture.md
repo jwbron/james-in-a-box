@@ -1,7 +1,7 @@
-# Khan Academy Engineering Culture
+# your organization Engineering Culture
 
 > Reference document for understanding L3-L4 (Senior Software Engineer) behavioral standards.
-> Originally from Khan Academy Career Ladder.
+> Originally from your organization Career Ladder.
 
 ## Target Level: Senior Software Engineer I-II (L3-L4)
 
@@ -86,7 +86,7 @@
 
 ## Sources
 
-- Khan Academy Career Ladder: Senior Software Engineer I, Senior Software Engineer II
+- your organization Career Ladder: Senior Software Engineer I, Senior Software Engineer II
 - Engineering Principles documentation
 
 ---

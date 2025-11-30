@@ -39,7 +39,7 @@ A multi-connector tool to sync documentation and context from multiple sources (
 
 ## Quick Start
 
-### For Khan Academy Users (Recommended)
+### For your organization Users (Recommended)
 
 ```bash
 # One-time setup
@@ -52,7 +52,7 @@ make docs-bootstrap
 The bootstrap command will:
 1. Set up your Confluence configuration (if needed)
 2. Run a full sync of all documentation to `~/context-sync/confluence/`
-3. Create symlinks in all Khan Academy projects
+3. Create symlinks in all your organization projects
 4. Make everything ready for Cursor to index
 
 The scheduler will automatically sync every hour in the background.
@@ -112,9 +112,9 @@ make docs-cleanup-execute # Remove orphaned files
 make docs-clean       # Clean all synced documentation
 make docs-link PROJECT="/path" # Create symlink in another project
 make docs-list-links  # List projects with symlinks
-make docs-link-khan   # Create symlinks in all Khan Academy projects (dry run)
-make docs-link-khan-execute # Create symlinks in all Khan Academy projects
-make docs-list-khan-links # List Khan Academy projects with symlinks
+make docs-link-workspace   # Create symlinks in all your organization projects (dry run)
+make docs-link-workspace-execute # Create symlinks in all your organization projects
+make docs-list-workspace-links # List your organization projects with symlinks
 make docs-setup-cursor   # Set up Cursor rules and guidance for confluence-docs
 make help             # Show all available commands
 ```
@@ -189,14 +189,14 @@ python -m sync.search --list-spaces
 
 ### Symlink Management
 
-For Khan Academy projects, you can automatically create symlinks:
+For your organization projects, you can automatically create symlinks:
 
 ```bash
-# Create symlinks in all Khan Academy projects
-make docs-link-khan-execute
+# Create symlinks in all your organization projects
+make docs-link-workspace-execute
 
 # List projects with symlinks
-make docs-list-khan-links
+make docs-list-workspace-links
 
 # Create symlink in a specific project
 make docs-link PROJECT="/path/to/project"
@@ -273,7 +273,7 @@ Once synced, your documentation is optimized for AI assistance:
 2. **Human-readable content**: Files contain view-formatted HTML content that's both readable and LLM-friendly
 3. **Hierarchical organization**: Directory structure mirrors Confluence page hierarchy for better AI understanding
 4. **AI guidance**: Cursor automatically references your internal documentation with optimal readability
-5. **Create symlinks**: Make documentation available in other projects with `make docs-link-khan-execute`
+5. **Create symlinks**: Make documentation available in other projects with `make docs-link-workspace-execute`
 
 The confluence-docs directories are:
 - **Human and LLM optimized** with view-formatted content for maximum readability and context

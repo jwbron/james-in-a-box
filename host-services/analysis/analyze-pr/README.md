@@ -18,13 +18,13 @@ The tool is automatically available when jib is set up. It requires:
 
 ```bash
 # Full URL
-analyze-pr https://github.com/Khan/buildmaster2/pull/179
+analyze-pr https://github.com/yourorg/buildmaster2/pull/179
 
 # Shorthand
-analyze-pr Khan/buildmaster2#179
+analyze-pr yourorg/buildmaster2#179
 
 # Alternative format
-analyze-pr Khan/buildmaster2/pull/179
+analyze-pr yourorg/buildmaster2/pull/179
 ```
 
 ### Options
@@ -39,16 +39,16 @@ analyze-pr Khan/buildmaster2/pull/179
 
 ```bash
 # Analyze and get suggestions
-analyze-pr Khan/repo#123
+analyze-pr yourorg/repo#123
 
 # Analyze and implement fixes
-analyze-pr --fix Khan/repo#123
+analyze-pr --fix yourorg/repo#123
 
 # Interactive mode for complex issues
-analyze-pr --interactive Khan/repo#123
+analyze-pr --interactive yourorg/repo#123
 
 # Just fetch context for manual review
-analyze-pr --context-only Khan/repo#123
+analyze-pr --context-only yourorg/repo#123
 ```
 
 ## How It Works
@@ -92,7 +92,7 @@ Claude provides:
 
 ### Fix Mode (`--fix`)
 
-If the repo is available in `~/khan/`:
+If the repo is available in `~/workspace/`:
 1. Checks out the PR branch
 2. Makes necessary changes using Claude's tools
 3. Commits with descriptive message
@@ -154,6 +154,6 @@ Install GitHub CLI: https://cli.github.com/
 - Check the context JSON manually
 
 ### Changes not pushed
-- Verify the repo exists in `~/khan/`
+- Verify the repo exists in `~/workspace/`
 - Check write access in `config/repositories.yaml`
 - Ensure the PR is still open

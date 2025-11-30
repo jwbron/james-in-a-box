@@ -39,8 +39,8 @@ These define how Claude operates within james-in-a-box.
 - `github-pr-context.md` - PR context tracking
 
 **Quality standards:**
-- `khan-academy.md` - Tech stack and code standards
-- `khan-academy-culture.md` - Engineering culture and competencies
+- `engineering-best-practices.md` - Tech stack and code standards
+- `engineering-culture.md` - Engineering culture and competencies
 - `pr-descriptions.md` - PR writing guidelines
 - `test-workflow.md` - Test discovery and execution
 

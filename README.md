@@ -152,7 +152,7 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 - Assesses cultural fit (communication style, problem-solving approach, collaboration quality)
 - Generates actionable improvements to agent behavior
 
-**Cultural Alignment**: Agent behavior continuously refined to match Khan Academy engineering values (clear communication, systematic problem-solving, thorough testing, user-focused decisions)
+**Cultural Alignment**: Agent behavior continuously refined to match engineering best practices (clear communication, systematic problem-solving, thorough testing, user-focused decisions)
 
 ## How It Works
 
@@ -317,7 +317,7 @@ You: "What's the recommended approach for implementing feature flags in Django?"
 jib: → Researches Django feature flag libraries
      → Reads latest documentation for top options
      → Compares LaunchDarkly, django-flags, django-waffle
-     → Analyzes Khan Academy's existing infrastructure
+     → Analyzes existing infrastructure and requirements
      → Recommends django-waffle with reasoning
      → Provides implementation example and migration guide
 ```

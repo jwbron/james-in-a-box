@@ -51,7 +51,7 @@ cleanup_orphaned_worktrees() {
             fi
 
             repo_name=$(basename "$worktree")
-            original_repo="$HOME/khan/$repo_name"
+            original_repo="$HOME/workspace/$repo_name"
 
             if [ -d "$original_repo/.git" ]; then
                 log "  Removing worktree: $repo_name"
@@ -85,7 +85,7 @@ cleanup_orphaned_worktrees() {
 prune_stale_worktree_references() {
     log "Pruning stale worktree references..."
 
-    # Prune worktree references in all khan repos
+    # Prune worktree references in all workspace repos
     local repos_pruned=0
     for repo in "$HOME/khan"/*; do
         if [ ! -d "$repo/.git" ]; then
@@ -117,7 +117,7 @@ cleanup_orphaned_branches() {
     local total_branches_deleted=0
     local total_branches_skipped=0
 
-    # Iterate through all repos in ~/khan/
+    # Iterate through all repos in ~/workspace/
     for repo in "$HOME/khan"/*; do
         if [ ! -d "$repo/.git" ]; then
             continue

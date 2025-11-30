@@ -9,7 +9,7 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 **Installation:**
 - `~/CLAUDE.md` → All rules combined
 
-**Why one file?** Since `~/khan/` is mounted from the host (not copied), we can't reliably write to it during container startup. Combining all rules into `~/CLAUDE.md` ensures they're always available.
+**Why one file?** Since `~/workspace/` is mounted from the host (not copied), we can't reliably write to it during container startup. Combining all rules into `~/CLAUDE.md` ensures they're always available.
 
 **Note**: `CLAUDE.md` is the [official Claude Code format](https://www.anthropic.com/engineering/claude-code-best-practices) for providing context and instructions to the agent.
 
@@ -39,9 +39,9 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
   - GitHub PR context tracking
   - Integration with Beads
 
-### Khan Academy Standards
+### your organization Standards
 
-- **khan-academy.md** - Tech stack and code standards
+- **engineering-best-practices.md** - Tech stack and code standards
   - Technologies (Python, React, TypeScript)
   - Code style guidelines
   - Common commands
@@ -49,7 +49,7 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 ### Quality & Communication
 
 - **pr-descriptions.md** - PR writing guidelines
-  - Khan Academy PR format
+  - your organization PR format
   - Length targets
 
 - **test-workflow.md** - Test discovery and execution
@@ -64,10 +64,10 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 
 The following content has been moved to `docs/reference/` for on-demand access:
 
-- **khan-academy-culture.md** - L3-L4 engineering behavioral standards
+- **engineering-culture.md** - L3-L4 engineering behavioral standards
 - **conversation-analysis-criteria.md** - Performance assessment dimensions
 
-See `~/khan/james-in-a-box/docs/index.md` for navigation to all documentation.
+See `~/workspace/james-in-a-box/docs/index.md` for navigation to all documentation.
 
 ## Design Principles
 

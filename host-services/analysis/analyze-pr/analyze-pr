@@ -5,8 +5,8 @@ PR Analyzer - Host-side wrapper for analyzing GitHub PRs
 Fetches comprehensive PR context from GitHub and passes it to jib for analysis.
 
 Usage:
-    analyze-pr https://github.com/Khan/buildmaster2/pull/179
-    analyze-pr Khan/buildmaster2#179
+    analyze-pr https://github.com/yourorg/buildmaster/pull/179
+    analyze-pr yourorg/buildmaster#179
     analyze-pr --help
 
 The script will:
@@ -30,10 +30,10 @@ def parse_pr_reference(ref: str) -> Tuple[str, str, int]:
     """Parse PR URL or shorthand into (owner, repo, number).
 
     Accepts:
-        - https://github.com/Khan/buildmaster2/pull/179
-        - github.com/Khan/buildmaster2/pull/179
-        - Khan/buildmaster2#179
-        - Khan/buildmaster2/pull/179
+        - https://github.com/yourorg/buildmaster/pull/179
+        - github.com/yourorg/buildmaster/pull/179
+        - yourorg/buildmaster#179
+        - yourorg/buildmaster/pull/179
     """
     # URL pattern: github.com/owner/repo/pull/number
     url_pattern = r'(?:https?://)?github\.com/([^/]+)/([^/]+)/pull/(\d+)'
@@ -276,9 +276,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    analyze-pr https://github.com/Khan/buildmaster2/pull/179
-    analyze-pr Khan/buildmaster2#179
-    analyze-pr --fix Khan/buildmaster2#179  # Attempt to implement fixes
+    analyze-pr https://github.com/yourorg/buildmaster/pull/179
+    analyze-pr yourorg/buildmaster#179
+    analyze-pr --fix yourorg/buildmaster#179  # Attempt to implement fixes
         """
     )
     parser.add_argument(
