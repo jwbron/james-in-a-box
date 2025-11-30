@@ -6,7 +6,6 @@
 **Informed:** Engineering teams
 **Proposed:** November 2025
 **Status:** Implemented (Phases 1-4 Complete)
-**Implementation Review:** See [IMPLEMENTATION-REVIEW.md](./ADR-Standardized-Logging-Interface-IMPLEMENTATION-REVIEW.md)
 
 ## Table of Contents
 
