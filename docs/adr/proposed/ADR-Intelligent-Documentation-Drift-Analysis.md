@@ -112,6 +112,7 @@ Documentation drift is a universal problem in software engineering:
 | **Correction Generator** | Create specific fix recommendations | LLM generates doc updates or code warnings |
 | **Review Workflow** | Human validates corrections | PR creation with explanation |
 | **Scheduler** | Trigger analysis | Post-merge, weekly, and on-demand |
+| **FEATURES.md** | Feature-to-source mapping | Maps features to implementation files |
 
 ## Decision Matrix
 
@@ -416,6 +417,23 @@ Create GitHub issue for team discussion:
 ```
 
 ### 4. Integration Points
+
+**Integration with FEATURES.md:**
+
+This ADR integrates with [ADR-Feature-Analyzer-Documentation-Sync](../not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md) to leverage FEATURES.md as a core data source for drift detection.
+
+**FEATURES.md provides:**
+- Authoritative feature-to-source mapping
+- Feature status tracking (not-implemented, in-progress, implemented)
+- Implementation file locations for each feature
+
+**Drift analyzer uses FEATURES.md to:**
+- Map documented features to actual code locations
+- Verify feature status matches documentation claims
+- Detect when documented features no longer exist or have changed
+- Prioritize drift detection based on feature criticality
+
+See "Strategy 4: Feature-Based Drift Detection" below for implementation details.
 
 **4.1 Post-Merge Hook**
 
@@ -752,6 +770,121 @@ def detect_semantic_drift(doc: str, codebase: dict) -> list[Drift]:
 
     return drifts
 ```
+
+### Strategy 4: Feature-Based Drift Detection
+
+For feature documentation using FEATURES.md mapping:
+
+```python
+def detect_feature_drift(doc: str, features_md: dict) -> list[Drift]:
+    """
+    Use FEATURES.md to validate documented features against actual code.
+
+    Example:
+    Doc says: "The GitHub watcher monitors PRs and creates jib tasks per ADR-GitHub-Integration"
+
+    FEATURES.md shows:
+    - Feature: "GitHub Watcher Service"
+    - Status: "implemented"
+    - Files: ["host-services/analysis/github-watcher/watcher.py"]
+
+    Validates:
+    1. Feature exists in FEATURES.md
+    2. Implementation files are present
+    3. Feature status matches documentation claims
+    4. Referenced ADR status is correct
+    """
+
+    # Extract feature mentions from documentation
+    doc_features = extract_feature_mentions(doc)
+
+    drifts = []
+    for feature_name in doc_features:
+        # Look up feature in FEATURES.md
+        feature = features_md.get(feature_name)
+
+        if not feature:
+            drifts.append(Drift(
+                type="feature_not_found",
+                claim=f"Feature '{feature_name}' exists",
+                reality="Feature not found in FEATURES.md",
+                severity="high",
+                recommendation=f"Verify feature exists or update documentation"
+            ))
+            continue
+
+        # Verify implementation files exist
+        missing_files = []
+        for file_path in feature.get('files', []):
+            if not os.path.exists(file_path):
+                missing_files.append(file_path)
+
+        if missing_files:
+            drifts.append(Drift(
+                type="feature_files_missing",
+                claim=f"Feature '{feature_name}' implemented in {feature['files']}",
+                reality=f"Files missing: {missing_files}",
+                severity="high",
+                file=feature['files'][0] if feature['files'] else None
+            ))
+
+        # Check status alignment
+        doc_status = extract_feature_status_from_doc(doc, feature_name)
+        if doc_status and doc_status != feature.get('status'):
+            drifts.append(Drift(
+                type="feature_status_mismatch",
+                claim=f"Feature '{feature_name}' is {doc_status}",
+                reality=f"FEATURES.md shows status: {feature.get('status')}",
+                severity="medium",
+                recommendation=f"Update documentation to reflect current status"
+            ))
+
+    return drifts
+```
+
+**Why Feature-Based Detection Matters:**
+
+FEATURES.md provides the **authoritative mapping** between high-level features and low-level code:
+
+**For Drift Detection:**
+- Knows which files implement which features
+- Provides feature status (not-implemented, in-progress, implemented)
+- Maps documentation claims to actual source locations
+
+**For Impact Analysis:**
+- Changes to feature files should trigger doc updates for related documentation
+- Deprecated features trigger removal of documentation
+- Status changes (implemented → deprecated) trigger doc updates
+
+**For Validation:**
+- Can verify documented features actually exist in the codebase
+- Can check if feature claims align with FEATURES.md status
+- Can detect when features are removed but docs still reference them
+
+**Example Use Case:**
+
+**Documentation says:**
+> "The GitHub watcher monitors PRs and creates jib tasks per ADR-GitHub-Integration"
+
+**Drift analyzer with FEATURES.md:**
+1. Checks FEATURES.md for "GitHub watcher" feature
+2. Finds it maps to `host-services/analysis/github-watcher/`
+3. Verifies that directory still exists and contains PR monitoring code
+4. Validates ADR-GitHub-Integration status is "implemented"
+5. **If drift detected**: Creates PR updating docs
+
+**Without FEATURES.md:**
+- Drift analyzer must guess which files implement "GitHub watcher"
+- May miss related files or check wrong locations
+- Higher false positive/negative rate
+- No authoritative source for feature status
+
+**Integration with Feature Analyzer:**
+
+This creates a complete documentation loop:
+- **FEATURES.md → Drift Analyzer**: Provides feature context for drift detection
+- **Drift Analyzer → Documentation**: Proposes doc updates when drift detected
+- **Codebase Analyzer → FEATURES.md**: Keeps feature list current (per ADR-Feature-Analyzer-Documentation-Sync)
 
 ## Correction Workflows
 
@@ -1122,6 +1255,7 @@ The general approach (automated drift detection + correction PRs) is likely stab
 | ADR | Relationship |
 |-----|--------------|
 | [ADR-LLM-Documentation-Index-Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | Provides codebase index infrastructure that drift detection builds on |
+| [ADR-Feature-Analyzer-Documentation-Sync](../not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Maintains FEATURES.md which drift detection uses as authoritative feature-to-source mapping |
 | [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) | jib needs accurate docs to function autonomously; drift detection ensures quality |
 
 ---
