@@ -1544,10 +1544,9 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     _quiet_mode = not args.verbose
     if _quiet_mode:
         # Initialize statusbar with estimated steps for interactive mode
-        # Steps: check docker, check permissions, check host, build image,
-        #        generate id, create worktrees, parse mounts, add worktree mounts,
-        #        get github token, run container
-        init_statusbar(total_steps=10, enabled=True)
+        # Steps: check docker image, check auth, build image, prepare container,
+        #        create worktrees, configure mounts, configure github, launch
+        init_statusbar(total_steps=8, enabled=True)
 
 
     # Handle reset

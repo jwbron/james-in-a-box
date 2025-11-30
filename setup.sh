@@ -512,6 +512,7 @@ declare -A component_descriptions=(
     ["index-generator"]="Index Generator (codebase indexing)"
     ["spec-enricher"]="Spec Enricher (specification enrichment)"
     ["adr-researcher"]="ADR Researcher (weekly ADR research)"
+    ["trace-collector"]="Trace Collector (LLM tool call tracing)"
 )
 
 # Desired installation order - ALL components are listed explicitly
@@ -526,6 +527,7 @@ component_order=(
     "analysis/conversation-analyzer"
     "analysis/doc-generator"
     "analysis/adr-researcher"
+    "analysis/trace-collector"
 )
 
 # Optional components with special setup commands

@@ -146,9 +146,9 @@ class TestJsonFormatter:
         assert "extra" in parsed
         assert parsed["extra"]["custom_field"] == "custom_value"
 
-    def test_includes_source_location_for_warnings_and_errors(self, formatter):
-        """Test that source location is included for WARNING and above."""
-        for level in [logging.WARNING, logging.ERROR, logging.CRITICAL]:
+    def test_includes_source_location_for_all_levels(self, formatter):
+        """Test that source location is included for all log levels."""
+        for level in [logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL]:
             record = logging.LogRecord(
                 name="test",
                 level=level,
@@ -157,6 +157,7 @@ class TestJsonFormatter:
                 msg="Test",
                 args=(),
                 exc_info=None,
+                func="test_function",
             )
 
             output = formatter.format(record)
@@ -165,12 +166,7 @@ class TestJsonFormatter:
             assert "sourceLocation" in parsed
             assert parsed["sourceLocation"]["file"] == "/path/to/file.py"
             assert parsed["sourceLocation"]["line"] == 42
-
-    def test_excludes_source_location_for_info(self, formatter, log_record):
-        """Test that source location is not included for INFO level."""
-        output = formatter.format(log_record)
-        parsed = json.loads(output)
-        assert "sourceLocation" not in parsed
+            assert parsed["sourceLocation"]["function"] == "test_function"
 
     def test_includes_exception_info(self, formatter):
         """Test that exception info is included."""
@@ -308,3 +304,38 @@ class TestConsoleFormatter:
             )
             output = formatter.format(record)
             assert logging.getLevelName(level) in output
+
+    def test_shows_source_location_when_enabled(self, formatter):
+        """Test that source location is shown when enabled (default)."""
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="/path/to/file.py",
+            lineno=42,
+            msg="Test",
+            args=(),
+            exc_info=None,
+        )
+        output = formatter.format(record)
+
+        assert "[/path/to/file.py:42]" in output
+
+    def test_hides_source_location_when_disabled(self):
+        """Test that source location is hidden when disabled."""
+        formatter = ConsoleFormatter(
+            service="test", use_colors=False, show_source_location=False
+        )
+
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="/path/to/file.py",
+            lineno=42,
+            msg="Test",
+            args=(),
+            exc_info=None,
+        )
+        output = formatter.format(record)
+
+        assert "/path/to/file.py" not in output
+        assert ":42" not in output

@@ -635,27 +635,30 @@ class SlackReceiver:
         timeout_seconds = 45 * 60
 
         try:
-            # Create a thread to read stderr while we stream stdout
-            def read_stderr():
-                if process.stderr:
-                    for line in process.stderr:
-                        stderr_lines.append(line)
-
-            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
-            stderr_thread.start()
-
-            # Stream stdout to log file in real-time
+            # Stream both stdout and stderr to log file in real-time
             self.logger.info(
-                "Streaming Claude output",
+                "Streaming container output",
                 log_file=str(log_file),
                 task_id=task_id,
             )
 
             with open(log_file, "w") as f:
-                f.write(f"=== Claude output for {task_id} ===\n")
+                f.write(f"=== Container output for {task_id} ===\n")
                 f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write("=" * 50 + "\n\n")
                 f.flush()
+
+                # Thread to read stderr and stream to log file
+                def read_stderr():
+                    if process.stderr:
+                        for line in process.stderr:
+                            stderr_lines.append(line)
+                            # Stream stderr to log file too (prefixed for clarity)
+                            f.write(f"[stderr] {line}")
+                            f.flush()
+
+                stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+                stderr_thread.start()
 
                 if process.stdout:
                     for line in process.stdout:
@@ -666,13 +669,14 @@ class SlackReceiver:
                 # Wait for process to complete
                 process.wait(timeout=timeout_seconds)
 
+                # Wait for stderr thread to finish
+                stderr_thread.join(timeout=5)
+
                 f.write("\n" + "=" * 50 + "\n")
                 f.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write(f"Exit code: {process.returncode}\n")
                 f.flush()
 
-            # Wait for stderr thread to finish
-            stderr_thread.join(timeout=5)
             stderr_str = "".join(stderr_lines)
 
             if process.returncode != 0:
