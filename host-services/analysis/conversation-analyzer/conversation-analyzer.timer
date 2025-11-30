@@ -1,6 +1,6 @@
 [Unit]
 Description=Weekly JIB Conversation Analysis Timer
-Documentation=https://github.com/jwiesebron/james-in-a-box
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/conversation-analyzer/README.md
 Requires=conversation-analyzer.service
 
 [Timer]
