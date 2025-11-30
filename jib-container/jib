@@ -1751,6 +1751,7 @@ def exec_in_new_container(
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
+        "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
     ]
 
     # Add logging configuration for log persistence
