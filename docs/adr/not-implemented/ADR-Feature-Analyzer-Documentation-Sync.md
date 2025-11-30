@@ -44,29 +44,44 @@ james-in-a-box has:
 
 ### What We're Deciding
 
-This ADR establishes an automated workflow where:
+This ADR establishes a **feature analyzer** responsible for maintaining FEATURES.md and related documentation through two mechanisms:
 
-1. ADRs trigger documentation updates after merge
-2. Feature analyzer detects which docs need updating based on ADR content
-3. Updates are proposed as PRs for human review
-4. Documentation stays synchronized with architectural decisions
+**1. ADR-Triggered Documentation Sync:**
+- ADRs trigger documentation updates after implementation and merge
+- Feature analyzer detects which docs need updating based on ADR content
+- Updates are proposed as PRs for human review
+- Documentation stays synchronized with architectural decisions
+
+**2. Weekly Code Analysis:**
+- Automatically scan all merged code to identify new features, components, and capabilities
+- Update FEATURES.md with newly discovered features
+- Remove or update entries for deprecated/changed features
+- Ensure FEATURES.md accurately reflects the codebase's current state
 
 ### Goals
 
 **Primary Goals:**
-1. **Automate doc discovery:** Identify which documentation is affected by each ADR
-2. **Prevent doc drift:** Ensure docs reflect implemented ADRs
-3. **Maintain quality:** Human review all auto-generated doc updates
-4. **Low friction:** Minimal manual tracking of what needs updating
+1. **Maintain FEATURES.md:** Automatically keep the feature list current by analyzing both ADRs and merged code
+2. **Automate doc discovery:** Identify which documentation is affected by each ADR
+3. **Prevent doc drift:** Ensure docs reflect implemented ADRs
+4. **Maintain quality:** Human review all auto-generated doc updates
+5. **Low friction:** Minimal manual tracking of what needs updating
+
+**Secondary Goals:**
+- Automatically analyze all merged code weekly to identify new features
+- Remove or update feature entries as code evolves
+- Ensure FEATURES.md accurately reflects the current state of the codebase
 
 **Non-Goals:**
 - Automatically merge documentation PRs without review
 - Replace human documentation writing entirely
-- Handle documentation for non-ADR changes (covered by existing workflows)
+- Track features across multiple repositories (single-repo scope for initial implementation)
 
 ## Decision
 
-**We will implement a feature analyzer that automatically detects and proposes documentation updates after ADR implementation and merge.**
+**We will implement a feature analyzer that:**
+1. **Automatically detects and proposes documentation updates after ADR implementation and merge**
+2. **Runs weekly to analyze all merged code and update FEATURES.md with newly discovered features**
 
 ### Core Workflow
 
@@ -87,12 +102,21 @@ ADR Lifecycle:
 
 The feature analyzer will:
 
+**For ADR-triggered documentation updates:**
 1. **Detect ADR status changes** via systemd-scheduled polling (see Implementation Roadmap)
 2. **Parse ADR content** to identify affected systems/features
 3. **Map to documentation** using docs index and feature list
 4. **Generate doc updates** with LLM assistance
 5. **Create PR** with proposed documentation changes
 6. **Link back to ADR** in PR description for context
+
+**For weekly code analysis:**
+1. **Scan all merged code** from the past week in the repository
+2. **Identify new features, components, and capabilities** added to the codebase
+3. **Extract feature metadata** (name, description, implementation files, tests)
+4. **Update FEATURES.md** with newly discovered features and their locations
+5. **Create PR** with FEATURES.md updates for human review
+6. **Link to commits** that introduced each new feature
 
 ### Integration Points
 
@@ -157,7 +181,39 @@ This ADR will be implemented in progressive phases to manage complexity and vali
 - **Success criteria:** Failed validations caught, easy rollback demonstrated
 - **Complexity:** Medium - testing edge cases
 
-**Phase 5 (Future): Real-time Webhooks (TBD)**
+**Phase 5: Weekly Code Analysis for FEATURES.md (Weeks 9-10)**
+- **Goal:** Automatically discover and document new features from merged code
+- **Components:**
+  - Weekly systemd timer (runs Monday mornings)
+  - Git log analyzer (scans commits from past 7 days in the repository)
+  - LLM-based feature extractor (analyzes diffs to identify new capabilities)
+  - FEATURES.md updater (adds new entries with proper status flags)
+  - PR creator for FEATURES.md updates
+- **Success criteria:** Identifies 80%+ of new features from weekly merges
+- **Complexity:** Medium-High - requires code analysis and feature classification
+- **Quality control:**
+  - **Precision vs Recall tradeoff:** Tune for high precision (fewer false positives) to avoid noise in FEATURES.md. Better to miss 20% of features (requiring manual backfill) than pollute FEATURES.md with non-features (refactors, internal changes).
+  - **Confidence scoring:** Each detected feature includes a confidence score (0.0-1.0). Low-confidence features (<0.7) are flagged with "⚠️ Needs Review" in the PR for human validation.
+  - **False positive handling:** Refactors and internal changes are filtered using heuristics (no new public APIs, no new user-facing capabilities, primarily code movement).
+  - **Missed features (the 20%):** Manual backfill process via monthly review or ad-hoc discovery. Engineers can also manually add features to FEATURES.md if the analyzer misses them.
+- **Implementation approach:**
+  ```python
+  # Scan repository for merged code from past week
+  commits = get_commits_since(days=7)
+  for commit in commits:
+      features = analyze_commit_for_features(commit)
+      for feature in features:
+          if not in_features_md(feature):
+              add_to_features_md(feature, status="implemented")
+  ```
+- **Detection heuristics:**
+  - New files in key directories (e.g., `host-services/`, `jib-container/`)
+  - New CLI commands or scripts
+  - New systemd services
+  - New API endpoints or handlers
+  - Significant new classes/modules (>50 LOC)
+
+**Phase 6 (Future): Real-time Webhooks (TBD)**
 - **Goal:** Near-instant response to ADR merges
 - **Components:**
   - GitHub webhook receiver (requires GCP deployment)
@@ -169,7 +225,7 @@ This ADR will be implemented in progressive phases to manage complexity and vali
 - **Decision:** Defer until local polling proves valuable
 
 **Estimated Total Effort:**
-- MVP to Phase 4: ~8 weeks part-time
+- MVP to Phase 5: ~10 weeks part-time
 - Maintenance: ~2 hours/week ongoing
 
 **Risk Mitigation:**
@@ -405,11 +461,135 @@ Co-Authored-By: Claude <noreply@anthropic.com>
     )
 ```
 
-### Phase 5: Human Review Process
+### Phase 5: Weekly Code Analysis and FEATURES.md Updates
+
+**Automated code analysis workflow:**
+
+```python
+# host-services/analysis/feature-analyzer/weekly_analyzer.py
+def analyze_weekly_code():
+    """Analyze all merged code from past week and update FEATURES.md."""
+
+    # Collect commits from past 7 days in current repository
+    commits = get_commits_since(days=7)
+
+    # Analyze each commit for new features
+    new_features = []
+    for commit in commits:
+        diff = get_commit_diff(commit)
+        features = extract_features_from_diff(diff, commit)
+        new_features.extend(features)
+
+    # Deduplicate and filter features
+    features = deduplicate_features(new_features)
+    features = filter_existing_features(features, "docs/FEATURES.md")
+
+    # Generate FEATURES.md updates
+    if features:
+        updated_content = add_features_to_md(features, "docs/FEATURES.md")
+        create_features_update_pr(features, updated_content)
+```
+
+**Feature extraction logic:**
+
+The LLM analyzes code diffs to identify features using these heuristics:
+
+1. **New files in key directories:**
+   - `host-services/*/` → New service or component
+   - `jib-container/scripts/` → New CLI tool
+   - `systemd/` → New background service
+
+2. **Significant code additions:**
+   - New Python classes (>50 LOC)
+   - New API endpoints
+   - New CLI commands (argparse definitions)
+   - New configuration files
+
+3. **Feature metadata extraction:**
+   - **Name:** Derived from class/function names, file names, or commit messages
+   - **Description:** From docstrings, comments, or LLM analysis of code purpose
+   - **Status:** Always "implemented" (since code is merged)
+   - **Files:** List of implementation files from the diff
+   - **Tests:** Auto-detect corresponding test files
+
+**Example feature detection:**
+
+```python
+# Commit adds: host-services/analysis/feature-analyzer/analyzer.py
+# LLM analyzes and extracts:
+{
+    "name": "Feature Analyzer Service",
+    "description": "Automated service that analyzes codebase to identify features and maintain FEATURES.md",
+    "status": "implemented",
+    "files": [
+        "host-services/analysis/feature-analyzer/analyzer.py",
+        "host-services/analysis/feature-analyzer/feature_extractor.py"
+    ],
+    "tests": [
+        "host-services/analysis/feature-analyzer/test_analyzer.py"
+    ],
+    "introduced_in_commit": "abc123",
+    "date_added": "2025-11-30"
+}
+```
+
+**FEATURES.md update PR:**
+
+```markdown
+## Summary
+
+Weekly code analysis identified 3 new features merged in the past 7 days.
+
+### New Features Detected
+
+1. **Feature Analyzer Service** (host-services/analysis/feature-analyzer/)
+   - Automated feature detection and FEATURES.md maintenance
+   - Introduced in commit: abc123
+
+2. **Beads Task Tracker** (jib-container/scripts/bd)
+   - Persistent task tracking across container restarts
+   - Introduced in commit: def456
+
+3. **Slack Notification Library** (jib-container/shared/notifications.py)
+   - Standardized async notifications to Slack
+   - Introduced in commit: ghi789
+
+## Test Plan
+
+- [x] All entries include correct file paths
+- [x] Status flags are accurate (all "implemented")
+- [x] No duplicate entries in FEATURES.md
+- [ ] Human review for accuracy and completeness
+
+---
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
+
+**Systemd timer configuration:**
+
+```ini
+# /etc/systemd/system/feature-analyzer-weekly.timer
+[Unit]
+Description=Weekly feature analyzer run
+Requires=feature-analyzer-weekly.service
+
+[Timer]
+# Runs Mondays at 11:00 AM Pacific Time (America/Los_Angeles)
+OnCalendar=Mon *-*-* 11:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+**Note on timezone:** Systemd timers use the system timezone. Ensure the host is configured to `America/Los_Angeles` timezone, or use UTC offset equivalents (Mon 19:00 UTC during standard time, Mon 18:00 UTC during daylight saving).
+
+### Phase 6: Human Review Process
 
 **Review workflow:**
 
-1. **Feature analyzer** creates PR with doc updates
+1. **Feature analyzer** creates PR with doc updates or FEATURES.md updates
 2. **GitHub notification** alerts human reviewer
 3. **Reviewer checks:**
    - Technical accuracy of updates
