@@ -82,11 +82,6 @@ RUN mkdir -p /opt/claude-rules
 COPY claude-rules/*.md /opt/claude-rules/
 RUN chmod 644 /opt/claude-rules/*.md
 
-# Copy Claude hooks directory
-RUN mkdir -p /opt/claude-hooks
-COPY .claude/hooks/ /opt/claude-hooks/
-RUN chmod 755 /opt/claude-hooks/*.sh 2>/dev/null || true
-
 # Create tmp directory in image (not mounted - container-only scratch space)
 RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
 
@@ -428,15 +423,6 @@ if [ -d "/usr/local/share/claude-commands" ]; then
     [ "$JIB_QUIET" = "0" ] && ls -1 "${USER_HOME}/.claude/commands/" | sed 's/.md$//' | sed 's/^/    @/'
 fi
 
-# Copy custom hooks to where Claude Code looks for them
-mkdir -p "${USER_HOME}/.claude/hooks"
-if [ -d "/opt/claude-hooks" ]; then
-    cp /opt/claude-hooks/*.sh "${USER_HOME}/.claude/hooks/" 2>/dev/null || true
-    chmod +x "${USER_HOME}/.claude/hooks/"*.sh 2>/dev/null || true
-    log_success "Custom hooks installed:"
-    [ "$JIB_QUIET" = "0" ] && ls -1 "${USER_HOME}/.claude/hooks/" 2>/dev/null | sed 's/^/    /'
-fi
-
 chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude"
 chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.config/claude-code"
 chmod 700 "${USER_HOME}/.claude"
@@ -447,7 +433,6 @@ chmod 700 "${USER_HOME}/.claude"
 # - Trace collector hooks for LLM analysis
 # Reference: https://github.com/anthropics/claude-code/issues/1992
 TRACE_COLLECTOR="${USER_HOME}/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py"
-BEADS_HOOK="${USER_HOME}/.claude/hooks/session-end.sh"
 cat > "${USER_HOME}/.claude/settings.json" << SETTINGS
 {
   "alwaysThinkingEnabled": true,
@@ -468,10 +453,6 @@ cat > "${USER_HOME}/.claude/settings.json" << SETTINGS
       {
         "type": "command",
         "command": "python3 ${TRACE_COLLECTOR} session-end"
-      },
-      {
-        "type": "command",
-        "command": "bash ${BEADS_HOOK}"
       }
     ]
   }
