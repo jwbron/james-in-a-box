@@ -94,11 +94,13 @@ inefficiency-detector/
 
 ## Detection Patterns
 
+All detectors provide **context-specific recommendations** tailored to the actual pattern detected. For example, the Documentation Miss detector examines whether glob was eventually used and adjusts its recommendation accordingly.
+
 ### Tool Discovery Failures (Category 1)
 
 **Documentation Miss:**
 - **Pattern:** Grep("SpecificTerm") → 0, Grep("Term") → 0, Glob("*term*") → success
-- **Recommendation:** Use glob patterns first for file discovery
+- **Recommendation:** Dynamic - suggests using glob first if glob eventually worked, or alternative search strategies otherwise
 
 **Search Failures:**
 - **Pattern:** 3+ consecutive searches returning 0 results
@@ -176,7 +178,8 @@ config = {
     },
     "resource_efficiency": {
         "large_file_threshold": 1000,  # Lines to consider "large"
-        "min_wasted_tokens": 200
+        "min_wasted_tokens": 200,
+        "tokens_per_line": 3           # Estimated tokens per line for waste calculations
     }
 }
 
@@ -242,9 +245,16 @@ pytest tests/host_services/test_inefficiency_detector.py::TestToolDiscoveryDetec
 3. **Heuristic-based:** May miss novel inefficiency patterns
 4. **No ML:** Pattern matching only, no learned models
 5. **English-only:** Recommendations assume English descriptions
+6. **Import path fragility:** Uses `sys.path.insert()` for imports (will be addressed in Phase 3 with proper package structure)
 
 ## Future Enhancements
 
+### Phase 3 Priorities
+- [ ] **Validate false positive rate** with real trace data from Phase 1b hook integration (target: <10%)
+- [ ] Implement weekly report generation and Slack integration
+- [ ] Convert to proper Python package with `setup.py`/`pyproject.toml` and relative imports
+
+### Later Phases
 - [ ] Implement remaining 4 detector categories
 - [ ] Add ML-based anomaly detection for novel patterns
 - [ ] Real-time detection during session (hook-based)

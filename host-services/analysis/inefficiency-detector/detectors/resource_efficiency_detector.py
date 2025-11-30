@@ -25,6 +25,16 @@ from schemas import TraceEvent
 class ResourceEfficiencyDetector(BaseDetector):
     """Detects inefficient resource usage patterns."""
 
+    def __init__(self, tokens_per_line: int = 3):
+        """
+        Initialize the detector.
+
+        Args:
+            tokens_per_line: Estimated tokens per line of code for waste calculations.
+                           Default is 3 (conservative). Adjust based on actual trace data.
+        """
+        self.tokens_per_line = tokens_per_line
+
     def get_category(self) -> str:
         return InefficiencyCategory.RESOURCE.value
 
@@ -132,12 +142,11 @@ class ResourceEfficiencyDetector(BaseDetector):
 
                     # Large file read without limits
                     if lines >= LARGE_FILE_THRESHOLD and not limited_read:
-                        # Estimate token waste
-                        # Assume ~3 tokens per line (conservative)
-                        tokens_read = lines * 3
+                        # Estimate token waste using configurable tokens_per_line
+                        tokens_read = lines * self.tokens_per_line
                         # Assume optimal would be 10% of file (200 lines for 1000-line file)
                         optimal_lines = min(200, lines // 5)
-                        optimal_tokens = optimal_lines * 3
+                        optimal_tokens = optimal_lines * self.tokens_per_line
                         wasted_tokens = tokens_read - optimal_tokens
 
                         if wasted_tokens > 500:
