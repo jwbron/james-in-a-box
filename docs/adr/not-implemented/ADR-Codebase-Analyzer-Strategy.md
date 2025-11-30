@@ -113,6 +113,7 @@ The landscape for codebase analysis has evolved significantly:
 | **Dependencies** | Version currency, security vulnerabilities, license compliance | Dependency update PRs, security alerts |
 | **Test Coverage** | Coverage gaps, test quality, mutation testing results | Coverage reports, test improvement PRs |
 | **File-Level** | Complexity, dead code, documentation coverage | File health reports, cleanup PRs |
+| **Feature Discovery** | New features, components, capabilities | FEATURES.md updates, feature documentation PRs |
 | **External Trends** | Industry best practices, emerging patterns, evolving standards | Research updates to ADRs, recommendations |
 
 ## Decision Matrix
@@ -185,6 +186,7 @@ The landscape for codebase analysis has evolved significantly:
 │  │  - Prioritize findings by severity and impact            │   │
 │  │  - Generate actionable recommendations                   │   │
 │  │  - Create PRs for code changes                           │   │
+│  │  - Update FEATURES.md with discovered features           │   │
 │  │  - Update documentation and ADRs                         │   │
 │  │  - Produce summary reports                               │   │
 │  └──────────────────────────────────────────────────────────┘   │
@@ -512,7 +514,153 @@ The landscape for codebase analysis has evolved significantly:
 }
 ```
 
-### 4. External Research Integration
+### 4. Feature Discovery and FEATURES.md Integration
+
+**Purpose:** Maintain an up-to-date mapping between features and source code locations through automated discovery.
+
+**Relationship to Feature Analyzer ADR:**
+
+This section implements Phase 5 (Weekly Code Analysis) of the [ADR-Feature-Analyzer-Documentation-Sync](ADR-Feature-Analyzer-Documentation-Sync.md), where the codebase analyzer serves as the **primary mechanism for maintaining FEATURES.md**.
+
+#### 4.1 FEATURES.md as Core Output
+
+The codebase analyzer should **maintain and update FEATURES.md** as part of its analysis pipeline:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   Feature Discovery Workflow                     │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                 1. CODE STRUCTURE ANALYSIS                │   │
+│  │  - Identify new components and modules                    │   │
+│  │  - Detect new API endpoints and functions                │   │
+│  │  - Find new classes and capabilities                      │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                            │                                     │
+│                            ▼                                     │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                 2. FEATURE CLASSIFICATION                 │   │
+│  │  - LLM analyzes component purpose and intent              │   │
+│  │  - Categorizes features by domain                         │   │
+│  │  - Maps features to source locations                      │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                            │                                     │
+│                            ▼                                     │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                 3. FEATURES.md UPDATE                     │   │
+│  │  - Add newly discovered features                          │   │
+│  │  - Update feature status (implemented/deprecated)         │   │
+│  │  - Refresh file location mappings                         │   │
+│  │  - Flag features removed from codebase                    │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                            │                                     │
+│                            ▼                                     │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                 4. PR GENERATION                          │   │
+│  │  - Create PR with FEATURES.md updates                     │   │
+│  │  - Include evidence (file paths, code snippets)           │   │
+│  │  - Suggest documentation PRs for new features             │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.2 Symbiotic Relationship
+
+FEATURES.md creates a **symbiotic relationship** between codebase analysis, feature documentation, and drift detection:
+
+```
+┌──────────────────┐
+│ Codebase Analyzer│ ──discovers features──> FEATURES.md
+└──────────────────┘                            │
+                                                │
+                           provides structure   │
+                                                │
+                                                ▼
+                                    ┌────────────────────┐
+                                    │ Documentation      │
+                                    │ Pipeline           │
+                                    └────────────────────┘
+                                                │
+                                                │
+                         validates patterns     │
+                                                │
+                                                ▼
+                                    ┌────────────────────┐
+                                    │ Drift Detector     │ ──feeds back──┐
+                                    │ (PR #256)          │                │
+                                    └────────────────────┘                │
+                                                                          │
+                                    ┌────────────────────┐                │
+                                    │ Codebase Analyzer  │ <──────────────┘
+                                    └────────────────────┘
+```
+
+**Codebase Analyzer → FEATURES.md:**
+- Discovers new features from code analysis
+- Updates feature implementation status
+- Maps features to source file locations
+- Identifies deprecated or removed features
+
+**FEATURES.md → Documentation:**
+- Provides structure for feature guides
+- Links features to relevant ADRs
+- Enables automatic guide generation
+
+**Documentation → Codebase Analyzer:**
+- Documented patterns guide what to look for
+- ADRs provide expected architectural patterns
+- Validates documented practices against code
+
+**Drift Detector (PR #256) → Codebase Analyzer:**
+- Reports feature-based drift (FEATURES.md vs code)
+- Identifies undocumented patterns
+- Highlights inconsistencies for next analysis cycle
+
+#### 4.3 Feature Discovery Output Format
+
+**FEATURES.md Update PR:**
+
+```markdown
+## Summary
+
+Updates FEATURES.md with newly discovered features from codebase analysis.
+
+### Features Added
+
+| Feature | Description | Location |
+|---------|-------------|----------|
+| GitHub Watcher | Real-time monitoring of GitHub events | `src/watchers/github-watcher.py` |
+| MCP Integration | Model Context Protocol server support | `jib-container/scripts/mcp-manager.py` |
+
+### Features Updated
+
+| Feature | Change | Evidence |
+|---------|--------|----------|
+| Beads Task Tracking | Added `--allow-stale` flag | `beads/src/cli.py:234` |
+
+### Features Deprecated
+
+| Feature | Reason | Recommendation |
+|---------|--------|----------------|
+| Legacy Context Sync | Replaced by MCP servers | Remove in next major version |
+
+### Documentation Needed
+
+The following features should have documentation PRs created:
+- [ ] GitHub Watcher integration guide
+- [ ] MCP server setup documentation
+
+## Test Plan
+
+- [x] FEATURES.md syntax is valid
+- [x] All file paths exist
+- [x] Features categorized correctly
+
+---
+🤖 Generated by jib codebase analyzer
+```
+
+### 5. External Research Integration
 
 **Purpose:** Validate internal practices against industry best practices and identify opportunities for improvement.
 
@@ -520,7 +668,7 @@ The landscape for codebase analysis has evolved significantly:
 
 This section mirrors Phase 6 (PR-Based Research Workflow) from the [LLM Documentation Index Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md), but focuses on codebase-specific research rather than ADR research.
 
-#### 4.1 Research Workflow
+#### 5.1 Research Workflow
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -567,7 +715,7 @@ This section mirrors Phase 6 (PR-Based Research Workflow) from the [LLM Document
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-#### 4.2 Research Categories and Sources
+#### 5.2 Research Categories and Sources
 
 | Category | Topics | Authoritative Sources |
 |----------|--------|----------------------|
@@ -578,7 +726,7 @@ This section mirrors Phase 6 (PR-Based Research Workflow) from the [LLM Document
 | **Dependencies** | Version management, security scanning, licensing | Snyk, Dependabot docs, OSS licensing guides |
 | **Language-Specific** | Python/JS/Go best practices | Official language docs, PEPs, TC39 |
 
-#### 4.3 Research Output Format
+#### 5.3 Research Output Format
 
 **Best Practice Comparison Report:**
 
@@ -611,7 +759,7 @@ This section mirrors Phase 6 (PR-Based Research Workflow) from the [LLM Document
 - [RFC 8725: JWT Best Practices](https://tools.ietf.org/html/rfc8725)
 ```
 
-#### 4.4 Scheduled Research Tasks
+#### 5.4 Scheduled Research Tasks
 
 ```yaml
 # codebase-research-schedule.yaml
@@ -649,22 +797,23 @@ schedules:
       - "pytest.ini"
 ```
 
-### 5. PR-Based Output Workflow
+### 6. PR-Based Output Workflow
 
 **Purpose:** Surface all analysis findings as reviewable, discussable PRs.
 
-#### 5.1 PR Categories
+#### 6.1 PR Categories
 
 | Category | Trigger | PR Type | Priority |
 |----------|---------|---------|----------|
 | **Security Vulnerabilities** | CVE detection | Dependency update | Critical |
 | **Test Coverage Gaps** | Coverage below threshold | Test addition | High |
 | **Consistency Fixes** | Pattern violations | Refactoring | Medium |
+| **Feature Discovery** | New features detected | FEATURES.md update | Medium |
 | **Dead Code Removal** | Unused code detection | Cleanup | Low |
 | **Best Practice Alignment** | External research gaps | Enhancement | Medium |
 | **Documentation Updates** | Drift detection | Doc update | Low |
 
-#### 5.2 PR Templates
+#### 6.2 PR Templates
 
 **Security Update PR:**
 
@@ -733,7 +882,7 @@ The module is security-critical and was flagged for inadequate coverage.
 🤖 Generated by jib codebase analyzer
 ```
 
-### 6. Analysis Report Structure
+### 7. Analysis Report Structure
 
 **Comprehensive Analysis Report:**
 
@@ -839,7 +988,9 @@ The module is security-critical and was flagged for inadequate coverage.
 3. Add complexity and maintainability scoring
 4. Create refactoring suggestion PRs
 
-**Success Criteria:** Context-aware analysis with low false positive rate
+**Success Criteria:**
+- Context-aware analysis with low false positive rate
+- FEATURES.md accurately reflects all discovered features
 
 ### Phase 5: External Research Integration
 
@@ -1009,6 +1160,7 @@ The multi-layered analysis approach and PR-based output pattern are established 
 | ADR | Relationship |
 |-----|--------------|
 | [LLM Documentation Index Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | Provides documentation infrastructure; Phase 6 research workflow shared |
+| [Feature Analyzer Documentation Sync](ADR-Feature-Analyzer-Documentation-Sync.md) | Codebase analyzer maintains FEATURES.md as core output (Phase 5 integration) |
 | [Continuous System Reinforcement](ADR-Continuous-System-Reinforcement.md) | Analysis feeds into system improvement loop |
 
 ---
