@@ -72,7 +72,7 @@ No manual setup required inside the container.
 - Limited GitHub token (scoped to specific repos only)
 
 **What the agent CAN do**:
-- Read/write code in `~/khan/` (isolated git worktree)
+- Read/write code in `~/khan/` (isolated git, cannot affect host)
 - Git commits locally
 - Create/manage PRs via GitHub MCP
 - Query issues, repos, comments via GitHub MCP

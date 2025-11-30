@@ -83,12 +83,13 @@ bd --allow-stale create "Task description" --labels feature,jira-1234  # New tas
 discover-tests.py ~/khan/<repo>                 # Find test framework
 ```
 
-### 3. Git Worktrees (IMPORTANT)
+### 3. Isolated Git (IMPORTANT)
 
-You work in an **isolated git worktree**:
-- Commits go to a temporary branch (`jib-temp-{container-id}`)
-- DO NOT create new branches - you're already on one
-- Just commit directly, then create a PR
+You work in a **completely isolated git environment**:
+- Your container has its own git directory (cannot affect host or other containers)
+- You start on branch `jib-temp-{container-id}`
+- Commit directly, push, and create a PR
+- All git operations are safe - you cannot contaminate host repos
 
 ### 4. Plan & Implement
 
@@ -137,9 +138,6 @@ Then use GitHub MCP to create the PR:
 
 **NEVER mix commits from different tasks/PRs.** Each PR must contain ONLY commits related to its original intent.
 
-⚠️ **WORKTREE WARNING**: In worktrees, `git checkout main` FAILS because main is checked out elsewhere.
-ALWAYS use: `git checkout -b <branch-name> origin/main` to create branches from origin/main.
-
 **Before ANY commit, verify you're on the correct branch:**
 ```bash
 git branch --show-current    # What branch am I on?
@@ -147,31 +145,18 @@ git log --oneline -5         # What commits are here?
 git status                   # What changes am I about to commit?
 ```
 
-**Root cause of cross-contamination:**
-- Switching between tasks without checking current branch
-- Committing changes while on wrong branch (e.g., still on PR #26's branch when working on task #27)
-- Not resetting to main before starting new work
-
-**Prevention checklist - BEFORE starting any new task:**
+**To create a new branch for a different task:**
 ```bash
-# 1. Verify current state
-git branch --show-current
-git status
-
-# 2. If uncommitted changes exist for CURRENT task, commit them first
-# 3. If starting NEW task, create a fresh branch from origin/main:
 git fetch origin main
 git checkout -b new-task-branch origin/main   # ALWAYS specify base!
 ```
-
-**CRITICAL in worktrees**: You CANNOT use `git checkout main` because main is checked out elsewhere. ALWAYS create branches with an explicit base: `git checkout -b <name> origin/main`
 
 **If you realize you committed to the wrong branch:**
 ```bash
 # Save the commit hash
 git log --oneline -1         # e.g., abc1234
 
-# Create correct branch from origin/main (worktree-safe)
+# Create correct branch from origin/main
 git fetch origin main
 git checkout -b correct-branch origin/main
 

@@ -1,36 +1,49 @@
-# Worktree Watcher
+# Container Directory Watcher
 
-Automatically cleans up orphaned git worktrees and temporary branches from stopped or crashed jib containers.
+Automatically cleans up orphaned container directories from stopped or crashed jib containers.
 
 **Status**: Operational
 **Type**: Host-side systemd timer service
-**Purpose**: Prevent worktree and branch accumulation, save disk space
+**Purpose**: Prevent disk space accumulation from orphaned container data
 
 ## Overview
 
-Each jib container gets its own ephemeral git worktree to isolate changes from the host repository. When containers exit normally, worktrees are cleaned up automatically. However, if a container crashes or is forcefully killed, worktrees may be left behind.
+Each jib container gets its own **isolated git directory** in `~/.jib-worktrees/{container-id}/`. This directory contains:
+- Isolated `.git-{repo}` directories with independent git state
+- Working tree copies for code editing
 
-This service runs periodically to detect and remove orphaned worktrees.
+When containers exit normally, these directories are cleaned up automatically. However, if a container crashes or is forcefully killed, directories may be left behind.
+
+This service runs periodically to detect and remove orphaned directories.
+
+## Isolation Model
+
+With the isolated git approach:
+- **Complete isolation**: Each container has its own git refs, branches, and config
+- **No shared state**: Containers cannot affect host repos or each other
+- **Simple cleanup**: Just delete the container directory (no git operations needed)
+- **Object sharing**: Git objects are shared via alternates (read-only, safe)
 
 ## How It Works
 
 1. **Timer triggers every 15 minutes**
-2. **Scans** `~/.jib-worktrees/` for container worktree directories
+2. **Scans** `~/.jib-worktrees/` for container directories
 3. **Checks** if corresponding Docker container still exists
-4. **Removes** worktrees and directories for non-existent containers
-5. **Prunes** stale worktree references from git metadata
-6. **Deletes** orphaned `jib-temp-*` and `jib-exec-*` branches (only if safe - see below)
-7. **Logs** all cleanup operations to systemd journal
+4. **Removes** directories for non-existent containers
+5. **Logs** all cleanup operations to systemd journal
 
-## Worktree Layout
+## Directory Layout
 
 ```
 ~/.jib-worktrees/
-├── jib-20251123-103045-12345/    # Container ID (timestamp-based)
-│   ├── webapp/                   # Worktree for webapp repo
-│   ├── frontend/                 # Worktree for frontend repo
+├── jib-20251123-103045-12345/       # Container ID (timestamp-based)
+│   ├── .git-webapp/                  # Isolated git dir for webapp
+│   ├── .git-frontend/                # Isolated git dir for frontend
+│   ├── webapp/                       # Working tree (worktree of .git-webapp)
+│   ├── frontend/                     # Working tree (worktree of .git-frontend)
 │   └── ...
-└── jib-20251123-103120-12346/
+└── jib-exec-20251123-103120-12346/   # Exec container
+    ├── .git-webapp/
     ├── webapp/
     └── ...
 ```
@@ -83,21 +96,13 @@ systemctl --user disable worktree-watcher.timer
 
 ## Safety
 
-The watcher only removes worktrees and branches for containers that no longer exist. If a container is running or stopped (but not removed), its worktrees and branches are preserved.
+The watcher only removes directories for containers that no longer exist. If a container is running or stopped (but not removed), its directory is preserved.
 
-Branch deletion is conservative - a branch is only deleted if ALL of these conditions are met:
-1. Matches the `jib-temp-*` or `jib-exec-*` pattern
-2. No Docker container exists with the matching ID
-3. No worktree directory exists (worktrees are cleaned up first)
-4. **One of these is true:**
-   - Branch has no commits that aren't already in `main` (nothing to lose), OR
-   - Branch has an open PR in GitHub (work is tracked and visible)
-
-This ensures that branches with unmerged work that hasn't been captured in a PR are preserved for manual review.
+**Note**: With isolated git, there are no shared branches or refs to worry about. Each container's git state is completely independent and ephemeral.
 
 ## Manual Cleanup
 
-To manually clean up all worktrees:
+To manually clean up all container directories:
 
 ```bash
 # Stop all jib containers first
@@ -112,7 +117,7 @@ systemctl --user start worktree-watcher.service
 
 ## Troubleshooting
 
-### Worktrees not being cleaned up
+### Directories not being cleaned up
 
 Check if timer is running:
 ```bash
@@ -127,9 +132,9 @@ systemctl --user start worktree-watcher.timer
 
 ### Permission errors
 
-Ensure script is executable:
+Some files may be owned by root (from Docker). Manual cleanup:
 ```bash
-chmod +x ~/khan/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
+sudo rm -rf ~/.jib-worktrees/jib-{container-id}
 ```
 
 ### View cleanup history
@@ -141,8 +146,8 @@ journalctl --user -u worktree-watcher.service --since "1 day ago"
 ## Integration
 
 This component works with:
-- **bin/jib**: Creates worktrees on container start, cleans up on normal exit
+- **jib**: Creates isolated git directories on container start, cleans up on normal exit
 - **Worktree Watcher**: Handles cleanup for crashed/killed containers
-- **Docker containers**: Each container gets isolated workspace
+- **Docker containers**: Each container gets completely isolated workspace
 
-Together, they ensure your host repositories (`~/khan/webapp`, etc.) stay clean while containers can work independently.
+Together, they ensure your host repositories (`~/khan/webapp`, etc.) are **never modified** by container operations.

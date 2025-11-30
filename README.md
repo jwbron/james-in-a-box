@@ -45,12 +45,12 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 │  • Slack notifier/receiver (systemd services)       │
 │  • Context sync (Confluence, JIRA → markdown)       │
 │  • Automated analyzers (code quality, conversations)│
-│  • Git worktree management and cleanup              │
+│  • Container directory cleanup                      │
 └─────────────────────────────────────────────────────┘
                       ↕
 ┌─────────────────────────────────────────────────────┐
 │  Docker Container (Sandbox)                         │
-│  • Claude agent with isolated worktree workspace    │
+│  • Claude agent with isolated git workspace         │
 │  • No credentials (SSH keys, cloud tokens excluded) │
 │  • Network isolation (outbound HTTP only)           │
 │  • Ephemeral - spun up per task, auto-cleanup       │
@@ -59,37 +59,36 @@ jib is an **LLM-powered autonomous software engineer** that runs in a Docker san
 
 **Workflow:**
 1. Send task via Slack DM to bot
-2. Container spawns with isolated git worktree (host repos stay clean)
-3. Agent implements changes, writes tests, commits to branch `jib-temp-{container-id}`
-4. Container shuts down, worktree directory cleaned up (commits preserved on branch)
-5. Agent sends Slack notification with branch name
-6. You review commits and create PR
+2. Container spawns with isolated git repos (host repos stay clean)
+3. Agent implements changes, writes tests, commits to branch
+4. Agent pushes to GitHub and creates PR
+5. Container shuts down, isolated directory cleaned up
+6. You review and merge PR
 
-### Worktree Isolation
+### Git Isolation
 
-Each container gets its own ephemeral git worktree, keeping your host repositories clean:
+Each container gets **completely isolated git directories** that cannot affect the host:
 
 ```
 Host:
-~/projects/myapp/                   # Your working directory (untouched!)
-~/projects/myapp/.git/              # Git metadata (mounted read-only to containers)
+~/khan/myapp/                       # Your working directory (NEVER modified by containers)
+~/khan/myapp/.git/                  # Your git state (NEVER modified by containers)
+
 ~/.jib-worktrees/
   └── jib-20251123-103045-12345/    # Container's isolated workspace
-      └── myapp/                    # Worktree with changes
+      ├── .git-myapp/               # Container's OWN git directory (isolated refs)
+      │   └── objects/info/alternates → ~/khan/myapp/.git/objects (read-only)
+      └── myapp/                    # Working tree
 
-Container:
-~/projects/myapp/                   # Mounted from worktree (not host repo)
-~/.git-main/myapp/                  # Read-only git metadata (enables git commands)
+Container sees:
+~/khan/myapp/                       # Mounted from container's isolated workspace
 ```
 
-**Benefits:**
-- **Host protection**: Your local repos stay clean while you work
-- **True parallelism**: Multiple containers can work on same repo simultaneously
-- **Isolated branches**: Each container works on `jib-temp-{container-id}` branch
-- **Git commands work**: Full git functionality inside container (status, log, commit, diff)
-- **Commits preserved**: All commits saved on branch even after container exits
-- **Auto-cleanup**: Worktrees removed when container exits, commits remain accessible
-- **Orphan detection**: Watcher cleans up crashed container worktrees every 15 min
+**Key benefit: Complete isolation via git alternates**
+- Each container has its own refs, branches, and config
+- Objects are shared read-only (no disk waste)
+- Containers CANNOT modify host repos or each other
+- Simple cleanup: just delete the container directory
 
 ## Key Capabilities
 
@@ -218,12 +217,12 @@ jib separates concerns between the host machine and the sandboxed container:
 │  ├── Slack services (bidirectional messaging)                       │
 │  ├── Context sync (Confluence, JIRA, GitHub → markdown)             │
 │  ├── Analyzers (codebase, conversations)                            │
-│  └── Worktree management (isolation, cleanup)                       │
+│  └── Container directory cleanup                                    │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Docker Container (Sandbox)                                         │
 │  ├── Claude Code agent with custom rules and commands               │
 │  ├── Access to synced context (read-only)                           │
-│  ├── Code workspace (read-write, isolated worktree)                 │
+│  ├── Code workspace (read-write, isolated git)                      │
 │  ├── Beads task memory (persistent, git-backed, shared across runs) │
 │  └── GitHub MCP server (PR operations)                              │
 └─────────────────────────────────────────────────────────────────────┘

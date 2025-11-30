@@ -42,8 +42,8 @@ bd --allow-stale list                         # All tasks
 1. **Start container**: `bin/jib`
 2. **Check for tasks**: `bd --allow-stale list` or check `~/sharing/incoming/`
 3. **Load context**: `/load-context <project-name>`
-4. **Work on task**: Claude works in isolated git worktree
-5. **Commit changes**: Git commit to temp branch
+4. **Work on task**: Claude works in isolated git environment
+5. **Commit changes**: Git commit and push to GitHub
 6. **Create PR**: Use GitHub MCP `create_pull_request`
 7. **Save learnings**: `/save-context <project-name>`
 8. **Complete task**: `bd --allow-stale update <task-id> --status closed`
@@ -52,7 +52,7 @@ bd --allow-stale list                         # All tasks
 
 | Inside Container | Purpose |
 |-----------------|---------|
-| `~/khan/` | Code workspace (git worktree) |
+| `~/khan/` | Code workspace (isolated git) |
 | `~/context-sync/` | Confluence/JIRA docs (read-only) |
 | `~/sharing/incoming/` | Tasks from Slack |
 | `~/sharing/notifications/` | Outgoing notifications |

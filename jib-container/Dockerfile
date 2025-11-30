@@ -180,116 +180,67 @@ fi
 # Remote URLs are managed by the HOST and should not be modified by the container
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global advice.pushUpdateRejected false
 
-# Also fix local repo configs in case they were corrupted with Claude's authorship
-# Local configs override global, so we need to ensure they use jib too
-if [ -d "${USER_HOME}/.git-main" ]; then
-    for repo_config in "${USER_HOME}/.git-main"/*/config; do
-        if [ -f "$repo_config" ]; then
-            repo_dir=$(dirname "$repo_config")
-            # Use git config to set local repo identity (will update the config file)
-            git config -f "$repo_config" user.name "jib"
-            git config -f "$repo_config" user.email "jib@khan.org"
-
-            # CRITICAL: Verify remote URLs don't have embedded tokens
-            # If they do, strip them out (tokens belong in env vars, not URLs)
-            remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
-            if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
-                log_warn "Found token in git remote URL, cleaning it up..."
-                # Extract the GitHub repo path (owner/repo.git)
-                clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
-                git config -f "$repo_config" remote.origin.url "$clean_url"
-                log_info "  Cleaned: $remote_url -> $clean_url"
-            fi
-        fi
-    done
-fi
 log_success "Git configured to commit as jib <jib@khan.org>"
 
-# Fix worktree .git files to point to mounted git directories
-# Worktrees have .git files that reference the main repo's .git directory
-# We mount the main .git at ~/.git-main/{repo}/ so we need to rewrite these references
+# Verify isolated git repositories are accessible
+# With the new isolated git approach:
+# - Each container has its own .git-{repo} directory in ~/.jib-worktrees/{container-id}/
+# - Worktree .git files point to paths within ~/.jib-worktrees/ (mounted from host)
+# - No .git-main needed - complete isolation from host git state
+# - No rewriting of .git files needed - paths are consistent between host and container
 #
-# FAIL FAST: If worktree setup is broken, exit immediately.
-# A container with broken git is worse than no container at all.
+# FAIL FAST: If git setup is broken, exit immediately.
 worktree_setup_failed=false
 
 if [ -d "${USER_HOME}/khan" ]; then
-    # Check if there are any worktrees to configure
-    has_worktrees=false
+    repos_verified=0
+    repos_failed=0
+    failed_repos=""
+
     for repo_dir in "${USER_HOME}/khan"/*; do
         if [ -f "${repo_dir}/.git" ]; then
-            has_worktrees=true
-            break
+            repo_name=$(basename "$repo_dir")
+            # Read the gitdir path from .git file
+            gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
+
+            # Verify the git directory is accessible
+            if [ -d "$gitdir" ]; then
+                repos_verified=$((repos_verified + 1))
+            else
+                log_error "FATAL: Git directory not accessible for ${repo_name}"
+                log_error "  Expected: ${gitdir}"
+                repos_failed=$((repos_failed + 1))
+                failed_repos="${failed_repos} ${repo_name}"
+            fi
+        elif [ -d "${repo_dir}/.git" ]; then
+            # Normal repo (not a worktree) - just verify it works
+            repo_name=$(basename "$repo_dir")
+            repos_verified=$((repos_verified + 1))
         fi
     done
 
-    if [ "$has_worktrees" = true ]; then
-        # First, verify ~/.git-main mount exists
-        if [ ! -d "${USER_HOME}/.git-main" ]; then
-            log_error "FATAL: ~/.git-main not mounted but worktrees exist"
-            log_error "  This means jib failed to mount the git directories."
-            log_error "  Container cannot start with broken git configuration."
-            log_error ""
-            log_error "  Possible causes:"
-            log_error "    - Docker mount failed"
-            log_error "    - Host .git directories don't exist"
-            log_error "    - Permission issues on host"
-            worktree_setup_failed=true
-        else
-            worktrees_configured=0
-            worktrees_failed=0
-            failed_repos=""
-
-            for repo_dir in "${USER_HOME}/khan"/*; do
-                if [ -f "${repo_dir}/.git" ]; then
-                    repo_name=$(basename "$repo_dir")
-                    # Read the original gitdir path
-                    original_gitdir=$(cat "${repo_dir}/.git" | sed 's/^gitdir: //')
-                    # Extract the worktree admin directory name (last component of path)
-                    worktree_admin=$(basename "$original_gitdir")
-
-                    # Build the target path
-                    target_path="${USER_HOME}/.git-main/${repo_name}/worktrees/${worktree_admin}"
-
-                    # Verify target path exists before rewriting
-                    if [ -d "$target_path" ]; then
-                        echo "gitdir: ${target_path}" > "${repo_dir}/.git"
-                        chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
-                        worktrees_configured=$((worktrees_configured + 1))
-                    else
-                        log_error "FATAL: Worktree path doesn't exist for ${repo_name}"
-                        log_error "  Expected: ${target_path}"
-                        log_error "  Original: ${original_gitdir}"
-                        worktrees_failed=$((worktrees_failed + 1))
-                        failed_repos="${failed_repos} ${repo_name}"
-                    fi
-                fi
-            done
-
-            if [ $worktrees_failed -gt 0 ]; then
-                log_error ""
-                log_error "FATAL: ${worktrees_failed} worktree(s) failed to configure:${failed_repos}"
-                log_error "  Container cannot start with broken git configuration."
-                log_error ""
-                log_error "  Possible causes:"
-                log_error "    - Worktree was deleted on host"
-                log_error "    - Git metadata corrupted"
-                log_error "    - Mount configuration mismatch"
-                worktree_setup_failed=true
-            elif [ $worktrees_configured -gt 0 ]; then
-                log_success "Khan worktrees configured: ${worktrees_configured} repo(s)"
-                log_info "  Git metadata mounted read-write from ~/.git-main/"
-            fi
-        fi
+    if [ $repos_failed -gt 0 ]; then
+        log_error ""
+        log_error "FATAL: ${repos_failed} repo(s) have inaccessible git directories:${failed_repos}"
+        log_error "  Container cannot start with broken git configuration."
+        log_error ""
+        log_error "  Possible causes:"
+        log_error "    - ~/.jib-worktrees/ not mounted correctly"
+        log_error "    - Isolated git directory was not created"
+        log_error "    - Permission issues"
+        worktree_setup_failed=true
+    elif [ $repos_verified -gt 0 ]; then
+        log_success "Isolated git repos verified: ${repos_verified} repo(s)"
+        log_info "  Each repo has independent git state (cannot affect host)"
     fi
 else
     log_warn "Khan workspace not found - check mount configuration"
 fi
 
-# Exit if worktree setup failed - don't start a broken container
+# Exit if git setup failed - don't start a broken container
 if [ "$worktree_setup_failed" = true ]; then
     log_error ""
-    log_error "Container startup aborted due to worktree configuration failure."
+    log_error "Container startup aborted due to git configuration failure."
     log_error "Please check your jib setup and try again."
     exit 1
 fi
@@ -643,23 +594,8 @@ cleanup_on_exit() {
         fi
     fi
 
-    # Check and clean git remote URLs one final time
-    if [ -d "${USER_HOME}/.git-main" ]; then
-        for repo_config in "${USER_HOME}/.git-main"/*/config; do
-            if [ -f "$repo_config" ]; then
-                remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
-                if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
-                    echo "⚠ WARNING: Git remote URL was modified during session!"
-                    echo "  Found token in: $repo_config"
-                    # Clean it up
-                    clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
-                    git config -f "$repo_config" remote.origin.url "$clean_url"
-                    echo "  ✓ Cleaned: $remote_url -> $clean_url"
-                    echo "  Note: This should not happen. Git remote URLs should never contain tokens."
-                fi
-            fi
-        done
-    fi
+    # Note: With isolated git repos, no cleanup of git remote URLs is needed
+    # Each container has its own ephemeral git state that's discarded on exit
 
     [ "$JIB_QUIET" = "0" ] && echo "✓ Cleanup complete"
 }

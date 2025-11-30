@@ -646,152 +646,201 @@ def get_default_branch(repo_path: Path) -> str:
     return "main"
 
 
-def create_worktrees(container_id: str) -> dict:
-    """Create git worktrees for all repos in ~/khan/
+def get_git_dir(repo_path: Path) -> Optional[Path]:
+    """Get the actual git directory for a repo (handles worktrees).
 
-    Worktrees are always based on the default branch (main or master),
-    regardless of what branch is currently checked out on the host.
+    Args:
+        repo_path: Path to the repository
 
     Returns:
-        Dictionary mapping repo names to worktree paths
+        Path to the actual .git directory, or None if not a git repo
     """
-    worktree_dir = Config.WORKTREE_BASE / container_id
-    worktree_dir.mkdir(parents=True, exist_ok=True)
+    git_path = repo_path / ".git"
+    if not git_path.exists():
+        return None
 
-    worktrees = {}
+    if git_path.is_dir():
+        # Normal repo - .git is the directory
+        return git_path
+
+    # Worktree - .git is a file pointing to the actual git dir
+    # Format: "gitdir: /path/to/.git/worktrees/name"
+    try:
+        content = git_path.read_text().strip()
+        if content.startswith("gitdir:"):
+            gitdir_path = Path(content[7:].strip())
+            # Navigate up from worktrees/<name> to the main .git directory
+            if "worktrees" in gitdir_path.parts:
+                worktrees_idx = gitdir_path.parts.index("worktrees")
+                return Path(*gitdir_path.parts[:worktrees_idx])
+    except Exception:
+        pass
+
+    return None
+
+
+def create_isolated_repos(container_id: str) -> dict:
+    """Create isolated git repositories for all repos in ~/khan/
+
+    Each container gets its own isolated git directory that:
+    - Shares objects with the original repo via git alternates (no disk waste)
+    - Has its own refs, branches, and config (complete isolation)
+    - Cannot affect the host or other containers
+
+    This replaces the old worktree approach which shared mutable git state.
+
+    Returns:
+        Dictionary mapping repo names to (worktree_path, git_dir_path) tuples
+    """
+    import shutil
+
+    container_dir = Config.WORKTREE_BASE / container_id
+    container_dir.mkdir(parents=True, exist_ok=True)
+
+    repos = {}
 
     if not Config.KHAN_SOURCE.exists():
         warn(f"Khan source directory not found: {Config.KHAN_SOURCE}")
-        return worktrees
+        return repos
 
     # Iterate through all repos in ~/khan/
     for repo_path in Config.KHAN_SOURCE.iterdir():
         if not repo_path.is_dir():
             continue
 
-        # Check if it's a git repository with a .git DIRECTORY
-        # If .git is a file, the host repo is itself a worktree, which is unsupported
-        git_dir = repo_path / ".git"
-        if not git_dir.exists():
+        # Get the actual git directory (handles both normal repos and worktrees)
+        source_git_dir = get_git_dir(repo_path)
+        if source_git_dir is None:
             continue
 
         repo_name = repo_path.name
 
-        # Note: git worktree add works even when source repo is a worktree
-        # It creates a new worktree of the same underlying main repository
-        worktree_path = worktree_dir / repo_name
-        is_source_worktree = git_dir.is_file()
+        # Paths for this container's isolated copy
+        isolated_git_dir = container_dir / f".git-{repo_name}"
+        worktree_path = container_dir / repo_name
 
         try:
             # Determine the default branch for this repo
             default_branch = get_default_branch(repo_path)
 
             if not _quiet_mode:
-                info(f"Creating worktree for {repo_name} (from {default_branch})...")
+                info(f"Creating isolated repo for {repo_name} (from {default_branch})...")
 
-            # Create temporary branch for this container, starting from the default branch
+            # Step 1: Create isolated git directory structure
+            isolated_git_dir.mkdir(parents=True, exist_ok=True)
+
+            # Step 2: Initialize as bare-ish git repo
+            subprocess.run(
+                ["git", "init", "--bare", str(isolated_git_dir)],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            # Step 3: Set up alternates to share objects (no disk waste, instant)
+            alternates_dir = isolated_git_dir / "objects" / "info"
+            alternates_dir.mkdir(parents=True, exist_ok=True)
+            alternates_file = alternates_dir / "alternates"
+            alternates_file.write_text(str(source_git_dir / "objects") + "\n")
+
+            # Step 4: Copy refs (small files, fast) - this gives us isolation
+            source_refs = source_git_dir / "refs"
+            isolated_refs = isolated_git_dir / "refs"
+            if source_refs.exists():
+                # Remove the refs created by git init and copy from source
+                shutil.rmtree(isolated_refs, ignore_errors=True)
+                shutil.copytree(source_refs, isolated_refs)
+
+            # Step 5: Copy other essential files
+            for filename in ["HEAD", "config", "packed-refs", "info/exclude"]:
+                source_file = source_git_dir / filename
+                dest_file = isolated_git_dir / filename
+                if source_file.exists():
+                    dest_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source_file, dest_file)
+
+            # Step 6: Create worktree from isolated git dir
             branch_name = f"jib-temp-{container_id}"
 
-            # Create worktree based on the default branch (not current HEAD)
+            # First, create the branch in the isolated repo
             result = subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), "-b", branch_name, default_branch],
-                cwd=repo_path,
+                ["git", "--git-dir", str(isolated_git_dir),
+                 "branch", branch_name, default_branch],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                warn(f"  ✗ Failed to create branch for {repo_name}: {result.stderr}")
+                continue
+
+            # Now create worktree
+            result = subprocess.run(
+                ["git", "--git-dir", str(isolated_git_dir),
+                 "worktree", "add", str(worktree_path), branch_name],
                 capture_output=True,
                 text=True
             )
 
             if result.returncode == 0:
-                worktrees[repo_name] = worktree_path
+                repos[repo_name] = {
+                    'worktree': worktree_path,
+                    'git_dir': isolated_git_dir,
+                }
                 if not _quiet_mode:
-                    success(f"  ✓ {repo_name} -> {worktree_path}")
+                    success(f"  ✓ {repo_name} (isolated)")
             else:
                 warn(f"  ✗ Failed to create worktree for {repo_name}: {result.stderr}")
 
         except Exception as e:
-            warn(f"  ✗ Error creating worktree for {repo_name}: {e}")
+            warn(f"  ✗ Error creating isolated repo for {repo_name}: {e}")
 
-    return worktrees
+    return repos
+
+
+def create_worktrees(container_id: str) -> dict:
+    """DEPRECATED: Use create_isolated_repos() instead.
+
+    This function is kept for backwards compatibility but now delegates
+    to create_isolated_repos() and returns in the old format.
+    """
+    repos = create_isolated_repos(container_id)
+    # Convert to old format: {repo_name: worktree_path}
+    return {name: info['worktree'] for name, info in repos.items()}
 
 
 def cleanup_worktrees(container_id: str) -> None:
-    """Clean up worktrees for a container
+    """Clean up isolated repos and worktrees for a container.
+
+    With the new isolated git approach, cleanup is simple:
+    - The entire container directory contains both the isolated .git dirs
+      and worktrees, so we just delete the whole thing
+    - No need to touch the host's git directories at all
+    - Commits in the isolated repo are lost (they were never in the host repo)
 
     Args:
         container_id: Unique container identifier
     """
     import shutil
 
-    worktree_dir = Config.WORKTREE_BASE / container_id
+    container_dir = Config.WORKTREE_BASE / container_id
 
-    if not worktree_dir.exists():
+    if not container_dir.exists():
         return
 
     if not _quiet_mode:
-        info(f"Cleaning up worktrees for {container_id}...")
+        info(f"Cleaning up container {container_id}...")
 
-    # Collect repos and their worktree admin directories
-    # We need to forcibly remove admin dirs because container modified .git files
-    # to point to container-only paths, which breaks git worktree prune
-    repos_to_clean = {}  # repo_path -> list of admin dir names
-    for worktree_path in worktree_dir.iterdir():
-        if worktree_path.is_dir():
-            repo_name = worktree_path.name
-            original_repo = Config.KHAN_SOURCE / repo_name
-            if original_repo.exists():
-                # Find the admin directory name from the worktree's .git file
-                git_file = worktree_path / ".git"
-                if git_file.is_file():
-                    try:
-                        content = git_file.read_text().strip()
-                        # Format: "gitdir: /path/to/.git/worktrees/NAME" or
-                        # "gitdir: /path/to/.git-main/repo/worktrees/NAME"
-                        if "worktrees/" in content:
-                            admin_name = content.split("worktrees/")[-1]
-                            if original_repo not in repos_to_clean:
-                                repos_to_clean[original_repo] = []
-                            repos_to_clean[original_repo].append(admin_name)
-                    except Exception:
-                        pass
-
-    # Remove container worktree directory first
+    # Simply remove the entire container directory
+    # This includes:
+    # - Isolated .git-{repo} directories (container's own git state)
+    # - Worktree directories (working copies)
+    # No host git state is affected because we use isolated repos with alternates
     try:
-        shutil.rmtree(worktree_dir)
+        shutil.rmtree(container_dir)
         if not _quiet_mode:
-            info(f"  ✓ Removed worktree directory")
+            success(f"  ✓ Removed container directory")
     except Exception as e:
-        warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
-
-    # Forcibly remove worktree admin directories
-    # Don't rely on git worktree prune - it fails when .git files are corrupted
-    admin_dirs_removed = 0
-    for repo_path, admin_names in repos_to_clean.items():
-        worktrees_dir = repo_path / ".git" / "worktrees"
-        if worktrees_dir.is_dir():
-            for admin_name in admin_names:
-                admin_dir = worktrees_dir / admin_name
-                if admin_dir.exists():
-                    try:
-                        shutil.rmtree(admin_dir)
-                        admin_dirs_removed += 1
-                    except Exception as e:
-                        warn(f"  ✗ Failed to remove admin dir {admin_dir}: {e}")
-
-    # Also run git worktree prune as a fallback for any we missed
-    for repo_path in repos_to_clean.keys():
-        try:
-            subprocess.run(
-                ["git", "worktree", "prune", "-v"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                check=False  # Don't fail if prune has issues
-            )
-        except Exception:
-            pass
-
-    if admin_dirs_removed > 0 and not _quiet_mode:
-        info(f"  ✓ Removed {admin_dirs_removed} worktree admin dir(s)")
-        info(f"  Commits preserved on branch: jib-temp-{container_id}")
+        warn(f"  ✗ Failed to remove directory {container_dir}: {e}")
 
 
 def setup() -> bool:
@@ -1174,57 +1223,23 @@ def run_claude() -> bool:
             display_path = container_path if container_path != mount_path else mount_path
             print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
 
-    # Add worktree mounts
-    # Also track which main repos need their .git directories mounted
-    main_repos_needed = set()
+    # Add worktree mounts (isolated repos - no shared git state)
+    # With the new isolated git approach:
+    # - Each container has its own .git-{repo} directory with independent refs
+    # - Objects are shared via git alternates (read-only, safe)
+    # - No .git-main mounting needed - complete isolation
     for repo_name, worktree_path in worktrees.items():
         container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         if not _quiet_mode:
-            print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
-        main_repos_needed.add(repo_name)
+            print(f"  • ~/khan/{repo_name} (ISOLATED repo, cannot affect host)")
 
-    # Mount main repo .git directories (read-write) so worktrees can commit changes
-    for repo_name in main_repos_needed:
-        main_repo = Config.KHAN_SOURCE / repo_name
-        git_path = main_repo / ".git"
-        if git_path.is_dir():
-            # Normal repo - mount .git directory directly
-            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
-            if not _quiet_mode:
-                print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
-        elif git_path.is_file():
-            # Host repo is a worktree - read .git file to find actual git directory
-            # Format is: "gitdir: /path/to/repo.git/worktrees/name"
-            try:
-                gitdir_content = git_path.read_text().strip()
-                if gitdir_content.startswith("gitdir:"):
-                    gitdir_path = Path(gitdir_content[7:].strip())
-                    # Navigate up from worktrees/<name> to the main .git directory
-                    # e.g., /path/.git/worktrees/foo -> /path/.git
-                    if "worktrees" in gitdir_path.parts:
-                        worktrees_idx = gitdir_path.parts.index("worktrees")
-                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
-                        if main_git_path.is_dir():
-                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
-                            if not _quiet_mode:
-                                print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
-                        else:
-                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
-                    else:
-                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
-                else:
-                    warn(f"Invalid .git file format for {repo_name}")
-            except Exception as e:
-                warn(f"Error reading .git file for {repo_name}: {e}")
-
-    # Mount worktree base directory (used by both interactive and --exec modes)
+    # Mount worktree base directory - needed because worktree .git files reference
+    # paths inside ~/.jib-worktrees/{container-id}/.git-{repo}/
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
     if not _quiet_mode:
-        print(f"  • ~/.jib-worktrees/ (worktree base directory)")
+        print(f"  • ~/.jib-worktrees/ (isolated git directories)")
 
     if not _quiet_mode:
         print()
@@ -1394,44 +1409,17 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
 
         mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
 
-    # Add worktree mounts
-    main_repos_needed = set()
+    # Add worktree mounts (isolated repos - no shared git state)
+    # With the new isolated git approach, each container has its own git state
     for repo_name, worktree_path in worktrees.items():
         container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
-        print(f"  • ~/khan/{repo_name} (WORKTREE, isolated)")
-        main_repos_needed.add(repo_name)
+        print(f"  • ~/khan/{repo_name} (ISOLATED repo)")
 
-    # Mount main repo .git directories (read-write) so worktrees can commit changes
-    for repo_name in main_repos_needed:
-        main_repo = Config.KHAN_SOURCE / repo_name
-        git_path = main_repo / ".git"
-        if git_path.is_dir():
-            # Normal repo - mount .git directory directly
-            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
-            print(f"  • ~/.git-main/{repo_name} (git metadata)")
-        elif git_path.is_file():
-            # Host repo is a worktree - read .git file to find actual git directory
-            try:
-                gitdir_content = git_path.read_text().strip()
-                if gitdir_content.startswith("gitdir:"):
-                    gitdir_path = Path(gitdir_content[7:].strip())
-                    if "worktrees" in gitdir_path.parts:
-                        worktrees_idx = gitdir_path.parts.index("worktrees")
-                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
-                        if main_git_path.is_dir():
-                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
-                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
-                            print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
-                        else:
-                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
-                    else:
-                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
-                else:
-                    warn(f"Invalid .git file format for {repo_name}")
-            except Exception as e:
-                warn(f"Error reading .git file for {repo_name}: {e}")
+    # Mount worktree base directory - needed for worktree .git file paths
+    worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
+    mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
+    print(f"  • ~/.jib-worktrees/ (isolated git directories)")
 
     print()
 
