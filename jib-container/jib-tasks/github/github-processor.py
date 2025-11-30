@@ -32,6 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 from beads import PRContextManager
 from claude import run_claude
+from jib_logging import ContextScope
 
 
 # Global PR context manager for beads integration
@@ -263,8 +264,20 @@ Review the output carefully. Note which failures match the CI logs vs new/differ
 8. **Verify branch again**: Run `git branch --show-current` - confirm still on `{pr_branch}`
 9. **Commit** - Commit fixes with clear message
 10. **Push** - Push to the PR branch: `git push origin {pr_branch}`
-11. **Comment** - Add PR comment explaining fixes
+11. **Comment** - Add PR comment explaining fixes. Use the signature helper to add workflow context:
+    ```python
+    try:
+        from jib_logging.signatures import add_signature_to_comment
+        comment_with_sig = add_signature_to_comment("Your comment text here")
+    except Exception:
+        # Fallback to unsigned comment if signature helper fails
+        comment_with_sig = "Your comment text here"
+    # Then post to GitHub with comment_with_sig
+    ```
+    The try/except ensures that signature failures don't block the primary task.
 12. **Update beads** - Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
+
+**IMPORTANT**: All PR comments you post should include the workflow signature (automatically added by the helper).
 
 Begin by checking out the PR branch now.
 """
@@ -814,20 +827,37 @@ def main():
     print(f"Time: {datetime.now().isoformat()}")
     print("=" * 60)
 
-    # Dispatch to appropriate handler
-    handlers = {
-        "check_failure": handle_check_failure,
-        "comment": handle_comment,
-        "review_request": handle_review_request,
-        "merge_conflict": handle_merge_conflict,
-    }
+    # Extract workflow context from incoming context
+    workflow_id = context.get("workflow_id")
+    workflow_type = context.get("workflow_type", args.task)
+    repository = context.get("repository")
+    pr_number = context.get("pr_number")
 
-    handler = handlers.get(args.task)
-    if handler:
-        handler(context)
-    else:
-        print(f"Unknown task type: {args.task}")
-        sys.exit(1)
+    # Establish logging context for the entire workflow execution
+    # This propagates to all logs, notifications, and signatures
+    with ContextScope(
+        workflow_id=workflow_id,
+        workflow_type=workflow_type,
+        repository=repository,
+        pr_number=pr_number,
+    ):
+        if workflow_id:
+            print(f"Workflow ID: {workflow_id}")
+
+        # Dispatch to appropriate handler
+        handlers = {
+            "check_failure": handle_check_failure,
+            "comment": handle_comment,
+            "review_request": handle_review_request,
+            "merge_conflict": handle_merge_conflict,
+        }
+
+        handler = handlers.get(args.task)
+        if handler:
+            handler(context)
+        else:
+            print(f"Unknown task type: {args.task}")
+            sys.exit(1)
 
     print("=" * 60)
     print("GitHub Processor - Completed")

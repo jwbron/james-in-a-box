@@ -57,6 +57,7 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 """
 
 import json
+import secrets
 import subprocess
 import sys
 import threading
@@ -371,6 +372,19 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     Returns:
         True if invocation succeeded
     """
+    # Generate unique workflow ID for this invocation
+    # Format: gw-{task_type}-{timestamp}-{random_hex}
+    # - timestamp provides second-level uniqueness (YYYYMMDD-HHMMSS)
+    # - secrets.token_hex(4) generates 8 hex chars (4 bytes = 32 bits of randomness)
+    # - Collision probability: ~1 in 4 billion for same-second invocations
+    # - Given timestamp prefix, practical collision risk is negligible
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    workflow_id = f"gw-{task_type}-{timestamp}-{secrets.token_hex(4)}"
+
+    # Add workflow context to the task context
+    context["workflow_id"] = workflow_id
+    context["workflow_type"] = task_type
+
     context_json = json.dumps(context)
 
     # Container path is fixed - jib always mounts to /home/jwies/khan/
