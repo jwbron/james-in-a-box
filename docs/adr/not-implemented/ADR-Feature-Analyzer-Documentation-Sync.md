@@ -44,27 +44,38 @@ james-in-a-box has:
 
 ### What We're Deciding
 
-This ADR establishes an automated workflow where:
+This ADR establishes a **feature analyzer** responsible for maintaining FEATURES.md and related documentation through two mechanisms:
 
-1. ADRs trigger documentation updates after merge
-2. Feature analyzer detects which docs need updating based on ADR content
-3. Updates are proposed as PRs for human review
-4. Documentation stays synchronized with architectural decisions
-5. **Weekly code analysis identifies new features across all merged code and updates FEATURES.md**
+**1. ADR-Triggered Documentation Sync:**
+- ADRs trigger documentation updates after implementation and merge
+- Feature analyzer detects which docs need updating based on ADR content
+- Updates are proposed as PRs for human review
+- Documentation stays synchronized with architectural decisions
+
+**2. Weekly Code Analysis:**
+- Automatically scan all merged code to identify new features, components, and capabilities
+- Update FEATURES.md with newly discovered features
+- Remove or update entries for deprecated/changed features
+- Ensure FEATURES.md accurately reflects the codebase's current state
 
 ### Goals
 
 **Primary Goals:**
-1. **Automate doc discovery:** Identify which documentation is affected by each ADR
-2. **Prevent doc drift:** Ensure docs reflect implemented ADRs
-3. **Maintain quality:** Human review all auto-generated doc updates
-4. **Low friction:** Minimal manual tracking of what needs updating
-5. **Keep FEATURES.md current:** Automatically analyze all merged code weekly to identify new features and update FEATURES.md
+1. **Maintain FEATURES.md:** Automatically keep the feature list current by analyzing both ADRs and merged code
+2. **Automate doc discovery:** Identify which documentation is affected by each ADR
+3. **Prevent doc drift:** Ensure docs reflect implemented ADRs
+4. **Maintain quality:** Human review all auto-generated doc updates
+5. **Low friction:** Minimal manual tracking of what needs updating
+
+**Secondary Goals:**
+- Automatically analyze all merged code weekly to identify new features
+- Remove or update feature entries as code evolves
+- Ensure FEATURES.md accurately reflects the current state of the codebase
 
 **Non-Goals:**
 - Automatically merge documentation PRs without review
 - Replace human documentation writing entirely
-- Handle documentation for non-ADR changes (covered by existing workflows)
+- Track features across multiple repositories (single-repo scope for initial implementation)
 
 ## Decision
 
@@ -100,7 +111,7 @@ The feature analyzer will:
 6. **Link back to ADR** in PR description for context
 
 **For weekly code analysis:**
-1. **Scan all merged code** from the past week (across all repositories in `~/khan/`)
+1. **Scan all merged code** from the past week in the repository
 2. **Identify new features, components, and capabilities** added to the codebase
 3. **Extract feature metadata** (name, description, implementation files, tests)
 4. **Update FEATURES.md** with newly discovered features and their locations
@@ -173,30 +184,34 @@ This ADR will be implemented in progressive phases to manage complexity and vali
 **Phase 5: Weekly Code Analysis for FEATURES.md (Weeks 9-10)**
 - **Goal:** Automatically discover and document new features from merged code
 - **Components:**
-  - Weekly systemd timer (runs Sunday nights)
-  - Git log analyzer (scans commits from past 7 days across all repos)
+  - Weekly systemd timer (runs Monday mornings)
+  - Git log analyzer (scans commits from past 7 days in the repository)
   - LLM-based feature extractor (analyzes diffs to identify new capabilities)
   - FEATURES.md updater (adds new entries with proper status flags)
   - PR creator for FEATURES.md updates
 - **Success criteria:** Identifies 80%+ of new features from weekly merges
 - **Complexity:** Medium-High - requires code analysis and feature classification
+- **Quality control:**
+  - **Precision vs Recall tradeoff:** Tune for high precision (fewer false positives) to avoid noise in FEATURES.md. Better to miss 20% of features (requiring manual backfill) than pollute FEATURES.md with non-features (refactors, internal changes).
+  - **Confidence scoring:** Each detected feature includes a confidence score (0.0-1.0). Low-confidence features (<0.7) are flagged with "⚠️ Needs Review" in the PR for human validation.
+  - **False positive handling:** Refactors and internal changes are filtered using heuristics (no new public APIs, no new user-facing capabilities, primarily code movement).
+  - **Missed features (the 20%):** Manual backfill process via monthly review or ad-hoc discovery. Engineers can also manually add features to FEATURES.md if the analyzer misses them.
 - **Implementation approach:**
   ```python
-  # Scan all repos for merged code
-  for repo in ["james-in-a-box", "other-repos"]:
-      commits = get_commits_since(repo, last_week)
-      for commit in commits:
-          features = analyze_commit_for_features(commit)
-          for feature in features:
-              if not in_features_md(feature):
-                  add_to_features_md(feature, status="implemented")
+  # Scan repository for merged code from past week
+  commits = get_commits_since(days=7)
+  for commit in commits:
+      features = analyze_commit_for_features(commit)
+      for feature in features:
+          if not in_features_md(feature):
+              add_to_features_md(feature, status="implemented")
   ```
 - **Detection heuristics:**
   - New files in key directories (e.g., `host-services/`, `jib-container/`)
   - New CLI commands or scripts
   - New systemd services
   - New API endpoints or handlers
-  - Significant new classes/modules (>100 LOC)
+  - Significant new classes/modules (>50 LOC)
 
 **Phase 6 (Future): Real-time Webhooks (TBD)**
 - **Goal:** Near-instant response to ADR merges
@@ -455,18 +470,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 def analyze_weekly_code():
     """Analyze all merged code from past week and update FEATURES.md."""
 
-    # Get all repos to scan
-    repos = discover_repos("~/khan/")
-
-    # Collect commits from past 7 days
-    all_commits = []
-    for repo in repos:
-        commits = get_commits_since(repo, days=7)
-        all_commits.extend(commits)
+    # Collect commits from past 7 days in current repository
+    commits = get_commits_since(days=7)
 
     # Analyze each commit for new features
     new_features = []
-    for commit in all_commits:
+    for commit in commits:
         diff = get_commit_diff(commit)
         features = extract_features_from_diff(diff, commit)
         new_features.extend(features)
@@ -566,12 +575,15 @@ Description=Weekly feature analyzer run
 Requires=feature-analyzer-weekly.service
 
 [Timer]
-OnCalendar=Sun 02:00
+# Runs Mondays at 11:00 AM Pacific Time (America/Los_Angeles)
+OnCalendar=Mon *-*-* 11:00:00
 Persistent=true
 
 [Install]
 WantedBy=timers.target
 ```
+
+**Note on timezone:** Systemd timers use the system timezone. Ensure the host is configured to `America/Los_Angeles` timezone, or use UTC offset equivalents (Mon 19:00 UTC during standard time, Mon 18:00 UTC during daylight saving).
 
 ### Phase 6: Human Review Process
 
