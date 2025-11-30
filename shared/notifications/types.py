@@ -48,6 +48,10 @@ class NotificationContext:
     pr_number: int | None = None  # PR number if applicable
     branch: str | None = None  # Git branch if applicable
 
+    # Workflow context
+    workflow_id: str | None = None  # Unique identifier for the workflow/job
+    workflow_type: str | None = None  # Type of workflow (e.g., 'check_failure', 'comment')
+
     # Additional metadata
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -98,10 +102,21 @@ class NotificationMessage:
         if self.context.source:
             footer_parts.append(f"Source: {self.context.source}")
 
+        # Add workflow context footer (smaller font, less prominent)
+        workflow_parts = []
+        if self.context.workflow_type:
+            workflow_parts.append(f"Workflow: {self.context.workflow_type}")
+        if self.context.workflow_id:
+            workflow_parts.append(f"ID: `{self.context.workflow_id}`")
+
         if footer_parts:
             lines.append("")
             lines.append("---")
             lines.append(" | ".join(footer_parts))
+
+        if workflow_parts:
+            lines.append("")
+            lines.append(f"_({' | '.join(workflow_parts)})_")
 
         return "\n".join(lines)
 
