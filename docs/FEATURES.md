@@ -36,11 +36,14 @@ Features are tagged with status flags matching ADR lifecycle:
   - `host-services/analysis/analyze-pr/` - PR analysis service
 - **Tests**: `tests/analysis/test_analyze_pr.py`
 
-#### Feature Analyzer **[not-implemented]**
+#### Feature Analyzer **[in-progress]**
 - **Description**: Automated feature detection and documentation sync workflow
 - **ADR**: [ADR-Feature-Analyzer-Documentation-Sync](adr/not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md)
-- **Implementation**: Not yet started
-- **Planned**:
+- **Implementation**: Phase 1 (MVP) complete - manual CLI tool
+- **Current Status**:
+  - ✅ Phase 1: Manual CLI tool (`feature-analyzer sync-docs`)
+  - ⏳ Phase 2+: Automated detection, PR creation
+- **Implementation**:
   - `host-services/analysis/feature-analyzer/` - Main service
   - CLI tool for manual triggering (Phase 1)
   - Automated detection via systemd timer (Phase 2+)

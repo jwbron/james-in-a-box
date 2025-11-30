@@ -26,6 +26,7 @@ Usage (Phase 1 - Manual):
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -33,8 +34,6 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
-
-import yaml
 
 
 @dataclass
@@ -167,9 +166,11 @@ class FeatureAnalyzer:
         if removed_headers:
             errors.append(f"Major sections removed: {', '.join(removed_headers)}")
 
-        # Check 3: Link preservation (basic check for markdown links)
-        current_links = [line for line in current.split('\n') if '](http' in line or '](' in line]
-        proposed_links = [line for line in proposed.split('\n') if '](http' in line or '](' in line]
+        # Check 3: Link preservation (regex-based markdown link detection)
+        # Matches all markdown links: [text](url) including http/https and internal links
+        link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
+        current_links = re.findall(link_pattern, current)
+        proposed_links = re.findall(link_pattern, proposed)
 
         # Don't error on link changes, just warn if count drops significantly
         if len(proposed_links) < len(current_links) * 0.7:
