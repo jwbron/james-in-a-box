@@ -308,8 +308,11 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}, "failed_tasks": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            # First call: PR comments/reviews, Second call: API review_comments
-            mock_gh.side_effect = [{"comments": [], "reviews": []}, []]
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
+            mock_gh.side_effect = [
+                {"comments": [], "reviews": []},
+                [],  # Line-level review comments (empty)
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
@@ -326,7 +329,7 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}, "failed_tasks": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            # First call: PR comments/reviews, Second call: API review_comments
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
             mock_gh.side_effect = [
                 {
                     "comments": [
@@ -339,7 +342,7 @@ class TestCheckPrForComments:
                     ],
                     "reviews": [],
                 },
-                [],  # No review comments from API
+                [],  # Line-level review comments (empty)
             ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
@@ -354,7 +357,7 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}, "failed_tasks": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            # First call: PR comments/reviews, Second call: API review_comments
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
             mock_gh.side_effect = [
                 {
                     "comments": [
@@ -373,7 +376,7 @@ class TestCheckPrForComments:
                     ],
                     "reviews": [],
                 },
-                [],  # No review comments from API
+                [],  # Line-level review comments (empty)
             ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
