@@ -32,6 +32,13 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 - If a commit's failures have been processed, they won't be retried for that same commit
 - Pushing a new commit resets the processed state, allowing fresh retry attempts
 
+### Failed task retry behavior:
+- When jib fails to process a task (e.g., container crashes, timeout, error), the task is
+  tracked in `failed_tasks` state for automatic retry on the next watcher run
+- Failed tasks bypass the timestamp filter, ensuring old PRs/comments are not ignored
+- Once successfully processed, failed tasks are automatically removed from retry queue
+- State is stored in `~/.local/share/github-watcher/state.json`
+
 ### Merge conflict detection:
 - PRs with mergeable=CONFLICTING or mergeStateStatus=DIRTY are detected
 - Each unique (repo, PR, commit SHA) conflict combination is tracked
@@ -58,7 +65,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 import yaml
 
@@ -100,9 +106,29 @@ class ThreadSafeState:
         self._lock = threading.Lock()
 
     def mark_processed(self, key: str, signature: str) -> None:
-        """Mark a task as processed (thread-safe)."""
+        """Mark a task as processed (thread-safe).
+
+        Also removes from failed_tasks if present (successful retry).
+        """
         with self._lock:
             self._state.setdefault(key, {})[signature] = utc_now_iso()
+            # Remove from failed_tasks if this was a retry
+            if signature in self._state.get("failed_tasks", {}):
+                del self._state["failed_tasks"][signature]
+            self._save()
+
+    def mark_failed(self, signature: str, task_type: str, context: dict) -> None:
+        """Mark a task as failed for later retry (thread-safe).
+
+        Stores minimal context needed to retry the task on the next run.
+        """
+        with self._lock:
+            self._state.setdefault("failed_tasks", {})[signature] = {
+                "failed_at": utc_now_iso(),
+                "task_type": task_type,
+                "repository": context.get("repository", "unknown"),
+                "pr_number": context.get("pr_number"),
+            }
             self._save()
 
     def _save(self) -> None:
@@ -151,12 +177,14 @@ def load_state() -> dict:
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
                 state.setdefault("processed_conflicts", {})
+                state.setdefault("failed_tasks", {})
                 state.setdefault("last_run_start", None)
                 logger.debug(
                     "State loaded successfully",
                     state_file=str(state_file),
                     processed_failures_count=len(state["processed_failures"]),
                     processed_comments_count=len(state["processed_comments"]),
+                    failed_tasks_count=len(state["failed_tasks"]),
                     last_run_start=state["last_run_start"],
                 )
                 return state
@@ -181,6 +209,7 @@ def load_state() -> dict:
         "processed_comments": {},
         "processed_reviews": {},
         "processed_conflicts": {},
+        "failed_tasks": {},
         "last_run_start": None,
     }
 
@@ -465,6 +494,9 @@ def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
     success = invoke_jib(task.task_type, task.context)
     if success:
         safe_state.mark_processed(task.signature_key, task.signature_value)
+    else:
+        # Mark as failed for retry on next run
+        safe_state.mark_failed(task.signature_value, task.task_type, task.context)
     return success
 
 
@@ -799,9 +831,19 @@ def check_pr_for_comments(
         )
         return None
 
+    # Check if there are failed tasks for this PR that need retry
+    failed_tasks = state.get("failed_tasks", {})
+    has_failed_comment_task = any(
+        info.get("task_type") == "comment"
+        and info.get("repository") == repo
+        and info.get("pr_number") == pr_num
+        for info in failed_tasks.values()
+    )
+
     # Filter by since_timestamp if provided (only show comments newer than last run)
+    # UNLESS there's a failed task that needs retry for this PR
     # Use >= to avoid missing comments that occur at exactly the same timestamp
-    if since_timestamp:
+    if since_timestamp and not has_failed_comment_task:
         pre_filter_count = len(other_comments)
         other_comments = [c for c in other_comments if c.get("created_at", "") >= since_timestamp]
         if not other_comments:
@@ -812,6 +854,12 @@ def check_pr_for_comments(
                 since=since_timestamp,
             )
             return None  # No new comments since last run
+    elif has_failed_comment_task:
+        logger.info(
+            "Skipping timestamp filter due to failed task retry",
+            pr_number=pr_num,
+            repository=repo,
+        )
 
     # Create signature based on latest comment timestamp
     latest_comment = max(other_comments, key=lambda c: c.get("created_at", ""))
@@ -967,10 +1015,23 @@ def check_prs_for_review(
     if not other_prs:
         return []
 
+    # Check for failed review tasks that need retry
+    failed_tasks = state.get("failed_tasks", {})
+    failed_review_pr_numbers = {
+        info.get("pr_number")
+        for info in failed_tasks.values()
+        if info.get("task_type") == "review_request" and info.get("repository") == repo
+    }
+
     # Filter by since_timestamp if provided (only show PRs created after last run)
+    # UNLESS the PR has a failed task that needs retry
     # Use >= to avoid missing PRs that occur at exactly the same timestamp
     if since_timestamp:
-        other_prs = [p for p in other_prs if p.get("createdAt", "") >= since_timestamp]
+        other_prs = [
+            p
+            for p in other_prs
+            if p.get("createdAt", "") >= since_timestamp or p["number"] in failed_review_pr_numbers
+        ]
         if not other_prs:
             return []  # No new PRs since last run
 
@@ -1077,6 +1138,18 @@ def main():
 
     # Load state
     state = load_state()
+
+    # Check for failed tasks that need retry
+    failed_tasks = state.get("failed_tasks", {})
+    if failed_tasks:
+        logger.info(
+            "Found failed tasks from previous runs - will retry",
+            failed_task_count=len(failed_tasks),
+            failed_tasks=[
+                f"{info.get('repository', 'unknown')}#{info.get('pr_number', '?')} ({info.get('task_type', 'unknown')})"
+                for info in failed_tasks.values()
+            ],
+        )
 
     # Get the timestamp from when the PREVIOUS run started (for comment filtering)
     since_timestamp = get_since_timestamp(state)
