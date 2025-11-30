@@ -11,7 +11,7 @@ Tests the GitHub Processor dispatcher:
 import json
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -338,14 +338,24 @@ class TestHandlers:
             "failed_checks": [{"name": "test", "state": "FAILURE"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Import ClaudeResult to create mock return value
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+        from claude import ClaudeResult
+
+        mock_result = ClaudeResult(
+            success=True, stdout="Analysis complete", stderr="", returncode=0
+        )
+
+        with patch.object(github_processor, "run_claude", return_value=mock_result) as mock_run:
             github_processor.handle_check_failure(context)
 
-            # Should invoke claude
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            # Should invoke run_claude
+            mock_run.assert_called_once()
+            # Check that a prompt was passed
+            call_args = mock_run.call_args
+            assert call_args[0][0]  # First positional arg is the prompt
 
     def test_handle_comment_invokes_claude(self, temp_dir):
         """Test comment handler invokes Claude."""
@@ -357,13 +367,23 @@ class TestHandlers:
             "comments": [{"author": "user", "body": "Please fix", "type": "comment"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Import ClaudeResult to create mock return value
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+        from claude import ClaudeResult
+
+        mock_result = ClaudeResult(
+            success=True, stdout="Analysis complete", stderr="", returncode=0
+        )
+
+        with patch.object(github_processor, "run_claude", return_value=mock_result) as mock_run:
             github_processor.handle_comment(context)
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            mock_run.assert_called_once()
+            # Check that a prompt was passed
+            call_args = mock_run.call_args
+            assert call_args[0][0]  # First positional arg is the prompt
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
         """Test review handler invokes Claude."""
@@ -381,13 +401,23 @@ class TestHandlers:
             "diff": "diff content",
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Import ClaudeResult to create mock return value
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+        from claude import ClaudeResult
+
+        mock_result = ClaudeResult(
+            success=True, stdout="Analysis complete", stderr="", returncode=0
+        )
+
+        with patch.object(github_processor, "run_claude", return_value=mock_result) as mock_run:
             github_processor.handle_review_request(context)
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            mock_run.assert_called_once()
+            # Check that a prompt was passed
+            call_args = mock_run.call_args
+            assert call_args[0][0]  # First positional arg is the prompt
 
 
 class TestMain:

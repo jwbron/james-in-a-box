@@ -10,7 +10,7 @@ Tests the Slack incoming message processor:
 import sys
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 # Load incoming-processor module (hyphenated filename)
@@ -279,9 +279,12 @@ class TestMain:
 class TestProcessTask:
     """Tests for task processing."""
 
-    @patch("subprocess.run")
-    def test_process_task_with_thread_context(self, mock_run, temp_dir, monkeypatch):
+    def test_process_task_with_thread_context(self, temp_dir, monkeypatch):
         """Test that thread context is preserved in task processing."""
+        # Import ClaudeResult to create mock return value
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+        from claude import ClaudeResult
+
         # Create task file with frontmatter
         incoming_dir = temp_dir / "incoming"
         incoming_dir.mkdir()
@@ -296,9 +299,9 @@ task_id: "slack-task-001"
 Please help with this task.
 """)
 
-        # Mock Claude command success
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="Task completed successfully!", stderr=""
+        # Mock Claude result (success)
+        mock_result = ClaudeResult(
+            success=True, stdout="Task completed successfully!", stderr="", returncode=0
         )
 
         # Mock home directory
@@ -311,21 +314,27 @@ Please help with this task.
 
         # Need to reload to pick up HOME change for Path.home()
         with patch.object(Path, "home", return_value=temp_dir):
-            result = incoming_processor.process_task(task_file)
+            with patch.object(
+                incoming_processor, "run_claude", return_value=mock_result
+            ) as mock_run:
+                result = incoming_processor.process_task(task_file)
 
         # Should complete successfully
         assert result is True
 
-        # Claude should have been called
+        # run_claude should have been called
         mock_run.assert_called()
 
 
 class TestProcessResponse:
     """Tests for response processing."""
 
-    @patch("subprocess.run")
-    def test_process_response_with_reference(self, mock_run, temp_dir, monkeypatch):
+    def test_process_response_with_reference(self, temp_dir, monkeypatch):
         """Test that referenced notification is loaded."""
+        # Import ClaudeResult to create mock return value
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+        from claude import ClaudeResult
+
         # Create response file
         responses_dir = temp_dir / "responses"
         responses_dir.mkdir()
@@ -346,17 +355,23 @@ Here is my response to your question.
         original = notifications_dir / "20251124-123456.md"
         original.write_text("# Original Notification\n\nOriginal content.")
 
-        # Mock Claude command
-        mock_run.return_value = MagicMock(returncode=0, stdout="Response processed!", stderr="")
+        # Mock Claude result (success)
+        mock_result = ClaudeResult(
+            success=True, stdout="Response processed!", stderr="", returncode=0
+        )
 
         # Mock home
         (temp_dir / "khan").mkdir()
         monkeypatch.setenv("HOME", str(temp_dir))
 
         with patch.object(Path, "home", return_value=temp_dir):
-            result = incoming_processor.process_response(response_file)
+            with patch.object(
+                incoming_processor, "run_claude", return_value=mock_result
+            ) as mock_run:
+                result = incoming_processor.process_response(response_file)
 
         assert result is True
+        mock_run.assert_called()
 
 
 class TestExtractThreadContext:
