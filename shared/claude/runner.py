@@ -11,10 +11,11 @@ import os
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Callable, TextIO
+from typing import TextIO
 
 
 @dataclass
@@ -321,5 +322,3 @@ def _run_claude_streaming(
         returncode=returncode,
         error=None if returncode == 0 else f"Claude exited with code {returncode}",
     )
-
-
