@@ -32,6 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 from beads import PRContextManager
 from claude import run_claude
+from jib_logging import ContextScope
 
 
 # Global PR context manager for beads integration
@@ -263,8 +264,20 @@ Review the output carefully. Note which failures match the CI logs vs new/differ
 8. **Verify branch again**: Run `git branch --show-current` - confirm still on `{pr_branch}`
 9. **Commit** - Commit fixes with clear message
 10. **Push** - Push to the PR branch: `git push origin {pr_branch}`
-11. **Comment** - Add PR comment explaining fixes
+11. **Comment** - Add PR comment explaining fixes. Use the signature helper to add workflow context:
+    ```python
+    try:
+        from jib_logging.signatures import add_signature_to_comment
+        comment_with_sig = add_signature_to_comment("Your comment text here")
+    except Exception:
+        # Fallback to unsigned comment if signature helper fails
+        comment_with_sig = "Your comment text here"
+    # Then post to GitHub with comment_with_sig
+    ```
+    The try/except ensures that signature failures don't block the primary task.
 12. **Update beads** - Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
+
+**IMPORTANT**: All PR comments you post should include the workflow signature (automatically added by the helper).
 
 Begin by checking out the PR branch now.
 """
@@ -374,7 +387,10 @@ def build_comment_prompt(context: dict, beads_id: str | None = None) -> str:
     if beads_id:
         beads_context = pr_context_manager.get_context_summary(repo, pr_num)
 
-    repo_name = repo.split("/")[-1]
+    # Extract owner and repo name for use in f-strings
+    repo_parts = repo.split("/")
+    owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
+    repo_name = repo_parts[-1]
 
     prompt = f"""# PR Comment Response
 
@@ -425,23 +441,97 @@ If you commit without checking out `{pr_branch}` first, your changes will go to 
 
 ## Your Task
 
-Review the comments above and:
+Review the comments above and respond appropriately:
 
-1. **Understand** what the commenter is asking or suggesting
-2. **Research** - read relevant code if needed to understand context
-3. **IF implementing changes**:
-   a. FIRST checkout the PR branch: `git checkout {pr_branch}`
-   b. Verify with: `git branch --show-current`
-   c. Make changes
-   d. Verify branch again before committing
-   e. Commit and push to `{pr_branch}`
-4. **Respond** - use `gh pr comment` to respond thoughtfully:
-   - Acknowledge their feedback
-   - Explain what you've done or will do
-   - Ask clarifying questions if needed
-5. **Update beads** - Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
+### Step 1: Understand the Comments
 
-Sign your response with: "— Authored by jib"
+**Check comment types:**
+- **Inline review comments** - Comments on specific lines of code
+- **General PR comments** - Overall feedback or questions
+- **Suggested changes** - GitHub suggestion blocks that can be committed
+
+### Step 2: Handle Suggested Changes (If Any)
+
+If a comment contains a GitHub suggestion (```suggestion blocks), you can commit it directly using the GitHub MCP:
+
+```python
+# Use MCP: mcp__github__pull_request_read(owner="{owner}", repo="{repo_name}", pullNumber={pr_num}, method="get_review_comments")
+# This will show you all review comments including suggestions
+```
+
+To commit a suggestion:
+1. First, checkout the PR branch (see "Branch Verification" above)
+2. Apply the suggested change manually by editing the file
+3. Commit with a message like: "Apply suggestion from @username"
+4. Push to the PR branch
+
+**Alternative using GitHub UI:**
+You can also tell the user to commit the suggestion via the GitHub web interface (click "Commit suggestion" button).
+
+### Step 3: Respond to Inline Comments
+
+For inline review comments, you can respond directly to the comment thread using GitHub CLI:
+
+```bash
+# Reply to a specific review comment by its ID
+gh pr comment {pr_num} --body "Your response here — Authored by jib"
+```
+
+Or add a general PR comment:
+```bash
+gh pr comment {pr_num} --body "Overall response to feedback — Authored by jib"
+```
+
+### Step 4: Implement Requested Changes
+
+If the comments request code changes:
+
+**a. FIRST checkout the PR branch:**
+```bash
+cd ~/khan/{repo_name}
+git fetch origin {pr_branch}
+git checkout {pr_branch}
+git branch --show-current  # VERIFY this shows: {pr_branch}
+```
+
+**b. Make the requested changes:**
+- Read the code to understand context
+- Implement the changes thoughtfully
+- Follow project conventions
+- Test your changes if possible
+
+**c. Commit with clear message:**
+```bash
+git add <changed_files>
+git commit -m "Address review feedback: <brief description>
+
+- Detail 1
+- Detail 2
+
+Addresses: <comment/issue reference>"
+git branch --show-current  # VERIFY still on {pr_branch}
+git push origin {pr_branch}
+```
+
+**d. Comment on the PR to explain what you did:**
+```bash
+gh pr comment {pr_num} --body "I've addressed the review feedback:
+- Fixed issue X in file Y
+- Refactored Z as suggested
+
+Committed as [commit SHA]. — Authored by jib"
+```
+
+### Step 5: Update Beads
+
+Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
+
+### Important Notes
+
+- **For suggestions**: Either commit them directly or ask the user to
+- **For inline questions**: Respond directly in the comment thread
+- **For change requests**: Implement, commit, push, and comment
+- **Always acknowledge**: Let the commenter know you've seen and processed their feedback
 
 Begin analysis now.
 """
@@ -568,6 +658,11 @@ def build_review_prompt(context: dict, beads_id: str | None = None) -> str:
     files = context.get("files", [])
     diff = context.get("diff", "")
 
+    # Extract owner and repo name for use in f-strings
+    repo_parts = repo.split("/")
+    owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
+    repo_name = repo_parts[-1]
+
     prompt = f"""# PR Code Review
 
 ## PR Information
@@ -593,22 +688,90 @@ def build_review_prompt(context: dict, beads_id: str | None = None) -> str:
 
 ## Your Task
 
-Review this PR and provide constructive feedback:
+Review this PR and provide constructive feedback using **inline comments with suggested fixes**:
 
-1. **Understand** the purpose of the changes
-2. **Check** for:
-   - Code quality and style
-   - Potential bugs or edge cases
-   - Security concerns
-   - Test coverage
-   - Documentation
-3. **Comment** using `gh pr review` with your assessment:
-   - Be constructive and specific
-   - Suggest improvements where appropriate
-   - Acknowledge good patterns you see
-4. **Update beads** - Update the beads task with your review summary{f" (task: {beads_id})" if beads_id else ""}
+### Step 1: Create a Pending Review
 
-Sign your review with: "— Reviewed by jib"
+Use the GitHub MCP tool to create a pending review:
+```python
+# Use MCP: mcp__github__pull_request_review_write(method="create", owner="{owner}", repo="{repo_name}", pullNumber={pr_num})
+```
+
+### Step 2: Add Inline Comments with Suggested Fixes
+
+For each issue you find, add inline comments using the GitHub MCP tool:
+
+```python
+# Use MCP: mcp__github__add_comment_to_pending_review(
+#     owner="{owner}",
+#     repo="{repo_name}",
+#     pullNumber={pr_num},
+#     path="path/to/file.py",
+#     body="Comment with suggested fix",
+#     line=42,
+#     side="RIGHT",
+#     subjectType="LINE"
+# )
+```
+
+**Important parameters:**
+- `path`: Relative path to the file (from repo root)
+- `line`: The line number in the diff where the comment applies
+- `side`: "RIGHT" for new code, "LEFT" for old code
+- `subjectType`: "LINE" for single-line comments, "FILE" for file-level comments
+- `body`: Your comment - use markdown to include suggested fixes
+
+**Suggested fix format:**
+When suggesting code changes, use this format in the `body`:
+```markdown
+Consider refactoring this for better readability:
+
+\`\`\`suggestion
+def improved_function():
+    # Your suggested code here
+    pass
+\`\`\`
+```
+
+The `suggestion` code fence will render as a suggested change that can be committed directly from GitHub.
+
+### Step 3: Submit the Review
+
+After adding all inline comments, submit the review:
+```python
+# Use MCP: mcp__github__pull_request_review_write(
+#     method="submit_pending",
+#     owner="{owner}",
+#     repo="{repo_name}",
+#     pullNumber={pr_num},
+#     body="Overall review summary here. — Reviewed by jib",
+#     event="COMMENT"  # or "APPROVE" or "REQUEST_CHANGES"
+# )
+```
+
+**Review event types:**
+- `COMMENT`: General feedback without approval/rejection
+- `APPROVE`: Approve the PR
+- `REQUEST_CHANGES`: Request changes before merging
+
+### Step 4: What to Review
+
+**Check for:**
+1. **Code quality and style** - Does it follow project conventions?
+2. **Potential bugs or edge cases** - Are there scenarios not handled?
+3. **Security concerns** - Any vulnerabilities (XSS, SQL injection, etc.)?
+4. **Test coverage** - Are changes adequately tested?
+5. **Documentation** - Are comments and docs updated?
+
+**Be constructive:**
+- Use inline comments for specific issues
+- Provide suggested fixes when possible
+- Acknowledge good patterns you see
+- Be specific about what needs to change and why
+
+### Step 5: Update Beads
+
+Update the beads task with your review summary{f" (task: {beads_id})" if beads_id else ""}
 
 Begin review now.
 """
@@ -814,20 +977,37 @@ def main():
     print(f"Time: {datetime.now().isoformat()}")
     print("=" * 60)
 
-    # Dispatch to appropriate handler
-    handlers = {
-        "check_failure": handle_check_failure,
-        "comment": handle_comment,
-        "review_request": handle_review_request,
-        "merge_conflict": handle_merge_conflict,
-    }
+    # Extract workflow context from incoming context
+    workflow_id = context.get("workflow_id")
+    workflow_type = context.get("workflow_type", args.task)
+    repository = context.get("repository")
+    pr_number = context.get("pr_number")
 
-    handler = handlers.get(args.task)
-    if handler:
-        handler(context)
-    else:
-        print(f"Unknown task type: {args.task}")
-        sys.exit(1)
+    # Establish logging context for the entire workflow execution
+    # This propagates to all logs, notifications, and signatures
+    with ContextScope(
+        workflow_id=workflow_id,
+        workflow_type=workflow_type,
+        repository=repository,
+        pr_number=pr_number,
+    ):
+        if workflow_id:
+            print(f"Workflow ID: {workflow_id}")
+
+        # Dispatch to appropriate handler
+        handlers = {
+            "check_failure": handle_check_failure,
+            "comment": handle_comment,
+            "review_request": handle_review_request,
+            "merge_conflict": handle_merge_conflict,
+        }
+
+        handler = handlers.get(args.task)
+        if handler:
+            handler(context)
+        else:
+            print(f"Unknown task type: {args.task}")
+            sys.exit(1)
 
     print("=" * 60)
     print("GitHub Processor - Completed")

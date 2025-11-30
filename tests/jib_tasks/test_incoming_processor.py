@@ -238,7 +238,10 @@ class TestMain:
         task_file = incoming_dir / "task.md"
         task_file.write_text("## Current Message\n\nTest task")
 
-        with patch.object(incoming_processor, "process_task", return_value=True) as mock_task:
+        with (
+            patch.object(incoming_processor, "process_task", return_value=True) as mock_task,
+            patch("subprocess.run"),
+        ):  # Mock service stop calls at end of main
             with patch.object(sys, "argv", ["incoming-processor.py", str(task_file)]):
                 incoming_processor.main()
 
@@ -251,9 +254,12 @@ class TestMain:
         response_file = responses_dir / "response.md"
         response_file.write_text("## Current Message\n\nTest response")
 
-        with patch.object(
-            incoming_processor, "process_response", return_value=True
-        ) as mock_response:
+        with (
+            patch.object(
+                incoming_processor, "process_response", return_value=True
+            ) as mock_response,
+            patch("subprocess.run"),
+        ):  # Mock service stop calls at end of main
             with patch.object(sys, "argv", ["incoming-processor.py", str(response_file)]):
                 incoming_processor.main()
 
@@ -301,26 +307,26 @@ Please help with this task.
         notifications_dir = temp_dir / "sharing" / "notifications"
         notifications_dir.mkdir(parents=True)
 
-        # run_claude uses subprocess.Popen for streaming mode (default)
-        with patch("subprocess.Popen") as mock_popen:
-            mock_process = MagicMock()
-            mock_process.stdin = MagicMock()
-            mock_process.stdout = iter(["Task completed successfully!\n"])
-            mock_process.stderr = iter([])
-            mock_process.wait.return_value = 0
-            mock_popen.return_value = mock_process
+        # Mock run_claude directly since it uses subprocess.Popen in streaming mode
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.returncode = 0
+        mock_result.stdout = "Task completed successfully!"
+        mock_result.stderr = ""
+        mock_result.error = None
 
-            # Need to reload to pick up HOME change for Path.home()
-            with patch.object(Path, "home", return_value=temp_dir):
-                result = incoming_processor.process_task(task_file)
+        # Need to reload to pick up HOME change for Path.home()
+        with (
+            patch.object(Path, "home", return_value=temp_dir),
+            patch.object(incoming_processor, "run_claude", return_value=mock_result) as mock_claude,
+        ):
+            result = incoming_processor.process_task(task_file)
 
         # Should complete successfully
         assert result is True
 
-        # Claude should have been called via Popen
-        mock_popen.assert_called()
-        call_args = mock_popen.call_args[0][0]
-        assert "claude" in call_args
+        # run_claude should have been called
+        mock_claude.assert_called_once()
 
 
 class TestProcessResponse:
@@ -352,24 +358,22 @@ Here is my response to your question.
         (temp_dir / "khan").mkdir()
         monkeypatch.setenv("HOME", str(temp_dir))
 
-        # run_claude uses subprocess.Popen for streaming mode (default)
-        with patch("subprocess.Popen") as mock_popen:
-            mock_process = MagicMock()
-            mock_process.stdin = MagicMock()
-            mock_process.stdout = iter(["Response processed!\n"])
-            mock_process.stderr = iter([])
-            mock_process.wait.return_value = 0
-            mock_popen.return_value = mock_process
+        # Mock run_claude directly since it uses subprocess.Popen in streaming mode
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.returncode = 0
+        mock_result.stdout = "Response processed!"
+        mock_result.stderr = ""
+        mock_result.error = None
 
-            with patch.object(Path, "home", return_value=temp_dir):
-                result = incoming_processor.process_response(response_file)
+        with (
+            patch.object(Path, "home", return_value=temp_dir),
+            patch.object(incoming_processor, "run_claude", return_value=mock_result) as mock_claude,
+        ):
+            result = incoming_processor.process_response(response_file)
 
         assert result is True
-
-        # Claude should have been called via Popen
-        mock_popen.assert_called()
-        call_args = mock_popen.call_args[0][0]
-        assert "claude" in call_args
+        mock_claude.assert_called_once()
 
 
 class TestExtractThreadContext:

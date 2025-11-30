@@ -36,11 +36,17 @@ ln -sf "${SCRIPT_DIR}/adr-researcher.timer" ~/.config/systemd/user/
 # Reload systemd
 systemctl --user daemon-reload
 
+# Enable and start timer
+systemctl --user enable adr-researcher.timer
+echo "✓ Timer enabled"
+
+systemctl --user start adr-researcher.timer
+echo "✓ Timer started"
+
 echo ""
 echo "Setup complete!"
 echo ""
-echo "To enable automated weekly research (Mondays at 11am):"
-echo "  systemctl --user enable --now adr-researcher.timer"
+echo "Automated weekly research enabled (Mondays at 11am)."
 echo ""
 echo "To run manually:"
 echo "  systemctl --user start adr-researcher.service"

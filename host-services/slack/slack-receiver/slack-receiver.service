@@ -1,6 +1,6 @@
 [Unit]
 Description=JIB Slack Receiver - Bidirectional Slack communication
-Documentation=https://github.com/anthropics/james-in-a-box
+Documentation=file://%h/khan/james-in-a-box/host-services/slack/slack-receiver/README.md
 After=network-online.target
 Wants=network-online.target
 
@@ -8,14 +8,19 @@ Wants=network-online.target
 Type=simple
 # Uses shared virtual environment installed by setup.sh via uv
 ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/slack/slack-receiver/slack-receiver.py
+
+# Restart on failure
 Restart=on-failure
 RestartSec=10
+
+# Logging
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=slack-receiver
 
-# Security
-NoNewPrivileges=true
-PrivateTmp=true
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
 
 # Environment
 Environment=PYTHONUNBUFFERED=1
