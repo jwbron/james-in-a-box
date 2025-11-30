@@ -51,7 +51,7 @@ Reports are saved to `~/sharing/analysis/beads/`:
 ./beads-analyzer.py --days 30
 
 # Print report to stdout
-./beads-analyzer.py --force --print
+./beads-analyzer.py --force --stdout
 ```
 
 ## Systemd Timer
