@@ -522,8 +522,7 @@ def create_dockerfile() -> None:
         if not _quiet_mode:
             info("Claude commands copied to build context")
     else:
-        if not _quiet_mode:
-            warn("claude-commands directory not found")
+        warn("claude-commands directory not found")
 
     # Copy claude-rules directory to build context
     rules_src = script_dir / "claude-rules"
@@ -535,8 +534,21 @@ def create_dockerfile() -> None:
         if not _quiet_mode:
             info("Claude rules directory copied to build context")
     else:
+        warn("claude-rules directory not found, skipping agent rules")
+
+    # Copy .claude/hooks directory to build context
+    hooks_src = script_dir / ".claude" / "hooks"
+    hooks_dest = Config.CONFIG_DIR / ".claude" / "hooks"
+    if hooks_src.exists():
+        if hooks_dest.exists():
+            shutil.rmtree(hooks_dest)
+        # Ensure parent directory exists
+        hooks_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(hooks_src, hooks_dest)
         if not _quiet_mode:
-            warn("claude-rules directory not found, skipping agent rules")
+            info("Claude hooks directory copied to build context")
+    else:
+        warn(".claude/hooks directory not found, skipping hooks")
 
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
