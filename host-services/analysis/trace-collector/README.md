@@ -67,9 +67,32 @@ Query and analysis utilities:
 
 ## Installation
 
-### 1. Hook Configuration
+### Automatic (Recommended)
 
-Add to `~/.claude/settings.json` (or project `.claude/settings.json`):
+The trace collector is automatically configured when you run the main jib setup:
+
+```bash
+cd ~/khan/james-in-a-box
+./setup.sh
+```
+
+This will:
+- Create the `~/sharing/traces/` storage directory
+- Configure Claude Code hooks in `~/.claude/settings.json`
+
+### Manual Installation
+
+If you need to set up manually (e.g., without running full setup):
+
+```bash
+# Run the trace-collector setup script
+cd ~/khan/james-in-a-box/host-services/analysis/trace-collector
+./setup.sh
+```
+
+Or configure manually:
+
+1. **Add hooks to `~/.claude/settings.json`:**
 
 ```json
 {
@@ -90,13 +113,13 @@ Add to `~/.claude/settings.json` (or project `.claude/settings.json`):
 }
 ```
 
-### 2. Create Storage Directory
+2. **Create storage directory:**
 
 ```bash
 mkdir -p ~/sharing/traces
 ```
 
-### 3. Test Collection
+### Verify Installation
 
 ```bash
 # Run the collector test
