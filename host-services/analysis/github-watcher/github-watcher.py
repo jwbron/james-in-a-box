@@ -58,7 +58,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 import yaml
 
@@ -396,7 +395,9 @@ def invoke_jib(task_type: str, context: dict) -> bool:
                 # Look for common error patterns
                 for line in stderr_tail.split("\n"):
                     line_lower = line.lower()
-                    if any(kw in line_lower for kw in ["error:", "failed:", "exception:", "traceback"]):
+                    if any(
+                        kw in line_lower for kw in ["error:", "failed:", "exception:", "traceback"]
+                    ):
                         error_summary = line.strip()[:200]
                         break
 
@@ -471,9 +472,7 @@ def execute_tasks_parallel(tasks: list[JibTask], safe_state: ThreadSafeState) ->
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
-        future_to_task = {
-            executor.submit(execute_task, task, safe_state): task for task in tasks
-        }
+        future_to_task = {executor.submit(execute_task, task, safe_state): task for task in tasks}
 
         # Process completed tasks as they finish
         for future in as_completed(future_to_task):

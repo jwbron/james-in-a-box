@@ -277,8 +277,9 @@ class TestMain:
 class TestProcessTask:
     """Tests for task processing."""
 
+    @patch("subprocess.Popen")
     @patch("subprocess.run")
-    def test_process_task_with_thread_context(self, mock_run, temp_dir, monkeypatch):
+    def test_process_task_with_thread_context(self, mock_run, mock_popen, temp_dir, monkeypatch):
         """Test that thread context is preserved in task processing."""
         # Create task file with frontmatter
         incoming_dir = temp_dir / "incoming"
@@ -294,10 +295,18 @@ task_id: "slack-task-001"
 Please help with this task.
 """)
 
-        # Mock Claude command success
+        # Mock subprocess.run (for beads and other commands)
         mock_run.return_value = MagicMock(
             returncode=0, stdout="Task completed successfully!", stderr=""
         )
+
+        # Mock subprocess.Popen for Claude streaming mode
+        mock_process = MagicMock()
+        mock_process.stdin = MagicMock()
+        mock_process.stdout = iter(["Claude output line 1\n", "Claude output line 2\n"])
+        mock_process.stderr = iter([])
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
 
         # Mock home directory
         monkeypatch.setenv("HOME", str(temp_dir))
@@ -314,15 +323,16 @@ Please help with this task.
         # Should complete successfully
         assert result is True
 
-        # Claude should have been called
-        mock_run.assert_called()
+        # Claude should have been called via Popen (streaming mode)
+        mock_popen.assert_called()
 
 
 class TestProcessResponse:
     """Tests for response processing."""
 
+    @patch("subprocess.Popen")
     @patch("subprocess.run")
-    def test_process_response_with_reference(self, mock_run, temp_dir, monkeypatch):
+    def test_process_response_with_reference(self, mock_run, mock_popen, temp_dir, monkeypatch):
         """Test that referenced notification is loaded."""
         # Create response file
         responses_dir = temp_dir / "responses"
@@ -344,8 +354,16 @@ Here is my response to your question.
         original = notifications_dir / "20251124-123456.md"
         original.write_text("# Original Notification\n\nOriginal content.")
 
-        # Mock Claude command
+        # Mock subprocess.run (for beads and other commands)
         mock_run.return_value = MagicMock(returncode=0, stdout="Response processed!", stderr="")
+
+        # Mock subprocess.Popen for Claude streaming mode
+        mock_process = MagicMock()
+        mock_process.stdin = MagicMock()
+        mock_process.stdout = iter(["Response output\n"])
+        mock_process.stderr = iter([])
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
 
         # Mock home
         (temp_dir / "khan").mkdir()

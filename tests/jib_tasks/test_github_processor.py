@@ -338,14 +338,31 @@ class TestHandlers:
             "failed_checks": [{"name": "test", "state": "FAILURE"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_check_failure(context)
+        with patch("subprocess.Popen") as mock_popen:
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-            # Should invoke claude
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                # Mock subprocess.Popen for Claude streaming mode
+                mock_process = MagicMock()
+                mock_process.stdin = MagicMock()
+                mock_process.stdout = iter(["Claude output\n"])
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_popen.return_value = mock_process
+
+                github_processor.handle_check_failure(context)
+
+                # Should invoke claude via Popen (streaming mode)
+                mock_popen.assert_called()
+                # Check that at least one Popen call includes 'claude' in the command
+                all_popen_calls = mock_popen.call_args_list
+                claude_called = any(
+                    "claude" in call[0][0] if call[0] and call[0][0] else False
+                    for call in all_popen_calls
+                )
+                assert claude_called, (
+                    f"Expected 'claude' in at least one Popen call, got: {all_popen_calls}"
+                )
 
     def test_handle_comment_invokes_claude(self, temp_dir):
         """Test comment handler invokes Claude."""
@@ -357,13 +374,30 @@ class TestHandlers:
             "comments": [{"author": "user", "body": "Please fix", "type": "comment"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_comment(context)
+        with patch("subprocess.Popen") as mock_popen:
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                # Mock subprocess.Popen for Claude streaming mode
+                mock_process = MagicMock()
+                mock_process.stdin = MagicMock()
+                mock_process.stdout = iter(["Claude output\n"])
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_popen.return_value = mock_process
+
+                github_processor.handle_comment(context)
+
+                mock_popen.assert_called()
+                # Check that at least one Popen call includes 'claude' in the command
+                all_popen_calls = mock_popen.call_args_list
+                claude_called = any(
+                    "claude" in call[0][0] if call[0] and call[0][0] else False
+                    for call in all_popen_calls
+                )
+                assert claude_called, (
+                    f"Expected 'claude' in at least one Popen call, got: {all_popen_calls}"
+                )
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
         """Test review handler invokes Claude."""
@@ -381,13 +415,30 @@ class TestHandlers:
             "diff": "diff content",
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_review_request(context)
+        with patch("subprocess.Popen") as mock_popen:
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                # Mock subprocess.Popen for Claude streaming mode
+                mock_process = MagicMock()
+                mock_process.stdin = MagicMock()
+                mock_process.stdout = iter(["Claude output\n"])
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_popen.return_value = mock_process
+
+                github_processor.handle_review_request(context)
+
+                mock_popen.assert_called()
+                # Check that at least one Popen call includes 'claude' in the command
+                all_popen_calls = mock_popen.call_args_list
+                claude_called = any(
+                    "claude" in call[0][0] if call[0] and call[0][0] else False
+                    for call in all_popen_calls
+                )
+                assert claude_called, (
+                    f"Expected 'claude' in at least one Popen call, got: {all_popen_calls}"
+                )
 
 
 class TestMain:

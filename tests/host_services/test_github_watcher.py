@@ -307,7 +307,9 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {"comments": [], "reviews": []}
+            # First call: gh pr view returns comments/reviews
+            # Second call: gh api for line-level review comments returns empty list
+            mock_gh.side_effect = [{"comments": [], "reviews": []}, []]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
@@ -324,17 +326,22 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {
-                "comments": [
-                    {
-                        "id": "comment-1",
-                        "author": {"login": "reviewer"},
-                        "body": "Please fix this",
-                        "createdAt": "2025-01-01T00:00:00Z",
-                    }
-                ],
-                "reviews": [],
-            }
+            # First call: gh pr view returns comments/reviews
+            # Second call: gh api for line-level review comments returns empty list
+            mock_gh.side_effect = [
+                {
+                    "comments": [
+                        {
+                            "id": "comment-1",
+                            "author": {"login": "reviewer"},
+                            "body": "Please fix this",
+                            "createdAt": "2025-01-01T00:00:00Z",
+                        }
+                    ],
+                    "reviews": [],
+                },
+                [],  # No line-level review comments
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
@@ -348,23 +355,28 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {
-                "comments": [
-                    {
-                        "id": "c1",
-                        "author": {"login": "github-actions[bot]"},
-                        "body": "CI passed",
-                        "createdAt": "2025-01-01",
-                    },
-                    {
-                        "id": "c2",
-                        "author": {"login": "dependabot[bot]"},
-                        "body": "Update deps",
-                        "createdAt": "2025-01-01",
-                    },
-                ],
-                "reviews": [],
-            }
+            # First call: gh pr view returns comments/reviews
+            # Second call: gh api for line-level review comments returns empty list
+            mock_gh.side_effect = [
+                {
+                    "comments": [
+                        {
+                            "id": "c1",
+                            "author": {"login": "github-actions[bot]"},
+                            "body": "CI passed",
+                            "createdAt": "2025-01-01",
+                        },
+                        {
+                            "id": "c2",
+                            "author": {"login": "dependabot[bot]"},
+                            "body": "Update deps",
+                            "createdAt": "2025-01-01",
+                        },
+                    ],
+                    "reviews": [],
+                },
+                [],  # No line-level review comments
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
