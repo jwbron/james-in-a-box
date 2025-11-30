@@ -788,6 +788,18 @@ def main():
     message_file = Path(sys.argv[1])
     logger.info("Starting incoming-processor", file=str(message_file))
 
+    # Refresh GitHub authentication to handle token expiration in long-running containers
+    # This ensures both gh CLI (via GITHUB_TOKEN env var) and GitHub MCP stay authenticated
+    try:
+        from github_auth import refresh_all_auth, start_token_watcher_daemon
+        env_ok, mcp_ok = refresh_all_auth()
+        if env_ok or mcp_ok:
+            logger.info("GitHub authentication refreshed", env=env_ok, mcp=mcp_ok)
+        # Start background watcher for containers that may run >1hr
+        start_token_watcher_daemon(interval=300)  # Check every 5 minutes
+    except Exception as e:
+        logger.warning("Failed to refresh GitHub auth - continuing anyway", error=str(e))
+
     if not message_file.exists():
         logger.error("File not found", file=str(message_file))
         return 1
