@@ -12,7 +12,8 @@ Metrics tracked:
 4. Integration Coverage - What percentage of work is tracked?
 5. Abandonment Patterns - How many tasks are left hanging?
 
-Reports: ~/sharing/analysis/beads/
+Reports: Committed to docs/analysis/beads/ in the repo for version control and
+         analyzer accessibility. Also sends Slack notifications for high-severity issues.
 
 Runs on host (not in container) via systemd timer:
 - Weekly (checks if last run was within 7 days)
@@ -24,7 +25,7 @@ Usage:
 Example:
     beads-analyzer.py --days 7
     beads-analyzer.py --force
-    beads-analyzer.py --days 30 --output ~/sharing/analysis/beads/monthly
+    beads-analyzer.py --days 30 --output ~/custom/path
 """
 
 import argparse
@@ -37,7 +38,9 @@ from pathlib import Path
 
 
 # Constants
-ANALYSIS_DIR = Path.home() / "sharing" / "analysis" / "beads"
+# Write to repo for version control and analyzer accessibility
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "beads"
 BEADS_DIR = Path.home() / "beads"
 ABANDONED_THRESHOLD_HOURS = 24  # Tasks in_progress longer than this are considered abandoned
 
@@ -773,7 +776,7 @@ Period: Last {self.days} days
 
         # Save report
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        report_file = self.analysis_dir / f"beads-analysis-{timestamp}.md"
+        report_file = self.analysis_dir / f"beads-health-{timestamp}.md"
         with open(report_file, "w") as f:
             f.write(report)
 
@@ -945,7 +948,7 @@ Examples:
         "--days", type=int, default=7, help="Number of days to analyze (default: 7)"
     )
     parser.add_argument(
-        "--output", type=Path, help="Output directory (default: ~/sharing/analysis/beads)"
+        "--output", type=Path, help="Output directory (default: docs/analysis/beads in repo)"
     )
     parser.add_argument(
         "--stdout", action="store_true", dest="print_to_stdout", help="Print report to stdout"

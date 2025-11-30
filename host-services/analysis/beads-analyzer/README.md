@@ -33,10 +33,17 @@ The analyzer produces a health score (0-100) based on:
 
 ## Reports
 
-Reports are saved to `~/sharing/analysis/beads/`:
-- `beads-analysis-YYYYMMDD-HHMMSS.md` - Full markdown report
+Reports are **committed to version control** at `docs/analysis/beads/` in the repository:
+- `beads-health-YYYYMMDD-HHMMSS.md` - Full markdown report
 - `beads-metrics-YYYYMMDD-HHMMSS.json` - Machine-readable metrics
 - `latest-report.md` / `latest-metrics.json` - Symlinks to most recent
+
+**Why version control?** Committing reports to the repo provides:
+- Historical tracking of task tracking quality over time
+- Accessible context for all analyzers and LLM agents
+- Transparency into how well beads is being used for persistent memory
+
+High-severity issues also trigger Slack notifications for immediate attention.
 
 ## Usage
 
