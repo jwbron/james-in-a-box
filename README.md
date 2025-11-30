@@ -45,33 +45,7 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 
 **Example**: "Implement OAuth2 authentication for JIRA-1234" → Designs schema per ADRs → Implements endpoints → Writes integration tests → Creates PR with migration guide
 
-### 2. Documentation Generation & Maintenance
-
-**Keeps documentation synchronized with code:**
-- **Auto-generates documentation** from code, commits, and architectural decisions
-- **ADR generation**: Drafts Architecture Decision Records from discussions and design docs
-- **ADR updates**: Monitors code changes and updates ADRs when architecture evolves
-- **API documentation**: Auto-generates and maintains API reference docs
-- **LLM-optimized indexes**: Structures docs following [llms.txt](https://llmstxt.org/) standard for efficient navigation
-- **Documentation drift detection**: Identifies when docs are out of sync with code
-- **Multi-agent documentation pipeline**: Specialized agents for analysis, drafting, review, and validation
-
-**Example**: After implementing a new authentication system, jib automatically updates the security ADR, generates API docs, and creates migration guides.
-
-### 3. Codebase Analysis & Health Monitoring
-
-**Weekly automated analysis for continuous improvement:**
-- **Code quality scanning**: Identifies complexity, duplication, anti-patterns
-- **Security vulnerability detection**: Scans for OWASP top 10, dependency vulnerabilities
-- **Structural analysis**: Recommends architectural improvements
-- **Performance profiling**: Identifies bottlenecks and optimization opportunities
-- **Dependency health**: Tracks outdated packages, security advisories
-- **Documentation gaps**: Finds undocumented functions, missing ADRs
-- **Self-improvement tracking**: Agent behavior analyzed for alignment with team standards
-
-**Output**: Prioritized recommendations (HIGH/MEDIUM/LOW) delivered via Slack
-
-### 4. Pull Request Automation
+### 2. Pull Request Automation
 
 **Comprehensive PR workflow automation:**
 
@@ -98,6 +72,32 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 - Analyzes failure logs and identifies root causes
 - Suggests or implements automated fixes (for auto-fixable issues like linting)
 - Creates Slack notifications with analysis and recommendations
+
+### 3. Documentation Generation & Maintenance
+
+**Keeps documentation synchronized with code:**
+- **Auto-generates documentation** from code, commits, and architectural decisions
+- **ADR generation**: Drafts Architecture Decision Records from discussions and design docs
+- **ADR updates**: Monitors code changes and updates ADRs when architecture evolves
+- **API documentation**: Auto-generates and maintains API reference docs
+- **LLM-optimized indexes**: Structures docs following [llms.txt](https://llmstxt.org/) standard for efficient navigation
+- **Documentation drift detection**: Identifies when docs are out of sync with code
+- **Multi-agent documentation pipeline**: Specialized agents for analysis, drafting, review, and validation
+
+**Example**: After implementing a new authentication system, jib automatically updates the security ADR, generates API docs, and creates migration guides.
+
+### 4. Codebase Analysis & Health Monitoring
+
+**Weekly automated analysis for continuous improvement:**
+- **Code quality scanning**: Identifies complexity, duplication, anti-patterns
+- **Security vulnerability detection**: Scans for OWASP top 10, dependency vulnerabilities
+- **Structural analysis**: Recommends architectural improvements
+- **Performance profiling**: Identifies bottlenecks and optimization opportunities
+- **Dependency health**: Tracks outdated packages, security advisories
+- **Documentation gaps**: Finds undocumented functions, missing ADRs
+- **Self-improvement tracking**: Agent behavior analyzed for alignment with team standards
+
+**Output**: Prioritized recommendations (HIGH/MEDIUM/LOW) delivered via Slack
 
 ### 5. Automated Refactoring
 
@@ -132,18 +132,7 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 - **Confluence watcher**: Identifies architectural decisions, detects impacts on current work
 - **GitHub watcher**: Monitors check failures, auto-reviews PRs, suggests comment responses
 
-### 7. Conversation Analysis & Self-Improvement
-
-**Daily automated analysis of agent behavior:**
-- Evaluates agent interactions for quality and alignment with engineering standards
-- Identifies patterns in errors and successful interactions
-- Recommends prompt refinements and workflow optimizations
-- Assesses cultural fit (communication style, problem-solving approach, collaboration quality)
-- Generates actionable improvements to agent behavior
-
-**Cultural Alignment**: Agent behavior continuously refined to match Khan Academy engineering values (clear communication, systematic problem-solving, thorough testing, user-focused decisions)
-
-### 8. Persistent Task Memory (Beads)
+### 7. Persistent Task Memory (Beads)
 
 **Git-backed task tracking that survives container restarts:**
 - **Automatic context preservation** across Slack threads and PR sessions
@@ -153,6 +142,17 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 - **Automatic resumption** after crashes or container restarts
 
 **Why it matters**: LLMs are stateless—Beads gives jib persistent memory, enabling true autonomous operation across sessions.
+
+### 8. Conversation Analysis & Self-Improvement
+
+**Daily automated analysis of agent behavior:**
+- Evaluates agent interactions for quality and alignment with engineering standards
+- Identifies patterns in errors and successful interactions
+- Recommends prompt refinements and workflow optimizations
+- Assesses cultural fit (communication style, problem-solving approach, collaboration quality)
+- Generates actionable improvements to agent behavior
+
+**Cultural Alignment**: Agent behavior continuously refined to match Khan Academy engineering values (clear communication, systematic problem-solving, thorough testing, user-focused decisions)
 
 ## How It Works
 
@@ -186,7 +186,7 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 2. Container spawns with isolated git worktree
 3. Agent implements changes, writes tests, generates docs, commits to branch
 4. Agent creates PR with comprehensive description
-5. Container shuts down, worktree cleaned up (commits preserved)
+5. Container shuts down and worktree is cleaned up (commits are preserved on branch)
 6. You review PR and merge when satisfied
 
 ### Worktree Isolation
@@ -322,6 +322,25 @@ jib: → Researches Django feature flag libraries
      → Provides implementation example and migration guide
 ```
 
+## Documentation
+
+jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly documentation. Start with the navigation index:
+
+**[Documentation Index](docs/index.md)** - Central hub linking all documentation
+
+### Architecture Decision Records (ADRs)
+
+| ADR | Description |
+|-----|-------------|
+| [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, self-improvement |
+| [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | How documentation is structured for efficient LLM navigation |
+| [Context Sync Strategy](docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Current connectors and MCP migration plan |
+| [ADR Index](docs/adr/README.md) | Full list of all ADRs by status |
+
+### Quick References
+
+- [Beads Task Tracking](docs/reference/beads.md) - Persistent memory: Slack thread context, PR state, multi-session work
+
 ## Architecture
 
 jib separates concerns between the host machine and the sandboxed container:
@@ -358,27 +377,29 @@ For detailed component documentation, see:
 
 **5-Layer Defense Against Data Exfiltration:**
 
-1. **Human Review** (Phase 1 - Current)
+1. **Human Review** (✅ Implemented - Phase 1)
    - All PRs require human approval before merge
    - MEDIUM risk, acceptable for pilot
 
-2. **Context Source Filtering** (Phase 2)
+2. **Context Source Filtering** (Planned - Phase 2)
    - Confluence/JIRA allowlists
    - Exclude customer data (SUPPORT, SALES, etc.)
 
-3. **Content Classification** (Phase 2)
+3. **Content Classification** (Planned - Phase 2)
    - Tag docs: Public/Internal/Confidential
    - Agent skips Confidential content
 
-4. **DLP Scanning** (Phase 3)
+4. **DLP Scanning** (Planned - Phase 3)
    - Cloud DLP before Claude API calls
    - Automated redaction of PII, secrets
 
-5. **Output Monitoring** (Phase 3)
+5. **Output Monitoring** (Planned - Phase 3)
    - Scan PRs, commits, Slack for leaks
    - Alert on sensitive data exposure
 
-**Current Risk**: MEDIUM (human review only)
+**Current State**: Layer 1 (Human Review) + Sandbox Isolation
+**Current Risk**: MEDIUM (acceptable for pilot phase)
+**Target State**: All 5 layers operational
 **Target Risk**: LOW (full DLP + monitoring operational)
 
 **Sandbox Isolation:**
@@ -386,25 +407,6 @@ For detailed component documentation, see:
 - No cloud credentials (can't deploy)
 - Network: Outbound HTTP only (Claude API, packages)
 - Container: No inbound ports, bridge networking
-
-## Documentation
-
-jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly documentation. Start with the navigation index:
-
-**[Documentation Index](docs/index.md)** - Central hub linking all documentation
-
-### Architecture Decision Records (ADRs)
-
-| ADR | Description |
-|-----|-------------|
-| [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, self-improvement |
-| [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | How documentation is structured for efficient LLM navigation |
-| [Context Sync Strategy](docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Current connectors and MCP migration plan |
-| [ADR Index](docs/adr/README.md) | Full list of all ADRs by status |
-
-### Quick References
-
-- [Beads Task Tracking](docs/reference/beads.md) - Persistent memory: Slack thread context, PR state, multi-session work
 
 ## Roadmap
 
@@ -476,7 +478,7 @@ This project uses multiple linters to maintain code quality:
 | [ruff](https://docs.astral.sh/ruff/) | Python linting & formatting | Yes |
 | [shfmt](https://github.com/mvdan/sh) | Shell script formatting | Yes |
 | [shellcheck](https://www.shellcheck.net/) | Shell script analysis | No |
-| [yamllint](https://yamllint.readthedocs.io/) | YAML linting | Partial |
+| [yamllint](https://yamllint.readthedocs.io/) | YAML linting | Partial (trailing spaces) |
 | [hadolint](https://github.com/hadolint/hadolint) | Dockerfile linting | No |
 | [actionlint](https://github.com/rhysd/actionlint) | GitHub Actions linting | No |
 
