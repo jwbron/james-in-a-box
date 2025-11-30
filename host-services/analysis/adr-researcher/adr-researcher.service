@@ -1,5 +1,6 @@
 [Unit]
 Description=ADR Researcher - Research and update ADRs with industry findings
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/adr-researcher/README.md
 After=network-online.target
 Wants=network-online.target
 
@@ -11,6 +12,11 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/khan/james-in-a-b
 # Logging
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=adr-researcher
+
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
 
 [Install]
 WantedBy=default.target

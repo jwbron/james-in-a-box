@@ -338,31 +338,18 @@ class TestHandlers:
             "failed_checks": [{"name": "test", "state": "FAILURE"}],
         }
 
-        with patch("subprocess.Popen") as mock_popen:
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        # Mock run_claude instead of subprocess.run since the handler uses run_claude
+        with patch.object(github_processor, "run_claude") as mock_claude:
+            mock_claude.return_value = MagicMock(success=True, stdout="", stderr="")
+            github_processor.handle_check_failure(context)
 
-                # Mock subprocess.Popen for Claude streaming mode
-                mock_process = MagicMock()
-                mock_process.stdin = MagicMock()
-                mock_process.stdout = iter(["Claude output\n"])
-                mock_process.stderr = iter([])
-                mock_process.wait.return_value = 0
-                mock_popen.return_value = mock_process
-
-                github_processor.handle_check_failure(context)
-
-                # Should invoke claude via Popen (streaming mode)
-                mock_popen.assert_called()
-                # Check that at least one Popen call includes 'claude' in the command
-                all_popen_calls = mock_popen.call_args_list
-                claude_called = any(
-                    "claude" in call[0][0] if call[0] and call[0][0] else False
-                    for call in all_popen_calls
-                )
-                assert claude_called, (
-                    f"Expected 'claude' in at least one Popen call, got: {all_popen_calls}"
-                )
+            # Should invoke run_claude with a prompt
+            mock_claude.assert_called_once()
+            call_kwargs = mock_claude.call_args
+            # First arg is the prompt
+            prompt = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1].get("prompt", "")
+            assert "owner/repo" in prompt
+            assert "#123" in prompt
 
     def test_handle_comment_invokes_claude(self, temp_dir):
         """Test comment handler invokes Claude."""
@@ -374,30 +361,16 @@ class TestHandlers:
             "comments": [{"author": "user", "body": "Please fix", "type": "comment"}],
         }
 
-        with patch("subprocess.Popen") as mock_popen:
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        # Mock run_claude instead of subprocess.run since the handler uses run_claude
+        with patch.object(github_processor, "run_claude") as mock_claude:
+            mock_claude.return_value = MagicMock(success=True, stdout="", stderr="")
+            github_processor.handle_comment(context)
 
-                # Mock subprocess.Popen for Claude streaming mode
-                mock_process = MagicMock()
-                mock_process.stdin = MagicMock()
-                mock_process.stdout = iter(["Claude output\n"])
-                mock_process.stderr = iter([])
-                mock_process.wait.return_value = 0
-                mock_popen.return_value = mock_process
-
-                github_processor.handle_comment(context)
-
-                mock_popen.assert_called()
-                # Check that at least one Popen call includes 'claude' in the command
-                all_popen_calls = mock_popen.call_args_list
-                claude_called = any(
-                    "claude" in call[0][0] if call[0] and call[0][0] else False
-                    for call in all_popen_calls
-                )
-                assert claude_called, (
-                    f"Expected 'claude' in at least one Popen call, got: {all_popen_calls}"
-                )
+            mock_claude.assert_called_once()
+            call_kwargs = mock_claude.call_args
+            prompt = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1].get("prompt", "")
+            assert "owner/repo" in prompt
+            assert "#123" in prompt
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
         """Test review handler invokes Claude."""
@@ -415,30 +388,21 @@ class TestHandlers:
             "diff": "diff content",
         }
 
-        with patch("subprocess.Popen") as mock_popen:
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        # Mock run_claude and subprocess.run for check_existing_review
+        with (
+            patch.object(github_processor, "run_claude") as mock_claude,
+            patch("subprocess.run") as mock_subprocess,
+        ):
+            mock_claude.return_value = MagicMock(success=True, stdout="", stderr="")
+            # Mock gh pr view to return no existing reviews
+            mock_subprocess.return_value = MagicMock(returncode=0, stdout='{"reviews": []}')
+            github_processor.handle_review_request(context)
 
-                # Mock subprocess.Popen for Claude streaming mode
-                mock_process = MagicMock()
-                mock_process.stdin = MagicMock()
-                mock_process.stdout = iter(["Claude output\n"])
-                mock_process.stderr = iter([])
-                mock_process.wait.return_value = 0
-                mock_popen.return_value = mock_process
-
-                github_processor.handle_review_request(context)
-
-                mock_popen.assert_called()
-                # Check that at least one Popen call includes 'claude' in the command
-                all_popen_calls = mock_popen.call_args_list
-                claude_called = any(
-                    "claude" in call[0][0] if call[0] and call[0][0] else False
-                    for call in all_popen_calls
-                )
-                assert claude_called, (
-                    f"Expected 'claude' in at least one Popen call, got: {all_popen_calls}"
-                )
+            mock_claude.assert_called_once()
+            call_kwargs = mock_claude.call_args
+            prompt = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1].get("prompt", "")
+            assert "owner/repo" in prompt
+            assert "#123" in prompt
 
 
 class TestMain:

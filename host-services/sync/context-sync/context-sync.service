@@ -1,6 +1,8 @@
 [Unit]
 Description=Context Sync - Sync all connectors (Confluence, JIRA, etc.)
 Documentation=file://%h/khan/james-in-a-box/host-services/sync/context-sync/README.md
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
@@ -24,6 +26,10 @@ SyslogIdentifier=context-sync
 Nice=10
 IOSchedulingClass=2
 IOSchedulingPriority=7
+
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
 
 [Install]
 WantedBy=default.target

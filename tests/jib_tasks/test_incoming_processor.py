@@ -238,7 +238,10 @@ class TestMain:
         task_file = incoming_dir / "task.md"
         task_file.write_text("## Current Message\n\nTest task")
 
-        with patch.object(incoming_processor, "process_task", return_value=True) as mock_task:
+        with (
+            patch.object(incoming_processor, "process_task", return_value=True) as mock_task,
+            patch("subprocess.run"),
+        ):  # Mock service stop calls at end of main
             with patch.object(sys, "argv", ["incoming-processor.py", str(task_file)]):
                 incoming_processor.main()
 
@@ -251,9 +254,12 @@ class TestMain:
         response_file = responses_dir / "response.md"
         response_file.write_text("## Current Message\n\nTest response")
 
-        with patch.object(
-            incoming_processor, "process_response", return_value=True
-        ) as mock_response:
+        with (
+            patch.object(
+                incoming_processor, "process_response", return_value=True
+            ) as mock_response,
+            patch("subprocess.run"),
+        ):  # Mock service stop calls at end of main
             with patch.object(sys, "argv", ["incoming-processor.py", str(response_file)]):
                 incoming_processor.main()
 
@@ -277,9 +283,7 @@ class TestMain:
 class TestProcessTask:
     """Tests for task processing."""
 
-    @patch("subprocess.Popen")
-    @patch("subprocess.run")
-    def test_process_task_with_thread_context(self, mock_run, mock_popen, temp_dir, monkeypatch):
+    def test_process_task_with_thread_context(self, temp_dir, monkeypatch):
         """Test that thread context is preserved in task processing."""
         # Create task file with frontmatter
         incoming_dir = temp_dir / "incoming"
@@ -295,19 +299,6 @@ task_id: "slack-task-001"
 Please help with this task.
 """)
 
-        # Mock subprocess.run (for beads and other commands)
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="Task completed successfully!", stderr=""
-        )
-
-        # Mock subprocess.Popen for Claude streaming mode
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = iter(["Claude output line 1\n", "Claude output line 2\n"])
-        mock_process.stderr = iter([])
-        mock_process.wait.return_value = 0
-        mock_popen.return_value = mock_process
-
         # Mock home directory
         monkeypatch.setenv("HOME", str(temp_dir))
 
@@ -316,23 +307,32 @@ Please help with this task.
         notifications_dir = temp_dir / "sharing" / "notifications"
         notifications_dir.mkdir(parents=True)
 
+        # Mock run_claude directly since it uses subprocess.Popen in streaming mode
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.returncode = 0
+        mock_result.stdout = "Task completed successfully!"
+        mock_result.stderr = ""
+        mock_result.error = None
+
         # Need to reload to pick up HOME change for Path.home()
-        with patch.object(Path, "home", return_value=temp_dir):
+        with (
+            patch.object(Path, "home", return_value=temp_dir),
+            patch.object(incoming_processor, "run_claude", return_value=mock_result) as mock_claude,
+        ):
             result = incoming_processor.process_task(task_file)
 
         # Should complete successfully
         assert result is True
 
-        # Claude should have been called via Popen (streaming mode)
-        mock_popen.assert_called()
+        # run_claude should have been called
+        mock_claude.assert_called_once()
 
 
 class TestProcessResponse:
     """Tests for response processing."""
 
-    @patch("subprocess.Popen")
-    @patch("subprocess.run")
-    def test_process_response_with_reference(self, mock_run, mock_popen, temp_dir, monkeypatch):
+    def test_process_response_with_reference(self, temp_dir, monkeypatch):
         """Test that referenced notification is loaded."""
         # Create response file
         responses_dir = temp_dir / "responses"
@@ -354,25 +354,26 @@ Here is my response to your question.
         original = notifications_dir / "20251124-123456.md"
         original.write_text("# Original Notification\n\nOriginal content.")
 
-        # Mock subprocess.run (for beads and other commands)
-        mock_run.return_value = MagicMock(returncode=0, stdout="Response processed!", stderr="")
-
-        # Mock subprocess.Popen for Claude streaming mode
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = iter(["Response output\n"])
-        mock_process.stderr = iter([])
-        mock_process.wait.return_value = 0
-        mock_popen.return_value = mock_process
-
         # Mock home
         (temp_dir / "khan").mkdir()
         monkeypatch.setenv("HOME", str(temp_dir))
 
-        with patch.object(Path, "home", return_value=temp_dir):
+        # Mock run_claude directly since it uses subprocess.Popen in streaming mode
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.returncode = 0
+        mock_result.stdout = "Response processed!"
+        mock_result.stderr = ""
+        mock_result.error = None
+
+        with (
+            patch.object(Path, "home", return_value=temp_dir),
+            patch.object(incoming_processor, "run_claude", return_value=mock_result) as mock_claude,
+        ):
             result = incoming_processor.process_response(response_file)
 
         assert result is True
+        mock_claude.assert_called_once()
 
 
 class TestExtractThreadContext:
