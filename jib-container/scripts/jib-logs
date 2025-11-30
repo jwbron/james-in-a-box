@@ -134,6 +134,8 @@ def find_logs_by_pattern(pattern: str) -> list[tuple[Path, list[str]]]:
     """Search all logs for a pattern. Returns list of (file, matching_lines)."""
     results = []
     regex = re.compile(pattern, re.IGNORECASE)
+    max_file_size = 10 * 1024 * 1024  # 10MB limit for search
+    max_matches_per_file = 1000  # Limit matches per file
 
     for log_dir in [CONTAINER_LOGS_DIR, CLAUDE_LOGS_DIR]:
         if not log_dir.exists():
@@ -144,13 +146,32 @@ def find_logs_by_pattern(pattern: str) -> list[tuple[Path, list[str]]]:
                 continue  # Skip symlinks to avoid duplicates
 
             try:
-                matches = []
-                for i, line in enumerate(log_file.read_text().split("\n"), 1):
-                    if regex.search(line):
-                        matches.append(f"{i}: {line}")
+                # Check file size before reading
+                file_size = log_file.stat().st_size
+                if file_size > max_file_size:
+                    # For large files, stream and limit
+                    matches = []
+                    with open(log_file) as f:
+                        for i, line in enumerate(f, 1):
+                            if regex.search(line):
+                                matches.append(f"{i}: {line.rstrip()}")
+                                if len(matches) >= max_matches_per_file:
+                                    matches.append(f"... (limited to {max_matches_per_file} matches)")
+                                    break
+                    if matches:
+                        results.append((log_file, matches))
+                else:
+                    # For small files, read all at once
+                    matches = []
+                    for i, line in enumerate(log_file.read_text().split("\n"), 1):
+                        if regex.search(line):
+                            matches.append(f"{i}: {line}")
+                            if len(matches) >= max_matches_per_file:
+                                matches.append(f"... (limited to {max_matches_per_file} matches)")
+                                break
 
-                if matches:
-                    results.append((log_file, matches))
+                    if matches:
+                        results.append((log_file, matches))
             except Exception:
                 pass
 

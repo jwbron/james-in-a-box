@@ -141,6 +141,60 @@ Recommended cleanup policy:
 0 0 * * 0 /path/to/jib-logs --cleanup --days 14
 ```
 
+## Security Considerations
+
+### Sensitive Data in Logs
+
+**IMPORTANT**: Container logs may contain sensitive information:
+
+- **API Keys and Tokens**: Environment variables, authentication headers
+- **Credentials**: Database passwords, SSH keys, OAuth secrets
+- **Personal Data**: User information, email addresses, API responses
+- **Internal Details**: System paths, configuration details
+
+### Security Recommendations
+
+1. **Storage Encryption**: Logs are stored **unencrypted** in `~/.jib-sharing/container-logs/`
+   - Ensure filesystem encryption if handling sensitive data
+   - Consider encrypting the entire `.jib-sharing` directory
+
+2. **Access Control**:
+   - Logs are readable by the user running jib
+   - Ensure proper file permissions on the `.jib-sharing` directory
+   - Avoid sharing logs without sanitization
+
+3. **Regular Cleanup**:
+   ```bash
+   # Clean up old logs to minimize exposure window
+   jib-logs --cleanup --days 7
+   ```
+
+4. **Shared Environments**:
+   - **DO NOT** use jib on shared systems without considering log exposure
+   - Implement log sanitization if logs will be shared (e.g., for debugging)
+   - Consider using separate jib instances for sensitive vs. non-sensitive work
+
+5. **Log Retention Policy**:
+   - Default: Manual cleanup only
+   - Recommended: Automated weekly/monthly cleanup via cron
+   - For compliance: Align retention with your organization's data retention policies
+
+### Sanitizing Logs for Sharing
+
+Before sharing logs with others:
+
+```bash
+# Create a sanitized copy
+jib-logs task-20251129-222239 > /tmp/log.txt
+
+# Manually review and redact:
+# - API keys (look for "Bearer", "token", "key")
+# - Passwords (look for "password", "secret")
+# - Personal data (emails, names, IDs)
+```
+
+Consider creating a sanitization script if you frequently share logs.
+
 ## Troubleshooting
 
 ### Logs Not Being Saved
