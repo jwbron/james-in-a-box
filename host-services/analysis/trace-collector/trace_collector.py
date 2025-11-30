@@ -333,6 +333,9 @@ class TraceCollector:
             self.metadata.peak_context_size = max(
                 self.metadata.peak_context_size, tokens_in_context
             )
+            # Write metadata to disk after each tool call to ensure it's persisted
+            # even if the session ends unexpectedly
+            self._write_metadata()
 
         return event
 
@@ -367,6 +370,9 @@ class TraceCollector:
 
         if self.metadata:
             self.metadata.total_events += 1
+            # Write metadata to disk after each session event to ensure it's persisted
+            # even if the session ends unexpectedly
+            self._write_metadata()
 
         return event
 
