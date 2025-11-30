@@ -160,11 +160,15 @@ class JibLogger:
         """Log a warning message."""
         self._log(logging.WARNING, msg, *args, stacklevel=_stacklevel, **kwargs)
 
-    def error(self, msg: str, *args: Any, exc_info: Any = None, _stacklevel: int = 1, **kwargs: Any) -> None:
+    def error(
+        self, msg: str, *args: Any, exc_info: Any = None, _stacklevel: int = 1, **kwargs: Any
+    ) -> None:
         """Log an error message."""
         self._log(logging.ERROR, msg, *args, exc_info=exc_info, stacklevel=_stacklevel, **kwargs)
 
-    def critical(self, msg: str, *args: Any, exc_info: Any = None, _stacklevel: int = 1, **kwargs: Any) -> None:
+    def critical(
+        self, msg: str, *args: Any, exc_info: Any = None, _stacklevel: int = 1, **kwargs: Any
+    ) -> None:
         """Log a critical message."""
         self._log(logging.CRITICAL, msg, *args, exc_info=exc_info, stacklevel=_stacklevel, **kwargs)
 
@@ -242,10 +246,14 @@ class BoundLogger:
         self._parent.warning(msg, *args, _stacklevel=2, **self._merge_kwargs(kwargs))
 
     def error(self, msg: str, *args: Any, exc_info: Any = None, **kwargs: Any) -> None:
-        self._parent.error(msg, *args, exc_info=exc_info, _stacklevel=2, **self._merge_kwargs(kwargs))
+        self._parent.error(
+            msg, *args, exc_info=exc_info, _stacklevel=2, **self._merge_kwargs(kwargs)
+        )
 
     def critical(self, msg: str, *args: Any, exc_info: Any = None, **kwargs: Any) -> None:
-        self._parent.critical(msg, *args, exc_info=exc_info, _stacklevel=2, **self._merge_kwargs(kwargs))
+        self._parent.critical(
+            msg, *args, exc_info=exc_info, _stacklevel=2, **self._merge_kwargs(kwargs)
+        )
 
     def exception(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._parent.exception(msg, *args, _stacklevel=2, **self._merge_kwargs(kwargs))

@@ -355,10 +355,7 @@ class TestHandlers:
                 mock_popen.assert_called()
                 # Check that at least one call has "claude" in the command
                 all_calls = mock_popen.call_args_list + mock_run.call_args_list
-                claude_calls = [
-                    call for call in all_calls
-                    if call[0] and "claude" in call[0][0]
-                ]
+                claude_calls = [call for call in all_calls if call[0] and "claude" in call[0][0]]
                 assert len(claude_calls) > 0, "Expected at least one call to claude"
 
     def test_handle_comment_invokes_claude(self, temp_dir):
@@ -388,10 +385,7 @@ class TestHandlers:
                 mock_popen.assert_called()
                 # Check that at least one call has "claude" in the command
                 all_calls = mock_popen.call_args_list + mock_run.call_args_list
-                claude_calls = [
-                    call for call in all_calls
-                    if call[0] and "claude" in call[0][0]
-                ]
+                claude_calls = [call for call in all_calls if call[0] and "claude" in call[0][0]]
                 assert len(claude_calls) > 0, "Expected at least one call to claude"
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
@@ -427,10 +421,7 @@ class TestHandlers:
                 mock_popen.assert_called()
                 # Check that at least one call has "claude" in the command
                 all_calls = mock_popen.call_args_list + mock_run.call_args_list
-                claude_calls = [
-                    call for call in all_calls
-                    if call[0] and "claude" in call[0][0]
-                ]
+                claude_calls = [call for call in all_calls if call[0] and "claude" in call[0][0]]
                 assert len(claude_calls) > 0, "Expected at least one call to claude"
 
 

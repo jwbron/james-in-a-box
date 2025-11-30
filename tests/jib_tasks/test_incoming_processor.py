@@ -296,9 +296,7 @@ Please help with this task.
 """)
 
         # Mock subprocess.run for beads and other subprocess calls
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="", stderr=""
-        )
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         # Mock Popen for streaming mode (used by run_claude)
         mock_process = MagicMock()
