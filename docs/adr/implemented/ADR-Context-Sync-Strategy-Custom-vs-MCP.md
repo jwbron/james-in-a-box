@@ -5,8 +5,8 @@
 **Contributors:** James Wiesebron, Claude (AI Pair Programming)
 **Informed:** Engineering teams
 **Proposed:** November 2025
-**Implemented:** November 2025
-**Status:** Implemented
+**Implemented:** November 2025 (Partial - GitHub MCP only)
+**Status:** Partially Implemented (GitHub MCP ✅, JIRA MCP ❌)
 
 ## Table of Contents
 
@@ -22,22 +22,25 @@
 
 ## Current Implementation Status
 
-**MCP Integration (Implemented):**
-- GitHub MCP Server: Configured via `api.githubcopilot.com` - Real-time PR/issue/repo access
-- Bi-directional GitHub operations: Create PRs, add comments, manage issues via MCP
-- Claude Code natively uses GitHub MCP for all GitHub interactions
+**MCP Integration (Partially Implemented):**
+- ✅ GitHub MCP Server: Configured via `api.githubcopilot.com` (mcp-token-watcher.py) - Real-time PR/issue/repo access
+- ✅ Bi-directional GitHub operations: Create PRs, add comments, manage issues via MCP
+- ✅ Claude Code natively uses GitHub MCP for all GitHub interactions
+- ❌ JIRA MCP Server: **Not yet implemented** - still using custom sync
+- ❌ Atlassian MCP Server: **Not yet implemented** - still using custom sync
 
-**Custom Sync System (Retained per Decision):**
-- Confluence Connector: ~1,134 lines of Python - Bulk ADR/docs sync
-- JIRA Connector: ~636 lines of Python - Retained for batch ticket sync
-- **Decision**: Keep Confluence sync for token-efficient bulk documentation access
+**Custom Sync System (Still Active for JIRA and Confluence):**
+- Confluence Connector: ~1,134 lines of Python - Bulk ADR/docs sync (**retained per decision**)
+- JIRA Connector: ~636 lines of Python - **Still in use** (MCP migration pending)
+- Custom GitHub sync: **Removed** (replaced by GitHub MCP)
 
 **Sync Frequencies:**
-- Confluence/JIRA: Hourly (systemd timer)
-- GitHub: Real-time via MCP (replaces 15-minute polling for interactive use)
+- Confluence: Hourly (systemd timer) - retained
+- JIRA: Hourly (systemd timer) - **pending MCP migration**
+- GitHub: Real-time via MCP (custom sync removed)
 
 **Post-Sync Analysis (Active):**
-- github-watcher.py: Monitors PRs, CI failures, review comments (1,292 LOC)
+- host-services/analysis/github-watcher/github-watcher.py: Monitors PRs, CI failures, review comments (1,292 LOC)
 - Analysis jobs: ADR researcher, PR reviewer, conversation analyzer
 
 ## Context
@@ -730,4 +733,7 @@ This ADR is part of a series defining the jib GCP deployment architecture:
 
 **Last Updated:** 2025-11-30
 **Next Review:** 2025-12-28 (Monthly)
-**Status:** Implemented (GitHub MCP active, Confluence sync retained per decision)
+**Status:** Partially Implemented
+- ✅ GitHub MCP: Active via api.githubcopilot.com (mcp-token-watcher.py)
+- ✅ Confluence sync: Retained per decision (custom sync)
+- ❌ JIRA MCP: Pending implementation (still using custom sync)
