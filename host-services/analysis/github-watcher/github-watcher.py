@@ -373,6 +373,11 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         True if invocation succeeded
     """
     # Generate unique workflow ID for this invocation
+    # Format: gw-{task_type}-{timestamp}-{random_hex}
+    # - timestamp provides second-level uniqueness (YYYYMMDD-HHMMSS)
+    # - secrets.token_hex(4) generates 8 hex chars (4 bytes = 32 bits of randomness)
+    # - Collision probability: ~1 in 4 billion for same-second invocations
+    # - Given timestamp prefix, practical collision risk is negligible
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     workflow_id = f"gw-{task_type}-{timestamp}-{secrets.token_hex(4)}"
 

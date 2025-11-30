@@ -299,6 +299,107 @@ def test_workflow_context_propagation():
         assert "Test" in sig  # workflow_type formatted as "Test"
 ```
 
+## Troubleshooting
+
+### Workflow ID Not Appearing in Logs
+
+**Problem**: Logs don't include `workflow_id` field
+
+**Diagnosis**:
+1. Check if `ContextScope` was established at the entry point
+2. Verify workflow_id was passed in the context dict
+3. Check that you're using structured logging (`logger.info()`, not `print()`)
+
+**Solution**:
+```python
+# Ensure ContextScope is established
+from jib_logging import ContextScope
+
+workflow_id = context.get("workflow_id")
+workflow_type = context.get("workflow_type", "unknown")
+
+with ContextScope(workflow_id=workflow_id, workflow_type=workflow_type):
+    # All operations in this scope will have workflow context
+    logger.info("Processing task")
+```
+
+### Workflow Signature Missing from GitHub Comments
+
+**Problem**: PR comments don't include workflow signature
+
+**Diagnosis**:
+1. Check if `add_signature_to_comment()` was called
+2. Verify ContextScope includes workflow_id and workflow_type
+3. Check for errors in signature helper
+
+**Solution**:
+```python
+from jib_logging.signatures import add_signature_to_comment
+
+# Use try/except to ensure failures don't block the task
+try:
+    comment_with_sig = add_signature_to_comment("Your comment")
+except Exception as e:
+    logger.warning(f"Failed to add signature: {e}")
+    comment_with_sig = "Your comment"  # Fallback to unsigned
+
+# Post the comment
+```
+
+### Workflow Context Not Propagating
+
+**Problem**: Nested functions/calls don't have workflow context
+
+**Diagnosis**:
+1. Ensure you're within a ContextScope
+2. Check that context is being read with `get_current_context()`
+3. Verify you're not creating a new context that overwrites workflow fields
+
+**Solution**:
+```python
+# Parent function establishes scope
+with ContextScope(workflow_id="abc", workflow_type="test"):
+    # Child function automatically inherits context
+    child_function()
+
+def child_function():
+    # Access inherited context
+    ctx = get_current_context()
+    assert ctx.workflow_id == "abc"
+```
+
+### Workflow Signature Format Issues
+
+**Problem**: Workflow type displays as `check_failure` instead of `Check Failure`
+
+**Diagnosis**: Using `workflow_type` directly instead of formatted version
+
+**Solution**: The signature helpers automatically format workflow_type with `.replace("_", " ").title()`. If you're manually building signatures, use the same formatting:
+
+```python
+workflow_display = workflow_type.replace("_", " ").title()
+```
+
+### Verifying Workflow Context
+
+**To verify workflow context is working correctly**:
+
+1. **Check logs**: Look for `workflow_id` and `workflow_type` fields in structured log output
+2. **Check GitHub comments**: Look for signature at end: `_(Workflow: ... | ID: ...)_`
+3. **Check Slack notifications**: Look for workflow context in footer
+4. **Correlate across systems**: Use workflow_id to find related entries in logs, GitHub, and Slack
+
+**Example verification**:
+```bash
+# Search logs for workflow_id
+grep "gw-check_failure-20251130-102305" ~/.jib-sharing/logs/*.log
+
+# Check GitHub for matching signature
+# (search PR comments for the workflow_id)
+
+# Check Slack for notification with same workflow_id
+```
+
 ## Migration Notes
 
 ### Existing Code

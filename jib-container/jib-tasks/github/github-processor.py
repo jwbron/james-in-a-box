@@ -266,10 +266,15 @@ Review the output carefully. Note which failures match the CI logs vs new/differ
 10. **Push** - Push to the PR branch: `git push origin {pr_branch}`
 11. **Comment** - Add PR comment explaining fixes. Use the signature helper to add workflow context:
     ```python
-    from jib_logging.signatures import add_signature_to_comment
-    comment_with_sig = add_signature_to_comment("Your comment text here")
-    # Then post to GitHub
+    try:
+        from jib_logging.signatures import add_signature_to_comment
+        comment_with_sig = add_signature_to_comment("Your comment text here")
+    except Exception:
+        # Fallback to unsigned comment if signature helper fails
+        comment_with_sig = "Your comment text here"
+    # Then post to GitHub with comment_with_sig
     ```
+    The try/except ensures that signature failures don't block the primary task.
 12. **Update beads** - Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
 
 **IMPORTANT**: All PR comments you post should include the workflow signature (automatically added by the helper).

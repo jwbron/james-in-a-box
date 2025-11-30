@@ -105,7 +105,9 @@ class NotificationMessage:
         # Add workflow context footer (smaller font, less prominent)
         workflow_parts = []
         if self.context.workflow_type:
-            workflow_parts.append(f"Workflow: {self.context.workflow_type}")
+            # Format workflow type consistently with signatures.py
+            workflow_display = self.context.workflow_type.replace("_", " ").title()
+            workflow_parts.append(f"Workflow: {workflow_display}")
         if self.context.workflow_id:
             workflow_parts.append(f"ID: `{self.context.workflow_id}`")
 
