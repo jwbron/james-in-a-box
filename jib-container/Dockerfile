@@ -456,6 +456,7 @@ cat > "${USER_HOME}/.claude/settings.json" << SETTINGS
   "editorMode": "normal",
   "autoUpdate": false,
   "outputStyle": "default",
+  "defaultModel": "claude-opus-4-20250514",
   "hooks": {
     "PostToolUse": [
       {
