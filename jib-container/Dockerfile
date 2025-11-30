@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y \
     # Development
     strace ltrace gdb \
     # Other useful tools
-    jq tree watch tmux screen \
+    jq tree watch tmux screen inotify-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI (gh)
@@ -157,6 +157,8 @@ export USER="${RUNTIME_USER}"
 export PATH="${USER_HOME}/khan/james-in-a-box/jib-container/scripts:/usr/local/bin:${PATH}"
 # Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
 export PYTHONDONTWRITEBYTECODE=1
+# Ensure Python output is unbuffered for real-time streaming to log files
+export PYTHONUNBUFFERED=1
 # Disable Claude Code auto-update prompts (prevents interrupts in automation)
 export DISABLE_AUTOUPDATER=1
 
@@ -303,12 +305,16 @@ if [ -d "${USER_HOME}/sharing" ]; then
     mkdir -p "${USER_HOME}/sharing/notifications"
     mkdir -p "${USER_HOME}/sharing/context"
     mkdir -p "${USER_HOME}/sharing/tracking"
+    mkdir -p "${USER_HOME}/sharing/traces"
+    mkdir -p "${USER_HOME}/sharing/logs"
 
     chown -R "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/sharing"
     log_success "Shared directories configured:"
     log_info "  ~/sharing/tmp/           (mounted from ~/.jib-sharing/tmp/)"
     log_info "  ~/sharing/notifications/ (mounted from ~/.jib-sharing/notifications/)"
     log_info "  ~/sharing/context/       (mounted from ~/.jib-sharing/context/)"
+    log_info "  ~/sharing/traces/        (LLM trace collection)"
+    log_info "  ~/sharing/logs/          (trace collector logs)"
     log_info "  Convenience symlink: ~/tmp → ~/sharing/tmp"
 else
     log_warn "Sharing directory not found - check mount configuration"
@@ -426,15 +432,31 @@ chmod 700 "${USER_HOME}/.claude"
 # Create settings.json with:
 # - Autonomous operation (no permission prompts)
 # - Normal editor mode (avoids vim mode stack overflow bug)
+# - Trace collector hooks for LLM analysis
 # Reference: https://github.com/anthropics/claude-code/issues/1992
-cat > "${USER_HOME}/.claude/settings.json" << 'SETTINGS'
+TRACE_COLLECTOR="${USER_HOME}/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py"
+cat > "${USER_HOME}/.claude/settings.json" << SETTINGS
 {
   "alwaysThinkingEnabled": true,
   "defaultPermissionMode": "bypassPermissions",
   "autoApproveEdits": true,
   "editorMode": "normal",
   "autoUpdate": false,
-  "outputStyle": "default"
+  "outputStyle": "default",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "python3 ${TRACE_COLLECTOR} post-tool-use"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "python3 ${TRACE_COLLECTOR} session-end"
+      }
+    ]
+  }
 }
 SETTINGS
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.claude/settings.json"
@@ -495,8 +517,8 @@ if [ -n "$CURRENT_TOKEN" ]; then
     else
         # Remove any existing github MCP config to ensure clean state
         # This handles upgrades from old configs (e.g., local scope → user scope)
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local 2>/dev/null || true
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user 2>/dev/null || true
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local >/dev/null 2>&1 || true
+        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user >/dev/null 2>&1 || true
 
         # Add fresh config with user scope
         # Suppress output to avoid logging the Authorization header/token
@@ -676,6 +698,37 @@ if [ $# -eq 0 ]; then
             --interval 60 > /dev/null 2>&1 &
         log_success "MCP token watcher started (PID: $!)"
         log_info "  Will refresh GitHub MCP config when token changes"
+        log_info ""
+    fi
+
+    # Start credential sync watcher in background
+    # This watches ~/.claude/.credentials.json and syncs to ~/.claude-auth/ when it changes
+    # Fixes the issue where /login updates local creds but jib --exec containers read from shared
+    AUTH_DIR="${USER_HOME}/.claude-auth"
+    CREDS_FILE="${USER_HOME}/.claude/.credentials.json"
+    if [ -d "$AUTH_DIR" ]; then
+        log_info "Starting credential sync watcher..."
+        (
+            while true; do
+                # Wait for credential file changes using inotifywait if available, else poll
+                if command -v inotifywait >/dev/null 2>&1; then
+                    inotifywait -q -e modify -e create "$CREDS_FILE" 2>/dev/null || sleep 5
+                else
+                    sleep 5
+                fi
+                # Sync if credentials changed
+                if [ -f "$CREDS_FILE" ]; then
+                    if [ ! -f "${AUTH_DIR}/.credentials.json" ] || \
+                       ! cmp -s "$CREDS_FILE" "${AUTH_DIR}/.credentials.json"; then
+                        cp "$CREDS_FILE" "${AUTH_DIR}/.credentials.json"
+                        chmod 600 "${AUTH_DIR}/.credentials.json"
+                        echo "✓ Credentials synced to shared auth ($(date +%H:%M:%S))"
+                    fi
+                fi
+            done
+        ) &
+        log_success "Credential sync watcher started"
+        log_info "  Syncs to ~/.claude-auth/ immediately after /login"
         log_info ""
     fi
 
