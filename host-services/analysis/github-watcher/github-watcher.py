@@ -203,14 +203,23 @@ def save_state(state: dict, update_last_run: bool = False):
         json.dump(state, f, indent=2)
 
 
-def gh_json(args: list[str]) -> dict | list | None:
+def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
     """Run gh CLI command and return JSON output with rate limit handling.
 
     Implements exponential backoff on rate limit errors and basic throttling
     between calls to prevent hitting rate limits.
+
+    Args:
+        args: Arguments to pass to gh CLI
+        repo: Optional repository context for logging
     """
     # Basic throttling between calls
     time.sleep(RATE_LIMIT_DELAY)
+
+    # Build logging context
+    log_ctx = {"command": " ".join(args)}
+    if repo:
+        log_ctx["repo"] = repo
 
     for attempt in range(RATE_LIMIT_MAX_RETRIES):
         try:
@@ -231,7 +240,7 @@ def gh_json(args: list[str]) -> dict | list | None:
                         "Rate limited, retrying",
                         wait_seconds=wait_time,
                         attempt=attempt + 1,
-                        command=" ".join(args),
+                        **log_ctx,
                     )
                     time.sleep(wait_time)
                     continue
@@ -239,20 +248,32 @@ def gh_json(args: list[str]) -> dict | list | None:
                     logger.error(
                         "Rate limit exceeded after max retries",
                         retries=RATE_LIMIT_MAX_RETRIES,
-                        command=" ".join(args),
+                        **log_ctx,
                     )
                     return None
             else:
+                # Include full stderr for debugging - common issues:
+                # - "gh: command not found" - gh CLI not installed
+                # - "authentication required" - not logged in
+                # - "HTTP 404" - repo doesn't exist or no access
+                # - "HTTP 403" - rate limit or permission denied
+                stderr_msg = e.stderr.strip() if e.stderr else "(no stderr)"
                 logger.error(
                     "gh command failed",
-                    command=" ".join(args),
-                    stderr=e.stderr,
+                    return_code=e.returncode,
+                    stderr=stderr_msg,
+                    **log_ctx,
                 )
                 return None
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.error(
+                "Failed to parse gh output as JSON",
+                error=str(e),
+                **log_ctx,
+            )
             return None
         except subprocess.TimeoutExpired:
-            logger.warning("gh command timed out", command=" ".join(args))
+            logger.warning("gh command timed out", **log_ctx)
             return None
 
     return None
@@ -517,7 +538,8 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
         [
             "api",
             f"repos/{repo}/commits/{head_sha}/check-runs",
-        ]
+        ],
+        repo=repo,
     )
 
     if check_runs_response is None:
@@ -605,7 +627,8 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
             repo,
             "--json",
             "number,title,body,url,headRefName,baseRefName,state",
-        ]
+        ],
+        repo=repo,
     )
 
     return {
@@ -681,7 +704,8 @@ def check_pr_for_comments(
             repo,
             "--json",
             "comments,reviews",
-        ]
+        ],
+        repo=repo,
     )
 
     if comments is None:
@@ -721,7 +745,8 @@ def check_pr_for_comments(
         [
             "api",
             f"repos/{repo}/pulls/{pr_num}/comments",
-        ]
+        ],
+        repo=repo,
     )
 
     if review_comments:
@@ -851,7 +876,8 @@ def check_pr_for_merge_conflict(repo: str, pr_data: dict, state: dict) -> dict |
             repo,
             "--json",
             "number,title,body,url,headRefName,baseRefName,mergeable,mergeStateStatus",
-        ]
+        ],
+        repo=repo,
     )
 
     if pr_details is None:
@@ -1082,7 +1108,8 @@ def main():
                     "open",
                     "--json",
                     "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
-                ]
+                ],
+                repo=repo,
             )
 
             if all_prs is None:

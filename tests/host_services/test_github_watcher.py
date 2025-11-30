@@ -307,7 +307,11 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {"comments": [], "reviews": []}
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
+            mock_gh.side_effect = [
+                {"comments": [], "reviews": []},
+                [],  # Line-level review comments (empty)
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
@@ -324,17 +328,21 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {
-                "comments": [
-                    {
-                        "id": "comment-1",
-                        "author": {"login": "reviewer"},
-                        "body": "Please fix this",
-                        "createdAt": "2025-01-01T00:00:00Z",
-                    }
-                ],
-                "reviews": [],
-            }
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
+            mock_gh.side_effect = [
+                {
+                    "comments": [
+                        {
+                            "id": "comment-1",
+                            "author": {"login": "reviewer"},
+                            "body": "Please fix this",
+                            "createdAt": "2025-01-01T00:00:00Z",
+                        }
+                    ],
+                    "reviews": [],
+                },
+                [],  # Line-level review comments (empty)
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
@@ -348,23 +356,27 @@ class TestCheckPrForComments:
         state = {"processed_comments": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {
-                "comments": [
-                    {
-                        "id": "c1",
-                        "author": {"login": "github-actions[bot]"},
-                        "body": "CI passed",
-                        "createdAt": "2025-01-01",
-                    },
-                    {
-                        "id": "c2",
-                        "author": {"login": "dependabot[bot]"},
-                        "body": "Update deps",
-                        "createdAt": "2025-01-01",
-                    },
-                ],
-                "reviews": [],
-            }
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
+            mock_gh.side_effect = [
+                {
+                    "comments": [
+                        {
+                            "id": "c1",
+                            "author": {"login": "github-actions[bot]"},
+                            "body": "CI passed",
+                            "createdAt": "2025-01-01",
+                        },
+                        {
+                            "id": "c2",
+                            "author": {"login": "dependabot[bot]"},
+                            "body": "Update deps",
+                            "createdAt": "2025-01-01",
+                        },
+                    ],
+                    "reviews": [],
+                },
+                [],  # Line-level review comments (empty)
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
