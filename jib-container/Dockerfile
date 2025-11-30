@@ -157,6 +157,8 @@ export USER="${RUNTIME_USER}"
 export PATH="${USER_HOME}/khan/james-in-a-box/jib-container/scripts:/usr/local/bin:${PATH}"
 # Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
 export PYTHONDONTWRITEBYTECODE=1
+# Ensure Python output is unbuffered for real-time streaming to log files
+export PYTHONUNBUFFERED=1
 # Disable Claude Code auto-update prompts (prevents interrupts in automation)
 export DISABLE_AUTOUPDATER=1
 
