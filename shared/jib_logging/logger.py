@@ -128,6 +128,7 @@ class JibLogger:
         msg: str,
         *args: Any,
         exc_info: Any = None,
+        stacklevel: int = 1,
         **kwargs: Any,
     ) -> None:
         """Internal logging method."""
@@ -135,37 +136,41 @@ class JibLogger:
 
         extra = self._get_extra(kwargs)
 
+        # stacklevel adjusts where Python looks for caller info:
+        # +1 for this method, +1 for the public method (info, warning, etc.)
+        # Additional levels can be added by callers (e.g., BoundLogger adds +1)
         self._logger.log(
             level,
             msg,
             *args,
             exc_info=exc_info,
             extra=extra,
+            stacklevel=stacklevel + 2,
         )
 
-    def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:
+    def debug(self, msg: str, *args: Any, _stacklevel: int = 1, **kwargs: Any) -> None:
         """Log a debug message."""
-        self._log(logging.DEBUG, msg, *args, **kwargs)
+        self._log(logging.DEBUG, msg, *args, stacklevel=_stacklevel, **kwargs)
 
-    def info(self, msg: str, *args: Any, **kwargs: Any) -> None:
+    def info(self, msg: str, *args: Any, _stacklevel: int = 1, **kwargs: Any) -> None:
         """Log an info message."""
-        self._log(logging.INFO, msg, *args, **kwargs)
+        self._log(logging.INFO, msg, *args, stacklevel=_stacklevel, **kwargs)
 
-    def warning(self, msg: str, *args: Any, **kwargs: Any) -> None:
+    def warning(self, msg: str, *args: Any, _stacklevel: int = 1, **kwargs: Any) -> None:
         """Log a warning message."""
-        self._log(logging.WARNING, msg, *args, **kwargs)
+        self._log(logging.WARNING, msg, *args, stacklevel=_stacklevel, **kwargs)
 
-    def error(self, msg: str, *args: Any, exc_info: Any = None, **kwargs: Any) -> None:
+    def error(self, msg: str, *args: Any, exc_info: Any = None, _stacklevel: int = 1, **kwargs: Any) -> None:
         """Log an error message."""
-        self._log(logging.ERROR, msg, *args, exc_info=exc_info, **kwargs)
+        self._log(logging.ERROR, msg, *args, exc_info=exc_info, stacklevel=_stacklevel, **kwargs)
 
-    def critical(self, msg: str, *args: Any, exc_info: Any = None, **kwargs: Any) -> None:
+    def critical(self, msg: str, *args: Any, exc_info: Any = None, _stacklevel: int = 1, **kwargs: Any) -> None:
         """Log a critical message."""
-        self._log(logging.CRITICAL, msg, *args, exc_info=exc_info, **kwargs)
+        self._log(logging.CRITICAL, msg, *args, exc_info=exc_info, stacklevel=_stacklevel, **kwargs)
 
-    def exception(self, msg: str, *args: Any, **kwargs: Any) -> None:
+    def exception(self, msg: str, *args: Any, _stacklevel: int = 1, **kwargs: Any) -> None:
         """Log an exception (includes stack trace)."""
-        self._log(logging.ERROR, msg, *args, exc_info=True, **kwargs)
+        self._log(logging.ERROR, msg, *args, exc_info=True, stacklevel=_stacklevel, **kwargs)
 
     def add_file_handler(
         self,
@@ -228,22 +233,22 @@ class BoundLogger:
         return result
 
     def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        self._parent.debug(msg, *args, **self._merge_kwargs(kwargs))
+        self._parent.debug(msg, *args, _stacklevel=2, **self._merge_kwargs(kwargs))
 
     def info(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        self._parent.info(msg, *args, **self._merge_kwargs(kwargs))
+        self._parent.info(msg, *args, _stacklevel=2, **self._merge_kwargs(kwargs))
 
     def warning(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        self._parent.warning(msg, *args, **self._merge_kwargs(kwargs))
+        self._parent.warning(msg, *args, _stacklevel=2, **self._merge_kwargs(kwargs))
 
     def error(self, msg: str, *args: Any, exc_info: Any = None, **kwargs: Any) -> None:
-        self._parent.error(msg, *args, exc_info=exc_info, **self._merge_kwargs(kwargs))
+        self._parent.error(msg, *args, exc_info=exc_info, _stacklevel=2, **self._merge_kwargs(kwargs))
 
     def critical(self, msg: str, *args: Any, exc_info: Any = None, **kwargs: Any) -> None:
-        self._parent.critical(msg, *args, exc_info=exc_info, **self._merge_kwargs(kwargs))
+        self._parent.critical(msg, *args, exc_info=exc_info, _stacklevel=2, **self._merge_kwargs(kwargs))
 
     def exception(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        self._parent.exception(msg, *args, **self._merge_kwargs(kwargs))
+        self._parent.exception(msg, *args, _stacklevel=2, **self._merge_kwargs(kwargs))
 
     def with_context(self, **kwargs: Any) -> "BoundLogger":
         """Create a new bound logger with additional context."""
