@@ -4,6 +4,21 @@
 >
 > **Automation Strategy:** See [Maintaining This List](#maintaining-this-list) below.
 
+## Table of Contents
+
+- [Core Architecture](#core-architecture)
+- [Slack Integration](#slack-integration)
+- [Context Management](#context-management)
+- [GitHub Integration](#github-integration)
+- [Self-Improvement System](#self-improvement-system)
+- [Documentation System](#documentation-system)
+- [Custom Commands](#custom-commands)
+- [Container Customization](#container-customization)
+- [Utilities](#utilities)
+- [Security Features](#security-features)
+- [Configuration](#configuration)
+- [Maintaining This List](#maintaining-this-list)
+
 ## Core Architecture
 
 ### 1. Docker Sandbox Environment
@@ -37,39 +52,18 @@
 
 ## Slack Integration
 
-### 4. Slack Notifier (Claude → Human)
+### 4. Bidirectional Slack Integration
 **Category:** Communication
-**Location:** `host-services/slack/slack-notifier/`
-**Description:** Watches notification directory and sends formatted messages to Slack with thread support.
+**Location:** `host-services/slack/slack-notifier/`, `host-services/slack/slack-receiver/`, `docs/architecture/slack-integration.md`
+**Description:** Fully async bidirectional workflow enabling task delegation and review via Slack. Combines outbound notifications (Claude → Human) with inbound task processing (Human → Claude).
 **Key Components:**
-- File-based notification watching
-- Thread context preservation
-- Python library interface
-- Summary/detail splitting
-
-### 5. Slack Receiver (Human → Claude)
-**Category:** Communication
-**Location:** `host-services/slack/slack-receiver/`
-**Description:** Listens for Slack DMs and thread replies, converts to tasks for agent processing.
-**Key Components:**
-- Socket mode connection
-- Thread tracking with `task_id`
-- YAML frontmatter metadata
-- Task queuing
-
-### 6. Bidirectional Slack Workflow
-**Category:** Communication
-**Location:** `host-services/slack/`, `docs/architecture/slack-integration.md`
-**Description:** Fully async workflow enabling task delegation and review via Slack.
-**Key Components:**
-- Task submission via DM
-- Threaded notifications
-- Progress updates
-- Question/answer flow
+- **Notifier**: File-based notification watching, thread context preservation, Python library interface
+- **Receiver**: Socket mode connection, thread tracking with `task_id`, YAML frontmatter metadata, task queuing
+- **Workflow**: Task submission via DM, threaded notifications, progress updates, question/answer flow
 
 ## Context Management
 
-### 7. Beads Task Tracking
+### 5. Beads Task Tracking
 **Category:** Persistence
 **Location:** `~/.jib-sharing/beads/`, `docs/reference/beads.md`
 **Description:** Git-backed persistent task memory preserving Slack thread context, PR state, and multi-session work across container restarts.
@@ -80,7 +74,7 @@
 - Label-based searching
 - Notes and progress tracking
 
-### 8. Context Sync System
+### 6. Context Sync System
 **Category:** Knowledge Integration
 **Location:** `host-services/sync/context-sync/`
 **Description:** Syncs external data sources (Confluence, JIRA, GitHub) to local markdown for agent access.
@@ -90,18 +84,9 @@
 - GitHub connector (PRs, issues)
 - Scheduled syncing
 
-### 9. Context Load/Save Commands
-**Category:** Knowledge Integration
-**Location:** `jib-container/.claude/commands/load-context.md`, `jib-container/.claude/commands/save-context.md`
-**Description:** Custom commands to persist and restore learned context across sessions.
-**Key Components:**
-- Project-specific context storage
-- Accumulated knowledge preservation
-- Session continuity
-
 ## GitHub Integration
 
-### 10. GitHub MCP Server
+### 7. GitHub MCP Server
 **Category:** Version Control
 **Location:** Container runtime, configured via `docker-setup.py`
 **Description:** Model Context Protocol server enabling GitHub API operations (PRs, issues, comments) from within container.
@@ -111,7 +96,7 @@
 - Comment operations
 - Branch management
 
-### 11. GitHub Token Management
+### 8. GitHub Token Management
 **Category:** Authentication
 **Location:** `host-services/utilities/github-token-refresher/`
 **Description:** Refreshes GitHub App installation tokens and maintains git credential helper for HTTPS push.
@@ -120,28 +105,39 @@
 - Credential helper integration
 - Secure token storage
 
-### 12. GitHub Watcher
+### 9. Check Failure Auto-Fix
 **Category:** Automation
-**Location:** `host-services/analysis/github-watcher/`
-**Description:** Monitors GitHub for events requiring agent attention (new PRs, check failures, comments).
+**Location:** `host-services/analysis/github-watcher/` (detection), `host-services/analysis/issue-fixer/` (fixing)
+**Description:** Automatically detects and fixes CI/CD check failures on jib-authored PRs.
 **Key Components:**
-- PR auto-review triggering
-- Check failure detection
-- Comment response suggestions
+- Periodic polling (every 5 min) for check status
+- Failure analysis and root cause identification
+- Automated fix generation and commit
+- State tracking to avoid duplicate processing
 
-### 13. PR Auto-Review
+### 10. Merge Conflict Resolver
 **Category:** Automation
-**Location:** `host-services/analysis/analyze-pr/`
+**Location:** `host-services/analysis/github-watcher/` (detection), container-based resolution
+**Description:** Detects and resolves merge conflicts on jib-authored PRs when base branch updates.
+**Key Components:**
+- Conflict detection on PR updates
+- Automated rebase or merge strategy
+- Conflict resolution with AI assistance
+- PR update with resolved conflicts
+
+### 11. PR Auto-Review
+**Category:** Automation
+**Location:** `host-services/analysis/github-watcher/` (detection), `host-services/analysis/analyze-pr/` (review)
 **Description:** Automatically reviews PRs from other developers, analyzing code quality, security, and performance.
 **Key Components:**
-- Automated PR scanning
+- New PR detection (others' PRs)
 - Code quality analysis
 - Security vulnerability detection
-- Notification generation
+- Review comment generation via GitHub MCP
 
 ## Self-Improvement System
 
-### 14. Conversation Analyzer
+### 12. Conversation Analyzer
 **Category:** Analysis
 **Location:** `host-services/analysis/conversation-analyzer/`
 **Description:** Daily analysis of agent-human interactions to assess quality, alignment with standards, and identify improvement areas.
@@ -151,7 +147,7 @@
 - Communication quality assessment
 - Prompt improvement suggestions
 
-### 15. Trace Collection System
+### 13. Trace Collection System
 **Category:** Analysis
 **Location:** `host-services/analysis/trace-collector/`
 **Description:** Captures structured traces of LLM interactions for inefficiency analysis.
@@ -161,7 +157,7 @@
 - Decision pattern detection
 - Inefficiency categorization
 
-### 16. Codebase Analyzer
+### 14. Codebase Analyzer
 **Category:** Analysis
 **Location:** Planned (referenced in ADR-Autonomous-Software-Engineer.md)
 **Description:** Weekly automated codebase scanning for quality issues, security vulnerabilities, and structural problems.
@@ -173,7 +169,7 @@
 
 ## Documentation System
 
-### 17. LLM-Optimized Documentation
+### 15. LLM-Optimized Documentation
 **Category:** Documentation
 **Location:** `docs/index.md`, `docs/generated/`
 **Description:** Structured documentation following llms.txt standard with navigation indexes and machine-readable metadata.
@@ -183,7 +179,7 @@
 - Machine-readable indexes (JSON)
 - Multi-level hierarchy
 
-### 18. Documentation Index Generator
+### 16. Documentation Index Generator
 **Category:** Documentation
 **Location:** `host-services/analysis/index-generator/`
 **Description:** Auto-generates machine-readable indexes (codebase.json, patterns.json, dependencies.json) for efficient querying.
@@ -193,7 +189,7 @@
 - Dependency mapping
 - JSON index generation
 
-### 19. ADR Researcher
+### 17. ADR Researcher
 **Category:** Documentation
 **Location:** `host-services/analysis/adr-researcher/`
 **Description:** Helps generate Architecture Decision Records by researching best practices and alternatives.
@@ -203,7 +199,7 @@
 - Best practice identification
 - Alternative analysis
 
-### 20. Document Generator
+### 18. Document Generator
 **Category:** Documentation
 **Location:** `host-services/analysis/doc-generator/`
 **Description:** Multi-agent pipeline for drafting, reviewing, and validating documentation.
@@ -213,7 +209,7 @@
 - Review process
 - Validation
 
-### 21. Spec Enricher
+### 19. Spec Enricher
 **Category:** Documentation
 **Location:** `host-services/analysis/spec-enricher/`
 **Description:** Enhances technical specifications with implementation details and edge cases.
@@ -224,7 +220,7 @@
 
 ## Custom Commands
 
-### 22. PR Creation Command
+### 20. PR Creation Command
 **Category:** Development Workflow
 **Location:** `jib-container/.claude/commands/create-pr.md`
 **Description:** Auto-generates PR descriptions from commits with audit trails.
@@ -234,16 +230,16 @@
 - Audit mode support
 - Draft PR creation
 
-### 23. Beads Status/Sync Commands
+### 21. Beads Status/Sync Commands
 **Category:** Task Management
-**Location:** `jib-container/.claude/commands/beads-status.md`, `beads-sync.md`
+**Location:** `jib-container/.claude/commands/beads-status.md`, `jib-container/.claude/commands/beads-sync.md`
 **Description:** Quick access to Beads task status and synchronization.
 **Key Components:**
 - Status overview
 - Task synchronization
 - Quick updates
 
-### 24. Confluence Update Command
+### 22. Confluence Update Command
 **Category:** Documentation
 **Location:** `jib-container/.claude/commands/update-confluence-doc.md`
 **Description:** Prepares Confluence documentation updates for human review.
@@ -252,7 +248,7 @@
 - Change tracking
 - Update staging
 
-### 25. Metrics Display Command
+### 23. Metrics Display Command
 **Category:** Monitoring
 **Location:** `jib-container/.claude/commands/show-metrics.md`
 **Description:** Displays system metrics and performance data.
@@ -263,7 +259,7 @@
 
 ## Container Customization
 
-### 26. Custom Claude Rules
+### 24. Custom Claude Rules
 **Category:** Agent Behavior
 **Location:** `jib-container/.claude/rules/`
 **Description:** Behavior rules defining agent personality, communication style, and decision-making.
@@ -273,7 +269,7 @@
 - Decision frameworks
 - Quality standards
 
-### 27. Test Discovery System
+### 25. Test Discovery System
 **Category:** Development Workflow
 **Location:** `jib-container/scripts/discover-tests.py`
 **Description:** Auto-discovers test frameworks and commands across different codebases.
@@ -283,7 +279,7 @@
 - Configuration parsing
 - JSON output
 
-### 28. Container Setup Script
+### 26. Container Setup Script
 **Category:** Infrastructure
 **Location:** `jib-container/docker-setup.py`
 **Description:** Configures container environment, installs dependencies, sets up services.
@@ -295,7 +291,7 @@
 
 ## Utilities
 
-### 29. Worktree Watcher
+### 27. Worktree Watcher
 **Category:** Infrastructure
 **Location:** `host-services/utilities/worktree-watcher/`
 **Description:** Monitors and cleans up orphaned git worktrees from crashed containers.
@@ -304,7 +300,7 @@
 - Cleanup automation
 - State tracking
 
-### 30. Notifications Library
+### 28. Notifications Library
 **Category:** Communication
 **Location:** `jib-container/shared/notifications.py`
 **Description:** Python library for sending structured notifications from container to Slack.
@@ -314,7 +310,7 @@
 - Priority levels
 - Action-required notifications
 
-### 31. Status Bar
+### 29. Status Bar
 **Category:** User Interface
 **Location:** `jib-container/statusbar.py`
 **Description:** Displays real-time status information in Claude interface.
@@ -325,7 +321,7 @@
 
 ## Security Features
 
-### 32. Network Isolation
+### 30. Network Isolation
 **Category:** Security
 **Location:** Container configuration
 **Description:** Restricts container network access to outbound HTTP/HTTPS only.
@@ -334,7 +330,7 @@
 - Outbound-only rules
 - API access control
 
-### 33. Credential Exclusion
+### 31. Credential Exclusion
 **Category:** Security
 **Location:** Container configuration, `jib-container/jib`
 **Description:** Ensures no sensitive credentials are mounted in container.
@@ -343,7 +339,7 @@
 - Cloud token exclusion
 - Credential validation
 
-### 34. Human-in-the-Loop Review
+### 32. Human-in-the-Loop Review
 **Category:** Security
 **Location:** Workflow design
 **Description:** All code changes require human review before merge.
@@ -354,7 +350,7 @@
 
 ## Configuration
 
-### 35. Master Setup Script
+### 33. Master Setup Script
 **Category:** Installation
 **Location:** `setup.sh`
 **Description:** One-command setup for all host services and dependencies.
@@ -364,7 +360,7 @@
 - Dependency verification
 - Update mode
 
-### 36. Git Credential Helper
+### 34. Git Credential Helper
 **Category:** Authentication
 **Location:** `jib-container/scripts/git-credential-github-token`
 **Description:** Custom git credential helper using GitHub App token for HTTPS operations.
@@ -452,6 +448,8 @@ After merge, validation runs:
 
 ### Implementation Plan
 
+> **Note:** Track implementation progress via GitHub issue (to be created after this PR merges).
+
 **Phase 1: Static Validation (Immediate)**
 ```bash
 # Script: scripts/validate-features.py
@@ -495,7 +493,7 @@ When adding a new feature manually:
 - [ ] List Key Components (3-5 items)
 - [ ] Verify source locations exist
 - [ ] Update table of contents if adding category
-- [ ] Run validation: `make validate-features`
+- [ ] Run validation: `python scripts/validate-features.py` (once Phase 1 is implemented)
 
 ### Feature Discovery Heuristics
 
