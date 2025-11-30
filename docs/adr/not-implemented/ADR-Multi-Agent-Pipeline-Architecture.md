@@ -7,6 +7,17 @@
 **Proposed:** November 2025
 **Status:** Proposed (Not Implemented)
 
+---
+
+> **2025 Research Update**: This ADR has been enhanced with latest industry research and best practices:
+> - [Anthropic's multi-agent system](https://www.anthropic.com/engineering/multi-agent-research-system) achieved **90% performance improvement** over single-agent
+> - Multi-agent systems use **~15× more tokens** than single-agent chats - economic viability requires high-value tasks
+> - **Context engineering** (clear objectives, task boundaries, termination criteria) is the #1 success factor
+> - [40% of agentic AI projects](https://galileo.ai/blog/hidden-cost-of-agentic-ai) are canceled before production due to cost/complexity
+> - Industry has converged on core patterns: Sequential, Parallel, Hierarchical, Consensus, Iterative
+
+---
+
 ## Table of Contents
 
 - [Context](#context)
@@ -55,17 +66,20 @@ Slack Task → incoming-processor.py → Claude Code (single invocation)
   └─ Updates beads
 ```
 
-**Industry Patterns:**
+**Industry Patterns (2025):**
 
-Multi-agent systems are emerging as best practice for complex LLM workflows:
+Multi-agent systems have become established best practice for complex LLM workflows. Research from [Anthropic's multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) showed **over 90% performance improvement** when using Claude Opus 4 as lead agent with Claude Sonnet 4 subagents compared to single-agent setups. [Microsoft Azure](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns), [Google Cloud](https://cloud.google.com/architecture/choose-design-pattern-agentic-ai-system), and industry practitioners have standardized on core orchestration patterns:
 
-| Pattern | Example | Benefit |
-|---------|---------|---------|
-| **Sequential Pipeline** | Plan → Implement → Test → Review | Specialization, checkpointing |
-| **Parallel Execution** | Multiple PRs reviewed concurrently | Throughput, resource utilization |
-| **Hierarchical** | Coordinator → Specialist agents | Complex orchestration, sub-task delegation |
-| **Debate/Consensus** | Multiple agents propose, best chosen | Quality through diversity |
-| **Tool-Specialized** | Code agent, research agent, test agent | Deep expertise per domain |
+| Pattern | Example | Benefit | When to Use |
+|---------|---------|---------|-------------|
+| **Sequential Pipeline** | Plan → Implement → Test → Review | Specialization, checkpointing, clear dependencies | Multi-stage processes with linear workflow |
+| **Parallel/Concurrent** | Multiple PR checks simultaneously | Reduced latency (vs sequential), comprehensive coverage | Independent analyses, time-sensitive workflows |
+| **Hierarchical/Delegating** | Coordinator → Specialist agents | Complex orchestration, sub-task delegation | Large tasks requiring diverse expertise |
+| **Debate/Consensus** | Multiple agents propose, best chosen | Quality through diversity, reduced bias | High-stakes decisions, ambiguous requirements |
+| **Tool-Specialized** | Code agent, research agent, test agent | Deep expertise per domain | Domain-specific tasks requiring specialized knowledge |
+| **Iterative Refinement** | Code → Test → Fix loop (max 3 iterations) | Quality improvement, graceful failure handling | Flaky processes, quality-critical outputs |
+
+**Key Industry Insight**: According to 2025 industry data, over 80% of enterprise workloads are expected to run on AI-driven systems by 2026, with multi-agent architectures leading this transformation.
 
 ### What We're Deciding
 
@@ -76,6 +90,59 @@ This ADR proposes a **multi-agent pipeline architecture** for jib where:
 3. **Agents can run sequentially** (with checkpointing) or **in parallel** (for throughput)
 4. **Coordination logic** manages agent orchestration, state, and error handling
 5. **Reusable agent templates** enable consistent patterns across workflows
+
+### 2025 Best Practices from Industry
+
+Based on research from [Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system), [Microsoft](https://azure.microsoft.com/en-us/blog/agent-factory-the-new-era-of-agentic-ai-common-use-cases-and-design-patterns/), and [leading AI practitioners](https://collabnix.com/multi-agent-and-multi-llm-architecture-complete-guide-for-2025/), the following principles emerged as critical for successful multi-agent systems:
+
+**1. Context Engineering (Critical Success Factor)**
+
+Context engineering is **the #1 job of engineers building AI agents** in 2025. Anthropic's research found that early agent systems failed when agents:
+- Spawned 50 subagents for simple queries (lack of task scoping)
+- Scoured the web endlessly for nonexistent sources (no termination criteria)
+- Distracted each other with excessive updates (poor coordination boundaries)
+
+**Each subagent must have:**
+- Clear objective and output format
+- Guidance on tools and sources to use
+- Explicit task boundaries (what NOT to do)
+- Termination criteria
+
+**2. Economic Viability Through Value Alignment**
+
+[Industry data](https://medium.com/@anishnarayan09/agentic-ai-automation-optimize-efficiency-minimize-token-costs-69185687713c) shows that:
+- Agents use **~4× more tokens** than chat interactions
+- Multi-agent systems use **~15× more tokens** than chats
+- Complex agents with tool-calling consume **5-20× more tokens** than simple chains due to loops and retries
+
+**Rule of thumb**: Multi-agent systems require tasks where the **value of the task is high enough** to pay for increased performance and cost.
+
+**3. When to Use Multi-Agent vs Single-Agent**
+
+Multi-agent systems excel at:
+- Tasks requiring heavy parallelization
+- Information exceeding single context windows
+- Interfacing with numerous complex tools
+- Tasks where quality/accuracy improvements justify 15× token cost
+
+Multi-agent systems designed for **"reading" tasks** (analysis, research) tend to be more manageable than **"writing" tasks** (code generation, content creation).
+
+**4. Orchestration Framework Selection**
+
+[Industry guidance](https://research.aimultiple.com/agentic-orchestration/) suggests using orchestrators when you have **3+ of**:
+- State management requirements
+- Branching logic
+- Parallelism needs
+- Multiple tools/LLMs
+- Strict observability requirements
+
+**5. State Management and Checkpointing**
+
+[Research on checkpoint/restore systems](https://eunomia.dev/blog/2025/05/11/checkpointrestore-systems-evolution-techniques-and-applications-in-ai-agents/) and [LangGraph state machines](https://dev.to/jamesli/langgraph-state-machines-managing-complex-agent-task-flows-in-production-36f4) emphasize:
+- Every agent state change should be durably checkpointed
+- Agents must survive crashes and infrastructure updates
+- State should enable time-travel debugging
+- Centralized state management prevents conflicts
 
 ### Key Requirements
 
@@ -118,12 +185,13 @@ This ADR proposes a **multi-agent pipeline architecture** for jib where:
 
 | Decision Area | Chosen Approach | Key Rationale | Rejected Alternatives |
 |---------------|-----------------|---------------|----------------------|
-| **Pipeline Format** | Python DSL with YAML fallback | Flexible, type-safe, debugging support | Pure YAML (less expressive), pure code (verbose) |
-| **Orchestration** | Custom Python framework | Lightweight, jib-specific, no external deps | Airflow (heavy), Prefect (overkill), Temporal (complex) |
-| **Agent Invocation** | Subprocess with timeout | Isolation, resource control | In-process (less isolation), containers (slow) |
-| **State Storage** | Beads with structured notes | Already integrated, git-backed | Separate DB (complexity), files (unstructured) |
-| **Parallelism** | Process pool (multiprocessing) | Simple, reliable, bounded concurrency | Threads (GIL), async (event loop complexity) |
-| **Agent Templates** | Jinja2 + Python functions | Familiar, powerful, reusable | Plain strings (not reusable), pure Python (verbose) |
+| **Pipeline Format** | Python DSL with YAML fallback | Flexible, type-safe, debugging support, aligns with [LangGraph approach](https://latenode.com/blog/langgraph-vs-autogen-vs-crewai-complete-ai-agent-framework-comparison-architecture-analysis-2025) | Pure YAML (less expressive), pure code (verbose) |
+| **Orchestration** | Custom Python framework | Lightweight, jib-specific, no external deps, control over checkpointing | Airflow (heavy), Prefect (overkill), Temporal (complex), Microsoft Agent Framework (see below) |
+| **Agent Invocation** | Subprocess with timeout | Isolation, resource control, crash recovery | In-process (less isolation), containers (slow startup) |
+| **State Storage** | Beads with structured notes | Already integrated, git-backed, follows [checkpoint/restore patterns](https://eunomia.dev/blog/2025/05/11/checkpointrestore-systems-evolution-techniques-and-applications-in-ai-agents/) | Separate DB (complexity), files (unstructured) |
+| **Parallelism** | Process pool (multiprocessing) | Simple, reliable, bounded concurrency, follows [Azure concurrent pattern](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) | Threads (GIL), async (event loop complexity) |
+| **Agent Templates** | Jinja2 + Python functions | Familiar, powerful, reusable, [context engineering focused](https://www.anthropic.com/engineering/multi-agent-research-system) | Plain strings (not reusable), pure Python (verbose) |
+| **Token Optimization** | Stage-specific context loading | Reduce 5-20× token overhead, [optimize costs](https://medium.com/@anishnarayan09/agentic-ai-automation-optimize-efficiency-minimize-token-costs-69185687713c) | Load all context upfront (wasteful) |
 
 ## Multi-Agent Architecture
 
@@ -576,6 +644,42 @@ Pipeline(
 - Ambiguous requirements
 - Trade-offs between approaches
 
+### Token Optimization Strategies
+
+Given that multi-agent systems use **~15× more tokens** than single-agent chats ([source](https://medium.com/@anishnarayan09/agentic-ai-automation-optimize-efficiency-minimize-token-costs-69185687713c)), optimization is critical for economic viability.
+
+**Key Optimization Techniques:**
+
+1. **Stage-Specific Context Loading**
+   - Load only context needed for each stage
+   - Don't pass full codebase to every agent
+   - Planner needs requirements; Coder needs relevant files; Tester needs test framework info
+
+2. **Prompt Engineering**
+   - [Research shows](https://adam.holter.com/ai-costs-in-2025-cheaper-tokens-pricier-workflows-why-your-bill-is-still-rising/) optimized prompts reduce token consumption 30-50%
+   - Concise prompting and context pruning cut usage 40-50%
+   - Each agent template should be minimal yet complete
+
+3. **Dynamic Model Selection**
+   - Use smaller models (Haiku) for simple stages (validation, formatting)
+   - Reserve Opus/Sonnet for complex reasoning stages
+   - Anthropic's system used Opus 4 (lead) + Sonnet 4 (subagents) for cost balance
+
+4. **Termination Criteria**
+   - Prevent agents from running indefinitely
+   - Set max iterations for loops (typically 3)
+   - Include explicit "done" conditions in agent prompts
+
+5. **Modular Agent Design**
+   - Break agents into smaller, specialized units
+   - Reduces coordination overhead by ~20%
+   - Avoids redundant tool calls and retrieval
+
+**Measurement:**
+- Track token usage per stage
+- Compare multi-agent vs single-agent baselines
+- Target: multi-agent should provide >2× quality improvement to justify 15× token cost
+
 ## Implementation Phases
 
 ### Phase 1: Core Framework
@@ -702,7 +806,8 @@ Pipeline(
 - ⚠️ Increased code complexity (orchestration logic)
 - ⚠️ Potential for over-engineering (not all tasks need multi-agent)
 - ⚠️ More moving parts (more failure modes)
-- ⚠️ Token usage could increase for simple tasks (overhead)
+- ⚠️ **Economic impact**: [15× token usage](https://medium.com/@anishnarayan09/agentic-ai-automation-optimize-efficiency-minimize-token-costs-69185687713c) vs single-agent; must justify with value
+- ⚠️ **Industry failure rate**: [40% of agentic AI projects canceled](https://galileo.ai/blog/hidden-cost-of-agentic-ai) before production by 2027 (Gartner prediction)
 
 **Risks:**
 - ⚠️ Poor stage boundaries → worse than single-agent
@@ -784,24 +889,43 @@ Pipeline(
 
 **Rejected Because:** Too much infrastructure for jib's scale. Custom lightweight solution better fits needs and constraints.
 
-### Alternative 3: Agentic Framework (LangGraph, CrewAI, AutoGen)
+### Alternative 3: Agentic Framework (LangGraph, CrewAI, AutoGen, Microsoft Agent Framework)
 
 **Approach:** Use purpose-built multi-agent LLM framework
+
+Based on [comprehensive 2025 framework comparison](https://latenode.com/blog/langgraph-vs-autogen-vs-crewai-complete-ai-agent-framework-comparison-architecture-analysis-2025):
+
+**Framework Characteristics:**
+
+| Framework | Strengths | Weaknesses |
+|-----------|-----------|------------|
+| **LangGraph** | Graph-based architecture, sophisticated orchestration, fine-grained state management | Rigid state (defined upfront), steeper learning curve |
+| **CrewAI** | Intuitive role-based design, fast iteration, YAML-driven simplicity | Logging challenges, less flexible for dynamic workflows |
+| **AutoGen** | Conversational architecture, research-grade flexibility, LLM-to-LLM collaboration | Procedural code style, verbosity, no DAG support |
+| **Microsoft Agent Framework** | [Enterprise-grade](https://azure.microsoft.com/en-us/blog/introducing-microsoft-agent-framework/), converges AutoGen + Semantic Kernel, built-in observability/durability | Public preview (new), enterprise focus, potential complexity |
 
 **Pros:**
 - Designed for LLM agents
 - Built-in patterns (sequential, parallel, hierarchical)
-- Active development
-- Community examples
+- Active development and community examples
+- Microsoft Agent Framework offers [durability and checkpointing](https://techcommunity.microsoft.com/blog/appsonazureblog/bulletproof-agents-with-the-durable-task-extension-for-microsoft-agent-framework/4467122)
 
 **Cons:**
-- External dependency
-- Abstractions may not fit jib's needs
+- External dependency (increase complexity)
+- Abstractions may not fit jib's needs (Beads, Claude Code specifics, container isolation)
 - Migration effort still required
-- Less control over orchestration
-- Potential vendor lock-in
+- Less control over orchestration details
+- LangGraph: demands higher upfront investment
+- CrewAI: logging difficulties ("huge pain" according to practitioners)
+- AutoGen: code readability drops as network complexity grows
+- Microsoft Agent Framework: public preview, unproven stability
 
-**Rejected Because:** Prefer to own orchestration logic for jib-specific needs (Beads integration, Claude Code specifics, container isolation). Can adopt framework later if custom solution proves insufficient.
+**Rejected Because:**
+- Prefer to own orchestration logic for jib-specific needs (Beads integration, Claude Code specifics, container isolation)
+- Custom solution provides better control over checkpointing strategy
+- Can adopt or integrate framework patterns later if custom solution proves insufficient
+- [Context engineering](https://www.anthropic.com/engineering/multi-agent-research-system) requirements are jib-specific
+- Frameworks add dependency overhead for features we can build more simply
 
 ### Alternative 4: Agent Mesh (Fully Autonomous Collaboration)
 
@@ -840,13 +964,45 @@ Pipeline(
 
 ## References
 
+### Internal Documentation
 - [ADR: Autonomous Software Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) - Core jib architecture
 - [ADR: LLM Documentation Index Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) - Multi-agent doc generation example
-- [LangGraph Documentation](https://python.langchain.com/docs/langgraph) - Multi-agent patterns
+
+### Industry Research & Best Practices (2025)
+- [Anthropic: How we built our multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) - 90% performance improvement with multi-agent
+- [Multi-Agent and Multi-LLM Architecture: Complete Guide for 2025](https://collabnix.com/multi-agent-and-multi-llm-architecture-complete-guide-for-2025/)
+- [Microsoft Azure: AI Agent Orchestration Patterns](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) - Sequential, concurrent, group chat patterns
+- [Microsoft: Agent Factory - Agentic AI Design Patterns](https://azure.microsoft.com/en-us/blog/agent-factory-the-new-era-of-agentic-ai-common-use-cases-and-design-patterns/)
+- [Google Cloud: Choose a design pattern for your agentic AI system](https://cloud.google.com/architecture/choose-design-pattern-agentic-ai-system)
+- [LangChain: How and when to build multi-agent systems](https://blog.langchain.com/how-and-when-to-build-multi-agent-systems/)
+
+### Economic & Cost Optimization
+- [Agentic AI Automation: Optimize Efficiency, Minimize Token Costs](https://medium.com/@anishnarayan09/agentic-ai-automation-optimize-efficiency-minimize-token-costs-69185687713c)
+- [AI Costs in 2025: Cheaper Tokens, Pricier Workflows](https://adam.holter.com/ai-costs-in-2025-cheaper-tokens-pricier-workflows-why-your-bill-is-still-rising/)
+- [The Hidden Costs of Agentic AI](https://galileo.ai/blog/hidden-cost-of-agentic-ai) - 40% of projects fail before production
+
+### State Management & Checkpointing
+- [Checkpoint/Restore Systems: Evolution and Applications in AI Agents](https://eunomia.dev/blog/2025/05/11/checkpointrestore-systems-evolution-techniques-and-applications-in-ai-agents/)
+- [Bulletproof agents with durable task extension](https://techcommunity.microsoft.com/blog/appsonazureblog/bulletproof-agents-with-the-durable-task-extension-for-microsoft-agent-framework/4467122)
+- [LangGraph State Machines: Managing Complex Agent Task Flows in Production](https://dev.to/jamesli/langgraph-state-machines-managing-complex-agent-task-flows-in-production-36f4)
+- [Multi-Agent AI Failure Recovery That Actually Works](https://galileo.ai/blog/multi-agent-ai-system-failure-recovery)
+
+### Framework Comparisons
+- [LangGraph vs AutoGen vs CrewAI: Complete Comparison 2025](https://latenode.com/blog/langgraph-vs-autogen-vs-crewai-complete-ai-agent-framework-comparison-architecture-analysis-2025)
+- [A Detailed Comparison of Top 6 AI Agent Frameworks in 2025](https://www.turing.com/resources/ai-agent-frameworks)
+- [Comparing Open-Source AI Agent Frameworks](https://langfuse.com/blog/2025-03-19-ai-agent-comparison)
+- [Microsoft Agent Framework](https://azure.microsoft.com/en-us/blog/introducing-microsoft-agent-framework/) - Converges AutoGen + Semantic Kernel
+
+### Orchestration Patterns
+- [9 Agentic AI Workflow Patterns Transforming AI Agents in 2025](https://www.marktechpost.com/2025/08/09/9-agentic-ai-workflow-patterns-transforming-ai-agents-in-2025/)
+- [Top 10+ Agentic Orchestration Frameworks & Tools](https://research.aimultiple.com/agentic-orchestration/)
+- [Agent Orchestration Patterns: Linear and Adaptive Approaches](https://www.getdynamiq.ai/post/agent-orchestration-patterns-in-multi-agent-systems-linear-and-adaptive-approaches-with-dynamiq)
+
+### Legacy References
+- [LangGraph Documentation](https://python.langchain.com/docs/langgraph) - Graph-based multi-agent patterns
 - [CrewAI](https://github.com/joaomdmoura/crewAI) - Role-based agent orchestration
-- [AutoGen](https://microsoft.github.io/autogen/) - Microsoft's multi-agent framework
+- [AutoGen](https://microsoft.github.io/autogen/) - Original Microsoft research multi-agent framework
 - [Temporal Workflows](https://temporal.io/) - Distributed workflow orchestration
-- [BMAD Method](https://github.com/mshumer/ai-researcher) - AI-driven development with specialized agents
 
 ---
 
