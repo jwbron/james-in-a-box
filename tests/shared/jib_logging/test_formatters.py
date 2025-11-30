@@ -148,7 +148,13 @@ class TestJsonFormatter:
 
     def test_includes_source_location_for_all_levels(self, formatter):
         """Test that source location is included for all log levels."""
-        for level in [logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL]:
+        for level in [
+            logging.DEBUG,
+            logging.INFO,
+            logging.WARNING,
+            logging.ERROR,
+            logging.CRITICAL,
+        ]:
             record = logging.LogRecord(
                 name="test",
                 level=level,
@@ -322,9 +328,7 @@ class TestConsoleFormatter:
 
     def test_hides_source_location_when_disabled(self):
         """Test that source location is hidden when disabled."""
-        formatter = ConsoleFormatter(
-            service="test", use_colors=False, show_source_location=False
-        )
+        formatter = ConsoleFormatter(service="test", use_colors=False, show_source_location=False)
 
         record = logging.LogRecord(
             name="test",

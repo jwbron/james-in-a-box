@@ -97,8 +97,9 @@ class TestWorktreeWatcherFunctionality:
         )
 
         content = script_path.read_text()
-        assert "cleanup_orphaned_worktrees()" in content
-        assert "prune_stale_worktree_references()" in content
+        # After worktree isolation refactor, the function was renamed to cleanup_orphaned_containers
+        # since we now manage per-container directories instead of git worktrees
+        assert "cleanup_orphaned_containers()" in content
         assert "log()" in content
 
     def test_script_exits_successfully(self):

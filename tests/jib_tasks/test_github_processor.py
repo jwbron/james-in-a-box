@@ -338,14 +338,22 @@ class TestHandlers:
             "failed_checks": [{"name": "test", "state": "FAILURE"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        # Mock run_claude at the module level where it's imported
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.stdout = "Fixed the issue"
+        mock_result.stderr = ""
+
+        with patch.object(github_processor, "run_claude", return_value=mock_result) as mock_run:
             github_processor.handle_check_failure(context)
 
-            # Should invoke claude
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            # Should invoke run_claude with the prompt
+            mock_run.assert_called_once()
+            # First positional arg is the prompt
+            call_args = mock_run.call_args
+            assert call_args is not None
+            prompt = call_args[0][0] if call_args[0] else call_args[1].get("prompt", "")
+            assert "PR #123" in prompt or "Fix bug" in prompt
 
     def test_handle_comment_invokes_claude(self, temp_dir):
         """Test comment handler invokes Claude."""
@@ -357,13 +365,19 @@ class TestHandlers:
             "comments": [{"author": "user", "body": "Please fix", "type": "comment"}],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.stdout = "Response generated"
+        mock_result.stderr = ""
+
+        with patch.object(github_processor, "run_claude", return_value=mock_result) as mock_run:
             github_processor.handle_comment(context)
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            assert call_args is not None
+            prompt = call_args[0][0] if call_args[0] else call_args[1].get("prompt", "")
+            assert "PR #123" in prompt or "Please fix" in prompt
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
         """Test review handler invokes Claude."""
@@ -381,13 +395,19 @@ class TestHandlers:
             "diff": "diff content",
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.stdout = "Review completed"
+        mock_result.stderr = ""
+
+        with patch.object(github_processor, "run_claude", return_value=mock_result) as mock_run:
             github_processor.handle_review_request(context)
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            assert call_args is not None
+            prompt = call_args[0][0] if call_args[0] else call_args[1].get("prompt", "")
+            assert "PR #123" in prompt or "Add feature" in prompt
 
 
 class TestMain:
