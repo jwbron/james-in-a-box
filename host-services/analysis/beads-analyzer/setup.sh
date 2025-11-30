@@ -1,13 +1,13 @@
 #!/bin/bash
-# Setup script for Conversation Analyzer
+# Setup script for Beads Analyzer
 set -e
 
 COMPONENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="conversation-analyzer.service"
-TIMER_NAME="conversation-analyzer.timer"
+SERVICE_NAME="beads-analyzer.service"
+TIMER_NAME="beads-analyzer.timer"
 SYSTEMD_DIR="${HOME}/.config/systemd/user"
 
-echo "Setting up Conversation Analyzer..."
+echo "Setting up Beads Analyzer..."
 
 # Create systemd user directory
 mkdir -p "$SYSTEMD_DIR"
@@ -34,16 +34,16 @@ echo ""
 echo "Timer status:"
 systemctl --user status "$TIMER_NAME" --no-pager || true
 echo ""
-systemctl --user list-timers | grep conversation
+systemctl --user list-timers | grep beads || true
 
 echo ""
 echo "Setup complete!"
 echo ""
-echo "The conversation analyzer will run daily (2 AM)."
+echo "The beads analyzer will run weekly (Monday 10 AM)."
 echo ""
 echo "Useful commands:"
-echo "  systemctl --user list-timers | grep conversation  # Check timer"
-echo "  systemctl --user start $SERVICE_NAME              # Run now"
-echo "  systemctl --user status $SERVICE_NAME             # Check last run"
-echo "  journalctl --user -u $SERVICE_NAME -f             # View logs"
+echo "  systemctl --user list-timers | grep beads  # Check timer"
+echo "  systemctl --user start $SERVICE_NAME       # Run now"
+echo "  systemctl --user status $SERVICE_NAME      # Check last run"
+echo "  journalctl --user -u $SERVICE_NAME -f      # View logs"
 

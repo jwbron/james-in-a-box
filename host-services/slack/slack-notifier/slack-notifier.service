@@ -1,6 +1,8 @@
 [Unit]
 Description=Slack Notifier - Monitor Claude sandbox and send Slack notifications
 Documentation=file://%h/khan/james-in-a-box/host-services/slack/slack-notifier/README.md
+After=network-online.target
+Wants=network-online.target
 OnFailure=service-failure-notify@%n.service
 
 [Service]
@@ -23,6 +25,10 @@ SyslogIdentifier=slack-notifier
 Nice=10
 IOSchedulingClass=2
 IOSchedulingPriority=7
+
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
 
 [Install]
 WantedBy=default.target

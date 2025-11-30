@@ -36,11 +36,17 @@ ln -sf "${SCRIPT_DIR}/github-watcher.timer" ~/.config/systemd/user/
 # Reload systemd
 systemctl --user daemon-reload
 
+# Enable and start timer
+systemctl --user enable github-watcher.timer
+echo "✓ Timer enabled"
+
+systemctl --user start github-watcher.timer
+echo "✓ Timer started"
+
 echo ""
 echo "Setup complete!"
 echo ""
-echo "To enable automated monitoring:"
-echo "  systemctl --user enable --now github-watcher.timer"
+echo "Automated monitoring enabled (every 5 minutes)."
 echo ""
 echo "To run manually:"
 echo "  systemctl --user start github-watcher.service"

@@ -1,9 +1,11 @@
 [Unit]
-Description=Run ADR Researcher weekly to update implemented ADRs
+Description=Weekly ADR Researcher Timer
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/adr-researcher/README.md
 
 [Timer]
 OnCalendar=Mon *-*-* 11:00:00
 Persistent=true
+RandomizedDelaySec=5min
 
 [Install]
 WantedBy=timers.target

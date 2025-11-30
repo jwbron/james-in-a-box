@@ -129,7 +129,6 @@ show_usage() {
 case "${1:-install}" in
     install)
         setup_bin_links
-        install_systemd_timer
         run_initial_generation
         log_info "Setup complete!"
         echo ""
@@ -137,6 +136,9 @@ case "${1:-install}" in
         echo "  bin/query-index summary      # View codebase summary"
         echo "  bin/query-index pattern      # List detected patterns"
         echo "  bin/query-index search X     # Search for something"
+        echo ""
+        echo "Note: Indexes are auto-generated on jib container startup."
+        echo "      To enable weekly regeneration: ./setup.sh enable"
         ;;
     generate)
         run_initial_generation
