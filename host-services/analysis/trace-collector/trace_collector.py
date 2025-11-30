@@ -356,6 +356,9 @@ class TraceCollector:
                 self.metadata.cache_hit_rate = (
                     self.metadata.total_cache_read_tokens / total_input * 100
                 )
+            # Write metadata to disk after each tool call to ensure it's persisted
+            # even if the session ends unexpectedly
+            self._write_metadata()
 
         return event
 
@@ -390,6 +393,9 @@ class TraceCollector:
 
         if self.metadata:
             self.metadata.total_events += 1
+            # Write metadata to disk after each session event to ensure it's persisted
+            # even if the session ends unexpectedly
+            self._write_metadata()
 
         return event
 
