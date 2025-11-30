@@ -277,8 +277,7 @@ class TestMain:
 class TestProcessTask:
     """Tests for task processing."""
 
-    @patch("subprocess.run")
-    def test_process_task_with_thread_context(self, mock_run, temp_dir, monkeypatch):
+    def test_process_task_with_thread_context(self, temp_dir, monkeypatch):
         """Test that thread context is preserved in task processing."""
         # Create task file with frontmatter
         incoming_dir = temp_dir / "incoming"
@@ -294,11 +293,6 @@ task_id: "slack-task-001"
 Please help with this task.
 """)
 
-        # Mock Claude command success
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="Task completed successfully!", stderr=""
-        )
-
         # Mock home directory
         monkeypatch.setenv("HOME", str(temp_dir))
 
@@ -307,22 +301,32 @@ Please help with this task.
         notifications_dir = temp_dir / "sharing" / "notifications"
         notifications_dir.mkdir(parents=True)
 
-        # Need to reload to pick up HOME change for Path.home()
-        with patch.object(Path, "home", return_value=temp_dir):
-            result = incoming_processor.process_task(task_file)
+        # run_claude uses subprocess.Popen for streaming mode (default)
+        with patch("subprocess.Popen") as mock_popen:
+            mock_process = MagicMock()
+            mock_process.stdin = MagicMock()
+            mock_process.stdout = iter(["Task completed successfully!\n"])
+            mock_process.stderr = iter([])
+            mock_process.wait.return_value = 0
+            mock_popen.return_value = mock_process
+
+            # Need to reload to pick up HOME change for Path.home()
+            with patch.object(Path, "home", return_value=temp_dir):
+                result = incoming_processor.process_task(task_file)
 
         # Should complete successfully
         assert result is True
 
-        # Claude should have been called
-        mock_run.assert_called()
+        # Claude should have been called via Popen
+        mock_popen.assert_called()
+        call_args = mock_popen.call_args[0][0]
+        assert "claude" in call_args
 
 
 class TestProcessResponse:
     """Tests for response processing."""
 
-    @patch("subprocess.run")
-    def test_process_response_with_reference(self, mock_run, temp_dir, monkeypatch):
+    def test_process_response_with_reference(self, temp_dir, monkeypatch):
         """Test that referenced notification is loaded."""
         # Create response file
         responses_dir = temp_dir / "responses"
@@ -344,17 +348,28 @@ Here is my response to your question.
         original = notifications_dir / "20251124-123456.md"
         original.write_text("# Original Notification\n\nOriginal content.")
 
-        # Mock Claude command
-        mock_run.return_value = MagicMock(returncode=0, stdout="Response processed!", stderr="")
-
         # Mock home
         (temp_dir / "khan").mkdir()
         monkeypatch.setenv("HOME", str(temp_dir))
 
-        with patch.object(Path, "home", return_value=temp_dir):
-            result = incoming_processor.process_response(response_file)
+        # run_claude uses subprocess.Popen for streaming mode (default)
+        with patch("subprocess.Popen") as mock_popen:
+            mock_process = MagicMock()
+            mock_process.stdin = MagicMock()
+            mock_process.stdout = iter(["Response processed!\n"])
+            mock_process.stderr = iter([])
+            mock_process.wait.return_value = 0
+            mock_popen.return_value = mock_process
+
+            with patch.object(Path, "home", return_value=temp_dir):
+                result = incoming_processor.process_response(response_file)
 
         assert result is True
+
+        # Claude should have been called via Popen
+        mock_popen.assert_called()
+        call_args = mock_popen.call_args[0][0]
+        assert "claude" in call_args
 
 
 class TestExtractThreadContext:

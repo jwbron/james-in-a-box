@@ -338,14 +338,24 @@ class TestHandlers:
             "failed_checks": [{"name": "test", "state": "FAILURE"}],
         }
 
+        # run_claude uses subprocess.Popen for streaming mode (default)
+        # We need to patch both run (for beads) and Popen (for claude)
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_check_failure(context)
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("subprocess.Popen") as mock_popen:
+                mock_process = MagicMock()
+                mock_process.stdin = MagicMock()
+                mock_process.stdout = iter([])  # Empty iterator for streaming
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_popen.return_value = mock_process
 
-            # Should invoke claude
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                github_processor.handle_check_failure(context)
+
+                # Should invoke claude via Popen
+                mock_popen.assert_called()
+                call_args = mock_popen.call_args[0][0]
+                assert "claude" in call_args
 
     def test_handle_comment_invokes_claude(self, temp_dir):
         """Test comment handler invokes Claude."""
@@ -358,12 +368,20 @@ class TestHandlers:
         }
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_comment(context)
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("subprocess.Popen") as mock_popen:
+                mock_process = MagicMock()
+                mock_process.stdin = MagicMock()
+                mock_process.stdout = iter([])
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_popen.return_value = mock_process
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                github_processor.handle_comment(context)
+
+                mock_popen.assert_called()
+                call_args = mock_popen.call_args[0][0]
+                assert "claude" in call_args
 
     def test_handle_review_request_invokes_claude(self, temp_dir):
         """Test review handler invokes Claude."""
@@ -382,12 +400,20 @@ class TestHandlers:
         }
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-            github_processor.handle_review_request(context)
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            with patch("subprocess.Popen") as mock_popen:
+                mock_process = MagicMock()
+                mock_process.stdin = MagicMock()
+                mock_process.stdout = iter([])
+                mock_process.stderr = iter([])
+                mock_process.wait.return_value = 0
+                mock_popen.return_value = mock_process
 
-            mock_run.assert_called()
-            call_args = mock_run.call_args[0][0]
-            assert "claude" in call_args
+                github_processor.handle_review_request(context)
+
+                mock_popen.assert_called()
+                call_args = mock_popen.call_args[0][0]
+                assert "claude" in call_args
 
 
 class TestMain:
