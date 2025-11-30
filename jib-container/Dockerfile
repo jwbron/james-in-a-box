@@ -443,6 +443,7 @@ cat > "${USER_HOME}/.claude/settings.json" << SETTINGS
   "editorMode": "normal",
   "autoUpdate": false,
   "outputStyle": "default",
+  "defaultModel": "claude-sonnet-4-5-20250929",
   "hooks": {
     "PostToolUse": [
       {
