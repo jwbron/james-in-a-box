@@ -19,7 +19,7 @@ Runs on host (not in container) via systemd timer:
 - Can force run with --force flag
 
 Usage:
-    beads-analyzer.py [--days N] [--output DIR] [--force]
+    beads-analyzer.py [--days N] [--output DIR] [--stdout] [--force]
 
 Example:
     beads-analyzer.py --days 7
@@ -39,6 +39,7 @@ from pathlib import Path
 # Constants
 ANALYSIS_DIR = Path.home() / "sharing" / "analysis" / "beads"
 BEADS_DIR = Path.home() / "beads"
+ABANDONED_THRESHOLD_HOURS = 24  # Tasks in_progress longer than this are considered abandoned
 
 
 @dataclass
@@ -229,8 +230,8 @@ class BeadsAnalyzer:
 
             if status == "in_progress":
                 metrics.tasks_in_progress += 1
-                # Check for abandoned tasks (no update in 24h)
-                if (now - task.updated_at).total_seconds() > 24 * 3600:
+                # Check for abandoned tasks (no update beyond threshold)
+                if (now - task.updated_at).total_seconds() > ABANDONED_THRESHOLD_HOURS * 3600:
                     metrics.tasks_abandoned += 1
             elif status == "blocked":
                 metrics.tasks_blocked += 1
@@ -367,13 +368,14 @@ class BeadsAnalyzer:
                 t.id
                 for t in tasks
                 if t.status == "in_progress"
-                and (datetime.now() - t.updated_at).total_seconds() > 24 * 3600
+                and (datetime.now() - t.updated_at).total_seconds()
+                > ABANDONED_THRESHOLD_HOURS * 3600
             ]
             issues.append(
                 BeadsIssue(
                     severity="high",
                     category="Task Abandonment",
-                    description=f"{metrics.tasks_abandoned} tasks in_progress for >24h without updates",
+                    description=f"{metrics.tasks_abandoned} tasks in_progress for >{ABANDONED_THRESHOLD_HOURS}h without updates",
                     task_ids=abandoned[:10],  # Limit to first 10
                     recommendation="Review and either close or update these tasks. If blocked, mark as blocked with notes.",
                 )
@@ -945,7 +947,9 @@ Examples:
     parser.add_argument(
         "--output", type=Path, help="Output directory (default: ~/sharing/analysis/beads)"
     )
-    parser.add_argument("--print", action="store_true", help="Print report to stdout")
+    parser.add_argument(
+        "--stdout", action="store_true", dest="print_to_stdout", help="Print report to stdout"
+    )
     parser.add_argument("--force", action="store_true", help="Force analysis even if run recently")
 
     args = parser.parse_args()
@@ -965,7 +969,7 @@ Examples:
 
     report = analyzer.run_analysis()
 
-    if args.print and report:
+    if args.print_to_stdout and report:
         print("\n" + "=" * 80)
         print(report)
         print("=" * 80)
