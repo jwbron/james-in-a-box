@@ -67,6 +67,9 @@ Example output:
 | `input_tokens` | Regular input tokens after final cache breakpoint (standard rate) |
 | `cache_hit_rate` | Percentage of input tokens served from cache |
 
+> **Note:** Cache metrics are extracted from Claude API's `usage` field in transcript responses.
+> They represent server-side measurements, not client-side estimates.
+
 **Good cache hit rate:** 60%+ indicates effective caching
 **Low cache hit rate:** <30% may indicate frequent context changes
 

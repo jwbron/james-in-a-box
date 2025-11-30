@@ -274,7 +274,7 @@ class SessionMetadata:
             "total_cache_creation_tokens": self.total_cache_creation_tokens,
             "total_cache_read_tokens": self.total_cache_read_tokens,
             "total_input_tokens": self.total_input_tokens,
-            "cache_hit_rate": self.cache_hit_rate,
+            "cache_hit_rate": round(self.cache_hit_rate, 1),
             "outcome": self.outcome,
             "outcome_notes": self.outcome_notes,
         }
