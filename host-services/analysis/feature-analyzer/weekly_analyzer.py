@@ -437,7 +437,16 @@ Only output the JSON, no other text.
                 if not full_path.exists():
                     continue
 
-                content = full_path.read_text()
+                # Skip very large files (>1MB) to avoid memory issues
+                if full_path.stat().st_size > 1_000_000:
+                    continue
+
+                # Read with explicit encoding and handle encoding errors
+                try:
+                    content = full_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    continue  # Skip files with encoding issues
+
                 has_main = "def main(" in content or 'if __name__ == "__main__"' in content
 
                 if has_main:

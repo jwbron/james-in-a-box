@@ -706,7 +706,7 @@ def main():
                 if needs_review:
                     review_note = f"\n\n**⚠️ {len(needs_review)} feature(s) need human review** (low confidence detection)"
 
-                f"""## Summary
+                pr_body = f"""## Summary
 
 Weekly code analysis identified {len(result.features_added)} new features from the past {args.days} days.
 {review_note}
@@ -754,6 +754,7 @@ Weekly code analysis identified {len(result.features_added)} new features from t
                     updates=[update],
                     dry_run=False,
                     create_tag=True,
+                    custom_pr_body=pr_body,
                 )
 
                 if pr_result.success:

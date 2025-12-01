@@ -292,6 +292,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
         updates: list["GeneratedUpdate"],
         dry_run: bool = False,
         create_tag: bool = True,
+        custom_pr_body: str | None = None,
     ) -> PRResult:
         """
         Create a PR with documentation updates.
@@ -302,6 +303,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             updates: List of generated documentation updates
             dry_run: If True, don't actually create the PR
             create_tag: If True, create git tag for traceability (Phase 4)
+            custom_pr_body: Optional custom PR body (overrides default template)
 
         Returns:
             PRResult with PR details or error.
@@ -398,9 +400,12 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                 print(f"  Pushing tag: {tag_name}")
                 self._push_tag(tag_name)  # Non-fatal if fails
 
-            # Create PR body
-            # Note: We use relative path format that works in GitHub PR context
-            pr_body = f"""## Summary
+            # Create PR body - use custom body if provided, otherwise generate default
+            if custom_pr_body:
+                pr_body = custom_pr_body
+            else:
+                # Note: We use relative path format that works in GitHub PR context
+                pr_body = f"""## Summary
 
 Updates documentation to reflect implemented ADR: {adr_title}
 
