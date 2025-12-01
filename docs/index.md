@@ -14,7 +14,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [ADR Overview](adr/README.md) | Index of all ADRs and their status |
 | [Autonomous Software Engineer](adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, and design decisions |
 | [LLM Documentation Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation (this index) |
-| [Context Sync Strategy](adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | How external data (Confluence, JIRA, GitHub) is synced |
+| [Context Sync Strategy](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | How external data (Confluence, JIRA, GitHub) is synced |
 | [Slack Integration Strategy](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Bidirectional Slack communication approach |
 | [Message Queue Integration](adr/not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub migration plan for Slack |
 | [Slack Bot GCP Integration](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
@@ -45,6 +45,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Reference Overview](reference/README.md) | Quick reference guides and troubleshooting |
 | [Beads Task Tracking](reference/beads.md) | Persistent task memory system - commands, workflows, best practices |
+| [Features - Source Mapping](FEATURES.md) | Map of all features to their implementation locations |
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Khan Academy Culture](reference/khan-academy-culture.md) | L3-L4 engineering behavioral standards |
 | [Conversation Analysis Criteria](reference/conversation-analysis-criteria.md) | Assessment criteria for agent performance |
@@ -72,10 +73,12 @@ When working on specific tasks, consult these documents first:
 | **Slack integration changes** | [Slack Integration](architecture/slack-integration.md) | [ADR: Slack Strategy](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) |
 | **Adding new host services** | [Architecture Overview](architecture/README.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Security-related changes** | [ADR: Internet Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
-| **Context sync modifications** | [ADR: Context Sync](adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |
+| **Context sync modifications** | [ADR: Context Sync](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |
 | **GCP deployment changes** | [ADR: GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | [ADR: Slack GCP](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) |
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
 | **ADR research/generation** | [ADR Researcher](../host-services/analysis/adr-researcher/README.md) | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) |
+| **Feature discovery** | [Features - Source Mapping](FEATURES.md) | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) |
+| **Documentation sync** | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) | [ADR: Feature Analyzer](adr/not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md) |
 
 ## Machine-Readable Indexes
 
@@ -108,4 +111,4 @@ These files are auto-generated and provide structured data for programmatic acce
 ---
 
 *This index follows the [llms.txt](https://llmstxt.org/) convention for LLM-friendly documentation.*
-*Last updated: 2025-11-28*
+*Last updated: 2025-11-30*
