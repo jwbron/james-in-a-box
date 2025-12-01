@@ -211,15 +211,16 @@ class TestCreateNotificationWithThread:
 class TestMain:
     """Tests for main entry point."""
 
-    def test_missing_argument(self, caplog):
+    def test_missing_argument(self, capfd):
         """Test error when no file argument provided."""
         with patch.object(sys, "argv", ["incoming-processor.py"]):
             exit_code = incoming_processor.main()
 
         assert exit_code == 1
-        assert "Usage:" in caplog.text
+        captured = capfd.readouterr()
+        assert "Usage:" in captured.err
 
-    def test_file_not_found(self, temp_dir, caplog):
+    def test_file_not_found(self, temp_dir, capfd):
         """Test error when file doesn't exist."""
         nonexistent = temp_dir / "nonexistent.md"
 
@@ -227,7 +228,8 @@ class TestMain:
             exit_code = incoming_processor.main()
 
         assert exit_code == 1
-        assert "not found" in caplog.text.lower()
+        captured = capfd.readouterr()
+        assert "not found" in captured.err.lower()
 
     def test_incoming_file_routing(self, temp_dir, monkeypatch):
         """Test that incoming directory triggers process_task."""
@@ -236,7 +238,10 @@ class TestMain:
         task_file = incoming_dir / "task.md"
         task_file.write_text("## Current Message\n\nTest task")
 
-        with patch.object(incoming_processor, "process_task", return_value=True) as mock_task:
+        with (
+            patch.object(incoming_processor, "process_task", return_value=True) as mock_task,
+            patch("subprocess.run"),
+        ):  # Mock service stop calls at end of main
             with patch.object(sys, "argv", ["incoming-processor.py", str(task_file)]):
                 incoming_processor.main()
 
@@ -249,15 +254,18 @@ class TestMain:
         response_file = responses_dir / "response.md"
         response_file.write_text("## Current Message\n\nTest response")
 
-        with patch.object(
-            incoming_processor, "process_response", return_value=True
-        ) as mock_response:
+        with (
+            patch.object(
+                incoming_processor, "process_response", return_value=True
+            ) as mock_response,
+            patch("subprocess.run"),
+        ):  # Mock service stop calls at end of main
             with patch.object(sys, "argv", ["incoming-processor.py", str(response_file)]):
                 incoming_processor.main()
 
             mock_response.assert_called_once_with(response_file)
 
-    def test_unknown_directory_error(self, temp_dir, caplog):
+    def test_unknown_directory_error(self, temp_dir, capfd):
         """Test error for file in unknown directory."""
         unknown_dir = temp_dir / "unknown"
         unknown_dir.mkdir()
@@ -268,14 +276,14 @@ class TestMain:
             exit_code = incoming_processor.main()
 
         assert exit_code == 1
-        assert "unknown message type" in caplog.text.lower()
+        captured = capfd.readouterr()
+        assert "unknown message type" in captured.err.lower()
 
 
 class TestProcessTask:
     """Tests for task processing."""
 
-    @patch("subprocess.run")
-    def test_process_task_with_thread_context(self, mock_run, temp_dir, monkeypatch):
+    def test_process_task_with_thread_context(self, temp_dir, monkeypatch):
         """Test that thread context is preserved in task processing."""
         # Create task file with frontmatter
         incoming_dir = temp_dir / "incoming"
@@ -291,11 +299,6 @@ task_id: "slack-task-001"
 Please help with this task.
 """)
 
-        # Mock Claude command success
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="Task completed successfully!", stderr=""
-        )
-
         # Mock home directory
         monkeypatch.setenv("HOME", str(temp_dir))
 
@@ -304,22 +307,32 @@ Please help with this task.
         notifications_dir = temp_dir / "sharing" / "notifications"
         notifications_dir.mkdir(parents=True)
 
+        # Mock run_claude directly since it uses subprocess.Popen in streaming mode
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.returncode = 0
+        mock_result.stdout = "Task completed successfully!"
+        mock_result.stderr = ""
+        mock_result.error = None
+
         # Need to reload to pick up HOME change for Path.home()
-        with patch.object(Path, "home", return_value=temp_dir):
+        with (
+            patch.object(Path, "home", return_value=temp_dir),
+            patch.object(incoming_processor, "run_claude", return_value=mock_result) as mock_claude,
+        ):
             result = incoming_processor.process_task(task_file)
 
         # Should complete successfully
         assert result is True
 
-        # Claude should have been called
-        mock_run.assert_called()
+        # run_claude should have been called
+        mock_claude.assert_called_once()
 
 
 class TestProcessResponse:
     """Tests for response processing."""
 
-    @patch("subprocess.run")
-    def test_process_response_with_reference(self, mock_run, temp_dir, monkeypatch):
+    def test_process_response_with_reference(self, temp_dir, monkeypatch):
         """Test that referenced notification is loaded."""
         # Create response file
         responses_dir = temp_dir / "responses"
@@ -341,17 +354,26 @@ Here is my response to your question.
         original = notifications_dir / "20251124-123456.md"
         original.write_text("# Original Notification\n\nOriginal content.")
 
-        # Mock Claude command
-        mock_run.return_value = MagicMock(returncode=0, stdout="Response processed!", stderr="")
-
         # Mock home
         (temp_dir / "khan").mkdir()
         monkeypatch.setenv("HOME", str(temp_dir))
 
-        with patch.object(Path, "home", return_value=temp_dir):
+        # Mock run_claude directly since it uses subprocess.Popen in streaming mode
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.returncode = 0
+        mock_result.stdout = "Response processed!"
+        mock_result.stderr = ""
+        mock_result.error = None
+
+        with (
+            patch.object(Path, "home", return_value=temp_dir),
+            patch.object(incoming_processor, "run_claude", return_value=mock_result) as mock_claude,
+        ):
             result = incoming_processor.process_response(response_file)
 
         assert result is True
+        mock_claude.assert_called_once()
 
 
 class TestExtractThreadContext:

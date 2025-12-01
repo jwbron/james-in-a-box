@@ -14,7 +14,16 @@ from pathlib import Path
 
 import requests
 
+
+# Add shared directory to path for jib_logging
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent / "shared"))
+from jib_logging import get_logger
+
 from connectors.confluence.config import ConfluenceConfig
+
+
+# Initialize logger
+logger = get_logger("confluence-sync")
 
 
 class ConfluenceSync:
@@ -52,9 +61,22 @@ class ConfluenceSync:
         if self.sync_state_file.exists():
             try:
                 with open(self.sync_state_file, "rb") as f:
-                    return pickle.load(f)
-            except:
-                pass
+                    state = pickle.load(f)
+                    logger.debug(
+                        "Loaded sync state",
+                        state_file=str(self.sync_state_file),
+                        space_count=len(state),
+                    )
+                    return state
+            except Exception as e:
+                logger.error(
+                    "Failed to load sync state",
+                    state_file=str(self.sync_state_file),
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+        else:
+            logger.debug("No existing sync state file found", state_file=str(self.sync_state_file))
         return {}
 
     def _save_sync_state(self, state: dict):
@@ -108,13 +130,23 @@ class ConfluenceSync:
             spaces = data.get("results", [])
 
             if spaces:
+                logger.debug(
+                    "Found Confluence space",
+                    space_key=space_key,
+                    space_name=spaces[0].get("name"),
+                )
                 return spaces[0]
             else:
-                print(f"Space with key '{space_key}' not found")
+                logger.warning("Confluence space not found", space_key=space_key)
                 return None
 
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching space info for {space_key}: {e}")
+            logger.error(
+                "Error fetching space info",
+                space_key=space_key,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return None
 
     def _sanitize_filename(self, filename: str) -> str:
@@ -143,12 +175,15 @@ class ConfluenceSync:
             if parent_page:
                 ancestors.insert(0, parent_page)  # Insert at beginning to maintain order
                 current_page = parent_page
-                print(
-                    f"      Found parent: {parent_page.get('title', 'Unknown')} (ID: {parent_id})"
+                logger.debug(
+                    "Found parent page in hierarchy",
+                    parent_id=parent_id,
+                    parent_title=parent_page.get("title", "Unknown")[:60],
                 )
             else:
-                print(
-                    f"      Parent page {parent_id} not found in current page set, stopping hierarchy walk"
+                logger.debug(
+                    "Parent page not found in current page set, stopping hierarchy walk",
+                    parent_id=parent_id,
                 )
                 break
 
@@ -168,9 +203,6 @@ class ConfluenceSync:
                 sanitized_title = self._sanitize_filename(ancestor_title)
                 if sanitized_title:
                     path_parts.append(sanitized_title)
-                    print(f"        → {sanitized_title}/")
-            else:
-                print(f"        ✗ Skipped: {ancestor_title} (home page or empty)")
 
         # Add the current page title
         sanitized_title = self._sanitize_filename(page_title)
@@ -184,18 +216,23 @@ class ConfluenceSync:
         # First get the space ID from the space key
         space_info = self.get_space_info(space_key)
         if not space_info:
-            print(f"Could not find space with key: {space_key}")
+            logger.error("Could not find space", space_key=space_key)
             return []
 
         space_id = space_info.get("id")
         space_name = space_info.get("name", space_key)
 
-        print(f"Found space: {space_name} (ID: {space_id})")
+        logger.info(
+            "Found Confluence space",
+            space_key=space_key,
+            space_name=space_name,
+            space_id=space_id,
+        )
 
         pages = []
         cursor = None
         limit = 50
-        page_count = 0
+        api_calls = 0
 
         while True:
             # Use space ID instead of space key for the pages endpoint
@@ -211,9 +248,15 @@ class ConfluenceSync:
                 data = response.json()
                 new_pages = data.get("results", [])
                 pages.extend(new_pages)
-                page_count += 1
+                api_calls += 1
 
-                print(f"  Fetched page {page_count}: {len(new_pages)} pages (total: {len(pages)})")
+                logger.debug(
+                    "Fetched page batch",
+                    space_key=space_key,
+                    batch_size=len(new_pages),
+                    total_pages=len(pages),
+                    api_calls=api_calls,
+                )
 
                 # Check for next page using cursor-based pagination
                 if "_links" in data and "next" in data["_links"]:
@@ -227,14 +270,29 @@ class ConfluenceSync:
 
                 # Check if we've hit the limit
                 if float("inf") != self.config.MAX_PAGES and len(pages) >= self.config.MAX_PAGES:
-                    print(f"  Reached limit of {self.config.MAX_PAGES} pages")
+                    logger.info(
+                        "Reached page limit",
+                        space_key=space_key,
+                        limit=self.config.MAX_PAGES,
+                    )
                     break
 
             except requests.exceptions.RequestException as e:
-                print(f"Error fetching pages from space {space_key} (ID: {space_id}): {e}")
+                logger.error(
+                    "Error fetching pages from space",
+                    space_key=space_key,
+                    space_id=space_id,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
                 break
 
-        print(f"Total pages found: {len(pages)}")
+        logger.info(
+            "Completed page enumeration",
+            space_key=space_key,
+            total_pages=len(pages),
+            api_calls=api_calls,
+        )
         if float("inf") != self.config.MAX_PAGES:
             return pages[: self.config.MAX_PAGES]
         return pages
@@ -247,7 +305,12 @@ class ConfluenceSync:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching page {page_id}: {e}")
+            logger.error(
+                "Error fetching page by ID",
+                page_id=page_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return None
 
     def get_page_content(self, page_id: str) -> str | None:
@@ -263,7 +326,11 @@ class ConfluenceSync:
             # Check for rate limiting
             if response.status_code == 429:
                 retry_after = response.headers.get("Retry-After", "60")
-                print(f"      Rate limited! Waiting {retry_after} seconds...")
+                logger.warning(
+                    "Rate limited by Confluence API",
+                    page_id=page_id,
+                    retry_after_seconds=int(retry_after),
+                )
                 import time
 
                 time.sleep(int(retry_after))
@@ -279,12 +346,16 @@ class ConfluenceSync:
             return content
 
         except requests.exceptions.Timeout:
-            print(f"      Timeout fetching page {page_id}")
+            logger.error("Timeout fetching page content", page_id=page_id)
             return None
         except requests.exceptions.RequestException as e:
-            print(f"      Failed to get page {page_id}: {e}")
-            if hasattr(e.response, "status_code"):
-                print(f"      Status code: {e.response.status_code}")
+            logger.error(
+                "Failed to get page content",
+                page_id=page_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                status_code=getattr(getattr(e, "response", None), "status_code", None),
+            )
             return None
 
     def get_page_comments(self, page_id: str) -> list[dict]:
@@ -312,7 +383,12 @@ class ConfluenceSync:
                     # Check for rate limiting
                     if response.status_code == 429:
                         retry_after = response.headers.get("Retry-After", "60")
-                        print(f"      Rate limited! Waiting {retry_after} seconds...")
+                        logger.warning(
+                            "Rate limited fetching comments",
+                            page_id=page_id,
+                            comment_type=comment_type,
+                            retry_after_seconds=int(retry_after),
+                        )
                         import time
 
                         time.sleep(int(retry_after))
@@ -331,7 +407,13 @@ class ConfluenceSync:
                     url = f"{self.config.BASE_URL}{next_link}" if next_link else None
 
             except requests.exceptions.RequestException as e:
-                print(f"      Failed to get {comment_type} comments for page {page_id}: {e}")
+                logger.error(
+                    "Failed to get page comments",
+                    page_id=page_id,
+                    comment_type=comment_type,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
         return all_comments
 
@@ -387,16 +469,12 @@ class ConfluenceSync:
         markdown = h.handle(html_content)
 
         # Basic cleanup for Confluence artifacts
-        import re
-
         markdown = re.sub(r"\n\n\n+", "\n\n", markdown)  # Remove extra blank lines
 
         return markdown.strip()
 
     def extract_page_id_from_url(self, url: str) -> str | None:
         """Extract page ID from Confluence URL."""
-        import re
-
         # Classic format: /pages/viewpage.action?pageId=12345
         match = re.search(r"[?&]pageId=(\d+)", url)
         if match:
@@ -451,7 +529,11 @@ class ConfluenceSync:
 
         Creates .html files for page content and .md files for directory navigation indexes.
         """
-        print(f"Syncing space: {space_key}")
+        logger.info(
+            "Starting space sync",
+            space_key=space_key,
+            incremental=incremental,
+        )
 
         # Create output directory
         output_dir = Path(self.config.OUTPUT_DIR) / space_key
@@ -463,7 +545,11 @@ class ConfluenceSync:
 
         # Get all pages
         pages = self.get_pages_in_space(space_key)
-        print(f"Found {len(pages)} pages in space {space_key}")
+        logger.info(
+            "Found pages in space",
+            space_key=space_key,
+            page_count=len(pages),
+        )
 
         updated_pages = 0
         new_pages = 0
@@ -472,7 +558,7 @@ class ConfluenceSync:
 
         # Build a lookup map of all pages by ID for hierarchy resolution
         page_lookup = {page["id"]: page for page in pages}
-        print(f"Built page lookup with {len(page_lookup)} pages")
+        logger.debug("Built page lookup map", page_count=len(page_lookup))
 
         for page in pages:
             page_id = page["id"]
@@ -480,17 +566,8 @@ class ConfluenceSync:
             page_url = f"{self.config.BASE_URL}/pages/viewpage.action?pageId={page_id}"
             page_hash = self._get_page_hash(page)
 
-            # Show page processing info
-            print(f"  Processing: {page_title}")
-            if page.get("parentId"):
-                print(f"    Parent ID: {page['parentId']}")
-            else:
-                print("    No parent (root page)")
-
             # Build hierarchical path using parentId chain
-            print("    Building hierarchy...")
             ancestors = self.get_page_ancestors_from_parentid(page, page_lookup)
-            print(f"      Found {len(ancestors)} ancestors for '{page_title}'")
 
             relative_path = self._build_page_path(page_title, ancestors)
             # Adjust file extension based on configured output format
@@ -498,23 +575,14 @@ class ConfluenceSync:
                 relative_path = relative_path.with_suffix(".md")
             filepath = output_dir / relative_path
 
-            # Show final path being created
-            if len(relative_path.parts) > 1:
-                print(f"    → Final path: {relative_path}")
-            else:
-                print(f"    → Root file: {relative_path}")
-
             # Track directory for index creation
             file_dir = filepath.parent
             created_directories.add(file_dir)
             all_files.append(filepath)
 
             # Always fetch comments to check for changes (lightweight API call)
-            print(f"    Fetching comments for page {page_id}...")
             comments = self.get_page_comments(page_id)
             comments_hash = self._get_comments_hash(comments)
-            if comments:
-                print(f"    Found {len(comments)} comment(s)")
 
             # Get stored state for this page
             stored_state = space_state.get(page_id, {})
@@ -530,7 +598,11 @@ class ConfluenceSync:
             comments_changed = comments_hash != stored_comments_hash
 
             if incremental and not page_changed and not comments_changed:
-                print(f"  - {page_title} (no changes)")
+                logger.debug(
+                    "Page unchanged, skipping",
+                    page_id=page_id,
+                    page_title=page_title[:60],
+                )
                 continue
 
             # Determine what changed for logging
@@ -542,20 +614,25 @@ class ConfluenceSync:
 
             # Get page content (only if page changed, otherwise read from existing file)
             if page_changed or not filepath.exists():
-                print(f"    Fetching content for page {page_id}...")
                 content = self.get_page_content(page_id)
                 if content is None:
-                    print(f"    Failed to get content for {page_title}, skipping")
+                    logger.error(
+                        "Failed to get content, skipping page",
+                        page_id=page_id,
+                        page_title=page_title[:60],
+                    )
                     continue
-                print(f"    Content fetched successfully ({len(content)} characters)")
+                logger.debug(
+                    "Fetched page content",
+                    page_id=page_id,
+                    content_length=len(content),
+                )
 
                 # Convert to markdown if configured
                 if self.config.OUTPUT_FORMAT == "markdown":
-                    print("    Converting to Markdown format...")
                     content = self.convert_html_to_markdown(content)
             else:
                 # Page content unchanged, extract from existing file (before comments section)
-                print("    Using cached content (only comments changed)")
                 try:
                     with open(filepath, encoding="utf-8") as f:
                         existing_content = f.read()
@@ -581,10 +658,18 @@ class ConfluenceSync:
                                 break
                         content = "\n".join(lines[content_start:])
                 except Exception as e:
-                    print(f"    Failed to read existing file, fetching fresh: {e}")
+                    logger.warning(
+                        "Failed to read cached content, fetching fresh",
+                        page_id=page_id,
+                        error=str(e),
+                    )
                     content = self.get_page_content(page_id)
                     if content is None:
-                        print(f"    Failed to get content for {page_title}, skipping")
+                        logger.error(
+                            "Failed to get content, skipping page",
+                            page_id=page_id,
+                            page_title=page_title[:60],
+                        )
                         continue
                     if self.config.OUTPUT_FORMAT == "markdown":
                         content = self.convert_html_to_markdown(content)
@@ -625,13 +710,23 @@ class ConfluenceSync:
             is_new = stored_page_hash == "" and stored_comments_hash == ""
             if is_new:
                 new_pages += 1
-                print(f"  - {page_title} (new)")
+                logger.debug(
+                    "New page synced",
+                    page_id=page_id,
+                    page_title=page_title[:60],
+                    comments_count=len(comments),
+                )
             else:
                 updated_pages += 1
-                print(f"  - {page_title} (updated: {', '.join(change_reasons)})")
+                logger.debug(
+                    "Page updated",
+                    page_id=page_id,
+                    page_title=page_title[:60],
+                    changes=change_reasons,
+                )
 
         # Create directory indices for better navigation
-        print("Creating directory indices...")
+        logger.debug("Creating directory indices", directory_count=len(created_directories))
         for directory in created_directories:
             self._create_directory_index(directory, space_key)
 
@@ -675,8 +770,14 @@ class ConfluenceSync:
         sync_state[space_key] = space_state
         self._save_sync_state(sync_state)
 
-        print(f"Sync complete: {new_pages} new pages, {updated_pages} updated pages")
-        print(f"Created directory structure with {len(created_directories)} directories")
+        logger.info(
+            "Space sync completed",
+            space_key=space_key,
+            new_pages=new_pages,
+            updated_pages=updated_pages,
+            total_pages=len(pages),
+            directories_created=len(created_directories),
+        )
 
     def sync_single_page(
         self, page_id_or_url: str, incremental: bool = True, output_format: str = "html"
@@ -692,24 +793,31 @@ class ConfluenceSync:
         if page_id_or_url.startswith("http"):
             page_id = self.extract_page_id_from_url(page_id_or_url)
             if not page_id:
-                print(f"Could not extract page ID from URL: {page_id_or_url}")
-                print("Please provide the page ID directly (the number in the URL)")
+                logger.error(
+                    "Could not extract page ID from URL",
+                    url=page_id_or_url[:100],
+                )
                 return
         else:
             page_id = page_id_or_url
 
-        print(f"Syncing single page: {page_id} (format: {output_format})")
+        logger.info(
+            "Syncing single page",
+            page_id=page_id,
+            output_format=output_format,
+            incremental=incremental,
+        )
 
         # Get page metadata
         page = self.get_page_by_id(page_id)
         if not page:
-            print(f"Could not fetch page with ID: {page_id}")
+            logger.error("Could not fetch page", page_id=page_id)
             return
 
         # Get space info
         space_id = page.get("spaceId")
         if not space_id:
-            print(f"Page {page_id} has no space ID")
+            logger.error("Page has no space ID", page_id=page_id)
             return
 
         # Get space key
@@ -745,11 +853,8 @@ class ConfluenceSync:
         filepath = output_dir / relative_path
 
         # Always fetch comments first to check for changes
-        print(f"Fetching comments for '{page_title}'...")
         comments = self.get_page_comments(page_id)
         comments_hash = self._get_comments_hash(comments)
-        if comments:
-            print(f"Found {len(comments)} comment(s)")
 
         # Check incremental sync with both page and comment hashes
         page_hash = self._get_page_hash(page)
@@ -771,7 +876,11 @@ class ConfluenceSync:
             comments_changed = comments_hash != stored_comments_hash
 
             if not page_changed and not comments_changed:
-                print(f"Page '{page_title}' is up to date")
+                logger.info(
+                    "Page is up to date",
+                    page_id=page_id,
+                    page_title=page_title[:60],
+                )
                 return
 
             # Log what changed
@@ -780,7 +889,12 @@ class ConfluenceSync:
                 changes.append("content")
             if comments_changed:
                 changes.append("comments")
-            print(f"Changes detected: {', '.join(changes)}")
+            logger.info(
+                "Changes detected for page",
+                page_id=page_id,
+                page_title=page_title[:60],
+                changes=changes,
+            )
 
         # Get content (only fetch if page changed or file doesn't exist)
         page_changed_or_new = (
@@ -788,19 +902,16 @@ class ConfluenceSync:
         )
 
         if page_changed_or_new or not filepath.exists():
-            print(f"Fetching content for '{page_title}'...")
             content = self.get_page_content(page_id)
             if content is None:
-                print(f"Failed to get content for {page_title}")
+                logger.error("Failed to get content", page_id=page_id, page_title=page_title[:60])
                 return
 
             # Convert to Markdown if requested
             if output_format == "markdown":
-                print("Converting to Markdown format...")
                 content = self.convert_html_to_markdown(content)
         else:
             # Only comments changed, reuse existing content
-            print("Using cached content (only comments changed)")
             try:
                 with open(filepath, encoding="utf-8") as f:
                     existing_content = f.read()
@@ -818,10 +929,16 @@ class ConfluenceSync:
                         break
                 content = "\n".join(lines[content_start:])
             except Exception as e:
-                print(f"Failed to read existing file, fetching fresh: {e}")
+                logger.warning(
+                    "Failed to read cached content, fetching fresh",
+                    page_id=page_id,
+                    error=str(e),
+                )
                 content = self.get_page_content(page_id)
                 if content is None:
-                    print(f"Failed to get content for {page_title}")
+                    logger.error(
+                        "Failed to get content", page_id=page_id, page_title=page_title[:60]
+                    )
                     return
                 if output_format == "markdown":
                     content = self.convert_html_to_markdown(content)
@@ -854,7 +971,12 @@ class ConfluenceSync:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(page_content)
 
-        print(f"✓ Synced: {filepath.relative_to(Path(self.config.OUTPUT_DIR))}")
+        logger.info(
+            "Single page synced successfully",
+            page_id=page_id,
+            page_title=page_title[:60],
+            output_path=str(filepath.relative_to(Path(self.config.OUTPUT_DIR))),
+        )
 
         # Update sync state with both page and comment hashes
         sync_state = self._load_sync_state()
@@ -872,18 +994,34 @@ class ConfluenceSync:
         space_keys = self.config.get_space_keys_list()
 
         if not space_keys:
-            print("No space keys configured. Please set CONFLUENCE_SPACE_KEYS.")
+            logger.warning("No space keys configured. Please set CONFLUENCE_SPACE_KEYS.")
             return
 
-        print(f"Starting sync for {len(space_keys)} spaces...")
+        logger.info(
+            "Starting sync for all configured spaces",
+            space_count=len(space_keys),
+            space_keys=space_keys,
+            incremental=incremental,
+        )
 
+        success_count = 0
         for space_key in space_keys:
             try:
                 self.sync_space(space_key, incremental)
+                success_count += 1
             except Exception as e:
-                print(f"Error syncing space {space_key}: {e}")
+                logger.error(
+                    "Error syncing space",
+                    space_key=space_key,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
-        print("All spaces synced!")
+        logger.info(
+            "All spaces sync completed",
+            success_count=success_count,
+            total_count=len(space_keys),
+        )
 
 
 def main():
@@ -922,7 +1060,11 @@ def main():
 
         return 0
     except Exception as e:
-        print(f"Sync failed: {e}")
+        logger.error(
+            "Sync failed",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return 1
 
 

@@ -68,3 +68,7 @@ logs/
 docs/generated/codebase.json
 docs/generated/patterns.json
 docs/generated/dependencies.json
+
+# Index generator bin symlinks (created by setup.sh)
+bin/generate-index
+bin/query-index

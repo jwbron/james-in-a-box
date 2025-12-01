@@ -11,14 +11,19 @@ Uses Slack Socket Mode to receive events without exposing a public endpoint.
 """
 
 import json
-import logging
 import os
 import signal
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+# Add shared directory to path for jib_logging module
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from jib_logging import get_logger
 
 
 # Check for required dependencies
@@ -42,14 +47,13 @@ class SlackReceiver:
         # Store threads in shared directory (accessible to both host and container)
         # Host: ~/.jib-sharing/tracking/ -> Container: ~/sharing/tracking/
         self.threads_file = Path.home() / ".jib-sharing" / "tracking" / "slack-threads.json"
-        self.log_file = config_dir / "receiver.log"
 
         # Ensure config directory exists with secure permissions
         self.config_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.config_dir, 0o700)
 
-        # Set up logging
-        self._setup_logging()
+        # Initialize jib_logging logger
+        self.logger = get_logger("slack-receiver")
 
         # Load configuration
         self.config = self._load_config()
@@ -93,29 +97,6 @@ class SlackReceiver:
         # Set up signal handlers
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
-
-    def _setup_logging(self):
-        """Configure logging to file and console."""
-        self.logger = logging.getLogger("slack-receiver")
-        self.logger.setLevel(logging.INFO)
-
-        # File handler
-        fh = logging.FileHandler(self.log_file)
-        fh.setLevel(logging.INFO)
-
-        # Console handler
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-
-        # Formatter
-        formatter = logging.Formatter(
-            "[%(asctime)s] %(levelname)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-
-        self.logger.addHandler(fh)
-        self.logger.addHandler(ch)
 
     def _load_config(self) -> dict:
         """Load configuration from ~/.config/jib/.
@@ -186,7 +167,7 @@ class SlackReceiver:
         with open(self.config_file, "w") as f:
             json.dump(config, f, indent=2)
         os.chmod(self.config_file, 0o600)
-        self.logger.info(f"Configuration saved to {self.config_file}")
+        self.logger.info("Configuration saved", file=str(self.config_file))
 
     def _load_threads(self) -> dict:
         """Load thread state mapping task IDs to Slack thread_ts."""
@@ -195,7 +176,7 @@ class SlackReceiver:
                 with open(self.threads_file) as f:
                     return json.load(f)
             except Exception as e:
-                self.logger.error(f"Failed to load threads file: {e}")
+                self.logger.error("Failed to load threads file", error=str(e))
                 return {}
         return {}
 
@@ -207,11 +188,11 @@ class SlackReceiver:
                 json.dump(self.threads, f, indent=2)
             os.chmod(self.threads_file, 0o600)
         except Exception as e:
-            self.logger.error(f"Failed to save threads file: {e}")
+            self.logger.error("Failed to save threads file", error=str(e))
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
-        self.logger.info(f"Received signal {signum}, shutting down...")
+        self.logger.info("Received shutdown signal", signal=signum)
         self.running = False
         if self.socket_client:
             self.socket_client.close()
@@ -222,11 +203,11 @@ class SlackReceiver:
             response = self.web_client.auth_test()
             if response["ok"]:
                 self.bot_user_id = response["user_id"]
-                self.logger.info(f"Bot user ID: {self.bot_user_id}")
+                self.logger.info("Bot user ID retrieved", bot_user_id=self.bot_user_id)
             else:
                 self.logger.error("Failed to get bot user ID")
         except Exception as e:
-            self.logger.error(f"Exception getting bot user ID: {e}")
+            self.logger.error("Exception getting bot user ID", error=str(e))
 
     def _is_allowed_user(self, user_id: str) -> bool:
         """Check if user is allowed to send messages."""
@@ -245,7 +226,7 @@ class SlackReceiver:
             # Import the handler (lazy import to avoid circular dependencies)
             from host_command_handler import HostCommandHandler
 
-            self.logger.info(f"Executing remote command: {command_text}")
+            self.logger.info("Executing remote command", command=command_text)
 
             # Execute in a separate thread to avoid blocking
             import threading
@@ -255,7 +236,7 @@ class SlackReceiver:
                     handler = HostCommandHandler()
                     handler.execute_from_text(command_text)
                 except Exception as e:
-                    self.logger.error(f"Command execution failed: {e}")
+                    self.logger.error("Command execution failed", error=str(e))
 
             thread = threading.Thread(target=run_command, daemon=True)
             thread.start()
@@ -268,7 +249,7 @@ class SlackReceiver:
             self.logger.warning("HostCommandHandler not found, falling back to shell script")
             return self._execute_command_shell(command_text)
         except Exception as e:
-            self.logger.error(f"Failed to execute command: {e}")
+            self.logger.error("Failed to execute command", error=str(e), command=command_text)
             return False
 
     def _execute_command_shell(self, command_text: str) -> bool:
@@ -282,7 +263,7 @@ class SlackReceiver:
         remote_control = script_dir / "remote-control.sh"
 
         if not remote_control.exists():
-            self.logger.error(f"Remote control script not found: {remote_control}")
+            self.logger.error("Remote control script not found", script=str(remote_control))
             return False
 
         # Parse command text
@@ -302,7 +283,7 @@ class SlackReceiver:
 
         # Execute command in background (async)
         try:
-            self.logger.info(f"Executing remote command (shell fallback): {' '.join(parts)}")
+            self.logger.info("Executing remote command via shell fallback", command_parts=parts)
 
             # Run command in background
             subprocess.Popen(
@@ -312,11 +293,11 @@ class SlackReceiver:
                 start_new_session=True,  # Detach from parent
             )
 
-            self.logger.info("Command dispatched successfully")
+            self.logger.info("Shell command dispatched successfully")
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to execute command: {e}")
+            self.logger.error("Failed to execute shell command", error=str(e))
             return False
 
     def _parse_message(
@@ -507,18 +488,20 @@ class SlackReceiver:
             with open(filepath, "w") as f:
                 f.write("\n".join(doc_parts))
 
-            self.logger.info(f"Message written: {filepath}")
+            self.logger.info("Message written", file=str(filepath))
 
             # Save thread_ts mapping for new tasks
             # This allows future notifications to reply in the same thread
             if msg_type == "task" and metadata.get("thread_ts"):
                 self.threads[task_id] = metadata["thread_ts"]
                 self._save_threads()
-                self.logger.info(f"Saved thread mapping: {task_id} → {metadata['thread_ts']}")
+                self.logger.info(
+                    "Saved thread mapping", task_id=task_id, thread_ts=metadata["thread_ts"]
+                )
 
             return filepath
         except Exception as e:
-            self.logger.error(f"Failed to write message to {filepath}: {e}")
+            self.logger.error("Failed to write message", file=str(filepath), error=str(e))
             return None
 
     def _send_ack(self, channel: str, text: str, thread_ts: str | None = None):
@@ -553,10 +536,220 @@ class SlackReceiver:
                     time.sleep(0.5)
 
         except Exception as e:
-            self.logger.error(f"Failed to send ack: {e}")
+            self.logger.error("Failed to send acknowledgment", error=str(e))
 
-    def _trigger_processing(self, filepath: Path):
-        """Trigger message processing in jib container via jib --exec."""
+    def _create_failure_notification(
+        self,
+        task_id: str,
+        thread_ts: str | None,
+        error_message: str,
+        stderr_output: str = "",
+    ):
+        """Create a notification file for container startup failures.
+
+        This runs on the HOST side, so we write directly to ~/.jib-sharing/notifications/
+        which the slack-notifier service monitors.
+
+        Args:
+            task_id: Task ID for filename and identification
+            thread_ts: Slack thread timestamp for threading (if available)
+            error_message: Description of what went wrong
+            stderr_output: Captured stderr from the failed process
+        """
+        notifications_dir = Path.home() / ".jib-sharing" / "notifications"
+        notifications_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build notification with YAML frontmatter for proper threading
+        frontmatter_lines = [
+            "---",
+            f'task_id: "{task_id}"',
+        ]
+        if thread_ts:
+            frontmatter_lines.append(f'thread_ts: "{thread_ts}"')
+        frontmatter_lines.append("---")
+        frontmatter_lines.append("")
+
+        frontmatter = "\n".join(frontmatter_lines)
+
+        # Truncate stderr if too long
+        stderr_preview = stderr_output[:1000] if stderr_output else "None captured"
+
+        notification_content = f"""{frontmatter}# Container Startup Failed
+
+**Task ID:** `{task_id}`
+**Status:** Failed to start container
+
+## Error Details
+
+{error_message}
+
+**Stderr output:**
+```
+{stderr_preview}
+```
+
+## What you can do
+
+- Check if Docker is running: `docker ps`
+- Check jib logs: `journalctl -u jib-services -n 50`
+- Try running manually: `jib --exec echo "test"`
+- Check for container build issues
+
+---
+*Generated by slack-receiver (host-side failure notification)*
+"""
+
+        notification_file = notifications_dir / f"{task_id}-startup-failed.md"
+        try:
+            notification_file.write_text(notification_content)
+            self.logger.info(
+                "Created failure notification",
+                file=notification_file.name,
+                thread_ts=thread_ts or None,
+            )
+        except Exception as e:
+            self.logger.error("Failed to write failure notification", error=str(e))
+
+    def _monitor_container_process(
+        self,
+        process: subprocess.Popen,
+        task_id: str,
+        thread_ts: str | None,
+        filepath: Path,
+        log_file: Path,
+    ):
+        """Monitor a container process in a background thread and notify on failure.
+
+        This runs in a separate thread to avoid blocking the main event loop.
+        Streams stdout to log_file in real-time for visibility.
+        If the process exits with a non-zero code, creates a failure notification.
+
+        Args:
+            process: The Popen process object to monitor
+            task_id: Task ID for notifications
+            thread_ts: Slack thread timestamp for threading
+            filepath: Original message file path
+            log_file: Path to write real-time Claude output
+        """
+        stderr_lines = []
+        timeout_seconds = 45 * 60
+
+        try:
+            # Stream both stdout and stderr to log file in real-time
+            self.logger.info(
+                "Streaming container output",
+                log_file=str(log_file),
+                task_id=task_id,
+            )
+
+            with open(log_file, "w") as f:
+                f.write(f"=== Container output for {task_id} ===\n")
+                f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 50 + "\n\n")
+                f.flush()
+
+                # Thread to read stderr and stream to log file
+                def read_stderr():
+                    if process.stderr:
+                        for line in process.stderr:
+                            stderr_lines.append(line)
+                            # Stream stderr to log file too (prefixed for clarity)
+                            f.write(f"[stderr] {line}")
+                            f.flush()
+
+                stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+                stderr_thread.start()
+
+                if process.stdout:
+                    for line in process.stdout:
+                        # Write to log file immediately (real-time streaming)
+                        f.write(line)
+                        f.flush()
+
+                # Wait for process to complete
+                process.wait(timeout=timeout_seconds)
+
+                # Wait for stderr thread to finish
+                stderr_thread.join(timeout=5)
+
+                f.write("\n" + "=" * 50 + "\n")
+                f.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Exit code: {process.returncode}\n")
+                f.flush()
+
+            stderr_str = "".join(stderr_lines)
+
+            if process.returncode != 0:
+                self.logger.error(
+                    "Container process failed",
+                    file=filepath.name,
+                    return_code=process.returncode,
+                    stderr_preview=stderr_str[:200] if stderr_str else None,
+                )
+
+                # Create a failure notification
+                error_msg = f"Container exited with code {process.returncode}"
+                if "error" in stderr_str.lower() or "failed" in stderr_str.lower():
+                    # Extract the most relevant error line
+                    for line in stderr_str.split("\n"):
+                        if "error" in line.lower() or "failed" in line.lower():
+                            error_msg = f"{error_msg}\n\n**Key error:** {line.strip()}"
+                            break
+
+                self._create_failure_notification(
+                    task_id=task_id,
+                    thread_ts=thread_ts,
+                    error_message=error_msg,
+                    stderr_output=stderr_str,
+                )
+            else:
+                self.logger.info(
+                    "Container process completed successfully",
+                    file=filepath.name,
+                    log_file=str(log_file),
+                )
+
+        except subprocess.TimeoutExpired:
+            self.logger.error(
+                "Container process timed out",
+                file=filepath.name,
+                timeout_minutes=timeout_seconds // 60,
+            )
+            process.kill()
+            stderr_str = "".join(stderr_lines)
+
+            self._create_failure_notification(
+                task_id=task_id,
+                thread_ts=thread_ts,
+                error_message=f"Container timed out after {timeout_seconds // 60} minutes",
+                stderr_output=stderr_str,
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "Error monitoring container process",
+                file=filepath.name,
+                error=str(e),
+            )
+            self._create_failure_notification(
+                task_id=task_id,
+                thread_ts=thread_ts,
+                error_message=f"Monitor error: {e!s}",
+                stderr_output="",
+            )
+
+    def _trigger_processing(self, filepath: Path, task_id: str, thread_ts: str | None):
+        """Trigger message processing in jib container via jib --exec.
+
+        Claude output is streamed to a log file at ~/.jib-sharing/logs/{task_id}.log
+        You can tail this file to see Claude's output in real-time:
+            tail -f ~/.jib-sharing/logs/{task_id}.log
+
+        Args:
+            filepath: Path to the message file
+            task_id: Task ID for tracking and notifications
+            thread_ts: Slack thread timestamp for threading (if available)
+        """
         try:
             jib_script = Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
 
@@ -569,20 +762,53 @@ class SlackReceiver:
             # Container path to processor script (james-in-a-box mounted at ~/khan/james-in-a-box/)
             container_processor = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/jib-tasks/slack/incoming-processor.py"
 
-            self.logger.info(f"Triggering processing for {filepath.name}")
+            # Create log file for streaming Claude output
+            logs_dir = Path.home() / ".jib-sharing" / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_file = logs_dir / f"{task_id}.log"
 
-            # Execute in background (non-blocking) in a new ephemeral container
-            # IMPORTANT: --exec must be LAST (uses argparse.REMAINDER)
-            subprocess.Popen(
+            self.logger.info(
+                "Triggering processing",
+                file=filepath.name,
+                task_id=task_id,
+                log_file=str(log_file),
+            )
+
+            # Execute in background but stream output to log file
+            # Use text=True for string output instead of bytes
+            process = subprocess.Popen(
                 [str(jib_script), "--exec", "python3", container_processor, container_message_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                text=True,  # Text mode for string output
                 start_new_session=True,  # Detach from parent
             )
 
-            self.logger.info(f"Processing triggered for {filepath.name}")
+            self.logger.info(
+                "Processing triggered - stream to log file",
+                file=filepath.name,
+                pid=process.pid,
+                log_file=str(log_file),
+            )
+
+            # Start a background thread to monitor the process and stream output
+            # This allows us to detect failures, send notifications, and stream Claude logs
+            monitor_thread = threading.Thread(
+                target=self._monitor_container_process,
+                args=(process, task_id, thread_ts, filepath, log_file),
+                daemon=True,  # Don't block shutdown
+            )
+            monitor_thread.start()
+
         except Exception as e:
-            self.logger.error(f"Failed to trigger processing: {e}")
+            self.logger.error("Failed to trigger processing", error=str(e), file=filepath.name)
+            # Even if we can't start the process, notify the user
+            self._create_failure_notification(
+                task_id=task_id,
+                thread_ts=thread_ts,
+                error_message=f"Failed to start container: {e!s}",
+                stderr_output="",
+            )
 
     def _get_thread_parent_text(self, channel: str, thread_ts: str) -> str:
         """Fetch the parent message text from a thread."""
@@ -595,7 +821,7 @@ class SlackReceiver:
             if response["ok"] and response["messages"]:
                 return response["messages"][0].get("text", "")
         except Exception as e:
-            self.logger.error(f"Failed to fetch thread parent: {e}")
+            self.logger.error("Failed to fetch thread parent", error=str(e))
 
         return ""
 
@@ -639,11 +865,13 @@ class SlackReceiver:
                         }
                     )
 
-                self.logger.info(f"Fetched {len(messages)} messages from thread {thread_ts}")
+                self.logger.info(
+                    "Fetched thread messages", message_count=len(messages), thread_ts=thread_ts
+                )
                 return messages
 
         except Exception as e:
-            self.logger.error(f"Failed to fetch full thread context: {e}")
+            self.logger.error("Failed to fetch full thread context", error=str(e))
 
         return []
 
@@ -665,7 +893,7 @@ class SlackReceiver:
 
         # Check if user is allowed
         if not self._is_allowed_user(user_id):
-            self.logger.warning(f"Blocked message from unauthorized user: {user_id}")
+            self.logger.warning("Blocked message from unauthorized user", user_id=user_id)
             self._send_ack(
                 channel,
                 "⚠️ You are not authorized to send messages to Claude.",
@@ -680,9 +908,23 @@ class SlackReceiver:
         except:
             user_name = "Unknown"
 
-        self.logger.info(f"Received message from {user_name} ({user_id}): {text[:100]}")
-        if thread_ts:
-            self.logger.info(f"  (thread reply, thread_ts: {thread_ts})")
+        # Ignore empty or whitespace-only messages
+        if not text.strip():
+            self.logger.info(
+                "Ignoring empty message",
+                user_name=user_name,
+                user_id=user_id,
+                thread_ts=thread_ts or None,
+            )
+            return
+
+        self.logger.info(
+            "Received message",
+            user_name=user_name,
+            user_id=user_id,
+            preview=text[:100],
+            thread_ts=thread_ts or None,
+        )
 
         # If this is a thread reply, get full thread context
         referenced_notif = None
@@ -699,7 +941,9 @@ class SlackReceiver:
                 match = re.search(timestamp_pattern, parent_text)
                 if match:
                     referenced_notif = match.group(0)
-                    self.logger.info(f"  Extracted notification timestamp: {referenced_notif}")
+                    self.logger.info(
+                        "Extracted notification timestamp", referenced_notif=referenced_notif
+                    )
 
         # Parse message
         parsed = self._parse_message(text, thread_ts=thread_ts, channel=channel)
@@ -707,7 +951,7 @@ class SlackReceiver:
 
         # Handle remote control commands
         if msg_type == "command":
-            self.logger.info(f"Processing remote control command: {parsed['content']}")
+            self.logger.info("Processing remote control command", command=parsed["content"])
 
             if self._execute_command(parsed["content"]):
                 ack_msg = "🎮 Command dispatched. Check notifications for result."
@@ -737,18 +981,29 @@ class SlackReceiver:
         filepath = self._write_message(msg_type, parsed["content"], metadata)
 
         if filepath:
-            # Send acknowledgment
+            # Extract task_id from filename (e.g., "task-20251124-112705.md" -> "task-20251124-112705")
+            task_id = filepath.stem
+
+            # Send acknowledgment with log file path for real-time monitoring
+            log_file_path = f"~/.jib-sharing/logs/{task_id}.log"
             if msg_type == "response":
                 ack_msg = (
-                    f"✅ Response received and forwarded to Claude\n📁 Saved to: `{filepath.name}`"
+                    f"✅ Response received and forwarded to Claude\n"
+                    f"📁 Saved to: `{filepath.name}`\n"
+                    f"📋 Stream logs: `tail -f {log_file_path}`"
                 )
             else:
-                ack_msg = f"✅ Task received and queued for Claude\n📁 Saved to: `{filepath.name}`"
+                ack_msg = (
+                    f"✅ Task received and queued for Claude\n"
+                    f"📁 Saved to: `{filepath.name}`\n"
+                    f"📋 Stream logs: `tail -f {log_file_path}`"
+                )
 
             self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
 
             # Trigger processing in jib container
-            self._trigger_processing(filepath)
+            # Pass task_id and thread_ts for failure notification purposes
+            self._trigger_processing(filepath, task_id=task_id, thread_ts=reply_thread_ts)
         else:
             self._send_ack(
                 channel,
@@ -778,24 +1033,27 @@ class SlackReceiver:
 
     def start(self):
         """Start listening for Slack messages."""
-        self.logger.info(f"Starting Slack receiver (PID: {os.getpid()})")
+        self.logger.info("Starting Slack receiver", pid=os.getpid())
 
         # Get bot user ID
         self._get_bot_user_id()
 
-        self.logger.info(f"Incoming messages → {self.incoming_dir}")
-        self.logger.info(f"Responses → {self.responses_dir}")
+        self.logger.info(
+            "Directories configured",
+            incoming_dir=str(self.incoming_dir),
+            responses_dir=str(self.responses_dir),
+        )
 
         if self.self_dm_channel:
-            self.logger.info(f"Self-DM channel: {self.self_dm_channel}")
+            self.logger.info("Self-DM channel configured", channel=self.self_dm_channel)
         else:
             self.logger.warning("No self-DM channel configured - will not detect 'claude:' tasks")
 
         if self.owner_user_id:
-            self.logger.info(f"Owner user ID: {self.owner_user_id}")
+            self.logger.info("Owner user ID configured", owner_user_id=self.owner_user_id)
 
         if self.allowed_users:
-            self.logger.info(f"Allowed users: {', '.join(self.allowed_users)}")
+            self.logger.info("Allowed users configured", allowed_users=self.allowed_users)
         else:
             self.logger.warning("No user whitelist configured - accepting messages from all users")
 
@@ -807,8 +1065,7 @@ class SlackReceiver:
 
             self.socket_client.socket_mode_request_listeners.append(self._handle_event)
 
-            self.logger.info("Connected to Slack Socket Mode")
-            self.logger.info("Listening for direct messages...")
+            self.logger.info("Connected to Slack Socket Mode, listening for direct messages")
 
             # Keep running
             self.socket_client.connect()
@@ -822,7 +1079,7 @@ class SlackReceiver:
         except KeyboardInterrupt:
             self.logger.info("Interrupted by user")
         except Exception as e:
-            self.logger.error(f"Fatal error: {e}", exc_info=True)
+            self.logger.error("Fatal error", error=str(e))
         finally:
             if self.socket_client:
                 self.socket_client.close()
@@ -841,7 +1098,6 @@ def main():
         sys.exit(0)
     except Exception as e:
         print(f"Fatal error: {e}", file=sys.stderr)
-        logging.exception("Fatal error")
         sys.exit(1)
 
 

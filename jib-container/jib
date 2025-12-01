@@ -20,6 +20,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from statusbar import StatusBar, init_statusbar, status, status_success, status_error, status_warn, status_finish
+
+
+# Global quiet mode flag
+_quiet_mode = False
+
+
+# Default log directory for container logs
+CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
+
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -32,19 +42,35 @@ class Colors:
 
 
 def info(msg: str) -> None:
-    print(f"{Colors.BLUE}[INFO]{Colors.NC} {msg}")
+    """Show info message. In quiet mode, updates statusbar instead."""
+    if _quiet_mode:
+        status(msg)
+    else:
+        print(f"{Colors.BLUE}[INFO]{Colors.NC} {msg}")
 
 
 def success(msg: str) -> None:
-    print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {msg}")
+    """Show success message. In quiet mode, shows as persistent success."""
+    if _quiet_mode:
+        status_success(msg)
+    else:
+        print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {msg}")
 
 
 def warn(msg: str) -> None:
-    print(f"{Colors.YELLOW}[WARNING]{Colors.NC} {msg}")
+    """Show warning message. Always visible."""
+    if _quiet_mode:
+        status_warn(msg)
+    else:
+        print(f"{Colors.YELLOW}[WARNING]{Colors.NC} {msg}")
 
 
 def error(msg: str) -> None:
-    print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
+    """Show error message. Always visible."""
+    if _quiet_mode:
+        status_error(msg)
+    else:
+        print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
 
 
 def check_claude_credentials() -> bool:
@@ -73,8 +99,10 @@ class Config:
     # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
     TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
-    # Persistent .claude directory shared by all containers (in ~/.jib/)
-    CLAUDE_SHARED_DIR = CONFIG_DIR / "claude"
+    # Shared Claude auth files only (NOT full .claude directory to avoid history sharing)
+    # Auth files: .credentials.json, settings.json
+    # Container creates its own ephemeral: history.jsonl, debug/, session-env/, etc.
+    CLAUDE_AUTH_DIR = CONFIG_DIR / "claude-auth"
     # Worktree base directory (ephemeral workspaces per container)
     WORKTREE_BASE = Path.home() / ".jib-worktrees"
 
@@ -280,6 +308,53 @@ def check_docker_permissions() -> bool:
     return False
 
 
+def get_setup_script_path() -> Optional[Path]:
+    """Find the setup.sh script relative to the jib launcher location"""
+    # Try to find setup.sh relative to the jib script
+    jib_script = Path(__file__).resolve()
+
+    # jib is at jib-container/jib, setup.sh is at repo root
+    repo_root = jib_script.parent.parent
+    setup_script = repo_root / "setup.sh"
+
+    if setup_script.exists():
+        return setup_script
+
+    # Fallback: check ~/khan/james-in-a-box/setup.sh
+    fallback = Path.home() / "khan" / "james-in-a-box" / "setup.sh"
+    if fallback.exists():
+        return fallback
+
+    return None
+
+
+def run_setup_script() -> bool:
+    """Run the setup.sh script to configure jib"""
+    setup_script = get_setup_script_path()
+
+    if not setup_script:
+        error("Could not find setup.sh script")
+        print()
+        print("Please run setup manually:")
+        print("  cd ~/khan/james-in-a-box")
+        print("  ./setup.sh")
+        return False
+
+    info(f"Running setup: {setup_script}")
+    print()
+
+    try:
+        # Run setup.sh in its directory
+        result = subprocess.run(
+            ["bash", str(setup_script)],
+            cwd=setup_script.parent
+        )
+        return result.returncode == 0
+    except Exception as e:
+        error(f"Failed to run setup.sh: {e}")
+        return False
+
+
 def check_host_setup() -> bool:
     """Check if host setup is complete (services installed, directories exist)"""
     # Critical systemd services that should be installed
@@ -320,16 +395,15 @@ def check_host_setup() -> bool:
     if not config_file.exists():
         config_warning = f"Configuration file not found: {config_file}"
 
-    # Report findings
-    if issues_found or config_warning:
+    # If critical issues found, automatically run setup
+    if issues_found:
         warn("Host setup appears incomplete")
         print()
 
-        if issues_found:
-            error("Critical issues found:")
-            for issue in issues_found:
-                print(f"  ✗ {issue}")
-            print()
+        error("Critical issues found:")
+        for issue in issues_found:
+            print(f"  ✗ {issue}")
+        print()
 
         if config_warning:
             warn(config_warning)
@@ -339,16 +413,21 @@ def check_host_setup() -> bool:
         print("  • Slack integration (notifier and receiver)")
         print("  • Shared directories for notifications and task communication")
         print()
-        print("To set up the host:")
-        print("  cd ~/khan/james-in-a-box")
-        print("  ./setup.sh")
-        print()
 
-        if issues_found:
-            response = input("Continue anyway? (yes/no): ").strip().lower()
-            if response != "yes":
-                info("Please run ./setup.sh to configure the host first")
-                return False
+        # Auto-run setup.sh when config is missing
+        info("Running setup.sh to configure jib...")
+        print()
+        if run_setup_script():
+            success("Setup completed!")
+            return True
+        else:
+            error("Setup failed")
+            return False
+
+    # Config warning only (not critical) - just warn and continue
+    if config_warning:
+        warn(config_warning)
+        print()
 
     return True
 
@@ -400,6 +479,91 @@ def check_docker() -> bool:
 
 
 
+def _copy_directory_atomic(src: Path, dest: Path, name: str, quiet: bool = False) -> bool:
+    """Copy a directory atomically with retry logic for race conditions.
+
+    When multiple jib --exec instances run simultaneously, they may all try to
+    update the same build context directories. This function uses atomic operations
+    to handle race conditions:
+    1. Copy to a temporary directory
+    2. Remove existing destination (with retry on ENOTEMPTY/ENOENT)
+    3. Rename temp to destination (atomic on same filesystem)
+
+    Args:
+        src: Source directory to copy
+        dest: Destination path
+        name: Human-readable name for logging
+        quiet: If True, suppress info messages
+
+    Returns:
+        True if successful, False otherwise
+    """
+    import shutil
+    import tempfile
+    import uuid
+
+    max_retries = 3
+    retry_delay = 0.1  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            # Create a unique temp directory in the same parent (for atomic rename)
+            temp_dir = dest.parent / f".tmp-{uuid.uuid4().hex[:8]}"
+
+            # Copy source to temp location
+            shutil.copytree(src, temp_dir)
+
+            # Try to remove existing destination
+            if dest.exists():
+                try:
+                    shutil.rmtree(dest)
+                except FileNotFoundError:
+                    # Another process already removed it - that's fine
+                    pass
+                except OSError as e:
+                    # Directory not empty (ENOTEMPTY) - another process is writing
+                    # Clean up temp and retry
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay * (attempt + 1))
+                        continue
+                    raise
+
+            # Atomic rename from temp to destination
+            try:
+                temp_dir.rename(dest)
+            except OSError:
+                # Destination appeared between rmtree and rename - another process won
+                # Clean up our temp and use their copy
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                if dest.exists():
+                    # Other process succeeded, we're done
+                    if not quiet:
+                        info(f"{name} directory ready (from another process)")
+                    return True
+                # Neither exists - retry
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                raise
+
+            if not quiet:
+                info(f"{name} copied to build context")
+            return True
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (attempt + 1))
+                continue
+            warn(f"Failed to copy {name} directory after {max_retries} attempts: {e}")
+            # Clean up temp if it exists
+            if 'temp_dir' in locals() and temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            return False
+
+    return False
+
+
 def is_dangerous_dir(path: Path) -> bool:
     """Check if a directory is dangerous to mount (contains credentials)"""
     for dangerous in Config.DANGEROUS_DIRS:
@@ -434,37 +598,47 @@ def create_dockerfile() -> None:
         warn("docker-setup.py not found, skipping dev tools installation")
 
     # Copy claude-commands directory to config directory
+    # Use atomic copy with retry to handle race conditions when multiple
+    # jib --exec instances run simultaneously
     commands_src = script_dir / "claude-commands"
     commands_dest = Config.CONFIG_DIR / "claude-commands"
     if commands_src.exists():
-        if commands_dest.exists():
-            shutil.rmtree(commands_dest)
-        shutil.copytree(commands_src, commands_dest)
-        info("Claude commands copied to build context")
+        _copy_directory_atomic(commands_src, commands_dest, "Claude commands", _quiet_mode)
     else:
         warn("claude-commands directory not found")
 
     # Copy claude-rules directory to build context
+    # Use atomic copy with retry to handle race conditions
     rules_src = script_dir / "claude-rules"
     rules_dest = Config.CONFIG_DIR / "claude-rules"
     if rules_src.exists():
-        if rules_dest.exists():
-            shutil.rmtree(rules_dest)
-        shutil.copytree(rules_src, rules_dest)
-        info("Claude rules directory copied to build context")
+        _copy_directory_atomic(rules_src, rules_dest, "Claude rules", _quiet_mode)
     else:
         warn("claude-rules directory not found, skipping agent rules")
+
+    # Copy .claude/hooks directory to build context
+    # Use atomic copy with retry to handle race conditions
+    hooks_src = script_dir / ".claude" / "hooks"
+    hooks_dest = Config.CONFIG_DIR / ".claude" / "hooks"
+    if hooks_src.exists():
+        # Ensure parent directory exists
+        hooks_dest.parent.mkdir(parents=True, exist_ok=True)
+        _copy_directory_atomic(hooks_src, hooks_dest, "Claude hooks", _quiet_mode)
+    else:
+        warn(".claude/hooks directory not found, skipping hooks")
 
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
     # Avoids issues with stale/revoked OAuth tokens from previous builds
-    info("Claude credentials will be mounted from host at runtime (see setup output above)")
+    if not _quiet_mode:
+        info("Claude credentials will be mounted from host at runtime (see setup output above)")
 
     # Copy Dockerfile from script directory
     dockerfile_src = script_dir / "Dockerfile"
     if dockerfile_src.exists():
         shutil.copy(dockerfile_src, Config.DOCKERFILE)
-        success("Build context prepared")
+        if not _quiet_mode:
+            success("Build context prepared")
     else:
         error(f"Dockerfile not found at {dockerfile_src}")
         error("Cannot build without Dockerfile")
@@ -486,8 +660,19 @@ def build_image() -> bool:
             str(Config.CONFIG_DIR)
         ]
 
-        # Docker automatically uses cache for unchanged layers
-        subprocess.run(cmd, check=True)
+        # In quiet mode, suppress Docker build output
+        if _quiet_mode:
+            cmd.insert(2, "--quiet")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                # Show error output if build failed
+                error("Docker build failed")
+                if result.stderr:
+                    print(result.stderr, file=sys.stderr)
+                return False
+        else:
+            # Docker automatically uses cache for unchanged layers
+            subprocess.run(cmd, check=True)
         return True
     except subprocess.CalledProcessError:
         error("Docker build failed")
@@ -509,8 +694,407 @@ def generate_container_id() -> str:
     return f"jib-{timestamp}-{pid}"
 
 
+def get_docker_log_config(container_id: str, task_id: Optional[str] = None) -> list:
+    """Generate Docker logging configuration arguments.
+
+    Uses the json-file logging driver with:
+    - Log rotation (max 10MB per file, 5 files)
+    - Correlation labels for easy searching
+    - Timestamps included
+
+    Args:
+        container_id: Unique container identifier
+        task_id: Optional task ID for correlation (e.g., "task-20251129-222239")
+
+    Returns:
+        List of Docker command arguments for logging configuration
+    """
+    # Ensure container logs directory exists
+    CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Log file path based on container ID
+    log_file = CONTAINER_LOGS_DIR / f"{container_id}.log"
+
+    log_args = [
+        "--log-driver", "json-file",
+        "--log-opt", "max-size=10m",
+        "--log-opt", "max-file=5",
+        # Add labels for correlation - these appear in docker inspect
+        "--label", f"jib.container_id={container_id}",
+    ]
+
+    if task_id:
+        log_args.extend(["--label", f"jib.task_id={task_id}"])
+
+    return log_args
+
+
+def extract_task_id_from_command(command: List[str]) -> Optional[str]:
+    """Extract task ID from the command if it's processing a task file.
+
+    Looks for patterns like:
+    - incoming-processor.py /path/to/task-20251129-222239.md
+    - task-20251129-222239
+
+    Args:
+        command: Command list passed to jib --exec
+
+    Returns:
+        Task ID if found, None otherwise
+    """
+    import re
+    task_pattern = r"(task-\d{8}-\d{6})"
+
+    for arg in command:
+        match = re.search(task_pattern, arg)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def extract_thread_ts_from_task_file(task_file_path: str) -> Optional[str]:
+    """Extract thread_ts from a task file's YAML frontmatter.
+
+    Task files contain YAML frontmatter like:
+        ---
+        task_id: "task-20251129-222239"
+        thread_ts: "1764483758.159619"
+        ---
+
+    Args:
+        task_file_path: Path to the task file (may be container path)
+
+    Returns:
+        Thread timestamp if found, None otherwise
+    """
+    import re
+
+    # Convert container path back to host path
+    host_path = task_file_path
+    if "/sharing/" in task_file_path:
+        # Container path like /home/user/sharing/incoming/task.md
+        # -> Host path like ~/.jib-sharing/incoming/task.md
+        parts = task_file_path.split("/sharing/", 1)
+        if len(parts) == 2:
+            host_path = str(Path.home() / ".jib-sharing" / parts[1])
+
+    try:
+        path = Path(host_path)
+        if path.exists():
+            content = path.read_text()
+            # Look for thread_ts in YAML frontmatter
+            match = re.search(r'thread_ts:\s*["\']?(\d+\.\d+)["\']?', content)
+            if match:
+                return match.group(1)
+    except Exception:
+        pass
+
+    return None
+
+
+def update_log_index(
+    container_id: str,
+    task_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    log_file: Optional[str] = None,
+) -> None:
+    """Update the log index file with correlation information.
+
+    The log index enables quick lookups:
+    - task_id -> container_id
+    - thread_ts -> task_id
+    - List of all recent container runs
+
+    Uses file locking to prevent race conditions when multiple containers
+    finish simultaneously.
+
+    Args:
+        container_id: Docker container ID
+        task_id: Optional task ID (e.g., "task-20251129-222239")
+        thread_ts: Optional Slack thread timestamp
+        log_file: Path to the log file
+    """
+    import json
+    import fcntl
+
+    index_file = CONTAINER_LOGS_DIR / "log-index.json"
+    CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Use file locking to prevent concurrent modifications
+    # Open in 'a+' mode to create file if it doesn't exist
+    with open(index_file, 'a+') as f:
+        # Acquire exclusive lock
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            # Seek to beginning to read
+            f.seek(0)
+            content = f.read()
+
+            # Load existing index
+            index = {"task_to_container": {}, "thread_to_task": {}, "entries": []}
+            if content:
+                try:
+                    index = json.loads(content)
+                except Exception:
+                    pass
+
+            # Update correlation maps
+            if task_id:
+                index["task_to_container"][task_id] = container_id
+            if thread_ts and task_id:
+                index["thread_to_task"][thread_ts] = task_id
+
+            # Add entry
+            entry = {
+                "container_id": container_id,
+                "task_id": task_id,
+                "thread_ts": thread_ts,
+                "log_file": str(log_file) if log_file else None,
+                "timestamp": datetime.now().isoformat(),
+            }
+            index["entries"].append(entry)
+
+            # Keep last 1000 entries
+            if len(index["entries"]) > 1000:
+                index["entries"] = index["entries"][-1000:]
+
+            # Write updated index
+            f.seek(0)
+            f.truncate()
+            f.write(json.dumps(index, indent=2))
+        finally:
+            # Release lock
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def save_container_logs(
+    container_id: str,
+    task_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+) -> Optional[Path]:
+    """Save Docker container logs to persistent storage.
+
+    Uses `docker logs` to capture all container output and saves it to
+    ~/.jib-sharing/container-logs/{container_id}.log
+
+    Also creates a symlink from task_id.log -> container_id.log for easy lookup,
+    and updates the log index for correlation searches.
+
+    Args:
+        container_id: Docker container ID/name
+        task_id: Optional task ID for symlink creation
+        thread_ts: Optional Slack thread timestamp for index
+
+    Returns:
+        Path to the saved log file, or None if saving failed
+    """
+    CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    log_file = CONTAINER_LOGS_DIR / f"{container_id}.log"
+
+    try:
+        # Get container logs using docker logs command
+        result = subprocess.run(
+            ["docker", "logs", container_id],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        # Check log size before writing to prevent disk space exhaustion
+        max_log_size = 100 * 1024 * 1024  # 100MB
+        total_log_size = len(result.stdout) + len(result.stderr)
+        if total_log_size > max_log_size:
+            warn(f"Container logs exceed {max_log_size / (1024 * 1024):.0f}MB, truncating...")
+            # Truncate stderr/stdout proportionally
+            if result.stdout:
+                result.stdout = result.stdout[:max_log_size // 2] + "\n\n[... truncated ...]\n"
+            if result.stderr:
+                result.stderr = result.stderr[:max_log_size // 2] + "\n\n[... truncated ...]\n"
+
+        # Write logs (both stdout and stderr)
+        with open(log_file, "w") as f:
+            f.write(f"=== Container: {container_id} ===\n")
+            f.write(f"=== Saved: {datetime.now().isoformat()} ===\n")
+            if task_id:
+                f.write(f"=== Task ID: {task_id} ===\n")
+            if thread_ts:
+                f.write(f"=== Thread TS: {thread_ts} ===\n")
+            f.write("=" * 50 + "\n\n")
+
+            if result.stdout:
+                f.write("=== STDOUT ===\n")
+                f.write(result.stdout)
+                f.write("\n")
+
+            if result.stderr:
+                f.write("\n=== STDERR ===\n")
+                f.write(result.stderr)
+
+        # Create symlink from task_id if provided
+        if task_id:
+            task_log_link = CONTAINER_LOGS_DIR / f"{task_id}.log"
+            # Remove existing symlink if present
+            if task_log_link.is_symlink():
+                task_log_link.unlink()
+            # Create relative symlink
+            task_log_link.symlink_to(f"{container_id}.log")
+
+        # Update log index for correlation lookups
+        update_log_index(container_id, task_id, thread_ts, str(log_file))
+
+        if not _quiet_mode:
+            info(f"Container logs saved: {log_file}")
+            if task_id:
+                info(f"  Symlink: {task_id}.log -> {container_id}.log")
+
+        return log_file
+
+    except subprocess.TimeoutExpired:
+        warn("Timed out getting container logs")
+    except FileNotFoundError:
+        # Container doesn't exist or already removed
+        pass
+    except Exception as e:
+        warn(f"Failed to save container logs: {e}")
+
+    return None
+
+
+def get_default_branch(repo_path: Path) -> str:
+    """Get the default branch (main or master) for a git repository.
+
+    Args:
+        repo_path: Path to the git repository
+
+    Returns:
+        The default branch name ('main' or 'master'), or 'main' as fallback
+    """
+    # Try to get the default branch from git config (set by clone)
+    result = subprocess.run(
+        ["git", "config", "--get", "init.defaultBranch"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+
+    # Check if origin/HEAD exists and points to a branch
+    result = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        cwd=repo_path,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        # Format: refs/remotes/origin/main -> main
+        return result.stdout.strip().split("/")[-1]
+
+    # Fall back to checking which branches exist
+    for branch in ["main", "master"]:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/{branch}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            return branch
+
+    # Default to 'main' if nothing found
+    return "main"
+
+
+def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> Optional[int]:
+    """Acquire an exclusive lock for git operations on a repository.
+
+    Git doesn't handle concurrent operations well. When multiple jib --exec
+    containers try to create worktrees simultaneously, they can conflict on
+    the same repo's config/index files. This function provides file-based
+    locking to serialize git operations per repository.
+
+    Args:
+        repo_path: Path to the git repository
+        timeout: Maximum time to wait for lock in seconds
+
+    Returns:
+        File descriptor for the lock (must be closed to release), or None if failed
+    """
+    import fcntl
+    import errno
+
+    # Create lock file in the repo's .git directory
+    git_dir = repo_path / ".git"
+    if git_dir.is_file():
+        # Worktree - read the actual git dir path
+        try:
+            content = git_dir.read_text().strip()
+            if content.startswith("gitdir:"):
+                git_dir = Path(content[7:].strip())
+        except Exception:
+            pass
+
+    if not git_dir.is_dir():
+        return None
+
+    lock_file = git_dir / ".jib-worktree-lock"
+
+    start_time = time.time()
+    retry_delay = 0.1
+
+    while True:
+        try:
+            # Open lock file (create if doesn't exist)
+            fd = os.open(str(lock_file), os.O_CREAT | os.O_RDWR)
+
+            # Try to acquire exclusive lock (non-blocking)
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            # Got the lock
+            return fd
+
+        except (OSError, IOError) as e:
+            if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES):
+                # Lock held by another process
+                elapsed = time.time() - start_time
+                if elapsed >= timeout:
+                    warn(f"Timeout waiting for git lock on {repo_path.name}")
+                    if 'fd' in locals():
+                        os.close(fd)
+                    return None
+
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 1.5, 1.0)  # Exponential backoff, max 1s
+                continue
+            else:
+                # Other error
+                if 'fd' in locals():
+                    os.close(fd)
+                return None
+
+
+def _release_git_lock(fd: int) -> None:
+    """Release a git lock acquired with _acquire_git_lock."""
+    import fcntl
+
+    if fd is not None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        except Exception:
+            pass
+
+
 def create_worktrees(container_id: str) -> dict:
     """Create git worktrees for all repos in ~/khan/
+
+    Worktrees are always based on the default branch (main or master),
+    regardless of what branch is currently checked out on the host.
+
+    Uses file-based locking to prevent conflicts when multiple jib --exec
+    containers try to create worktrees simultaneously.
 
     Returns:
         Dictionary mapping repo names to worktree paths
@@ -537,23 +1121,29 @@ def create_worktrees(container_id: str) -> dict:
 
         repo_name = repo_path.name
 
-        if git_dir.is_file():
-            # Host repo is a worktree - skip it with a warning
-            warn(f"  ⚠ Skipping {repo_name}: host repo is a worktree (.git is a file)")
-            warn(f"    jib requires host repos to be normal git repos")
-            continue
-
+        # Note: git worktree add works even when source repo is a worktree
+        # It creates a new worktree of the same underlying main repository
         worktree_path = worktree_dir / repo_name
 
-        try:
-            info(f"Creating worktree for {repo_name}...")
+        # Acquire lock to prevent concurrent git operations on same repo
+        lock_fd = _acquire_git_lock(repo_path, timeout=60.0)
+        if lock_fd is None:
+            warn(f"  ✗ Could not acquire lock for {repo_name}, skipping worktree")
+            continue
 
-            # Create temporary branch for this container
+        try:
+            # Determine the default branch for this repo
+            default_branch = get_default_branch(repo_path)
+
+            if not _quiet_mode:
+                info(f"Creating worktree for {repo_name} (from {default_branch})...")
+
+            # Create temporary branch for this container, starting from the default branch
             branch_name = f"jib-temp-{container_id}"
 
-            # Create worktree
+            # Create worktree based on the default branch (not current HEAD)
             result = subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), "-b", branch_name],
+                ["git", "worktree", "add", str(worktree_path), "-b", branch_name, default_branch],
                 cwd=repo_path,
                 capture_output=True,
                 text=True
@@ -561,12 +1151,15 @@ def create_worktrees(container_id: str) -> dict:
 
             if result.returncode == 0:
                 worktrees[repo_name] = worktree_path
-                success(f"  ✓ {repo_name} -> {worktree_path}")
+                if not _quiet_mode:
+                    success(f"  ✓ {repo_name} -> {worktree_path}")
             else:
                 warn(f"  ✗ Failed to create worktree for {repo_name}: {result.stderr}")
 
         except Exception as e:
             warn(f"  ✗ Error creating worktree for {repo_name}: {e}")
+        finally:
+            _release_git_lock(lock_fd)
 
     return worktrees
 
@@ -584,7 +1177,8 @@ def cleanup_worktrees(container_id: str) -> None:
     if not worktree_dir.exists():
         return
 
-    info(f"Cleaning up worktrees for {container_id}...")
+    if not _quiet_mode:
+        info(f"Cleaning up worktrees for {container_id}...")
 
     # Collect repos and their worktree admin directories
     # We need to forcibly remove admin dirs because container modified .git files
@@ -613,7 +1207,8 @@ def cleanup_worktrees(container_id: str) -> None:
     # Remove container worktree directory first
     try:
         shutil.rmtree(worktree_dir)
-        info(f"  ✓ Removed worktree directory")
+        if not _quiet_mode:
+            info(f"  ✓ Removed worktree directory")
     except Exception as e:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
@@ -645,9 +1240,9 @@ def cleanup_worktrees(container_id: str) -> None:
         except Exception:
             pass
 
-    if admin_dirs_removed > 0:
+    if admin_dirs_removed > 0 and not _quiet_mode:
         info(f"  ✓ Removed {admin_dirs_removed} worktree admin dir(s)")
-        info(f"  💡 Commits preserved on branch: jib-temp-{container_id}")
+        info(f"  Commits preserved on branch: jib-temp-{container_id}")
 
 
 def setup() -> bool:
@@ -750,7 +1345,7 @@ def setup() -> bool:
     # Sharing directory - single location for ALL persistent data
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
-    Config.CLAUDE_SHARED_DIR.mkdir(parents=True, exist_ok=True)  # claude/ inside .jib/
+    Config.CLAUDE_AUTH_DIR.mkdir(parents=True, exist_ok=True)  # claude-auth/ for auth files only
 
     sharing_container_path = f"/home/{os.environ['USER']}/sharing"
     # Add :z flag for SELinux systems
@@ -767,14 +1362,16 @@ def setup() -> bool:
     # Create convenience symlink in container for tmp
     # Note: Actual symlink creation happens in container entrypoint
 
-    # Mount shared .claude directory (persistent across all containers)
-    # This ensures all containers share the same authentication
+    # Mount shared Claude auth files (NOT the whole .claude directory)
+    # This prevents history/session data from being shared across containers
+    # while still sharing authentication credentials
     print()
     print(f"{Colors.BOLD}Claude Code authentication...{Colors.NC}")
 
-    # Mount ~/.claude/ directory
-    claude_container_path = f"/home/{os.environ['USER']}/.claude"
-    mounts.append(f"{Config.CLAUDE_SHARED_DIR}:{claude_container_path}:rw,z")
+    # Mount Claude auth directory (contains .credentials.json and settings.json)
+    # Container's entrypoint will copy these to ~/.claude/ on startup
+    claude_auth_container_path = f"/home/{os.environ['USER']}/.claude-auth"
+    mounts.append(f"{Config.CLAUDE_AUTH_DIR}:{claude_auth_container_path}:rw,z")
 
     # Mount ~/.claude.json file (user state with userID)
     claude_json_file = Config.CONFIG_DIR / "claude.json"
@@ -785,20 +1382,18 @@ def setup() -> bool:
     mounts.append(f"{claude_json_file}:{claude_json_container_path}:rw,z")
 
     # Check if credentials already exist in shared directory
-    shared_creds = Config.CLAUDE_SHARED_DIR / ".credentials.json"
+    shared_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
     if shared_creds.exists():
         success("Claude credentials found in shared directory")
-        print(f"  All containers will use:")
-        print(f"    ~/.claude/ → {Config.CLAUDE_SHARED_DIR}")
-        print(f"    ~/.claude.json → {claude_json_file}")
+        print(f"  Auth files shared via: {Config.CLAUDE_AUTH_DIR}")
+        print(f"  Session data: ephemeral (per-container)")
     else:
         info("Claude credentials not yet configured")
-        print(f"  Shared locations:")
-        print(f"    ~/.claude/ → {Config.CLAUDE_SHARED_DIR}")
-        print(f"    ~/.claude.json → {claude_json_file}")
+        print(f"  Auth files will be saved to: {Config.CLAUDE_AUTH_DIR}")
         print()
         info("The first container will authenticate and save credentials.")
         info("All other containers will automatically use the same credentials.")
+        info("Session history is NOT shared (each container has its own).")
 
     print()
     print("Add additional directories? (optional)")
@@ -882,6 +1477,8 @@ def setup() -> bool:
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     # Check if image exists
+    if _quiet_mode:
+        status("Checking Docker image...")
     if not image_exists():
         info("Docker image not found. Running initial setup...")
         if not setup():
@@ -893,69 +1490,95 @@ def run_claude() -> bool:
         if not setup():
             return False
 
-    # Ensure shared authentication files exist
-    Config.CLAUDE_SHARED_DIR.mkdir(parents=True, exist_ok=True)
+    # Ensure shared authentication directory exists
+    if _quiet_mode:
+        status("Checking authentication...")
+    Config.CLAUDE_AUTH_DIR.mkdir(parents=True, exist_ok=True)
     claude_json_file = Config.CONFIG_DIR / "claude.json"
     if not claude_json_file.exists():
         # Initialize with empty JSON object (Claude Code will populate on first run)
         claude_json_file.write_text("{}\n")
 
-    # Check Claude Code authentication in shared directory
-    print()
-    print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
+    # Migration: copy credentials from old shared directory if it exists
+    old_claude_dir = Config.CONFIG_DIR / "claude"  # Old location: ~/.jib/claude/
+    old_creds = old_claude_dir / ".credentials.json"
+    new_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
+    if old_creds.exists() and not new_creds.exists():
+        import shutil
+        info("Migrating credentials from old shared directory...")
+        shutil.copy2(old_creds, new_creds)
+        new_creds.chmod(0o600)
+        success("Credentials migrated to new auth-only directory")
+        print(f"  Old: {old_claude_dir} (can be deleted)")
+        print(f"  New: {Config.CLAUDE_AUTH_DIR}")
+        print()
 
-    shared_creds = Config.CLAUDE_SHARED_DIR / ".credentials.json"
+    # Check Claude Code authentication in shared auth directory
+    if not _quiet_mode:
+        print()
+        print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
-    if shared_creds.exists():
-        try:
-            with open(shared_creds, 'r') as f:
-                creds = json.load(f)
+        shared_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
 
-            scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
-            required_scopes = {
-                "user:inference",
-                "user:profile",
-                "user:sessions:claude_code"
-            }
+        if shared_creds.exists():
+            try:
+                with open(shared_creds, 'r') as f:
+                    creds = json.load(f)
 
-            if required_scopes.issubset(set(scopes)):
-                success("Claude Code authenticated with full scopes (shared)")
-                print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
-            else:
-                warn("Claude Code credentials found but missing required scopes")
-                warn("  Container will work with limited functionality (--print mode only)")
-                print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
-        except Exception as e:
-            warn(f"Could not read shared credentials: {e}")
-            warn("Container will prompt for authentication on first run")
-    else:
-        info("Claude Code not yet authenticated")
-        info("Container will prompt for authentication on first launch")
-        info("Credentials will be saved and shared across all containers")
-        print(f"  Location: {Config.CLAUDE_SHARED_DIR}")
+                scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
+                required_scopes = {
+                    "user:inference",
+                    "user:profile",
+                    "user:sessions:claude_code"
+                }
 
-    print()
+                if required_scopes.issubset(set(scopes)):
+                    success("Claude Code authenticated with full scopes")
+                    print(f"  Auth shared via: {Config.CLAUDE_AUTH_DIR}")
+                    print(f"  Session history: ephemeral (per-container)")
+                else:
+                    warn("Claude Code credentials found but missing required scopes")
+                    warn("  Container will work with limited functionality (--print mode only)")
+                    print(f"  Location: {Config.CLAUDE_AUTH_DIR}")
+            except Exception as e:
+                warn(f"Could not read shared credentials: {e}")
+                warn("Container will prompt for authentication on first run")
+        else:
+            info("Claude Code not yet authenticated")
+            info("Container will prompt for authentication on first launch")
+            info("Credentials will be saved and shared across all containers")
+            info("Session history is NOT shared (each container has its own)")
+            print(f"  Auth location: {Config.CLAUDE_AUTH_DIR}")
+
+        print()
 
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
+    if _quiet_mode:
+        status("Building Docker image...")
     if not build_image():
         error("Docker build failed")
         return False
 
     # Generate unique container ID
+    if _quiet_mode:
+        status("Preparing container...")
     container_id = generate_container_id()
 
-    info("Launching sandboxed Claude Code environment...")
-    print()
-
-    info(f"Container ID: {container_id}")
-    print()
+    if not _quiet_mode:
+        info("Launching sandboxed Claude Code environment...")
+        print()
+        info(f"Container ID: {container_id}")
+        print()
 
     # Create worktrees for repos (isolates container from host repos)
-    info("Creating isolated worktrees...")
-    print()
+    if _quiet_mode:
+        status("Creating isolated worktrees...")
+    else:
+        info("Creating isolated worktrees...")
+        print()
     worktrees = create_worktrees(container_id)
 
-    if worktrees:
+    if worktrees and not _quiet_mode:
         print()
         info(f"Created {len(worktrees)} worktree(s)")
         print()
@@ -967,6 +1590,8 @@ def run_claude() -> bool:
     atexit.register(cleanup_on_exit)
 
     # Parse mount configuration
+    if _quiet_mode:
+        status("Configuring mounts...")
     mount_args = []
     mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
     for mount in mounts:
@@ -995,9 +1620,10 @@ def run_claude() -> bool:
             mode = f"{mode},z"
 
         mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
-        mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
-        display_path = container_path if container_path != mount_path else mount_path
-        print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
+        if not _quiet_mode:
+            mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
+            display_path = container_path if container_path != mount_path else mount_path
+            print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
 
     # Add worktree mounts
     # Also track which main repos need their .git directories mounted
@@ -1005,7 +1631,8 @@ def run_claude() -> bool:
     for repo_name, worktree_path in worktrees.items():
         container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
-        print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
+        if not _quiet_mode:
+            print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
         main_repos_needed.add(repo_name)
 
     # Mount main repo .git directories (read-write) so worktrees can commit changes
@@ -1013,24 +1640,45 @@ def run_claude() -> bool:
         main_repo = Config.KHAN_SOURCE / repo_name
         git_path = main_repo / ".git"
         if git_path.is_dir():
-            # Mount the main repo's .git directory at a special location
-            # Worktree .git files will be rewritten to point here
+            # Normal repo - mount .git directory directly
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
-            print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
+            if not _quiet_mode:
+                print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
         elif git_path.is_file():
-            # .git is a file = host repo is itself a worktree
-            # This is an unsupported configuration for jib
-            warn(f"Host repo {repo_name} is a worktree (.git is a file)")
-            warn(f"  jib requires host repos to be normal git repos, not worktrees")
-            warn(f"  Git operations may fail for this repo")
+            # Host repo is a worktree - read .git file to find actual git directory
+            # Format is: "gitdir: /path/to/repo.git/worktrees/name"
+            try:
+                gitdir_content = git_path.read_text().strip()
+                if gitdir_content.startswith("gitdir:"):
+                    gitdir_path = Path(gitdir_content[7:].strip())
+                    # Navigate up from worktrees/<name> to the main .git directory
+                    # e.g., /path/.git/worktrees/foo -> /path/.git
+                    if "worktrees" in gitdir_path.parts:
+                        worktrees_idx = gitdir_path.parts.index("worktrees")
+                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
+                        if main_git_path.is_dir():
+                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
+                            if not _quiet_mode:
+                                print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
+                        else:
+                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
+                    else:
+                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
+                else:
+                    warn(f"Invalid .git file format for {repo_name}")
+            except Exception as e:
+                warn(f"Error reading .git file for {repo_name}: {e}")
 
     # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
-    print(f"  • ~/.jib-worktrees/ (worktree base directory)")
+    if not _quiet_mode:
+        print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
-    print()
+    if not _quiet_mode:
+        print()
 
     # Remove old container if exists (cleanup any previous runs)
     subprocess.run(["docker", "rm", "-f", container_id],
@@ -1048,22 +1696,24 @@ def run_claude() -> bool:
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
+        "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
     # Add GitHub token for container (prefer App token, fall back to PAT)
     # Also write token to shared file for long-running container support
+    if _quiet_mode:
+        status("Configuring GitHub access...")
     github_app_token = get_github_app_token()
     if github_app_token:
         cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
         # Write token to shared file for auto-refresh support
-        if write_github_token_file(github_app_token):
+        write_github_token_file(github_app_token)
+        if not _quiet_mode:
             info("GitHub auth: App installation token (auto-refresh enabled)")
             print("  Token written to ~/.jib-sharing/.github-token")
             print("  github-token-refresher service will keep it fresh")
-        else:
-            info("GitHub auth: App installation token (1-hour expiry)")
-        print("  Full GitHub API access including Checks API")
+            print("  Full GitHub API access including Checks API")
     else:
         # Fall back to PAT if App not configured
         github_token = get_github_token()
@@ -1071,25 +1721,33 @@ def run_claude() -> bool:
             cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
             # Also write PAT to shared file (won't be auto-refreshed but provides consistency)
             write_github_token_file(github_token)
-            info("GitHub auth: Personal Access Token (fallback)")
-            warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
+            if not _quiet_mode:
+                info("GitHub auth: Personal Access Token (fallback)")
+                warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
         else:
-            warn("GitHub auth: Not configured (GitHub operations disabled)")
-            print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
+            # Only warn if not in quiet mode - GitHub access is optional
+            if not _quiet_mode:
+                warn("GitHub auth: Not configured (GitHub operations disabled)")
+                print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
 
-    info("Network mode: Bridge (isolated from host, outbound HTTP only)")
-    print("  Container can: Access Claude API, download packages")
-    print("  Container cannot: Access host services, accept inbound connections")
-    print()
+    if not _quiet_mode:
+        info("Network mode: Bridge (isolated from host, outbound HTTP only)")
+        print("  Container can: Access Claude API, download packages")
+        print("  Container cannot: Access host services, accept inbound connections")
+        print()
 
-    info("Claude authentication: Will authenticate with browser on first run")
-    print()
+        info("Claude authentication: Will authenticate with browser on first run")
+        print()
 
     # Add mount arguments
     cmd.extend(mount_args)
 
     # Add image name
     cmd.append(Config.IMAGE_NAME)
+
+    # Final status update before launching
+    if _quiet_mode:
+        status("Launching Claude...")
 
     # Run container
     try:
@@ -1104,7 +1762,12 @@ def run_claude() -> bool:
         return False
 
 
-def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool:
+def exec_in_new_container(
+    command: List[str],
+    timeout_minutes: int = 30,
+    task_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+) -> bool:
     """Execute a command in a new ephemeral container with isolated worktrees.
 
     Creates worktrees for all repos to isolate changes (same as interactive mode):
@@ -1112,10 +1775,13 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
     - Worktrees allow parallel work without conflicts
     - Automatic cleanup (--rm)
     - All commits go to temporary branches (jib-temp-jib-exec-*)
+    - Container logs persisted to ~/.jib-sharing/container-logs/
 
     Args:
         command: Command to execute
         timeout_minutes: Timeout in minutes (default: 30)
+        task_id: Optional task ID for log correlation (auto-detected from command if not provided)
+        thread_ts: Optional Slack thread timestamp for correlation
 
     Returns:
         True if successful, False otherwise
@@ -1140,7 +1806,22 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
     # Generate unique container ID for this exec
     container_id = f"jib-exec-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
 
+    # Auto-detect task_id from command if not provided
+    if not task_id:
+        task_id = extract_task_id_from_command(command)
+
+    # Auto-detect thread_ts from task file if not provided
+    if not thread_ts and task_id:
+        for arg in command:
+            if ".md" in arg:
+                thread_ts = extract_thread_ts_from_task_file(arg)
+                break
+
     info(f"Executing command in new container: {container_id}")
+    if task_id:
+        info(f"Task ID: {task_id}")
+    if thread_ts:
+        info(f"Thread TS: {thread_ts}")
     print(f"Command: {' '.join(command)}")
     print(f"Timeout: {timeout_minutes} minutes")
     print()
@@ -1200,26 +1881,55 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
         main_repo = Config.KHAN_SOURCE / repo_name
         git_path = main_repo / ".git"
         if git_path.is_dir():
+            # Normal repo - mount .git directory directly
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
         elif git_path.is_file():
-            # .git is a file = host repo is itself a worktree
-            warn(f"Host repo {repo_name} is a worktree (.git is a file)")
-            warn(f"  Git operations may fail for this repo")
+            # Host repo is a worktree - read .git file to find actual git directory
+            try:
+                gitdir_content = git_path.read_text().strip()
+                if gitdir_content.startswith("gitdir:"):
+                    gitdir_path = Path(gitdir_content[7:].strip())
+                    if "worktrees" in gitdir_path.parts:
+                        worktrees_idx = gitdir_path.parts.index("worktrees")
+                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
+                        if main_git_path.is_dir():
+                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
+                            print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
+                        else:
+                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
+                    else:
+                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
+                else:
+                    warn(f"Invalid .git file format for {repo_name}")
+            except Exception as e:
+                warn(f"Error reading .git file for {repo_name}: {e}")
 
     print()
 
-    # Build docker run command
+    # Build docker run command with logging configuration
+    # Note: We don't use --rm so we can save logs before cleanup
     cmd = [
         "docker", "run",
-        "--rm",  # Auto-remove container after exit
         "--name", container_id,
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
+        "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
     ]
+
+    # Add logging configuration for log persistence
+    log_config = get_docker_log_config(container_id, task_id)
+    cmd.extend(log_config)
+
+    # Add correlation environment variables for log tracing
+    if task_id:
+        cmd.extend(["-e", f"JIB_TASK_ID={task_id}"])
+    if thread_ts:
+        cmd.extend(["-e", f"JIB_THREAD_TS={thread_ts}"])
 
     # Add GitHub token for container (prefer App token, fall back to PAT)
     # Also write token to shared file for auto-refresh support
@@ -1244,9 +1954,31 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
 
     # Run container with configurable timeout
     timeout_seconds = timeout_minutes * 60
+    success = False
+
+    def cleanup_container():
+        """Save logs and remove container."""
+        try:
+            # Save container logs before removal (with correlation info)
+            save_container_logs(container_id, task_id, thread_ts)
+        except Exception as e:
+            error(f"Failed to save container logs: {e}")
+            # Don't re-raise - continue with container removal
+        finally:
+            # Remove container
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", container_id],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception as e:
+                error(f"Failed to remove container: {e}")
+                # Don't re-raise - original error is more important
+
     try:
         result = subprocess.run(cmd, timeout=timeout_seconds)
-        return result.returncode == 0
+        success = result.returncode == 0
     except subprocess.TimeoutExpired:
         print()
         error(f"Container execution timed out after {timeout_minutes} minutes")
@@ -1254,14 +1986,20 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
         subprocess.run(["docker", "kill", container_id],
                       stdout=subprocess.DEVNULL,
                       stderr=subprocess.DEVNULL)
-        return False
     except KeyboardInterrupt:
         print()
         warn("Interrupted by user")
-        return False
+        # Kill container on interrupt
+        subprocess.run(["docker", "kill", container_id],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL)
     except Exception as e:
         error(f"Failed to run container: {e}")
-        return False
+    finally:
+        # Always save logs and cleanup container
+        cleanup_container()
+
+    return success
 
 
 def main():
@@ -1270,21 +2008,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  jib                                      # Run Claude Code (setup on first use)
-  jib --setup                              # Reconfigure mounts
+  jib                                      # Run Claude Code (progress bar by default, auto-setup if needed)
+  jib -v                                   # Run in verbose mode (detailed output)
+  jib --setup                              # Run full setup (delegates to setup.sh)
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
-  jib --exec python3 /home/jwies/khan/james-in-a-box/jib-container/components/incoming-processor.py /home/jwies/sharing/incoming/task.md
   jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
 
 Note: --exec spawns a new container for each execution (automatic cleanup with --rm)
       Default timeout is 30 minutes, configurable via --timeout
+      If setup is incomplete, jib will prompt to run setup automatically
+      Default shows progress bar; use -v for verbose output
         """
     )
     parser.add_argument(
         "--setup",
         action="store_true",
-        help="Force setup/reconfiguration"
+        help="Run full jib setup (services, config, Docker image)"
     )
     parser.add_argument(
         "--reset",
@@ -1303,8 +2043,23 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         nargs=argparse.REMAINDER,
         help="Execute a command in a new ephemeral container (automatic cleanup)"
     )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)"
+    )
 
     args = parser.parse_args()
+
+    # Initialize quiet mode globally
+    # Quiet is the default; verbose (-v) overrides it
+    global _quiet_mode
+    _quiet_mode = not args.verbose
+    if _quiet_mode:
+        # Initialize statusbar with estimated steps for interactive mode
+        # Steps: check docker image, check auth, build image, prepare container,
+        #        create worktrees, configure mounts, configure github, launch
+        init_statusbar(total_steps=8, enabled=True)
 
 
     # Handle reset
@@ -1348,9 +2103,11 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     if not check_host_setup():
         return 1
 
-    # Handle setup
+    # Handle setup - delegate to setup.sh
     if args.setup:
-        if not setup():
+        info("Delegating to setup.sh for complete jib configuration...")
+        print()
+        if not run_setup_script():
             return 1
         return 0
 

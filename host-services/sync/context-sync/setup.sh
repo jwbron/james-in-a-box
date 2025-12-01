@@ -36,12 +36,16 @@ if [ ! -f "$CONFIG_DIR/.env" ]; then
     echo ""
 fi
 
-# Enable timer (but don't start yet - user may need to configure first)
+# Enable and start timer
 echo "Enabling context-sync timer..."
 systemctl --user enable context-sync.timer
+echo "✓ Timer enabled"
+
+systemctl --user start context-sync.timer
+echo "✓ Timer started"
 
 echo ""
-echo "✅ Context sync installed"
+echo "✅ Context sync installed and running"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Next Steps:"
@@ -50,13 +54,7 @@ echo ""
 echo "1. Configure credentials (if not done):"
 echo "   $COMPONENT_DIR/docs/README.md"
 echo ""
-echo "2. Run initial sync:"
-echo "   systemctl --user start context-sync.service"
-echo ""
-echo "3. Enable automated hourly syncing:"
-echo "   systemctl --user start context-sync.timer"
-echo ""
-echo "4. Monitor sync:"
+echo "2. Monitor sync:"
 echo "   journalctl --user -u context-sync.service -f"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

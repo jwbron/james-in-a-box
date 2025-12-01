@@ -160,26 +160,26 @@ Detailed index following llms.txt conventions:
 ```markdown
 # Documentation Index
 
-> James-in-a-box: LLM-powered autonomous software engineering agent
+> Project-name: Brief project description
 
 ## Core Documentation
-- [Architecture ADR](./adr/ADR-Autonomous-Software-Engineer.md): System architecture and design decisions
-- [Context Sync Strategy](./adr/ADR-Context-Sync-Strategy-Custom-vs-MCP.md): How external data is synced
-- [Security Model](./security/model.md): Isolation, permissions, data handling
+- [Architecture ADR](#architecture): System architecture and design decisions
+- [Context Sync Strategy](#context-sync): How external data is synced
+- [Security Model](#security): Isolation, permissions, data handling
 
 ## Development Guides
-- [Testing Guide](./testing/guide.md): Test frameworks, patterns, fixtures
-- [API Conventions](./api/conventions.md): REST design, error handling, versioning
-- [Code Style](./style/guide.md): Formatting, naming, documentation
+- [Testing Guide](#testing): Test frameworks, patterns, fixtures
+- [API Conventions](#api): REST design, error handling, versioning
+- [Code Style](#style): Formatting, naming, documentation
 
 ## Operational Runbooks
-- [Deployment](./runbooks/deployment.md): How to deploy changes
-- [Troubleshooting](./runbooks/troubleshooting.md): Common issues and fixes
-- [Monitoring](./runbooks/monitoring.md): Metrics, alerts, dashboards
+- [Deployment](#deployment): How to deploy changes
+- [Troubleshooting](#troubleshooting): Common issues and fixes
+- [Monitoring](#monitoring): Metrics, alerts, dashboards
 
 ## Machine-Readable
-- [codebase.json](./generated/codebase.json): Structured codebase analysis
-- [patterns.json](./generated/patterns.json): Extracted code patterns
+- [codebase.json](#codebase): Structured codebase analysis
+- [patterns.json](#patterns): Extracted code patterns
 ```
 
 ### 2. Codebase Index (Machine-Readable)
@@ -494,6 +494,416 @@ schedules:
       - "Kubernetes patterns"
       - "Cloud Run best practices GCP"
 ```
+
+### 6. PR-Based Research Workflow
+
+**Problem:** Research findings need review and iteration before integration. Simply updating documents in place bypasses discussion and validation.
+
+**Solution:** Output research findings as PRs that enable iterative review before merging.
+
+**Workflow Diagram:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  PR-Based Research Workflow                      │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    1. SCOPE SELECTION                        │ │
+│  │  Choose research scope:                                      │ │
+│  │  - "open PRs" → ADRs with pending review                    │ │
+│  │  - "merged ADRs" → Implemented decisions needing refresh    │ │
+│  │  - "specific topic" → Targeted research area                │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    2. RESEARCH EXECUTION                     │ │
+│  │  For each ADR/topic:                                         │ │
+│  │  - Web search for current best practices (2024-2025)        │ │
+│  │  - Check academic sources (arXiv, conference papers)        │ │
+│  │  - Review official documentation updates                    │ │
+│  │  - Identify industry adoption patterns                      │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    3. FINDINGS SYNTHESIS                     │ │
+│  │  Create "Research Updates" section with:                    │ │
+│  │  - Industry adoption tables                                 │ │
+│  │  - Key insights with citations                              │ │
+│  │  - Implementation recommendations                           │ │
+│  │  - Linked research sources                                  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    4. PR CREATION                            │ │
+│  │  One PR per ADR with:                                        │ │
+│  │  - Summary of research findings                             │ │
+│  │  - Specific implementation recommendations                  │ │
+│  │  - Links to sources                                         │ │
+│  │  - Test plan / validation steps                             │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    5. ITERATIVE REVIEW                       │ │
+│  │  PR enables:                                                 │ │
+│  │  - Discussion of findings                                   │ │
+│  │  - Challenge of recommendations                             │ │
+│  │  - Refinement of implementation details                     │ │
+│  │  - Decision to implement, defer, or reject                  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Research Updates Section Template:**
+
+```markdown
+## Research Updates ({Month} {Year})
+
+Based on external research into {topic}:
+
+### {Subtopic 1}
+
+{Key findings with context}
+
+| {Column 1} | {Column 2} | {Column 3} |
+|------------|------------|------------|
+| Data       | Data       | Data       |
+
+**Application to {project}:**
+- Specific recommendation 1
+- Specific recommendation 2
+
+### {Subtopic 2}
+
+{Additional findings...}
+
+### Research Sources
+
+- [Source Title](URL) - Brief description
+- [Source Title](URL) - Brief description
+```
+
+**PR Description Template:**
+
+```markdown
+## Summary
+
+Updates {ADR-Name} with current industry research on {topic}.
+
+### Key Changes
+
+- **{Category 1}:** {What was updated}
+- **{Category 2}:** {What was updated}
+
+### Implementation Recommendations
+
+Based on research, consider:
+
+1. **{Recommendation}:** {Details}
+2. **{Recommendation}:** {Details}
+
+### Research Sources
+
+- [Source](URL)
+- [Source](URL)
+
+## Test plan
+
+- [x] ADR markdown renders correctly
+- [x] All research source links are valid
+- [x] Recommendations align with current architecture
+```
+
+**Research Source Types:**
+
+| Source Type | Examples | When to Use |
+|-------------|----------|-------------|
+| **Academic Papers** | arXiv, ACL, NeurIPS, ICML | Cutting-edge research, theoretical foundations |
+| **Official Docs** | Anthropic, OpenAI, framework docs | Authoritative patterns, API updates |
+| **Industry Blogs** | Engineering blogs, thought leaders | Practical adoption patterns, lessons learned |
+| **Standards Bodies** | OWASP, NIST, W3C | Security, compliance, accessibility |
+| **Product Announcements** | Release notes, launch posts | New capabilities, deprecations |
+| **GitHub/Community** | Trending repos, discussions | Community patterns, adoption signals |
+
+**Host Script (`host-services/analysis/adr-researcher/`):**
+
+The research workflow is implemented as a host service that can be run manually or scheduled:
+
+```bash
+# Research all open ADR PRs and post comments
+bin/adr-researcher --scope open-prs
+
+# Research all merged/implemented ADRs and create update PRs
+bin/adr-researcher --scope merged
+
+# Generate a new ADR from research on a topic
+bin/adr-researcher --generate "Topic for new ADR"
+
+# Review and validate an existing ADR with current research
+bin/adr-researcher --review path/to/ADR.md
+
+# Research specific ADR topic
+bin/adr-researcher --scope topic --query "Docker sandbox isolation"
+```
+
+**Output Modes:**
+
+| Mode | Flag | Description | Use Case |
+|------|------|-------------|----------|
+| **Update existing** | `--scope merged` | Creates PRs with Research Updates section | Refresh implemented ADRs |
+| **Comment on PRs** | `--scope open-prs` | Adds research as PR comments | Enrich ADRs under review |
+| **Generate new ADR** | `--generate "topic"` | Creates complete ADR from research | New architectural decisions |
+| **Review ADR** | `--review path` | Validates ADR against current research | Pre-merge validation |
+| **Markdown report** | `--report-only` | Outputs findings without PR/commit | Initial exploration |
+
+**Workflow Variations:**
+
+The research workflow supports three distinct use cases with different outputs:
+
+| Workflow | Input | Output | Research Updates Section? |
+|----------|-------|--------|---------------------------|
+| **ADR Update** | Existing ADR | PR with Research Updates added | ✅ Yes - appends findings |
+| **ADR Generation** | Topic description | New ADR document | ❌ No - research IS the ADR |
+| **ADR Review** | Draft ADR | Validation comments | ❌ No - provides feedback |
+
+*ADR Generation and Review workflows produce the ADR itself as the research artifact, so no separate "Research Updates" section is needed.*
+
+**Example Execution:**
+
+```bash
+# 1. Research open ADR PRs (posted comments)
+bin/adr-researcher --scope open-prs
+# → Posted research comments to PRs #124, #144, #138, #126, #170
+
+# 2. Research merged ADRs (created update PRs)
+bin/adr-researcher --scope merged
+# → Created PRs #174, #175, #176 with findings and recommendations
+
+# 3. Generate new ADR from research
+bin/adr-researcher --generate "MCP Server Security Model"
+# → Creates docs/adr/proposed/ADR-MCP-Server-Security-Model.md
+# → Creates PR with research-backed ADR ready for review
+
+# 4. Review draft ADR before merge
+bin/adr-researcher --review docs/adr/proposed/ADR-New-Feature.md
+# → Validates against current research
+# → Posts review comments on associated PR
+```
+
+### 6.1 ADR Generation Workflow
+
+**Purpose:** Create new ADRs grounded in current industry research rather than relying solely on internal knowledge.
+
+**When to Use:**
+- Proposing a new architectural pattern
+- Evaluating technology choices
+- Documenting decisions that benefit from external validation
+
+**Workflow Diagram:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ADR Generation Workflow                       │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    1. TOPIC ANALYSIS                         │ │
+│  │  Parse topic description to identify:                        │ │
+│  │  - Core technology/pattern being decided                    │ │
+│  │  - Key alternatives to evaluate                             │ │
+│  │  - Relevant industry domains                                │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    2. RESEARCH EXECUTION                     │ │
+│  │  Web search for:                                             │ │
+│  │  - Current best practices (prioritize 2024-2025)           │ │
+│  │  - Comparison analyses of alternatives                      │ │
+│  │  - Industry adoption patterns                               │ │
+│  │  - Known pitfalls and anti-patterns                        │ │
+│  │  - Official documentation and specifications               │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    3. ADR SYNTHESIS                          │ │
+│  │  Generate complete ADR with:                                 │ │
+│  │  - Context grounded in research findings                    │ │
+│  │  - Decision matrix with cited trade-offs                    │ │
+│  │  - Alternatives with research-backed evaluation             │ │
+│  │  - References section linking all sources                   │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    4. PR CREATION                            │ │
+│  │  Create PR with:                                             │ │
+│  │  - ADR in docs/adr/proposed/ directory                      │ │
+│  │  - Summary of research methodology                          │ │
+│  │  - Key findings that informed the decision                  │ │
+│  │  - Open questions for reviewer discussion                   │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**ADR Generation Template:**
+
+The generated ADR follows the standard format but with research-backed content:
+
+```markdown
+# ADR: {Title}
+
+**Driver:** jib (AI-generated, requires human approval)
+**Status:** Proposed
+**Research Date:** {Date}
+
+## Context
+
+### Background
+
+{Research-derived context about the problem space}
+
+### Industry Landscape
+
+{Summary of current industry practices with citations}
+
+| Approach | Adoption | Key Trade-offs |
+|----------|----------|----------------|
+| ...      | ...      | ...            |
+
+## Decision
+
+{Recommended approach with research justification}
+
+## Decision Matrix
+
+| Criterion | Option A | Option B | Option C |
+|-----------|----------|----------|----------|
+| ...       | ...      | ...      | ...      |
+
+*Evaluation criteria derived from [source citations]*
+
+## Alternatives Considered
+
+### Alternative 1: {Name}
+**Research findings:** {What external sources say}
+**Rejected because:** {Research-backed reasoning}
+
+## References
+
+- [Source Title](URL) - {How it informed the decision}
+- [Source Title](URL) - {How it informed the decision}
+```
+
+### 6.2 ADR Review Workflow
+
+**Purpose:** Validate draft ADRs against current industry research before merging.
+
+**When to Use:**
+- Before merging any proposed ADR
+- When an ADR has been open for extended period (research may be stale)
+- When reviewer requests external validation
+
+**Workflow Diagram:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ADR Review Workflow                           │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    1. ADR PARSING                            │ │
+│  │  Extract from draft ADR:                                     │ │
+│  │  - Core decision and alternatives                           │ │
+│  │  - Claims made about technologies                           │ │
+│  │  - Referenced sources (check if still valid)                │ │
+│  │  - Trade-off assertions                                     │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    2. VALIDATION RESEARCH                    │ │
+│  │  For each claim/assertion:                                   │ │
+│  │  - Verify against current sources                           │ │
+│  │  - Check for newer alternatives not mentioned               │ │
+│  │  - Validate trade-off characterizations                     │ │
+│  │  - Identify any outdated information                        │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    3. GAP ANALYSIS                           │ │
+│  │  Identify:                                                   │ │
+│  │  - Missing alternatives that research suggests              │ │
+│  │  - Outdated claims needing update                           │ │
+│  │  - Unsupported assertions lacking citations                 │ │
+│  │  - Emerging patterns not yet considered                     │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │                    4. REVIEW OUTPUT                          │ │
+│  │  Post PR review comment with:                                │ │
+│  │  - ✅ Validated claims (with supporting sources)            │ │
+│  │  - ⚠️ Claims needing update                                 │ │
+│  │  - ❌ Potentially incorrect assertions                      │ │
+│  │  - 💡 Suggestions for additional considerations             │ │
+│  │  - 📚 Additional sources for reviewer reference             │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Review Comment Format:**
+
+```markdown
+## 🔍 Research-Based ADR Review
+
+**Reviewed:** {ADR Title}
+**Research Date:** {Date}
+
+### ✅ Validated Claims
+
+- **Claim:** "{Quoted claim from ADR}"
+  - **Validation:** {Supporting research} ([source](URL))
+
+### ⚠️ Needs Update
+
+- **Claim:** "{Outdated claim}"
+  - **Current Status:** {What research shows now}
+  - **Suggested Update:** {Recommended revision}
+  - **Source:** [link](URL)
+
+### ❌ Potentially Incorrect
+
+- **Claim:** "{Questionable assertion}"
+  - **Research Contradicts:** {What sources actually say}
+  - **Recommendation:** {How to address}
+
+### 💡 Additional Considerations
+
+- {Alternative or pattern not mentioned in ADR}
+  - **Relevance:** {Why reviewer should consider}
+  - **Source:** [link](URL)
+
+### 📚 Supplementary Sources
+
+- [Source](URL) - {Brief description}
+- [Source](URL) - {Brief description}
+
+---
+*— Authored by jib (research-based review)*
+```
+
+**Integration with PR Review Process:**
+
+1. Human opens PR with proposed ADR
+2. `adr-researcher --review` runs automatically (or on request)
+3. Research-based review posted as PR comment
+4. Human reviewer incorporates findings
+5. ADR updated based on validated research
+6. Merge proceeds with research-backed confidence
 
 ## Documentation Index Architecture
 
@@ -841,8 +1251,7 @@ The documentation index approach aligns with emerging industry standards (llms.t
 
 | ADR | Relationship |
 |-----|--------------|
-| [ADR-LLM-Inefficiency-Reporting](../ADR-LLM-Inefficiency-Reporting.md) | Documentation indexes help detect Tool Discovery Failures (Category 1 in inefficiency taxonomy) |
-| [ADR-Jib-Repo-Onboarding](../not-implemented/ADR-Jib-Repo-Onboarding.md) | Extends this ADR with repository-specific onboarding patterns |
+| [ADR-LLM-Inefficiency-Reporting](ADR-LLM-Inefficiency-Reporting.md) | Documentation indexes help detect Tool Discovery Failures (Category 1 in inefficiency taxonomy) |
 
 ---
 

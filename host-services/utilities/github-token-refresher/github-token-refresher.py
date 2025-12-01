@@ -22,12 +22,16 @@ Options:
 
 import argparse
 import json
-import logging
 import subprocess
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+
+
+# Add shared directory to path for jib_logging
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from jib_logging import get_logger
 
 
 # Configuration
@@ -37,13 +41,8 @@ TOKEN_FILE = SHARING_DIR / ".github-token"
 REFRESH_INTERVAL_SECONDS = 45 * 60  # 45 minutes
 TOKEN_VALIDITY_SECONDS = 60 * 60  # 1 hour (GitHub's limit)
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+# Initialize logger
+logger = get_logger("github-token-refresher")
 
 
 def find_token_script() -> Path | None:
@@ -159,9 +158,19 @@ def write_token_file(token: str) -> bool:
         temp_file.write_text(json.dumps(data, indent=2) + "\n")
         temp_file.chmod(0o600)  # Restrict permissions
         temp_file.rename(TOKEN_FILE)
+        logger.debug(
+            "Token file written",
+            token_file=str(TOKEN_FILE),
+            expires_at=data["expires_at"],
+        )
         return True
     except Exception as e:
-        logger.error(f"Failed to write token file: {e}")
+        logger.error(
+            "Failed to write token file",
+            token_file=str(TOKEN_FILE),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return False
 
 
@@ -193,11 +202,14 @@ def token_needs_refresh(token_data: dict | None) -> bool:
 
 def refresh_token() -> bool:
     """Generate a new token and write it to the shared file."""
-    logger.info("Generating new GitHub App token...")
+    logger.info("Generating new GitHub App token")
 
     token, error = generate_token()
     if error:
-        logger.error(f"Token generation failed: {error}")
+        logger.error(
+            "Token generation failed",
+            error=error,
+        )
         return False
 
     if not write_token_file(token):
@@ -206,27 +218,37 @@ def refresh_token() -> bool:
     # Verify the write
     token_data = read_current_token()
     if not token_data or token_data.get("token") != token:
-        logger.error("Token verification failed")
+        logger.error(
+            "Token verification failed",
+            token_file=str(TOKEN_FILE),
+        )
         return False
 
-    logger.info(f"Token refreshed successfully. Expires at: {token_data.get('expires_at')}")
+    logger.info(
+        "Token refreshed successfully",
+        expires_at=token_data.get("expires_at"),
+        validity_seconds=TOKEN_VALIDITY_SECONDS,
+    )
     return True
 
 
 def run_once() -> bool:
     """Run a single token refresh cycle."""
     if not has_app_credentials():
-        logger.warning("GitHub App credentials not configured")
-        logger.warning(f"Expected files in {CONFIG_DIR}:")
-        logger.warning("  - github-app-id")
-        logger.warning("  - github-app-installation-id")
-        logger.warning("  - github-app.pem")
+        logger.warning(
+            "GitHub App credentials not configured",
+            config_dir=str(CONFIG_DIR),
+            required_files=["github-app-id", "github-app-installation-id", "github-app.pem"],
+        )
         return False
 
     current = read_current_token()
 
     if not token_needs_refresh(current):
-        logger.info("Token is still valid, no refresh needed")
+        logger.info(
+            "Token is still valid, no refresh needed",
+            expires_at=current.get("expires_at") if current else None,
+        )
         return True
 
     return refresh_token()
@@ -234,17 +256,24 @@ def run_once() -> bool:
 
 def run_daemon(interval: int = REFRESH_INTERVAL_SECONDS) -> None:
     """Run as a daemon, refreshing tokens periodically."""
-    logger.info("Starting GitHub Token Refresher daemon")
-    logger.info(f"Refresh interval: {interval // 60} minutes")
-    logger.info(f"Token file: {TOKEN_FILE}")
+    logger.info(
+        "Starting GitHub Token Refresher daemon",
+        refresh_interval_minutes=interval // 60,
+        token_file=str(TOKEN_FILE),
+        config_dir=str(CONFIG_DIR),
+    )
 
     if not has_app_credentials():
-        logger.error("GitHub App credentials not configured. Exiting.")
+        logger.error(
+            "GitHub App credentials not configured, exiting",
+            config_dir=str(CONFIG_DIR),
+        )
         sys.exit(1)
 
     # Initial refresh
     refresh_token()
 
+    refresh_count = 0
     while True:
         try:
             time.sleep(interval)
@@ -252,14 +281,25 @@ def run_daemon(interval: int = REFRESH_INTERVAL_SECONDS) -> None:
             current = read_current_token()
             if token_needs_refresh(current):
                 refresh_token()
+                refresh_count += 1
             else:
-                logger.debug("Token still valid, skipping refresh")
+                logger.debug(
+                    "Token still valid, skipping refresh",
+                    expires_at=current.get("expires_at") if current else None,
+                )
 
         except KeyboardInterrupt:
-            logger.info("Received interrupt, shutting down...")
+            logger.info(
+                "Received interrupt, shutting down",
+                total_refreshes=refresh_count,
+            )
             break
         except Exception as e:
-            logger.error(f"Error during refresh cycle: {e}")
+            logger.error(
+                "Error during refresh cycle",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             # Continue running even on errors
 
 
@@ -280,8 +320,10 @@ def main():
 
     args = parser.parse_args()
 
+    # Note: jib_logging handles log levels via environment variables (LOG_LEVEL)
+    # --verbose flag can be used to remind users about this
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
+        logger.info("Verbose mode requested - set LOG_LEVEL=DEBUG for debug logging")
 
     if args.once:
         success = run_once()

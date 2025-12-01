@@ -6,7 +6,6 @@ Runs all configured connectors and syncs content to ~/context-sync/<connector-na
 """
 
 import argparse
-import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,24 +16,22 @@ from utils.config_loader import load_env_file
 
 load_env_file()
 
+# Add shared directory to path for jib_logging
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+
 # Import connectors
 from connectors.confluence.connector import ConfluenceConnector
 from connectors.jira.connector import JIRAConnector
+from jib_logging import get_logger
 
 
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(
-            Path.home() / "context-sync" / "logs" / f"sync_{datetime.now().strftime('%Y%m%d')}.log"
-        ),
-    ],
-)
+# Initialize logger
+logger = get_logger("context-sync")
 
-logger = logging.getLogger("context-sync")
+# Add file handler for persistent logs
+log_dir = Path.home() / "context-sync" / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+logger.add_file_handler(log_dir / f"sync_{datetime.now().strftime('%Y%m%d')}.log")
 
 
 def get_all_connectors() -> list:
@@ -50,20 +47,38 @@ def get_all_connectors() -> list:
         connector = ConfluenceConnector()
         if connector.validate_config():
             connectors.append(connector)
+            logger.debug("Initialized connector", connector_name="confluence")
         else:
-            logger.warning("Confluence connector configuration invalid, skipping")
+            logger.warning(
+                "Connector configuration invalid, skipping",
+                connector_name="confluence",
+            )
     except Exception as e:
-        logger.error(f"Failed to initialize Confluence connector: {e}")
+        logger.error(
+            "Failed to initialize connector",
+            connector_name="confluence",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     # JIRA connector
     try:
         connector = JIRAConnector()
         if connector.validate_config():
             connectors.append(connector)
+            logger.debug("Initialized connector", connector_name="jira")
         else:
-            logger.warning("JIRA connector configuration invalid, skipping")
+            logger.warning(
+                "Connector configuration invalid, skipping",
+                connector_name="jira",
+            )
     except Exception as e:
-        logger.error(f"Failed to initialize JIRA connector: {e}")
+        logger.error(
+            "Failed to initialize connector",
+            connector_name="jira",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     # Add more connectors here as they are implemented
     # Example:
@@ -101,12 +116,20 @@ def sync_all_connectors(incremental: bool = True) -> dict:
         logger.warning("No connectors configured or available")
         return results
 
-    logger.info(f"Running sync for {len(connectors)} connector(s)")
+    connector_names = [c.name for c in connectors]
+    logger.info(
+        "Running sync for connectors",
+        connector_count=len(connectors),
+        connectors=connector_names,
+        incremental=incremental,
+    )
 
     for connector in connectors:
-        logger.info(f"{'=' * 60}")
-        logger.info(f"Syncing: {connector.name}")
-        logger.info(f"{'=' * 60}")
+        logger.info(
+            "Starting connector sync",
+            connector_name=connector.name,
+            incremental=incremental,
+        )
 
         try:
             success = connector.sync(incremental=incremental)
@@ -118,11 +141,27 @@ def sync_all_connectors(incremental: bool = True) -> dict:
                 results["success_count"] += 1
                 results["total_files"] += metadata["file_count"]
                 results["total_size"] += metadata["total_size"]
+                logger.info(
+                    "Connector sync completed successfully",
+                    connector_name=connector.name,
+                    file_count=metadata["file_count"],
+                    total_size_bytes=metadata["total_size"],
+                    output_dir=metadata.get("output_dir"),
+                )
             else:
                 results["failure_count"] += 1
+                logger.warning(
+                    "Connector sync completed with failures",
+                    connector_name=connector.name,
+                )
 
         except Exception as e:
-            logger.error(f"Error syncing {connector.name}: {e}")
+            logger.error(
+                "Error syncing connector",
+                connector_name=connector.name,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             results["connectors"][connector.name] = {"success": False, "error": str(e)}
             results["failure_count"] += 1
 
@@ -179,7 +218,10 @@ def main():
     log_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        logger.info("Starting context-sync")
+        logger.info(
+            "Starting context-sync",
+            mode="full" if args.full else "incremental",
+        )
         results = sync_all_connectors(incremental=not args.full)
 
         if not args.quiet:
@@ -187,17 +229,30 @@ def main():
 
         # Return exit code based on results
         if results["failure_count"] > 0:
-            logger.error(f"{results['failure_count']} connector(s) failed")
+            logger.error(
+                "Context-sync completed with failures",
+                failure_count=results["failure_count"],
+                success_count=results["success_count"],
+            )
             return 1
 
-        logger.info("Context-sync completed successfully")
+        logger.info(
+            "Context-sync completed successfully",
+            connector_count=results["success_count"],
+            total_files=results["total_files"],
+            total_size_mb=round(results["total_size"] / (1024 * 1024), 2),
+        )
         return 0
 
     except KeyboardInterrupt:
         logger.info("Sync interrupted by user")
         return 130
     except Exception as e:
-        logger.error(f"Sync failed: {e}", exc_info=True)
+        logger.error(
+            "Sync failed with unexpected error",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return 1
 
 
