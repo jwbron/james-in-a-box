@@ -221,9 +221,8 @@ class DocGenerator:
                 mentions_adr = adr_slug in content
                 mentions_concepts = any(c.lower() in content for c in concepts[:5])
 
-                if mentions_adr or mentions_concepts:
-                    if doc_path not in affected_docs:
-                        affected_docs.append(doc_path)
+                if (mentions_adr or mentions_concepts) and doc_path not in affected_docs:
+                    affected_docs.append(doc_path)
 
         return affected_docs
 
