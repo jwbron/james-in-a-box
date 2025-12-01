@@ -502,7 +502,7 @@ Context should be layered based on scope and relevance:
 │  │ - Security boundaries (what NOT to do)                       │ │
 │  │ - Output format requirements                                 │ │
 │  │                                                               │ │
-│  │ Size: ~500-1000 tokens                                       │ │
+│  │ Size: ~500-1000 tokens*                                      │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                            │                                      │
 │                            ▼                                      │
@@ -514,7 +514,7 @@ Context should be layered based on scope and relevance:
 │  │ - Relevant ADRs and standards                                │ │
 │  │ - Quality criteria for this workflow                         │ │
 │  │                                                               │ │
-│  │ Size: ~1000-3000 tokens                                      │ │
+│  │ Size: ~1000-3000 tokens*                                     │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                            │                                      │
 │                            ▼                                      │
@@ -542,6 +542,8 @@ Context should be layered based on scope and relevance:
 │  └─────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+> **Note:** Token estimates marked with * are starting guidelines. Calibrate these based on actual usage measurements—different models and tasks may require adjustment.
 
 ### Context Selection Guidelines
 
@@ -696,6 +698,11 @@ agent:
 ### Prompt Composition Engine
 
 ```python
+from typing import Optional
+from jinja2 import Environment, FileSystemLoader
+import yaml
+
+
 class PromptComposer:
     """Composes prompts from templates and context."""
 
@@ -1382,6 +1389,8 @@ Based on discussion with Tyler Burleigh, review stages can be configured at diff
 
 **Recommendation:** Phase-level review is the sweet spot for most workflows. Entire-plan-level review tends to catch too much at once and is harder to act on.
 
+> **Validation Note:** This recommendation should be validated empirically once the system is in production. Different workflow types (bug fixes vs. feature development vs. refactoring) may have different optimal review cadences.
+
 ## Model Selection Strategy
 
 ### Task-Complexity Mapping
@@ -1455,7 +1464,9 @@ class ModelSelector:
 
 **Multi-Model Consensus (Advanced):**
 
-For high-stakes decisions, consider running multiple models in parallel and synthesizing results:
+For high-stakes decisions, consider running multiple models in parallel and synthesizing results.
+
+> **Cost Consideration:** Multi-model consensus runs several models concurrently, which can be expensive. Reserve this pattern for decisions where correctness is critical and errors are costly—security decisions, architectural choices, or safety-critical code paths. For routine development tasks, single-model execution is typically sufficient.
 
 ```python
 async def consensus_decision(query, context):
