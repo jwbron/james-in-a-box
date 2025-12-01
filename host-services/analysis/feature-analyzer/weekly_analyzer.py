@@ -53,6 +53,80 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 from jib_exec import jib_exec
 
 
+def _run_llm_prompt_shared(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, str, str | None]:
+    """
+    Run an LLM prompt via jib container.
+
+    This shared function is used by both WeeklyAnalyzer and RepoAnalyzer.
+    Host-side code cannot directly call Claude - it's only available inside
+    the container. This method uses jib_exec to invoke the analysis processor.
+
+    Args:
+        repo_root: Path to the repository root
+        prompt: The prompt to send to the LLM
+        context_name: Optional name for logging/debugging
+
+    Returns:
+        Tuple of (success, stdout, error_message)
+    """
+    try:
+        result = jib_exec(
+            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            task_type="llm_prompt",
+            context={
+                "prompt": prompt,
+                "timeout": 300,
+                "cwd": str(repo_root),
+                "stream": False,
+            },
+            timeout=420,  # Extra time for container startup
+        )
+
+        if result.success and result.json_output:
+            output = result.json_output.get("result", {})
+            stdout = output.get("stdout", "")
+            return (True, stdout, None)
+
+        # Handle failure - build detailed error message
+        error_parts = []
+
+        # Check for jib-level error
+        if result.error:
+            error_parts.append(result.error)
+
+        # Check for processor-level error in JSON response
+        if result.json_output:
+            processor_error = result.json_output.get("error")
+            if processor_error:
+                error_parts.append(f"Processor: {processor_error}")
+            # Also check if there's a result with stderr
+            processor_result = result.json_output.get("result", {})
+            if isinstance(processor_result, dict) and processor_result.get("stderr"):
+                error_parts.append(f"stderr: {processor_result['stderr'][:200]}")
+
+        # If success=True but json_output is None, the jib command ran but
+        # we couldn't parse the output - include raw stdout for debugging
+        if result.success and not result.json_output:
+            if result.stdout:
+                stdout_preview = result.stdout[:300].replace("\n", "\\n")
+                error_parts.append(f"jib succeeded but no JSON parsed. stdout: {stdout_preview}")
+            else:
+                error_parts.append("jib succeeded but returned empty stdout")
+
+        # If nothing specific, check stderr
+        if not error_parts and result.stderr:
+            error_parts.append(f"stderr: {result.stderr[:200]}")
+
+        # Build final error message
+        error_msg = "; ".join(error_parts) if error_parts else "Unknown error (no details available)"
+        return (False, "", error_msg)
+
+    except Exception as e:
+        return (False, "", str(e))
+
+
 @dataclass
 class CommitInfo:
     """Information about a single commit."""
@@ -169,32 +243,7 @@ class WeeklyAnalyzer:
         Returns:
             Tuple of (success, stdout, error_message)
         """
-        try:
-            result = jib_exec(
-                processor="jib-container/jib-tasks/analysis/analysis-processor.py",
-                task_type="llm_prompt",
-                context={
-                    "prompt": prompt,
-                    "timeout": 300,
-                    "cwd": str(self.repo_root),
-                    "stream": False,
-                },
-                timeout=420,  # Extra time for container startup
-            )
-
-            if result.success and result.json_output:
-                output = result.json_output.get("result", {})
-                stdout = output.get("stdout", "")
-                return (True, stdout, None)
-
-            # Handle failure
-            error_msg = result.error or "Unknown error"
-            if result.json_output:
-                error_msg = result.json_output.get("error") or error_msg
-            return (False, "", error_msg)
-
-        except Exception as e:
-            return (False, "", str(e))
+        return _run_llm_prompt_shared(self.repo_root, prompt, context_name)
 
     def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
         """Run a git command in the repo root."""
@@ -1370,32 +1419,7 @@ class RepoAnalyzer:
         Returns:
             Tuple of (success, stdout, error_message)
         """
-        try:
-            result = jib_exec(
-                processor="jib-container/jib-tasks/analysis/analysis-processor.py",
-                task_type="llm_prompt",
-                context={
-                    "prompt": prompt,
-                    "timeout": 300,
-                    "cwd": str(self.repo_root),
-                    "stream": False,
-                },
-                timeout=420,  # Extra time for container startup
-            )
-
-            if result.success and result.json_output:
-                output = result.json_output.get("result", {})
-                stdout = output.get("stdout", "")
-                return (True, stdout, None)
-
-            # Handle failure
-            error_msg = result.error or "Unknown error"
-            if result.json_output:
-                error_msg = result.json_output.get("error") or error_msg
-            return (False, "", error_msg)
-
-        except Exception as e:
-            return (False, "", str(e))
+        return _run_llm_prompt_shared(self.repo_root, prompt, context_name)
 
     def _is_git_ignored(self, path: Path | str) -> bool:
         """
