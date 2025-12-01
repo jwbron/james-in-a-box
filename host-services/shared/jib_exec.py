@@ -38,6 +38,7 @@ See also:
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -281,6 +282,94 @@ def _process_result(result: subprocess.CompletedProcess) -> JibResult:
     return _process_result_from_parts(result.returncode, result.stdout, result.stderr)
 
 
+def _extract_json_from_output(stdout: str) -> dict | None:
+    """Extract JSON object from stdout that may contain status/progress messages.
+
+    The jib command outputs status bar messages before the actual JSON output
+    from the processor. This function searches for JSON in the output.
+
+    Strategies:
+    1. Try parsing the entire output as JSON (clean output case)
+    2. Find JSON by looking for the processor's output format ({"success": ...})
+    3. Find any complete JSON object by matching braces
+    4. Try each line that looks like JSON
+
+    Args:
+        stdout: Raw stdout from jib command
+
+    Returns:
+        Parsed JSON dict if found, None otherwise
+    """
+    stripped = stdout.strip()
+    if not stripped:
+        return None
+
+    # Strategy 1: Try entire output (handles clean case)
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 2: Find JSON by looking for the processor's output format
+    # analysis-processor.py outputs: {"success": ..., "result": ..., "error": ...}
+    # This is the most reliable pattern for our use case
+    success_match = re.search(r'\{"success":\s*(true|false)', stdout)
+    if success_match:
+        # Find the full JSON object by matching braces
+        start = success_match.start()
+        brace_count = 0
+        end = start
+        for i in range(start, len(stdout)):
+            if stdout[i] == "{":
+                brace_count += 1
+            elif stdout[i] == "}":
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i + 1
+                    break
+        if end > start:
+            try:
+                return json.loads(stdout[start:end])
+            except json.JSONDecodeError:
+                pass
+
+    # Strategy 3: Find the largest complete JSON object by matching braces
+    # Start from each { and find its matching }
+    candidates = []
+    for i, char in enumerate(stdout):
+        if char == "{":
+            brace_count = 0
+            for j in range(i, len(stdout)):
+                if stdout[j] == "{":
+                    brace_count += 1
+                elif stdout[j] == "}":
+                    brace_count -= 1
+                    if brace_count == 0:
+                        candidate = stdout[i : j + 1]
+                        try:
+                            parsed = json.loads(candidate)
+                            candidates.append((len(candidate), parsed))
+                        except json.JSONDecodeError:
+                            pass
+                        break
+
+    # Return the largest valid JSON object (most likely to be the full processor output)
+    if candidates:
+        candidates.sort(reverse=True)  # Sort by size, largest first
+        return candidates[0][1]
+
+    # Strategy 4: Try each line that looks like JSON
+    for line in stdout.split("\n"):
+        line = line.strip()
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+    return None
+
+
 def _process_result_from_parts(returncode: int, stdout: str, stderr: str) -> JibResult:
     """Build a JibResult from return code and output strings."""
     success = returncode == 0
@@ -298,21 +387,19 @@ def _process_result_from_parts(returncode: int, stdout: str, stderr: str) -> Jib
                     error = f"{error}: {line.strip()[:200]}"
                     break
 
-    # Try to parse JSON from stdout
+    # Try to extract JSON from stdout (handles mixed output with status messages)
     if stdout.strip():
-        try:
-            json_output = json.loads(stdout.strip())
-        except json.JSONDecodeError as e:
-            # Not JSON output - log a warning if it looks like it should have been JSON
-            # (e.g., starts with { or [)
+        json_output = _extract_json_from_output(stdout)
+
+        # If we expected JSON but couldn't extract it, add a warning
+        if json_output is None:
             stripped = stdout.strip()
-            if stripped.startswith(("{", "[")):
-                # This looks like it should be JSON but failed to parse
-                # Include the parse error in the result for debugging
+            # Check if there's any hint that JSON was expected
+            if '{"success"' in stripped or stripped.startswith(("{", "[")):
                 if error:
-                    error = f"{error}; JSON parse error: {e}"
+                    error = f"{error}; Could not extract JSON from output"
                 else:
-                    error = f"JSON parse error: {e} (output starts with: {stripped[:100]}...)"
+                    error = f"Could not extract JSON from output (length: {len(stdout)} chars)"
 
     return JibResult(
         success=success,
