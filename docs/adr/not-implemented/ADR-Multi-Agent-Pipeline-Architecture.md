@@ -376,34 +376,32 @@ You are a specialized planning agent. Your job is to analyze a task and create a
 
 Return ONLY valid JSON with this structure:
 
-```json
-{
-  "requirements": {
-    "functional": ["req1", "req2"],
-    "non_functional": ["perf requirement", "security requirement"]
-  },
-  "files_to_change": [
-    {"path": "src/foo.py", "reason": "Add new function"},
-    {"path": "tests/test_foo.py", "reason": "Add tests"}
-  ],
-  "approach": "High-level strategy here",
-  "dependencies": ["ADR-042", "Redis client"],
-  "complexity": "moderate",
-  "estimated_stages": 3
-}
-```
+    {
+      "requirements": {
+        "functional": ["req1", "req2"],
+        "non_functional": ["perf requirement", "security requirement"]
+      },
+      "files_to_change": [
+        {"path": "src/foo.py", "reason": "Add new function"},
+        {"path": "tests/test_foo.py", "reason": "Add tests"}
+      ],
+      "approach": "High-level strategy here",
+      "dependencies": ["ADR-042", "Redis client"],
+      "complexity": "moderate",
+      "estimated_stages": 3
+    }
 
 ## Context
 
-{% if beads_context %}
+{%- if beads_context %}
 ### Previous Work
 {{ beads_context }}
-{% endif %}
+{%- endif %}
 
-{% if related_docs %}
+{%- if related_docs %}
 ### Related Documentation
 {{ related_docs }}
-{% endif %}
+{%- endif %}
 
 ## Important Notes
 
