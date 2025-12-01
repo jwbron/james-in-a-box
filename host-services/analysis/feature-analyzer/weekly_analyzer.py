@@ -262,11 +262,7 @@ class WeeklyAnalyzer:
                 return True
 
         # Check directory patterns
-        for pattern in self.UTILITY_DIRECTORY_PATTERNS:
-            if re.search(pattern, file_path):
-                return True
-
-        return False
+        return any(re.search(pattern, file_path) for pattern in self.UTILITY_DIRECTORY_PATTERNS)
 
     def extract_docstring(self, file_path: Path) -> str | None:
         """
@@ -577,12 +573,21 @@ Only output the JSON, no other text.
                         name = name[:-3]
 
                     # For generic names like "Connector", prefix with parent directory
-                    generic_names = {"connector", "handler", "processor", "service", "client", "manager"}
+                    generic_names = {
+                        "connector",
+                        "handler",
+                        "processor",
+                        "service",
+                        "client",
+                        "manager",
+                    }
                     if file_stem.lower() in generic_names:
                         parent_dir = Path(file_path).parent.name
                         grandparent_dir = Path(file_path).parent.parent.name
                         # Use grandparent if parent is also generic (like "connectors/confluence/connector.py")
-                        context_dir = grandparent_dir if parent_dir.lower() in generic_names else parent_dir
+                        context_dir = (
+                            grandparent_dir if parent_dir.lower() in generic_names else parent_dir
+                        )
                         name = f"{context_dir.replace('_', ' ').replace('-', ' ').title()} {name}"
 
                     # Try to get a meaningful description from docstring
@@ -677,10 +682,14 @@ Only output the JSON, no other text.
             primary_file_lower = feature.primary_file.lower() if feature.primary_file else ""
             if primary_file_lower:
                 if primary_file_lower in existing_files:
-                    skipped.append((feature.name, f"File already documented: {feature.primary_file}"))
+                    skipped.append(
+                        (feature.name, f"File already documented: {feature.primary_file}")
+                    )
                     continue
                 if primary_file_lower in seen_primary_files:
-                    skipped.append((feature.name, f"Duplicate file in batch: {feature.primary_file}"))
+                    skipped.append(
+                        (feature.name, f"Duplicate file in batch: {feature.primary_file}")
+                    )
                     continue
 
             # Check any of the files if primary_file is empty
