@@ -1357,7 +1357,13 @@ class RepoAnalyzer:
             # Check directory name for hints
             dir_name = dir_path.name.lower()
             is_internal = dir_name in ["utils", "helpers", "common", "lib", "internal", "docs"]
-            is_likely_feature_dir = dir_name not in ["__pycache__", ".git", "node_modules", "tests", "test"]
+            is_likely_feature_dir = dir_name not in [
+                "__pycache__",
+                ".git",
+                "node_modules",
+                "tests",
+                "test",
+            ]
 
             # Check for subdirectories with their own README (would be their own features)
             subdirs_with_readme = []
@@ -1374,10 +1380,7 @@ class RepoAnalyzer:
                 return True
             if (has_py or has_sh) and not is_internal and is_likely_feature_dir:
                 return True
-            if has_md_files and ".claude" in str(dir_path):
-                return True
-
-            return False
+            return bool(has_md_files and ".claude" in str(dir_path))
 
         def collect_files(dir_path: Path) -> list[Path]:
             """Collect all relevant source files from a directory."""
