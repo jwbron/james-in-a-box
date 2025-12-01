@@ -120,7 +120,9 @@ def _run_llm_prompt_shared(
             error_parts.append(f"stderr: {result.stderr[:200]}")
 
         # Build final error message
-        error_msg = "; ".join(error_parts) if error_parts else "Unknown error (no details available)"
+        error_msg = (
+            "; ".join(error_parts) if error_parts else "Unknown error (no details available)"
+        )
         return (False, "", error_msg)
 
     except Exception as e:
