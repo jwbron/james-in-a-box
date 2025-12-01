@@ -932,7 +932,7 @@ Period: Last {self.days} days
             latest_report.symlink_to(f"beads-health-{timestamp}.md")
             latest_metrics.symlink_to(f"beads-metrics-{timestamp}.json")
 
-            print(f"✓ Copied reports to worktree")
+            print("✓ Copied reports to worktree")
 
             # Delete old reports if any (in worktree)
             if to_delete:
