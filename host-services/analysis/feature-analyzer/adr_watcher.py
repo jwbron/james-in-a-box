@@ -152,25 +152,21 @@ class ADRWatcher:
         self._save_state()
         print("State reset. All ADRs will be reprocessed on next run.")
 
-    def trigger_sync(
-        self, adr: NewADR, dry_run: bool = False, phase3: bool = False, use_jib: bool = False
-    ) -> bool:
+    def trigger_sync(self, adr: NewADR, dry_run: bool = False, use_jib: bool = True) -> bool:
         """
         Trigger documentation sync for a newly implemented ADR.
 
         Args:
             adr: The newly detected ADR
             dry_run: If True, don't make actual changes
-            phase3: If True, use Phase 3 generation and PR creation
-            use_jib: If True and phase3, use jib containers for LLM generation
+            use_jib: If True (default), use jib containers for LLM generation
 
         Returns True if sync was successful.
         """
         relative_path = adr.path.relative_to(self.repo_root)
 
         if dry_run:
-            mode = "generate (Phase 3)" if phase3 else "sync-docs (Phase 2)"
-            print(f"  [DRY RUN] Would run {mode} for: {relative_path}")
+            print(f"  [DRY RUN] Would run generate for: {relative_path}")
             return True
 
         # Import and use the existing sync functionality
@@ -178,31 +174,18 @@ class ADRWatcher:
             script_dir = Path(__file__).parent
             analyzer_script = script_dir / "feature-analyzer.py"
 
-            if phase3:
-                # Phase 3: Generate updates and create PR
-                cmd = [
-                    sys.executable,
-                    str(analyzer_script),
-                    "generate",
-                    "--adr",
-                    str(relative_path),
-                    "--repo-root",
-                    str(self.repo_root),
-                ]
-                if use_jib:
-                    cmd.append("--use-jib")
-            else:
-                # Phase 2: Sync analysis only (dry-run)
-                cmd = [
-                    sys.executable,
-                    str(analyzer_script),
-                    "sync-docs",
-                    "--adr",
-                    str(relative_path),
-                    "--repo-root",
-                    str(self.repo_root),
-                    "--dry-run",  # Phase 2 still uses dry-run by default
-                ]
+            # Always use generate command (Phase 3)
+            cmd = [
+                sys.executable,
+                str(analyzer_script),
+                "generate",
+                "--adr",
+                str(relative_path),
+                "--repo-root",
+                str(self.repo_root),
+            ]
+            if not use_jib:
+                cmd.append("--no-jib")
 
             result = subprocess.run(
                 cmd,
@@ -213,8 +196,7 @@ class ADRWatcher:
             )
 
             if result.returncode == 0:
-                mode = "Generation" if phase3 else "Sync analysis"
-                print(f"  ✓ {mode} complete for: {relative_path}")
+                print(f"  ✓ Generation complete for: {relative_path}")
                 if result.stdout:
                     # Indent the output
                     for line in result.stdout.strip().split("\n"):
@@ -251,20 +233,19 @@ class ADRWatcher:
 
         return new_adrs
 
-    def run_watch(self, dry_run: bool = False, phase3: bool = False, use_jib: bool = False) -> int:
+    def run_watch(self, dry_run: bool = False, use_jib: bool = True) -> int:
         """
         Main watch loop - detect and process new ADRs.
 
         Args:
             dry_run: If True, don't make actual changes
-            phase3: If True, use Phase 3 generation and PR creation
-            use_jib: If True and phase3, use jib containers for LLM generation
+            use_jib: If True (default), use jib containers for LLM generation
 
         Returns the number of ADRs processed.
         """
-        mode_str = "Phase 3 (with PR creation)" if phase3 else "Phase 2 (analysis only)"
+        jib_str = "with jib" if use_jib else "without jib"
         print(f"ADR Watcher starting at {datetime.now(UTC).isoformat()}")
-        print(f"Mode: {mode_str}")
+        print(f"Mode: Generate documentation updates {jib_str}")
         print(f"Checking: {self.implemented_dir}")
 
         if self.state.last_check_timestamp:
@@ -285,7 +266,7 @@ class ADRWatcher:
         for adr in new_adrs:
             print(f"\nProcessing: {adr.filename}")
 
-            success = self.trigger_sync(adr, dry_run=dry_run, phase3=phase3, use_jib=use_jib)
+            success = self.trigger_sync(adr, dry_run=dry_run, use_jib=use_jib)
 
             if success:
                 if not dry_run:
@@ -371,10 +352,8 @@ def main():
     watcher = ADRWatcher(repo_root)
 
     if args.command == "watch":
-        # Phase 3 with jib is now the default behavior
         count = watcher.run_watch(
             dry_run=args.dry_run,
-            phase3=True,  # Always use Phase 3
             use_jib=not args.no_jib,  # Use jib by default unless --no-jib is passed
         )
         sys.exit(0 if count >= 0 else 1)

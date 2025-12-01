@@ -25,11 +25,11 @@ Usage (Phase 1 - Manual):
   feature-analyzer sync-docs --adr docs/adr/implemented/ADR-Example.md --validate-only
 
 Usage (Phase 3 - Multi-Doc Updates with PR):
-  # Generate doc updates and create PR
+  # Generate doc updates and create PR (uses jib by default)
   feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md
 
-  # Generate with LLM assistance (requires jib)
-  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --use-jib
+  # Generate without jib containers
+  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --no-jib
 
   # Dry-run (show what would be done)
   feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --dry-run
@@ -310,9 +310,9 @@ def main():
         help="Show what would be done without creating PR",
     )
     gen_parser.add_argument(
-        "--use-jib",
+        "--no-jib",
         action="store_true",
-        help="Use jib containers for LLM-powered generation",
+        help="Disable jib containers for LLM-powered generation",
     )
     gen_parser.add_argument(
         "--no-pr",
@@ -401,7 +401,7 @@ def main():
 
             # Generate updates
             print("Generating documentation updates...")
-            generator = DocGenerator(args.repo_root, use_jib=args.use_jib)
+            generator = DocGenerator(args.repo_root, use_jib=not args.no_jib)
             gen_result = generator.generate_updates_for_adr(adr_metadata)
 
             # Validate all updates
