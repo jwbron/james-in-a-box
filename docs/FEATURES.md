@@ -151,6 +151,68 @@ Features are tagged with status flags matching ADR lifecycle:
   - `host-services/analysis/trace-collector/` - Trace collection service
 - **Tests**: `tests/analysis/test_trace_collector.py`
 
+
+### Analysis & Documentation (Auto-detected)
+
+#### Weekly Report Generator **[implemented]** **[needs review]**
+- **Description**: CLI tool providing weekly report generator functionality
+- **Documentation**: [host-services/analysis/inefficiency-detector/README.md](host-services/analysis/inefficiency-detector/README.md) 
+- **Implementation**:
+  - `host-services/analysis/inefficiency-detector/weekly_report_generator.py`
+- **Introduced in**: commit 1b9a93f6
+
+#### Inefficiency Detector **[implemented]** **[needs review]**
+- **Description**: CLI tool providing inefficiency detector functionality
+- **Documentation**: [host-services/analysis/inefficiency-detector/README.md](host-services/analysis/inefficiency-detector/README.md) 
+- **Implementation**:
+  - `host-services/analysis/inefficiency-detector/inefficiency_detector.py`
+- **Introduced in**: commit 15460d91
+
+#### Hook Handler **[implemented]** **[needs review]**
+- **Description**: CLI tool providing hook handler functionality
+- **Documentation**: [host-services/analysis/trace-collector/README.md](host-services/analysis/trace-collector/README.md) 
+- **Implementation**:
+  - `host-services/analysis/trace-collector/hook_handler.py`
+- **Introduced in**: commit 5a376b07
+
+#### Doc Generator **[implemented]** **[needs review]**
+- **Description**: CLI tool providing doc generator functionality
+- **Implementation**:
+  - `host-services/analysis/doc-generator/doc-generator.py`
+- **Introduced in**: commit 831fd3a8
+
+#### Drift Detector **[implemented]** **[needs review]**
+- **Description**: CLI tool providing drift detector functionality
+- **Implementation**:
+  - `host-services/analysis/doc-generator/drift-detector.py`
+- **Introduced in**: commit 9752995e
+
+
+### Context Sync (Auto-detected)
+
+#### Confluence Connector **[implemented]** **[needs review]**
+- **Description**: Confluence connector for context-sync.
+- **Implementation**:
+  - `host-services/sync/context-sync/connectors/confluence/connector.py`
+- **Introduced in**: commit eb796988
+
+#### Jira Connector **[implemented]** **[needs review]**
+- **Description**: JIRA connector for context-sync.
+- **Documentation**: [host-services/sync/context-sync/connectors/jira/README.md](host-services/sync/context-sync/connectors/jira/README.md) 
+- **Implementation**:
+  - `host-services/sync/context-sync/connectors/jira/connector.py`
+- **Introduced in**: commit eb796988
+
+
+### Slack Integration (Auto-detected)
+
+#### Host Command Handler **[implemented]** **[needs review]**
+- **Description**: CLI tool providing host command handler functionality
+- **Documentation**: [host-services/slack/slack-receiver/README.md](host-services/slack/slack-receiver/README.md) 
+- **Implementation**:
+  - `host-services/slack/slack-receiver/host_command_handler.py`
+- **Introduced in**: commit 17754e63
+
 ## Feature Lifecycle
 
 When ADR status changes, corresponding feature entries should be updated:
