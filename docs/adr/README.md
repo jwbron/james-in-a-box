@@ -22,13 +22,13 @@ ADRs are organized by implementation status:
 |-----|---------|
 | [Context Sync Strategy](implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: GitHub MCP implemented ✅, JIRA MCP pending ❌, Confluence sync retained |
 | [LLM Documentation Index Strategy](implemented/ADR-LLM-Documentation-Index-Strategy.md) | LLM-navigable documentation with 6-agent pipeline |
+| [LLM Inefficiency Reporting](implemented/ADR-LLM-Inefficiency-Reporting.md) | Self-improvement through inefficiency detection and reporting (All phases complete) |
 
 ### In Progress
 
 | ADR | Summary |
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
-| [LLM Inefficiency Reporting](in-progress/ADR-LLM-Inefficiency-Reporting.md) | Self-improvement through inefficiency detection and reporting (Phase 1a: Beads Analyzer implemented) |
 
 ### Not Implemented
 
