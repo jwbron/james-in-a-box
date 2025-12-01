@@ -247,9 +247,7 @@ class ADRWatcher:
 
         return new_adrs
 
-    def run_watch(
-        self, dry_run: bool = False, phase3: bool = False, use_jib: bool = False
-    ) -> int:
+    def run_watch(self, dry_run: bool = False, phase3: bool = False, use_jib: bool = False) -> int:
         """
         Main watch loop - detect and process new ADRs.
 
@@ -297,7 +295,9 @@ class ADRWatcher:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ADR Watcher - Automated ADR Detection (Phase 2-3)")
+    parser = argparse.ArgumentParser(
+        description="ADR Watcher - Automated ADR Detection (Phase 2-3)"
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 

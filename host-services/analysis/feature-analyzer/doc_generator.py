@@ -17,7 +17,6 @@ Usage:
     updates = generator.generate_updates_for_adr(adr_metadata, affected_docs)
 """
 
-import json
 import os
 import re
 import subprocess
@@ -26,6 +25,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
+
 
 if TYPE_CHECKING:
     from feature_analyzer import ADRMetadata
@@ -104,13 +104,11 @@ class DocGenerator:
                 }
             elif current_feature:
                 if line.startswith("- **Description**:"):
-                    current_feature["description"] = line.replace(
-                        "- **Description**:", ""
-                    ).strip()
+                    current_feature["description"] = line.replace("- **Description**:", "").strip()
                 elif line.startswith("  - ") and "Implementation" not in line:
                     # Capture implementation files
                     current_feature["implementation"].append(line.strip().lstrip("- "))
-                elif line.startswith("####") or line.startswith("###"):
+                elif line.startswith(("####", "###")):
                     # End of current feature
                     features.append(current_feature)
                     current_feature = None
@@ -174,9 +172,7 @@ class DocGenerator:
 
         return unique_concepts[:20]  # Limit to top 20
 
-    def map_adr_to_docs(
-        self, adr_path: Path, adr_content: str, concepts: list[str]
-    ) -> list[Path]:
+    def map_adr_to_docs(self, adr_path: Path, adr_content: str, concepts: list[str]) -> list[Path]:
         """
         Identify documentation files affected by this ADR.
 
@@ -253,18 +249,14 @@ Update this documentation to accurately reflect the implemented ADR. Follow thes
 Output ONLY the updated documentation content. Do not include any explanation or commentary outside the documentation.
 """
 
-    def _call_jib_for_generation(
-        self, prompt: str, doc_path: Path
-    ) -> tuple[str, float]:
+    def _call_jib_for_generation(self, prompt: str, doc_path: Path) -> tuple[str, float]:
         """
         Use jib container to generate documentation update.
 
         Returns (updated_content, confidence_score).
         """
         # Write prompt to temp file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
             f.write(prompt)
             prompt_file = f.name
 
@@ -287,6 +279,7 @@ Output ONLY the updated documentation content. Do not include any explanation or
                     "-p",
                     prompt,
                 ],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minute timeout
@@ -328,7 +321,6 @@ Output ONLY the updated documentation content. Do not include any explanation or
         # - Updating status flags in FEATURES.md
 
         changes_summary = ""
-        updated_content = doc_content
 
         # Handle FEATURES.md specially - update status if needed
         if doc_path.name == "FEATURES.md":
@@ -336,15 +328,15 @@ Output ONLY the updated documentation content. Do not include any explanation or
             # Look for feature entries that reference this ADR
             # and update their status to [implemented] if not already
             pattern = r"\*\*\[in-progress\]\*\*"
-            if adr_slug.lower() in doc_content.lower() and re.search(
-                pattern, doc_content
-            ):
+            if adr_slug.lower() in doc_content.lower() and re.search(pattern, doc_content):
                 # This is a simplified update - real implementation would be smarter
                 changes_summary = f"Feature status may need update based on {adr_title}"
                 return (doc_content, 0.5, changes_summary)
 
         # For other docs, just flag them as potentially needing review
-        changes_summary = f"Document references concepts from {adr_title} - manual review recommended"
+        changes_summary = (
+            f"Document references concepts from {adr_title} - manual review recommended"
+        )
         return (doc_content, 0.4, changes_summary)
 
     def generate_updates_for_adr(
@@ -373,9 +365,7 @@ Output ONLY the updated documentation content. Do not include any explanation or
 
         # Map to affected docs if not provided
         if affected_docs is None:
-            affected_docs = self.map_adr_to_docs(
-                adr_metadata.path, adr_content, concepts
-            )
+            affected_docs = self.map_adr_to_docs(adr_metadata.path, adr_content, concepts)
 
         print(f"  Concepts extracted: {concepts[:5]}...")
         print(f"  Affected documents: {len(affected_docs)}")
@@ -391,25 +381,19 @@ Output ONLY the updated documentation content. Do not include any explanation or
                     )
 
                     # Call jib for generation
-                    updated_content, confidence = self._call_jib_for_generation(
-                        prompt, doc_path
-                    )
+                    updated_content, confidence = self._call_jib_for_generation(prompt, doc_path)
 
                     if updated_content:
                         changes_summary = f"LLM-generated update for {adr_metadata.title}"
                     else:
                         # Fallback to simple update
-                        updated_content, confidence, changes_summary = (
-                            self._generate_simple_update(
-                                adr_content, adr_metadata.title, doc_path, doc_content
-                            )
+                        updated_content, confidence, changes_summary = self._generate_simple_update(
+                            adr_content, adr_metadata.title, doc_path, doc_content
                         )
                 else:
                     # No jib - use simple update
-                    updated_content, confidence, changes_summary = (
-                        self._generate_simple_update(
-                            adr_content, adr_metadata.title, doc_path, doc_content
-                        )
+                    updated_content, confidence, changes_summary = self._generate_simple_update(
+                        adr_content, adr_metadata.title, doc_path, doc_content
                     )
 
                 # Create update if content changed
@@ -423,18 +407,14 @@ Output ONLY the updated documentation content. Do not include any explanation or
                     )
                     result.updates.append(update)
                 else:
-                    result.skipped_docs.append(
-                        (doc_path, "No changes needed or generation failed")
-                    )
+                    result.skipped_docs.append((doc_path, "No changes needed or generation failed"))
 
             except Exception as e:
                 result.errors.append(f"Error processing {doc_path}: {e}")
 
         return result
 
-    def validate_update(
-        self, original: str, updated: str
-    ) -> tuple[bool, list[str]]:
+    def validate_update(self, original: str, updated: str) -> tuple[bool, list[str]]:
         """
         Validate a proposed documentation update.
 
@@ -454,12 +434,8 @@ Output ONLY the updated documentation content. Do not include any explanation or
             errors.append(f"Document length shrunk by {reduction:.0f}% (max 50% allowed)")
 
         # Check 2: Major sections preserved
-        original_headers = [
-            line for line in original.split("\n") if line.startswith("## ")
-        ]
-        updated_headers = [
-            line for line in updated.split("\n") if line.startswith("## ")
-        ]
+        original_headers = [line for line in original.split("\n") if line.startswith("## ")]
+        updated_headers = [line for line in updated.split("\n") if line.startswith("## ")]
 
         removed_headers = set(original_headers) - set(updated_headers)
         if removed_headers:
@@ -471,9 +447,7 @@ Output ONLY the updated documentation content. Do not include any explanation or
         updated_links = re.findall(link_pattern, updated)
 
         if len(updated_links) < len(original_links) * 0.7:
-            errors.append(
-                f"Links reduced from {len(original_links)} to {len(updated_links)}"
-            )
+            errors.append(f"Links reduced from {len(original_links)} to {len(updated_links)}")
 
         # Check 4: Diff bounds
         diff_chars = abs(len(original) - len(updated))
@@ -492,9 +466,7 @@ Output ONLY the updated documentation content. Do not include any explanation or
         Updates the validation_passed and validation_errors fields.
         """
         for update in result.updates:
-            passed, errors = self.validate_update(
-                update.original_content, update.updated_content
-            )
+            passed, errors = self.validate_update(update.original_content, update.updated_content)
             update.validation_passed = passed
             update.validation_errors = errors
 
@@ -513,9 +485,7 @@ def main():
         default=Path.cwd(),
         help="Repository root directory",
     )
-    parser.add_argument(
-        "--no-jib", action="store_true", help="Skip jib container generation"
-    )
+    parser.add_argument("--no-jib", action="store_true", help="Skip jib container generation")
 
     args = parser.parse_args()
 
@@ -535,7 +505,7 @@ def main():
     result = generator.generate_updates_for_adr(adr_metadata)
     result = generator.validate_all_updates(result)
 
-    print(f"\nGeneration Results:")
+    print("\nGeneration Results:")
     print(f"  Updates generated: {len(result.updates)}")
     print(f"  Docs skipped: {len(result.skipped_docs)}")
     print(f"  Errors: {len(result.errors)}")

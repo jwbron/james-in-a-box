@@ -408,7 +408,7 @@ def main():
             gen_result = generator.validate_all_updates(gen_result)
 
             # Report results
-            print(f"\nGeneration Results:")
+            print("\nGeneration Results:")
             print(f"  Updates generated: {len(gen_result.updates)}")
             print(f"  Docs skipped: {len(gen_result.skipped_docs)}")
 
@@ -449,7 +449,7 @@ def main():
                 )
 
                 if pr_result.success:
-                    print(f"\n✓ PR created successfully!")
+                    print("\n✓ PR created successfully!")
                     print(f"  Branch: {pr_result.branch_name}")
                     if pr_result.pr_url:
                         print(f"  PR URL: {pr_result.pr_url}")

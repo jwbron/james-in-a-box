@@ -20,13 +20,14 @@ Usage:
     pr_url = creator.create_doc_sync_pr(adr_metadata, updates)
 """
 
-import os
+import contextlib
 import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+
 
 if TYPE_CHECKING:
     from doc_generator import GeneratedUpdate
@@ -72,9 +73,7 @@ class PRCreator:
 
     def _branch_exists(self, branch_name: str) -> bool:
         """Check if a branch exists (local or remote)."""
-        result = self._run_git(
-            "show-ref", "--verify", f"refs/heads/{branch_name}", check=False
-        )
+        result = self._run_git("show-ref", "--verify", f"refs/heads/{branch_name}", check=False)
         if result.returncode == 0:
             return True
 
@@ -202,10 +201,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             pr_url = result.stdout.strip()
             pr_number = None
             if pr_url and "/" in pr_url:
-                try:
+                with contextlib.suppress(ValueError):
                     pr_number = int(pr_url.split("/")[-1])
-                except ValueError:
-                    pass
 
             return PRResult(
                 success=True,
@@ -272,7 +269,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
 
         # Handle dry run
         if dry_run:
-            print(f"  [DRY RUN] Would create PR:")
+            print("  [DRY RUN] Would create PR:")
             print(f"    Branch: {branch_name}")
             print(f"    Files: {len(valid_updates)}")
             for update in valid_updates:
@@ -311,7 +308,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                 )
 
             # Commit changes
-            print(f"  Committing changes...")
+            print("  Committing changes...")
             if not self._commit_changes(written_files, adr_title, adr_path):
                 return PRResult(
                     success=False,
@@ -319,7 +316,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                 )
 
             # Push branch
-            print(f"  Pushing branch to origin...")
+            print("  Pushing branch to origin...")
             if not self._push_branch(branch_name):
                 return PRResult(
                     success=False,
@@ -361,7 +358,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
             # Create PR
             pr_title = f"docs: Sync documentation with {adr_title}"
-            print(f"  Creating PR...")
+            print("  Creating PR...")
 
             result = self._create_pr_with_gh(branch_name, pr_title, pr_body)
 
@@ -376,10 +373,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
         finally:
             # Return to original branch
-            try:
+            with contextlib.suppress(Exception):
                 self._run_git("checkout", original_branch, check=False)
-            except Exception:
-                pass
 
 
 def main():
@@ -434,7 +429,7 @@ def main():
         dry_run=args.dry_run,
     )
 
-    print(f"\nPR Creation Result:")
+    print("\nPR Creation Result:")
     print(f"  Success: {result.success}")
     print(f"  Branch: {result.branch_name}")
     print(f"  PR URL: {result.pr_url}")

@@ -14,6 +14,7 @@ According to ADR, this accounts for ~45% of inefficiencies.
 import sys
 from pathlib import Path
 
+
 # Add paths for imports
 base_path = Path(__file__).parent.parent
 sys.path.insert(0, str(base_path))
@@ -21,7 +22,7 @@ sys.path.insert(0, str(base_path.parent / "trace-collector"))
 
 from base_detector import BaseDetector
 from inefficiency_schema import DetectedInefficiency, InefficiencyCategory, Severity
-from schemas import TraceEvent, ToolCategory
+from schemas import ToolCategory, TraceEvent
 
 
 class ToolDiscoveryDetector(BaseDetector):
@@ -113,7 +114,9 @@ class ToolDiscoveryDetector(BaseDetector):
                             token_cost=actual_cost,
                             estimated_optimal_cost=optimal_cost,
                             wasted_tokens=wasted_tokens,
-                            wasted_percentage=(wasted_tokens / actual_cost * 100) if actual_cost > 0 else 0,
+                            wasted_percentage=(wasted_tokens / actual_cost * 100)
+                            if actual_cost > 0
+                            else 0,
                             description=f"Searched {len(all_events)} times with {len(zero_results)} empty results before finding target",
                             recommendation=recommendation,
                             turn_range=self._get_turn_range(all_events),
@@ -123,7 +126,9 @@ class ToolDiscoveryDetector(BaseDetector):
                                     {
                                         "tool": e.tool_name,
                                         "pattern": e.tool_params.pattern if e.tool_params else None,
-                                        "results": e.tool_result.match_count if e.tool_result else None,
+                                        "results": e.tool_result.match_count
+                                        if e.tool_result
+                                        else None,
                                     }
                                     for e in all_events
                                 ],
@@ -148,18 +153,17 @@ class ToolDiscoveryDetector(BaseDetector):
         consecutive_failures = []
         for event in events:
             if event.tool_category in (ToolCategory.SEARCH, ToolCategory.FILE_READ):
-                if event.tool_name in ("Grep", "Glob"):
-                    if event.tool_result:
-                        match_count = event.tool_result.match_count or event.tool_result.file_count or 0
-                        if match_count == 0:
-                            consecutive_failures.append(event)
-                        else:
-                            # Success - check if we had a pattern
-                            if len(consecutive_failures) >= 3:
-                                self._create_search_failure_inefficiency(
-                                    consecutive_failures, inefficiencies
-                                )
-                            consecutive_failures = []
+                if event.tool_name in ("Grep", "Glob") and event.tool_result:
+                    match_count = event.tool_result.match_count or event.tool_result.file_count or 0
+                    if match_count == 0:
+                        consecutive_failures.append(event)
+                    else:
+                        # Success - check if we had a pattern
+                        if len(consecutive_failures) >= 3:
+                            self._create_search_failure_inefficiency(
+                                consecutive_failures, inefficiencies
+                            )
+                        consecutive_failures = []
 
         # Check final sequence
         if len(consecutive_failures) >= 3:
@@ -254,7 +258,9 @@ class ToolDiscoveryDetector(BaseDetector):
                                     evidence={
                                         "tool": curr.tool_name,
                                         "error_message": curr.tool_result.error_message,
-                                        "failed_params": curr.tool_params.raw if curr.tool_params else {},
+                                        "failed_params": curr.tool_params.raw
+                                        if curr.tool_params
+                                        else {},
                                         "success_params": next_event.tool_params.raw
                                         if next_event.tool_params
                                         else {},
