@@ -1356,6 +1356,47 @@ class RepoAnalyzer:
         # Cache for gitignore check results to avoid repeated subprocess calls
         self._gitignore_cache: dict[str, bool] = {}
 
+    def _run_llm_prompt(self, prompt: str, context_name: str = "") -> tuple[bool, str, str | None]:
+        """
+        Run an LLM prompt via jib container.
+
+        Host-side code cannot directly call Claude - it's only available inside
+        the container. This method uses jib_exec to invoke the analysis processor.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            context_name: Optional name for logging/debugging
+
+        Returns:
+            Tuple of (success, stdout, error_message)
+        """
+        try:
+            result = jib_exec(
+                processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+                task_type="llm_prompt",
+                context={
+                    "prompt": prompt,
+                    "timeout": 300,
+                    "cwd": str(self.repo_root),
+                    "stream": False,
+                },
+                timeout=420,  # Extra time for container startup
+            )
+
+            if result.success and result.json_output:
+                output = result.json_output.get("result", {})
+                stdout = output.get("stdout", "")
+                return (True, stdout, None)
+
+            # Handle failure
+            error_msg = result.error or "Unknown error"
+            if result.json_output:
+                error_msg = result.json_output.get("error") or error_msg
+            return (False, "", error_msg)
+
+        except Exception as e:
+            return (False, "", str(e))
+
     def _is_git_ignored(self, path: Path | str) -> bool:
         """
         Check if a path is ignored by git using 'git check-ignore'.
