@@ -1541,7 +1541,7 @@ If no clear features, return: `[]`
         for i, f in enumerate(all_features):
             files_str = ", ".join(f.files[:3]) if f.files else "none"
             feature_summaries.append(
-                f"{i+1}. {f.name} ({f.category}, {f.confidence:.0%})\n"
+                f"{i + 1}. {f.name} ({f.category}, {f.confidence:.0%})\n"
                 f"   Files: {files_str}\n"
                 f"   Description: {f.description}"
             )
@@ -1721,26 +1721,28 @@ Return ONLY a JSON array of the consolidated features:
                 lines.append("")
                 feature_num += 1
 
-        lines.extend([
-            "---",
-            "",
-            "## Maintaining This List",
-            "",
-            "This feature list is maintained by the Feature Analyzer tool.",
-            "",
-            "### Update Commands",
-            "",
-            "```bash",
-            "# Regenerate entire list from scratch",
-            "feature-analyzer full-repo --repo-root /path/to/repo",
-            "",
-            "# Weekly incremental updates",
-            "feature-analyzer weekly-analyze --days 7",
-            "```",
-            "",
-            f"**Last Updated:** {datetime.now(UTC).strftime('%Y-%m-%d')}",
-            "",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                "## Maintaining This List",
+                "",
+                "This feature list is maintained by the Feature Analyzer tool.",
+                "",
+                "### Update Commands",
+                "",
+                "```bash",
+                "# Regenerate entire list from scratch",
+                "feature-analyzer full-repo --repo-root /path/to/repo",
+                "",
+                "# Weekly incremental updates",
+                "feature-analyzer weekly-analyze --days 7",
+                "```",
+                "",
+                f"**Last Updated:** {datetime.now(UTC).strftime('%Y-%m-%d')}",
+                "",
+            ]
+        )
 
         return "\n".join(lines)
 
