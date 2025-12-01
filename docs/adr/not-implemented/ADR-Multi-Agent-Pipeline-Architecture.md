@@ -9,19 +9,6 @@
 
 ---
 
-> **2025 Research Update (December 2025)**: This ADR has been enhanced with the latest industry research and best practices:
-> - [Anthropic's multi-agent system](https://www.anthropic.com/engineering/multi-agent-research-system) achieved **90% performance improvement** over single-agent using Opus 4 lead + Sonnet 4 subagents
-> - Multi-agent systems use **~15× more tokens** than single-agent chats - economic viability requires high-value tasks
-> - **Context engineering** (clear objectives, task boundaries, termination criteria) is the #1 success factor
-> - [40% of agentic AI projects](https://galileo.ai/blog/hidden-cost-of-agentic-ai) are canceled before production due to cost/complexity
-> - Industry has converged on core patterns: Sequential, Parallel, Hierarchical, Consensus, Iterative
-> - **New:** [UC Berkeley's MAST taxonomy](https://arxiv.org/abs/2503.13657) identifies 14 failure modes across 3 categories - essential reading for reliability
-> - **New:** [A2A (Agent2Agent) protocol](https://a2a-protocol.org/) + [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) emerging as interoperability standards
-> - **New:** [OpenAI Agents SDK](https://openai.com/index/new-tools-for-building-agents/) replaced Swarm; parallel execution reducing latency by 20-50%
-> - **New:** Enterprise deployments showing real ROI: Wiley 40%+ case resolution, 1-800Accountant 70% autonomous resolution
-
----
-
 ## Table of Contents
 
 - [Context](#context)
@@ -29,10 +16,10 @@
 - [Decision Matrix](#decision-matrix)
 - [Multi-Agent Architecture](#multi-agent-architecture)
 - [Pipeline Patterns](#pipeline-patterns)
-- [Failure Modes & Reliability](#failure-modes--reliability) *(New)*
-- [Security & Isolation](#security--isolation) *(New)*
-- [Interoperability Standards](#interoperability-standards) *(New)*
-- [Enterprise Case Studies](#enterprise-case-studies) *(New)*
+- [Failure Modes & Reliability](#failure-modes--reliability)
+- [Security & Isolation](#security--isolation)
+- [Interoperability Standards](#interoperability-standards)
+- [Enterprise Case Studies](#enterprise-case-studies)
 - [Implementation Phases](#implementation-phases)
 - [Consequences](#consequences)
 - [Decision Permanence](#decision-permanence)
@@ -389,34 +376,32 @@ You are a specialized planning agent. Your job is to analyze a task and create a
 
 Return ONLY valid JSON with this structure:
 
-```json
-{
-  "requirements": {
-    "functional": ["req1", "req2"],
-    "non_functional": ["perf requirement", "security requirement"]
-  },
-  "files_to_change": [
-    {"path": "src/foo.py", "reason": "Add new function"},
-    {"path": "tests/test_foo.py", "reason": "Add tests"}
-  ],
-  "approach": "High-level strategy here",
-  "dependencies": ["ADR-042", "Redis client"],
-  "complexity": "moderate",
-  "estimated_stages": 3
-}
-```
+    {
+      "requirements": {
+        "functional": ["req1", "req2"],
+        "non_functional": ["perf requirement", "security requirement"]
+      },
+      "files_to_change": [
+        {"path": "src/foo.py", "reason": "Add new function"},
+        {"path": "tests/test_foo.py", "reason": "Add tests"}
+      ],
+      "approach": "High-level strategy here",
+      "dependencies": ["ADR-042", "Redis client"],
+      "complexity": "moderate",
+      "estimated_stages": 3
+    }
 
 ## Context
 
-{% if beads_context %}
+{%- if beads_context %}
 ### Previous Work
 {{ beads_context }}
-{% endif %}
+{%- endif %}
 
-{% if related_docs %}
+{%- if related_docs %}
 ### Related Documentation
 {{ related_docs }}
-{% endif %}
+{%- endif %}
 
 ## Important Notes
 
@@ -1409,19 +1394,19 @@ Based on [comprehensive 2025 framework comparison](https://latenode.com/blog/lan
 - [LangChain: How and when to build multi-agent systems](https://blog.langchain.com/how-and-when-to-build-multi-agent-systems/)
 - [ZenML: LLM Agents in Production](https://www.zenml.io/blog/llm-agents-in-production-architectures-challenges-and-best-practices) - Production deployment challenges
 
-### Failure Modes & Reliability Research (New)
+### Failure Modes & Reliability Research
 - [UC Berkeley: Why Do Multi-Agent LLM Systems Fail? (MAST)](https://arxiv.org/abs/2503.13657) - 14 failure modes taxonomy
 - [MAST Project Page](https://sky.cs.berkeley.edu/project/mast/) - Dataset and LLM annotator
 - [Understanding and Mitigating Failure Modes in LLM-Based Multi-Agent Systems](https://www.marktechpost.com/2025/03/25/understanding-and-mitigating-failure-modes-in-llm-based-multi-agent-systems/)
 - [Ensuring AI Agent Reliability in Production Environments](https://www.getmaxim.ai/articles/ensuring-ai-agent-reliability-in-production-environments-strategies-and-solutions/)
 - [AI Agent Orchestration in 2025: Scalable, Secure, Observable](https://dev.to/nexaitech/ai-agent-orchestration-in-2025-how-to-build-scalable-secure-and-observable-multi-agent-systems-2flc)
 
-### Security & Isolation (New)
+### Security & Isolation
 - [Open Challenges in Multi-Agent Security](https://arxiv.org/html/2505.02077v1) - Novel security threats in MAS
 - [The attack surface you can't see: Securing autonomous AI](https://www.cio.com/article/4071216/the-attack-surface-you-cant-see-securing-your-autonomous-ai-and-agentic-systems.html)
 - [Unit 42: Top 10 AI Agent Security Risks](https://chapinindustries.com/2025/05/04/ai-agents-are-here-so-are-the-threats-unit-42-unveils-the-top-10-ai-agent-security-risks/)
 
-### Interoperability Protocols (New)
+### Interoperability Protocols
 - [A2A Protocol (Agent2Agent)](https://a2a-protocol.org/) - Official protocol documentation
 - [Google: Announcing the Agent2Agent Protocol](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/)
 - [Linux Foundation: A2A Protocol Project Launch](https://www.linuxfoundation.org/press/linux-foundation-launches-the-agent2agent-protocol-project-to-enable-secure-intelligent-communication-between-ai-agents)
@@ -1430,7 +1415,7 @@ Based on [comprehensive 2025 framework comparison](https://latenode.com/blog/lan
 - [MCP: Landscape, Security Threats, and Future Directions](https://arxiv.org/abs/2503.23278)
 - [Enterprise Challenges in Deploying Remote MCP Servers](https://www.descope.com/blog/post/enterprise-mcp)
 
-### Enterprise Case Studies (New)
+### Enterprise Case Studies
 - [Salesforce Agentforce 3: Building Production Infrastructure](https://salesforcedevops.net/index.php/2025/06/23/salesforce-agentforce-3/)
 - [Salesforce: Top AI Agent Statistics for 2025](https://www.salesforce.com/news/stories/ai-agents-statistics/)
 - [AI agents move from demos to deployment at enterprise scale](https://siliconangle.com/2025/10/23/ai-agents-move-demos-deployment-enterprise-scale-dreamforce/)
@@ -1450,7 +1435,7 @@ Based on [comprehensive 2025 framework comparison](https://latenode.com/blog/lan
 - [Beyond context windows: How AI agent memory is evolving](https://bdtechtalks.com/2025/08/31/ai-agent-memory-frameworks/)
 - [Context Engineering for Agents](https://rlancemartin.github.io/2025/06/23/context_engineering/)
 
-### Benchmarks & Evaluation (New)
+### Benchmarks & Evaluation
 - [Benchmarking Multi-Agent AI: Insights & Practical Use](https://galileo.ai/blog/benchmarks-multi-agent-ai)
 - [MultiAgentBench: Evaluating Collaboration and Competition](https://arxiv.org/abs/2503.01935)
 - [TheAgentCompany: Benchmarking LLM Agents on Real World Tasks](https://arxiv.org/abs/2412.14161)
