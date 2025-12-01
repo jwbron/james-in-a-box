@@ -1278,7 +1278,7 @@ async def test_cross_model_consistency(provider, test_case):
 
 ### 11. Observability and Cost Tracking
 
-Integrated observability is critical for multi-provider systems. This integrates with the [Standardized Logging ADR](./ADR-Standardized-Logging-Interface.md):
+Integrated observability is critical for multi-provider systems. This integrates with the [Standardized Logging ADR](../in-progress/ADR-Standardized-Logging-Interface.md):
 
 ```python
 # shared/llm/observability.py
@@ -1621,8 +1621,8 @@ class HybridModelRouter:
 | ADR | Relationship |
 |-----|--------------|
 | [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) | Parent ADR defining jib architecture; mentions "Architecture supports swapping" LLM providers |
-| [ADR-Context-Sync-Strategy](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | MCP strategy applies to model-agnostic tools; MCP provides provider-agnostic tool protocol |
-| [ADR-Standardized-Logging-Interface](./ADR-Standardized-Logging-Interface.md) | Logging must capture multi-provider LLM outputs for debugging and cost tracking |
+| [ADR-Context-Sync-Strategy](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | MCP strategy applies to model-agnostic tools; MCP provides provider-agnostic tool protocol |
+| [ADR-Standardized-Logging-Interface](../in-progress/ADR-Standardized-Logging-Interface.md) | Logging must capture multi-provider LLM outputs for debugging and cost tracking |
 
 ## References
 
