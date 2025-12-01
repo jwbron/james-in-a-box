@@ -44,10 +44,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import contextlib
 
+from impact_tracker import ImpactTracker
+from improvement_proposer import ImprovementProposer
 from inefficiency_detector import InefficiencyDetector
 from inefficiency_schema import AggregateInefficiencyReport, Severity
-from improvement_proposer import ImprovementProposer
-from impact_tracker import ImpactTracker
 from proposal_schema import ProposalBatch, ProposalPriority
 
 from config.model_pricing import calculate_blended_cost, get_active_model, get_model_pricing
@@ -83,9 +83,7 @@ class WeeklyReportGenerator:
         self.generate_proposals = generate_proposals
         self.send_slack = send_slack
         self.proposer = ImprovementProposer(proposals_dir=PROPOSALS_DIR)
-        self.impact_tracker = ImpactTracker(
-            tracking_dir=IMPACT_DIR, proposals_dir=PROPOSALS_DIR
-        )
+        self.impact_tracker = ImpactTracker(tracking_dir=IMPACT_DIR, proposals_dir=PROPOSALS_DIR)
 
     def generate_weekly_report(self) -> tuple[AggregateInefficiencyReport | None, Path | None]:
         """
@@ -527,7 +525,9 @@ See the full report for detailed analysis and actionable recommendations.
 - **Expected Savings:** ~{proposal_batch.total_expected_savings:,} tokens/week
 
 """
-                high_priority = [p for p in proposal_batch.proposals if p.priority == ProposalPriority.HIGH]
+                high_priority = [
+                    p for p in proposal_batch.proposals if p.priority == ProposalPriority.HIGH
+                ]
                 if high_priority:
                     pr_body += "**High Priority:**\n"
                     for p in high_priority[:3]:
@@ -719,7 +719,7 @@ See the full report for detailed analysis and actionable recommendations.
                 shared_path = REPO_ROOT / "shared"
                 if str(shared_path) not in sys.path:
                     sys.path.insert(0, str(shared_path))
-                from notifications import slack_notify, NotificationContext, NotificationType
+                from notifications import NotificationContext, NotificationType, slack_notify
             except ImportError:
                 print("  WARNING: notifications library not available, using file-based fallback")
                 return self._send_slack_file_notification(report, batch, impact_report, pr_url)
@@ -729,7 +729,9 @@ See the full report for detailed analysis and actionable recommendations.
             title = f"LLM Inefficiency Report - {batch.total_proposals} Proposals"
 
             body_lines = []
-            body_lines.append(f"**Health Score:** {health_score}/100 {self._get_health_emoji(health_score)}")
+            body_lines.append(
+                f"**Health Score:** {health_score}/100 {self._get_health_emoji(health_score)}"
+            )
             body_lines.append(f"**Period:** {report.time_period}")
             body_lines.append("")
             body_lines.append("## Quick Stats")
@@ -741,7 +743,9 @@ See the full report for detailed analysis and actionable recommendations.
             # Proposals summary
             body_lines.append("## Improvement Proposals")
             body_lines.append(f"**Total:** {batch.total_proposals}")
-            body_lines.append(f"**Expected Savings:** ~{batch.total_expected_savings:,} tokens/week")
+            body_lines.append(
+                f"**Expected Savings:** ~{batch.total_expected_savings:,} tokens/week"
+            )
             body_lines.append("")
 
             # List high priority proposals
@@ -750,7 +754,9 @@ See the full report for detailed analysis and actionable recommendations.
                 body_lines.append("### High Priority")
                 for p in high[:3]:  # Limit to top 3
                     body_lines.append(f"- **{p.title}** (`{p.proposal_id}`)")
-                    body_lines.append(f"  - {p.occurrences_count} occurrences, ~{p.expected_token_savings:,} savings")
+                    body_lines.append(
+                        f"  - {p.occurrences_count} occurrences, ~{p.expected_token_savings:,} savings"
+                    )
                 body_lines.append("")
 
             # Impact summary if available
@@ -766,7 +772,9 @@ See the full report for detailed analysis and actionable recommendations.
                 body_lines.append(f"**Full Report PR:** {pr_url}")
             body_lines.append("")
             body_lines.append("## Review Commands")
-            body_lines.append("Reply with: `approve <id>`, `reject <id> <reason>`, `defer <id>`, `details <id>`")
+            body_lines.append(
+                "Reply with: `approve <id>`, `reject <id> <reason>`, `defer <id>`, `details <id>`"
+            )
             body_lines.append("Or: `approve all` to approve all proposals")
 
             body = "\n".join(body_lines)
@@ -894,9 +902,7 @@ Examples:
     parser.add_argument(
         "--no-proposals", action="store_true", help="Skip improvement proposal generation"
     )
-    parser.add_argument(
-        "--no-slack", action="store_true", help="Skip Slack notification"
-    )
+    parser.add_argument("--no-slack", action="store_true", help="Skip Slack notification")
 
     args = parser.parse_args()
 

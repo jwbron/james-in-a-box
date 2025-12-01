@@ -149,9 +149,7 @@ class ImpactReport:
             underperforming=data.get("underperforming", []),
             overperforming=data.get("overperforming", []),
         )
-        report.measurements = [
-            ImpactMeasurement.from_dict(m) for m in data.get("measurements", [])
-        ]
+        report.measurements = [ImpactMeasurement.from_dict(m) for m in data.get("measurements", [])]
         return report
 
     def to_markdown(self) -> str:
@@ -181,7 +179,9 @@ class ImpactReport:
         elif self.overall_savings_ratio >= 0.5:
             lines.append("Improvements are **partially effective** (50-70% of expected).")
         else:
-            lines.append("Improvements are **underperforming** (<50% of expected). Consider reviewing proposals.")
+            lines.append(
+                "Improvements are **underperforming** (<50% of expected). Consider reviewing proposals."
+            )
         lines.append("")
 
         # Individual measurements
@@ -302,8 +302,12 @@ class ImpactTracker:
         """Create a tracking entry for an implemented proposal."""
         entry = {
             "proposal_id": proposal.proposal_id,
-            "sub_category": proposal.source_inefficiencies[0].split(":")[0] if proposal.source_inefficiencies else "unknown",
-            "implemented_at": proposal.implemented_at.isoformat() if proposal.implemented_at else None,
+            "sub_category": proposal.source_inefficiencies[0].split(":")[0]
+            if proposal.source_inefficiencies
+            else "unknown",
+            "implemented_at": proposal.implemented_at.isoformat()
+            if proposal.implemented_at
+            else None,
             "expected_savings": proposal.expected_token_savings,
             "baseline_occurrences": proposal.occurrences_count,
             "baseline_wasted_tokens": proposal.total_wasted_tokens,
@@ -413,9 +417,7 @@ class ImpactTracker:
 
         return measurement
 
-    def _update_proposal_impact(
-        self, proposal_id: str, measurement: ImpactMeasurement
-    ) -> None:
+    def _update_proposal_impact(self, proposal_id: str, measurement: ImpactMeasurement) -> None:
         """Update a proposal with its measured impact."""
         for filepath in self.proposals_dir.glob("batch-*.json"):
             try:
@@ -521,13 +523,15 @@ class ImpactTracker:
                 else:
                     summary["awaiting_measurement"] += 1
 
-                summary["proposals"].append({
-                    "proposal_id": entry["proposal_id"],
-                    "implemented_at": entry.get("implemented_at"),
-                    "measured": entry.get("measured", False),
-                    "expected_savings": entry.get("expected_savings", 0),
-                    "actual_savings": entry.get("measurement", {}).get("token_savings"),
-                })
+                summary["proposals"].append(
+                    {
+                        "proposal_id": entry["proposal_id"],
+                        "implemented_at": entry.get("implemented_at"),
+                        "measured": entry.get("measured", False),
+                        "expected_savings": entry.get("expected_savings", 0),
+                        "actual_savings": entry.get("measurement", {}).get("token_savings"),
+                    }
+                )
 
             except (OSError, json.JSONDecodeError):
                 continue

@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from inefficiency_schema import AggregateInefficiencyReport, InefficiencyCategory
+from inefficiency_schema import AggregateInefficiencyReport
 from proposal_schema import (
     ImprovementProposal,
     ProposalBatch,
@@ -275,9 +275,7 @@ class ImprovementProposer:
         # Ensure directory exists
         self.proposals_dir.mkdir(parents=True, exist_ok=True)
 
-    def generate_proposals(
-        self, report: AggregateInefficiencyReport
-    ) -> ProposalBatch:
+    def generate_proposals(self, report: AggregateInefficiencyReport) -> ProposalBatch:
         """
         Generate improvement proposals from an aggregate inefficiency report.
 
@@ -376,9 +374,7 @@ class ImprovementProposer:
 
         # Calculate additional stats for templates
         avg_attempts = data["evidence"].get("search_attempts", [])
-        avg_attempts = (
-            sum(avg_attempts) / len(avg_attempts) if avg_attempts else 3.0
-        )
+        avg_attempts = sum(avg_attempts) / len(avg_attempts) if avg_attempts else 3.0
         success_rate = 89.0  # Default based on ADR estimates
         avg_retries = data["evidence"].get("retry_counts", [])
         avg_retries = sum(avg_retries) / len(avg_retries) if avg_retries else 3.0
@@ -469,9 +465,7 @@ class ImprovementProposer:
                 with open(filepath) as f:
                     data = json.load(f)
                 batch = ProposalBatch.from_dict(data)
-                pending.extend(
-                    p for p in batch.proposals if p.status == ProposalStatus.PENDING
-                )
+                pending.extend(p for p in batch.proposals if p.status == ProposalStatus.PENDING)
             except (OSError, json.JSONDecodeError):
                 continue
         return pending
@@ -544,7 +538,9 @@ class ImprovementProposer:
             lines.append("## High Priority")
             for p in high:
                 lines.append(f"- **{p.title}** (`{p.proposal_id}`)")
-                lines.append(f"  - {p.occurrences_count} occurrences, {p.total_wasted_tokens:,} tokens wasted")
+                lines.append(
+                    f"  - {p.occurrences_count} occurrences, {p.total_wasted_tokens:,} tokens wasted"
+                )
                 lines.append(f"  - Expected savings: ~{p.expected_token_savings:,} tokens/week")
             lines.append("")
 
@@ -552,7 +548,9 @@ class ImprovementProposer:
             lines.append("## Medium Priority")
             for p in medium:
                 lines.append(f"- **{p.title}** (`{p.proposal_id}`)")
-                lines.append(f"  - {p.occurrences_count} occurrences, {p.total_wasted_tokens:,} tokens wasted")
+                lines.append(
+                    f"  - {p.occurrences_count} occurrences, {p.total_wasted_tokens:,} tokens wasted"
+                )
             lines.append("")
 
         if low:

@@ -14,6 +14,15 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from impact_tracker import ImpactMeasurement, ImpactReport, ImpactTracker
+from improvement_proposer import PROPOSAL_TEMPLATES, ImprovementProposer
+from inefficiency_schema import (
+    AggregateInefficiencyReport,
+    DetectedInefficiency,
+    InefficiencyCategory,
+    SessionInefficiencyReport,
+    Severity,
+)
 from proposal_schema import (
     ImprovementProposal,
     ProposalBatch,
@@ -21,15 +30,6 @@ from proposal_schema import (
     ProposalPriority,
     ProposalStatus,
     ProposedChange,
-)
-from improvement_proposer import ImprovementProposer, PROPOSAL_TEMPLATES
-from impact_tracker import ImpactTracker, ImpactMeasurement, ImpactReport
-from inefficiency_schema import (
-    AggregateInefficiencyReport,
-    DetectedInefficiency,
-    InefficiencyCategory,
-    SessionInefficiencyReport,
-    Severity,
 )
 
 
@@ -47,12 +47,12 @@ class TestProposalSchema(unittest.TestCase):
         )
 
         data = change.to_dict()
-        self.assertEqual(data["file_path"], "CLAUDE.md")
-        self.assertEqual(data["section"], "Doing tasks")
+        assert data["file_path"] == "CLAUDE.md"
+        assert data["section"] == "Doing tasks"
 
         restored = ProposedChange.from_dict(data)
-        self.assertEqual(restored.file_path, change.file_path)
-        self.assertEqual(restored.content, change.content)
+        assert restored.file_path == change.file_path
+        assert restored.content == change.content
 
     def test_improvement_proposal_serialization(self):
         """Test ImprovementProposal to_dict and from_dict."""
@@ -81,17 +81,17 @@ class TestProposalSchema(unittest.TestCase):
         )
 
         data = proposal.to_dict()
-        self.assertEqual(data["proposal_id"], "prop-20251201-001")
-        self.assertEqual(data["category"], "prompt_refinement")
-        self.assertEqual(data["priority"], "high")
-        self.assertEqual(data["status"], "pending")
-        self.assertEqual(len(data["changes"]), 1)
+        assert data["proposal_id"] == "prop-20251201-001"
+        assert data["category"] == "prompt_refinement"
+        assert data["priority"] == "high"
+        assert data["status"] == "pending"
+        assert len(data["changes"]) == 1
 
         restored = ImprovementProposal.from_dict(data)
-        self.assertEqual(restored.proposal_id, proposal.proposal_id)
-        self.assertEqual(restored.category, ProposalCategory.PROMPT_REFINEMENT)
-        self.assertEqual(restored.priority, ProposalPriority.HIGH)
-        self.assertEqual(len(restored.changes), 1)
+        assert restored.proposal_id == proposal.proposal_id
+        assert restored.category == ProposalCategory.PROMPT_REFINEMENT
+        assert restored.priority == ProposalPriority.HIGH
+        assert len(restored.changes) == 1
 
     def test_proposal_batch_serialization(self):
         """Test ProposalBatch to_dict and from_dict."""
@@ -115,13 +115,13 @@ class TestProposalSchema(unittest.TestCase):
         batch.add_proposal(proposal)
 
         data = batch.to_dict()
-        self.assertEqual(data["batch_id"], "batch-20251201")
-        self.assertEqual(data["total_proposals"], 1)
-        self.assertEqual(data["total_expected_savings"], 1000)
+        assert data["batch_id"] == "batch-20251201"
+        assert data["total_proposals"] == 1
+        assert data["total_expected_savings"] == 1000
 
         restored = ProposalBatch.from_dict(data)
-        self.assertEqual(restored.batch_id, batch.batch_id)
-        self.assertEqual(len(restored.proposals), 1)
+        assert restored.batch_id == batch.batch_id
+        assert len(restored.proposals) == 1
 
     def test_proposal_markdown_generation(self):
         """Test ImprovementProposal.to_markdown()."""
@@ -141,10 +141,10 @@ class TestProposalSchema(unittest.TestCase):
         )
 
         md = proposal.to_markdown()
-        self.assertIn("Test Proposal", md)
-        self.assertIn("HIGH", md)
-        self.assertIn("prop-20251201-001", md)
-        self.assertIn("500", md)  # expected savings
+        assert "Test Proposal" in md
+        assert "HIGH" in md
+        assert "prop-20251201-001" in md
+        assert "500" in md  # expected savings
 
 
 class TestImprovementProposer(unittest.TestCase):
@@ -162,6 +162,7 @@ class TestImprovementProposer(unittest.TestCase):
     def tearDown(self):
         """Clean up temp directory."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_template_coverage(self):
@@ -173,7 +174,7 @@ class TestImprovementProposer(unittest.TestCase):
             "excessive_context",
         ]
         for template_key in expected_templates:
-            self.assertIn(template_key, PROPOSAL_TEMPLATES)
+            assert template_key in PROPOSAL_TEMPLATES
 
     def test_generate_proposals_from_report(self):
         """Test proposal generation from an aggregate report."""
@@ -218,15 +219,14 @@ class TestImprovementProposer(unittest.TestCase):
         # Generate proposals
         batch = self.proposer.generate_proposals(report)
 
-        self.assertGreater(batch.total_proposals, 0)
-        self.assertEqual(batch.time_period, report.time_period)
+        assert batch.total_proposals > 0
+        assert batch.time_period == report.time_period
 
         # Check proposal was generated for documentation_miss
         doc_miss_proposals = [
-            p for p in batch.proposals
-            if "Tool Discovery" in p.title or "Glob" in p.title
+            p for p in batch.proposals if "Tool Discovery" in p.title or "Glob" in p.title
         ]
-        self.assertGreater(len(doc_miss_proposals), 0)
+        assert len(doc_miss_proposals) > 0
 
     def test_save_and_load_batch(self):
         """Test saving and loading proposal batches."""
@@ -250,13 +250,13 @@ class TestImprovementProposer(unittest.TestCase):
 
         # Save
         filepath = self.proposer.save_batch(batch)
-        self.assertTrue(filepath.exists())
+        assert filepath.exists()
 
         # Load
         loaded = self.proposer.load_batch("batch-test")
-        self.assertIsNotNone(loaded)
-        self.assertEqual(loaded.batch_id, batch.batch_id)
-        self.assertEqual(len(loaded.proposals), 1)
+        assert loaded is not None
+        assert loaded.batch_id == batch.batch_id
+        assert len(loaded.proposals) == 1
 
     def test_update_proposal_status(self):
         """Test updating proposal status."""
@@ -286,12 +286,12 @@ class TestImprovementProposer(unittest.TestCase):
             reviewed_by="test_user",
             review_notes="LGTM",
         )
-        self.assertTrue(success)
+        assert success
 
         # Verify
         loaded = self.proposer.load_batch("batch-status-test")
-        self.assertEqual(loaded.proposals[0].status, ProposalStatus.APPROVED)
-        self.assertEqual(loaded.proposals[0].reviewed_by, "test_user")
+        assert loaded.proposals[0].status == ProposalStatus.APPROVED
+        assert loaded.proposals[0].reviewed_by == "test_user"
 
     def test_slack_summary_generation(self):
         """Test Slack summary generation."""
@@ -317,11 +317,11 @@ class TestImprovementProposer(unittest.TestCase):
 
         summary = self.proposer.generate_slack_summary(batch)
 
-        self.assertIn("Improvement Proposals", summary)
-        self.assertIn("High Priority", summary)
-        self.assertIn("prop-slack-001", summary)
-        self.assertIn("approve", summary.lower())
-        self.assertIn("reject", summary.lower())
+        assert "Improvement Proposals" in summary
+        assert "High Priority" in summary
+        assert "prop-slack-001" in summary
+        assert "approve" in summary.lower()
+        assert "reject" in summary.lower()
 
 
 class TestImpactTracker(unittest.TestCase):
@@ -369,6 +369,7 @@ class TestImpactTracker(unittest.TestCase):
     def tearDown(self):
         """Clean up temp directory."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_mark_implemented(self):
@@ -378,18 +379,18 @@ class TestImpactTracker(unittest.TestCase):
             "https://github.com/test/repo/pull/1",
             datetime.now(),
         )
-        self.assertTrue(success)
+        assert success
 
         # Verify tracking entry created
         tracking_file = self.tracking_dir / "tracking-prop-impact-001.json"
-        self.assertTrue(tracking_file.exists())
+        assert tracking_file.exists()
 
         with open(tracking_file) as f:
             entry = json.load(f)
 
-        self.assertEqual(entry["proposal_id"], "prop-impact-001")
-        self.assertEqual(entry["expected_savings"], 500)
-        self.assertFalse(entry["measured"])
+        assert entry["proposal_id"] == "prop-impact-001"
+        assert entry["expected_savings"] == 500
+        assert not entry["measured"]
 
     def test_get_proposals_due_for_measurement(self):
         """Test getting proposals due for measurement."""
@@ -402,8 +403,8 @@ class TestImpactTracker(unittest.TestCase):
         )
 
         due = self.tracker.get_proposals_due_for_measurement()
-        self.assertEqual(len(due), 1)
-        self.assertEqual(due[0]["proposal_id"], "prop-impact-001")
+        assert len(due) == 1
+        assert due[0]["proposal_id"] == "prop-impact-001"
 
     def test_record_measurement(self):
         """Test recording an impact measurement."""
@@ -419,10 +420,10 @@ class TestImpactTracker(unittest.TestCase):
             notes="50% reduction observed",
         )
 
-        self.assertIsNotNone(measurement)
-        self.assertEqual(measurement.token_savings, 500)  # 1000 - 500
-        self.assertEqual(measurement.occurrence_reduction, 5)  # 10 - 5
-        self.assertEqual(measurement.savings_ratio, 1.0)  # 500 / 500 expected
+        assert measurement is not None
+        assert measurement.token_savings == 500  # 1000 - 500
+        assert measurement.occurrence_reduction == 5  # 10 - 5
+        assert measurement.savings_ratio == 1.0  # 500 / 500 expected
 
     def test_impact_measurement_serialization(self):
         """Test ImpactMeasurement serialization."""
@@ -444,9 +445,9 @@ class TestImpactTracker(unittest.TestCase):
         data = measurement.to_dict()
         restored = ImpactMeasurement.from_dict(data)
 
-        self.assertEqual(restored.proposal_id, measurement.proposal_id)
-        self.assertEqual(restored.token_savings, 600)
-        self.assertEqual(restored.savings_ratio, 1.2)
+        assert restored.proposal_id == measurement.proposal_id
+        assert restored.token_savings == 600
+        assert restored.savings_ratio == 1.2
 
     def test_impact_report_generation(self):
         """Test impact report generation."""
@@ -464,8 +465,8 @@ class TestImpactTracker(unittest.TestCase):
         # Generate report
         report = self.tracker.generate_impact_report("Test Period")
 
-        self.assertEqual(report.total_proposals_tracked, 1)
-        self.assertGreater(report.total_actual_savings, 0)
+        assert report.total_proposals_tracked == 1
+        assert report.total_actual_savings > 0
 
     def test_impact_report_markdown(self):
         """Test ImpactReport.to_markdown()."""
@@ -490,9 +491,9 @@ class TestImpactTracker(unittest.TestCase):
         report.add_measurement(measurement)
 
         md = report.to_markdown()
-        self.assertIn("Impact Report", md)
-        self.assertIn("prop-001", md)
-        self.assertIn("600", md)  # token savings
+        assert "Impact Report" in md
+        assert "prop-001" in md
+        assert "600" in md  # token savings
 
     def test_implementation_summary(self):
         """Test getting implementation summary."""
@@ -503,9 +504,9 @@ class TestImpactTracker(unittest.TestCase):
 
         summary = self.tracker.get_implementation_summary()
 
-        self.assertEqual(summary["total_implemented"], 1)
-        self.assertEqual(summary["awaiting_measurement"], 1)
-        self.assertEqual(summary["measured"], 0)
+        assert summary["total_implemented"] == 1
+        assert summary["awaiting_measurement"] == 1
+        assert summary["measured"] == 0
 
 
 class TestPriorityCalculation(unittest.TestCase):
@@ -557,7 +558,7 @@ class TestPriorityCalculation(unittest.TestCase):
 
         # Should have at least one HIGH priority proposal
         high_priority = [p for p in batch.proposals if p.priority == ProposalPriority.HIGH]
-        self.assertGreater(len(high_priority), 0)
+        assert len(high_priority) > 0
 
 
 if __name__ == "__main__":
