@@ -96,9 +96,9 @@ def get_model_pricing(model: str | None = None) -> ModelPricing:
         return MODEL_PRICING[model]
 
     # Try to match by prefix (e.g., "claude-sonnet-4" matches "claude-sonnet-4-20250514")
-    for known_model in MODEL_PRICING:
+    for known_model, pricing in MODEL_PRICING.items():
         if model.startswith(known_model) or known_model.startswith(model):
-            return MODEL_PRICING[known_model]
+            return pricing
 
     # Default to sonnet pricing if unknown (most commonly used)
     return MODEL_PRICING["sonnet"]

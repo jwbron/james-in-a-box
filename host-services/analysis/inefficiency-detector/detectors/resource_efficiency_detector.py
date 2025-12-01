@@ -132,58 +132,57 @@ class ResourceEfficiencyDetector(BaseDetector):
         LARGE_FILE_THRESHOLD = 1000  # lines
 
         for event in events:
-            if event.tool_name == "Read":
-                if event.tool_result and event.tool_result.lines_returned:
-                    lines = event.tool_result.lines_returned
+            if event.tool_name == "Read" and event.tool_result and event.tool_result.lines_returned:
+                lines = event.tool_result.lines_returned
 
-                    # Check if this was a limited read
-                    limited_read = False
-                    if event.tool_params and event.tool_params.raw:
-                        limited_read = (
-                            "limit" in event.tool_params.raw or "offset" in event.tool_params.raw
-                        )
+                # Check if this was a limited read
+                limited_read = False
+                if event.tool_params and event.tool_params.raw:
+                    limited_read = (
+                        "limit" in event.tool_params.raw or "offset" in event.tool_params.raw
+                    )
 
-                    # Large file read without limits
-                    if lines >= LARGE_FILE_THRESHOLD and not limited_read:
-                        # Estimate token waste using configurable tokens_per_line
-                        tokens_read = lines * self.tokens_per_line
-                        # Assume optimal would be 10% of file (200 lines for 1000-line file)
-                        optimal_lines = min(200, lines // 5)
-                        optimal_tokens = optimal_lines * self.tokens_per_line
-                        wasted_tokens = tokens_read - optimal_tokens
+                # Large file read without limits
+                if lines >= LARGE_FILE_THRESHOLD and not limited_read:
+                    # Estimate token waste using configurable tokens_per_line
+                    tokens_read = lines * self.tokens_per_line
+                    # Assume optimal would be 10% of file (200 lines for 1000-line file)
+                    optimal_lines = min(200, lines // 5)
+                    optimal_tokens = optimal_lines * self.tokens_per_line
+                    wasted_tokens = tokens_read - optimal_tokens
 
-                        if wasted_tokens > 500:
-                            session_id = event.session_id
-                            task_id = event.task_id
-                            path = event.tool_params.path if event.tool_params else "unknown"
+                    if wasted_tokens > 500:
+                        session_id = event.session_id
+                        task_id = event.task_id
+                        path = event.tool_params.path if event.tool_params else "unknown"
 
-                            inefficiencies.append(
-                                DetectedInefficiency(
-                                    category=InefficiencyCategory.RESOURCE,
-                                    sub_category="excessive_context",
-                                    severity=Severity(self._determine_severity(wasted_tokens)),
-                                    trace_event_ids=[event.trace_id],
-                                    session_id=session_id,
-                                    task_id=task_id,
-                                    token_cost=tokens_read,
-                                    estimated_optimal_cost=optimal_tokens,
-                                    wasted_tokens=wasted_tokens,
-                                    wasted_percentage=(wasted_tokens / tokens_read * 100)
-                                    if tokens_read > 0
-                                    else 0,
-                                    description=f"Read {lines} lines from '{path}' without using limit/offset",
-                                    recommendation="Use Read tool with limit/offset parameters for large files. Use Grep to find specific sections first.",
-                                    turn_range=(event.turn_number, event.turn_number),
-                                    timestamp_range=(
-                                        event.timestamp.isoformat(),
-                                        event.timestamp.isoformat(),
-                                    ),
-                                    evidence={
-                                        "file_path": path,
-                                        "lines_read": lines,
-                                        "estimated_optimal_lines": optimal_lines,
-                                    },
-                                )
+                        inefficiencies.append(
+                            DetectedInefficiency(
+                                category=InefficiencyCategory.RESOURCE,
+                                sub_category="excessive_context",
+                                severity=Severity(self._determine_severity(wasted_tokens)),
+                                trace_event_ids=[event.trace_id],
+                                session_id=session_id,
+                                task_id=task_id,
+                                token_cost=tokens_read,
+                                estimated_optimal_cost=optimal_tokens,
+                                wasted_tokens=wasted_tokens,
+                                wasted_percentage=(wasted_tokens / tokens_read * 100)
+                                if tokens_read > 0
+                                else 0,
+                                description=f"Read {lines} lines from '{path}' without using limit/offset",
+                                recommendation="Use Read tool with limit/offset parameters for large files. Use Grep to find specific sections first.",
+                                turn_range=(event.turn_number, event.turn_number),
+                                timestamp_range=(
+                                    event.timestamp.isoformat(),
+                                    event.timestamp.isoformat(),
+                                ),
+                                evidence={
+                                    "file_path": path,
+                                    "lines_read": lines,
+                                    "estimated_optimal_lines": optimal_lines,
+                                },
                             )
+                        )
 
         return inefficiencies

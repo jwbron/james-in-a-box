@@ -942,6 +942,12 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
 
             # Create PR using gh CLI
             pr_title = f"Beads Health Report - {timestamp}"
+            cleanup_section = ""
+            if to_delete:
+                cleanup_section = (
+                    f"\n### Cleanup\n- Removed {len(to_delete)} old report(s)"
+                    " to maintain max 5 reports\n"
+                )
             pr_body = f"""## Beads Integration Health Report
 
 **Health Score**: {health_score}/100 {self._get_health_emoji(health_score)}
@@ -961,9 +967,7 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
 - `docs/analysis/beads/beads-health-{timestamp}.md` - Full health report
 - `docs/analysis/beads/beads-metrics-{timestamp}.json` - Machine-readable metrics
 - Symlinks updated to point to latest reports
-
-{f"### Cleanup\n- Removed {len(to_delete)} old report(s) to maintain max 5 reports" if to_delete else ""}
-
+{cleanup_section}
 See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for detailed analysis.
 """
 

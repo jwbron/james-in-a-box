@@ -19,7 +19,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Message Queue Integration](adr/not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub migration plan for Slack |
 | [Slack Bot GCP Integration](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
 | [GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment strategy |
-| [Internet Tool Access Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on network access |
+| [Internet Tool Access Lockdown](adr/in-progress/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on network access |
 
 ### Architecture
 
@@ -72,7 +72,7 @@ When working on specific tasks, consult these documents first:
 | **ANY new task** | [Beads Task Tracking](reference/beads.md) | Check for existing work before starting |
 | **Slack integration changes** | [Slack Integration](architecture/slack-integration.md) | [ADR: Slack Strategy](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) |
 | **Adding new host services** | [Architecture Overview](architecture/README.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
-| **Security-related changes** | [ADR: Internet Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
+| **Security-related changes** | [ADR: Internet Lockdown](adr/in-progress/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Context sync modifications** | [ADR: Context Sync](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |
 | **GCP deployment changes** | [ADR: GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | [ADR: Slack GCP](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) |
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
