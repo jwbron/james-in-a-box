@@ -54,7 +54,7 @@ def handle_llm_prompt(context: dict) -> int:
 
     Context expected:
         - prompt: str (the prompt to send to Claude)
-        - timeout: int (optional, default 300)
+        - timeout: int (optional, uses shared claude module default if not provided)
         - cwd: str (optional, working directory)
         - stream: bool (optional, whether to stream output)
 
@@ -67,19 +67,20 @@ def handle_llm_prompt(context: dict) -> int:
     if not prompt:
         return output_result(False, error="No prompt provided in context")
 
-    timeout = context.get("timeout", 300)
+    # Only pass timeout if explicitly provided; otherwise let run_claude use its default
+    timeout = context.get("timeout")
     cwd = context.get("cwd")
     if cwd:
         cwd = Path(cwd)
     stream = context.get("stream", False)
 
     try:
-        result = run_claude(
-            prompt=prompt,
-            timeout=timeout,
-            cwd=cwd,
-            stream=stream,
-        )
+        # Build kwargs, only including timeout if explicitly specified
+        kwargs = {"prompt": prompt, "cwd": cwd, "stream": stream}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+
+        result = run_claude(**kwargs)
 
         return output_result(
             success=result.success,
@@ -148,7 +149,6 @@ Output ONLY the updated documentation content. Do not include any explanation or
     try:
         result = run_claude(
             prompt=prompt,
-            timeout=300,
             cwd=Path(repo_root),
             stream=False,
         )
@@ -408,7 +408,6 @@ Output ONLY the JSON array, no other text.
     try:
         result = run_claude(
             prompt=prompt,
-            timeout=300,
             cwd=Path(repo_root),
             stream=False,
         )
