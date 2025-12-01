@@ -618,7 +618,9 @@ class TestFailedTaskRetry:
 
             current_state = safe_state.get_state()
             assert "owner/repo-123:comment-1" in current_state["failed_tasks"]
-            assert current_state["failed_tasks"]["owner/repo-123:comment-1"]["task_type"] == "comment"
+            assert (
+                current_state["failed_tasks"]["owner/repo-123:comment-1"]["task_type"] == "comment"
+            )
 
     def test_thread_safe_state_mark_processed_removes_failed(self, temp_dir):
         """Test that mark_processed removes from failed_tasks."""

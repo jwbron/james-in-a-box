@@ -18,6 +18,12 @@ These are invoked with `/command-name` syntax.
 - `/beads-sync` - Sync beads with git
 - `/show-metrics` - Generate activity report
 
+### hooks/
+Session hooks that execute automatically at specific events.
+
+**Available hooks:**
+- `session-end.sh` - Beads session-ending protocol (runs on exit)
+
 ### rules/
 Agent behavior rules and guidelines.
 

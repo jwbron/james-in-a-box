@@ -59,3 +59,4 @@ echo "Additional manual run modes:"
 echo "  bin/adr-researcher --scope open-prs    # Research ADRs in open PRs"
 echo "  bin/adr-researcher --scope merged      # Update implemented ADRs"
 echo "  bin/adr-researcher --generate \"topic\"  # Generate new ADR"
+

@@ -27,6 +27,8 @@ class LogContext:
         task_id: Beads task ID for task correlation
         repository: GitHub repository (owner/repo format)
         pr_number: Pull request number if applicable
+        workflow_id: Unique identifier for the workflow/job that initiated this work
+        workflow_type: Type of workflow (e.g., 'check_failure', 'comment', 'slack_task')
         extra: Additional context fields to include in logs
     """
 
@@ -36,6 +38,8 @@ class LogContext:
     task_id: str | None = None
     repository: str | None = None
     pr_number: int | None = None
+    workflow_id: str | None = None
+    workflow_type: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -54,6 +58,8 @@ class LogContext:
             task_id=self.task_id,
             repository=self.repository,
             pr_number=self.pr_number,
+            workflow_id=self.workflow_id,
+            workflow_type=self.workflow_type,
             extra=dict(self.extra),
         )
 
@@ -68,6 +74,8 @@ class LogContext:
             task_id=self.task_id,
             repository=self.repository,
             pr_number=self.pr_number,
+            workflow_id=self.workflow_id,
+            workflow_type=self.workflow_type,
             extra=new_extra,
         )
 
@@ -87,6 +95,10 @@ class LogContext:
             result["repository"] = self.repository
         if self.pr_number:
             result["pr_number"] = self.pr_number
+        if self.workflow_id:
+            result["workflow_id"] = self.workflow_id
+        if self.workflow_type:
+            result["workflow_type"] = self.workflow_type
 
         return result
 
@@ -126,6 +138,8 @@ class ContextScope:
         task_id: str | None = None,
         repository: str | None = None,
         pr_number: int | None = None,
+        workflow_id: str | None = None,
+        workflow_type: str | None = None,
         **extra: Any,
     ):
         # Store the provided values - we'll create the context in __enter__
@@ -135,6 +149,8 @@ class ContextScope:
         self._task_id = task_id
         self._repository = repository
         self._pr_number = pr_number
+        self._workflow_id = workflow_id
+        self._workflow_type = workflow_type
         self._extra = extra
         self._new_context: LogContext | None = None
         self._previous_context: LogContext | None = None
@@ -154,6 +170,8 @@ class ContextScope:
             task_id=self._task_id,
             repository=self._repository,
             pr_number=self._pr_number,
+            workflow_id=self._workflow_id,
+            workflow_type=self._workflow_type,
             extra=self._extra,
         )
 
@@ -173,6 +191,8 @@ def context_from_env() -> LogContext:
         - JIB_TASK_ID: Beads task ID
         - JIB_REPOSITORY: Repository name
         - JIB_PR_NUMBER: PR number
+        - JIB_WORKFLOW_ID: Workflow/job identifier
+        - JIB_WORKFLOW_TYPE: Workflow type
     """
     return LogContext(
         trace_id=os.environ.get("JIB_TRACE_ID") or os.environ.get("OTEL_TRACE_ID"),
@@ -180,4 +200,6 @@ def context_from_env() -> LogContext:
         task_id=os.environ.get("JIB_TASK_ID"),
         repository=os.environ.get("JIB_REPOSITORY"),
         pr_number=int(os.environ["JIB_PR_NUMBER"]) if os.environ.get("JIB_PR_NUMBER") else None,
+        workflow_id=os.environ.get("JIB_WORKFLOW_ID"),
+        workflow_type=os.environ.get("JIB_WORKFLOW_TYPE"),
     )

@@ -12,7 +12,6 @@ ADRs are organized by implementation status:
 
 - **`in-progress/`** - ADRs actively being implemented
 - **`implemented/`** - ADRs fully implemented and in production
-- **`not-implemented/`** - ADRs proposed but not yet started
 
 ## ADR Index
 
@@ -20,6 +19,7 @@ ADRs are organized by implementation status:
 
 | ADR | Summary |
 |-----|---------|
+| [Context Sync Strategy](implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: GitHub MCP implemented ✅, JIRA MCP pending ❌, Confluence sync retained |
 | [LLM Documentation Index Strategy](implemented/ADR-LLM-Documentation-Index-Strategy.md) | LLM-navigable documentation with 6-agent pipeline |
 
 ### In Progress
@@ -27,20 +27,10 @@ ADRs are organized by implementation status:
 | ADR | Summary |
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
-| [Context Sync Strategy](in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Custom sync vs MCP for Confluence/JIRA/GitHub |
+| [Feature Analyzer - Documentation Sync](in-progress/ADR-Feature-Analyzer-Documentation-Sync.md) | Automated documentation updates after ADR implementation and merge |
+| [Internet Tool Access Lockdown](in-progress/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
 | [LLM Inefficiency Reporting](in-progress/ADR-LLM-Inefficiency-Reporting.md) | Self-improvement through inefficiency detection and reporting (Phase 1a: Beads Analyzer implemented) |
-
-### Not Implemented
-
-| ADR | Summary |
-|-----|---------|
-| [Continuous System Reinforcement](not-implemented/ADR-Continuous-System-Reinforcement.md) | Systematic learning from breakages to strengthen the system |
-| [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
-| [Internet Tool Access Lockdown](not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
-| [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
-| [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
-| [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
-| [Standardized Logging Interface](not-implemented/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
+| [Standardized Logging Interface](in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 
 ## ADR Template
 
@@ -61,7 +51,7 @@ When creating a new ADR, include:
 - List **dependencies** between phases
 - Focus on **what** needs to be done, not **when**
 
-Place new ADRs in `not-implemented/` until work begins.
+Place new ADRs in `in-progress/` when work begins.
 
 ## See Also
 

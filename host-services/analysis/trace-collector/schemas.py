@@ -120,6 +120,11 @@ class TraceEvent:
     tokens_in_context: int = 0  # Estimated tokens in context window
     tokens_generated: int = 0  # Tokens generated in this turn
 
+    # Prompt caching metrics (from Claude API usage field)
+    cache_creation_input_tokens: int = 0  # Tokens written to cache
+    cache_read_input_tokens: int = 0  # Tokens read from cache
+    input_tokens: int = 0  # Regular input tokens (not cached)
+
     # Analysis hints (filled during collection or later analysis)
     reasoning_snippet: str | None = None  # Brief excerpt of reasoning
     inefficiency_flags: list[str] = field(default_factory=list)
@@ -137,6 +142,9 @@ class TraceEvent:
             "tool_category": self.tool_category.value if self.tool_category else None,
             "tokens_in_context": self.tokens_in_context,
             "tokens_generated": self.tokens_generated,
+            "cache_creation_input_tokens": self.cache_creation_input_tokens,
+            "cache_read_input_tokens": self.cache_read_input_tokens,
+            "input_tokens": self.input_tokens,
             "reasoning_snippet": self.reasoning_snippet,
             "inefficiency_flags": self.inefficiency_flags,
         }
@@ -203,6 +211,9 @@ class TraceEvent:
             tool_result=tool_result,
             tokens_in_context=data.get("tokens_in_context", 0),
             tokens_generated=data.get("tokens_generated", 0),
+            cache_creation_input_tokens=data.get("cache_creation_input_tokens", 0),
+            cache_read_input_tokens=data.get("cache_read_input_tokens", 0),
+            input_tokens=data.get("input_tokens", 0),
             reasoning_snippet=data.get("reasoning_snippet"),
             inefficiency_flags=data.get("inefficiency_flags", []),
         )
@@ -235,6 +246,12 @@ class SessionMetadata:
     total_tokens_generated: int = 0
     peak_context_size: int = 0
 
+    # Prompt caching metrics
+    total_cache_creation_tokens: int = 0  # Total tokens written to cache
+    total_cache_read_tokens: int = 0  # Total tokens read from cache
+    total_input_tokens: int = 0  # Total regular input tokens
+    cache_hit_rate: float = 0.0  # Percentage of input from cache
+
     # Outcome
     outcome: str | None = None  # "completed", "abandoned", "error"
     outcome_notes: str | None = None
@@ -254,6 +271,10 @@ class SessionMetadata:
             "tool_call_breakdown": self.tool_call_breakdown,
             "total_tokens_generated": self.total_tokens_generated,
             "peak_context_size": self.peak_context_size,
+            "total_cache_creation_tokens": self.total_cache_creation_tokens,
+            "total_cache_read_tokens": self.total_cache_read_tokens,
+            "total_input_tokens": self.total_input_tokens,
+            "cache_hit_rate": round(self.cache_hit_rate, 1),
             "outcome": self.outcome,
             "outcome_notes": self.outcome_notes,
         }
@@ -274,6 +295,10 @@ class SessionMetadata:
             tool_call_breakdown=data.get("tool_call_breakdown", {}),
             total_tokens_generated=data.get("total_tokens_generated", 0),
             peak_context_size=data.get("peak_context_size", 0),
+            total_cache_creation_tokens=data.get("total_cache_creation_tokens", 0),
+            total_cache_read_tokens=data.get("total_cache_read_tokens", 0),
+            total_input_tokens=data.get("total_input_tokens", 0),
+            cache_hit_rate=data.get("cache_hit_rate", 0.0),
             outcome=data.get("outcome"),
             outcome_notes=data.get("outcome_notes"),
         )

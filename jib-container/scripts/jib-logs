@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+"""
+JIB Log Viewer - Search and view container logs with correlation support.
+
+Searches logs in ~/.jib-sharing/container-logs/ and ~/.jib-sharing/logs/
+with support for task ID, thread timestamp, and container ID correlation.
+
+Usage:
+    jib-logs                          # List recent logs
+    jib-logs <task-id>                # Show logs for a specific task
+    jib-logs --search <pattern>       # Search logs for a pattern
+    jib-logs --tail <task-id>         # Tail logs for a task
+    jib-logs --cleanup --days 7       # Remove logs older than 7 days
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Optional
+
+
+# Log directories
+CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
+CLAUDE_LOGS_DIR = Path.home() / ".jib-sharing" / "logs"
+LOG_INDEX_FILE = CONTAINER_LOGS_DIR / "log-index.json"
+
+
+class Colors:
+    """ANSI color codes."""
+    HEADER = "\033[95m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+
+    @classmethod
+    def disable(cls):
+        """Disable colors (for piped output)."""
+        cls.HEADER = ""
+        cls.BLUE = ""
+        cls.CYAN = ""
+        cls.GREEN = ""
+        cls.YELLOW = ""
+        cls.RED = ""
+        cls.BOLD = ""
+        cls.RESET = ""
+
+
+def load_log_index() -> dict:
+    """Load the log index file for correlation lookups."""
+    if LOG_INDEX_FILE.exists():
+        try:
+            return json.loads(LOG_INDEX_FILE.read_text())
+        except Exception:
+            pass
+    return {"task_to_container": {}, "thread_to_task": {}, "entries": []}
+
+
+def save_log_index(index: dict) -> None:
+    """Save the log index file."""
+    CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_INDEX_FILE.write_text(json.dumps(index, indent=2))
+
+
+def update_log_index(
+    container_id: str,
+    task_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    log_file: Optional[str] = None,
+) -> None:
+    """Update the log index with a new entry."""
+    index = load_log_index()
+
+    entry = {
+        "container_id": container_id,
+        "task_id": task_id,
+        "thread_ts": thread_ts,
+        "log_file": log_file,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+    # Update correlation maps
+    if task_id:
+        index["task_to_container"][task_id] = container_id
+    if thread_ts and task_id:
+        index["thread_to_task"][thread_ts] = task_id
+
+    # Add to entries (keep last 1000)
+    index["entries"].append(entry)
+    if len(index["entries"]) > 1000:
+        index["entries"] = index["entries"][-1000:]
+
+    save_log_index(index)
+
+
+def find_logs_for_task(task_id: str) -> list[Path]:
+    """Find all log files related to a task ID."""
+    logs = []
+
+    # Check container logs directory
+    if CONTAINER_LOGS_DIR.exists():
+        # Direct match
+        direct_log = CONTAINER_LOGS_DIR / f"{task_id}.log"
+        if direct_log.exists():
+            # Resolve symlink if needed
+            logs.append(direct_log.resolve() if direct_log.is_symlink() else direct_log)
+
+        # Search for container logs containing the task ID
+        for log_file in CONTAINER_LOGS_DIR.glob("*.log"):
+            if log_file.name.startswith(task_id) or (
+                log_file.exists() and task_id in log_file.read_text()[:1000]
+            ):
+                resolved = log_file.resolve() if log_file.is_symlink() else log_file
+                if resolved not in logs:
+                    logs.append(resolved)
+
+    # Check Claude output logs directory
+    if CLAUDE_LOGS_DIR.exists():
+        claude_log = CLAUDE_LOGS_DIR / f"{task_id}.log"
+        if claude_log.exists():
+            logs.append(claude_log)
+
+    return logs
+
+
+def find_logs_by_pattern(pattern: str) -> list[tuple[Path, list[str]]]:
+    """Search all logs for a pattern. Returns list of (file, matching_lines)."""
+    results = []
+    regex = re.compile(pattern, re.IGNORECASE)
+    max_file_size = 10 * 1024 * 1024  # 10MB limit for search
+    max_matches_per_file = 1000  # Limit matches per file
+
+    for log_dir in [CONTAINER_LOGS_DIR, CLAUDE_LOGS_DIR]:
+        if not log_dir.exists():
+            continue
+
+        for log_file in log_dir.glob("*.log"):
+            if log_file.is_symlink():
+                continue  # Skip symlinks to avoid duplicates
+
+            try:
+                # Check file size before reading
+                file_size = log_file.stat().st_size
+                if file_size > max_file_size:
+                    # For large files, stream and limit
+                    matches = []
+                    with open(log_file) as f:
+                        for i, line in enumerate(f, 1):
+                            if regex.search(line):
+                                matches.append(f"{i}: {line.rstrip()}")
+                                if len(matches) >= max_matches_per_file:
+                                    matches.append(f"... (limited to {max_matches_per_file} matches)")
+                                    break
+                    if matches:
+                        results.append((log_file, matches))
+                else:
+                    # For small files, read all at once
+                    matches = []
+                    for i, line in enumerate(log_file.read_text().split("\n"), 1):
+                        if regex.search(line):
+                            matches.append(f"{i}: {line}")
+                            if len(matches) >= max_matches_per_file:
+                                matches.append(f"... (limited to {max_matches_per_file} matches)")
+                                break
+
+                    if matches:
+                        results.append((log_file, matches))
+            except Exception:
+                pass
+
+    return results
+
+
+def list_recent_logs(limit: int = 20) -> list[dict]:
+    """List recent log files with metadata."""
+    logs = []
+
+    for log_dir in [CONTAINER_LOGS_DIR, CLAUDE_LOGS_DIR]:
+        if not log_dir.exists():
+            continue
+
+        for log_file in log_dir.glob("*.log"):
+            if log_file.is_symlink():
+                continue
+
+            stat = log_file.stat()
+            logs.append({
+                "path": log_file,
+                "name": log_file.name,
+                "size": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime),
+                "source": log_dir.name,
+            })
+
+    # Sort by modification time (newest first)
+    logs.sort(key=lambda x: x["modified"], reverse=True)
+
+    return logs[:limit]
+
+
+def cleanup_old_logs(days: int = 7, dry_run: bool = False) -> list[Path]:
+    """Remove logs older than specified days."""
+    cutoff = datetime.now() - timedelta(days=days)
+    removed = []
+
+    for log_dir in [CONTAINER_LOGS_DIR, CLAUDE_LOGS_DIR]:
+        if not log_dir.exists():
+            continue
+
+        for log_file in log_dir.glob("*.log"):
+            stat = log_file.stat()
+            modified = datetime.fromtimestamp(stat.st_mtime)
+
+            if modified < cutoff:
+                if not dry_run:
+                    log_file.unlink()
+                removed.append(log_file)
+
+        # Also clean up broken symlinks
+        for log_file in log_dir.glob("*.log"):
+            if log_file.is_symlink() and not log_file.exists():
+                if not dry_run:
+                    log_file.unlink()
+                removed.append(log_file)
+
+    return removed
+
+
+def format_size(size: int) -> str:
+    """Format file size in human-readable form."""
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024:
+            return f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}TB"
+
+
+def format_age(dt: datetime) -> str:
+    """Format datetime as relative age."""
+    delta = datetime.now() - dt
+    if delta.days > 0:
+        return f"{delta.days}d ago"
+    elif delta.seconds > 3600:
+        return f"{delta.seconds // 3600}h ago"
+    elif delta.seconds > 60:
+        return f"{delta.seconds // 60}m ago"
+    else:
+        return "just now"
+
+
+def print_log_content(log_file: Path, follow: bool = False, lines: int = 0) -> None:
+    """Print log file content with optional follow mode."""
+    if follow:
+        # Use tail -f for following
+        os.execvp("tail", ["tail", "-f", str(log_file)])
+    else:
+        content = log_file.read_text()
+        if lines > 0:
+            content = "\n".join(content.split("\n")[-lines:])
+        print(content)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="JIB Log Viewer - Search and view container logs",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  jib-logs                           List recent logs
+  jib-logs task-20251129-222239      Show logs for a task
+  jib-logs --search "error"          Search logs for errors
+  jib-logs --tail task-20251129      Follow logs for a task
+  jib-logs --cleanup --days 7        Remove logs older than 7 days
+  jib-logs --list 50                 List last 50 logs
+        """,
+    )
+
+    parser.add_argument(
+        "task_id",
+        nargs="?",
+        help="Task ID or container ID to look up",
+    )
+
+    parser.add_argument(
+        "--search", "-s",
+        metavar="PATTERN",
+        help="Search all logs for a pattern (regex supported)",
+    )
+
+    parser.add_argument(
+        "--tail", "-f",
+        action="store_true",
+        help="Follow log output (like tail -f)",
+    )
+
+    parser.add_argument(
+        "--lines", "-n",
+        type=int,
+        default=0,
+        help="Show last N lines only",
+    )
+
+    parser.add_argument(
+        "--list", "-l",
+        type=int,
+        nargs="?",
+        const=20,
+        metavar="N",
+        help="List recent logs (default: 20)",
+    )
+
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Remove old logs",
+    )
+
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Age threshold for cleanup (default: 7 days)",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be cleaned up without deleting",
+    )
+
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable colored output",
+    )
+
+    args = parser.parse_args()
+
+    # Disable colors if output is not a TTY or --no-color specified
+    if args.no_color or not sys.stdout.isatty():
+        Colors.disable()
+
+    # Handle cleanup mode
+    if args.cleanup:
+        removed = cleanup_old_logs(args.days, args.dry_run)
+        if removed:
+            action = "Would remove" if args.dry_run else "Removed"
+            print(f"{action} {len(removed)} log file(s) older than {args.days} days:")
+            for f in removed[:10]:
+                print(f"  {f.name}")
+            if len(removed) > 10:
+                print(f"  ... and {len(removed) - 10} more")
+        else:
+            print(f"No logs older than {args.days} days found")
+        return 0
+
+    # Handle list mode
+    if args.list is not None:
+        logs = list_recent_logs(args.list)
+        if not logs:
+            print("No logs found")
+            return 0
+
+        print(f"{Colors.BOLD}Recent Logs:{Colors.RESET}")
+        print()
+
+        for log in logs:
+            age = format_age(log["modified"])
+            size = format_size(log["size"])
+            source = f"[{log['source']}]"
+
+            # Color based on source
+            if "container" in log["source"]:
+                color = Colors.CYAN
+            else:
+                color = Colors.GREEN
+
+            print(f"  {color}{log['name']:<45}{Colors.RESET} {size:>8}  {age:>10}  {source}")
+
+        return 0
+
+    # Handle search mode
+    if args.search:
+        results = find_logs_by_pattern(args.search)
+        if not results:
+            print(f"No matches found for: {args.search}")
+            return 1
+
+        print(f"{Colors.BOLD}Search results for: {args.search}{Colors.RESET}")
+        print()
+
+        for log_file, matches in results:
+            print(f"{Colors.CYAN}{log_file.name}{Colors.RESET}:")
+            for match in matches[:5]:  # Show first 5 matches per file
+                # Highlight the match
+                highlighted = re.sub(
+                    f"({args.search})",
+                    f"{Colors.YELLOW}\\1{Colors.RESET}",
+                    match,
+                    flags=re.IGNORECASE,
+                )
+                print(f"  {highlighted}")
+            if len(matches) > 5:
+                print(f"  ... and {len(matches) - 5} more matches")
+            print()
+
+        return 0
+
+    # Handle task lookup mode
+    if args.task_id:
+        logs = find_logs_for_task(args.task_id)
+        if not logs:
+            print(f"No logs found for: {args.task_id}")
+            return 1
+
+        if len(logs) == 1:
+            print_log_content(logs[0], follow=args.tail, lines=args.lines)
+        else:
+            print(f"{Colors.BOLD}Found {len(logs)} log file(s) for {args.task_id}:{Colors.RESET}")
+            for i, log in enumerate(logs, 1):
+                print(f"\n{Colors.CYAN}=== [{i}] {log.name} ==={Colors.RESET}\n")
+                print_log_content(log, lines=args.lines if args.lines else 50)
+
+        return 0
+
+    # Default: list recent logs
+    args.list = 20
+    logs = list_recent_logs(args.list)
+    if not logs:
+        print("No logs found")
+        print(f"\nLog directories checked:")
+        print(f"  Container logs: {CONTAINER_LOGS_DIR}")
+        print(f"  Claude logs: {CLAUDE_LOGS_DIR}")
+        return 0
+
+    print(f"{Colors.BOLD}Recent Logs (use jib-logs <task-id> to view):{Colors.RESET}")
+    print()
+
+    for log in logs:
+        age = format_age(log["modified"])
+        size = format_size(log["size"])
+        source = f"[{log['source']}]"
+
+        # Color based on source
+        if "container" in log["source"]:
+            color = Colors.CYAN
+        else:
+            color = Colors.GREEN
+
+        print(f"  {color}{log['name']:<45}{Colors.RESET} {size:>8}  {age:>10}  {source}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

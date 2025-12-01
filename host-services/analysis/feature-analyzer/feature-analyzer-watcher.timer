@@ -1,0 +1,12 @@
+[Unit]
+Description=JIB Feature Analyzer ADR Watcher Timer - Every 15 minutes
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/feature-analyzer/README.md
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true
+RandomizedDelaySec=60s
+
+[Install]
+WantedBy=timers.target

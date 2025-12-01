@@ -1,0 +1,23 @@
+[Unit]
+Description=JIB Beads Integration Analyzer
+Documentation=https://github.com/jwbron/james-in-a-box
+After=network-online.target
+Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+
+# Execute the beads analyzer directly from the repo
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/beads-analyzer/beads-analyzer.py --days 7
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=beads-analyzer
+
+# Restart behavior
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

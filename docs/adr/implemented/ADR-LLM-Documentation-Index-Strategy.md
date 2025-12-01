@@ -1251,7 +1251,7 @@ The documentation index approach aligns with emerging industry standards (llms.t
 
 | ADR | Relationship |
 |-----|--------------|
-| [ADR-LLM-Inefficiency-Reporting](../not-implemented/ADR-LLM-Inefficiency-Reporting.md) | Documentation indexes help detect Tool Discovery Failures (Category 1 in inefficiency taxonomy) |
+| [ADR-LLM-Inefficiency-Reporting](../in-progress/ADR-LLM-Inefficiency-Reporting.md) | Documentation indexes help detect Tool Discovery Failures (Category 1 in inefficiency taxonomy) |
 
 ---
 

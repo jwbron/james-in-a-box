@@ -12,6 +12,7 @@ This directory contains systemd services and timers that run on the host machine
 | github-watcher | oneshot | 5min | Monitors GitHub for activity |
 | worktree-watcher | oneshot | 15min | Cleans orphaned git worktrees |
 | github-token-refresher | simple (long-running) | No | Refreshes GitHub App tokens |
+| feature-analyzer-watcher | oneshot | 15min | Detects newly implemented ADRs |
 | conversation-analyzer | oneshot | weekly | Analyzes conversation patterns |
 | adr-researcher | oneshot | weekly | Researches ADR topics |
 | doc-generator | oneshot | weekly | Generates documentation |
@@ -125,6 +126,7 @@ host-services/
 │   ├── adr-researcher/      # Weekly ADR research
 │   ├── conversation-analyzer/# Weekly conversation analysis
 │   ├── doc-generator/       # Documentation generation
+│   ├── feature-analyzer/    # ADR detection & doc sync (15min)
 │   ├── github-watcher/      # GitHub activity monitor
 │   ├── index-generator/     # Doc index generation
 │   └── spec-enricher/       # Spec enrichment (no systemd)
