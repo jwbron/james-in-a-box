@@ -396,6 +396,64 @@ class TestWorktreeHelpers:
         assert not container_dir.exists()
 
 
+class TestGetDefaultBranch:
+    """Tests for default branch detection."""
+
+    @patch("subprocess.run")
+    def test_uses_origin_head(self, mock_run, temp_dir):
+        """Test that origin/HEAD is preferred when available."""
+        # First call: git config returns nothing
+        # Second call: symbolic-ref returns origin/main
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout=""),
+            MagicMock(returncode=0, stdout="refs/remotes/origin/main\n"),
+        ]
+
+        result = jib.get_default_branch(temp_dir)
+        assert result == "main"
+
+    @patch("subprocess.run")
+    def test_uses_init_default_branch(self, mock_run, temp_dir):
+        """Test that init.defaultBranch config is checked first."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="develop\n")
+
+        result = jib.get_default_branch(temp_dir)
+        assert result == "develop"
+
+    @patch("subprocess.run")
+    def test_fallback_to_main_branch(self, mock_run, temp_dir):
+        """Test fallback to checking if main branch exists."""
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout=""),  # git config
+            MagicMock(returncode=1, stdout=""),  # symbolic-ref
+            MagicMock(returncode=0, stdout="abc123\n"),  # rev-parse main
+        ]
+
+        result = jib.get_default_branch(temp_dir)
+        assert result == "main"
+
+    @patch("subprocess.run")
+    def test_fallback_to_master_branch(self, mock_run, temp_dir):
+        """Test fallback to master when main doesn't exist."""
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout=""),  # git config
+            MagicMock(returncode=1, stdout=""),  # symbolic-ref
+            MagicMock(returncode=1, stdout=""),  # rev-parse main (not found)
+            MagicMock(returncode=0, stdout="abc123\n"),  # rev-parse master
+        ]
+
+        result = jib.get_default_branch(temp_dir)
+        assert result == "master"
+
+    @patch("subprocess.run")
+    def test_default_to_main_when_nothing_found(self, mock_run, temp_dir):
+        """Test default to 'main' when no branch detection succeeds."""
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+
+        result = jib.get_default_branch(temp_dir)
+        assert result == "main"
+
+
 class TestBuildImage:
     """Tests for Docker image building."""
 

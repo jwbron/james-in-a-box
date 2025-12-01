@@ -53,11 +53,11 @@
 
 **In Progress:**
 - Production hardening
-- MCP server evaluation for context integration (see [ADR-Context-Sync-Strategy](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md))
+- MCP server evaluation for context integration (see [ADR-Context-Sync-Strategy](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md))
 - GCP deployment planning (see [Related ADRs](#related-adrs) for detailed specifications):
-  - [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) - Pub/Sub messaging
-  - [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) - Slash command interface
-  - [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) - Terraform infrastructure
+  - [ADR-Message-Queue-Slack-Integration](../not-implemented/ADR-Message-Queue-Slack-Integration.md) - Pub/Sub messaging
+  - [ADR-Slack-Bot-GCP-Integration](../not-implemented/ADR-Slack-Bot-GCP-Integration.md) - Slash command interface
+  - [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) - Terraform infrastructure
 
 **Recently Completed:**
 - ✅ **Automated PR creation** - Agent creates PRs via `gh` CLI after task completion
@@ -1110,11 +1110,11 @@ If agent drifts from Khan Academy engineering culture, analyzer recommends:
 ### Phase 3: Production Hardening & Cloud Migration
 
 **Detailed specifications in companion ADRs:**
-- [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) - Cloud Pub/Sub for Slack messaging
-- [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) - MCP for Jira/GitHub, custom for Confluence
-- [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) - MCP for reading, Pub/Sub for sending
-- [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) - Full slash command interface
-- [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) - Complete Terraform infrastructure
+- [ADR-Message-Queue-Slack-Integration](../not-implemented/ADR-Message-Queue-Slack-Integration.md) - Cloud Pub/Sub for Slack messaging
+- [ADR-Context-Sync-Strategy-Custom-vs-MCP](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) - MCP for Jira/GitHub, custom for Confluence
+- [ADR-Slack-Integration-Strategy-MCP-vs-Custom](../not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) - MCP for reading, Pub/Sub for sending
+- [ADR-Slack-Bot-GCP-Integration](../not-implemented/ADR-Slack-Bot-GCP-Integration.md) - Full slash command interface
+- [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) - Complete Terraform infrastructure
 
 **Infrastructure:**
 - [ ] **Cloud Run deployment** via Terraform (Pattern A from ADR #889)
@@ -1466,7 +1466,7 @@ Benefits:
 
 **7. Cloud Run Production Deployment**
 
-> **Detailed specification:** See [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) for complete architecture.
+> **Detailed specification:** See [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) for complete architecture.
 
 ```
 Deploy james-in-a-box to Cloud Run using Terraform (Pattern A from ADR #889):
@@ -1758,11 +1758,11 @@ This ADR is the foundational document for jib. The following companion ADRs prov
 
 | ADR | Purpose |
 |-----|---------|
-| [ADR-Message-Queue-Slack-Integration](./ADR-Message-Queue-Slack-Integration.md) | Cloud Pub/Sub messaging to replace file-based Slack notifications |
-| [ADR-Context-Sync-Strategy-Custom-vs-MCP](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: MCP for Jira/GitHub, keep custom sync for Confluence |
-| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](./ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | MCP for reading Slack, Pub/Sub for sending messages |
-| [ADR-Slack-Bot-GCP-Integration](./ADR-Slack-Bot-GCP-Integration.md) | Full slash command interface replacing host-based commands |
-| [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md) | Complete Terraform infrastructure following ADR #889 patterns |
+| [ADR-Message-Queue-Slack-Integration](../not-implemented/ADR-Message-Queue-Slack-Integration.md) | Cloud Pub/Sub messaging to replace file-based Slack notifications |
+| [ADR-Context-Sync-Strategy-Custom-vs-MCP](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: MCP for Jira/GitHub, keep custom sync for Confluence |
+| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](../not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | MCP for reading Slack, Pub/Sub for sending messages |
+| [ADR-Slack-Bot-GCP-Integration](../not-implemented/ADR-Slack-Bot-GCP-Integration.md) | Full slash command interface replacing host-based commands |
+| [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) | Complete Terraform infrastructure following ADR #889 patterns |
 
 **Architecture Evolution:**
 ```

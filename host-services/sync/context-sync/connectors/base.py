@@ -4,11 +4,17 @@ Base connector class for context-sync.
 All connectors should inherit from BaseConnector and implement the required methods.
 """
 
-import logging
 import pickle
+import sys
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
+
+
+# Add shared directory to path for jib_logging
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "shared"))
+
+from jib_logging import get_logger
 
 
 class BaseConnector(ABC):
@@ -25,26 +31,11 @@ class BaseConnector(ABC):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Set up logging
-        self.logger = self._setup_logger()
+        # Set up logging using jib_logging
+        self.logger = get_logger("context-sync", component=self.name)
 
         # Sync state management
         self.sync_state_file = self.output_dir / ".sync_state"
-
-    def _setup_logger(self) -> logging.Logger:
-        """Set up logger for this connector."""
-        logger = logging.getLogger(f"context-sync.{self.name}")
-        logger.setLevel(logging.INFO)
-
-        if not logger.handlers:
-            # Console handler
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(logging.INFO)
-            formatter = logging.Formatter(f"[{self.name}] %(levelname)s: %(message)s")
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
-
-        return logger
 
     def _load_sync_state(self) -> dict:
         """Load sync state from file."""
@@ -53,7 +44,7 @@ class BaseConnector(ABC):
                 with open(self.sync_state_file, "rb") as f:
                     return pickle.load(f)
             except Exception as e:
-                self.logger.warning(f"Failed to load sync state: {e}")
+                self.logger.warning("Failed to load sync state", error=str(e))
         return {}
 
     def _save_sync_state(self, state: dict):
@@ -62,7 +53,7 @@ class BaseConnector(ABC):
             with open(self.sync_state_file, "wb") as f:
                 pickle.dump(state, f)
         except Exception as e:
-            self.logger.error(f"Failed to save sync state: {e}")
+            self.logger.error("Failed to save sync state", error=str(e))
 
     @abstractmethod
     def validate_config(self) -> bool:
@@ -122,5 +113,5 @@ class BaseConnector(ABC):
         """
         results = {"files_to_remove": [], "bytes_to_free": 0, "dry_run": dry_run}
 
-        self.logger.info(f"Cleanup not implemented for {self.name}")
+        self.logger.info("Cleanup not implemented", connector=self.name)
         return results

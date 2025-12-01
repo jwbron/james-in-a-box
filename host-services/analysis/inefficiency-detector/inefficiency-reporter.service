@@ -1,0 +1,23 @@
+[Unit]
+Description=JIB LLM Inefficiency Reporter
+Documentation=https://github.com/jwbron/james-in-a-box
+After=network-online.target
+Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+
+# Execute the weekly report generator directly from the repo
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/inefficiency-detector/weekly_report_generator.py --days 7
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=inefficiency-reporter
+
+# Restart behavior
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

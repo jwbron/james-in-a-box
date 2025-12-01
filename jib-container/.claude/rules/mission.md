@@ -137,6 +137,9 @@ Then use GitHub MCP to create the PR:
 
 **NEVER mix commits from different tasks/PRs.** Each PR must contain ONLY commits related to its original intent.
 
+⚠️ **WORKTREE WARNING**: In worktrees, `git checkout main` FAILS because main is checked out elsewhere.
+ALWAYS use: `git checkout -b <branch-name> origin/main` to create branches from origin/main.
+
 **Before ANY commit, verify you're on the correct branch:**
 ```bash
 git branch --show-current    # What branch am I on?
@@ -156,20 +159,21 @@ git branch --show-current
 git status
 
 # 2. If uncommitted changes exist for CURRENT task, commit them first
-# 3. If starting NEW task, ensure you're on main or correct temp branch:
-git checkout main            # Go to main
-git pull origin main         # Get latest
-# (Container worktree branch will be created automatically)
+# 3. If starting NEW task, create a fresh branch from origin/main:
+git fetch origin main
+git checkout -b new-task-branch origin/main   # ALWAYS specify base!
 ```
+
+**CRITICAL in worktrees**: You CANNOT use `git checkout main` because main is checked out elsewhere. ALWAYS create branches with an explicit base: `git checkout -b <name> origin/main`
 
 **If you realize you committed to the wrong branch:**
 ```bash
 # Save the commit hash
 git log --oneline -1         # e.g., abc1234
 
-# Switch to main and start fresh
-git checkout main
-git checkout -b correct-branch
+# Create correct branch from origin/main (worktree-safe)
+git fetch origin main
+git checkout -b correct-branch origin/main
 
 # Cherry-pick the commit
 git cherry-pick abc1234
@@ -214,11 +218,13 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 - **Superseding a PR**: If you must replace a PR, close the old one with a comment linking to the new one
 
 **Example - updating an existing PR:**
-```
+```bash
 # Human says: "Please add error handling to PR #26"
 # 1. Check PR state via MCP: get_pull_request(owner, repo, 26)
-# 2. Switch to PR's branch locally:
-git checkout <pr-branch-name> && git pull origin <pr-branch-name>
+# 2. Fetch and switch to PR's branch:
+git fetch origin <pr-branch-name>
+git checkout <pr-branch-name>     # Works if branch exists locally
+# OR: git checkout -b <pr-branch-name> origin/<pr-branch-name>  # If new locally
 # 3. Make changes...
 git add -A && git commit -m "Add error handling"
 # 4. Push to GitHub
@@ -279,7 +285,7 @@ When human isn't available, use the **notifications library** (preferred):
 # Python - use the notifications library
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "jib-container" / "shared"))
+sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 from notifications import slack_notify, NotificationContext
 
 # Simple notification
@@ -292,8 +298,8 @@ slack_notify("Title", "Body", context=ctx)
 # Get full service for specialized notifications
 from notifications import get_slack_service
 slack = get_slack_service()
-slack.notify_warning("Security Issue", "Details here")
-slack.notify_action_required("Review Needed", "Please review...")
+slack.notify_pr_created(url, title, branch, base, repo)
+slack.notify_code_pushed(branch, repo, commit_message)
 ```
 
 Or for quick shell notifications (legacy, still works):

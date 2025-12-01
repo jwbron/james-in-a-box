@@ -94,3 +94,4 @@ echo "  systemctl --user restart $SERVICE_NAME   # Restart service"
 echo "  systemctl --user stop $SERVICE_NAME      # Stop service"
 echo "  journalctl --user -u $SERVICE_NAME -f    # View logs"
 echo "  cat ~/.jib-sharing/.github-token         # View current token info"
+

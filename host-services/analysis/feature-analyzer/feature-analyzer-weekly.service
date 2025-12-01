@@ -1,0 +1,26 @@
+[Unit]
+Description=Weekly feature analyzer - scans code and updates FEATURES.md
+Documentation=https://github.com/jwbron/james-in-a-box/blob/main/docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/feature-analyzer weekly-analyze --repo-root %h/khan/james-in-a-box
+WorkingDirectory=%h/khan/james-in-a-box
+Environment=HOME=%h
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# Timeout after 30 minutes (LLM analysis can take time)
+TimeoutStartSec=1800
+
+# Restart on failure with delay
+Restart=on-failure
+RestartSec=300
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=feature-analyzer-weekly
+
+[Install]
+WantedBy=default.target
