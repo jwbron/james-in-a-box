@@ -38,6 +38,7 @@ See also:
 
 import json
 import os
+import shutil
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -70,12 +71,28 @@ def get_container_username() -> str:
     """Get the username used inside the container.
 
     The container mirrors the host user, so we use the current user.
+
+    Raises:
+        RuntimeError: If USER environment variable is not set.
     """
-    return os.environ.get("USER", "jwies")
+    username = os.environ.get("USER")
+    if not username:
+        raise RuntimeError("USER environment variable not set")
+    return username
 
 
 def get_jib_path() -> Path:
-    """Get the path to the jib executable."""
+    """Get the path to the jib executable.
+
+    First checks if 'jib' is available in PATH (consistent with other host services),
+    then falls back to the standard location in ~/khan/james-in-a-box/bin/jib.
+    """
+    # Check PATH first for consistency with other host services
+    jib_in_path = shutil.which("jib")
+    if jib_in_path:
+        return Path(jib_in_path)
+
+    # Fall back to standard location
     return Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
 
 
