@@ -1255,6 +1255,170 @@ The documentation index approach aligns with emerging industry standards (llms.t
 
 ---
 
-**Last Updated:** 2025-11-28
-**Next Review:** 2025-12-28 (Monthly)
+## Research Updates (December 2025)
+
+Based on external research into LLM documentation indexes, agent instruction standards, and documentation generation workflows:
+
+### llms.txt Standard Evolution
+
+The llms.txt standard proposed by Jeremy Howard (Co-Founder of Answer.AI) in September 2024 has seen significant adoption across the industry. The standard addresses a critical limitation: context windows are too small to handle most websites in their entirety, and converting complex HTML into LLM-friendly text is both difficult and imprecise.
+
+| Aspect | Current State | Industry Trend |
+|--------|---------------|----------------|
+| Format | Markdown with structured sections | Widely adopted for human+LLM readability |
+| Dual-file approach | `/llms.txt` (navigation) + `/llms-full.txt` (comprehensive) | Emerging as best practice |
+| Adoption | Stripe, Anthropic, Mintlify, Nuxt UI, Cursor | Growing rapidly across documentation platforms |
+| Automatic generation | Mintlify auto-generates llms.txt for hosted docs | Documentation platforms adding native support |
+| Official LLM support | Not yet officially used by major AI companies for crawling | Anthropic has published llms.txt on their own site |
+
+**Application to this ADR:**
+- The dual-file approach (`index.md` + comprehensive docs) aligns with our Navigation Index + detailed docs strategy
+- Consider adding an `/llms.txt` endpoint for external LLM consumers of our documentation
+- Mintlify-style auto-generation validates our automated documentation index approach
+
+### AGENTS.md Standardization
+
+AGENTS.md has emerged as a cross-platform standard for agent instructions, with OpenAI maintaining the official repository at [github.com/openai/agents.md](https://github.com/openai/agents.md). The format has achieved explosive growth with 4,378+ stars and broad tooling support.
+
+| Platform | Support Status | Notes |
+|----------|----------------|-------|
+| GitHub Copilot | Full support (Aug 2025) | Reads AGENTS.md, CLAUDE.md, GEMINI.md |
+| OpenAI Codex | Native support | AGENTS.md originated here |
+| Cursor | Full support | Compatible with .cursorrules |
+| Google Jules | Supported | Part of multi-tool ecosystem |
+| Aider | Supported | Convention-based detection |
+
+**Key Features:**
+- Plain Markdown with no required fields or strict formatting
+- Monorepo support: nested AGENTS.md files with closest-wins precedence
+- Complements MCP (Model Context Protocol) - AGENTS.md handles local instructions, MCP handles tool/data connections
+
+**Application to this ADR:**
+- Our CLAUDE.md approach is validated by industry convergence on similar formats
+- Consider renaming or creating an AGENTS.md alias for broader tool compatibility
+- The "closest wins" monorepo pattern supports our hierarchical documentation structure
+
+### CLAUDE.md Best Practices
+
+Anthropic's official guidance on CLAUDE.md has matured significantly, with detailed best practices published at [claude.com/blog/using-claude-md-files](https://www.claude.com/blog/using-claude-md-files):
+
+| Practice | Recommendation | Relevance to ADR |
+|----------|----------------|------------------|
+| File hierarchy | Root, parent, child directories; closest takes precedence | Supports our layered index approach |
+| Content | Tech stack, project structure, key commands | Aligns with our Navigation Index content |
+| Maintenance | Use `#` shortcut to iteratively build context | Supports "living documentation" principle |
+| Context management | Use `/clear` between tasks; split work into smaller steps | Validates our "Index, Don't Dump" principle |
+| Custom commands | Store in `.claude/commands/` for team sharing | Opportunity for standardized research commands |
+
+**Application to this ADR:**
+- The official "keep it concise and iterate over time" guidance validates our index-focused approach
+- Custom slash commands could implement our spec enrichment workflow
+- The workflow pattern "Plan -> small diff -> tests -> review" aligns with our multi-agent pipeline
+
+### Model Context Protocol (MCP) Integration
+
+MCP has evolved rapidly with three specification releases in eight months, reaching the June 2025 specification with enterprise-ready features:
+
+| Version | Key Additions | Relevance |
+|---------|---------------|-----------|
+| 2024-11-05 | Initial specification | Foundation for tool integration |
+| 2025-03-26 | Enhanced security | OAuth authorization support |
+| 2025-06-18 | Enterprise features | Structured outputs, elicitation, resource metadata |
+
+**Industry Adoption:**
+- OpenAI adopted MCP in March 2025 across ChatGPT, Agents SDK, and Responses API
+- Google DeepMind confirmed MCP support for Gemini (April 2025)
+- MCP Registry launched September 2025 for server discovery
+- Anthropic maintains reference implementations for GitHub, Slack, Postgres, and others
+
+**Application to this ADR:**
+- MCP provides the "tool layer" while documentation indexes provide the "knowledge layer"
+- Consider exposing documentation index as an MCP resource for external tool access
+- MCP's structured outputs could enhance our codebase.json generation
+
+### Documentation Generation Tools Evolution
+
+Several LLM-powered documentation tools have emerged that validate and extend our multi-agent approach:
+
+| Tool | Approach | Key Innovation |
+|------|----------|----------------|
+| DocAgent | Multi-agent system with LLM-as-judge | Specialized agents for different doc phases |
+| RepoAgent | Repository-level generation | Proactive maintenance and updating |
+| Repomix | Tree-sitter compression | ~70% token reduction for codebase packing |
+| Code2Prompt | Templated transformation | Git integration for diffs/logs |
+| PocketFlow | Tutorial generation | Converts codebases to beginner-friendly tutorials |
+
+**Research Findings:**
+- Tree-sitter MCP Server (March 2025) enables structured code analysis for AI assistants
+- Aider uses tree-sitter to build "repository maps" for LLM codebase understanding
+- RAG with AST-based chunking preserves syntactic integrity of code fragments
+- CodeNav research shows LLM agents can navigate unseen codebases using indexed code blocks
+
+**Application to this ADR:**
+- Our Tree-sitter + LLM hybrid approach is validated by industry tools
+- Consider Repomix-style compression for large codebase contexts
+- The multi-agent documentation pipeline aligns with DocAgent's specialized agent approach
+
+### Documentation Drift and Freshness
+
+Research on LLM drift detection provides insights for documentation freshness:
+
+| Drift Type | Description | Detection Approach |
+|------------|-------------|-------------------|
+| Concept Drift | Meaning of terms changes over time | Semantic comparison with baseline |
+| Covariate Drift | Input distribution changes | Statistical analysis (PSI, KL Divergence) |
+| Documentation Drift | Docs no longer match code | Structure comparison + LLM validation |
+
+**Industry Practice (2025):**
+- Models left unchanged for 6+ months see 35% higher error rates on new data
+- Tools like Evidently AI and LangSmith provide real-time drift monitoring
+- PEFT (Parameter-Efficient Fine-Tuning) enables rolling updates without full retraining
+
+**Application to this ADR:**
+- Schedule documentation refresh at minimum quarterly to avoid staleness
+- Implement automated drift detection comparing docs against code changes
+- Consider semantic similarity scoring for documentation-code alignment
+
+### Multi-Agent Pipeline Patterns
+
+Research on LLM-based multi-agent systems shows key patterns for documentation generation:
+
+| Pattern | Description | Application |
+|---------|-------------|-------------|
+| Role Specialization | Separate agents for analysis, drafting, review | Matches our Context/Draft/Review/Revise agents |
+| Natural Language Coordination | Agents communicate via text, not protocols | Enables flexible handoffs between pipeline stages |
+| LLM-as-Judge | Use LLM to evaluate generated content | Quality gate for documentation before human review |
+| Hierarchical Agents | Sub-agents for complex subtasks | Supports nested documentation generation |
+
+**Challenges Identified:**
+- Context limitations restrict information tracking
+- Long-term planning difficulties in multi-step generation
+- Knowledge drift leads to error propagation through agent chains
+
+**Application to this ADR:**
+- Our multi-agent pipeline design aligns with research best practices
+- Add explicit context-passing mechanisms between agents
+- Implement error detection between pipeline stages to prevent drift propagation
+
+### Research Sources
+
+- [llms.txt Standard](https://llmstxt.org/) - Official specification for LLM-friendly documentation
+- [Instructor llms.txt Adoption](https://python.useinstructor.com/blog/2025/03/19/instructor-adopts-llms-txt/) - Example implementation
+- [OpenAI AGENTS.md Repository](https://github.com/openai/agents.md) - Official AGENTS.md specification
+- [GitHub Blog: How to Write a Great AGENTS.md](https://github.blog/ai-and-ml/github-copilot/how-to-write-a-great-agents-md-lessons-from-over-2500-repositories/) - Best practices from 2,500+ repositories
+- [Anthropic Claude Code Best Practices](https://www.anthropic.com/engineering/claude-code-best-practices) - Official guidance
+- [Using CLAUDE.MD Files](https://www.claude.com/blog/using-claude-md-files) - Anthropic's detailed documentation
+- [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-06-18) - Latest MCP spec
+- [MCP Spec Updates June 2025](https://auth0.com/blog/mcp-specs-update-all-about-auth/) - Security and auth additions
+- [DocAgent: Multi-Agent Documentation Generation](https://arxiv.org/html/2504.08725v1) - Academic research on multi-agent docs
+- [Tree-sitter MCP Server](https://www.pulsemcp.com/servers/wrale-tree-sitter) - Code analysis for AI assistants
+- [Aider Tree-sitter Integration](https://aider.chat/2024/05/22/linting.html) - Repository map building
+- [Repomix](https://repomix.com/) - AI-friendly codebase packing
+- [CodeNav Research](https://arxiv.org/html/2406.12276v1) - LLM agents navigating codebases
+- [LLM Drift Detection Guide](https://medium.com/@tsiciliani/drift-detection-in-large-language-models-a-practical-guide-3f54d783792c) - Practical drift monitoring
+
+---
+
+**Last Updated:** 2025-12-01
+**Next Review:** 2026-01-01 (Monthly)
 **Status:** Implemented
