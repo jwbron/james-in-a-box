@@ -201,7 +201,9 @@ class AggregateInefficiencyReport:
 
         # Recalculate average inefficiency rate
         if self.total_sessions > 0:
-            self.average_inefficiency_rate = sum(s.inefficiency_rate for s in self.sessions) / self.total_sessions
+            self.average_inefficiency_rate = (
+                sum(s.inefficiency_rate for s in self.sessions) / self.total_sessions
+            )
 
     def compute_top_issues(self, limit: int = 5) -> None:
         """

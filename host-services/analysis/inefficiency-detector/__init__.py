@@ -14,11 +14,12 @@ from .inefficiency_schema import (
     Severity,
 )
 
+
 __all__ = [
-    "InefficiencyDetector",
+    "AggregateInefficiencyReport",
     "DetectedInefficiency",
     "InefficiencyCategory",
-    "Severity",
+    "InefficiencyDetector",
     "SessionInefficiencyReport",
-    "AggregateInefficiencyReport",
+    "Severity",
 ]

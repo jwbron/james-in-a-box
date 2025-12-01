@@ -10,15 +10,20 @@ from pathlib import Path
 
 import pytest
 
+
 # Add inefficiency-detector to path
-detector_path = Path(__file__).parent.parent.parent / "host-services" / "analysis" / "inefficiency-detector"
-trace_collector_path = Path(__file__).parent.parent.parent / "host-services" / "analysis" / "trace-collector"
+detector_path = (
+    Path(__file__).parent.parent.parent / "host-services" / "analysis" / "inefficiency-detector"
+)
+trace_collector_path = (
+    Path(__file__).parent.parent.parent / "host-services" / "analysis" / "trace-collector"
+)
 sys.path.insert(0, str(detector_path))
 sys.path.insert(0, str(trace_collector_path))
 
+from detectors.resource_efficiency_detector import ResourceEfficiencyDetector
 from detectors.tool_discovery_detector import ToolDiscoveryDetector
 from detectors.tool_execution_detector import ToolExecutionDetector
-from detectors.resource_efficiency_detector import ResourceEfficiencyDetector
 from schemas import EventType, ToolCallParams, ToolCategory, ToolResult, TraceEvent
 
 
@@ -119,15 +124,9 @@ class TestToolExecutionDetector:
 
         # Same bash command failing 3 times
         events = [
-            create_event(
-                "evt-1", 1, "Bash", ToolCategory.EXECUTION, "error", tokens_generated=200
-            ),
-            create_event(
-                "evt-2", 2, "Bash", ToolCategory.EXECUTION, "error", tokens_generated=200
-            ),
-            create_event(
-                "evt-3", 3, "Bash", ToolCategory.EXECUTION, "error", tokens_generated=200
-            ),
+            create_event("evt-1", 1, "Bash", ToolCategory.EXECUTION, "error", tokens_generated=200),
+            create_event("evt-2", 2, "Bash", ToolCategory.EXECUTION, "error", tokens_generated=200),
+            create_event("evt-3", 3, "Bash", ToolCategory.EXECUTION, "error", tokens_generated=200),
         ]
 
         # Set same error type for all

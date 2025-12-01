@@ -12,6 +12,7 @@ Detects technical failures in tool invocation and response handling:
 import sys
 from pathlib import Path
 
+
 # Add paths for imports
 base_path = Path(__file__).parent.parent
 sys.path.insert(0, str(base_path))
@@ -176,7 +177,7 @@ class ToolExecutionDetector(BaseDetector):
                 session_id = param_errors[0].session_id
                 task_id = param_errors[0].task_id
 
-                tools_affected = list(set(e.tool_name for e in param_errors if e.tool_name))
+                tools_affected = list({e.tool_name for e in param_errors if e.tool_name})
 
                 inefficiencies.append(
                     DetectedInefficiency(

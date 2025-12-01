@@ -5,18 +5,17 @@ Defines the abstract interface that all inefficiency detectors must implement.
 Each detector focuses on one category from the ADR taxonomy.
 """
 
-from abc import ABC, abstractmethod
-
 import sys
+from abc import ABC, abstractmethod
 from pathlib import Path
+
 
 # Add trace-collector to path for imports
 trace_collector_path = Path(__file__).parent.parent / "trace-collector"
 sys.path.insert(0, str(trace_collector_path))
 
-from schemas import TraceEvent
-
 from inefficiency_schema import DetectedInefficiency
+from schemas import TraceEvent
 
 
 class BaseDetector(ABC):
@@ -47,12 +46,10 @@ class BaseDetector(ABC):
         Returns:
             List of detected inefficiencies
         """
-        pass
 
     @abstractmethod
     def get_category(self) -> str:
         """Return the inefficiency category this detector handles."""
-        pass
 
     def _calculate_token_cost(self, events: list[TraceEvent]) -> int:
         """
