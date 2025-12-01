@@ -1009,7 +1009,9 @@ Output ONLY the markdown content, no explanation.
         # Add documentation link if available
         if feature.doc_path:
             doc_label = "(auto-generated)" if feature.doc_generated else ""
-            lines.append(f"- **Documentation**: [{feature.doc_path}]({feature.doc_path}) {doc_label}")
+            lines.append(
+                f"- **Documentation**: [{feature.doc_path}]({feature.doc_path}) {doc_label}"
+            )
 
         # Add ADR reference if available
         if feature.adr_reference:
