@@ -3,6 +3,9 @@ Claude Code wrapper for jib_logging.
 
 Wraps Claude Code CLI invocations to capture model interactions with structured logging.
 This is a basic wrapper for Phase 2 - full model output capture is planned for Phase 3.
+
+IMPORTANT: Uses stdin mode with --dangerously-skip-permissions for full tool access.
+Never use --print flag which creates a restricted session.
 """
 
 import json
@@ -21,14 +24,18 @@ class ClaudeWrapper(ToolWrapper):
 
     Full model output capture (token usage, response storage) is planned for Phase 3.
 
+    IMPORTANT: This wrapper uses stdin mode (input_text parameter) with
+    --dangerously-skip-permissions flag for full tool access. The --print flag
+    should NEVER be used as it creates a restricted session.
+
     Usage:
         from jib_logging.wrappers import claude
 
-        # Run claude with a prompt
+        # Run claude with a prompt (uses stdin mode)
         result = claude.prompt("What is the capital of France?")
 
         # Run claude with context file
-        result = claude.run("--context", "file.py", "-p", "Explain this code")
+        result = claude.run_with_file("file.py", "Explain this code")
 
     Note:
         The claude CLI is typically run with more complex arguments and
@@ -48,10 +55,13 @@ class ClaudeWrapper(ToolWrapper):
         timeout: float | None = None,
         cwd: str | None = None,
     ) -> ToolResult:
-        """Run claude with a prompt.
+        """Run claude with a prompt via stdin.
+
+        Uses stdin mode with --dangerously-skip-permissions for full tool access.
+        Never uses --print which creates a restricted session.
 
         Args:
-            prompt_text: The prompt to send
+            prompt_text: The prompt to send (via stdin)
             model: Model to use (overrides default)
             output_format: Output format (text, json, stream-json)
             max_turns: Maximum conversation turns
@@ -62,7 +72,8 @@ class ClaudeWrapper(ToolWrapper):
         Returns:
             ToolResult with response in stdout
         """
-        args: list[str] = ["--print", "-p", prompt_text]
+        # Use stdin mode, NOT --print (which creates restricted session)
+        args: list[str] = ["--dangerously-skip-permissions"]
 
         if model:
             args.extend(["--model", model])
@@ -76,7 +87,8 @@ class ClaudeWrapper(ToolWrapper):
         if context:
             args.extend(["--context", context])
 
-        return self.run(*args, timeout=timeout, cwd=cwd)
+        # Pass prompt via stdin using input_text parameter
+        return self.run(*args, timeout=timeout, cwd=cwd, input_text=prompt_text)
 
     def run_with_file(
         self,
@@ -89,6 +101,8 @@ class ClaudeWrapper(ToolWrapper):
     ) -> ToolResult:
         """Run claude with a file as context.
 
+        Uses stdin mode with --dangerously-skip-permissions for full tool access.
+
         Args:
             file_path: Path to file for context
             prompt_text: Optional prompt (if None, uses file content as prompt)
@@ -99,15 +113,14 @@ class ClaudeWrapper(ToolWrapper):
         Returns:
             ToolResult
         """
-        args: list[str] = ["--print", "--context", file_path]
-
-        if prompt_text:
-            args.extend(["-p", prompt_text])
+        args: list[str] = ["--dangerously-skip-permissions", "--context", file_path]
 
         if model:
             args.extend(["--model", model])
 
-        return self.run(*args, timeout=timeout, cwd=cwd)
+        # If prompt_text provided, pass via stdin; otherwise use file as prompt
+        input_text = prompt_text if prompt_text else None
+        return self.run(*args, timeout=timeout, cwd=cwd, input_text=input_text)
 
     def resume(
         self,
@@ -119,21 +132,21 @@ class ClaudeWrapper(ToolWrapper):
     ) -> ToolResult:
         """Resume a previous claude session.
 
+        Uses stdin mode with --dangerously-skip-permissions for full tool access.
+
         Args:
             session_id: Session ID to resume
-            prompt_text: Optional new prompt
+            prompt_text: Optional new prompt (via stdin)
             timeout: Timeout in seconds
             cwd: Working directory
 
         Returns:
             ToolResult
         """
-        args: list[str] = ["--print", "--resume", session_id]
+        args: list[str] = ["--dangerously-skip-permissions", "--resume", session_id]
 
-        if prompt_text:
-            args.extend(["-p", prompt_text])
-
-        return self.run(*args, timeout=timeout, cwd=cwd)
+        # Pass prompt via stdin if provided
+        return self.run(*args, timeout=timeout, cwd=cwd, input_text=prompt_text)
 
     def _extract_context(
         self,

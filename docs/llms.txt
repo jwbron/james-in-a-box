@@ -9,7 +9,7 @@ enabling autonomous software development with security boundaries.
 
 - [Documentation Index](index.md): Complete navigation index for all docs
 - [Main README](../README.md): Project overview and quick start
-- [Architecture ADR](adr/ADR-Autonomous-Software-Engineer.md): Core system design
+- [Architecture ADR](adr/in-progress/ADR-Autonomous-Software-Engineer.md): Core system design
 
 ## Key Concepts
 

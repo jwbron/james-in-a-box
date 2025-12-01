@@ -36,18 +36,26 @@ Features are tagged with status flags matching ADR lifecycle:
   - `host-services/analysis/analyze-pr/` - PR analysis service
 - **Tests**: `tests/analysis/test_analyze_pr.py`
 
-#### Feature Analyzer **[in-progress]**
+#### Feature Analyzer **[implemented]**
 - **Description**: Automated feature detection and documentation sync workflow
-- **ADR**: [ADR-Feature-Analyzer-Documentation-Sync](adr/in-progress/ADR-Feature-Analyzer-Documentation-Sync.md)
+- **ADR**: [ADR-Feature-Analyzer-Documentation-Sync](adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md)
 - **Current Status**:
   - ✅ Phase 1: Manual CLI tool (`feature-analyzer sync-docs`)
   - ✅ Phase 2: Automated ADR detection via systemd timer (15min interval)
-  - ⏳ Phase 3+: Multi-doc updates, LLM content generation, PR creation
+  - ✅ Phase 3: Multi-doc updates, LLM content generation, PR creation
+  - ✅ Phase 4: Full validation suite (6 checks), HTML metadata injection, git tagging, rollback tooling
+  - ✅ Phase 5: Weekly code analysis for FEATURES.md updates
 - **Implementation**:
-  - `host-services/analysis/feature-analyzer/feature-analyzer.py` - Manual CLI tool
+  - `host-services/analysis/feature-analyzer/feature-analyzer.py` - Main CLI tool
   - `host-services/analysis/feature-analyzer/adr_watcher.py` - Automated watcher
-  - `host-services/analysis/feature-analyzer/feature-analyzer-watcher.service` - Systemd service
-  - `host-services/analysis/feature-analyzer/feature-analyzer-watcher.timer` - 15-min timer
+  - `host-services/analysis/feature-analyzer/doc_generator.py` - LLM-powered doc generation
+  - `host-services/analysis/feature-analyzer/pr_creator.py` - Automated PR creation
+  - `host-services/analysis/feature-analyzer/rollback.py` - Rollback utilities (Phase 4)
+  - `host-services/analysis/feature-analyzer/weekly_analyzer.py` - Weekly code analysis (Phase 5)
+  - `host-services/analysis/feature-analyzer/feature-analyzer-watcher.service` - Systemd service (ADR watcher)
+  - `host-services/analysis/feature-analyzer/feature-analyzer-watcher.timer` - 15-min timer (ADR watcher)
+  - `host-services/analysis/feature-analyzer/feature-analyzer-weekly.service` - Systemd service (Weekly analysis)
+  - `host-services/analysis/feature-analyzer/feature-analyzer-weekly.timer` - Weekly timer (Mondays 11am)
   - `~/.local/share/feature-analyzer/state.json` - State persistence
 
 ### Context Sync
@@ -159,12 +167,13 @@ When ADR status changes, corresponding feature entries should be updated:
 - Update status when ADR directory changes
 - Remove deprecated features after sunset
 
-**Automated Updates (Phase 5):**
-- Weekly code analysis will detect new features and propose updates
-- Feature analyzer will sync statuses with ADR lifecycle
+**Automated Updates (Phase 5 - Implemented):**
+- Weekly code analysis detects new features every Monday and proposes updates
+- Feature analyzer syncs statuses with ADR lifecycle
 - All updates proposed via PR for human review
+- Run manually with: `feature-analyzer weekly-analyze`
 
 ---
 
 **Last Updated**: 2025-12-01
-**Maintained By**: Feature Analyzer (Phase 2 implemented) + Manual updates
+**Maintained By**: Feature Analyzer (Phase 5 implemented) + Manual updates

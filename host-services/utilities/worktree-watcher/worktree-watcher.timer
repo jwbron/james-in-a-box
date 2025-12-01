@@ -3,14 +3,9 @@ Description=JIB Worktree Watcher Timer - Periodic cleanup of orphaned worktrees
 Documentation=file://%h/khan/james-in-a-box/host-services/utilities/worktree-watcher/README.md
 
 [Timer]
-# Run 5 minutes after boot
-OnBootSec=5min
-
-# Run every 15 minutes
+# Run every 15 minutes based on when the timer was last activated
+# No OnBootSec to avoid immediate execution during setup
 OnUnitActiveSec=15min
-
-# Persist timer across reboots
-Persistent=true
 
 [Install]
 WantedBy=timers.target

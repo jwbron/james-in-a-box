@@ -225,7 +225,7 @@ class ToolDiscoveryDetector(BaseDetector):
             curr = events[i]
             next_event = events[i + 1]
 
-            # Same tool called twice in a row
+            # Same tool called twice in a row, first call failed, second succeeded
             if (
                 curr.tool_name == next_event.tool_name
                 and curr.tool_name
@@ -234,7 +234,6 @@ class ToolDiscoveryDetector(BaseDetector):
                 and next_event.tool_result
                 and next_event.tool_result.status == "success"
             ):
-                # First call failed, second call succeeded
                 both_events = [curr, next_event]
                 actual_cost = self._calculate_token_cost(both_events)
                 optimal_cost = self._calculate_token_cost([next_event])

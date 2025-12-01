@@ -191,7 +191,7 @@ Planned improvements to prompt caching in jib:
 
 - [Claude API Prompt Caching Docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
 - [Trace Collector Documentation](../reference/trace-collector.md) (planned)
-- [ADR: LLM Inefficiency Reporting](../adr/in-progress/ADR-LLM-Inefficiency-Reporting.md)
+- [ADR: LLM Inefficiency Reporting](../adr/implemented/ADR-LLM-Inefficiency-Reporting.md)
 
 ---
 

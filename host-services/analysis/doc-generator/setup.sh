@@ -257,7 +257,9 @@ Description=Weekly JIB Documentation Generation
 [Timer]
 # Run weekly on Monday at 11am
 OnCalendar=Mon *-*-* 11:00:00
+# If system was off when timer should have run, run it on next boot
 Persistent=true
+# Randomize start time to avoid resource spikes
 RandomizedDelaySec=300
 
 [Install]
