@@ -161,8 +161,11 @@ class ToolDiscoveryDetector(BaseDetector):
                 if match_count == 0:
                     consecutive_failures.append(event)
                 else:
-                    # Success - reset failures (documentation_miss handles the
-                    # case where failures are followed by success)
+                    # Success - check if we had a pattern of failures before this success
+                    if len(consecutive_failures) >= 3:
+                        self._create_search_failure_inefficiency(
+                            consecutive_failures, inefficiencies
+                        )
                     consecutive_failures = []
 
         # Check final sequence - only report if failures are NOT followed by success
