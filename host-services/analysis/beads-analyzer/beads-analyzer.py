@@ -962,7 +962,7 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
 - `docs/analysis/beads/beads-metrics-{timestamp}.json` - Machine-readable metrics
 - Symlinks updated to point to latest reports
 
-{f"### Cleanup\n- Removed {len(to_delete)} old report(s) to maintain max 5 reports" if to_delete else ""}
+{("### Cleanup" + chr(10) + f"- Removed {len(to_delete)} old report(s) to maintain max 5 reports") if to_delete else ""}
 
 See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for detailed analysis.
 """
