@@ -11,10 +11,11 @@ The Feature Analyzer implements [ADR-Feature-Analyzer-Documentation-Sync](../../
 - **Phase 3**: Multi-document batch updates with LLM generation and PR creation
 - **Phase 4**: Enhanced validation, traceability metadata, git tagging, and rollback tooling
 - **Phase 5**: Weekly code analysis for FEATURES.md updates
+- **Phase 6**: Full repository analysis for comprehensive FEATURES.md generation
 
-## Current Status: Phase 5 (Weekly Code Analysis)
+## Current Status: Phase 6 (Full Repository Analysis)
 
-Phase 5 adds automated code analysis to discover and document new features in FEATURES.md.
+Phase 6 adds the ability to analyze an entire repository from scratch and generate a comprehensive FEATURES.md document, similar to what was created in PR #259.
 
 ### Phase 1 Capabilities (Manual CLI)
 
@@ -61,6 +62,16 @@ Phase 5 adds automated code analysis to discover and document new features in FE
 5. **Duplicate detection** - Skips features already in FEATURES.md
 6. **FEATURES.md updates** - Adds new entries with proper formatting
 7. **Weekly systemd timer** - Runs automatically on Monday mornings
+
+### Phase 6 Capabilities (Full Repository Analysis)
+
+1. **Directory structure scanning** - Scans entire repo for feature directories
+2. **Deep code analysis** - Reads source files (not just commits) for thorough extraction
+3. **LLM-powered feature detection** - Uses Claude to identify and describe features
+4. **Category organization** - Organizes features into standard categories
+5. **Documentation linking** - Links features to existing README files
+6. **Comprehensive FEATURES.md generation** - Creates complete feature list from scratch
+7. **Deduplication** - Removes duplicate features based on name and file overlap
 
 ## Installation
 
@@ -388,16 +399,66 @@ The analyzer identifies features using:
 - **0.3-0.7**: Added with "⚠️ Needs Review" flag
 - **<0.3**: Skipped (likely not a user-facing feature)
 
+### Phase 6: Full Repository Analysis
+
+The `full-repo` command analyzes an entire repository from scratch to generate a comprehensive FEATURES.md document. This is useful for:
+- Initial feature list generation for new repositories
+- Regenerating feature lists after major refactors
+- Auditing existing features against actual code
+
+#### Run Full Repository Analysis
+
+```bash
+# Dry-run (preview what would be generated)
+feature-analyzer full-repo --dry-run
+
+# Generate comprehensive FEATURES.md
+feature-analyzer full-repo
+
+# Generate without LLM (heuristics only, faster but less accurate)
+feature-analyzer full-repo --no-llm
+
+# Generate FEATURES.md but don't create PR
+feature-analyzer full-repo --no-pr
+
+# Custom output path
+feature-analyzer full-repo --output /path/to/output.md
+
+# Analyze a different repository
+feature-analyzer full-repo --repo-root /path/to/repo
+```
+
+#### How It Works
+
+1. **Directory Scanning**: Scans `host-services/`, `jib-container/`, `.claude/commands/`, `scripts/`, and `bin/` directories
+2. **File Analysis**: Reads Python and shell scripts in each directory
+3. **LLM Extraction**: Uses Claude to identify features from code content and READMEs
+4. **Categorization**: Organizes features into standard categories (Core Architecture, Communication, etc.)
+5. **Deduplication**: Removes duplicate features based on name similarity and file overlap
+6. **Generation**: Creates formatted FEATURES.md with table of contents
+
+#### Output Format
+
+The generated FEATURES.md includes:
+- Table of contents with category links
+- Numbered features organized by category
+- Feature name, location (file paths), and description
+- Links to existing documentation (README files)
+- "Needs review" flags for low-confidence detections
+- Maintenance instructions
+
 ## Architecture
 
 ```
 feature-analyzer/
-├── feature-analyzer.py                  # Main CLI tool (Phase 1-5)
+├── feature-analyzer.py                  # Main CLI tool (Phase 1-6)
 ├── adr_watcher.py                       # Automated watcher (Phase 2-3)
 ├── doc_generator.py                     # LLM-powered doc generation (Phase 3-4)
-├── pr_creator.py                        # Automated PR creation (Phase 3-5)
+├── pr_creator.py                        # Automated PR creation (Phase 3-6)
 ├── rollback.py                          # Rollback utilities (Phase 4)
-├── weekly_analyzer.py                   # Weekly code analysis (Phase 5)
+├── weekly_analyzer.py                   # Weekly + full repo analysis (Phase 5-6)
+│   ├── WeeklyAnalyzer                   # Commit-based weekly analysis
+│   └── RepoAnalyzer                     # Full repository analysis
 ├── feature-analyzer-watcher.service     # Systemd service - ADR watcher (Phase 2)
 ├── feature-analyzer-watcher.timer       # Systemd timer - 15 min (Phase 2)
 ├── feature-analyzer-weekly.service      # Systemd service - weekly analysis (Phase 5)
