@@ -25,20 +25,16 @@ Usage (Phase 1 - Manual):
 """
 
 import argparse
-import json
 import re
-import subprocess
 import sys
-import time
-from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 
 @dataclass
 class ADRMetadata:
     """Metadata extracted from an ADR file."""
+
     path: Path
     filename: str
     title: str
@@ -51,6 +47,7 @@ class ADRMetadata:
 @dataclass
 class DocumentUpdate:
     """Represents a proposed documentation update."""
+
     path: Path
     reason: str
     current_content: str = ""
@@ -62,6 +59,7 @@ class DocumentUpdate:
 @dataclass
 class SyncResult:
     """Result of a documentation sync operation."""
+
     adr: ADRMetadata
     docs_to_update: list[Path] = field(default_factory=list)
     updates: list[DocumentUpdate] = field(default_factory=list)
@@ -83,12 +81,12 @@ class FeatureAnalyzer:
             raise FileNotFoundError(f"ADR not found: {adr_path}")
 
         content = adr_path.read_text()
-        lines = content.split('\n')
+        lines = content.split("\n")
 
         # Extract title (first # heading)
         title = "Unknown"
         for line in lines:
-            if line.startswith('# '):
+            if line.startswith("# "):
                 title = line[2:].strip()
                 break
 
@@ -104,11 +102,11 @@ class FeatureAnalyzer:
         # Extract decision summary (first paragraph under ## Decision)
         decision_summary = ""
         in_decision = False
-        for i, line in enumerate(lines):
-            if line.startswith('## Decision'):
+        for _i, line in enumerate(lines):
+            if line.startswith("## Decision"):
                 in_decision = True
                 continue
-            if in_decision and line.strip() and not line.startswith('#'):
+            if in_decision and line.strip() and not line.startswith("#"):
                 decision_summary = line.strip()
                 break
 
@@ -117,7 +115,7 @@ class FeatureAnalyzer:
             filename=adr_path.name,
             title=title,
             status=status,
-            decision_summary=decision_summary
+            decision_summary=decision_summary,
         )
 
     def map_adr_to_docs(self, adr_metadata: ADRMetadata) -> list[Path]:
@@ -156,11 +154,13 @@ class FeatureAnalyzer:
 
         # Check 1: Document length (shouldn't shrink >50%)
         if len(proposed) < len(current) * 0.5:
-            errors.append(f"Document length shrunk by {100 - (len(proposed)/len(current)*100):.0f}% (max 50% allowed)")
+            errors.append(
+                f"Document length shrunk by {100 - (len(proposed) / len(current) * 100):.0f}% (max 50% allowed)"
+            )
 
         # Check 2: Major sections preserved
-        current_headers = [line for line in current.split('\n') if line.startswith('## ')]
-        proposed_headers = [line for line in proposed.split('\n') if line.startswith('## ')]
+        current_headers = [line for line in current.split("\n") if line.startswith("## ")]
+        proposed_headers = [line for line in proposed.split("\n") if line.startswith("## ")]
 
         removed_headers = set(current_headers) - set(proposed_headers)
         if removed_headers:
@@ -168,24 +168,30 @@ class FeatureAnalyzer:
 
         # Check 3: Link preservation (regex-based markdown link detection)
         # Matches all markdown links: [text](url) including http/https and internal links
-        link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
+        link_pattern = r"\[([^\]]+)\]\(([^)]+)\)"
         current_links = re.findall(link_pattern, current)
         proposed_links = re.findall(link_pattern, proposed)
 
         # Don't error on link changes, just warn if count drops significantly
         if len(proposed_links) < len(current_links) * 0.7:
-            errors.append(f"Links reduced from {len(current_links)} to {len(proposed_links)} (>30% reduction)")
+            errors.append(
+                f"Links reduced from {len(current_links)} to {len(proposed_links)} (>30% reduction)"
+            )
 
         # Check 4: Diff bounds (rough check - character-level diff approximation)
         # Calculate simple character diff
         diff_chars = abs(len(current) - len(proposed))
         max_allowed_diff = len(current) * 0.4
         if diff_chars > max_allowed_diff:
-            errors.append(f"Changes exceed 40% threshold ({diff_chars} chars changed, max {max_allowed_diff:.0f})")
+            errors.append(
+                f"Changes exceed 40% threshold ({diff_chars} chars changed, max {max_allowed_diff:.0f})"
+            )
 
         return (len(errors) == 0, errors)
 
-    def sync_docs_for_adr(self, adr_path: Path, dry_run: bool = False, validate_only: bool = False) -> SyncResult:
+    def sync_docs_for_adr(
+        self, adr_path: Path, dry_run: bool = False, validate_only: bool = False
+    ) -> SyncResult:
         """
         Synchronize documentation for a specific ADR.
 
@@ -195,10 +201,7 @@ class FeatureAnalyzer:
         # Parse ADR
         adr_metadata = self.parse_adr(adr_path)
 
-        result = SyncResult(
-            adr=adr_metadata,
-            dry_run=dry_run
-        )
+        result = SyncResult(adr=adr_metadata, dry_run=dry_run)
 
         # Map to affected documentation
         docs_to_update = self.map_adr_to_docs(adr_metadata)
@@ -229,7 +232,7 @@ class FeatureAnalyzer:
                 update = DocumentUpdate(
                     path=doc_path,
                     reason=f"Mentions {adr_metadata.filename} or related concepts",
-                    current_content=current_content
+                    current_content=current_content,
                 )
 
                 # Phase 1: Don't auto-generate content, just flag for review
@@ -238,8 +241,7 @@ class FeatureAnalyzer:
 
                 # Validate (even though content unchanged in Phase 1)
                 passed, validation_errors = self.validate_update(
-                    update.current_content,
-                    update.proposed_content
+                    update.current_content, update.proposed_content
                 )
                 update.validation_passed = passed
                 update.validation_errors = validation_errors
@@ -254,46 +256,41 @@ def main():
         description="Feature Analyzer - Documentation Sync Tool (Phase 1 MVP)"
     )
 
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
     # sync-docs command
     sync_parser = subparsers.add_parser(
-        'sync-docs',
-        help='Manually sync documentation for a specific ADR'
+        "sync-docs", help="Manually sync documentation for a specific ADR"
     )
     sync_parser.add_argument(
-        '--adr',
+        "--adr",
         type=Path,
         required=True,
-        help='Path to ADR file (e.g., docs/adr/implemented/ADR-Example.md)'
+        help="Path to ADR file (e.g., docs/adr/implemented/ADR-Example.md)",
     )
     sync_parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be updated without making changes'
+        "--dry-run", action="store_true", help="Show what would be updated without making changes"
     )
     sync_parser.add_argument(
-        '--validate-only',
-        action='store_true',
-        help='Only validate and report, do not propose updates'
+        "--validate-only",
+        action="store_true",
+        help="Only validate and report, do not propose updates",
     )
     sync_parser.add_argument(
-        '--repo-root',
+        "--repo-root",
         type=Path,
         default=Path.cwd(),
-        help='Repository root directory (default: current directory)'
+        help="Repository root directory (default: current directory)",
     )
 
     args = parser.parse_args()
 
-    if args.command == 'sync-docs':
+    if args.command == "sync-docs":
         analyzer = FeatureAnalyzer(args.repo_root)
 
         try:
             result = analyzer.sync_docs_for_adr(
-                args.adr,
-                dry_run=args.dry_run,
-                validate_only=args.validate_only
+                args.adr, dry_run=args.dry_run, validate_only=args.validate_only
             )
 
             # Output results
@@ -311,7 +308,9 @@ def main():
                 for update in result.updates:
                     print(f"\n  {update.path.relative_to(args.repo_root)}")
                     print(f"    Reason: {update.reason}")
-                    print(f"    Validation: {'✓ Passed' if update.validation_passed else '✗ Failed'}")
+                    print(
+                        f"    Validation: {'✓ Passed' if update.validation_passed else '✗ Failed'}"
+                    )
                     if update.validation_errors:
                         for error in update.validation_errors:
                             print(f"      - {error}")
@@ -339,9 +338,10 @@ def main():
         except Exception as e:
             print(f"Unexpected error: {e}", file=sys.stderr)
             import traceback
+
             traceback.print_exc()
             sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

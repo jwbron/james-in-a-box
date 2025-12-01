@@ -24,13 +24,11 @@ Usage:
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -41,7 +39,7 @@ class WatcherState:
     processed_adrs: set[str] = field(default_factory=set)
 
     # Last time the watcher ran successfully
-    last_check_timestamp: Optional[str] = None
+    last_check_timestamp: str | None = None
 
     # Version for future state migrations
     version: int = 1
@@ -76,7 +74,7 @@ class NewADR:
 class ADRWatcher:
     """Watches ADR directories for status changes."""
 
-    def __init__(self, repo_root: Path, state_dir: Optional[Path] = None):
+    def __init__(self, repo_root: Path, state_dir: Path | None = None):
         self.repo_root = repo_root
         self.adr_dir = repo_root / "docs" / "adr"
         self.implemented_dir = self.adr_dir / "implemented"
@@ -176,6 +174,7 @@ class ADRWatcher:
                     str(self.repo_root),
                     "--dry-run",  # Phase 2 still uses dry-run by default
                 ],
+                check=False,
                 capture_output=True,
                 text=True,
                 cwd=self.repo_root,
@@ -256,9 +255,7 @@ class ADRWatcher:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="ADR Watcher - Automated ADR Detection (Phase 2)"
-    )
+    parser = argparse.ArgumentParser(description="ADR Watcher - Automated ADR Detection (Phase 2)")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
