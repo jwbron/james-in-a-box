@@ -1334,7 +1334,16 @@ See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for det
             pr_url = result.json_output.get("result", {}).get("pr_url", "")
             print(f"✓ Created PR: {pr_url}")
         else:
-            print(f"ERROR creating PR: {result.error}", file=sys.stderr)
+            # Build informative error message
+            error_msg = result.error
+            if not error_msg:
+                if not result.success:
+                    error_msg = f"jib_exec failed with return code {result.returncode}"
+                elif not result.json_output:
+                    error_msg = "jib_exec returned success but no JSON output"
+            print(f"ERROR creating PR: {error_msg}", file=sys.stderr)
+            if result.stdout:
+                print(f"  stdout: {result.stdout[:500]}", file=sys.stderr)
             if result.stderr:
                 print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
 

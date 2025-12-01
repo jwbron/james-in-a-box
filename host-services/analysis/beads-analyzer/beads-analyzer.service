@@ -8,6 +8,10 @@ OnFailure=service-failure-notify@%n.service
 [Service]
 Type=oneshot
 
+# Ensure PATH includes common binary locations (systemd has minimal PATH by default)
+# bd is installed via Go at ~/go/bin/bd
+Environment="PATH=%h/go/bin:/usr/local/bin:/usr/bin:/bin:%h/khan/james-in-a-box/bin"
+
 # Execute the beads analyzer directly from the repo
 ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/beads-analyzer/beads-analyzer.py --days 7
 
