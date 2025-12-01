@@ -285,7 +285,7 @@ When human isn't available, use the **notifications library** (preferred):
 # Python - use the notifications library
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "jib-container" / "shared"))
+sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 from notifications import slack_notify, NotificationContext
 
 # Simple notification
@@ -298,8 +298,8 @@ slack_notify("Title", "Body", context=ctx)
 # Get full service for specialized notifications
 from notifications import get_slack_service
 slack = get_slack_service()
-slack.notify_warning("Security Issue", "Details here")
-slack.notify_action_required("Review Needed", "Please review...")
+slack.notify_pr_created(url, title, branch, base, repo)
+slack.notify_code_pushed(branch, repo, commit_message)
 ```
 
 Or for quick shell notifications (legacy, still works):
