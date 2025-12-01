@@ -334,7 +334,7 @@ jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly docum
 |-----|-------------|
 | [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, self-improvement |
 | [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | How documentation is structured for efficient LLM navigation |
-| [Context Sync Strategy](docs/adr/in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Current connectors and MCP migration plan |
+| [Context Sync Strategy](docs/adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Current connectors and MCP migration plan |
 | [ADR Index](docs/adr/README.md) | Full list of all ADRs by status |
 
 ### Quick References

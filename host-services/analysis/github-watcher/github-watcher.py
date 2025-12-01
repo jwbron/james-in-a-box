@@ -64,7 +64,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -378,7 +378,7 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     # - secrets.token_hex(4) generates 8 hex chars (4 bytes = 32 bits of randomness)
     # - Collision probability: ~1 in 4 billion for same-second invocations
     # - Given timestamp prefix, practical collision risk is negligible
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     workflow_id = f"gw-{task_type}-{timestamp}-{secrets.token_hex(4)}"
 
     # Add workflow context to the task context

@@ -39,14 +39,16 @@ Features are tagged with status flags matching ADR lifecycle:
 #### Feature Analyzer **[in-progress]**
 - **Description**: Automated feature detection and documentation sync workflow
 - **ADR**: [ADR-Feature-Analyzer-Documentation-Sync](adr/not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md)
-- **Implementation**: Phase 1 (MVP) complete - manual CLI tool
 - **Current Status**:
   - ✅ Phase 1: Manual CLI tool (`feature-analyzer sync-docs`)
-  - ⏳ Phase 2+: Automated detection, PR creation
+  - ✅ Phase 2: Automated ADR detection via systemd timer (15min interval)
+  - ⏳ Phase 3+: Multi-doc updates, LLM content generation, PR creation
 - **Implementation**:
-  - `host-services/analysis/feature-analyzer/` - Main service
-  - CLI tool for manual triggering (Phase 1)
-  - Automated detection via systemd timer (Phase 2+)
+  - `host-services/analysis/feature-analyzer/feature-analyzer.py` - Manual CLI tool
+  - `host-services/analysis/feature-analyzer/adr_watcher.py` - Automated watcher
+  - `host-services/analysis/feature-analyzer/feature-analyzer-watcher.service` - Systemd service
+  - `host-services/analysis/feature-analyzer/feature-analyzer-watcher.timer` - 15-min timer
+  - `~/.local/share/feature-analyzer/state.json` - State persistence
 
 ### Context Sync
 
@@ -164,5 +166,5 @@ When ADR status changes, corresponding feature entries should be updated:
 
 ---
 
-**Last Updated**: 2025-11-30
-**Maintained By**: Feature Analyzer (once implemented) + Manual updates
+**Last Updated**: 2025-12-01
+**Maintained By**: Feature Analyzer (Phase 2 implemented) + Manual updates

@@ -1090,9 +1090,9 @@ Weekly codebase analysis can include:
 | ADR | Relationship |
 |-----|--------------|
 | [ADR-Autonomous-Software-Engineer](./ADR-Autonomous-Software-Engineer.md) | Parent ADR; defines conversation analyzer |
-| [ADR-Context-Sync-Strategy](./ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Context availability affects tool discovery |
+| [ADR-Context-Sync-Strategy](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Context availability affects tool discovery |
 | [ADR-LLM-Documentation-Index-Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | Documentation indexes directly address Tool Discovery Failures (Category 1); well-indexed docs reduce navigation inefficiencies |
-| [ADR-Standardized-Logging-Interface](../not-implemented/ADR-Standardized-Logging-Interface.md) | Structured logging enables trace collection and inefficiency detection described in this ADR |
+| [ADR-Standardized-Logging-Interface](./ADR-Standardized-Logging-Interface.md) | Structured logging enables trace collection and inefficiency detection described in this ADR |
 | [ADR-Continuous-System-Reinforcement](../not-implemented/ADR-Continuous-System-Reinforcement.md) | Complementary self-improvement mechanism; Reinforcement learns from breakages, Inefficiency learns from processing patterns |
 
 ---

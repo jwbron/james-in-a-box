@@ -663,7 +663,7 @@ def build_review_prompt(context: dict, beads_id: str | None = None) -> str:
     owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
     repo_name = repo_parts[-1]
 
-    prompt = f"""# PR Code Review
+    prompt = rf"""# PR Code Review
 
 ## PR Information
 - **Repository**: {repo}
