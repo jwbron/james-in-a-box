@@ -32,6 +32,7 @@ import argparse
 import builtins
 import contextlib
 import json
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -44,6 +45,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "beads"
 BEADS_DIR = Path.home() / ".jib-sharing" / "beads"
+WORKTREE_BASE = Path.home() / ".jib-worktrees"
 ABANDONED_THRESHOLD_HOURS = 24  # Tasks in_progress longer than this are considered abandoned
 
 
@@ -869,43 +871,90 @@ Period: Last {self.days} days
         report_file: Path,
         timestamp: str,
     ):
-        """Create a PR with the health reports."""
+        """Create a PR with the health reports using a temporary worktree.
+
+        Uses git worktree to avoid modifying the main repo checkout, which could
+        interfere with other work or container mounts.
+        """
         print("\nPreparing to create PR with health reports...")
 
         # Cleanup old reports (keep only last 5)
         to_delete = self._cleanup_old_reports(max_reports=5)
 
-        # Determine branch name
+        # Determine branch name and worktree path
         branch_name = f"beads-health-report-{timestamp}"
+        worktree_id = f"beads-analyzer-{timestamp}"
+        worktree_dir = WORKTREE_BASE / worktree_id / "james-in-a-box"
 
         try:
-            # Create new branch
+            # Ensure worktree base exists
+            WORKTREE_BASE.mkdir(parents=True, exist_ok=True)
+            (WORKTREE_BASE / worktree_id).mkdir(parents=True, exist_ok=True)
+
+            # Fetch latest from origin
+            print("Fetching latest from origin...")
             subprocess.run(
-                ["git", "checkout", "-b", branch_name, "origin/main"],
+                ["git", "fetch", "origin", "main"],
                 check=True,
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
             )
-            print(f"✓ Created branch: {branch_name}")
 
-            # Delete old reports if any
+            # Create worktree with new branch
+            print(f"Creating worktree: {worktree_dir}")
+            subprocess.run(
+                ["git", "worktree", "add", "-b", branch_name, str(worktree_dir), "origin/main"],
+                check=True,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            print(f"✓ Created worktree with branch: {branch_name}")
+
+            # Calculate paths in the worktree
+            worktree_analysis_dir = worktree_dir / "docs" / "analysis" / "beads"
+            worktree_analysis_dir.mkdir(parents=True, exist_ok=True)
+
+            # Copy the report files to the worktree
+            for src_file in self.analysis_dir.glob("beads-health-*.md"):
+                shutil.copy2(src_file, worktree_analysis_dir / src_file.name)
+            for src_file in self.analysis_dir.glob("beads-metrics-*.json"):
+                shutil.copy2(src_file, worktree_analysis_dir / src_file.name)
+
+            # Recreate symlinks in worktree
+            latest_report = worktree_analysis_dir / "latest-report.md"
+            latest_metrics = worktree_analysis_dir / "latest-metrics.json"
+            if latest_report.exists():
+                latest_report.unlink()
+            if latest_metrics.exists():
+                latest_metrics.unlink()
+            latest_report.symlink_to(f"beads-health-{timestamp}.md")
+            latest_metrics.symlink_to(f"beads-metrics-{timestamp}.json")
+
+            print(f"✓ Copied reports to worktree")
+
+            # Delete old reports if any (in worktree)
             if to_delete:
                 for file_path in to_delete:
-                    subprocess.run(
-                        ["git", "rm", str(file_path)],
-                        check=True,
-                        cwd=REPO_ROOT,
-                        capture_output=True,
-                        text=True,
-                    )
+                    # Convert path to worktree equivalent
+                    rel_path = file_path.relative_to(REPO_ROOT)
+                    worktree_file = worktree_dir / rel_path
+                    if worktree_file.exists():
+                        subprocess.run(
+                            ["git", "rm", str(worktree_file)],
+                            check=True,
+                            cwd=worktree_dir,
+                            capture_output=True,
+                            text=True,
+                        )
                 print(f"✓ Removed {len(to_delete)} old report(s)")
 
             # Stage the new report files
             subprocess.run(
-                ["git", "add", str(self.analysis_dir)],
+                ["git", "add", str(worktree_analysis_dir)],
                 check=True,
-                cwd=REPO_ROOT,
+                cwd=worktree_dir,
                 capture_output=True,
                 text=True,
             )
@@ -924,7 +973,7 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
             subprocess.run(
                 ["git", "commit", "-m", commit_message],
                 check=True,
-                cwd=REPO_ROOT,
+                cwd=worktree_dir,
                 capture_output=True,
                 text=True,
             )
@@ -934,7 +983,7 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
             subprocess.run(
                 ["git", "push", "origin", branch_name],
                 check=True,
-                cwd=REPO_ROOT,
+                cwd=worktree_dir,
                 capture_output=True,
                 text=True,
             )
@@ -982,7 +1031,7 @@ See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for det
                     branch_name,
                 ],
                 check=True,
-                cwd=REPO_ROOT,
+                cwd=worktree_dir,
                 capture_output=True,
                 text=True,
             )
@@ -993,14 +1042,20 @@ See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for det
             print(f"ERROR creating PR: {e}", file=sys.stderr)
             print(f"  stdout: {e.stdout}", file=sys.stderr)
             print(f"  stderr: {e.stderr}", file=sys.stderr)
-            # Try to return to main branch
+
+        finally:
+            # Always clean up the worktree
+            print("Cleaning up worktree...")
             with contextlib.suppress(builtins.BaseException):
                 subprocess.run(
-                    ["git", "checkout", "main"],
+                    ["git", "worktree", "remove", str(worktree_dir), "--force"],
                     check=False,
                     cwd=REPO_ROOT,
                     capture_output=True,
                 )
+                # Remove the container directory
+                shutil.rmtree(WORKTREE_BASE / worktree_id, ignore_errors=True)
+            print("✓ Cleaned up worktree")
 
 
 def check_last_run(analysis_dir: Path) -> datetime | None:
