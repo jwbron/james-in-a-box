@@ -449,7 +449,6 @@ If no meaningful features are found, return: `[]`
         try:
             result = run_claude(
                 prompt=prompt,
-                timeout=300,
                 cwd=self.repo_root,
                 stream=False,
             )
@@ -682,10 +681,6 @@ If no meaningful features are found, return: `[]`
         This provides more thorough analysis than commit-based extraction,
         useful for poorly named commits or large refactors.
 
-        Note: Uses a 10-minute timeout to allow thorough analysis of multiple files.
-        When running with --deep-analysis, expect longer execution times for large
-        codebases.
-
         Args:
             file_contents: Dict mapping file paths to their content
 
@@ -795,7 +790,6 @@ If no features found, return: `[]`
         try:
             result = run_claude(
                 prompt=prompt,
-                timeout=600,  # 10 minute timeout for thorough analysis
                 cwd=self.repo_root,
                 stream=False,
             )
@@ -863,7 +857,6 @@ Output ONLY the markdown content, no explanation.
         try:
             result = run_claude(
                 prompt=prompt,
-                timeout=300,
                 cwd=self.repo_root,
                 stream=False,
             )
