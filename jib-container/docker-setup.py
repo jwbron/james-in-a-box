@@ -21,6 +21,13 @@ def run(cmd: list[str], check: bool = True, **kwargs) -> subprocess.CompletedPro
 
 def run_shell(cmd: str, check: bool = True, **kwargs) -> subprocess.CompletedProcess:
     """Run a shell command"""
+    # IMPORTANT: Ensure add-apt-repository uses system Python 3.10
+    # add-apt-repository requires apt_pkg module which is only in system Python
+    # After setting Python 3.11 as default, we need to patch add-apt-repository's shebang
+    # to explicitly use python3.10 instead of the python3 symlink
+    if "add-apt-repository" in cmd and not cmd.startswith("python3.10"):
+        # Replace add-apt-repository command with explicit python3.10 invocation
+        cmd = cmd.replace("add-apt-repository", "python3.10 /usr/bin/add-apt-repository")
     print(f"Running: {cmd}")
     return subprocess.run(cmd, shell=True, check=check, executable="/bin/bash", **kwargs)
 

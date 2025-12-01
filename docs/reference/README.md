@@ -24,14 +24,6 @@ Common Slack operations and commands.
 - Troubleshooting connection issues
 - Managing channels and tokens
 
-### [Claude Authentication](claude-authentication.md)
-Claude CLI authentication and setup.
-
-**Information about:**
-- Initial authentication
-- Token management
-- Troubleshooting auth issues
-
 ### [Khan Academy Culture](khan-academy-culture.md)
 Engineering culture standards from the Khan Academy Career Ladder.
 

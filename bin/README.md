@@ -12,6 +12,7 @@ Convenient symlinks to commonly used commands.
 **Documentation:**
 - `generate-docs` - Generate documentation from code patterns
 - `check-doc-drift` - Detect documentation drift from code
+- `adr-researcher` - Research-based ADR workflow tool (Phase 6)
 - `setup-doc-generator` - Install weekly doc generation timer
 
 **Setup Scripts:**

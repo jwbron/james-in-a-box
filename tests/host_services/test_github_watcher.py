@@ -65,6 +65,7 @@ class TestStateManagement:
                 "processed_comments": {},
                 "processed_reviews": {},
                 "processed_conflicts": {},
+                "failed_tasks": {},
                 "last_run_start": None,
             }
 
@@ -304,10 +305,14 @@ class TestCheckPrForComments:
     def test_no_comments(self):
         """Test PR with no comments."""
         pr_data = {"number": 123, "title": "Fix bug"}
-        state = {"processed_comments": {}}
+        state = {"processed_comments": {}, "failed_tasks": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {"comments": [], "reviews": []}
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
+            mock_gh.side_effect = [
+                {"comments": [], "reviews": []},
+                [],  # Line-level review comments (empty)
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
@@ -321,20 +326,24 @@ class TestCheckPrForComments:
             "url": "https://github.com/owner/repo/pull/123",
             "headRefName": "fix-branch",
         }
-        state = {"processed_comments": {}}
+        state = {"processed_comments": {}, "failed_tasks": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {
-                "comments": [
-                    {
-                        "id": "comment-1",
-                        "author": {"login": "reviewer"},
-                        "body": "Please fix this",
-                        "createdAt": "2025-01-01T00:00:00Z",
-                    }
-                ],
-                "reviews": [],
-            }
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
+            mock_gh.side_effect = [
+                {
+                    "comments": [
+                        {
+                            "id": "comment-1",
+                            "author": {"login": "reviewer"},
+                            "body": "Please fix this",
+                            "createdAt": "2025-01-01T00:00:00Z",
+                        }
+                    ],
+                    "reviews": [],
+                },
+                [],  # Line-level review comments (empty)
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
@@ -345,26 +354,30 @@ class TestCheckPrForComments:
     def test_bot_comments_filtered(self):
         """Test that bot comments are filtered out."""
         pr_data = {"number": 123, "title": "Fix bug"}
-        state = {"processed_comments": {}}
+        state = {"processed_comments": {}, "failed_tasks": {}}
 
         with patch.object(github_watcher, "gh_json") as mock_gh:
-            mock_gh.return_value = {
-                "comments": [
-                    {
-                        "id": "c1",
-                        "author": {"login": "github-actions[bot]"},
-                        "body": "CI passed",
-                        "createdAt": "2025-01-01",
-                    },
-                    {
-                        "id": "c2",
-                        "author": {"login": "dependabot[bot]"},
-                        "body": "Update deps",
-                        "createdAt": "2025-01-01",
-                    },
-                ],
-                "reviews": [],
-            }
+            # Two calls: 1) PR comments/reviews, 2) line-level review comments
+            mock_gh.side_effect = [
+                {
+                    "comments": [
+                        {
+                            "id": "c1",
+                            "author": {"login": "github-actions[bot]"},
+                            "body": "CI passed",
+                            "createdAt": "2025-01-01",
+                        },
+                        {
+                            "id": "c2",
+                            "author": {"login": "dependabot[bot]"},
+                            "body": "Update deps",
+                            "createdAt": "2025-01-01",
+                        },
+                    ],
+                    "reviews": [],
+                },
+                [],  # Line-level review comments (empty)
+            ]
 
             result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser")
 
@@ -543,3 +556,292 @@ class TestCheckPrForMergeConflict:
             result = github_watcher.check_pr_for_merge_conflict("owner/repo", pr_data, state)
 
             assert result is None
+
+
+class TestFailedTaskRetry:
+    """Tests for failed task retry functionality."""
+
+    def test_load_state_includes_failed_tasks(self, temp_dir):
+        """Test that loading state includes failed_tasks key."""
+        with patch.object(Path, "home", return_value=temp_dir):
+            state = github_watcher.load_state()
+            assert "failed_tasks" in state
+            assert state["failed_tasks"] == {}
+
+    def test_load_state_preserves_failed_tasks(self, temp_dir):
+        """Test that existing failed_tasks are preserved on load."""
+        state_dir = temp_dir / ".local" / "share" / "github-watcher"
+        state_dir.mkdir(parents=True)
+        state_file = state_dir / "state.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "processed_failures": {},
+                    "processed_comments": {},
+                    "processed_reviews": {},
+                    "processed_conflicts": {},
+                    "failed_tasks": {
+                        "owner/repo-123:comment-1": {
+                            "failed_at": "2025-01-01T00:00:00Z",
+                            "task_type": "comment",
+                            "repository": "owner/repo",
+                            "pr_number": 123,
+                        }
+                    },
+                    "last_run_start": "2025-01-01T00:00:00Z",
+                }
+            )
+        )
+
+        with patch.object(Path, "home", return_value=temp_dir):
+            state = github_watcher.load_state()
+            assert "owner/repo-123:comment-1" in state["failed_tasks"]
+
+    def test_thread_safe_state_mark_failed(self, temp_dir):
+        """Test that mark_failed adds to failed_tasks."""
+        state = {
+            "processed_failures": {},
+            "processed_comments": {},
+            "processed_reviews": {},
+            "processed_conflicts": {},
+            "failed_tasks": {},
+            "last_run_start": None,
+        }
+
+        with patch.object(Path, "home", return_value=temp_dir):
+            safe_state = github_watcher.ThreadSafeState(state)
+            safe_state.mark_failed(
+                "owner/repo-123:comment-1",
+                "comment",
+                {"repository": "owner/repo", "pr_number": 123},
+            )
+
+            current_state = safe_state.get_state()
+            assert "owner/repo-123:comment-1" in current_state["failed_tasks"]
+            assert (
+                current_state["failed_tasks"]["owner/repo-123:comment-1"]["task_type"] == "comment"
+            )
+
+    def test_thread_safe_state_mark_processed_removes_failed(self, temp_dir):
+        """Test that mark_processed removes from failed_tasks."""
+        state = {
+            "processed_failures": {},
+            "processed_comments": {},
+            "processed_reviews": {},
+            "processed_conflicts": {},
+            "failed_tasks": {
+                "owner/repo-123:comment-1": {
+                    "failed_at": "2025-01-01T00:00:00Z",
+                    "task_type": "comment",
+                    "repository": "owner/repo",
+                    "pr_number": 123,
+                }
+            },
+            "last_run_start": None,
+        }
+
+        with patch.object(Path, "home", return_value=temp_dir):
+            safe_state = github_watcher.ThreadSafeState(state)
+            safe_state.mark_processed("processed_comments", "owner/repo-123:comment-1")
+
+            current_state = safe_state.get_state()
+            # Should be removed from failed_tasks
+            assert "owner/repo-123:comment-1" not in current_state["failed_tasks"]
+            # Should be added to processed_comments
+            assert "owner/repo-123:comment-1" in current_state["processed_comments"]
+
+    def test_execute_task_marks_failed_on_error(self, temp_dir):
+        """Test that execute_task marks task as failed when jib fails."""
+        state = {
+            "processed_failures": {},
+            "processed_comments": {},
+            "processed_reviews": {},
+            "processed_conflicts": {},
+            "failed_tasks": {},
+            "last_run_start": None,
+        }
+
+        task = github_watcher.JibTask(
+            task_type="comment",
+            context={"repository": "owner/repo", "pr_number": 123},
+            signature_key="processed_comments",
+            signature_value="owner/repo-123:comment-1",
+        )
+
+        with patch.object(Path, "home", return_value=temp_dir):
+            safe_state = github_watcher.ThreadSafeState(state)
+
+            # Mock invoke_jib to return failure
+            with patch.object(github_watcher, "invoke_jib", return_value=False):
+                result = github_watcher.execute_task(task, safe_state)
+
+                assert result is False
+                current_state = safe_state.get_state()
+                assert "owner/repo-123:comment-1" in current_state["failed_tasks"]
+
+    def test_comments_with_failed_task_bypass_timestamp_filter(self):
+        """Test that comments with failed tasks bypass the since_timestamp filter."""
+        pr_data = {
+            "number": 123,
+            "title": "Fix bug",
+            "url": "https://github.com/owner/repo/pull/123",
+            "headRefName": "fix-branch",
+        }
+        state = {
+            "processed_comments": {},
+            "failed_tasks": {
+                "owner/repo-123:old-comment": {
+                    "failed_at": "2025-01-01T00:00:00Z",
+                    "task_type": "comment",
+                    "repository": "owner/repo",
+                    "pr_number": 123,
+                }
+            },
+        }
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            # First call: PR comments/reviews, Second call: API review_comments
+            mock_gh.side_effect = [
+                {
+                    "comments": [
+                        {
+                            "id": "comment-1",
+                            "author": {"login": "reviewer"},
+                            "body": "Please fix this",
+                            "createdAt": "2025-01-01T00:00:00Z",  # Before since_timestamp
+                        }
+                    ],
+                    "reviews": [],
+                },
+                [],  # No review comments from API
+            ]
+
+            # Call with a since_timestamp that would normally filter out the comment
+            result = github_watcher.check_pr_for_comments(
+                "owner/repo",
+                pr_data,
+                state,
+                "testbot",
+                since_timestamp="2025-01-02T00:00:00Z",  # After the comment
+            )
+
+            # Comment should NOT be filtered out because there's a failed task for this PR
+            assert result is not None
+            assert result["type"] == "comment"
+
+    def test_comments_without_failed_task_respect_timestamp_filter(self):
+        """Test that comments without failed tasks respect the since_timestamp filter."""
+        pr_data = {
+            "number": 123,
+            "title": "Fix bug",
+            "url": "https://github.com/owner/repo/pull/123",
+            "headRefName": "fix-branch",
+        }
+        state = {
+            "processed_comments": {},
+            "failed_tasks": {},  # No failed tasks
+        }
+
+        with patch.object(github_watcher, "gh_json") as mock_gh:
+            # First call: PR comments/reviews, Second call: API review_comments
+            mock_gh.side_effect = [
+                {
+                    "comments": [
+                        {
+                            "id": "comment-1",
+                            "author": {"login": "reviewer"},
+                            "body": "Please fix this",
+                            "createdAt": "2025-01-01T00:00:00Z",  # Before since_timestamp
+                        }
+                    ],
+                    "reviews": [],
+                },
+                [],  # No review comments from API
+            ]
+
+            # Call with a since_timestamp that would filter out the comment
+            result = github_watcher.check_pr_for_comments(
+                "owner/repo",
+                pr_data,
+                state,
+                "testbot",
+                since_timestamp="2025-01-02T00:00:00Z",  # After the comment
+            )
+
+            # Comment should be filtered out because there's no failed task
+            assert result is None
+
+    def test_reviews_with_failed_task_bypass_timestamp_filter(self):
+        """Test that PRs with failed review tasks bypass the since_timestamp filter."""
+        state = {
+            "processed_reviews": {},
+            "failed_tasks": {
+                "owner/repo-456:review": {
+                    "failed_at": "2025-01-01T00:00:00Z",
+                    "task_type": "review_request",
+                    "repository": "owner/repo",
+                    "pr_number": 456,
+                }
+            },
+        }
+        all_prs = [
+            {
+                "number": 456,
+                "title": "New feature",
+                "url": "https://github.com/owner/repo/pull/456",
+                "headRefName": "feature",
+                "baseRefName": "main",
+                "author": {"login": "other-dev"},
+                "createdAt": "2025-01-01T00:00:00Z",  # Before since_timestamp
+                "additions": 100,
+                "deletions": 50,
+                "files": [{"path": "app.py"}],
+            }
+        ]
+
+        with patch.object(github_watcher, "gh_text", return_value="diff content"):
+            result = github_watcher.check_prs_for_review(
+                "owner/repo",
+                all_prs,
+                state,
+                "testuser",
+                "botuser",
+                since_timestamp="2025-01-02T00:00:00Z",  # After the PR
+            )
+
+        # PR should NOT be filtered out because there's a failed task
+        assert len(result) == 1
+        assert result[0]["pr_number"] == 456
+
+    def test_reviews_without_failed_task_respect_timestamp_filter(self):
+        """Test that PRs without failed review tasks respect the since_timestamp filter."""
+        state = {
+            "processed_reviews": {},
+            "failed_tasks": {},  # No failed tasks
+        }
+        all_prs = [
+            {
+                "number": 456,
+                "title": "New feature",
+                "url": "https://github.com/owner/repo/pull/456",
+                "headRefName": "feature",
+                "baseRefName": "main",
+                "author": {"login": "other-dev"},
+                "createdAt": "2025-01-01T00:00:00Z",  # Before since_timestamp
+                "additions": 100,
+                "deletions": 50,
+                "files": [{"path": "app.py"}],
+            }
+        ]
+
+        result = github_watcher.check_prs_for_review(
+            "owner/repo",
+            all_prs,
+            state,
+            "testuser",
+            "botuser",
+            since_timestamp="2025-01-02T00:00:00Z",  # After the PR
+        )
+
+        # PR should be filtered out because there's no failed task
+        assert result == []

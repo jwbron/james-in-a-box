@@ -29,3 +29,4 @@ echo "  spec-enricher --spec task.md                    # Enrich a spec file"
 echo "  echo 'Add auth' | spec-enricher                 # Enrich from stdin"
 echo "  spec-enricher --spec task.md --format yaml      # Output as YAML"
 echo "  spec-enricher --spec task.md --context-only     # Just the context"
+

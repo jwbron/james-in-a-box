@@ -20,24 +20,22 @@ ADRs are organized by implementation status:
 
 | ADR | Summary |
 |-----|---------|
+| [Context Sync Strategy](implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: GitHub MCP implemented ✅, JIRA MCP pending ❌, Confluence sync retained |
+| [Feature Analyzer - Documentation Sync](implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Automated documentation updates after ADR implementation and merge |
 | [LLM Documentation Index Strategy](implemented/ADR-LLM-Documentation-Index-Strategy.md) | LLM-navigable documentation with 6-agent pipeline |
+| [LLM Inefficiency Reporting](implemented/ADR-LLM-Inefficiency-Reporting.md) | Self-improvement through inefficiency detection and reporting (All phases complete) |
 
 ### In Progress
 
 | ADR | Summary |
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
-| [Context Sync Strategy](in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Custom sync vs MCP for Confluence/JIRA/GitHub |
 
 ### Not Implemented
 
-| ADR | Summary |
-|-----|---------|
-| [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
-| [Internet Tool Access Lockdown](not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
-| [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
-| [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
-| [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
+> **Note**: Several ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
+
+*No ADRs currently in not-implemented/ - all pending ADRs are in open PRs.*
 
 ## ADR Template
 
@@ -48,6 +46,15 @@ When creating a new ADR, include:
 3. **Context** - What problem are we solving?
 4. **Decision** - What did we decide?
 5. **Consequences** - What are the trade-offs?
+
+### Important Guidelines
+
+**DO NOT include time-based estimates** in ADRs (e.g., "Week 1-2", "Phase 1 takes 3 weeks"). Time estimates are not reliable or relevant for LLM-assisted development where task completion depends on many unpredictable factors. Instead:
+
+- Use **phase numbering** without time estimates (Phase 1, Phase 2, etc.)
+- Define **success criteria** for each phase
+- List **dependencies** between phases
+- Focus on **what** needs to be done, not **when**
 
 Place new ADRs in `not-implemented/` until work begins.
 

@@ -1,0 +1,22 @@
+[Unit]
+Description=ADR Researcher - Research and update ADRs with industry findings
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/adr-researcher/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/adr-researcher/adr-researcher.py --scope merged
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/khan/james-in-a-box/bin
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=adr-researcher
+
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
