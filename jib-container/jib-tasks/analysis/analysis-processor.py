@@ -35,6 +35,8 @@ from pathlib import Path
 
 # Import shared modules - navigate from jib-tasks/analysis up to repo root, then shared
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+import contextlib
+
 from claude import run_claude
 
 
@@ -174,10 +176,8 @@ After writing the file, confirm by saying "JSON written to {output_file}" but do
                 )
             finally:
                 # Clean up the temp file
-                try:
+                with contextlib.suppress(OSError):
                     output_path.unlink()
-                except OSError:
-                    pass
         else:
             return output_result(
                 success=False,
@@ -203,10 +203,8 @@ After writing the file, confirm by saying "JSON written to {output_file}" but do
     except Exception as e:
         # Clean up temp file on error
         if output_path.exists():
-            try:
+            with contextlib.suppress(OSError):
                 output_path.unlink()
-            except OSError:
-                pass
         return output_result(False, error=f"Error running Claude: {e}")
 
 
