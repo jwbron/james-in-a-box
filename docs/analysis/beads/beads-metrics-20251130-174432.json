@@ -1,0 +1,26 @@
+{
+  "timestamp": "20251130-174432",
+  "days_analyzed": 7,
+  "total_tasks": 0,
+  "tasks_created": 0,
+  "tasks_closed": 0,
+  "tasks_abandoned": 0,
+  "tasks_in_progress": 0,
+  "tasks_blocked": 0,
+  "tasks_with_notes": 0,
+  "tasks_with_labels": 0,
+  "tasks_with_searchable_title": 0,
+  "avg_time_to_close_hours": 0,
+  "proper_lifecycle_rate": 0,
+  "slack_linked_tasks": 0,
+  "pr_linked_tasks": 0,
+  "jira_linked_tasks": 0,
+  "tasks_by_status": {},
+  "tasks_by_source": {},
+  "issues_count": {
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  },
+  "health_score": 100
+}
