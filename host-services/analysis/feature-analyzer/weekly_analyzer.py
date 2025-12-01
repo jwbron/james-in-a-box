@@ -1252,16 +1252,16 @@ class RepoAnalyzer:
     """
     Analyzes an entire repository from scratch to generate a comprehensive feature list.
 
-    Unlike WeeklyAnalyzer which looks at recent commits, this class scans the entire
-    repository structure to identify all features, generating a complete FEATURES.md.
+    Uses a multi-agent approach:
+    - Pass 1: Preprocessing agent scans directories and builds a structured inventory
+    - Pass 2: Feature extraction agent analyzes each directory for user-facing features
+    - Pass 3: Consolidation agent deduplicates, categorizes, and organizes final output
 
-    This is useful for:
-    - Initial feature list generation for new repos
-    - Regenerating feature lists from scratch
-    - Auditing existing features against actual code
+    This approach lets the LLM handle complex decisions (deduplication, classification,
+    edge cases) rather than trying to encode all possible heuristics in code.
     """
 
-    # Standard categories for feature organization
+    # Standard categories for feature organization (used as guidance for LLM)
     CATEGORIES = [
         "Core Architecture",
         "Communication",
@@ -1285,32 +1285,14 @@ class RepoAnalyzer:
         "bin/",
     ]
 
-    # Files/patterns to skip
+    # Basic patterns to skip (obvious non-features)
     SKIP_PATTERNS = [
         r"__pycache__",
         r"\.pyc$",
         r"\.git/",
         r"node_modules/",
         r"\.egg-info",
-        r"test_.*\.py$",
-        r".*_test\.py$",
-        r"conftest\.py$",
-        r"setup\.py$",
-        r"__init__\.py$",
     ]
-
-    # Category mapping based on directory structure
-    CATEGORY_MAPPINGS = {
-        "host-services/analysis/": "Self-Improvement System",
-        "host-services/sync/": "Context Management",
-        "host-services/slack/": "Communication",
-        "host-services/utilities/": "Utilities",
-        "jib-container/scripts/": "Container Infrastructure",
-        "jib-container/shared/": "Container Infrastructure",
-        ".claude/commands/": "Custom Commands",
-        ".claude/rules/": "Configuration",
-        "Dockerfile": "Core Architecture",
-    }
 
     def __init__(self, repo_root: Path, use_llm: bool = True):
         """
@@ -1325,25 +1307,12 @@ class RepoAnalyzer:
         self.features_md = repo_root / "docs" / "FEATURES.md"
 
     def _should_skip(self, path: str) -> bool:
-        """Check if a path should be skipped."""
+        """Check if a path should be skipped (obvious non-features only)."""
         return any(re.search(pattern, path) for pattern in self.SKIP_PATTERNS)
-
-    def _get_category(self, path: str) -> str:
-        """Determine category for a file path."""
-        for prefix, category in self.CATEGORY_MAPPINGS.items():
-            if prefix in path:
-                return category
-        return "Utilities"
 
     def scan_directory_structure(self) -> dict[str, list[Path]]:
         """
         Scan the repository and group files by potential feature directories.
-
-        Note: This intentionally scans only one level deep into FEATURE_DIRECTORIES.
-        Each top-level subdirectory (e.g., host-services/slack/, jib-container/scripts/)
-        is treated as a single feature unit. Deeper nesting (e.g., host-services/analysis/
-        feature-analyzer/submodule/) is included in the parent feature's file list via
-        rglob, but not treated as a separate feature directory.
 
         Returns:
             Dict mapping directory paths to lists of relevant files
@@ -1355,25 +1324,22 @@ class RepoAnalyzer:
             if not base_path.exists():
                 continue
 
-            # Find subdirectories that likely represent features
             if base_path.is_dir():
                 for item in base_path.iterdir():
                     if item.is_dir() and not self._should_skip(str(item)):
-                        # This subdirectory likely represents a feature
                         dir_key = str(item.relative_to(self.repo_root))
                         feature_dirs[dir_key] = []
 
-                        # Collect Python files in this directory
+                        # Collect source files
                         for py_file in item.rglob("*.py"):
                             if not self._should_skip(str(py_file)):
                                 feature_dirs[dir_key].append(py_file)
 
-                        # Also check for shell scripts
                         for sh_file in item.rglob("*.sh"):
                             if not self._should_skip(str(sh_file)):
                                 feature_dirs[dir_key].append(sh_file)
 
-        # Also check for standalone scripts in root directories
+        # Check for standalone scripts
         for pattern in ["*.py", "*.sh"]:
             for script in self.repo_root.glob(pattern):
                 if not self._should_skip(str(script)):
@@ -1383,18 +1349,10 @@ class RepoAnalyzer:
         return feature_dirs
 
     def _read_file_safe(self, path: Path, max_lines: int = 500) -> str:
-        """Safely read file content with size limits.
-
-        Limits:
-        - 100KB file size (reasonable for LLM context; also truncated at max_lines anyway)
-        - max_lines line count (default 500)
-
-        Files exceeding these limits or with encoding issues are skipped with a warning.
-        """
+        """Safely read file content with size limits."""
         try:
             file_size = path.stat().st_size
-            if file_size > 100_000:  # 100KB limit (reasonable for LLM context)
-                print(f"      [skip] {path.name}: file too large ({file_size // 1024}KB)")
+            if file_size > 100_000:  # 100KB limit
                 return ""
             content = path.read_text(encoding="utf-8")
             lines = content.split("\n")
@@ -1402,51 +1360,28 @@ class RepoAnalyzer:
                 lines = lines[:max_lines]
                 lines.append(f"\n... [truncated at {max_lines} lines]")
             return "\n".join(lines)
-        except UnicodeDecodeError:
-            print(f"      [skip] {path.name}: encoding error (not UTF-8)")
-            return ""
-        except OSError as e:
-            print(f"      [skip] {path.name}: read error ({e})")
+        except (UnicodeDecodeError, OSError):
             return ""
 
-    def _extract_docstring(self, content: str) -> str:
-        """Extract the module docstring from source code."""
-        patterns = [
-            r'^"""(.*?)"""',
-            r"^'''(.*?)'''",
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, content.strip(), re.DOTALL)
-            if match:
-                docstring = match.group(1).strip()
-                first_para = docstring.split("\n\n")[0]
-                first_para = " ".join(first_para.split())
-                if len(first_para) > 300:
-                    first_para = first_para[:297] + "..."
-                return first_para
-        return ""
+    def _build_directory_summary(self, dir_path: str, files: list[Path]) -> str:
+        """Build a summary of a directory for LLM analysis."""
+        summary_parts = [f"Directory: {dir_path}"]
+        summary_parts.append(f"Files: {len(files)}")
 
-    def _find_readme(self, dir_path: Path) -> str | None:
-        """Find README.md in a directory."""
-        readme = dir_path / "README.md"
-        if readme.exists():
-            return str(readme.relative_to(self.repo_root))
-        return None
+        # List files
+        file_list = [str(f.relative_to(self.repo_root)) for f in files[:20]]
+        summary_parts.append("File list: " + ", ".join(file_list))
+        if len(files) > 20:
+            summary_parts.append(f"... and {len(files) - 20} more")
 
-    # Priority file names that likely contain entry points or main logic
-    PRIORITY_FILE_NAMES = {"main.py", "cli.py", "app.py", "__main__.py", "server.py", "service.py"}
+        # Check for README
+        readme_path = self.repo_root / dir_path / "README.md"
+        if readme_path.exists():
+            readme_content = self._read_file_safe(readme_path, max_lines=50)
+            if readme_content:
+                summary_parts.append(f"README excerpt:\n{readme_content[:500]}")
 
-    def _prioritize_files(self, files: list[Path]) -> list[Path]:
-        """Sort files to prioritize likely entry points for LLM analysis.
-
-        Prioritization order:
-        1. Files with priority names (main.py, cli.py, app.py, etc.)
-        2. Smaller files (more likely to be focused/readable)
-        """
-        return sorted(
-            files,
-            key=lambda f: (f.name not in self.PRIORITY_FILE_NAMES, f.stat().st_size),
-        )
+        return "\n".join(summary_parts)
 
     def _analyze_directory_with_llm(
         self, dir_path: str, files: list[Path]
@@ -1454,19 +1389,13 @@ class RepoAnalyzer:
         """
         Use LLM to analyze a directory and extract features.
 
-        Args:
-            dir_path: Relative path to the directory
-            files: List of files in the directory
-
-        Returns:
-            List of detected features
+        This is the feature extraction pass - given a directory, identify
+        what user-facing features it contains.
         """
-        # Sort files to prioritize entry points
-        prioritized_files = self._prioritize_files(files)
-
-        # Read file contents (limited to 5 files)
+        # Read file contents (take first 5 files by size, smallest first)
+        sorted_files = sorted(files, key=lambda f: f.stat().st_size)
         file_contents = {}
-        for f in prioritized_files[:5]:
+        for f in sorted_files[:5]:
             content = self._read_file_safe(f)
             if content:
                 rel_path = str(f.relative_to(self.repo_root))
@@ -1475,38 +1404,26 @@ class RepoAnalyzer:
         if not file_contents:
             return []
 
-        # Check for README first
+        # Check for README
         readme_content = ""
         readme_path = self.repo_root / dir_path / "README.md"
         if readme_path.exists():
             readme_content = self._read_file_safe(readme_path, max_lines=200)
 
-        # Build prompt
+        # Build code sections
         code_sections = []
         for file_path, content in file_contents.items():
             ext = Path(file_path).suffix
             lang = "python" if ext == ".py" else "bash" if ext == ".sh" else ""
-            code_sections.append(f"""
-## File: {file_path}
-
-```{lang}
-{content}
-```
-""")
+            code_sections.append(f"## File: {file_path}\n\n```{lang}\n{content}\n```")
 
         code_text = "\n---\n".join(code_sections)
 
         readme_section = ""
         if readme_content:
-            readme_section = f"""
-## README.md Content
+            readme_section = f"## README.md\n\n```markdown\n{readme_content}\n```\n"
 
-```markdown
-{readme_content}
-```
-"""
-
-        prompt = f"""Analyze this code directory to identify user-facing FEATURES for documentation.
+        prompt = f"""Analyze this code directory to identify user-facing FEATURES.
 
 # Directory: {dir_path}
 
@@ -1518,41 +1435,27 @@ class RepoAnalyzer:
 
 # Task
 
-Identify the main feature(s) in this directory. For each feature:
+Identify the main feature(s) in this directory. For each feature provide:
 
-1. **name**: Clear, descriptive name (NOT the directory name)
-   - Good: "Slack Message Router", "GitHub Token Refresher", "Conversation Analyzer"
-   - Bad: "Slack Notifier" (too vague), "Utils" (too generic)
-
-2. **description**: 2-3 sentence description explaining:
-   - What it does
-   - The problem it solves
-   - Key capabilities
-
-3. **category**: One of:
-   - "Core Architecture", "Communication", "Context Management", "GitHub Integration",
-   - "Self-Improvement System", "Documentation System", "Custom Commands",
-   - "Container Infrastructure", "Utilities", "Security Features", "Configuration"
-
-4. **key_components**: List 3-5 key components/capabilities
-
-5. **files**: Main implementation files
-
-6. **confidence**: 0.0-1.0 based on how clearly this is a user-facing feature
+1. **name**: Clear, descriptive name
+2. **description**: 2-3 sentence description
+3. **category**: One of: Core Architecture, Communication, Context Management, GitHub Integration, Self-Improvement System, Documentation System, Custom Commands, Container Infrastructure, Utilities, Security Features, Configuration
+4. **files**: Main implementation files
+5. **confidence**: 0.0-1.0
 
 # What IS a Feature?
 
-- Services that run as systemd units
-- CLI tools users can invoke
-- Libraries providing public APIs
+- Services/daemons that run continuously
+- CLI tools users invoke
+- Libraries with public APIs
 - Standalone capabilities solving user problems
 
 # What is NOT a Feature?
 
-- Internal utilities
+- Internal utilities/helpers
 - Test files
-- Configuration helpers
-- Generic "connector" classes without clear purpose
+- Configuration
+- Generic base classes
 
 # Output
 
@@ -1562,16 +1465,15 @@ Return ONLY a JSON array:
 [
   {{
     "name": "Feature Name",
-    "description": "2-3 sentence description",
-    "category": "Category Name",
-    "key_components": ["Component 1", "Component 2", "Component 3"],
-    "files": ["path/to/main.py"],
+    "description": "Description",
+    "category": "Category",
+    "files": ["path/to/file.py"],
     "confidence": 0.85
   }}
 ]
 ```
 
-If this directory doesn't contain a clear feature, return: `[]`
+If no clear features, return: `[]`
 """
 
         try:
@@ -1582,13 +1484,13 @@ If this directory doesn't contain a clear feature, return: `[]`
             )
 
             if result.success and result.stdout.strip():
-                return self._parse_llm_output(result.stdout, dir_path)
+                return self._parse_llm_output(result.stdout)
             return []
         except Exception as e:
             print(f"    Warning: LLM analysis failed for {dir_path}: {e}")
             return []
 
-    def _parse_llm_output(self, output: str, dir_path: str) -> list[DetectedFeature]:
+    def _parse_llm_output(self, output: str) -> list[DetectedFeature]:
         """Parse LLM JSON output into DetectedFeature objects."""
         features = []
 
@@ -1609,25 +1511,12 @@ If this directory doesn't contain a clear feature, return: `[]`
                 feature = DetectedFeature(
                     name=item.get("name", "Unknown"),
                     description=item.get("description", ""),
-                    category=item.get("category", self._get_category(dir_path)),
+                    category=item.get("category", "Utilities"),
                     files=item.get("files", []),
                     confidence=confidence,
                     date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
                     needs_review=confidence < 0.7,
                 )
-
-                # Enrich description with key_components if provided
-                key_components = item.get("key_components", [])
-                if key_components:
-                    # Ensure description ends with a period
-                    if feature.description and not feature.description.endswith("."):
-                        feature.description += "."
-                    # Append key capabilities
-                    components_str = ", ".join(key_components[:3])
-                    feature.description = (
-                        f"{feature.description} Key capabilities: {components_str}."
-                    )
-
                 features.append(feature)
 
         except (json.JSONDecodeError, ValueError) as e:
@@ -1635,43 +1524,123 @@ If this directory doesn't contain a clear feature, return: `[]`
 
         return features
 
+    def _consolidate_features_with_llm(
+        self, all_features: list[DetectedFeature]
+    ) -> list[DetectedFeature]:
+        """
+        Use LLM to consolidate, deduplicate, and organize features.
+
+        This is the consolidation pass - given all raw features from individual
+        directory analysis, produce a clean, deduplicated, well-organized list.
+        """
+        if not all_features:
+            return []
+
+        # Build feature summaries for the LLM
+        feature_summaries = []
+        for i, f in enumerate(all_features):
+            files_str = ", ".join(f.files[:3]) if f.files else "none"
+            feature_summaries.append(
+                f"{i+1}. {f.name} ({f.category}, {f.confidence:.0%})\n"
+                f"   Files: {files_str}\n"
+                f"   Description: {f.description}"
+            )
+
+        features_text = "\n\n".join(feature_summaries)
+
+        prompt = f"""You are consolidating a list of detected features for a FEATURES.md document.
+
+# Raw Feature List (from directory-by-directory analysis)
+
+{features_text}
+
+# Task
+
+Consolidate this list by:
+
+1. **Removing duplicates**: If two features are the same thing (same files, same purpose), keep only the better-described one
+2. **Merging related features**: If features are parts of the same system, consider merging them
+3. **Fixing categories**: Ensure each feature has the most appropriate category
+4. **Improving descriptions**: Make descriptions clear and consistent
+5. **Filtering noise**: Remove low-confidence items that aren't real user-facing features
+
+# Categories to use
+
+- Core Architecture
+- Communication
+- Context Management
+- GitHub Integration
+- Self-Improvement System
+- Documentation System
+- Custom Commands
+- Container Infrastructure
+- Utilities
+- Security Features
+- Configuration
+
+# Output
+
+Return ONLY a JSON array of the consolidated features:
+
+```json
+[
+  {{
+    "name": "Feature Name",
+    "description": "Clear 2-3 sentence description",
+    "category": "Category",
+    "files": ["path/to/file.py"],
+    "confidence": 0.85
+  }}
+]
+```
+"""
+
+        try:
+            result = run_claude(
+                prompt=prompt,
+                cwd=self.repo_root,
+                stream=False,
+            )
+
+            if result.success and result.stdout.strip():
+                return self._parse_llm_output(result.stdout)
+            return all_features  # Fall back to unprocessed list
+        except Exception as e:
+            print(f"    Warning: Consolidation failed: {e}")
+            return all_features
+
     def _analyze_directory_heuristically(
         self, dir_path: str, files: list[Path]
     ) -> list[DetectedFeature]:
-        """
-        Analyze a directory using heuristics (fallback when LLM unavailable).
-        """
+        """Analyze a directory using simple heuristics (fallback when LLM unavailable)."""
         features = []
 
-        # Check for main Python file
-        main_file = None
         for f in files:
             if f.suffix == ".py":
                 content = self._read_file_safe(f)
                 if "def main(" in content or 'if __name__ == "__main__"' in content:
-                    main_file = f
-                    break
+                    # Extract docstring for description
+                    docstring = ""
+                    match = re.search(r'^"""(.*?)"""', content.strip(), re.DOTALL)
+                    if match:
+                        docstring = match.group(1).strip().split("\n\n")[0]
+                        docstring = " ".join(docstring.split())[:200]
 
-        if main_file:
-            content = self._read_file_safe(main_file)
-            docstring = self._extract_docstring(content)
+                    dir_name = Path(dir_path).name
+                    name = dir_name.replace("_", " ").replace("-", " ").title()
+                    description = docstring or f"Tool providing {name.lower()} functionality"
 
-            # Generate name from directory
-            dir_name = Path(dir_path).name
-            name = dir_name.replace("_", " ").replace("-", " ").title()
-
-            description = docstring if docstring else f"Tool providing {name.lower()} functionality"
-
-            feature = DetectedFeature(
-                name=name,
-                description=description,
-                category=self._get_category(dir_path),
-                files=[str(main_file.relative_to(self.repo_root))],
-                confidence=0.5,
-                date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
-                needs_review=True,
-            )
-            features.append(feature)
+                    feature = DetectedFeature(
+                        name=name,
+                        description=description,
+                        category="Utilities",
+                        files=[str(f.relative_to(self.repo_root))],
+                        confidence=0.5,
+                        date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
+                        needs_review=True,
+                    )
+                    features.append(feature)
+                    break  # One feature per directory in heuristic mode
 
         return features
 
@@ -1683,17 +1652,12 @@ If this directory doesn't contain a clear feature, return: `[]`
         primary_file = Path(feature.files[0])
         parent = self.repo_root / primary_file.parent
 
-        # Check for README in same directory
         readme = parent / "README.md"
         if readme.exists():
             return str(primary_file.parent / "README.md")
 
-        # Check docs/reference/
         slug = feature.name.lower().replace(" ", "-")
-        for pattern in [
-            f"docs/reference/{slug}.md",
-            f"docs/{slug}.md",
-        ]:
+        for pattern in [f"docs/reference/{slug}.md", f"docs/{slug}.md"]:
             if (self.repo_root / pattern).exists():
                 return pattern
 
@@ -1702,17 +1666,8 @@ If this directory doesn't contain a clear feature, return: `[]`
     def generate_features_md(
         self, features: list[DetectedFeature], repo_name: str = "Repository"
     ) -> str:
-        """
-        Generate complete FEATURES.md content.
-
-        Args:
-            features: List of detected features
-            repo_name: Name of the repository for the title
-
-        Returns:
-            Complete FEATURES.md content as string
-        """
-        # Group features by category
+        """Generate complete FEATURES.md content."""
+        # Group by category
         by_category: dict[str, list[DetectedFeature]] = {}
         for feature in features:
             cat = feature.category or "Utilities"
@@ -1720,17 +1675,12 @@ If this directory doesn't contain a clear feature, return: `[]`
                 by_category[cat] = []
             by_category[cat].append(feature)
 
-        # Sort categories by standard order
-        sorted_categories = []
-        for cat in self.CATEGORIES:
-            if cat in by_category:
-                sorted_categories.append(cat)
-        # Add any categories not in standard list
+        # Sort categories
+        sorted_categories = [c for c in self.CATEGORIES if c in by_category]
         for cat in by_category:
             if cat not in sorted_categories:
                 sorted_categories.append(cat)
 
-        # Build document
         lines = [
             f"# {repo_name} Feature List",
             "",
@@ -1742,14 +1692,12 @@ If this directory doesn't contain a clear feature, return: `[]`
             "",
         ]
 
-        # Generate TOC
         for cat in sorted_categories:
             anchor = cat.lower().replace(" ", "-").replace("&", "and")
             lines.append(f"- [{cat}](#{anchor})")
 
         lines.extend(["", "---", ""])
 
-        # Generate feature sections
         feature_num = 1
         for cat in sorted_categories:
             cat_features = by_category[cat]
@@ -1757,50 +1705,42 @@ If this directory doesn't contain a clear feature, return: `[]`
             lines.append("")
 
             for feature in cat_features:
-                # Feature header
                 review_flag = " ⚠️ *needs review*" if feature.needs_review else ""
                 lines.append(f"### {feature_num}. {feature.name}{review_flag}")
-
                 lines.append(f"**Category:** {feature.category}")
 
-                # Location
                 if feature.files:
                     files_str = ", ".join(f"`{f}`" for f in feature.files[:3])
                     lines.append(f"**Location:** {files_str}")
 
-                # Description
                 lines.append(f"**Description:** {feature.description}")
 
-                # Documentation link
                 if feature.doc_path:
                     lines.append(f"**Documentation:** [{feature.doc_path}]({feature.doc_path})")
 
                 lines.append("")
                 feature_num += 1
 
-        # Add footer
-        lines.extend(
-            [
-                "---",
-                "",
-                "## Maintaining This List",
-                "",
-                "This feature list is maintained by the Feature Analyzer tool.",
-                "",
-                "### Update Commands",
-                "",
-                "```bash",
-                "# Regenerate entire list from scratch",
-                "feature-analyzer full-repo --repo-root /path/to/repo",
-                "",
-                "# Weekly incremental updates",
-                "feature-analyzer weekly-analyze --days 7",
-                "```",
-                "",
-                f"**Last Updated:** {datetime.now(UTC).strftime('%Y-%m-%d')}",
-                "",
-            ]
-        )
+        lines.extend([
+            "---",
+            "",
+            "## Maintaining This List",
+            "",
+            "This feature list is maintained by the Feature Analyzer tool.",
+            "",
+            "### Update Commands",
+            "",
+            "```bash",
+            "# Regenerate entire list from scratch",
+            "feature-analyzer full-repo --repo-root /path/to/repo",
+            "",
+            "# Weekly incremental updates",
+            "feature-analyzer weekly-analyze --days 7",
+            "```",
+            "",
+            f"**Last Updated:** {datetime.now(UTC).strftime('%Y-%m-%d')}",
+            "",
+        ])
 
         return "\n".join(lines)
 
@@ -1812,12 +1752,11 @@ If this directory doesn't contain a clear feature, return: `[]`
         """
         Analyze entire repository and generate comprehensive FEATURES.md.
 
-        Args:
-            dry_run: If True, don't write files
-            output_path: Custom output path (default: docs/FEATURES.md)
-
-        Returns:
-            FullRepoAnalysisResult with analysis details
+        Uses a multi-agent approach:
+        1. Scan directories to build inventory
+        2. Analyze each directory for features (LLM pass 1)
+        3. Consolidate and deduplicate all features (LLM pass 2)
+        4. Generate final FEATURES.md
         """
         result = FullRepoAnalysisResult(
             analysis_date=datetime.now(UTC).isoformat(),
@@ -1825,19 +1764,19 @@ If this directory doesn't contain a clear feature, return: `[]`
 
         output = output_path or self.features_md
 
-        print("Full Repository Feature Analysis")
+        print("Full Repository Feature Analysis (Multi-Agent)")
         print("=" * 50)
         print(f"Repository: {self.repo_root}")
         print(f"Output: {output}")
         print()
 
-        # Scan directory structure
+        # Phase 1: Scan directory structure
         print("Phase 1: Scanning directory structure...")
         feature_dirs = self.scan_directory_structure()
         result.directories_scanned = len(feature_dirs)
         print(f"  Found {len(feature_dirs)} potential feature directories")
 
-        # Analyze each directory
+        # Phase 2: Analyze each directory (LLM pass 1 - extraction)
         print("\nPhase 2: Analyzing directories for features...")
         all_features: list[DetectedFeature] = []
 
@@ -1856,7 +1795,6 @@ If this directory doesn't contain a clear feature, return: `[]`
                 features = self._analyze_directory_heuristically(dir_path, files)
 
             for feature in features:
-                # Find existing documentation
                 doc_path = self._find_existing_docs(feature)
                 if doc_path:
                     feature.doc_path = doc_path
@@ -1867,22 +1805,26 @@ If this directory doesn't contain a clear feature, return: `[]`
         result.features_detected = all_features
         print(f"\n  Total features detected: {len(all_features)}")
 
-        # Deduplicate features
-        print("\nPhase 3: Deduplicating and organizing...")
-        unique_features = self._deduplicate_features(all_features)
-        print(f"  Unique features: {len(unique_features)}")
+        # Phase 3: Consolidate features (LLM pass 2 - deduplication/organization)
+        print("\nPhase 3: Consolidating and organizing (LLM)...")
+        if self.use_llm and len(all_features) > 1:
+            consolidated_features = self._consolidate_features_with_llm(all_features)
+            print(f"  Consolidated to {len(consolidated_features)} features")
+        else:
+            consolidated_features = all_features
+            print(f"  Using {len(consolidated_features)} features (no consolidation)")
 
-        # Group by category
-        for feature in unique_features:
+        # Group by category for result
+        for feature in consolidated_features:
             cat = feature.category or "Utilities"
             if cat not in result.features_by_category:
                 result.features_by_category[cat] = []
             result.features_by_category[cat].append(feature)
 
-        # Generate FEATURES.md
+        # Phase 4: Generate FEATURES.md
         print("\nPhase 4: Generating FEATURES.md...")
         repo_name = self.repo_root.name
-        content = self.generate_features_md(unique_features, repo_name=repo_name)
+        content = self.generate_features_md(consolidated_features, repo_name=repo_name)
 
         if dry_run:
             print("\n[DRY RUN] Would write to:", output)
@@ -1893,68 +1835,12 @@ If this directory doesn't contain a clear feature, return: `[]`
             if len(content.split("\n")) > 50:
                 print("  ...")
         else:
-            # Ensure output directory exists
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(content)
             result.output_file = str(output)
             print(f"  ✓ Written to: {output}")
 
         return result
-
-    def _deduplicate_features(self, features: list[DetectedFeature]) -> list[DetectedFeature]:
-        """Remove duplicate features based on name similarity and file overlap.
-
-        Uses a sophisticated similarity check requiring either:
-        - At least 2 significant common words (>3 chars), OR
-        - At least 1 significant word AND 50%+ word overlap ratio
-
-        This prevents false positives like "Slack Message Router" and "Slack Notification
-        Service" being flagged as duplicates just because they share "Slack".
-        """
-        seen_names: set[str] = set()
-        seen_files: set[str] = set()
-        unique: list[DetectedFeature] = []
-
-        # Sort by confidence to keep best matches
-        sorted_features = sorted(features, key=lambda f: f.confidence, reverse=True)
-
-        for feature in sorted_features:
-            name_lower = feature.name.lower()
-
-            # Check for name similarity
-            is_duplicate = False
-            for seen in seen_names:
-                name_words = set(name_lower.split())
-                seen_words = set(seen.split())
-                common = name_words & seen_words
-                significant = [w for w in common if len(w) > 3]
-
-                # Require at least 2 significant common words, OR
-                # at least 1 significant word with 50%+ word overlap ratio
-                if len(significant) >= 2:
-                    is_duplicate = True
-                    break
-                elif len(significant) >= 1:
-                    max_words = max(len(name_words), len(seen_words))
-                    overlap_ratio = len(significant) / max_words if max_words > 0 else 0
-                    if overlap_ratio >= 0.5:
-                        is_duplicate = True
-                        break
-
-            if is_duplicate:
-                continue
-
-            # Check for file overlap
-            if feature.files:
-                primary = feature.files[0]
-                if primary in seen_files:
-                    continue
-                seen_files.add(primary)
-
-            seen_names.add(name_lower)
-            unique.append(feature)
-
-        return unique
 
 
 def main():
