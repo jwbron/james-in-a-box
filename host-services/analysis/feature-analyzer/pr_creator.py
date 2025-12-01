@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-PR Creator - Automated Pull Request Creation (Phase 3)
+PR Creator - Automated Pull Request Creation (Phase 3-4)
 
 This module creates GitHub PRs with documentation updates. It:
 1. Creates a branch with the documentation changes
 2. Commits the changes with proper traceability
 3. Creates a PR via GitHub MCP or gh CLI
-4. Returns the PR URL for tracking
+4. Creates git tags for audit trail (Phase 4)
+5. Returns the PR URL for tracking
 
 The PR includes:
 - Summary of what ADR triggered the update
@@ -14,6 +15,10 @@ The PR includes:
 - Diff summary
 - Test plan checklist
 - Traceability to the original ADR
+
+Phase 4 additions:
+- Git tagging: auto-doc-sync-YYYYMMDD for traceability
+- Query support: git log --tags='auto-doc-sync-*'
 
 Usage:
     creator = PRCreator(repo_root)
@@ -42,6 +47,7 @@ class PRResult:
     pr_url: str | None = None
     pr_number: int | None = None
     branch_name: str | None = None
+    tag_name: str | None = None  # Phase 4: Git tag for traceability
     error: str | None = None
 
 
@@ -138,6 +144,51 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
         except subprocess.CalledProcessError as e:
             print(f"    Error pushing branch: {e.stderr}")
             return False
+
+    def _create_tag(self, tag_name: str, message: str) -> bool:
+        """
+        Create a git tag for traceability (Phase 4).
+
+        Tags commits containing auto-generated content for easy querying:
+            git log --tags='auto-doc-sync-*'
+        """
+        try:
+            self._run_git("tag", "-a", tag_name, "-m", message)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"    Warning: Failed to create tag: {e.stderr}")
+            return False
+
+    def _push_tag(self, tag_name: str) -> bool:
+        """Push a tag to origin."""
+        try:
+            self._run_git("push", "origin", tag_name)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"    Warning: Failed to push tag: {e.stderr}")
+            return False
+
+    def _generate_tag_name(self) -> str:
+        """
+        Generate a tag name for auto-doc-sync commits (Phase 4).
+
+        Format: auto-doc-sync-YYYYMMDD[-N]
+        Adds suffix if tag already exists on that date.
+        """
+        base_tag = f"auto-doc-sync-{datetime.now(UTC).strftime('%Y%m%d')}"
+
+        # Check if tag exists
+        result = self._run_git("tag", "-l", f"{base_tag}*", check=False)
+        existing_tags = result.stdout.strip().split("\n") if result.stdout.strip() else []
+
+        if base_tag not in existing_tags:
+            return base_tag
+
+        # Find next available suffix
+        suffix = 2
+        while f"{base_tag}-{suffix}" in existing_tags:
+            suffix += 1
+        return f"{base_tag}-{suffix}"
 
     def _format_doc_list(self, updates: list["GeneratedUpdate"]) -> str:
         """Format the list of updated documents for PR description."""
@@ -240,6 +291,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
         adr_path: Path,
         updates: list["GeneratedUpdate"],
         dry_run: bool = False,
+        create_tag: bool = True,
+        custom_pr_body: str | None = None,
     ) -> PRResult:
         """
         Create a PR with documentation updates.
@@ -249,6 +302,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             adr_path: Path to the ADR file
             updates: List of generated documentation updates
             dry_run: If True, don't actually create the PR
+            create_tag: If True, create git tag for traceability (Phase 4)
+            custom_pr_body: Optional custom PR body (overrides default template)
 
         Returns:
             PRResult with PR details or error.
@@ -272,8 +327,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
 
         # Handle dry run
         if dry_run:
+            tag_name = self._generate_tag_name() if create_tag else None
             print("  [DRY RUN] Would create PR:")
             print(f"    Branch: {branch_name}")
+            if tag_name:
+                print(f"    Tag: {tag_name}")
             print(f"    Files: {len(valid_updates)}")
             for update in valid_updates:
                 rel_path = update.doc_path.relative_to(self.repo_root)
@@ -281,6 +339,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             return PRResult(
                 success=True,
                 branch_name=branch_name,
+                tag_name=tag_name,
                 pr_url="[dry-run]",
             )
 
@@ -318,18 +377,35 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                     error="Failed to commit changes",
                 )
 
+            # Create git tag for traceability (Phase 4)
+            tag_name = None
+            if create_tag:
+                tag_name = self._generate_tag_name()
+                tag_message = f"Auto-generated documentation sync for {adr_title}"
+                print(f"  Creating tag: {tag_name}")
+                self._create_tag(tag_name, tag_message)
+
             # Push branch
             print("  Pushing branch to origin...")
             if not self._push_branch(branch_name):
                 return PRResult(
                     success=False,
                     branch_name=branch_name,
+                    tag_name=tag_name,
                     error="Failed to push branch. Changes committed locally.",
                 )
 
-            # Create PR body
-            # Note: We use relative path format that works in GitHub PR context
-            pr_body = f"""## Summary
+            # Push tag if created
+            if tag_name:
+                print(f"  Pushing tag: {tag_name}")
+                self._push_tag(tag_name)  # Non-fatal if fails
+
+            # Create PR body - use custom body if provided, otherwise generate default
+            if custom_pr_body:
+                pr_body = custom_pr_body
+            else:
+                # Note: We use relative path format that works in GitHub PR context
+                pr_body = f"""## Summary
 
 Updates documentation to reflect implemented ADR: {adr_title}
 
@@ -366,12 +442,16 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
             result = self._create_pr_with_gh(branch_name, pr_title, pr_body)
 
+            # Add tag_name to result
+            result.tag_name = tag_name
+
             return result
 
         except Exception as e:
             return PRResult(
                 success=False,
                 branch_name=branch_name,
+                tag_name=tag_name if "tag_name" in dir() else None,
                 error=f"Unexpected error: {e}",
             )
 

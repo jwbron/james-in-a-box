@@ -10,12 +10,10 @@ Documentation=file://%h/khan/james-in-a-box/host-services/sync/context-sync/READ
 #   hourly           - Every hour (default)
 #   *-*-* 00:00:00   - Daily at midnight
 OnCalendar=hourly
-# Run 5 minutes after boot if missed
-OnBootSec=5min
 # Allow random delay of up to 2 minutes to avoid load spikes
 RandomizedDelaySec=2min
-# Persist timestamp across reboots
-Persistent=true
+# Note: No OnBootSec or Persistent=true to avoid immediate execution during setup
+# The timer will start from the next scheduled hourly interval
 
 [Install]
 WantedBy=timers.target

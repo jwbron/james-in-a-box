@@ -21,9 +21,9 @@ Async notifications to human via Slack.
 ### Option 1: Python Library (Preferred)
 
 ```python
-from pathlib import Path
 import sys
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "jib-container" / "shared"))
+from pathlib import Path
+sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 from notifications import slack_notify, NotificationContext
 
 # Simple notification
