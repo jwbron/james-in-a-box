@@ -38,7 +38,7 @@ Features are tagged with status flags matching ADR lifecycle:
 
 #### Feature Analyzer **[in-progress]**
 - **Description**: Automated feature detection and documentation sync workflow
-- **ADR**: [ADR-Feature-Analyzer-Documentation-Sync](adr/not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md)
+- **ADR**: [ADR-Feature-Analyzer-Documentation-Sync](adr/in-progress/ADR-Feature-Analyzer-Documentation-Sync.md)
 - **Current Status**:
   - ✅ Phase 1: Manual CLI tool (`feature-analyzer sync-docs`)
   - ✅ Phase 2: Automated ADR detection via systemd timer (15min interval)

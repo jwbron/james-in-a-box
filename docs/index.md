@@ -78,7 +78,7 @@ When working on specific tasks, consult these documents first:
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
 | **ADR research/generation** | [ADR Researcher](../host-services/analysis/adr-researcher/README.md) | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) |
 | **Feature discovery** | [Features - Source Mapping](FEATURES.md) | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) |
-| **Documentation sync** | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) | [ADR: Feature Analyzer](adr/not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md) |
+| **Documentation sync** | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) | [ADR: Feature Analyzer](adr/in-progress/ADR-Feature-Analyzer-Documentation-Sync.md) |
 
 ## Machine-Readable Indexes
 
