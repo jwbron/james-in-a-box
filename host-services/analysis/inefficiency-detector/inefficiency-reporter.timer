@@ -7,14 +7,14 @@ Requires=inefficiency-reporter.service
 # Run weekly on Monday at 11:00 AM (after beads-analyzer at 10:00)
 OnCalendar=Mon *-*-* 11:00:00
 
+# If system was off when timer should have run, run it on next boot
+Persistent=true
+
 # Randomize start time by up to 5 minutes to avoid resource spikes
 RandomizedDelaySec=5min
 
 # Timer unit to activate
 Unit=inefficiency-reporter.service
-
-# Note: No Persistent=true to avoid immediate execution during setup
-# If a scheduled run is missed, it will simply run at the next scheduled time
 
 [Install]
 WantedBy=timers.target
