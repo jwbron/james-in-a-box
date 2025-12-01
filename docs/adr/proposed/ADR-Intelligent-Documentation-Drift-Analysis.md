@@ -420,7 +420,7 @@ Create GitHub issue for team discussion:
 
 **Integration with FEATURES.md:**
 
-This ADR integrates with [ADR-Feature-Analyzer-Documentation-Sync](../not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md) to leverage FEATURES.md as a core data source for drift detection.
+This ADR integrates with [ADR-Feature-Analyzer-Documentation-Sync](../implemented/ADR-Feature-Analyzer-Documentation-Sync.md) to leverage FEATURES.md as a core data source for drift detection.
 
 **FEATURES.md provides:**
 - Authoritative feature-to-source mapping
@@ -1255,7 +1255,7 @@ The general approach (automated drift detection + correction PRs) is likely stab
 | ADR | Relationship |
 |-----|--------------|
 | [ADR-LLM-Documentation-Index-Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | Provides codebase index infrastructure that drift detection builds on |
-| [ADR-Feature-Analyzer-Documentation-Sync](../not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Maintains FEATURES.md which drift detection uses as authoritative feature-to-source mapping |
+| [ADR-Feature-Analyzer-Documentation-Sync](../implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Maintains FEATURES.md which drift detection uses as authoritative feature-to-source mapping |
 | [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) | jib needs accurate docs to function autonomously; drift detection ensures quality |
 
 ---
