@@ -1321,9 +1321,13 @@ Output ONLY the markdown content, no explanation.
             all_files = set()
             for commit in feature_commits:
                 for f in commit.files:
-                    if f.endswith(".py") and self.is_feature_directory(f):
-                        if not self._is_utility_file(f) and "test" not in f.lower():
-                            all_files.add(f)
+                    if (
+                        f.endswith(".py")
+                        and self.is_feature_directory(f)
+                        and not self._is_utility_file(f)
+                        and "test" not in f.lower()
+                    ):
+                        all_files.add(f)
 
             if all_files:
                 print(f"    Analyzing {len(all_files)} files...")
