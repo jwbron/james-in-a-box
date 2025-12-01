@@ -79,11 +79,10 @@ def _run_llm_prompt_shared(
             task_type="llm_prompt",
             context={
                 "prompt": prompt,
-                "timeout": 300,
                 "cwd": str(repo_root),
                 "stream": False,
             },
-            timeout=420,  # Extra time for container startup
+            # No timeout specified - let the shared claude module determine the default
         )
 
         if result.success and result.json_output:
