@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-Weekly Inefficiency Report Generator - Phase 3 of ADR-LLM-Inefficiency-Reporting
+Weekly Inefficiency Report Generator - Phase 3+4 of ADR-LLM-Inefficiency-Reporting
 
-Generates weekly reports on LLM processing inefficiencies and delivers them via GitHub PRs.
+Generates weekly reports on LLM processing inefficiencies, generates improvement
+proposals, and delivers them via GitHub PRs and Slack notifications.
 
 This is the automated component that:
 1. Analyzes trace sessions from the past week
 2. Generates comprehensive inefficiency reports
 3. Creates PRs with reports committed to docs/analysis/inefficiency/
+4. (Phase 4) Generates improvement proposals from detected inefficiencies
+5. (Phase 4) Sends Slack notifications for proposal review
+6. (Phase 4) Tracks impact of implemented proposals
 
 Reports: Creates PRs with reports committed to docs/analysis/inefficiency/ in the repo.
          Keeps only the last 5 reports (deletes older ones when creating PR #6).
@@ -17,12 +21,13 @@ Runs on host (not in container) via systemd timer:
 - Can force run with --force flag
 
 Usage:
-    weekly_report_generator.py [--days N] [--force] [--stdout]
+    weekly_report_generator.py [--days N] [--force] [--stdout] [--no-proposals] [--no-slack]
 
 Example:
     weekly_report_generator.py                    # Run weekly analysis
     weekly_report_generator.py --force            # Force run regardless of schedule
     weekly_report_generator.py --days 14          # Analyze last 14 days
+    weekly_report_generator.py --no-proposals     # Skip proposal generation
 """
 
 import argparse
@@ -39,25 +44,46 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import contextlib
 
+from impact_tracker import ImpactTracker
+from improvement_proposer import ImprovementProposer
 from inefficiency_detector import InefficiencyDetector
 from inefficiency_schema import AggregateInefficiencyReport, Severity
+from proposal_schema import ProposalBatch, ProposalPriority
 
 from config.model_pricing import calculate_blended_cost, get_active_model, get_model_pricing
 
 
 # Constants
 ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "inefficiency"
+PROPOSALS_DIR = REPO_ROOT / "docs" / "analysis" / "proposals"
+IMPACT_DIR = REPO_ROOT / "docs" / "analysis" / "impact"
 
 
 class WeeklyReportGenerator:
     """
     Generates weekly inefficiency reports and creates GitHub PRs with the results.
+
+    Phase 4 additions:
+    - Generates improvement proposals from detected inefficiencies
+    - Sends Slack notifications for proposal review
+    - Tracks impact of implemented proposals
     """
 
-    def __init__(self, days: int = 7):
+    def __init__(
+        self,
+        days: int = 7,
+        generate_proposals: bool = True,
+        send_slack: bool = True,
+    ):
         self.days = days
         self.analysis_dir = ANALYSIS_DIR
         self.detector = InefficiencyDetector()
+
+        # Phase 4 components
+        self.generate_proposals = generate_proposals
+        self.send_slack = send_slack
+        self.proposer = ImprovementProposer(proposals_dir=PROPOSALS_DIR)
+        self.impact_tracker = ImpactTracker(tracking_dir=IMPACT_DIR, proposals_dir=PROPOSALS_DIR)
 
     def generate_weekly_report(self) -> tuple[AggregateInefficiencyReport | None, Path | None]:
         """
@@ -373,10 +399,20 @@ class WeeklyReportGenerator:
         return to_delete
 
     def create_pr_with_report(
-        self, report: AggregateInefficiencyReport, report_file: Path, timestamp: str
+        self,
+        report: AggregateInefficiencyReport,
+        report_file: Path,
+        timestamp: str,
+        proposal_batch: ProposalBatch | None = None,
     ) -> str | None:
         """
         Create a PR with the inefficiency report.
+
+        Args:
+            report: The aggregate inefficiency report.
+            report_file: Path to the report markdown file.
+            timestamp: Timestamp string for the report.
+            proposal_batch: Optional proposal batch to include in PR.
 
         Returns:
             PR URL if successful, None otherwise
@@ -481,6 +517,24 @@ High-severity issues: {report.severity_counts.get("high", 0)}
 
 See the full report for detailed analysis and actionable recommendations.
 """
+            # Add Phase 4: Proposals section
+            if proposal_batch and proposal_batch.total_proposals > 0:
+                pr_body += f"""
+### Improvement Proposals (Phase 4)
+- **Total Proposals:** {proposal_batch.total_proposals}
+- **Expected Savings:** ~{proposal_batch.total_expected_savings:,} tokens/week
+
+"""
+                high_priority = [
+                    p for p in proposal_batch.proposals if p.priority == ProposalPriority.HIGH
+                ]
+                if high_priority:
+                    pr_body += "**High Priority:**\n"
+                    for p in high_priority[:3]:
+                        pr_body += f"- `{p.proposal_id}`: {p.title}\n"
+
+                pr_body += "\nProposals require human review. Reply to the Slack notification to approve/reject.\n"
+
             # Add cleanup note if files were deleted
             if to_delete:
                 pr_body += f"\n### Cleanup\n- Removed {len(to_delete)} old report(s) to maintain max 5 reports\n"
@@ -539,8 +593,20 @@ See the full report for detailed analysis and actionable recommendations.
         # Create timestamp for PR
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-        # Create PR with report
-        pr_url = self.create_pr_with_report(report, report_file, timestamp)
+        # Phase 4: Generate improvement proposals
+        proposal_batch = None
+        if self.generate_proposals and report.total_sessions > 0:
+            proposal_batch = self._generate_improvement_proposals(report)
+
+        # Phase 4: Check impact of previously implemented proposals
+        impact_report = self._check_proposal_impacts()
+
+        # Create PR with report (and proposals if generated)
+        pr_url = self.create_pr_with_report(report, report_file, timestamp, proposal_batch)
+
+        # Phase 4: Send Slack notification with proposals for review
+        if self.send_slack and proposal_batch and proposal_batch.total_proposals > 0:
+            self._send_slack_notification(report, proposal_batch, impact_report, pr_url)
 
         print("\n" + "=" * 60)
         print("Weekly Inefficiency Report Complete")
@@ -550,9 +616,232 @@ See the full report for detailed analysis and actionable recommendations.
         print(f"Health Score: {self._calculate_health_score(report)}/100")
         if pr_url:
             print(f"PR Created: {pr_url}")
+        if proposal_batch:
+            print(f"Proposals Generated: {proposal_batch.total_proposals}")
+            print(f"Expected Savings: ~{proposal_batch.total_expected_savings:,} tokens/week")
         print("=" * 60)
 
         return True
+
+    def _generate_improvement_proposals(
+        self, report: AggregateInefficiencyReport
+    ) -> ProposalBatch | None:
+        """Generate improvement proposals from the inefficiency report.
+
+        Args:
+            report: The aggregate inefficiency report.
+
+        Returns:
+            ProposalBatch with generated proposals, or None if no proposals.
+        """
+        print("\nGenerating improvement proposals...")
+
+        try:
+            batch = self.proposer.generate_proposals(report)
+
+            if batch.total_proposals == 0:
+                print("  No proposals generated (thresholds not met)")
+                return None
+
+            # Save the batch
+            batch_file = self.proposer.save_batch(batch)
+            print(f"  Generated {batch.total_proposals} proposals")
+            print(f"  Saved to: {batch_file}")
+
+            # Also save markdown version
+            md_file = batch_file.with_suffix(".md")
+            with open(md_file, "w") as f:
+                f.write(batch.to_markdown())
+
+            return batch
+
+        except Exception as e:
+            print(f"  ERROR generating proposals: {e}")
+            return None
+
+    def _check_proposal_impacts(self) -> dict | None:
+        """Check impact of previously implemented proposals.
+
+        Returns:
+            Impact summary or None if no proposals to check.
+        """
+        print("\nChecking implemented proposal impacts...")
+
+        try:
+            # Get proposals due for measurement
+            due = self.impact_tracker.get_proposals_due_for_measurement()
+
+            if due:
+                print(f"  {len(due)} proposals due for impact measurement")
+                # Note: Actual measurement requires comparing with new report data
+                # This would be automated in a real implementation
+
+            # Get implementation summary
+            summary = self.impact_tracker.get_implementation_summary()
+
+            if summary["total_implemented"] > 0:
+                print(f"  Total implemented: {summary['total_implemented']}")
+                print(f"  Awaiting measurement: {summary['awaiting_measurement']}")
+                print(f"  Already measured: {summary['measured']}")
+                if summary["measured"] > 0:
+                    print(f"  Overall effectiveness: {summary['overall_effectiveness']:.0%}")
+
+            return summary if summary["total_implemented"] > 0 else None
+
+        except Exception as e:
+            print(f"  ERROR checking impacts: {e}")
+            return None
+
+    def _send_slack_notification(
+        self,
+        report: AggregateInefficiencyReport,
+        batch: ProposalBatch,
+        impact_report: dict | None,
+        pr_url: str | None,
+    ) -> bool:
+        """Send Slack notification with proposals for review.
+
+        Args:
+            report: The inefficiency report.
+            batch: The proposal batch.
+            impact_report: Impact summary of previous proposals.
+            pr_url: URL of the PR created.
+
+        Returns:
+            True if notification sent successfully.
+        """
+        print("\nSending Slack notification...")
+
+        try:
+            # Try to import notifications library
+            try:
+                # Add shared lib to path
+                shared_path = REPO_ROOT / "shared"
+                if str(shared_path) not in sys.path:
+                    sys.path.insert(0, str(shared_path))
+                from notifications import NotificationContext, NotificationType, slack_notify
+            except ImportError:
+                print("  WARNING: notifications library not available, using file-based fallback")
+                return self._send_slack_file_notification(report, batch, impact_report, pr_url)
+
+            # Build notification content
+            health_score = self._calculate_health_score(report)
+            title = f"LLM Inefficiency Report - {batch.total_proposals} Proposals"
+
+            body_lines = []
+            body_lines.append(
+                f"**Health Score:** {health_score}/100 {self._get_health_emoji(health_score)}"
+            )
+            body_lines.append(f"**Period:** {report.time_period}")
+            body_lines.append("")
+            body_lines.append("## Quick Stats")
+            body_lines.append(f"- Sessions: {report.total_sessions}")
+            body_lines.append(f"- Inefficiency Rate: {report.average_inefficiency_rate:.1f}%")
+            body_lines.append(f"- Wasted Tokens: {report.total_wasted_tokens:,}")
+            body_lines.append("")
+
+            # Proposals summary
+            body_lines.append("## Improvement Proposals")
+            body_lines.append(f"**Total:** {batch.total_proposals}")
+            body_lines.append(
+                f"**Expected Savings:** ~{batch.total_expected_savings:,} tokens/week"
+            )
+            body_lines.append("")
+
+            # List high priority proposals
+            high = [p for p in batch.proposals if p.priority == ProposalPriority.HIGH]
+            if high:
+                body_lines.append("### High Priority")
+                for p in high[:3]:  # Limit to top 3
+                    body_lines.append(f"- **{p.title}** (`{p.proposal_id}`)")
+                    body_lines.append(
+                        f"  - {p.occurrences_count} occurrences, ~{p.expected_token_savings:,} savings"
+                    )
+                body_lines.append("")
+
+            # Impact summary if available
+            if impact_report and impact_report.get("measured", 0) > 0:
+                body_lines.append("## Previous Proposals Impact")
+                body_lines.append(f"- Implemented: {impact_report['total_implemented']}")
+                body_lines.append(f"- Measured: {impact_report['measured']}")
+                body_lines.append(f"- Effectiveness: {impact_report['overall_effectiveness']:.0%}")
+                body_lines.append("")
+
+            # Links
+            if pr_url:
+                body_lines.append(f"**Full Report PR:** {pr_url}")
+            body_lines.append("")
+            body_lines.append("## Review Commands")
+            body_lines.append(
+                "Reply with: `approve <id>`, `reject <id> <reason>`, `defer <id>`, `details <id>`"
+            )
+            body_lines.append("Or: `approve all` to approve all proposals")
+
+            body = "\n".join(body_lines)
+
+            # Send notification
+            context = NotificationContext(
+                task_id=f"inefficiency-report-{datetime.now().strftime('%Y%m%d')}",
+                source="inefficiency-reporter",
+                repository="jwbron/james-in-a-box",
+            )
+
+            result = slack_notify(
+                title=title,
+                body=body,
+                context=context,
+                notification_type=NotificationType.ACTION_REQUIRED,
+            )
+
+            if result.success:
+                print(f"  Notification sent: {result.message_id}")
+                return True
+            else:
+                print(f"  WARNING: Notification failed: {result.error_message}")
+                return False
+
+        except Exception as e:
+            print(f"  ERROR sending Slack notification: {e}")
+            return False
+
+    def _send_slack_file_notification(
+        self,
+        report: AggregateInefficiencyReport,
+        batch: ProposalBatch,
+        impact_report: dict | None,
+        pr_url: str | None,
+    ) -> bool:
+        """Fallback: Send notification via file-based system.
+
+        Args:
+            report: The inefficiency report.
+            batch: The proposal batch.
+            impact_report: Impact summary.
+            pr_url: PR URL.
+
+        Returns:
+            True if file written successfully.
+        """
+        notifications_dir = Path.home() / "sharing" / "notifications"
+        notifications_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"{timestamp}-inefficiency-proposals.md"
+        filepath = notifications_dir / filename
+
+        content = self.proposer.generate_slack_summary(batch)
+
+        # Add PR link
+        if pr_url:
+            content += f"\n\n**Full Report PR:** {pr_url}"
+
+        try:
+            filepath.write_text(content)
+            print(f"  Notification file written: {filepath}")
+            return True
+        except Exception as e:
+            print(f"  ERROR writing notification file: {e}")
+            return False
 
 
 def check_last_run(analysis_dir: Path) -> datetime | None:
@@ -601,6 +890,8 @@ Examples:
   %(prog)s                    # Run if last analysis was >7 days ago
   %(prog)s --force            # Force run regardless of schedule
   %(prog)s --days 14          # Analyze last 14 days
+  %(prog)s --no-proposals     # Skip proposal generation (Phase 4)
+  %(prog)s --no-slack         # Skip Slack notification
         """,
     )
     parser.add_argument(
@@ -608,6 +899,10 @@ Examples:
     )
     parser.add_argument("--force", action="store_true", help="Force analysis even if run recently")
     parser.add_argument("--stdout", action="store_true", help="Print report to stdout")
+    parser.add_argument(
+        "--no-proposals", action="store_true", help="Skip improvement proposal generation"
+    )
+    parser.add_argument("--no-slack", action="store_true", help="Skip Slack notification")
 
     args = parser.parse_args()
 
@@ -616,7 +911,11 @@ Examples:
         sys.exit(0)
 
     # Run report generation
-    generator = WeeklyReportGenerator(days=args.days)
+    generator = WeeklyReportGenerator(
+        days=args.days,
+        generate_proposals=not args.no_proposals,
+        send_slack=not args.no_slack,
+    )
     success = generator.run()
 
     # Optionally print to stdout
