@@ -21,27 +21,26 @@ Usage:
     slack.notify_action_required("Review Needed", "PR ready for review")
 """
 
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
 class NotificationContext:
     """Context for threading and tracking notifications."""
-    task_id: Optional[str] = None
-    thread_ts: Optional[str] = None
-    repository: Optional[str] = None
-    pr_number: Optional[int] = None
-    beads_id: Optional[str] = None
+
+    task_id: str | None = None
+    thread_ts: str | None = None
+    repository: str | None = None
+    pr_number: int | None = None
+    beads_id: str | None = None
 
 
 class SlackNotificationService:
     """Service for sending Slack notifications via file-based mechanism."""
 
-    def __init__(self, notifications_dir: Optional[Path] = None):
+    def __init__(self, notifications_dir: Path | None = None):
         self.notifications_dir = notifications_dir or Path.home() / "sharing" / "notifications"
         self.notifications_dir.mkdir(parents=True, exist_ok=True)
 
@@ -53,7 +52,7 @@ class SlackNotificationService:
         safe_topic = safe_topic[:30]  # Limit length
         return f"{timestamp}-{safe_topic}.md"
 
-    def _build_frontmatter(self, context: Optional[NotificationContext] = None) -> str:
+    def _build_frontmatter(self, context: NotificationContext | None = None) -> str:
         """Build YAML frontmatter for threading support."""
         if not context:
             return ""
@@ -66,7 +65,7 @@ class SlackNotificationService:
         if context.repository:
             lines.append(f'repository: "{context.repository}"')
         if context.pr_number:
-            lines.append(f'pr_number: {context.pr_number}')
+            lines.append(f"pr_number: {context.pr_number}")
         if context.beads_id:
             lines.append(f'beads_id: "{context.beads_id}"')
         lines.append("---")
@@ -77,7 +76,7 @@ class SlackNotificationService:
         self,
         title: str,
         body: str,
-        context: Optional[NotificationContext] = None,
+        context: NotificationContext | None = None,
         priority: str = "Low",
     ) -> Path:
         """
@@ -116,8 +115,8 @@ class SlackNotificationService:
         branch: str,
         commits: int = 1,
         summary: str = "",
-        pr_url: Optional[str] = None,
-        context: Optional[NotificationContext] = None,
+        pr_url: str | None = None,
+        context: NotificationContext | None = None,
     ) -> Path:
         """Send a work completion notification."""
         body = f"""**Repository**: {repository}
@@ -147,7 +146,7 @@ class SlackNotificationService:
         self,
         title: str,
         details: str,
-        context: Optional[NotificationContext] = None,
+        context: NotificationContext | None = None,
     ) -> Path:
         """Send a warning notification."""
         return self.send(
@@ -161,8 +160,8 @@ class SlackNotificationService:
         self,
         title: str,
         details: str,
-        options: Optional[list[str]] = None,
-        context: Optional[NotificationContext] = None,
+        options: list[str] | None = None,
+        context: NotificationContext | None = None,
     ) -> Path:
         """Send a notification requiring human action."""
         body = details
@@ -182,7 +181,7 @@ class SlackNotificationService:
         self,
         title: str,
         reason: str,
-        context: Optional[NotificationContext] = None,
+        context: NotificationContext | None = None,
     ) -> Path:
         """Send a notification that work is blocked."""
         return self.send(
@@ -196,7 +195,7 @@ class SlackNotificationService:
         self,
         title: str,
         error_details: str,
-        context: Optional[NotificationContext] = None,
+        context: NotificationContext | None = None,
     ) -> Path:
         """Send an error notification."""
         return self.send(
@@ -208,7 +207,7 @@ class SlackNotificationService:
 
 
 # Module-level singleton
-_service: Optional[SlackNotificationService] = None
+_service: SlackNotificationService | None = None
 
 
 def get_slack_service() -> SlackNotificationService:
@@ -222,7 +221,7 @@ def get_slack_service() -> SlackNotificationService:
 def slack_notify(
     title: str,
     body: str,
-    context: Optional[NotificationContext] = None,
+    context: NotificationContext | None = None,
     priority: str = "Low",
 ) -> Path:
     """
