@@ -1,9 +1,9 @@
 # LLM Inefficiency Detector (Phase 2 + 3)
 
-**Status:** Phase 3 Implementation (Weekly Reports + Slack Integration)
+**Status:** Phase 3 Implementation (Weekly Reports + GitHub PR Integration)
 **ADR:** [ADR-LLM-Inefficiency-Reporting.md](../../../docs/adr/in-progress/ADR-LLM-Inefficiency-Reporting.md)
 
-Analyzes LLM trace sessions to detect processing inefficiencies, generates actionable improvement recommendations, and delivers weekly reports via Slack.
+Analyzes LLM trace sessions to detect processing inefficiencies, generates actionable improvement recommendations, and delivers weekly reports via GitHub PRs.
 
 ## Overview
 
@@ -36,14 +36,14 @@ python inefficiency_detector.py analyze-period \
 ### Weekly Reports (Phase 3)
 
 ```bash
-# Generate weekly report with Slack notification and PR creation
+# Generate weekly report with PR creation
 python weekly_report_generator.py
 
 # Force run regardless of schedule
 python weekly_report_generator.py --force
 
-# Analyze custom period without Slack
-python weekly_report_generator.py --days 14 --no-slack
+# Analyze custom period
+python weekly_report_generator.py --days 14
 ```
 
 ### Programmatic Usage
@@ -77,7 +77,7 @@ detector.generate_markdown_report(aggregate, Path("report.md"))
 from weekly_report_generator import WeeklyReportGenerator
 
 generator = WeeklyReportGenerator(days=7)
-generator.run(send_slack=True)  # Generates report, sends Slack, creates PR
+generator.run()  # Generates report and creates PR
 ```
 
 ## Implemented Detectors
@@ -228,11 +228,7 @@ detector = InefficiencyDetector(config=config)
 ✅ **Weekly reports generated automatically** (Phase 3)
    - Systemd timer runs every Monday at 11:00 AM
    - Reports saved to `docs/analysis/inefficiency/`
-   - Slack notifications with summary
-
-✅ **Slack delivery** (Phase 3)
-   - Uses `notifications` library for Slack integration
-   - Fallback to file-based notifications if library unavailable
+   - GitHub PRs created automatically for review
 
 ## Weekly Report Workflow (Phase 3)
 
@@ -256,9 +252,6 @@ python weekly_report_generator.py --force
 
 # Custom time period
 python weekly_report_generator.py --days 14
-
-# Without Slack notification
-python weekly_report_generator.py --force --no-slack
 ```
 
 ### Report Output
@@ -269,14 +262,6 @@ Reports are saved to `docs/analysis/inefficiency/` in the repo:
 - `latest-report.md` / `latest-metrics.json` - Symlinks to most recent
 
 A PR is automatically created with each report, keeping only the last 5 reports.
-
-### Slack Notifications
-
-The weekly report generator sends a summary to Slack including:
-- Health Score (0-100)
-- Sessions analyzed, tokens consumed, wasted tokens
-- Top issue with recommendation
-- Severity breakdown (High/Medium/Low)
 
 ### Systemd Commands
 
@@ -325,9 +310,9 @@ pytest tests/host_services/test_inefficiency_detector.py::TestToolDiscoveryDetec
 
 ### Phase 3 (COMPLETED)
 - [x] Implement weekly report generation
-- [x] Add Slack integration for notifications
+- [x] GitHub PR integration for report delivery
 - [x] Create systemd timer for automated weekly runs
-- [x] PR creation with report files
+- [x] Automatic report retention (last 5 reports)
 
 ### Phase 4 Priorities (Self-Improvement Loop)
 - [ ] **Validate false positive rate** with real trace data from Phase 1b hook integration (target: <10%)
@@ -355,5 +340,5 @@ pytest tests/host_services/test_inefficiency_detector.py::TestToolDiscoveryDetec
 ---
 
 **Last Updated:** 2025-12-01
-**Phase:** 3 (Weekly Reports + Slack Integration)
+**Phase:** 3 (Weekly Reports + GitHub PR Integration)
 **Next Phase:** 4 (Self-Improvement Loop)

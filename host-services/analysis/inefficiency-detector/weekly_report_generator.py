@@ -2,13 +2,12 @@
 """
 Weekly Inefficiency Report Generator - Phase 3 of ADR-LLM-Inefficiency-Reporting
 
-Generates weekly reports on LLM processing inefficiencies and delivers them via Slack.
+Generates weekly reports on LLM processing inefficiencies and delivers them via GitHub PRs.
 
 This is the automated component that:
 1. Analyzes trace sessions from the past week
 2. Generates comprehensive inefficiency reports
 3. Creates PRs with reports committed to docs/analysis/inefficiency/
-4. Sends Slack notifications with summary and actionable insights
 
 Reports: Creates PRs with reports committed to docs/analysis/inefficiency/ in the repo.
          Keeps only the last 5 reports (deletes older ones when creating PR #6).
@@ -18,17 +17,15 @@ Runs on host (not in container) via systemd timer:
 - Can force run with --force flag
 
 Usage:
-    weekly_report_generator.py [--days N] [--force] [--no-slack] [--stdout]
+    weekly_report_generator.py [--days N] [--force] [--stdout]
 
 Example:
-    weekly_report_generator.py                    # Run weekly analysis with Slack
+    weekly_report_generator.py                    # Run weekly analysis
     weekly_report_generator.py --force            # Force run regardless of schedule
     weekly_report_generator.py --days 14          # Analyze last 14 days
-    weekly_report_generator.py --no-slack         # Skip Slack notification
 """
 
 import argparse
-import json
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -43,12 +40,11 @@ from inefficiency_schema import AggregateInefficiencyReport, Severity
 # Constants
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "inefficiency"
-SHARING_DIR = Path.home() / "sharing"
 
 
 class WeeklyReportGenerator:
     """
-    Generates weekly inefficiency reports with Slack delivery and GitHub PR creation.
+    Generates weekly inefficiency reports and creates GitHub PRs with the results.
     """
 
     def __init__(self, days: int = 7):
@@ -133,9 +129,14 @@ class WeeklyReportGenerator:
 
             # Calculate potential savings
             if report.total_wasted_tokens > 0:
-                # Rough cost estimate: ~$0.003 per 1K tokens for output
-                potential_savings = (report.total_wasted_tokens / 1000) * 0.003
+                # Cost estimates based on Claude Sonnet 4 pricing (most commonly used model)
+                # Input: $3/MTok, Output: $15/MTok
+                # Wasted tokens are primarily output tokens from failed/retried tool calls
+                # Using blended rate assuming ~60% output, 40% input for wasted tokens
+                blended_rate = 0.60 * 15.0 + 0.40 * 3.0  # $10.20 per MTok
+                potential_savings = (report.total_wasted_tokens / 1_000_000) * blended_rate
                 f.write(f"| Estimated Weekly Savings | ~${potential_savings:.2f} |\n")
+                f.write(f"| *(Based on Claude Sonnet 4 pricing)* | |\n")
 
             f.write("\n")
 
@@ -328,111 +329,6 @@ class WeeklyReportGenerator:
 
         return recommendations
 
-    def send_slack_notification(self, report: AggregateInefficiencyReport, report_file: Path) -> bool:
-        """
-        Send Slack notification with report summary.
-
-        Returns:
-            True if notification sent successfully
-        """
-        if report.total_sessions == 0:
-            print("Skipping Slack notification - no sessions to report")
-            return False
-
-        try:
-            # Try to use the notifications library
-            notifications_path = Path.home() / "khan" / "james-in-a-box" / "jib-container" / "shared"
-            sys.path.insert(0, str(notifications_path))
-
-            from notifications import slack_notify
-
-            health_score = self._calculate_health_score(report)
-
-            # Build notification body
-            body_lines = [
-                f"**Health Score:** {health_score}/100 {self._get_health_emoji(health_score)}",
-                "",
-                "**Quick Stats:**",
-                f"- Sessions Analyzed: {report.total_sessions}",
-                f"- Total Tokens: {report.total_tokens:,}",
-                f"- Wasted Tokens: {report.total_wasted_tokens:,}",
-                f"- Inefficiency Rate: {report.average_inefficiency_rate:.1f}%",
-                "",
-            ]
-
-            # Add top issue
-            if report.top_issues:
-                top = report.top_issues[0]
-                body_lines.extend([
-                    "**Top Issue:**",
-                    f"- {top['sub_category'].replace('_', ' ').title()}: {top['occurrences']} occurrences, {top['total_waste_tokens']:,} tokens wasted",
-                    f"- Recommendation: {top['recommendation'][:100]}...",
-                    "",
-                ])
-
-            # Add severity summary
-            body_lines.extend([
-                "**Severity Summary:**",
-                f"- 🔴 High: {report.severity_counts.get('high', 0)}",
-                f"- 🟡 Medium: {report.severity_counts.get('medium', 0)}",
-                f"- 🟢 Low: {report.severity_counts.get('low', 0)}",
-            ])
-
-            body = "\n".join(body_lines)
-
-            slack_notify(
-                f"Weekly LLM Inefficiency Report - Score: {health_score}/100",
-                body
-            )
-
-            print("✓ Slack notification sent")
-            return True
-
-        except ImportError as e:
-            print(f"WARNING: Could not import notifications library: {e}")
-            return self._fallback_slack_notification(report)
-        except Exception as e:
-            print(f"WARNING: Failed to send Slack notification: {e}")
-            return False
-
-    def _fallback_slack_notification(self, report: AggregateInefficiencyReport) -> bool:
-        """Fallback to file-based notification if library not available."""
-        try:
-            notifications_dir = SHARING_DIR / "notifications"
-            notifications_dir.mkdir(parents=True, exist_ok=True)
-
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            notification_file = notifications_dir / f"{timestamp}-inefficiency-report.md"
-
-            health_score = self._calculate_health_score(report)
-
-            content = f"""# 📊 Weekly LLM Inefficiency Report
-
-**Health Score**: {health_score}/100 {self._get_health_emoji(health_score)}
-
-## Quick Stats
-- Sessions: {report.total_sessions}
-- Total Tokens: {report.total_tokens:,}
-- Wasted: {report.total_wasted_tokens:,} ({report.average_inefficiency_rate:.1f}%)
-
-## Severity Summary
-- 🔴 High: {report.severity_counts.get('high', 0)}
-- 🟡 Medium: {report.severity_counts.get('medium', 0)}
-- 🟢 Low: {report.severity_counts.get('low', 0)}
-
-Full report available in docs/analysis/inefficiency/
-"""
-
-            with open(notification_file, "w") as f:
-                f.write(content)
-
-            print(f"✓ Notification file created: {notification_file}")
-            return True
-
-        except Exception as e:
-            print(f"ERROR: Failed to create notification file: {e}")
-            return False
-
     def _cleanup_old_reports(self, max_reports: int = 5) -> list[Path]:
         """Keep only the last N reports, return files to be deleted."""
         report_files = sorted(
@@ -594,7 +490,7 @@ See the full report for detailed analysis and actionable recommendations.
                 pass
             return None
 
-    def run(self, send_slack: bool = True) -> bool:
+    def run(self) -> bool:
         """
         Run the full weekly report generation workflow.
 
@@ -610,10 +506,6 @@ See the full report for detailed analysis and actionable recommendations.
 
         # Create timestamp for PR
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-        # Send Slack notification
-        if send_slack:
-            self.send_slack_notification(report, report_file)
 
         # Create PR with report
         pr_url = self.create_pr_with_report(report, report_file, timestamp)
@@ -677,7 +569,6 @@ Examples:
   %(prog)s                    # Run if last analysis was >7 days ago
   %(prog)s --force            # Force run regardless of schedule
   %(prog)s --days 14          # Analyze last 14 days
-  %(prog)s --no-slack         # Skip Slack notification
         """,
     )
     parser.add_argument(
@@ -685,9 +576,6 @@ Examples:
     )
     parser.add_argument(
         "--force", action="store_true", help="Force analysis even if run recently"
-    )
-    parser.add_argument(
-        "--no-slack", action="store_true", help="Skip Slack notification"
     )
     parser.add_argument(
         "--stdout", action="store_true", help="Print report to stdout"
@@ -701,7 +589,7 @@ Examples:
 
     # Run report generation
     generator = WeeklyReportGenerator(days=args.days)
-    success = generator.run(send_slack=not args.no_slack)
+    success = generator.run()
 
     # Optionally print to stdout
     if args.stdout:
