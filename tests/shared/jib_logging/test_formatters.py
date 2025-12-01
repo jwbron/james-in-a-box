@@ -342,4 +342,6 @@ class TestConsoleFormatter:
         output = formatter.format(record)
 
         assert "/path/to/file.py" not in output
-        assert ":42" not in output
+        # Check that source location format (file:lineno) is not in output
+        # Note: We can't just check for ":42" as timestamps may contain that
+        assert "[/path/to/file.py:42]" not in output
