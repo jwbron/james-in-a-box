@@ -13,6 +13,7 @@ Task types:
     - llm_prompt: Run an LLM prompt and return the result as JSON
     - doc_generation: Generate documentation updates based on an ADR
     - feature_extraction: Extract features from code for FEATURES.md
+    - create_pr: Create a PR with files (uses container's git worktree)
 
 Output:
     Writes JSON to stdout with structure:
@@ -178,6 +179,136 @@ Output ONLY the updated documentation content. Do not include any explanation or
         return output_result(False, error=f"Error generating documentation: {e}")
 
 
+def handle_create_pr(context: dict) -> int:
+    """Handle PR creation for analysis reports.
+
+    This runs inside the jib container where git worktrees are already set up,
+    avoiding interference with the host's main worktree.
+
+    Context expected:
+        - repo_name: str (e.g., "james-in-a-box")
+        - branch_name: str (e.g., "beads-health-report-20251201")
+        - files: list[dict] with {path: str, content: str} - files to commit
+        - commit_message: str
+        - pr_title: str
+        - pr_body: str
+
+    Returns JSON with:
+        - result.pr_url: str (URL of created PR)
+        - result.branch: str (branch name)
+    """
+    import subprocess
+
+    repo_name = context.get("repo_name", "james-in-a-box")
+    branch_name = context.get("branch_name")
+    files = context.get("files", [])
+    commit_message = context.get("commit_message", "chore: Add analysis report")
+    pr_title = context.get("pr_title", "Analysis Report")
+    pr_body = context.get("pr_body", "")
+
+    if not branch_name:
+        return output_result(False, error="No branch_name provided")
+    if not files:
+        return output_result(False, error="No files provided to commit")
+
+    # Get repo path - inside container, repos are at ~/khan/<repo>
+    repo_path = Path.home() / "khan" / repo_name
+
+    if not repo_path.exists():
+        return output_result(False, error=f"Repository not found: {repo_path}")
+
+    try:
+        # Create branch from origin/main
+        subprocess.run(
+            ["git", "fetch", "origin", "main"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-b", branch_name, "origin/main"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Write files
+        for file_info in files:
+            file_path = repo_path / file_info["path"]
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(file_info["content"])
+
+        # Stage all files
+        for file_info in files:
+            subprocess.run(
+                ["git", "add", file_info["path"]],
+                check=True,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+
+        # Commit
+        subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Push
+        subprocess.run(
+            ["git", "push", "origin", branch_name],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Create PR using gh CLI
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                pr_title,
+                "--body",
+                pr_body,
+                "--base",
+                "main",
+                "--head",
+                branch_name,
+            ],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        pr_url = result.stdout.strip()
+
+        return output_result(
+            success=True,
+            result={
+                "pr_url": pr_url,
+                "branch": branch_name,
+            },
+        )
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"Git operation failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except Exception as e:
+        return output_result(False, error=f"Error creating PR: {e}")
+
+
 def handle_feature_extraction(context: dict) -> int:
     """Handle feature extraction from code files.
 
@@ -288,7 +419,7 @@ def main():
         "--task",
         type=str,
         required=True,
-        choices=["llm_prompt", "doc_generation", "feature_extraction"],
+        choices=["llm_prompt", "doc_generation", "feature_extraction", "create_pr"],
         help="Type of analysis task to perform",
     )
     parser.add_argument(
@@ -311,6 +442,7 @@ def main():
         "llm_prompt": handle_llm_prompt,
         "doc_generation": handle_doc_generation,
         "feature_extraction": handle_feature_extraction,
+        "create_pr": handle_create_pr,
     }
 
     handler = handlers.get(args.task)

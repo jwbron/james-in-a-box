@@ -38,6 +38,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Add host-services/shared to path for jib_exec
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared"))
+from jib_exec import jib_exec
 
 # Constants
 # Write to repo for version control and analyzer accessibility
@@ -869,8 +872,12 @@ Period: Last {self.days} days
         report_file: Path,
         timestamp: str,
     ):
-        """Create a PR with the health reports."""
-        print("\nPreparing to create PR with health reports...")
+        """Create a PR with the health reports via jib --exec.
+
+        Uses jib_exec to run git operations inside a container where worktrees
+        are already set up, avoiding interference with the host's main worktree.
+        """
+        print("\nPreparing to create PR with health reports via jib --exec...")
 
         # Cleanup old reports (keep only last 5)
         to_delete = self._cleanup_old_reports(max_reports=5)
@@ -878,41 +885,44 @@ Period: Last {self.days} days
         # Determine branch name
         branch_name = f"beads-health-report-{timestamp}"
 
-        try:
-            # Create new branch
-            subprocess.run(
-                ["git", "checkout", "-b", branch_name, "origin/main"],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
-            print(f"✓ Created branch: {branch_name}")
+        # Calculate health score for commit message and PR
+        health_score = self._calculate_health_score(metrics, issues)
 
-            # Delete old reports if any
-            if to_delete:
-                for file_path in to_delete:
-                    subprocess.run(
-                        ["git", "rm", str(file_path)],
-                        check=True,
-                        cwd=REPO_ROOT,
-                        capture_output=True,
-                        text=True,
-                    )
-                print(f"✓ Removed {len(to_delete)} old report(s)")
+        # Build list of files to commit
+        files = []
 
-            # Stage the new report files
-            subprocess.run(
-                ["git", "add", str(self.analysis_dir)],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
+        # Read all report files from analysis_dir
+        for report_path in self.analysis_dir.glob("beads-health-*.md"):
+            rel_path = report_path.relative_to(REPO_ROOT)
+            files.append({
+                "path": str(rel_path),
+                "content": report_path.read_text(),
+            })
 
-            # Commit
-            health_score = self._calculate_health_score(metrics, issues)
-            commit_message = f"""chore: Add Beads health report {timestamp}
+        for metrics_path in self.analysis_dir.glob("beads-metrics-*.json"):
+            rel_path = metrics_path.relative_to(REPO_ROOT)
+            files.append({
+                "path": str(rel_path),
+                "content": metrics_path.read_text(),
+            })
+
+        # Add symlinks as actual files pointing to latest
+        # (symlinks don't work well with git add in container, use relative links)
+        files.append({
+            "path": "docs/analysis/beads/latest-report.md",
+            "content": f"beads-health-{timestamp}.md",  # Symlink target
+        })
+        files.append({
+            "path": "docs/analysis/beads/latest-metrics.json",
+            "content": f"beads-metrics-{timestamp}.json",  # Symlink target
+        })
+
+        if not files:
+            print("ERROR: No report files to commit", file=sys.stderr)
+            return
+
+        # Build commit message
+        commit_message = f"""chore: Add Beads health report {timestamp}
 
 Health Score: {health_score}/100
 - Total Tasks: {metrics.total_tasks}
@@ -921,28 +931,10 @@ Health Score: {health_score}/100
 
 High-severity issues: {len([i for i in issues if i.severity == "high"])}
 """
-            subprocess.run(
-                ["git", "commit", "-m", commit_message],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
-            print("✓ Committed changes")
 
-            # Push branch
-            subprocess.run(
-                ["git", "push", "origin", branch_name],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
-            print(f"✓ Pushed to origin/{branch_name}")
-
-            # Create PR using gh CLI
-            pr_title = f"Beads Health Report - {timestamp}"
-            pr_body = f"""## Beads Integration Health Report
+        # Build PR body
+        pr_title = f"Beads Health Report - {timestamp}"
+        pr_body = f"""## Beads Integration Health Report
 
 **Health Score**: {health_score}/100 {self._get_health_emoji(health_score)}
 
@@ -967,40 +959,29 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
 See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for detailed analysis.
 """
 
-            result = subprocess.run(
-                [
-                    "gh",
-                    "pr",
-                    "create",
-                    "--title",
-                    pr_title,
-                    "--body",
-                    pr_body,
-                    "--base",
-                    "main",
-                    "--head",
-                    branch_name,
-                ],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
-            pr_url = result.stdout.strip()
-            print(f"✓ Created PR: {pr_url}")
+        # Call jib --exec to create PR inside container
+        print(f"Invoking jib --exec to create PR on branch {branch_name}...")
+        result = jib_exec(
+            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            task_type="create_pr",
+            context={
+                "repo_name": "james-in-a-box",
+                "branch_name": branch_name,
+                "files": files,
+                "commit_message": commit_message,
+                "pr_title": pr_title,
+                "pr_body": pr_body,
+            },
+            timeout=300,
+        )
 
-        except subprocess.CalledProcessError as e:
-            print(f"ERROR creating PR: {e}", file=sys.stderr)
-            print(f"  stdout: {e.stdout}", file=sys.stderr)
-            print(f"  stderr: {e.stderr}", file=sys.stderr)
-            # Try to return to main branch
-            with contextlib.suppress(builtins.BaseException):
-                subprocess.run(
-                    ["git", "checkout", "main"],
-                    check=False,
-                    cwd=REPO_ROOT,
-                    capture_output=True,
-                )
+        if result.success and result.json_output:
+            pr_url = result.json_output.get("result", {}).get("pr_url", "")
+            print(f"✓ Created PR: {pr_url}")
+        else:
+            print(f"ERROR creating PR: {result.error}", file=sys.stderr)
+            if result.stderr:
+                print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
 
 
 def check_last_run(analysis_dir: Path) -> datetime | None:
