@@ -65,13 +65,20 @@ Phase 6 adds the ability to analyze an entire repository from scratch and genera
 
 ### Phase 6 Capabilities (Full Repository Analysis)
 
-1. **Directory structure scanning** - Scans entire repo for feature directories
-2. **Deep code analysis** - Reads source files (not just commits) for thorough extraction
-3. **LLM-powered feature detection** - Uses Claude to identify and describe features
-4. **Category organization** - Organizes features into standard categories
-5. **Documentation linking** - Links features to existing README files
-6. **Comprehensive FEATURES.md generation** - Creates complete feature list from scratch
-7. **Deduplication** - Removes duplicate features based on name and file overlap
+1. **Deep recursive scanning** - Recursively scans ALL directories to find features (unbounded depth)
+2. **Smart feature detection** - Identifies feature directories using README presence, source files, and structure
+3. **Generous file analysis** - Reads up to 15 files per directory with 1000-line limits for thorough extraction
+4. **LLM-powered feature detection** - Uses Claude to identify and describe ALL features comprehensively
+5. **Category organization** - Organizes features into standard categories
+6. **Documentation linking** - Links features to existing README files
+7. **Comprehensive FEATURES.md generation** - Creates complete feature list from scratch
+8. **Conservative deduplication** - Only removes TRUE duplicates, preserves related but distinct features
+
+**Key improvements (v2):**
+- Scans nested directories recursively (e.g., `host-services/analysis/adr-researcher/`)
+- Includes `.claude/commands/`, `jib-tasks/`, `jib-tools/` for complete coverage
+- Reads more files per directory (15 vs 5) for better LLM context
+- Inclusive prompting - Claude is encouraged to find ALL features, not filter conservatively
 
 ## Installation
 

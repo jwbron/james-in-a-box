@@ -1276,13 +1276,22 @@ class RepoAnalyzer:
         "Configuration",
     ]
 
-    # Directories that contain features
-    FEATURE_DIRECTORIES = [
+    # Directories that contain features - scan recursively for actual feature directories
+    # These are root directories that MAY contain nested feature directories
+    FEATURE_ROOT_DIRECTORIES = [
         "host-services/",
         "jib-container/",
-        ".claude/commands/",
         "scripts/",
         "bin/",
+    ]
+
+    # Additional specific feature directories to scan (these contain features directly)
+    SPECIFIC_FEATURE_DIRECTORIES = [
+        "jib-container/.claude/commands/",
+        "jib-container/.claude/hooks/",
+        "jib-container/jib-tasks/",
+        "jib-container/jib-tools/",
+        "jib-container/scripts/",
     ]
 
     # Basic patterns to skip (obvious non-features)
@@ -1312,40 +1321,103 @@ class RepoAnalyzer:
 
     def scan_directory_structure(self) -> dict[str, list[Path]]:
         """
-        Scan the repository and group files by potential feature directories.
+        Scan the repository DEEPLY to find ALL potential feature directories.
 
-        Scans one level deep into FEATURE_DIRECTORIES, treating each
-        top-level subdirectory as a feature unit. For example, if
-        FEATURE_DIRECTORIES includes "host-services/", this will identify
-        "host-services/slack/" and "host-services/sync/" as separate features,
-        but won't recurse further to treat subdirectories of those as features.
+        This method is now UNBOUNDED - it recursively discovers all directories
+        that look like they contain features. A directory is considered a
+        "feature directory" if it:
+        1. Contains Python files (.py) with main() or __main__
+        2. Contains shell scripts (.sh)
+        3. Contains a README.md (indicates standalone component)
+        4. Is a leaf directory with source files (no further subdirectories with source)
 
         Returns:
             Dict mapping directory paths to lists of relevant files
         """
         feature_dirs: dict[str, list[Path]] = {}
 
-        for feature_dir in self.FEATURE_DIRECTORIES:
-            base_path = self.repo_root / feature_dir
-            if not base_path.exists():
-                continue
+        def is_feature_directory(dir_path: Path) -> bool:
+            """
+            Determine if a directory is a feature directory (standalone feature unit).
 
-            if base_path.is_dir():
-                for item in base_path.iterdir():
-                    if item.is_dir() and not self._should_skip(str(item)):
-                        dir_key = str(item.relative_to(self.repo_root))
-                        feature_dirs[dir_key] = []
+            A feature directory is one that contains implementation files
+            and is the logical unit of a feature. We want to find the RIGHT
+            level - not too coarse (missing features) but not too fine
+            (every utility module as a feature).
+            """
+            if not dir_path.is_dir():
+                return False
 
-                        # Collect source files
-                        for py_file in item.rglob("*.py"):
-                            if not self._should_skip(str(py_file)):
-                                feature_dirs[dir_key].append(py_file)
+            # Check for source files at THIS level (not recursively)
+            has_py = any(dir_path.glob("*.py"))
+            has_sh = any(dir_path.glob("*.sh"))
+            has_readme = (dir_path / "README.md").exists()
+            has_md_files = any(dir_path.glob("*.md"))
 
-                        for sh_file in item.rglob("*.sh"):
-                            if not self._should_skip(str(sh_file)):
-                                feature_dirs[dir_key].append(sh_file)
+            # Check directory name for hints
+            dir_name = dir_path.name.lower()
+            is_internal = dir_name in ["utils", "helpers", "common", "lib", "internal", "docs"]
+            is_likely_feature_dir = dir_name not in [
+                "__pycache__",
+                ".git",
+                "node_modules",
+                "tests",
+                "test",
+            ]
 
-        # Check for standalone scripts
+            # It's a feature directory if:
+            # 1. Has a README (strongest signal of a feature unit), OR
+            # 2. Has source files AND is not an internal/utility directory, OR
+            # 3. Has markdown files in .claude directories (commands, hooks, rules)
+            if has_readme:
+                return True
+            if (has_py or has_sh) and not is_internal and is_likely_feature_dir:
+                return True
+            return bool(has_md_files and ".claude" in str(dir_path))
+
+        def collect_files(dir_path: Path) -> list[Path]:
+            """Collect all relevant source files from a directory."""
+            files = []
+            for pattern in ["*.py", "*.sh", "*.md"]:
+                for f in dir_path.rglob(pattern):
+                    if not self._should_skip(str(f)):
+                        files.append(f)
+            return files
+
+        def scan_recursively(base_path: Path, depth: int = 0, max_depth: int = 10):
+            """Recursively scan for feature directories."""
+            if depth > max_depth:
+                return
+
+            if not base_path.exists() or not base_path.is_dir():
+                return
+
+            if self._should_skip(str(base_path)):
+                return
+
+            # Check if this is a feature directory
+            if is_feature_directory(base_path):
+                dir_key = str(base_path.relative_to(self.repo_root))
+                files = collect_files(base_path)
+                if files:
+                    feature_dirs[dir_key] = files
+
+            # Always recurse into subdirectories to find nested features
+            for item in base_path.iterdir():
+                if item.is_dir() and not self._should_skip(str(item)):
+                    scan_recursively(item, depth + 1, max_depth)
+
+        # Scan root directories recursively
+        for root_dir in self.FEATURE_ROOT_DIRECTORIES:
+            base_path = self.repo_root / root_dir
+            scan_recursively(base_path)
+
+        # Also scan specific directories that might be missed
+        for specific_dir in self.SPECIFIC_FEATURE_DIRECTORIES:
+            base_path = self.repo_root / specific_dir
+            scan_recursively(base_path)
+
+        # Check for standalone scripts at repo root
         for pattern in ["*.py", "*.sh"]:
             for script in self.repo_root.glob(pattern):
                 if not self._should_skip(str(script)):
@@ -1354,17 +1426,32 @@ class RepoAnalyzer:
 
         return feature_dirs
 
-    def _read_file_safe(self, path: Path, max_lines: int = 500) -> str:
-        """Safely read file content with size limits."""
+    def _read_file_safe(self, path: Path, max_lines: int = 1000) -> str:
+        """
+        Safely read file content with generous limits using streaming.
+
+        We want Claude to see as much code as possible to make accurate
+        feature assessments, so we've increased limits significantly.
+
+        Uses line-by-line reading to avoid loading entire large files into memory.
+        """
         try:
             file_size = path.stat().st_size
-            if file_size > 100_000:  # 100KB limit
-                return ""
-            content = path.read_text(encoding="utf-8")
-            lines = content.split("\n")
-            if len(lines) > max_lines:
-                lines = lines[:max_lines]
-                lines.append(f"\n... [truncated at {max_lines} lines]")
+            lines = []
+
+            # Stream the file line by line to avoid memory spikes on large files
+            with path.open(encoding="utf-8") as f:
+                for i, line in enumerate(f):
+                    if i >= max_lines:
+                        lines.append(f"\n... [truncated at {max_lines} lines]")
+                        break
+                    lines.append(line.rstrip("\n"))
+
+                    # Early exit if we've read enough bytes (500KB limit)
+                    if file_size > 500_000 and i >= max_lines:
+                        lines.append(f"\n... [truncated, file too large: {file_size} bytes]")
+                        break
+
             return "\n".join(lines)
         except (UnicodeDecodeError, OSError):
             return ""
@@ -1396,12 +1483,35 @@ class RepoAnalyzer:
         Use LLM to analyze a directory and extract features.
 
         This is the feature extraction pass - given a directory, identify
-        what user-facing features it contains.
+        what user-facing features it contains. We now analyze MORE files
+        to give Claude the full picture.
         """
-        # Read file contents (take first 5 files by size, smallest first)
-        sorted_files = sorted(files, key=lambda f: f.stat().st_size)
+        # Prioritize important files: README first, then main files, then others
+        # Read up to 15 files (increased from 5) to give Claude more context
+        priority_order = []
+        readme_files = []
+        main_files = []
+        other_files = []
+
+        for f in files:
+            name = f.name.lower()
+            if name == "readme.md":
+                readme_files.append(f)
+            elif "main" in name or name.endswith("__init__.py") or f.suffix == ".md":
+                main_files.append(f)
+            else:
+                other_files.append(f)
+
+        # Sort other files by size (smaller first, as they're often more focused)
+        other_files = sorted(other_files, key=lambda f: f.stat().st_size)
+
+        # Combine in priority order
+        priority_order = readme_files + main_files + other_files
+
+        # Read up to 15 files (unbounded approach - let Claude see more)
+        max_files = 15
         file_contents = {}
-        for f in sorted_files[:5]:
+        for f in priority_order[:max_files]:
             content = self._read_file_safe(f)
             if content:
                 rel_path = str(f.relative_to(self.repo_root))
@@ -1429,7 +1539,7 @@ class RepoAnalyzer:
         if readme_content:
             readme_section = f"## README.md\n\n```markdown\n{readme_content}\n```\n"
 
-        prompt = f"""Analyze this code directory to identify user-facing FEATURES.
+        prompt = f"""Analyze this code directory to identify ALL user-facing FEATURES.
 
 # Directory: {dir_path}
 
@@ -1441,27 +1551,39 @@ class RepoAnalyzer:
 
 # Task
 
-Identify the main feature(s) in this directory. For each feature provide:
+Be THOROUGH - identify ALL features in this directory. Don't be conservative.
+For each feature provide:
 
 1. **name**: Clear, descriptive name
-2. **description**: 2-3 sentence description
+2. **description**: 2-3 sentence description explaining what it does and why it's useful
 3. **category**: One of: Core Architecture, Communication, Context Management, GitHub Integration, Self-Improvement System, Documentation System, Custom Commands, Container Infrastructure, Utilities, Security Features, Configuration
-4. **files**: Main implementation files
-5. **confidence**: 0.0-1.0
+4. **files**: Main implementation files (include ALL relevant files)
+5. **confidence**: 0.0-1.0 (use 0.8+ for clear features, lower only if truly ambiguous)
 
-# What IS a Feature?
+# What IS a Feature? (BE INCLUSIVE)
 
 - Services/daemons that run continuously
 - CLI tools users invoke
+- Scripts that automate tasks
 - Libraries with public APIs
+- Configuration systems
+- Integration points (Slack, GitHub, etc.)
+- Task processors and handlers
 - Standalone capabilities solving user problems
+- Claude commands (markdown files that define prompts)
+- Hooks that extend functionality
 
 # What is NOT a Feature?
 
-- Internal utilities/helpers
-- Test files
-- Configuration
-- Generic base classes
+- Pure test files (but test utilities ARE features)
+- Generic abstract base classes with no functionality
+- Empty __init__.py files
+
+# IMPORTANT
+
+- When in doubt, INCLUDE it as a feature
+- Multiple related capabilities in one directory should be listed as ONE feature
+- If this directory has a README, use it to understand the feature's purpose
 
 # Output
 
@@ -1479,7 +1601,7 @@ Return ONLY a JSON array:
 ]
 ```
 
-If no clear features, return: `[]`
+If truly no features (empty directory, only tests), return: `[]`
 """
 
         try:
@@ -1563,14 +1685,14 @@ If no clear features, return: `[]`
 
 # Task
 
-Consolidate this list by:
+Consolidate this list. PRESERVE as many features as possible - only remove TRUE duplicates.
 
-1. **Removing duplicates**: If two features are the same thing (same files, same purpose), keep only the better-described one
-2. **Merging related features**: If features are parts of the same system, consider merging them
-3. **Fixing categories**: Ensure each feature has the most appropriate category
-4. **Improving descriptions**: Make descriptions clear and consistent
-5. **Filtering noise**: Remove low-confidence items that aren't real user-facing features
-6. **Preserving test info**: If any feature has associated tests, include them
+1. **Remove TRUE duplicates ONLY**: Only merge features if they are EXACTLY the same thing with the same files
+2. **DON'T over-merge**: Related but distinct features should stay separate (e.g., "Slack Notifier" and "Slack Receiver" are different)
+3. **Fix categories**: Ensure each feature has the most appropriate category
+4. **Improve descriptions**: Make descriptions clear and consistent
+5. **KEEP low-confidence items**: Mark them for review but don't remove them
+6. **Preserve all file paths**: Include ALL relevant files
 
 # Categories to use
 
@@ -1585,6 +1707,14 @@ Consolidate this list by:
 - Utilities
 - Security Features
 - Configuration
+
+# IMPORTANT: Be INCLUSIVE
+
+The goal is a COMPREHENSIVE feature list. When in doubt, KEEP the feature.
+It's better to have a few extras than to miss important features.
+
+There should be approximately {len(all_features)} features (or more if you split some).
+If you output significantly fewer, you're probably over-consolidating.
 
 # Output
 
