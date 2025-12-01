@@ -130,6 +130,63 @@ def _run_llm_prompt_shared(
         return (False, "", str(e))
 
 
+def _run_llm_prompt_to_file_shared(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, list | dict | None, str | None]:
+    """
+    Run an LLM prompt that writes JSON output to a file.
+
+    This avoids JSON parsing issues when the LLM includes explanatory text
+    before/after the JSON in its stdout. The LLM writes JSON to a temp file,
+    which is then read and parsed.
+
+    Args:
+        repo_root: Path to the repository root
+        prompt: The prompt to send to the LLM (should request JSON output)
+        context_name: Optional name for logging/debugging
+
+    Returns:
+        Tuple of (success, parsed_json_content, error_message)
+    """
+    try:
+        result = jib_exec(
+            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            task_type="llm_prompt_to_file",
+            context={
+                "prompt": prompt,
+                "cwd": str(repo_root),
+            },
+            # No timeout specified - let the shared claude module determine the default
+        )
+
+        if result.success and result.json_output:
+            output = result.json_output.get("result", {})
+            json_content = output.get("json_content")
+            if json_content is not None:
+                return (True, json_content, None)
+            # If json_content is None but success=True, there was an issue
+            return (False, None, "LLM did not write JSON to file")
+
+        # Handle failure
+        error_parts = []
+
+        if result.error:
+            error_parts.append(result.error)
+
+        if result.json_output:
+            processor_error = result.json_output.get("error")
+            if processor_error:
+                error_parts.append(f"Processor: {processor_error}")
+
+        error_msg = (
+            "; ".join(error_parts) if error_parts else "Unknown error (no details available)"
+        )
+        return (False, None, error_msg)
+
+    except Exception as e:
+        return (False, None, str(e))
+
+
 @dataclass
 class CommitInfo:
     """Information about a single commit."""
@@ -1424,6 +1481,25 @@ class RepoAnalyzer:
         """
         return _run_llm_prompt_shared(self.repo_root, prompt, context_name)
 
+    def _run_llm_prompt_to_file(
+        self, prompt: str, context_name: str = ""
+    ) -> tuple[bool, list | dict | None, str | None]:
+        """
+        Run an LLM prompt that writes JSON output to a file.
+
+        This avoids JSON parsing issues when the LLM includes explanatory text
+        before/after the JSON in its stdout. The LLM writes JSON to a temp file,
+        which is then read and parsed.
+
+        Args:
+            prompt: The prompt to send to the LLM (should request JSON output)
+            context_name: Optional name for logging/debugging
+
+        Returns:
+            Tuple of (success, parsed_json_content, error_message)
+        """
+        return _run_llm_prompt_to_file_shared(self.repo_root, prompt, context_name)
+
     def _is_git_ignored(self, path: Path | str) -> bool:
         """
         Check if a path is ignored by git using 'git check-ignore'.
@@ -1845,6 +1921,39 @@ If truly no features (empty directory, only tests), return: `[]`
 
         return features
 
+    def _json_to_features(self, json_data: list) -> list[DetectedFeature]:
+        """
+        Convert a list of JSON dicts to DetectedFeature objects.
+
+        This is used when we get JSON directly from a file (via the file-based
+        LLM approach) rather than parsing it from stdout.
+
+        Args:
+            json_data: List of dicts with feature data
+
+        Returns:
+            List of DetectedFeature objects
+        """
+        features = []
+        for item in json_data:
+            if not isinstance(item, dict):
+                continue
+
+            confidence = float(item.get("confidence", 0.5))
+            feature = DetectedFeature(
+                name=item.get("name", "Unknown"),
+                description=item.get("description", ""),
+                category=item.get("category", "Utilities"),
+                files=item.get("files", []),
+                tests=item.get("tests", []),
+                confidence=confidence,
+                introduced_in_commit=item.get("introduced_in_commit", ""),
+                date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
+                needs_review=confidence < 0.7,
+            )
+            features.append(feature)
+        return features
+
     def _consolidate_features_with_llm(
         self, all_features: list[DetectedFeature]
     ) -> list[DetectedFeature]:
@@ -1908,11 +2017,10 @@ It's better to have a few extras than to miss important features.
 There should be approximately {len(all_features)} features (or more if you split some).
 If you output significantly fewer, you're probably over-consolidating.
 
-# Output
+# Output Format
 
-Return ONLY a JSON array of the consolidated features:
+Your output should be a JSON array of consolidated features with this structure:
 
-```json
 [
   {{
     "name": "Feature Name",
@@ -1923,24 +2031,44 @@ Return ONLY a JSON array of the consolidated features:
     "confidence": 0.85
   }}
 ]
-```
 """
 
-        success, stdout, error = self._run_llm_prompt(prompt, "consolidation")
+        # Use file-based approach to avoid JSON parsing issues when LLM includes
+        # explanatory text before/after the JSON array
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, "consolidation")
 
         if not success:
-            print(f"    Warning: LLM returned error: {error}")
-            print("    Using raw features instead")
+            print(f"    Warning: LLM file-based approach failed: {error}")
+            print("    Falling back to stdout parsing...")
+
+            # Fallback: try the original stdout parsing approach
+            success_fallback, stdout, error_fallback = self._run_llm_prompt(
+                prompt, "consolidation-fallback"
+            )
+
+            if not success_fallback:
+                print(f"    Warning: Fallback also failed: {error_fallback}")
+                print("    Using raw features instead")
+                return all_features
+
+            if not stdout.strip():
+                print("    Warning: Fallback returned empty output")
+                print("    Using raw features instead")
+                return all_features
+
+            consolidated = self._parse_llm_output(stdout, context="consolidation-fallback")
+            if consolidated:
+                return consolidated
+
+            print("    Warning: Consolidation parsing returned empty, using raw features")
             return all_features
 
-        if not stdout.strip():
-            print("    Warning: LLM returned empty output")
-            print("    Using raw features instead")
-            return all_features
-
-        consolidated = self._parse_llm_output(stdout, context="consolidation")
-        if consolidated:
-            return consolidated
+        # Successfully got JSON from file
+        if json_content and isinstance(json_content, list):
+            # Convert JSON dicts to DetectedFeature objects
+            consolidated = self._json_to_features(json_content)
+            if consolidated:
+                return consolidated
 
         print("    Warning: Consolidation parsing returned empty, using raw features")
         return all_features  # Fall back to unprocessed list

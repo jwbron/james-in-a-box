@@ -35,6 +35,8 @@ from pathlib import Path
 
 # Import shared modules - navigate from jib-tasks/analysis up to repo root, then shared
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+import contextlib
+
 from claude import run_claude
 
 
@@ -93,6 +95,116 @@ def handle_llm_prompt(context: dict) -> int:
         )
 
     except Exception as e:
+        return output_result(False, error=f"Error running Claude: {e}")
+
+
+def handle_llm_prompt_to_file(context: dict) -> int:
+    """Handle an LLM prompt that writes JSON output to a file.
+
+    This is designed to avoid JSON parsing issues when the LLM includes
+    explanatory text before/after the JSON in its stdout. By asking the LLM
+    to write the JSON to a specific file, we can reliably retrieve it.
+
+    Context expected:
+        - prompt: str (the prompt to send to Claude - should instruct it to write JSON to the output file)
+        - output_file: str (path where Claude should write the JSON output)
+        - timeout: int (optional, uses shared claude module default if not provided)
+        - cwd: str (optional, working directory)
+
+    Returns JSON with:
+        - result.json_content: The parsed JSON from the output file
+        - result.stdout: Claude's stdout (for debugging)
+        - result.stderr: Any stderr
+    """
+    import tempfile
+
+    prompt = context.get("prompt")
+    output_file = context.get("output_file")
+    if not prompt:
+        return output_result(False, error="No prompt provided in context")
+
+    # Generate a temporary file path if not provided
+    if not output_file:
+        # Create a temp file in /tmp (accessible both inside and outside container)
+        fd, output_file = tempfile.mkstemp(suffix=".json", prefix="llm_output_")
+        import os
+
+        os.close(fd)
+
+    output_path = Path(output_file)
+
+    # Only pass timeout if explicitly provided
+    timeout = context.get("timeout")
+    cwd = context.get("cwd")
+    if cwd:
+        cwd = Path(cwd)
+
+    # Enhance the prompt to explicitly instruct writing to the file
+    enhanced_prompt = f"""{prompt}
+
+CRITICAL INSTRUCTION: You MUST write your JSON output to this file: {output_file}
+
+Use the Write tool to write the JSON array to {output_file}. Do NOT just print the JSON to stdout - write it to the file.
+
+After writing the file, confirm by saying "JSON written to {output_file}" but do NOT include the JSON content in your response."""
+
+    try:
+        # Build kwargs
+        kwargs = {"prompt": enhanced_prompt, "cwd": cwd, "stream": False}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+
+        result = run_claude(**kwargs)
+
+        # Read the JSON from the output file
+        json_content = None
+        if output_path.exists():
+            try:
+                file_content = output_path.read_text().strip()
+                if file_content:
+                    json_content = json.loads(file_content)
+            except json.JSONDecodeError as e:
+                return output_result(
+                    success=False,
+                    result={
+                        "json_content": None,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "output_file": str(output_file),
+                    },
+                    error=f"Failed to parse JSON from output file: {e}",
+                )
+            finally:
+                # Clean up the temp file
+                with contextlib.suppress(OSError):
+                    output_path.unlink()
+        else:
+            return output_result(
+                success=False,
+                result={
+                    "json_content": None,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "output_file": str(output_file),
+                },
+                error=f"Output file was not created: {output_file}",
+            )
+
+        return output_result(
+            success=True,
+            result={
+                "json_content": json_content,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "output_file": str(output_file),
+            },
+        )
+
+    except Exception as e:
+        # Clean up temp file on error
+        if output_path.exists():
+            with contextlib.suppress(OSError):
+                output_path.unlink()
         return output_result(False, error=f"Error running Claude: {e}")
 
 
@@ -457,7 +569,13 @@ def main():
         "--task",
         type=str,
         required=True,
-        choices=["llm_prompt", "doc_generation", "feature_extraction", "create_pr"],
+        choices=[
+            "llm_prompt",
+            "llm_prompt_to_file",
+            "doc_generation",
+            "feature_extraction",
+            "create_pr",
+        ],
         help="Type of analysis task to perform",
     )
     parser.add_argument(
@@ -478,6 +596,7 @@ def main():
     # Dispatch to handler
     handlers = {
         "llm_prompt": handle_llm_prompt,
+        "llm_prompt_to_file": handle_llm_prompt_to_file,
         "doc_generation": handle_doc_generation,
         "feature_extraction": handle_feature_extraction,
         "create_pr": handle_create_pr,
