@@ -791,7 +791,9 @@ def main():
     # Refresh GitHub MCP authentication using existing mcp-token-watcher script
     # This ensures GitHub MCP stays authenticated in long-running containers
     try:
-        watcher_script = Path.home() / "khan/james-in-a-box/jib-container/scripts/mcp-token-watcher.py"
+        watcher_script = (
+            Path.home() / "khan/james-in-a-box/jib-container/scripts/mcp-token-watcher.py"
+        )
         result = subprocess.run(
             ["python3", str(watcher_script), "--once"],
             check=False,

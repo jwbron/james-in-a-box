@@ -7,13 +7,14 @@ Tests the cache metric tracking, calculation, and serialization added in PR #250
 import sys
 from pathlib import Path
 
-import pytest
 
 # Import trace collector modules
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "host-services" / "analysis" / "trace-collector"))
+sys.path.insert(
+    0, str(Path(__file__).parent.parent.parent / "host-services" / "analysis" / "trace-collector")
+)
 
-from trace_collector import TraceCollector
 from schemas import SessionMetadata, TraceEvent
+from trace_collector import TraceCollector
 
 
 class TestCacheMetrics:

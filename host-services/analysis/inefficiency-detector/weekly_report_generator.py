@@ -31,14 +31,16 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Add the inefficiency-detector to path for imports
+# Add the inefficiency-detector and config to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 from inefficiency_detector import InefficiencyDetector
 from inefficiency_schema import AggregateInefficiencyReport, Severity
+from config.model_pricing import get_model_pricing, get_active_model, calculate_blended_cost
 
 # Constants
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "inefficiency"
 
 
@@ -127,16 +129,18 @@ class WeeklyReportGenerator:
             f.write(f"| Total Wasted Tokens | {report.total_wasted_tokens:,} |\n")
             f.write(f"| Average Inefficiency Rate | {report.average_inefficiency_rate:.1f}% |\n")
 
-            # Calculate potential savings
+            # Calculate potential savings using actual model pricing from configuration
             if report.total_wasted_tokens > 0:
-                # Cost estimates based on Claude Sonnet 4 pricing (most commonly used model)
-                # Input: $3/MTok, Output: $15/MTok
+                # Get pricing for active model from configuration
+                active_model = get_active_model()
+                pricing = get_model_pricing(active_model)
                 # Wasted tokens are primarily output tokens from failed/retried tool calls
                 # Using blended rate assuming ~60% output, 40% input for wasted tokens
-                blended_rate = 0.60 * 15.0 + 0.40 * 3.0  # $10.20 per MTok
-                potential_savings = (report.total_wasted_tokens / 1_000_000) * blended_rate
+                potential_savings = calculate_blended_cost(
+                    report.total_wasted_tokens, input_ratio=0.4, model=active_model
+                )
                 f.write(f"| Estimated Weekly Savings | ~${potential_savings:.2f} |\n")
-                f.write(f"| *(Based on Claude Sonnet 4 pricing)* | |\n")
+                f.write(f"| *(Based on {active_model} pricing: ${pricing['input']}/MTok in, ${pricing['output']}/MTok out)* | |\n")
 
             f.write("\n")
 
