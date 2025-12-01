@@ -46,9 +46,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
-# Add shared modules to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
+# Add host-services shared modules to path (for jib_claude wrapper)
+# NOTE: Host-side code must use jib_claude which invokes Claude via jib --exec
+# because Claude CLI is only available inside the container.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from jib_claude import run_claude
 
 
 @dataclass
