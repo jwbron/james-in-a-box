@@ -899,7 +899,9 @@ Full repository analysis generated a comprehensive FEATURES.md with {feature_cou
                 update = GeneratedUpdate(
                     doc_path=features_md_path,
                     original_content="",
-                    updated_content=features_md_path.read_text() if features_md_path.exists() else "",
+                    updated_content=features_md_path.read_text()
+                    if features_md_path.exists()
+                    else "",
                     changes_summary=f"Generated comprehensive FEATURES.md with {feature_count} features",
                     confidence=0.9,
                     validation_passed=True,

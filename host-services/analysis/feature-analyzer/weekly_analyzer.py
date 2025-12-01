@@ -1735,26 +1735,28 @@ If this directory doesn't contain a clear feature, return: `[]`
                 feature_num += 1
 
         # Add footer
-        lines.extend([
-            "---",
-            "",
-            "## Maintaining This List",
-            "",
-            "This feature list is maintained by the Feature Analyzer tool.",
-            "",
-            "### Update Commands",
-            "",
-            "```bash",
-            "# Regenerate entire list from scratch",
-            "feature-analyzer full-repo --repo-root /path/to/repo",
-            "",
-            "# Weekly incremental updates",
-            "feature-analyzer weekly-analyze --days 7",
-            "```",
-            "",
-            f"**Last Updated:** {datetime.now(UTC).strftime('%Y-%m-%d')}",
-            "",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                "## Maintaining This List",
+                "",
+                "This feature list is maintained by the Feature Analyzer tool.",
+                "",
+                "### Update Commands",
+                "",
+                "```bash",
+                "# Regenerate entire list from scratch",
+                "feature-analyzer full-repo --repo-root /path/to/repo",
+                "",
+                "# Weekly incremental updates",
+                "feature-analyzer weekly-analyze --days 7",
+                "```",
+                "",
+                f"**Last Updated:** {datetime.now(UTC).strftime('%Y-%m-%d')}",
+                "",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -1855,9 +1857,7 @@ If this directory doesn't contain a clear feature, return: `[]`
 
         return result
 
-    def _deduplicate_features(
-        self, features: list[DetectedFeature]
-    ) -> list[DetectedFeature]:
+    def _deduplicate_features(self, features: list[DetectedFeature]) -> list[DetectedFeature]:
         """Remove duplicate features based on name similarity and file overlap."""
         seen_names: set[str] = set()
         seen_files: set[str] = set()
