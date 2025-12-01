@@ -20,6 +20,7 @@ ADRs are organized by implementation status:
 
 | ADR | Summary |
 |-----|---------|
+| [Context Sync Strategy](implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: GitHub MCP implemented ✅, JIRA MCP pending ❌, Confluence sync retained |
 | [LLM Documentation Index Strategy](implemented/ADR-LLM-Documentation-Index-Strategy.md) | LLM-navigable documentation with 6-agent pipeline |
 
 ### In Progress
@@ -27,7 +28,6 @@ ADRs are organized by implementation status:
 | ADR | Summary |
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
-| [Context Sync Strategy](in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Custom sync vs MCP for Confluence/JIRA/GitHub |
 | [LLM Inefficiency Reporting](in-progress/ADR-LLM-Inefficiency-Reporting.md) | Self-improvement through inefficiency detection and reporting (Phase 1a: Beads Analyzer implemented) |
 
 ### Not Implemented
@@ -35,12 +35,13 @@ ADRs are organized by implementation status:
 | ADR | Summary |
 |-----|---------|
 | [Continuous System Reinforcement](not-implemented/ADR-Continuous-System-Reinforcement.md) | Systematic learning from breakages to strengthen the system |
+| [Feature Analyzer - Documentation Sync](not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Automated documentation updates after ADR implementation and merge |
 | [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
 | [Internet Tool Access Lockdown](not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
 | [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
 | [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
 | [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
-| [Standardized Logging Interface](not-implemented/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
+| [Standardized Logging Interface](in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 
 ## ADR Template
 

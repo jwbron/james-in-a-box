@@ -908,6 +908,16 @@ class SlackReceiver:
         except:
             user_name = "Unknown"
 
+        # Ignore empty or whitespace-only messages
+        if not text.strip():
+            self.logger.info(
+                "Ignoring empty message",
+                user_name=user_name,
+                user_id=user_id,
+                thread_ts=thread_ts or None,
+            )
+            return
+
         self.logger.info(
             "Received message",
             user_name=user_name,

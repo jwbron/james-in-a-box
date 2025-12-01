@@ -5,7 +5,7 @@
 **Contributors:** James Wiesebron, Claude (AI Pair Programming)
 **Informed:** Engineering teams
 **Proposed:** November 2025
-**Status:** Draft
+**Status:** Implemented (Phases 1-4 Complete)
 
 ## Table of Contents
 
@@ -237,6 +237,58 @@ james-in-a-box/
 
 Both host services and container scripts can import from this shared location.
 
+### Key Implementation Features
+
+#### BoundLogger Pattern
+
+The `BoundLogger` class allows binding context to a logger instance, reducing boilerplate in long-running operations:
+
+```python
+from jib_logging import get_logger
+
+logger = get_logger("task-processor")
+
+# Create a bound logger with persistent context
+bound = logger.with_context(task_id="bd-abc123", repository="owner/repo")
+
+# All logs from bound logger include the context automatically
+bound.info("Starting task processing")    # Includes task_id, repository
+bound.info("Downloaded dependencies")     # Includes task_id, repository
+bound.info("Task completed successfully") # Includes task_id, repository
+
+# Can nest bound loggers
+step_logger = bound.with_context(step="validation")
+step_logger.info("Validating inputs")  # Includes task_id, repository, step
+```
+
+**Benefits:**
+- **Type-safe:** Context fields are validated at runtime
+- **Composable:** Chain multiple `.with_context()` calls
+- **Readable:** Clear intent in code structure
+
+#### Thread Safety
+
+All logger instances use thread-safe singleton patterns with double-checked locking:
+- Safe for concurrent requests in host services
+- No race conditions on initialization
+- Minimal locking overhead (only on first call)
+
+#### Source Location Tracking
+
+Every log entry includes exact source location for debugging:
+
+```json
+{
+  "sourceLocation": {
+    "file": "/path/to/service.py",
+    "line": 142,
+    "function": "process_request"
+  }
+}
+```
+
+This enables "jump to source" in GCP Cloud Logging UI.
+
 ## Structured Log Format
 
 ### Base Log Entry
@@ -317,6 +369,8 @@ Tool wrappers intercept calls to critical commands and:
 
 ### Wrapper Implementation Pattern
 
+#### Programmatic Usage (Python)
+
 ```python
 # Usage in scripts
 from jib_logging.wrappers import git, bd, gh
@@ -337,6 +391,59 @@ result = git.push("origin", "main")
 #   "context": {"repository": "jwbron/james-in-a-box", "branch": "main"}
 # }
 ```
+
+#### CLI Wrapper Binaries (Shell)
+
+For transparent logging of shell commands (including those run by Claude Code agent), use the provided CLI wrappers:
+
+**Location:** `shared/jib_logging/bin/`
+
+**Available Commands:**
+- `jib-bd` - Drop-in replacement for `bd`
+- `jib-git` - Drop-in replacement for `git`
+- `jib-gh` - Drop-in replacement for `gh`
+- `jib-claude` - Drop-in replacement for `claude`
+
+**Setup Option 1: Shell Aliases**
+
+```bash
+# In .bashrc or container setup
+alias bd='jib-bd'
+alias git='jib-git'
+alias gh='jib-gh'
+alias claude='jib-claude'
+
+# Or source the setup script
+source ~/khan/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
+```
+
+**Setup Option 2: PATH Override**
+
+```bash
+# Create symlinks earlier in PATH
+mkdir -p ~/.local/bin
+ln -sf ~/khan/james-in-a-box/shared/jib_logging/bin/jib-bd ~/.local/bin/bd
+ln -sf ~/khan/james-in-a-box/shared/jib_logging/bin/jib-git ~/.local/bin/git
+# ... etc
+```
+
+**Setup Option 3: Direct Usage**
+
+```bash
+# Use jib-* prefix directly
+jib-git status
+jib-bd --allow-stale list
+```
+
+**Environment Variables:**
+- `JIB_LOGGING_PASSTHROUGH=1` - Skip logging, pass through to real tool
+- `JIB_LOGGING_QUIET=1` - Suppress wrapper diagnostic messages
+
+**Benefits:**
+- **Zero code changes:** Existing scripts work unchanged
+- **Transparent to Claude:** Agent doesn't know it's being logged
+- **Full compatibility:** All arguments pass through unchanged
+- **Same exit codes:** Wrapper returns same code as underlying tool
 
 ### bd (Beads) Wrapper
 
@@ -471,10 +578,34 @@ Full model responses are stored separately (not in main log stream) due to size:
 ```
 /var/log/jib/model_output/
 ├── 2025-11-28/
-│   ├── abc123.json      # Full response for correlation_id abc123
-│   ├── def456.json
-│   └── index.jsonl      # Metadata index for the day
+│   ├── 143056_abc123.json      # Full response with trace_id
+│   ├── 143112_def456.json      # Timestamp_traceID.json format
+│   └── index.jsonl             # Metadata index for fast search
+├── 2025-11-29/
+│   ├── ...
+│   └── index.jsonl
 ```
+
+#### Daily Index Format
+
+Each directory contains an `index.jsonl` file (newline-delimited JSON) for fast searches without parsing full responses:
+
+```jsonl
+{"timestamp": "2025-11-28T14:30:56.789Z", "filename": "143056_abc123.json", "model": "claude-sonnet-4-5", "input_tokens": 1500, "output_tokens": 800, "trace_id": "abc123...", "task_id": "bd-xyz", "error": false}
+{"timestamp": "2025-11-28T14:31:12.456Z", "filename": "143112_def456.json", "model": "claude-sonnet-4-5", "input_tokens": 2000, "output_tokens": 1200, "trace_id": "def456...", "task_id": "bd-xyz", "error": false}
+```
+
+**Use Cases:**
+- **Cost Analytics:** `jq '.input_tokens + .output_tokens' index.jsonl | awk '{sum+=$1} END {print sum}'`
+- **Error Searches:** `grep '"error":true' index.jsonl`
+- **Task Correlation:** `jq 'select(.task_id=="bd-xyz")' index.jsonl`
+- **Retention Policy:** Delete old directories by date (`rm -rf 2025-10-*`)
+
+**Benefits:**
+- Fast searches without parsing 100KB+ response files
+- Enables cost dashboard queries
+- Structured retention (delete by date)
+- Trace-based lookup (`abc123.json` → full response)
 
 ## GCP Cloud Logging Integration
 
@@ -552,13 +683,17 @@ GROUP BY jsonPayload.tool
 4. **Cost Visibility**: Track Claude API token usage
 5. **GCP Ready**: Zero changes needed for Cloud Logging
 6. **Audit Trail**: Complete record of tool invocations
+7. **Thread Safety**: Safe for concurrent requests (double-checked locking)
+8. **CLI Transparency**: Drop-in replacements for tools (Claude Code unaware)
+9. **Source Location**: Jump directly to code from logs in GCP UI
+10. **Daily Index**: Fast cost analytics without parsing full responses
 
 ### Negative
 
-1. **Migration Effort**: Existing scripts need updates
-2. **Disk Space**: JSON logs larger than plain text
-3. **Learning Curve**: Developers need to learn new API
-4. **Dependency**: New shared library to maintain
+1. **Migration Effort**: Existing scripts need updates (✅ MITIGATED: 10+ services migrated, CLI wrappers available)
+2. **Disk Space**: JSON logs larger than plain text (acceptable trade-off for structure)
+3. **Learning Curve**: Developers need to learn new API (✅ MITIGATED: Clean API, good docs)
+4. **Dependency**: New shared library to maintain (✅ MITIGATED: Well-tested, stable)
 
 ### Trade-offs
 
@@ -622,39 +757,68 @@ GROUP BY jsonPayload.tool
 
 ## Implementation Plan
 
-### Phase 1: Core Library
+### Phase 1: Core Library ✅ COMPLETE
 
-1. Create `shared/jib_logging/` directory structure
-2. Implement `JibLogger` with JSON formatting
-3. Add console handler for development
-4. Add file handler for local deployment
-5. Basic tests
+1. ✅ Create `shared/jib_logging/` directory structure
+2. ✅ Implement `JibLogger` with JSON formatting
+3. ✅ Add console handler for development
+4. ✅ Add file handler for local deployment
+5. ✅ Basic tests (`tests/shared/jib_logging/`)
 
-### Phase 2: Tool Wrappers
+**Enhancements Beyond Spec:**
+- ✅ BoundLogger pattern for context binding
+- ✅ Thread-safe singleton pattern
+- ✅ Source location tracking in all logs
+- ✅ Environment auto-detection (GCP/container/host)
 
-1. Implement `bd` wrapper
-2. Implement `git` wrapper
-3. Implement `gh` wrapper
-4. Implement `claude` wrapper (basic)
-5. Integration tests
+### Phase 2: Tool Wrappers ✅ COMPLETE
 
-### Phase 3: Model Capture
+1. ✅ Implement `bd` wrapper (`shared/jib_logging/wrappers/bd.py`)
+2. ✅ Implement `git` wrapper (`shared/jib_logging/wrappers/git.py`)
+3. ✅ Implement `gh` wrapper (`shared/jib_logging/wrappers/gh.py`)
+4. ✅ Implement `claude` wrapper (`shared/jib_logging/wrappers/claude.py`)
+5. ✅ Integration tests
 
-1. Implement model output capture
-2. Add token tracking
-3. Add response storage
-4. Add performance metrics
+**Enhancements Beyond Spec:**
+- ✅ CLI wrapper binaries (`shared/jib_logging/bin/jib-*`)
+- ✅ Shell alias setup script
+- ✅ Passthrough mode via environment variables
+- ✅ Base `ToolWrapper` class for extensibility
 
-### Phase 4: Migration
+### Phase 3: Model Capture ✅ COMPLETE
 
-1. Update github-watcher to use new logging ✅ (PR #TBD)
-2. Update slack-receiver ✅ (PR #TBD)
-3. Update incoming-processor (container) ✅ (PR #TBD)
-4. Update context-sync (future PR)
-5. Update remaining container scripts (future PR)
-6. Documentation updates (inline with migrations)
+1. ✅ Implement model output capture (`shared/jib_logging/model_capture.py`)
+2. ✅ Add token tracking (OpenTelemetry GenAI conventions)
+3. ✅ Add response storage with daily directories
+4. ✅ Add performance metrics
 
-### Phase 5: GCP Cloud Logging Integration
+**Enhancements Beyond Spec:**
+- ✅ Daily index (`index.jsonl`) for fast searches
+- ✅ Thread-safe singleton pattern
+- ✅ Context manager API for clean usage
+- ✅ Automatic Claude output parsing
+
+### Phase 4: Migration ✅ EXTENSIVE ADOPTION
+
+**Services Migrated (10+):**
+1. ✅ github-watcher (`host-services/analysis/github-watcher/`)
+2. ✅ slack-receiver (`host-services/slack/slack-receiver/`)
+3. ✅ slack-notifier (`host-services/slack/slack-notifier/`)
+4. ✅ context-sync (`host-services/sync/context-sync/`)
+5. ✅ conversation-analyzer (`host-services/analysis/conversation-analyzer/`)
+6. ✅ incoming-processor (`jib-container/jib-tasks/slack/`)
+7. ✅ pr-reviewer (`jib-container/jib-tasks/github/`)
+8. ✅ comment-responder (`jib-container/jib-tasks/github/`)
+9. ✅ mcp-token-watcher (`jib-container/scripts/`)
+10. ✅ github-token-refresher (`host-services/utilities/`)
+
+**Documentation:**
+- ✅ Code examples in all wrapper modules
+- ✅ CLI wrapper README (`shared/jib_logging/bin/README.md`)
+- ✅ Docstrings for all public APIs
+- ✅ Implementation review document (this ADR companion)
+
+### Phase 5: GCP Cloud Logging Integration ⏳ DEFERRED (AS PLANNED)
 
 GCP-specific functionality (Cloud Logging output handler, log router configuration, BigQuery export) will be implemented as part of the GCP migration per [ADR-GCP-Deployment-Terraform](./ADR-GCP-Deployment-Terraform.md). This ensures:
 
@@ -679,5 +843,5 @@ GCP-specific functionality (Cloud Logging output handler, log router configurati
 
 ---
 
-**Last Updated:** 2025-11-28
-**Status:** Draft - Awaiting Review
+**Last Updated:** 2025-11-30
+**Status:** Implemented (Phases 1-4 Complete) - See [Implementation Review](./ADR-Standardized-Logging-Interface-IMPLEMENTATION-REVIEW.md)
