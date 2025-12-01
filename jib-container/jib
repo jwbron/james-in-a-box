@@ -27,6 +27,10 @@ from statusbar import StatusBar, init_statusbar, status, status_success, status_
 _quiet_mode = False
 
 
+# Default log directory for container logs
+CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
+
+
 class Colors:
     """ANSI color codes for terminal output"""
     BLUE = '\033[0;34m'
@@ -518,8 +522,7 @@ def create_dockerfile() -> None:
         if not _quiet_mode:
             info("Claude commands copied to build context")
     else:
-        if not _quiet_mode:
-            warn("claude-commands directory not found")
+        warn("claude-commands directory not found")
 
     # Copy claude-rules directory to build context
     rules_src = script_dir / "claude-rules"
@@ -531,8 +534,21 @@ def create_dockerfile() -> None:
         if not _quiet_mode:
             info("Claude rules directory copied to build context")
     else:
+        warn("claude-rules directory not found, skipping agent rules")
+
+    # Copy .claude/hooks directory to build context
+    hooks_src = script_dir / ".claude" / "hooks"
+    hooks_dest = Config.CONFIG_DIR / ".claude" / "hooks"
+    if hooks_src.exists():
+        if hooks_dest.exists():
+            shutil.rmtree(hooks_dest)
+        # Ensure parent directory exists
+        hooks_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(hooks_src, hooks_dest)
         if not _quiet_mode:
-            warn("claude-rules directory not found, skipping agent rules")
+            info("Claude hooks directory copied to build context")
+    else:
+        warn(".claude/hooks directory not found, skipping hooks")
 
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
@@ -599,6 +615,274 @@ def generate_container_id() -> str:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     pid = os.getpid()
     return f"jib-{timestamp}-{pid}"
+
+
+def get_docker_log_config(container_id: str, task_id: Optional[str] = None) -> list:
+    """Generate Docker logging configuration arguments.
+
+    Uses the json-file logging driver with:
+    - Log rotation (max 10MB per file, 5 files)
+    - Correlation labels for easy searching
+    - Timestamps included
+
+    Args:
+        container_id: Unique container identifier
+        task_id: Optional task ID for correlation (e.g., "task-20251129-222239")
+
+    Returns:
+        List of Docker command arguments for logging configuration
+    """
+    # Ensure container logs directory exists
+    CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Log file path based on container ID
+    log_file = CONTAINER_LOGS_DIR / f"{container_id}.log"
+
+    log_args = [
+        "--log-driver", "json-file",
+        "--log-opt", "max-size=10m",
+        "--log-opt", "max-file=5",
+        # Add labels for correlation - these appear in docker inspect
+        "--label", f"jib.container_id={container_id}",
+    ]
+
+    if task_id:
+        log_args.extend(["--label", f"jib.task_id={task_id}"])
+
+    return log_args
+
+
+def extract_task_id_from_command(command: List[str]) -> Optional[str]:
+    """Extract task ID from the command if it's processing a task file.
+
+    Looks for patterns like:
+    - incoming-processor.py /path/to/task-20251129-222239.md
+    - task-20251129-222239
+
+    Args:
+        command: Command list passed to jib --exec
+
+    Returns:
+        Task ID if found, None otherwise
+    """
+    import re
+    task_pattern = r"(task-\d{8}-\d{6})"
+
+    for arg in command:
+        match = re.search(task_pattern, arg)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def extract_thread_ts_from_task_file(task_file_path: str) -> Optional[str]:
+    """Extract thread_ts from a task file's YAML frontmatter.
+
+    Task files contain YAML frontmatter like:
+        ---
+        task_id: "task-20251129-222239"
+        thread_ts: "1764483758.159619"
+        ---
+
+    Args:
+        task_file_path: Path to the task file (may be container path)
+
+    Returns:
+        Thread timestamp if found, None otherwise
+    """
+    import re
+
+    # Convert container path back to host path
+    host_path = task_file_path
+    if "/sharing/" in task_file_path:
+        # Container path like /home/user/sharing/incoming/task.md
+        # -> Host path like ~/.jib-sharing/incoming/task.md
+        parts = task_file_path.split("/sharing/", 1)
+        if len(parts) == 2:
+            host_path = str(Path.home() / ".jib-sharing" / parts[1])
+
+    try:
+        path = Path(host_path)
+        if path.exists():
+            content = path.read_text()
+            # Look for thread_ts in YAML frontmatter
+            match = re.search(r'thread_ts:\s*["\']?(\d+\.\d+)["\']?', content)
+            if match:
+                return match.group(1)
+    except Exception:
+        pass
+
+    return None
+
+
+def update_log_index(
+    container_id: str,
+    task_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+    log_file: Optional[str] = None,
+) -> None:
+    """Update the log index file with correlation information.
+
+    The log index enables quick lookups:
+    - task_id -> container_id
+    - thread_ts -> task_id
+    - List of all recent container runs
+
+    Uses file locking to prevent race conditions when multiple containers
+    finish simultaneously.
+
+    Args:
+        container_id: Docker container ID
+        task_id: Optional task ID (e.g., "task-20251129-222239")
+        thread_ts: Optional Slack thread timestamp
+        log_file: Path to the log file
+    """
+    import json
+    import fcntl
+
+    index_file = CONTAINER_LOGS_DIR / "log-index.json"
+    CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Use file locking to prevent concurrent modifications
+    # Open in 'a+' mode to create file if it doesn't exist
+    with open(index_file, 'a+') as f:
+        # Acquire exclusive lock
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            # Seek to beginning to read
+            f.seek(0)
+            content = f.read()
+
+            # Load existing index
+            index = {"task_to_container": {}, "thread_to_task": {}, "entries": []}
+            if content:
+                try:
+                    index = json.loads(content)
+                except Exception:
+                    pass
+
+            # Update correlation maps
+            if task_id:
+                index["task_to_container"][task_id] = container_id
+            if thread_ts and task_id:
+                index["thread_to_task"][thread_ts] = task_id
+
+            # Add entry
+            entry = {
+                "container_id": container_id,
+                "task_id": task_id,
+                "thread_ts": thread_ts,
+                "log_file": str(log_file) if log_file else None,
+                "timestamp": datetime.now().isoformat(),
+            }
+            index["entries"].append(entry)
+
+            # Keep last 1000 entries
+            if len(index["entries"]) > 1000:
+                index["entries"] = index["entries"][-1000:]
+
+            # Write updated index
+            f.seek(0)
+            f.truncate()
+            f.write(json.dumps(index, indent=2))
+        finally:
+            # Release lock
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def save_container_logs(
+    container_id: str,
+    task_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+) -> Optional[Path]:
+    """Save Docker container logs to persistent storage.
+
+    Uses `docker logs` to capture all container output and saves it to
+    ~/.jib-sharing/container-logs/{container_id}.log
+
+    Also creates a symlink from task_id.log -> container_id.log for easy lookup,
+    and updates the log index for correlation searches.
+
+    Args:
+        container_id: Docker container ID/name
+        task_id: Optional task ID for symlink creation
+        thread_ts: Optional Slack thread timestamp for index
+
+    Returns:
+        Path to the saved log file, or None if saving failed
+    """
+    CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    log_file = CONTAINER_LOGS_DIR / f"{container_id}.log"
+
+    try:
+        # Get container logs using docker logs command
+        result = subprocess.run(
+            ["docker", "logs", container_id],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        # Check log size before writing to prevent disk space exhaustion
+        max_log_size = 100 * 1024 * 1024  # 100MB
+        total_log_size = len(result.stdout) + len(result.stderr)
+        if total_log_size > max_log_size:
+            warn(f"Container logs exceed {max_log_size / (1024 * 1024):.0f}MB, truncating...")
+            # Truncate stderr/stdout proportionally
+            if result.stdout:
+                result.stdout = result.stdout[:max_log_size // 2] + "\n\n[... truncated ...]\n"
+            if result.stderr:
+                result.stderr = result.stderr[:max_log_size // 2] + "\n\n[... truncated ...]\n"
+
+        # Write logs (both stdout and stderr)
+        with open(log_file, "w") as f:
+            f.write(f"=== Container: {container_id} ===\n")
+            f.write(f"=== Saved: {datetime.now().isoformat()} ===\n")
+            if task_id:
+                f.write(f"=== Task ID: {task_id} ===\n")
+            if thread_ts:
+                f.write(f"=== Thread TS: {thread_ts} ===\n")
+            f.write("=" * 50 + "\n\n")
+
+            if result.stdout:
+                f.write("=== STDOUT ===\n")
+                f.write(result.stdout)
+                f.write("\n")
+
+            if result.stderr:
+                f.write("\n=== STDERR ===\n")
+                f.write(result.stderr)
+
+        # Create symlink from task_id if provided
+        if task_id:
+            task_log_link = CONTAINER_LOGS_DIR / f"{task_id}.log"
+            # Remove existing symlink if present
+            if task_log_link.is_symlink():
+                task_log_link.unlink()
+            # Create relative symlink
+            task_log_link.symlink_to(f"{container_id}.log")
+
+        # Update log index for correlation lookups
+        update_log_index(container_id, task_id, thread_ts, str(log_file))
+
+        if not _quiet_mode:
+            info(f"Container logs saved: {log_file}")
+            if task_id:
+                info(f"  Symlink: {task_id}.log -> {container_id}.log")
+
+        return log_file
+
+    except subprocess.TimeoutExpired:
+        warn("Timed out getting container logs")
+    except FileNotFoundError:
+        # Container doesn't exist or already removed
+        pass
+    except Exception as e:
+        warn(f"Failed to save container logs: {e}")
+
+    return None
 
 
 def get_default_branch(repo_path: Path) -> str:
@@ -1311,7 +1595,12 @@ def run_claude() -> bool:
         return False
 
 
-def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool:
+def exec_in_new_container(
+    command: List[str],
+    timeout_minutes: int = 30,
+    task_id: Optional[str] = None,
+    thread_ts: Optional[str] = None,
+) -> bool:
     """Execute a command in a new ephemeral container with isolated worktrees.
 
     Creates worktrees for all repos to isolate changes (same as interactive mode):
@@ -1319,10 +1608,13 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
     - Worktrees allow parallel work without conflicts
     - Automatic cleanup (--rm)
     - All commits go to temporary branches (jib-temp-jib-exec-*)
+    - Container logs persisted to ~/.jib-sharing/container-logs/
 
     Args:
         command: Command to execute
         timeout_minutes: Timeout in minutes (default: 30)
+        task_id: Optional task ID for log correlation (auto-detected from command if not provided)
+        thread_ts: Optional Slack thread timestamp for correlation
 
     Returns:
         True if successful, False otherwise
@@ -1347,7 +1639,22 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
     # Generate unique container ID for this exec
     container_id = f"jib-exec-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
 
+    # Auto-detect task_id from command if not provided
+    if not task_id:
+        task_id = extract_task_id_from_command(command)
+
+    # Auto-detect thread_ts from task file if not provided
+    if not thread_ts and task_id:
+        for arg in command:
+            if ".md" in arg:
+                thread_ts = extract_thread_ts_from_task_file(arg)
+                break
+
     info(f"Executing command in new container: {container_id}")
+    if task_id:
+        info(f"Task ID: {task_id}")
+    if thread_ts:
+        info(f"Thread TS: {thread_ts}")
     print(f"Command: {' '.join(command)}")
     print(f"Timeout: {timeout_minutes} minutes")
     print()
@@ -1435,16 +1742,27 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
 
     print()
 
-    # Build docker run command
+    # Build docker run command with logging configuration
+    # Note: We don't use --rm so we can save logs before cleanup
     cmd = [
         "docker", "run",
-        "--rm",  # Auto-remove container after exit
         "--name", container_id,
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
+        "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
     ]
+
+    # Add logging configuration for log persistence
+    log_config = get_docker_log_config(container_id, task_id)
+    cmd.extend(log_config)
+
+    # Add correlation environment variables for log tracing
+    if task_id:
+        cmd.extend(["-e", f"JIB_TASK_ID={task_id}"])
+    if thread_ts:
+        cmd.extend(["-e", f"JIB_THREAD_TS={thread_ts}"])
 
     # Add GitHub token for container (prefer App token, fall back to PAT)
     # Also write token to shared file for auto-refresh support
@@ -1469,9 +1787,31 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
 
     # Run container with configurable timeout
     timeout_seconds = timeout_minutes * 60
+    success = False
+
+    def cleanup_container():
+        """Save logs and remove container."""
+        try:
+            # Save container logs before removal (with correlation info)
+            save_container_logs(container_id, task_id, thread_ts)
+        except Exception as e:
+            error(f"Failed to save container logs: {e}")
+            # Don't re-raise - continue with container removal
+        finally:
+            # Remove container
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", container_id],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception as e:
+                error(f"Failed to remove container: {e}")
+                # Don't re-raise - original error is more important
+
     try:
         result = subprocess.run(cmd, timeout=timeout_seconds)
-        return result.returncode == 0
+        success = result.returncode == 0
     except subprocess.TimeoutExpired:
         print()
         error(f"Container execution timed out after {timeout_minutes} minutes")
@@ -1479,14 +1819,20 @@ def exec_in_new_container(command: List[str], timeout_minutes: int = 30) -> bool
         subprocess.run(["docker", "kill", container_id],
                       stdout=subprocess.DEVNULL,
                       stderr=subprocess.DEVNULL)
-        return False
     except KeyboardInterrupt:
         print()
         warn("Interrupted by user")
-        return False
+        # Kill container on interrupt
+        subprocess.run(["docker", "kill", container_id],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL)
     except Exception as e:
         error(f"Failed to run container: {e}")
-        return False
+    finally:
+        # Always save logs and cleanup container
+        cleanup_container()
+
+    return success
 
 
 def main():
