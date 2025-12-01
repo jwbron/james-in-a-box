@@ -4,17 +4,17 @@ Automated feature detection and documentation sync workflow.
 
 ## Overview
 
-The Feature Analyzer implements [ADR-Feature-Analyzer-Documentation-Sync](../../../docs/adr/not-implemented/ADR-Feature-Analyzer-Documentation-Sync.md) in progressive phases:
+The Feature Analyzer implements [ADR-Feature-Analyzer-Documentation-Sync](../../../docs/adr/in-progress/ADR-Feature-Analyzer-Documentation-Sync.md) in progressive phases:
 
 - **Phase 1 (MVP)**: Manual CLI tool for syncing documentation with implemented ADRs
 - **Phase 2**: Automated ADR detection via systemd polling (15-minute interval)
 - **Phase 3**: Multi-document batch updates with LLM generation and PR creation
-- **Phase 4**: Enhanced validation and rollback
+- **Phase 4**: Enhanced validation, traceability metadata, git tagging, and rollback tooling
 - **Phase 5**: Weekly code analysis for FEATURES.md updates
 
-## Current Status: Phase 3 (Multi-Doc Updates)
+## Current Status: Phase 4 (Enhanced Validation & Rollback)
 
-Phase 3 adds LLM-powered documentation generation and automated PR creation.
+Phase 4 adds production-ready quality gates and traceability features.
 
 ### Phase 1 Capabilities (Manual CLI)
 
@@ -39,11 +39,21 @@ Phase 3 adds LLM-powered documentation generation and automated PR creation.
 5. **Batch validation** - Validates each update independently with failure handling
 6. **PR creation** - Creates consolidated PR with all documentation changes
 
+### Phase 4 Capabilities (Enhanced Validation & Rollback)
+
+1. **Full validation suite (6 checks)**:
+   - Non-destructive (document length doesn't shrink >50%)
+   - Major sections preserved (## headers maintained)
+   - Link preservation (links not accidentally removed)
+   - Diff bounds (max 40% of doc changed)
+   - Structure preservation (document hierarchy maintained)
+   - Traceability (new claims traceable to ADR)
+2. **HTML comment metadata injection** - Adds `<!-- Auto-updated from ADR-XYZ on YYYY-MM-DD -->` for filtering
+3. **Git tagging** - Creates `auto-doc-sync-YYYYMMDD` tags for audit trail
+4. **Rollback tooling** - CLI commands to find and revert auto-generated changes
+
 ### What It Does NOT Do (Yet)
 
-- HTML comment metadata injection (Phase 4)
-- Git tagging for traceability (Phase 4)
-- Rollback tooling (Phase 4)
 - Weekly code analysis for new features (Phase 5)
 
 ## Installation
@@ -158,14 +168,78 @@ adr-watcher watch --phase3 --use-jib
 adr-watcher watch --phase3 --dry-run
 ```
 
+### Phase 4: Rollback Utilities
+
+#### List Auto-Generated Content
+
+```bash
+# List auto-generated commits
+feature-analyzer rollback list-commits
+feature-analyzer rollback list-commits --since "1 week ago"
+feature-analyzer rollback list-commits --adr "ADR-Feature-Analyzer"
+
+# List files with auto-generated metadata
+feature-analyzer rollback list-files
+
+# List auto-doc-sync tags
+feature-analyzer rollback list-tags
+
+# Use --repo-root if not in repo directory
+feature-analyzer rollback --repo-root /path/to/repo list-commits
+```
+
+#### Revert Auto-Generated Changes
+
+```bash
+# Revert a single file to before last auto-generated change
+feature-analyzer rollback revert-file docs/README.md
+
+# Revert to a specific commit
+feature-analyzer rollback revert-file docs/README.md --to abc1234
+
+# Revert all changes from a specific ADR
+feature-analyzer rollback revert-adr ADR-Feature-Analyzer
+```
+
+#### Query Auto-Generated Content (Git Commands)
+
+```bash
+# Find all auto-generated commits
+git log --grep="auto-generated" --oneline
+
+# Find commits for a specific ADR
+git log --grep="ADR-Feature-Analyzer" --grep="auto-generated"
+
+# Show all auto-doc-sync tags
+git tag -l "auto-doc-sync-*"
+
+# Find files with metadata comments
+grep -r "Auto-updated from" docs/
+```
+
+### Phase 4 Options for Generate Command
+
+```bash
+# Skip HTML metadata injection
+feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --no-metadata
+
+# Skip git tag creation
+feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --no-tag
+
+# Combine options
+feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --no-metadata --no-tag
+```
+
 ## Validation Checks
 
-The validator ensures auto-generated updates meet quality standards:
+The validator ensures auto-generated updates meet quality standards (Phase 4 Full Suite):
 
 1. **Non-destructive**: Document length doesn't shrink >50%
-2. **Structure preserved**: Major section headings maintained
-3. **Link preservation**: Links not accidentally removed
+2. **Major sections preserved**: ## level headers maintained
+3. **Link preservation**: Links not accidentally removed (>70% retained)
 4. **Diff bounds**: Changes within 40% threshold
+5. **Structure preservation**: Document hierarchy maintained (no orphaned headings)
+6. **Traceability**: New content relates to ADR (common terms required)
 
 ## Examples
 
@@ -250,13 +324,6 @@ This ensures:
 
 ## Future Phases
 
-### Phase 4: Enhanced Validation (Future)
-
-- Full validation suite (6 checks)
-- HTML comment metadata injection
-- Git tagging for traceability
-- Rollback documentation
-
 ### Phase 5: Weekly Code Analysis (Future)
 
 - Scan merged commits from past week
@@ -268,10 +335,11 @@ This ensures:
 
 ```
 feature-analyzer/
-├── feature-analyzer.py                  # Main CLI tool (Phase 1-3)
+├── feature-analyzer.py                  # Main CLI tool (Phase 1-4)
 ├── adr_watcher.py                       # Automated watcher (Phase 2-3)
-├── doc_generator.py                     # LLM-powered doc generation (Phase 3)
-├── pr_creator.py                        # Automated PR creation (Phase 3)
+├── doc_generator.py                     # LLM-powered doc generation (Phase 3-4)
+├── pr_creator.py                        # Automated PR creation (Phase 3-4)
+├── rollback.py                          # Rollback utilities (Phase 4)
 ├── feature-analyzer-watcher.service     # Systemd service (Phase 2)
 ├── feature-analyzer-watcher.timer       # Systemd timer - 15 min (Phase 2)
 ├── README.md                            # This file

@@ -264,7 +264,7 @@ class FeatureAnalyzer:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Feature Analyzer - Documentation Sync Tool (Phase 1-3)"
+        description="Feature Analyzer - Documentation Sync Tool (Phase 1-4)"
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -294,9 +294,9 @@ def main():
         help="Repository root directory (default: current directory)",
     )
 
-    # generate command (Phase 3)
+    # generate command (Phase 3-4)
     gen_parser = subparsers.add_parser(
-        "generate", help="Generate doc updates and create PR (Phase 3)"
+        "generate", help="Generate doc updates and create PR (Phase 3-4)"
     )
     gen_parser.add_argument(
         "--adr",
@@ -320,11 +320,63 @@ def main():
         help="Generate updates but don't create PR",
     )
     gen_parser.add_argument(
+        "--no-metadata",
+        action="store_true",
+        help="Skip HTML comment metadata injection (Phase 4)",
+    )
+    gen_parser.add_argument(
+        "--no-tag",
+        action="store_true",
+        help="Skip git tag creation for traceability (Phase 4)",
+    )
+    gen_parser.add_argument(
         "--repo-root",
         type=Path,
         default=Path.cwd(),
         help="Repository root directory (default: current directory)",
     )
+
+    # rollback command (Phase 4)
+    rollback_parser = subparsers.add_parser(
+        "rollback", help="Rollback utilities for auto-generated documentation (Phase 4)"
+    )
+    rollback_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root directory (default: current directory)",
+    )
+    rollback_subparsers = rollback_parser.add_subparsers(dest="rollback_command")
+
+    # rollback list-commits
+    rollback_list_commits = rollback_subparsers.add_parser(
+        "list-commits", help="List auto-generated commits"
+    )
+    rollback_list_commits.add_argument(
+        "--since", help="Show commits since date (e.g., '1 week ago')"
+    )
+    rollback_list_commits.add_argument("--adr", help="Filter by ADR filename")
+
+    # rollback list-files
+    rollback_subparsers.add_parser("list-files", help="List files with auto-generated metadata")
+
+    # rollback list-tags
+    rollback_subparsers.add_parser("list-tags", help="List auto-doc-sync tags")
+
+    # rollback revert-file
+    rollback_revert_file = rollback_subparsers.add_parser(
+        "revert-file", help="Revert a single file"
+    )
+    rollback_revert_file.add_argument("file", type=Path, help="Path to file to revert")
+    rollback_revert_file.add_argument(
+        "--to", help="Commit to revert to (default: before last auto-generated)"
+    )
+
+    # rollback revert-adr
+    rollback_revert_adr = rollback_subparsers.add_parser(
+        "revert-adr", help="Revert all changes from an ADR"
+    )
+    rollback_revert_adr.add_argument("adr_name", help="ADR filename (e.g., ADR-Feature-Analyzer)")
 
     args = parser.parse_args()
 
@@ -384,7 +436,7 @@ def main():
             sys.exit(1)
 
     elif args.command == "generate":
-        # Phase 3: Multi-doc updates with PR creation
+        # Phase 3-4: Multi-doc updates with PR creation and traceability
         from doc_generator import DocGenerator
         from pr_creator import PRCreator
 
@@ -404,8 +456,15 @@ def main():
             generator = DocGenerator(args.repo_root, use_jib=not args.no_jib)
             gen_result = generator.generate_updates_for_adr(adr_metadata)
 
-            # Validate all updates
-            gen_result = generator.validate_all_updates(gen_result)
+            # Read ADR content for traceability validation (Phase 4)
+            adr_content = adr_metadata.path.read_text()
+
+            # Validate all updates with full validation suite (Phase 4)
+            gen_result = generator.validate_all_updates(gen_result, adr_content)
+
+            # Apply HTML metadata comments (Phase 4)
+            if not args.no_metadata:
+                gen_result = generator.apply_metadata_to_updates(gen_result, adr_metadata.filename)
 
             # Report results
             print("\nGeneration Results:")
@@ -423,6 +482,8 @@ def main():
                 print(f"\n  {status} {update.doc_path.relative_to(args.repo_root)}")
                 print(f"    Confidence: {update.confidence:.0%}")
                 print(f"    Summary: {update.changes_summary}")
+                if update.adr_reference:
+                    print(f"    Metadata: {update.adr_reference} ({update.update_timestamp})")
                 if update.validation_errors:
                     for error in update.validation_errors:
                         print(f"    Error: {error}")
@@ -446,11 +507,14 @@ def main():
                     adr_path=adr_metadata.path,
                     updates=gen_result.updates,
                     dry_run=args.dry_run,
+                    create_tag=not args.no_tag,  # Phase 4: Git tagging
                 )
 
                 if pr_result.success:
                     print("\n✓ PR created successfully!")
                     print(f"  Branch: {pr_result.branch_name}")
+                    if pr_result.tag_name:
+                        print(f"  Tag: {pr_result.tag_name}")
                     if pr_result.pr_url:
                         print(f"  PR URL: {pr_result.pr_url}")
                 else:
@@ -476,6 +540,82 @@ def main():
 
             traceback.print_exc()
             sys.exit(1)
+
+    elif args.command == "rollback":
+        # Phase 4: Rollback utilities
+        from rollback import Rollback
+
+        rollback = Rollback(args.repo_root)
+
+        if args.rollback_command == "list-commits":
+            commits = rollback.find_auto_generated_commits(since=args.since, adr_filename=args.adr)
+
+            if not commits:
+                print("No auto-generated commits found.")
+            else:
+                print(f"Found {len(commits)} auto-generated commit(s):\n")
+                for commit in commits:
+                    print(f"  {commit.sha[:8]} - {commit.message}")
+                    print(f"    Date: {commit.date}")
+                    if commit.adr_filename:
+                        print(f"    ADR: {commit.adr_filename}")
+                    if commit.files:
+                        print(f"    Files: {', '.join(commit.files[:3])}")
+                        if len(commit.files) > 3:
+                            print(f"           ... and {len(commit.files) - 3} more")
+                    print()
+
+        elif args.rollback_command == "list-files":
+            files = rollback.find_files_with_metadata()
+
+            if not files:
+                print("No files with auto-generated metadata found.")
+            else:
+                print(f"Found {len(files)} file(s) with auto-generated metadata:\n")
+                for file_path, adr_ref in files:
+                    rel_path = file_path.relative_to(args.repo_root)
+                    print(f"  {rel_path}")
+                    print(f"    Updated from: {adr_ref}")
+                    print()
+
+        elif args.rollback_command == "list-tags":
+            tags = rollback.find_auto_generated_tags()
+
+            if not tags:
+                print("No auto-doc-sync tags found.")
+            else:
+                print(f"Found {len(tags)} auto-doc-sync tag(s):\n")
+                for tag in tags:
+                    print(f"  {tag}")
+
+        elif args.rollback_command == "revert-file":
+            result = rollback.revert_single_file(args.file, target_commit=args.to)
+
+            if result.success:
+                print(f"✓ {result.message}")
+                print("\nNote: Changes are staged but not committed.")
+                print("Review and commit with: git commit -m 'Revert auto-generated changes'")
+            else:
+                print(f"✗ {result.message}")
+                sys.exit(1)
+
+        elif args.rollback_command == "revert-adr":
+            result = rollback.revert_adr_batch(args.adr_name)
+
+            if result.success:
+                print(f"✓ {result.message}")
+                if result.reverted_files:
+                    print("\nReverted files:")
+                    for f in result.reverted_files:
+                        print(f"  - {f}")
+                print("\nNote: Changes are staged but not committed.")
+                print("Review and commit with: git commit -m 'Revert auto-generated changes'")
+            else:
+                print(f"✗ {result.message}")
+                sys.exit(1)
+
+        else:
+            parser.print_help()
 
 
 if __name__ == "__main__":
