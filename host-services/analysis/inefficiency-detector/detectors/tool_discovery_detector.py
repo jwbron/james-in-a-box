@@ -264,9 +264,7 @@ class ToolDiscoveryDetector(BaseDetector):
                             evidence={
                                 "tool": curr.tool_name,
                                 "error_message": curr.tool_result.error_message,
-                                "failed_params": curr.tool_params.raw
-                                if curr.tool_params
-                                else {},
+                                "failed_params": curr.tool_params.raw if curr.tool_params else {},
                                 "success_params": next_event.tool_params.raw
                                 if next_event.tool_params
                                 else {},
