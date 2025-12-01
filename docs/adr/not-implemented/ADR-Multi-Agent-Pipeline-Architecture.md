@@ -9,19 +9,6 @@
 
 ---
 
-> **2025 Research Update (December 2025)**: This ADR has been enhanced with the latest industry research and best practices:
-> - [Anthropic's multi-agent system](https://www.anthropic.com/engineering/multi-agent-research-system) achieved **90% performance improvement** over single-agent using Opus 4 lead + Sonnet 4 subagents
-> - Multi-agent systems use **~15× more tokens** than single-agent chats - economic viability requires high-value tasks
-> - **Context engineering** (clear objectives, task boundaries, termination criteria) is the #1 success factor
-> - [40% of agentic AI projects](https://galileo.ai/blog/hidden-cost-of-agentic-ai) are canceled before production due to cost/complexity
-> - Industry has converged on core patterns: Sequential, Parallel, Hierarchical, Consensus, Iterative
-> - **New:** [UC Berkeley's MAST taxonomy](https://arxiv.org/abs/2503.13657) identifies 14 failure modes across 3 categories - essential reading for reliability
-> - **New:** [A2A (Agent2Agent) protocol](https://a2a-protocol.org/) + [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) emerging as interoperability standards
-> - **New:** [OpenAI Agents SDK](https://openai.com/index/new-tools-for-building-agents/) replaced Swarm; parallel execution reducing latency by 20-50%
-> - **New:** Enterprise deployments showing real ROI: Wiley 40%+ case resolution, 1-800Accountant 70% autonomous resolution
-
----
-
 ## Table of Contents
 
 - [Context](#context)
@@ -29,10 +16,11 @@
 - [Decision Matrix](#decision-matrix)
 - [Multi-Agent Architecture](#multi-agent-architecture)
 - [Pipeline Patterns](#pipeline-patterns)
-- [Failure Modes & Reliability](#failure-modes--reliability) *(New)*
-- [Security & Isolation](#security--isolation) *(New)*
-- [Interoperability Standards](#interoperability-standards) *(New)*
-- [Enterprise Case Studies](#enterprise-case-studies) *(New)*
+- [Industry Best Practices](#industry-best-practices)
+- [Failure Modes & Reliability](#failure-modes--reliability)
+- [Security & Isolation](#security--isolation)
+- [Interoperability Standards](#interoperability-standards)
+- [Enterprise Case Studies](#enterprise-case-studies)
 - [Implementation Phases](#implementation-phases)
 - [Consequences](#consequences)
 - [Decision Permanence](#decision-permanence)
@@ -98,59 +86,6 @@ This ADR proposes a **multi-agent pipeline architecture** for jib where:
 3. **Agents can run sequentially** (with checkpointing) or **in parallel** (for throughput)
 4. **Coordination logic** manages agent orchestration, state, and error handling
 5. **Reusable agent templates** enable consistent patterns across workflows
-
-### 2025 Best Practices from Industry
-
-Based on research from [Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system), [Microsoft](https://azure.microsoft.com/en-us/blog/agent-factory-the-new-era-of-agentic-ai-common-use-cases-and-design-patterns/), and [leading AI practitioners](https://collabnix.com/multi-agent-and-multi-llm-architecture-complete-guide-for-2025/), the following principles emerged as critical for successful multi-agent systems:
-
-**1. Context Engineering (Critical Success Factor)**
-
-Context engineering is **the #1 job of engineers building AI agents** in 2025. Anthropic's research found that early agent systems failed when agents:
-- Spawned 50 subagents for simple queries (lack of task scoping)
-- Scoured the web endlessly for nonexistent sources (no termination criteria)
-- Distracted each other with excessive updates (poor coordination boundaries)
-
-**Each subagent must have:**
-- Clear objective and output format
-- Guidance on tools and sources to use
-- Explicit task boundaries (what NOT to do)
-- Termination criteria
-
-**2. Economic Viability Through Value Alignment**
-
-[Industry data](https://medium.com/@anishnarayan09/agentic-ai-automation-optimize-efficiency-minimize-token-costs-69185687713c) shows that:
-- Agents use **~4× more tokens** than chat interactions
-- Multi-agent systems use **~15× more tokens** than chats
-- Complex agents with tool-calling consume **5-20× more tokens** than simple chains due to loops and retries
-
-**Rule of thumb**: Multi-agent systems require tasks where the **value of the task is high enough** to pay for increased performance and cost.
-
-**3. When to Use Multi-Agent vs Single-Agent**
-
-Multi-agent systems excel at:
-- Tasks requiring heavy parallelization
-- Information exceeding single context windows
-- Interfacing with numerous complex tools
-- Tasks where quality/accuracy improvements justify 15× token cost
-
-Multi-agent systems designed for **"reading" tasks** (analysis, research) tend to be more manageable than **"writing" tasks** (code generation, content creation).
-
-**4. Orchestration Framework Selection**
-
-[Industry guidance](https://research.aimultiple.com/agentic-orchestration/) suggests using orchestrators when you have **3+ of**:
-- State management requirements
-- Branching logic
-- Parallelism needs
-- Multiple tools/LLMs
-- Strict observability requirements
-
-**5. State Management and Checkpointing**
-
-[Research on checkpoint/restore systems](https://eunomia.dev/blog/2025/05/11/checkpointrestore-systems-evolution-techniques-and-applications-in-ai-agents/) and [LangGraph state machines](https://dev.to/jamesli/langgraph-state-machines-managing-complex-agent-task-flows-in-production-36f4) emphasize:
-- Every agent state change should be durably checkpointed
-- Agents must survive crashes and infrastructure updates
-- State should enable time-travel debugging
-- Centralized state management prevents conflicts
 
 ### Key Requirements
 
@@ -687,6 +622,59 @@ Given that multi-agent systems use **~15× more tokens** than single-agent chats
 - Track token usage per stage
 - Compare multi-agent vs single-agent baselines
 - Target: multi-agent should provide >2× quality improvement to justify 15× token cost
+
+## Industry Best Practices
+
+Based on research from [Anthropic](https://www.anthropic.com/engineering/multi-agent-research-system), [Microsoft](https://azure.microsoft.com/en-us/blog/agent-factory-the-new-era-of-agentic-ai-common-use-cases-and-design-patterns/), and [leading AI practitioners](https://collabnix.com/multi-agent-and-multi-llm-architecture-complete-guide-for-2025/), the following principles emerged as critical for successful multi-agent systems:
+
+### Context Engineering (Critical Success Factor)
+
+Context engineering is **the #1 job of engineers building AI agents** in 2025. Anthropic's research found that early agent systems failed when agents:
+- Spawned 50 subagents for simple queries (lack of task scoping)
+- Scoured the web endlessly for nonexistent sources (no termination criteria)
+- Distracted each other with excessive updates (poor coordination boundaries)
+
+**Each subagent must have:**
+- Clear objective and output format
+- Guidance on tools and sources to use
+- Explicit task boundaries (what NOT to do)
+- Termination criteria
+
+### Economic Viability
+
+[Industry data](https://medium.com/@anishnarayan09/agentic-ai-automation-optimize-efficiency-minimize-token-costs-69185687713c) shows that:
+- Agents use **~4× more tokens** than chat interactions
+- Multi-agent systems use **~15× more tokens** than chats
+- Complex agents with tool-calling consume **5-20× more tokens** than simple chains due to loops and retries
+
+**Rule of thumb**: Multi-agent systems require tasks where the **value of the task is high enough** to pay for increased performance and cost.
+
+### When to Use Multi-Agent vs Single-Agent
+
+Multi-agent systems excel at:
+- Tasks requiring heavy parallelization
+- Information exceeding single context windows
+- Interfacing with numerous complex tools
+- Tasks where quality/accuracy improvements justify 15× token cost
+
+Multi-agent systems designed for **"reading" tasks** (analysis, research) tend to be more manageable than **"writing" tasks** (code generation, content creation).
+
+### Orchestration Framework Selection
+
+[Industry guidance](https://research.aimultiple.com/agentic-orchestration/) suggests using orchestrators when you have **3+ of**:
+- State management requirements
+- Branching logic
+- Parallelism needs
+- Multiple tools/LLMs
+- Strict observability requirements
+
+### State Management and Checkpointing
+
+[Research on checkpoint/restore systems](https://eunomia.dev/blog/2025/05/11/checkpointrestore-systems-evolution-techniques-and-applications-in-ai-agents/) and [LangGraph state machines](https://dev.to/jamesli/langgraph-state-machines-managing-complex-agent-task-flows-in-production-36f4) emphasize:
+- Every agent state change should be durably checkpointed
+- Agents must survive crashes and infrastructure updates
+- State should enable time-travel debugging
+- Centralized state management prevents conflicts
 
 ## Failure Modes & Reliability
 
