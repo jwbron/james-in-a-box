@@ -1,20 +1,40 @@
 #!/usr/bin/env python3
 """
-Weekly Code Analyzer - FEATURES.md Auto-Discovery (Phase 5)
+Weekly Code Analyzer - FEATURES.md Auto-Discovery (Phase 5 Enhanced)
 
 This module scans merged code from the past week and identifies new features
-to add to FEATURES.md. It uses git log analysis and LLM-based feature extraction.
+to add to FEATURES.md. It uses both commit analysis AND deep code-level
+analysis with LLM-powered feature extraction.
 
-The analyzer:
-1. Collects commits from the past 7 days
-2. Analyzes commit diffs to identify new capabilities
-3. Extracts feature metadata (name, description, files, tests)
-4. Updates FEATURES.md with new entries
-5. Creates PR for human review
+The analyzer performs thorough analysis including:
+1. Collects commits from the past N days
+2. Phase 1: Commit-based feature extraction (original method)
+3. Phase 2: Deep code analysis - reads actual file contents for thorough
+   feature extraction, useful for poorly named commits
+4. Phase 3: Documentation discovery - links features to existing docs
+5. Phase 4: Documentation generation - auto-generates docs for undocumented features
+6. Updates FEATURES.md with new entries including doc links
+7. Creates PR for human review
+
+Key Features:
+- Deep code analysis reads source files, not just commit messages
+- Extracts meaningful descriptions from docstrings and code comments
+- Links each feature entry to its documentation (existing or generated)
+- Auto-generates README.md for undocumented features
+- FEATURES.md is hooked into docs/index.md for LLM navigation
 
 Usage:
     analyzer = WeeklyAnalyzer(repo_root)
-    result = analyzer.analyze_and_update()
+    result = analyzer.analyze_and_update(
+        days=7,
+        generate_docs=True,
+        deep_analysis=True
+    )
+
+CLI:
+    python weekly_analyzer.py --days 7 --repo-root /path/to/repo
+    python weekly_analyzer.py --no-deep-analysis  # Skip code-level analysis
+    python weekly_analyzer.py --no-docs           # Skip doc generation
 """
 
 import json
@@ -58,6 +78,8 @@ class DetectedFeature:
     confidence: float = 0.0  # 0.0-1.0
     adr_reference: str = ""  # Optional ADR if detected
     needs_review: bool = False  # True if confidence < 0.7
+    doc_path: str = ""  # Path to documentation file if exists
+    doc_generated: bool = False  # True if doc was auto-generated
 
 
 @dataclass
@@ -68,6 +90,7 @@ class AnalysisResult:
     features_detected: list[DetectedFeature] = field(default_factory=list)
     features_added: list[DetectedFeature] = field(default_factory=list)
     features_skipped: list[tuple[str, str]] = field(default_factory=list)  # (name, reason)
+    docs_generated: list[str] = field(default_factory=list)  # Paths to generated docs
     errors: list[str] = field(default_factory=list)
     analysis_date: str = ""
 
@@ -588,6 +611,272 @@ If no meaningful features are found, return: `[]`
 
         return paths
 
+    def find_existing_documentation(self, feature: DetectedFeature) -> str | None:
+        """
+        Find existing documentation for a feature by checking common locations.
+
+        Looks for README.md in the feature's directory or a matching doc file
+        in docs/reference/ or docs/.
+
+        Returns the relative path to documentation if found, None otherwise.
+        """
+        if not feature.files:
+            return None
+
+        primary_file = Path(feature.files[0])
+
+        # Check for README.md in the same directory
+        readme_path = self.repo_root / primary_file.parent / "README.md"
+        if readme_path.exists():
+            return str(primary_file.parent / "README.md")
+
+        # Check for documentation in docs/reference/
+        feature_slug = feature.name.lower().replace(" ", "-")
+        for doc_pattern in [
+            f"docs/reference/{feature_slug}.md",
+            f"docs/{feature_slug}.md",
+            f"docs/reference/{primary_file.stem}.md",
+        ]:
+            doc_path = self.repo_root / doc_pattern
+            if doc_path.exists():
+                return doc_pattern
+
+        return None
+
+    def _read_file_content(self, file_path: str, max_lines: int = 500) -> str:
+        """
+        Read file content for code analysis.
+
+        Args:
+            file_path: Relative path to the file
+            max_lines: Maximum lines to read (default 500)
+
+        Returns:
+            File content truncated to max_lines, or empty string if error
+        """
+        full_path = self.repo_root / file_path
+        if not full_path.exists():
+            return ""
+
+        try:
+            # Skip very large files
+            if full_path.stat().st_size > 500_000:  # 500KB limit
+                return ""
+
+            content = full_path.read_text(encoding="utf-8")
+            lines = content.split("\n")
+            if len(lines) > max_lines:
+                lines = lines[:max_lines]
+                lines.append(f"\n... [truncated at {max_lines} lines]")
+            return "\n".join(lines)
+        except (UnicodeDecodeError, OSError):
+            return ""
+
+    def _analyze_code_with_llm(self, file_contents: dict[str, str]) -> list[DetectedFeature]:
+        """
+        Use LLM to analyze actual code content and extract features.
+
+        This provides more thorough analysis than commit-based extraction,
+        useful for poorly named commits or large refactors.
+
+        Args:
+            file_contents: Dict mapping file paths to their content
+
+        Returns:
+            List of detected features
+        """
+        if not file_contents:
+            return []
+
+        # Build a comprehensive prompt with actual code
+        code_sections = []
+        for file_path, content in file_contents.items():
+            if content:
+                code_sections.append(f"""
+## File: {file_path}
+
+```python
+{content}
+```
+""")
+
+        if not code_sections:
+            return []
+
+        code_text = "\n---\n".join(code_sections)
+
+        prompt = f"""You are an expert software architect analyzing a codebase to identify user-facing FEATURES for documentation.
+
+# Code to Analyze
+
+{code_text}
+
+# Your Task
+
+Analyze this code thoroughly to identify substantive features. For EACH feature found, provide:
+
+1. **name**: A clear, descriptive feature name
+   - Good: "Slack Message Router", "Weekly Code Analyzer", "GitHub Token Refresher"
+   - Bad: "Handler", "Service", "Utils" (too generic)
+
+2. **description**: A meaningful description (2-3 sentences) explaining:
+   - What the feature does
+   - The problem it solves
+   - Key capabilities
+
+3. **category**: One of:
+   - "Analysis & Documentation" - code analysis, doc generation, PR review tools
+   - "Context Sync" - data synchronization services
+   - "Slack Integration" - Slack-related features
+   - "Task Tracking" - task management features
+   - "Git & GitHub Integration" - git/GitHub tooling
+   - "Container Infrastructure" - container, Docker, environment tools
+   - "Utilities" - general utilities
+
+4. **files**: Main implementation files (the ones you analyzed)
+
+5. **tests**: Any test files mentioned or inferred
+
+6. **confidence**: 0.0-1.0 based on:
+   - 0.9+: Clear user-facing feature with main() or public API
+   - 0.7-0.9: Likely feature, well-documented
+   - 0.5-0.7: Possibly a feature, needs review
+   - <0.5: Probably internal utility
+
+# What IS a Feature?
+
+- CLI tools with main() function or argument parser
+- Services that run as systemd units or daemons
+- Public APIs/libraries used by other code
+- Standalone capabilities that solve user problems
+
+# What is NOT a Feature?
+
+- Internal helper functions
+- Base classes or abstract interfaces
+- Configuration files
+- Test utilities
+- Generic connectors without clear user benefit
+
+# Quality Requirements
+
+- Extract meaningful descriptions from docstrings and comments
+- Identify the PURPOSE, not just the implementation
+- If a file is just internal plumbing, skip it (confidence < 0.3)
+- Group related functionality into single features
+
+# Output Format
+
+Return ONLY a JSON array:
+
+```json
+[
+  {{
+    "name": "Feature Name",
+    "description": "2-3 sentence description of what it does and why",
+    "category": "Category Name",
+    "files": ["path/to/main.py"],
+    "tests": ["tests/test_feature.py"],
+    "confidence": 0.85
+  }}
+]
+```
+
+If no features found, return: `[]`
+"""
+
+        try:
+            result = run_claude(
+                prompt=prompt,
+                timeout=600,  # 10 minute timeout for thorough analysis
+                cwd=self.repo_root,
+                stream=False,
+            )
+
+            if result.success and result.stdout.strip():
+                return self._parse_llm_features(result.stdout)
+            else:
+                error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown"
+                print(f"    Warning: Code analysis failed: {error_msg}")
+                return []
+
+        except Exception as e:
+            print(f"    Warning: Code analysis error: {e}")
+            return []
+
+    def generate_feature_documentation(self, feature: DetectedFeature) -> str | None:
+        """
+        Generate documentation for a feature using LLM.
+
+        Creates a README.md-style documentation file for the feature.
+
+        Args:
+            feature: The feature to document
+
+        Returns:
+            Path to generated documentation, or None if generation failed
+        """
+        if not feature.files:
+            return None
+
+        # Read the main implementation file
+        primary_file = feature.files[0]
+        content = self._read_file_content(primary_file, max_lines=800)
+        if not content:
+            return None
+
+        prompt = f"""Generate comprehensive documentation for this feature.
+
+# Feature: {feature.name}
+
+**Description**: {feature.description}
+**Category**: {feature.category}
+**Implementation**: `{primary_file}`
+
+# Source Code
+
+```python
+{content}
+```
+
+# Generate Documentation
+
+Create a README.md for this feature with these sections:
+
+1. **Overview** - What is this feature and why does it exist?
+2. **Usage** - How to use it (CLI commands, API calls, etc.)
+3. **Configuration** - Any configuration options
+4. **Architecture** - Key components and how they work together
+5. **Examples** - Practical usage examples
+
+Write clear, concise documentation suitable for developers.
+Output ONLY the markdown content, no explanation.
+"""
+
+        try:
+            result = run_claude(
+                prompt=prompt,
+                timeout=300,
+                cwd=self.repo_root,
+                stream=False,
+            )
+
+            if result.success and result.stdout.strip():
+                # Determine output path
+                primary_path = Path(primary_file)
+                doc_dir = self.repo_root / primary_path.parent
+
+                # Write the documentation
+                doc_path = doc_dir / "README.md"
+                if not doc_path.exists():
+                    doc_path.write_text(result.stdout.strip())
+                    return str(primary_path.parent / "README.md")
+
+        except Exception as e:
+            print(f"    Warning: Doc generation error: {e}")
+
+        return None
+
     def _deduplicate_by_files(
         self, features: list[DetectedFeature]
     ) -> tuple[list[DetectedFeature], list[tuple[str, str]]]:
@@ -710,12 +999,21 @@ If no meaningful features are found, return: `[]`
         return new_features, all_skipped
 
     def format_feature_entry(self, feature: DetectedFeature) -> str:
-        """Format a feature for FEATURES.md."""
+        """Format a feature for FEATURES.md with documentation links."""
         review_flag = " **[needs review]**" if feature.needs_review else ""
         lines = [
             f"#### {feature.name} **[{feature.status}]**{review_flag}",
             f"- **Description**: {feature.description}",
         ]
+
+        # Add documentation link if available
+        if feature.doc_path:
+            doc_label = "(auto-generated)" if feature.doc_generated else ""
+            lines.append(f"- **Documentation**: [{feature.doc_path}]({feature.doc_path}) {doc_label}")
+
+        # Add ADR reference if available
+        if feature.adr_reference:
+            lines.append(f"- **ADR**: [{feature.adr_reference}]({feature.adr_reference})")
 
         if feature.files:
             lines.append("- **Implementation**:")
@@ -790,13 +1088,27 @@ If no meaningful features are found, return: `[]`
 
         return new_content
 
-    def analyze_and_update(self, days: int = 7, dry_run: bool = False) -> AnalysisResult:
+    def analyze_and_update(
+        self,
+        days: int = 7,
+        dry_run: bool = False,
+        generate_docs: bool = True,
+        deep_analysis: bool = True,
+    ) -> AnalysisResult:
         """
         Main entry point: analyze recent commits and update FEATURES.md.
+
+        This method performs thorough feature analysis including:
+        1. Commit-based extraction (original method)
+        2. Code-level analysis (reads actual file contents for better extraction)
+        3. Documentation discovery (links to existing docs)
+        4. Documentation generation (creates docs for undocumented features)
 
         Args:
             days: Number of days to analyze
             dry_run: If True, don't actually modify files
+            generate_docs: If True, generate documentation for features without docs
+            deep_analysis: If True, also analyze file contents (not just commits)
 
         Returns:
             AnalysisResult with details of what was found/added
@@ -821,8 +1133,8 @@ If no meaningful features are found, return: `[]`
         if not feature_commits:
             return result
 
-        # Extract features
-        print("  Extracting features...")
+        # Phase 1: Extract features from commits (original method)
+        print("  Phase 1: Extracting features from commits...")
         if self.use_llm:
             detected = self.extract_features_with_llm(feature_commits)
             if not detected:
@@ -832,7 +1144,42 @@ If no meaningful features are found, return: `[]`
         else:
             detected = self.extract_features_heuristically(feature_commits)
 
-        print(f"    Detected {len(detected)} potential features")
+        print(f"    Detected {len(detected)} potential features from commits")
+
+        # Phase 2: Deep code analysis (reads file contents)
+        if deep_analysis and self.use_llm:
+            print("  Phase 2: Deep code analysis (reading file contents)...")
+
+            # Collect all Python files from commits for deeper analysis
+            all_files = set()
+            for commit in feature_commits:
+                for f in commit.files:
+                    if f.endswith(".py") and self.is_feature_directory(f):
+                        if not self._is_utility_file(f) and "test" not in f.lower():
+                            all_files.add(f)
+
+            if all_files:
+                print(f"    Analyzing {len(all_files)} files...")
+                # Read file contents
+                file_contents = {}
+                for file_path in list(all_files)[:15]:  # Limit to 15 files
+                    content = self._read_file_content(file_path)
+                    if content:
+                        file_contents[file_path] = content
+
+                # Run deep analysis
+                if file_contents:
+                    deep_features = self._analyze_code_with_llm(file_contents)
+                    if deep_features:
+                        print(f"    Deep analysis found {len(deep_features)} additional features")
+                        # Merge with commit-based features (avoid duplicates)
+                        existing_files = {f.files[0] for f in detected if f.files}
+                        for df in deep_features:
+                            if df.files and df.files[0] not in existing_files:
+                                detected.append(df)
+                                existing_files.add(df.files[0])
+
+        print(f"    Total: {len(detected)} potential features")
         result.features_detected = detected
 
         if not detected:
@@ -848,6 +1195,24 @@ If no meaningful features are found, return: `[]`
         if not new_features:
             return result
 
+        # Phase 3: Documentation discovery and generation
+        print("  Phase 3: Documentation discovery and generation...")
+        for feature in new_features:
+            # Try to find existing documentation
+            doc_path = self.find_existing_documentation(feature)
+            if doc_path:
+                feature.doc_path = doc_path
+                print(f"    Found existing docs for {feature.name}: {doc_path}")
+            elif generate_docs and self.use_llm and not dry_run:
+                # Generate documentation for undocumented features
+                print(f"    Generating docs for {feature.name}...")
+                generated_path = self.generate_feature_documentation(feature)
+                if generated_path:
+                    feature.doc_path = generated_path
+                    feature.doc_generated = True
+                    result.docs_generated.append(generated_path)
+                    print(f"      Generated: {generated_path}")
+
         # Update FEATURES.md
         print("  Updating FEATURES.md...")
         self.update_features_md(new_features, dry_run=dry_run)
@@ -857,6 +1222,8 @@ If no meaningful features are found, return: `[]`
             print("    [DRY RUN] Would add features to FEATURES.md")
         else:
             print(f"    Added {len(new_features)} features")
+            if result.docs_generated:
+                print(f"    Generated {len(result.docs_generated)} documentation files")
 
         return result
 
@@ -865,7 +1232,9 @@ def main():
     """CLI entry point for testing."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Weekly code analyzer for FEATURES.md")
+    parser = argparse.ArgumentParser(
+        description="Weekly code analyzer for FEATURES.md with thorough code analysis"
+    )
     parser.add_argument(
         "--days",
         type=int,
@@ -888,16 +1257,33 @@ def main():
         action="store_true",
         help="Don't modify files, just show what would be done",
     )
+    parser.add_argument(
+        "--no-docs",
+        action="store_true",
+        help="Skip documentation generation for undocumented features",
+    )
+    parser.add_argument(
+        "--no-deep-analysis",
+        action="store_true",
+        help="Skip deep code analysis (only use commit-based extraction)",
+    )
 
     args = parser.parse_args()
 
-    print("Weekly Code Analyzer - Phase 5")
+    print("Weekly Code Analyzer - Phase 5 (Enhanced)")
     print(f"Repository: {args.repo_root}")
     print(f"Analyzing past {args.days} days")
+    print(f"Deep analysis: {'disabled' if args.no_deep_analysis else 'enabled'}")
+    print(f"Doc generation: {'disabled' if args.no_docs else 'enabled'}")
     print()
 
     analyzer = WeeklyAnalyzer(args.repo_root, use_llm=not args.no_llm)
-    result = analyzer.analyze_and_update(days=args.days, dry_run=args.dry_run)
+    result = analyzer.analyze_and_update(
+        days=args.days,
+        dry_run=args.dry_run,
+        generate_docs=not args.no_docs,
+        deep_analysis=not args.no_deep_analysis,
+    )
 
     print("\n" + "=" * 50)
     print("Analysis Results:")
@@ -905,13 +1291,20 @@ def main():
     print(f"  Features detected: {len(result.features_detected)}")
     print(f"  Features added: {len(result.features_added)}")
     print(f"  Features skipped: {len(result.features_skipped)}")
+    print(f"  Docs generated: {len(result.docs_generated)}")
 
     if result.features_added:
         print("\nNew features added:")
         for feature in result.features_added:
             review = " (needs review)" if feature.needs_review else ""
-            print(f"  - {feature.name}{review}")
+            doc_info = f" [docs: {feature.doc_path}]" if feature.doc_path else " [no docs]"
+            print(f"  - {feature.name}{review}{doc_info}")
             print(f"    {feature.description}")
+
+    if result.docs_generated:
+        print("\nDocumentation generated:")
+        for doc_path in result.docs_generated:
+            print(f"  - {doc_path}")
 
     if result.features_skipped:
         print("\nSkipped features:")
