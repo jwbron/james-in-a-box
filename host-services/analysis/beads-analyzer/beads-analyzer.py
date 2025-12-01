@@ -126,7 +126,9 @@ class ClaudeAnalysis:
     smart_issues: list[dict] = field(default_factory=list)  # Issues Claude detected
     recommendations: list[dict] = field(default_factory=list)  # Prioritized recommendations
     trend_analysis: str = ""  # Comparison with previous reports
-    task_quality_scores: dict[str, dict] = field(default_factory=dict)  # task_id -> {score, reasons}
+    task_quality_scores: dict[str, dict] = field(
+        default_factory=dict
+    )  # task_id -> {score, reasons}
     patterns_detected: list[str] = field(default_factory=list)  # Workflow patterns observed
     success: bool = False
     error: str | None = None
@@ -806,18 +808,20 @@ Period: Last {self.days} days
         # Prepare task data for Claude (limit to avoid token limits)
         task_summaries = []
         for task in tasks[:50]:  # Limit to 50 most recent
-            task_summaries.append({
-                "id": task.id,
-                "title": task.title,
-                "status": task.status,
-                "labels": task.labels,
-                "has_notes": bool(task.notes),
-                "has_description": bool(task.description),
-                "created": task.created_at.isoformat() if task.created_at else None,
-                "updated": task.updated_at.isoformat() if task.updated_at else None,
-                "closed": task.closed_at.isoformat() if task.closed_at else None,
-                "notes_preview": task.notes[:200] if task.notes else "",
-            })
+            task_summaries.append(
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "status": task.status,
+                    "labels": task.labels,
+                    "has_notes": bool(task.notes),
+                    "has_description": bool(task.description),
+                    "created": task.created_at.isoformat() if task.created_at else None,
+                    "updated": task.updated_at.isoformat() if task.updated_at else None,
+                    "closed": task.closed_at.isoformat() if task.closed_at else None,
+                    "notes_preview": task.notes[:200] if task.notes else "",
+                }
+            )
 
         # Get previous report for trend analysis
         previous_report = self._get_previous_report()
@@ -834,7 +838,7 @@ Period: Last {self.days} days
         ]
 
         # Build the prompt
-        prompt = f'''You are analyzing Beads task tracking usage for an AI software engineering agent.
+        prompt = f"""You are analyzing Beads task tracking usage for an AI software engineering agent.
 Beads is a persistent task memory system that helps track work across container sessions.
 
 ## Current Metrics (Last {self.days} days)
@@ -844,9 +848,15 @@ Beads is a persistent task memory system that helps track work across container 
 - Closed: {metrics.tasks_closed}
 - In Progress: {metrics.tasks_in_progress}
 - Abandoned (>24h no update): {metrics.tasks_abandoned}
-- Tasks with Notes: {metrics.tasks_with_notes} ({100*metrics.tasks_with_notes//max(1,metrics.total_tasks)}%)
-- Tasks with Labels: {metrics.tasks_with_labels} ({100*metrics.tasks_with_labels//max(1,metrics.total_tasks)}%)
-- Searchable Titles: {metrics.tasks_with_searchable_title} ({100*metrics.tasks_with_searchable_title//max(1,metrics.total_tasks)}%)
+- Tasks with Notes: {metrics.tasks_with_notes} ({
+            100 * metrics.tasks_with_notes // max(1, metrics.total_tasks)
+        }%)
+- Tasks with Labels: {metrics.tasks_with_labels} ({
+            100 * metrics.tasks_with_labels // max(1, metrics.total_tasks)
+        }%)
+- Searchable Titles: {metrics.tasks_with_searchable_title} ({
+            100 * metrics.tasks_with_searchable_title // max(1, metrics.total_tasks)
+        }%)
 - Avg Time to Close: {metrics.avg_time_to_close_hours:.1f} hours
 
 ## Task Distribution by Status
@@ -861,9 +871,13 @@ Beads is a persistent task memory system that helps track work across container 
 ## Sample Tasks (most recent {len(task_summaries)})
 {json.dumps(task_summaries, indent=2)}
 
-{f"""## Previous Report Metrics (for trend comparison)
+{
+            f'''## Previous Report Metrics (for trend comparison)
 {json.dumps(previous_report, indent=2)}
-""" if previous_report else "## Previous Report: None available (first report)"}
+'''
+            if previous_report
+            else "## Previous Report: None available (first report)"
+        }
 
 ---
 
@@ -916,7 +930,7 @@ Focus on:
 4. Scoring task quality to identify which tasks need improvement
 5. Comparing trends if previous data is available
 
-Only output valid JSON, no other text.'''
+Only output valid JSON, no other text."""
 
         # Call Claude via jib --exec
         result = jib_exec(
@@ -943,7 +957,7 @@ Only output valid JSON, no other text.'''
                 claude_output = result.json_output.get("result", {}).get("stdout", "")
 
                 # Extract JSON from the response (may be wrapped in markdown code blocks)
-                json_match = re.search(r'```(?:json)?\s*(\{[\s\S]*\})\s*```', claude_output)
+                json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*\})\s*```", claude_output)
                 if json_match:
                     claude_output = json_match.group(1)
 
@@ -957,13 +971,17 @@ Only output valid JSON, no other text.'''
                 analysis.patterns_detected = parsed.get("patterns_detected", [])
                 analysis.success = True
 
-                print(f"  ✓ Claude analysis complete")
+                print("  ✓ Claude analysis complete")
                 print(f"    - {len(analysis.smart_issues)} smart issues detected")
                 print(f"    - {len(analysis.recommendations)} recommendations")
                 print(f"    - {len(analysis.patterns_detected)} patterns detected")
 
             else:
-                analysis.error = result.json_output.get("error", "Unknown error") if result.json_output else "No output"
+                analysis.error = (
+                    result.json_output.get("error", "Unknown error")
+                    if result.json_output
+                    else "No output"
+                )
                 print(f"  Claude returned error: {analysis.error}")
 
         except json.JSONDecodeError as e:
@@ -996,12 +1014,14 @@ Only output valid JSON, no other text.'''
 
         # Smart Issues
         if analysis.smart_issues:
-            issues_md = "\n".join([
-                f"### {i.get('severity', 'medium').upper()}: {i.get('title', 'Issue')}\n\n"
-                f"{i.get('description', '')}\n\n"
-                f"**Recommendation**: {i.get('recommendation', 'N/A')}\n"
-                for i in analysis.smart_issues
-            ])
+            issues_md = "\n".join(
+                [
+                    f"### {i.get('severity', 'medium').upper()}: {i.get('title', 'Issue')}\n\n"
+                    f"{i.get('description', '')}\n\n"
+                    f"**Recommendation**: {i.get('recommendation', 'N/A')}\n"
+                    for i in analysis.smart_issues
+                ]
+            )
             sections.append(f"""
 ## AI-Detected Issues
 
@@ -1010,12 +1030,14 @@ Only output valid JSON, no other text.'''
 
         # Prioritized Recommendations
         if analysis.recommendations:
-            recs_md = "\n".join([
-                f"{r.get('priority', '?')}. **{r.get('title', 'Recommendation')}** "
-                f"(effort: {r.get('effort', '?')}, impact: {r.get('impact', '?')})\n\n"
-                f"   {r.get('description', '')}\n"
-                for r in sorted(analysis.recommendations, key=lambda x: x.get('priority', 99))
-            ])
+            recs_md = "\n".join(
+                [
+                    f"{r.get('priority', '?')}. **{r.get('title', 'Recommendation')}** "
+                    f"(effort: {r.get('effort', '?')}, impact: {r.get('impact', '?')})\n\n"
+                    f"   {r.get('description', '')}\n"
+                    for r in sorted(analysis.recommendations, key=lambda x: x.get("priority", 99))
+                ]
+            )
             sections.append(f"""
 ## AI Recommendations (Prioritized)
 
@@ -1042,15 +1064,16 @@ Only output valid JSON, no other text.'''
         # Task Quality (show worst 5)
         if analysis.task_quality_scores:
             worst_tasks = sorted(
-                analysis.task_quality_scores.items(),
-                key=lambda x: x[1].get('score', 100)
+                analysis.task_quality_scores.items(), key=lambda x: x[1].get("score", 100)
             )[:5]
             if worst_tasks:
-                quality_md = "\n".join([
-                    f"- **{tid}** (score: {info.get('score', '?')}/100): "
-                    f"{', '.join(info.get('weaknesses', []))}"
-                    for tid, info in worst_tasks
-                ])
+                quality_md = "\n".join(
+                    [
+                        f"- **{tid}** (score: {info.get('score', '?')}/100): "
+                        f"{', '.join(info.get('weaknesses', []))}"
+                        for tid, info in worst_tasks
+                    ]
+                )
                 sections.append(f"""
 ## Tasks Needing Improvement
 
