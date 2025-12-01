@@ -1,0 +1,36 @@
+{
+  "timestamp": "20251201-113920",
+  "days_analyzed": 7,
+  "total_tasks": 525,
+  "tasks_created": 525,
+  "tasks_closed": 471,
+  "tasks_abandoned": 16,
+  "tasks_in_progress": 38,
+  "tasks_blocked": 5,
+  "tasks_with_notes": 490,
+  "tasks_with_labels": 524,
+  "tasks_with_searchable_title": 525,
+  "avg_time_to_close_hours": 10.295569001483251,
+  "proper_lifecycle_rate": 95.32908704883228,
+  "slack_linked_tasks": 178,
+  "pr_linked_tasks": 296,
+  "jira_linked_tasks": 1,
+  "tasks_by_status": {
+    "closed": 471,
+    "in_progress": 38,
+    "open": 11,
+    "blocked": 5
+  },
+  "tasks_by_source": {
+    "github": 296,
+    "unknown": 50,
+    "slack": 178,
+    "jira": 1
+  },
+  "issues_count": {
+    "high": 1,
+    "medium": 0,
+    "low": 1
+  },
+  "health_score": 97
+}
