@@ -29,14 +29,18 @@ Example:
 """
 
 import argparse
-import builtins
-import contextlib
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
+
+
+# Add host-services/shared to path for jib_exec
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared"))
+from jib_exec import jib_exec
 
 
 # Constants
@@ -112,6 +116,22 @@ class BeadsIssue:
     description: str
     task_ids: list[str]
     recommendation: str
+
+
+@dataclass
+class ClaudeAnalysis:
+    """Claude-generated intelligent analysis of beads usage."""
+
+    executive_summary: str = ""
+    smart_issues: list[dict] = field(default_factory=list)  # Issues Claude detected
+    recommendations: list[dict] = field(default_factory=list)  # Prioritized recommendations
+    trend_analysis: str = ""  # Comparison with previous reports
+    task_quality_scores: dict[str, dict] = field(
+        default_factory=dict
+    )  # task_id -> {score, reasons}
+    patterns_detected: list[str] = field(default_factory=list)  # Workflow patterns observed
+    success: bool = False
+    error: str | None = None
 
 
 class BeadsFetcher:
@@ -501,6 +521,7 @@ class BeadsAnalyzer:
         tasks: list[BeadsTask],
         metrics: BeadsMetrics,
         issues: list[BeadsIssue],
+        claude_analysis: ClaudeAnalysis | None = None,
     ) -> str:
         """Generate markdown report."""
         now = datetime.now()
@@ -646,6 +667,10 @@ Period: Last {self.days} days
             updated = task.updated_at.strftime("%m/%d %H:%M")
             report += f"| `{task.id}` | {title_short} | {task.status} | {source} | {updated} |\n"
 
+        # Add Claude-powered analysis section if available
+        if claude_analysis:
+            report += self._format_claude_analysis_section(claude_analysis)
+
         report += f"""
 ---
 
@@ -746,14 +771,331 @@ Period: Last {self.days} days
 
         return recommendations
 
-    def run_analysis(self) -> str | None:
-        """Run full analysis and generate report."""
+    def _get_previous_report(self) -> dict | None:
+        """Load the most recent previous metrics report for trend comparison."""
+        try:
+            metrics_files = sorted(
+                self.analysis_dir.glob("beads-metrics-*.json"),
+                key=lambda p: p.stem,
+                reverse=True,
+            )
+            # Skip the current one if it exists, get the previous
+            for metrics_file in metrics_files[1:2]:  # Get second most recent
+                with open(metrics_file) as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return None
+
+    def run_claude_analysis(
+        self,
+        tasks: list[BeadsTask],
+        metrics: BeadsMetrics,
+        issues: list[BeadsIssue],
+    ) -> ClaudeAnalysis:
+        """Run intelligent analysis using Claude via jib --exec.
+
+        This provides:
+        1. Executive summary - Human-readable overview
+        2. Smart issue detection - Pattern-based issues beyond rule-based
+        3. Prioritized recommendations - Actionable, specific advice
+        4. Trend analysis - Comparison with previous reports
+        5. Task quality scoring - Per-task quality assessment
+        6. Pattern detection - Workflow patterns observed
+        """
+        print("Running Claude-powered analysis...")
+
+        # Prepare task data for Claude (limit to avoid token limits)
+        task_summaries = []
+        for task in tasks[:50]:  # Limit to 50 most recent
+            task_summaries.append(
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "status": task.status,
+                    "labels": task.labels,
+                    "has_notes": bool(task.notes),
+                    "has_description": bool(task.description),
+                    "created": task.created_at.isoformat() if task.created_at else None,
+                    "updated": task.updated_at.isoformat() if task.updated_at else None,
+                    "closed": task.closed_at.isoformat() if task.closed_at else None,
+                    "notes_preview": task.notes[:200] if task.notes else "",
+                }
+            )
+
+        # Get previous report for trend analysis
+        previous_report = self._get_previous_report()
+
+        # Prepare issues for Claude
+        issue_summaries = [
+            {
+                "severity": i.severity,
+                "category": i.category,
+                "description": i.description,
+                "task_count": len(i.task_ids),
+            }
+            for i in issues
+        ]
+
+        # Build the prompt
+        prompt = f"""You are analyzing Beads task tracking usage for an AI software engineering agent.
+Beads is a persistent task memory system that helps track work across container sessions.
+
+## Current Metrics (Last {self.days} days)
+
+- Total Tasks: {metrics.total_tasks}
+- Created: {metrics.tasks_created}
+- Closed: {metrics.tasks_closed}
+- In Progress: {metrics.tasks_in_progress}
+- Abandoned (>24h no update): {metrics.tasks_abandoned}
+- Tasks with Notes: {metrics.tasks_with_notes} ({
+            100 * metrics.tasks_with_notes // max(1, metrics.total_tasks)
+        }%)
+- Tasks with Labels: {metrics.tasks_with_labels} ({
+            100 * metrics.tasks_with_labels // max(1, metrics.total_tasks)
+        }%)
+- Searchable Titles: {metrics.tasks_with_searchable_title} ({
+            100 * metrics.tasks_with_searchable_title // max(1, metrics.total_tasks)
+        }%)
+- Avg Time to Close: {metrics.avg_time_to_close_hours:.1f} hours
+
+## Task Distribution by Status
+{json.dumps(metrics.tasks_by_status, indent=2)}
+
+## Task Distribution by Source
+{json.dumps(metrics.tasks_by_source, indent=2)}
+
+## Rule-Based Issues Already Identified
+{json.dumps(issue_summaries, indent=2)}
+
+## Sample Tasks (most recent {len(task_summaries)})
+{json.dumps(task_summaries, indent=2)}
+
+{
+            f'''## Previous Report Metrics (for trend comparison)
+{json.dumps(previous_report, indent=2)}
+'''
+            if previous_report
+            else "## Previous Report: None available (first report)"
+        }
+
+---
+
+Please analyze this data and provide a JSON response with the following structure:
+
+```json
+{{
+  "executive_summary": "A 2-3 paragraph human-readable summary of the beads usage health, highlighting key strengths and concerns.",
+
+  "smart_issues": [
+    {{
+      "severity": "high|medium|low",
+      "title": "Brief issue title",
+      "description": "Detailed description of the issue",
+      "affected_tasks": ["task-id-1", "task-id-2"],
+      "recommendation": "Specific action to fix this"
+    }}
+  ],
+
+  "recommendations": [
+    {{
+      "priority": 1,
+      "title": "Recommendation title",
+      "description": "Why this matters and how to do it",
+      "effort": "low|medium|high",
+      "impact": "low|medium|high"
+    }}
+  ],
+
+  "trend_analysis": "Analysis of how metrics have changed compared to the previous report. Note improvements and regressions.",
+
+  "task_quality_scores": {{
+    "task-id": {{
+      "score": 85,
+      "strengths": ["Good title", "Has labels"],
+      "weaknesses": ["Missing notes"]
+    }}
+  }},
+
+  "patterns_detected": [
+    "Description of workflow pattern observed (e.g., 'Tasks from Slack often lack proper closure')"
+  ]
+}}
+```
+
+Focus on:
+1. Identifying issues that simple rules might miss (e.g., tasks that seem related but aren't linked)
+2. Providing specific, actionable recommendations with priority
+3. Detecting workflow anti-patterns
+4. Scoring task quality to identify which tasks need improvement
+5. Comparing trends if previous data is available
+
+Only output valid JSON, no other text."""
+
+        # Call Claude via jib --exec
+        result = jib_exec(
+            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            task_type="llm_prompt",
+            context={
+                "prompt": prompt,
+                "timeout": 120,
+            },
+            timeout=180,
+        )
+
+        analysis = ClaudeAnalysis()
+
+        if not result.success:
+            analysis.error = result.error or "Claude analysis failed"
+            print(f"  Claude analysis failed: {analysis.error}")
+            return analysis
+
+        # Parse the response
+        try:
+            # The result is nested: result.json_output.result.stdout contains Claude's response
+            if result.json_output and result.json_output.get("success"):
+                claude_output = result.json_output.get("result", {}).get("stdout", "")
+
+                # Extract JSON from the response (may be wrapped in markdown code blocks)
+                json_match = re.search(r"```(?:json)?\s*(\{[\s\S]*\})\s*```", claude_output)
+                if json_match:
+                    claude_output = json_match.group(1)
+
+                parsed = json.loads(claude_output)
+
+                analysis.executive_summary = parsed.get("executive_summary", "")
+                analysis.smart_issues = parsed.get("smart_issues", [])
+                analysis.recommendations = parsed.get("recommendations", [])
+                analysis.trend_analysis = parsed.get("trend_analysis", "")
+                analysis.task_quality_scores = parsed.get("task_quality_scores", {})
+                analysis.patterns_detected = parsed.get("patterns_detected", [])
+                analysis.success = True
+
+                print("  ✓ Claude analysis complete")
+                print(f"    - {len(analysis.smart_issues)} smart issues detected")
+                print(f"    - {len(analysis.recommendations)} recommendations")
+                print(f"    - {len(analysis.patterns_detected)} patterns detected")
+
+            else:
+                analysis.error = (
+                    result.json_output.get("error", "Unknown error")
+                    if result.json_output
+                    else "No output"
+                )
+                print(f"  Claude returned error: {analysis.error}")
+
+        except json.JSONDecodeError as e:
+            analysis.error = f"Failed to parse Claude response: {e}"
+            print(f"  {analysis.error}")
+        except Exception as e:
+            analysis.error = f"Error processing Claude response: {e}"
+            print(f"  {analysis.error}")
+
+        return analysis
+
+    def _format_claude_analysis_section(self, analysis: ClaudeAnalysis) -> str:
+        """Format Claude analysis as markdown for the report."""
+        if not analysis.success:
+            return f"""
+## AI-Powered Analysis
+
+*Analysis unavailable: {analysis.error}*
+"""
+
+        sections = []
+
+        # Executive Summary
+        if analysis.executive_summary:
+            sections.append(f"""
+## Executive Summary
+
+{analysis.executive_summary}
+""")
+
+        # Smart Issues
+        if analysis.smart_issues:
+            issues_md = "\n".join(
+                [
+                    f"### {i.get('severity', 'medium').upper()}: {i.get('title', 'Issue')}\n\n"
+                    f"{i.get('description', '')}\n\n"
+                    f"**Recommendation**: {i.get('recommendation', 'N/A')}\n"
+                    for i in analysis.smart_issues
+                ]
+            )
+            sections.append(f"""
+## AI-Detected Issues
+
+{issues_md}
+""")
+
+        # Prioritized Recommendations
+        if analysis.recommendations:
+            recs_md = "\n".join(
+                [
+                    f"{r.get('priority', '?')}. **{r.get('title', 'Recommendation')}** "
+                    f"(effort: {r.get('effort', '?')}, impact: {r.get('impact', '?')})\n\n"
+                    f"   {r.get('description', '')}\n"
+                    for r in sorted(analysis.recommendations, key=lambda x: x.get("priority", 99))
+                ]
+            )
+            sections.append(f"""
+## AI Recommendations (Prioritized)
+
+{recs_md}
+""")
+
+        # Trend Analysis
+        if analysis.trend_analysis:
+            sections.append(f"""
+## Trend Analysis
+
+{analysis.trend_analysis}
+""")
+
+        # Patterns Detected
+        if analysis.patterns_detected:
+            patterns_md = "\n".join([f"- {p}" for p in analysis.patterns_detected])
+            sections.append(f"""
+## Workflow Patterns Detected
+
+{patterns_md}
+""")
+
+        # Task Quality (show worst 5)
+        if analysis.task_quality_scores:
+            worst_tasks = sorted(
+                analysis.task_quality_scores.items(), key=lambda x: x[1].get("score", 100)
+            )[:5]
+            if worst_tasks:
+                quality_md = "\n".join(
+                    [
+                        f"- **{tid}** (score: {info.get('score', '?')}/100): "
+                        f"{', '.join(info.get('weaknesses', []))}"
+                        for tid, info in worst_tasks
+                    ]
+                )
+                sections.append(f"""
+## Tasks Needing Improvement
+
+{quality_md}
+""")
+
+        return "\n".join(sections)
+
+    def run_analysis(self, skip_claude: bool = False) -> str | None:
+        """Run full analysis and generate report.
+
+        Args:
+            skip_claude: If True, skip the Claude-powered analysis (faster but less insightful)
+        """
         print(f"Analyzing Beads integration from last {self.days} days...")
 
         # Fetch tasks
         print("Fetching Beads tasks...")
         tasks = self.fetcher.fetch_tasks(self.days)
         print(f"  Found {len(tasks)} tasks")
+
+        claude_analysis = None
 
         if not tasks:
             print("WARNING: No tasks found for analysis", file=sys.stderr)
@@ -769,9 +1111,13 @@ Period: Last {self.days} days
             print("Identifying issues...")
             issues = self.identify_issues(tasks, metrics)
 
-        # Generate report
+            # Run Claude-powered analysis (unless skipped)
+            if not skip_claude:
+                claude_analysis = self.run_claude_analysis(tasks, metrics, issues)
+
+        # Generate report (now includes Claude analysis)
         print("Generating report...")
-        report = self.generate_report(tasks, metrics, issues)
+        report = self.generate_report(tasks, metrics, issues, claude_analysis)
 
         # Ensure output directory exists
         self.analysis_dir.mkdir(parents=True, exist_ok=True)
@@ -869,8 +1215,12 @@ Period: Last {self.days} days
         report_file: Path,
         timestamp: str,
     ):
-        """Create a PR with the health reports."""
-        print("\nPreparing to create PR with health reports...")
+        """Create a PR with the health reports via jib --exec.
+
+        Uses jib_exec to run git operations inside a container where worktrees
+        are already set up, avoiding interference with the host's main worktree.
+        """
+        print("\nPreparing to create PR with health reports via jib --exec...")
 
         # Cleanup old reports (keep only last 5)
         to_delete = self._cleanup_old_reports(max_reports=5)
@@ -878,41 +1228,52 @@ Period: Last {self.days} days
         # Determine branch name
         branch_name = f"beads-health-report-{timestamp}"
 
-        try:
-            # Create new branch
-            subprocess.run(
-                ["git", "checkout", "-b", branch_name, "origin/main"],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
-            print(f"✓ Created branch: {branch_name}")
+        # Calculate health score for commit message and PR
+        health_score = self._calculate_health_score(metrics, issues)
 
-            # Delete old reports if any
-            if to_delete:
-                for file_path in to_delete:
-                    subprocess.run(
-                        ["git", "rm", str(file_path)],
-                        check=True,
-                        cwd=REPO_ROOT,
-                        capture_output=True,
-                        text=True,
-                    )
-                print(f"✓ Removed {len(to_delete)} old report(s)")
+        # Build list of files to commit
+        files = []
 
-            # Stage the new report files
-            subprocess.run(
-                ["git", "add", str(self.analysis_dir)],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
+        # Read all report files from analysis_dir
+        for report_path in self.analysis_dir.glob("beads-health-*.md"):
+            rel_path = report_path.relative_to(REPO_ROOT)
+            files.append(
+                {
+                    "path": str(rel_path),
+                    "content": report_path.read_text(),
+                }
             )
 
-            # Commit
-            health_score = self._calculate_health_score(metrics, issues)
-            commit_message = f"""chore: Add Beads health report {timestamp}
+        for metrics_path in self.analysis_dir.glob("beads-metrics-*.json"):
+            rel_path = metrics_path.relative_to(REPO_ROOT)
+            files.append(
+                {
+                    "path": str(rel_path),
+                    "content": metrics_path.read_text(),
+                }
+            )
+
+        # Create symlinks to latest report/metrics
+        symlinks = [
+            {
+                "path": "docs/analysis/beads/latest-report.md",
+                "target": f"beads-health-{timestamp}.md",
+            },
+            {
+                "path": "docs/analysis/beads/latest-metrics.json",
+                "target": f"beads-metrics-{timestamp}.json",
+            },
+        ]
+
+        # Convert to_delete paths to relative paths for the container
+        files_to_delete = [str(p.relative_to(REPO_ROOT)) for p in to_delete]
+
+        if not files and not symlinks:
+            print("ERROR: No report files to commit", file=sys.stderr)
+            return
+
+        # Build commit message
+        commit_message = f"""chore: Add Beads health report {timestamp}
 
 Health Score: {health_score}/100
 - Total Tasks: {metrics.total_tasks}
@@ -921,28 +1282,10 @@ Health Score: {health_score}/100
 
 High-severity issues: {len([i for i in issues if i.severity == "high"])}
 """
-            subprocess.run(
-                ["git", "commit", "-m", commit_message],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
-            print("✓ Committed changes")
 
-            # Push branch
-            subprocess.run(
-                ["git", "push", "origin", branch_name],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
-            print(f"✓ Pushed to origin/{branch_name}")
-
-            # Create PR using gh CLI
-            pr_title = f"Beads Health Report - {timestamp}"
-            pr_body = f"""## Beads Integration Health Report
+        # Build PR body
+        pr_title = f"Beads Health Report - {timestamp}"
+        pr_body = f"""## Beads Integration Health Report
 
 **Health Score**: {health_score}/100 {self._get_health_emoji(health_score)}
 
@@ -967,40 +1310,33 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
 See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for detailed analysis.
 """
 
-            result = subprocess.run(
-                [
-                    "gh",
-                    "pr",
-                    "create",
-                    "--title",
-                    pr_title,
-                    "--body",
-                    pr_body,
-                    "--base",
-                    "main",
-                    "--head",
-                    branch_name,
-                ],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-            )
-            pr_url = result.stdout.strip()
-            print(f"✓ Created PR: {pr_url}")
+        # Call jib --exec to create PR inside container
+        print(f"Invoking jib --exec to create PR on branch {branch_name}...")
+        if files_to_delete:
+            print(f"  Will delete {len(files_to_delete)} old report(s)")
+        result = jib_exec(
+            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            task_type="create_pr",
+            context={
+                "repo_name": "james-in-a-box",
+                "branch_name": branch_name,
+                "files": files,
+                "symlinks": symlinks,
+                "files_to_delete": files_to_delete,
+                "commit_message": commit_message,
+                "pr_title": pr_title,
+                "pr_body": pr_body,
+            },
+            timeout=300,
+        )
 
-        except subprocess.CalledProcessError as e:
-            print(f"ERROR creating PR: {e}", file=sys.stderr)
-            print(f"  stdout: {e.stdout}", file=sys.stderr)
-            print(f"  stderr: {e.stderr}", file=sys.stderr)
-            # Try to return to main branch
-            with contextlib.suppress(builtins.BaseException):
-                subprocess.run(
-                    ["git", "checkout", "main"],
-                    check=False,
-                    cwd=REPO_ROOT,
-                    capture_output=True,
-                )
+        if result.success and result.json_output:
+            pr_url = result.json_output.get("result", {}).get("pr_url", "")
+            print(f"✓ Created PR: {pr_url}")
+        else:
+            print(f"ERROR creating PR: {result.error}", file=sys.stderr)
+            if result.stderr:
+                print(f"  stderr: {result.stderr[:500]}", file=sys.stderr)
 
 
 def check_last_run(analysis_dir: Path) -> datetime | None:
@@ -1061,6 +1397,11 @@ Examples:
         "--stdout", action="store_true", dest="print_to_stdout", help="Print report to stdout"
     )
     parser.add_argument("--force", action="store_true", help="Force analysis even if run recently")
+    parser.add_argument(
+        "--skip-claude",
+        action="store_true",
+        help="Skip Claude-powered AI analysis (faster but less insightful)",
+    )
 
     args = parser.parse_args()
 
@@ -1077,7 +1418,7 @@ Examples:
         analyzer.analysis_dir = args.output
         analyzer.analysis_dir.mkdir(parents=True, exist_ok=True)
 
-    report = analyzer.run_analysis()
+    report = analyzer.run_analysis(skip_claude=args.skip_claude)
 
     if args.print_to_stdout and report:
         print("\n" + "=" * 80)
