@@ -2185,7 +2185,9 @@ Return ONLY a JSON array of the consolidated features:
                         print(f"  ✓ {analyzed_dir} ({file_count} files)")
                         for feature in features:
                             all_features.append(feature)
-                            print(f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)")
+                            print(
+                                f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)"
+                            )
 
                 except Exception as e:
                     with print_lock:
