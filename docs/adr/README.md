@@ -33,9 +33,12 @@ ADRs are organized by implementation status:
 
 ### Not Implemented
 
-> **Note**: Several ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
+| ADR | Summary |
+|-----|---------|
+| [Multi-Agent Pipeline Architecture](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Multi-agent pipeline design for complex tasks with orchestration patterns |
+| [LLM Prompting, Instructions, and Agents](not-implemented/ADR-LLM-Prompting-Instructions-Agents.md) | Context engineering, prompt architecture, and agent design patterns |
 
-*No ADRs currently in not-implemented/ - all pending ADRs are in open PRs.*
+> **Note**: Several additional ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
 
 ## ADR Template
 
