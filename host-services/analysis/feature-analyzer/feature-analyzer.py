@@ -358,9 +358,7 @@ def main():
     rollback_list_commits.add_argument("--adr", help="Filter by ADR filename")
 
     # rollback list-files
-    rollback_subparsers.add_parser(
-        "list-files", help="List files with auto-generated metadata"
-    )
+    rollback_subparsers.add_parser("list-files", help="List files with auto-generated metadata")
 
     # rollback list-tags
     rollback_subparsers.add_parser("list-tags", help="List auto-doc-sync tags")
@@ -378,9 +376,7 @@ def main():
     rollback_revert_adr = rollback_subparsers.add_parser(
         "revert-adr", help="Revert all changes from an ADR"
     )
-    rollback_revert_adr.add_argument(
-        "adr_name", help="ADR filename (e.g., ADR-Feature-Analyzer)"
-    )
+    rollback_revert_adr.add_argument("adr_name", help="ADR filename (e.g., ADR-Feature-Analyzer)")
 
     args = parser.parse_args()
 
@@ -468,9 +464,7 @@ def main():
 
             # Apply HTML metadata comments (Phase 4)
             if not args.no_metadata:
-                gen_result = generator.apply_metadata_to_updates(
-                    gen_result, adr_metadata.filename
-                )
+                gen_result = generator.apply_metadata_to_updates(gen_result, adr_metadata.filename)
 
             # Report results
             print("\nGeneration Results:")
@@ -554,9 +548,7 @@ def main():
         rollback = Rollback(args.repo_root)
 
         if args.rollback_command == "list-commits":
-            commits = rollback.find_auto_generated_commits(
-                since=args.since, adr_filename=args.adr
-            )
+            commits = rollback.find_auto_generated_commits(since=args.since, adr_filename=args.adr)
 
             if not commits:
                 print("No auto-generated commits found.")

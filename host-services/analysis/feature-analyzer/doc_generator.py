@@ -521,9 +521,26 @@ Output ONLY the updated documentation content. Do not include any explanation or
         """Extract key terms from content for traceability checking."""
         # Extract words longer than 4 characters, excluding common words
         common_words = {
-            "this", "that", "with", "from", "have", "will", "would", "could",
-            "should", "about", "which", "their", "there", "these", "those",
-            "other", "being", "using", "after", "before"
+            "this",
+            "that",
+            "with",
+            "from",
+            "have",
+            "will",
+            "would",
+            "could",
+            "should",
+            "about",
+            "which",
+            "their",
+            "there",
+            "these",
+            "those",
+            "other",
+            "being",
+            "using",
+            "after",
+            "before",
         }
         words = re.findall(r"\b[a-zA-Z]{5,}\b", content.lower())
         return set(words) - common_words
@@ -577,7 +594,9 @@ Output ONLY the updated documentation content. Do not include any explanation or
         # Check if this metadata already exists (avoid duplicates)
         if f"Auto-updated from {adr_filename}" in content:
             # Update existing timestamp
-            pattern = rf"<!-- Auto-updated from {re.escape(adr_filename)} on \d{{4}}-\d{{2}}-\d{{2}} -->"
+            pattern = (
+                rf"<!-- Auto-updated from {re.escape(adr_filename)} on \d{{4}}-\d{{2}}-\d{{2}} -->"
+            )
             return re.sub(pattern, metadata_comment.strip(), content)
 
         # Add at the end of the file, before any trailing newlines

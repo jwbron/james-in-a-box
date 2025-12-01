@@ -20,7 +20,6 @@ Usage:
 
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
 
@@ -101,7 +100,7 @@ class Rollback:
 
             parts = line.split(" ", 1)
             sha = parts[0]
-            message = parts[1] if len(parts) > 1 else ""
+            parts[1] if len(parts) > 1 else ""
 
             # Get commit details
             commit = self._get_commit_details(sha)
@@ -316,49 +315,33 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # list-commits command
-    list_parser = subparsers.add_parser(
-        "list-commits", help="List auto-generated commits"
-    )
-    list_parser.add_argument(
-        "--since", help="Show commits since date (e.g., '1 week ago')"
-    )
+    list_parser = subparsers.add_parser("list-commits", help="List auto-generated commits")
+    list_parser.add_argument("--since", help="Show commits since date (e.g., '1 week ago')")
     list_parser.add_argument("--adr", help="Filter by ADR filename")
 
     # list-files command
-    subparsers.add_parser(
-        "list-files", help="List files with auto-generated metadata"
-    )
+    subparsers.add_parser("list-files", help="List files with auto-generated metadata")
 
     # list-tags command
     subparsers.add_parser("list-tags", help="List auto-doc-sync tags")
 
     # revert-file command
-    revert_file_parser = subparsers.add_parser(
-        "revert-file", help="Revert a single file"
-    )
-    revert_file_parser.add_argument(
-        "file", type=Path, help="Path to file to revert"
-    )
+    revert_file_parser = subparsers.add_parser("revert-file", help="Revert a single file")
+    revert_file_parser.add_argument("file", type=Path, help="Path to file to revert")
     revert_file_parser.add_argument(
         "--to", help="Commit to revert to (default: before last auto-generated)"
     )
 
     # revert-adr command
-    revert_adr_parser = subparsers.add_parser(
-        "revert-adr", help="Revert all changes from an ADR"
-    )
-    revert_adr_parser.add_argument(
-        "adr", help="ADR filename (e.g., ADR-Feature-Analyzer)"
-    )
+    revert_adr_parser = subparsers.add_parser("revert-adr", help="Revert all changes from an ADR")
+    revert_adr_parser.add_argument("adr", help="ADR filename (e.g., ADR-Feature-Analyzer)")
 
     args = parser.parse_args()
 
     rollback = Rollback(args.repo_root)
 
     if args.command == "list-commits":
-        commits = rollback.find_auto_generated_commits(
-            since=args.since, adr_filename=args.adr
-        )
+        commits = rollback.find_auto_generated_commits(since=args.since, adr_filename=args.adr)
 
         if not commits:
             print("No auto-generated commits found.")
