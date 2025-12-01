@@ -47,8 +47,7 @@ from jib_exec import jib_exec
 # Write to repo for version control and analyzer accessibility
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "beads"
-# Beads repo root - bd command runs from here (data is in .beads/ subdirectory)
-BEADS_DIR = Path.home() / "beads"
+BEADS_DIR = Path.home() / ".jib-sharing" / "beads"
 ABANDONED_THRESHOLD_HOURS = 24  # Tasks in_progress longer than this are considered abandoned
 
 
