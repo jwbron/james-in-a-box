@@ -29,8 +29,6 @@ Example:
 """
 
 import argparse
-import builtins
-import contextlib
 import json
 import subprocess
 import sys
@@ -38,9 +36,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+
 # Add host-services/shared to path for jib_exec
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared"))
 from jib_exec import jib_exec
+
 
 # Constants
 # Write to repo for version control and analyzer accessibility
@@ -894,28 +894,36 @@ Period: Last {self.days} days
         # Read all report files from analysis_dir
         for report_path in self.analysis_dir.glob("beads-health-*.md"):
             rel_path = report_path.relative_to(REPO_ROOT)
-            files.append({
-                "path": str(rel_path),
-                "content": report_path.read_text(),
-            })
+            files.append(
+                {
+                    "path": str(rel_path),
+                    "content": report_path.read_text(),
+                }
+            )
 
         for metrics_path in self.analysis_dir.glob("beads-metrics-*.json"):
             rel_path = metrics_path.relative_to(REPO_ROOT)
-            files.append({
-                "path": str(rel_path),
-                "content": metrics_path.read_text(),
-            })
+            files.append(
+                {
+                    "path": str(rel_path),
+                    "content": metrics_path.read_text(),
+                }
+            )
 
         # Add symlinks as actual files pointing to latest
         # (symlinks don't work well with git add in container, use relative links)
-        files.append({
-            "path": "docs/analysis/beads/latest-report.md",
-            "content": f"beads-health-{timestamp}.md",  # Symlink target
-        })
-        files.append({
-            "path": "docs/analysis/beads/latest-metrics.json",
-            "content": f"beads-metrics-{timestamp}.json",  # Symlink target
-        })
+        files.append(
+            {
+                "path": "docs/analysis/beads/latest-report.md",
+                "content": f"beads-health-{timestamp}.md",  # Symlink target
+            }
+        )
+        files.append(
+            {
+                "path": "docs/analysis/beads/latest-metrics.json",
+                "content": f"beads-metrics-{timestamp}.json",  # Symlink target
+            }
+        )
 
         if not files:
             print("ERROR: No report files to commit", file=sys.stderr)
