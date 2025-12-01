@@ -41,6 +41,8 @@ import json
 import re
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -2081,19 +2083,60 @@ Return ONLY a JSON array of the consolidated features:
 
         return "\n".join(lines)
 
+    def _analyze_single_directory(
+        self, dir_path: str, files: list[Path]
+    ) -> tuple[str, int, list[DetectedFeature]]:
+        """
+        Analyze a single directory for features.
+
+        This method is designed to be called in parallel via ThreadPoolExecutor.
+
+        Args:
+            dir_path: Path to the directory relative to repo root
+            files: List of files in the directory
+
+        Returns:
+            Tuple of (dir_path, file_count, list of detected features)
+        """
+        if not files:
+            return (dir_path, 0, [])
+
+        file_count = len(files)
+
+        if self.use_llm:
+            features = self._analyze_directory_with_llm(dir_path, files)
+            if not features:
+                features = self._analyze_directory_heuristically(dir_path, files)
+        else:
+            features = self._analyze_directory_heuristically(dir_path, files)
+
+        # Find existing docs for each feature
+        for feature in features:
+            doc_path = self._find_existing_docs(feature)
+            if doc_path:
+                feature.doc_path = doc_path
+
+        return (dir_path, file_count, features)
+
     def analyze_full_repo(
         self,
         dry_run: bool = False,
         output_path: Path | None = None,
+        max_workers: int = 5,
     ) -> FullRepoAnalysisResult:
         """
         Analyze entire repository and generate comprehensive FEATURES.md.
 
-        Uses a multi-agent approach:
+        Uses a multi-agent approach with parallel directory analysis:
         1. Scan directories to build inventory
-        2. Analyze each directory for features (LLM pass 1)
+        2. Analyze directories for features IN PARALLEL (LLM pass 1)
         3. Consolidate and deduplicate all features (LLM pass 2)
         4. Generate final FEATURES.md
+
+        Args:
+            dry_run: If True, don't write output file
+            output_path: Custom output path (defaults to docs/FEATURES.md)
+            max_workers: Maximum number of parallel LLM calls (default 5)
         """
         result = FullRepoAnalysisResult(
             analysis_date=datetime.now(UTC).isoformat(),
@@ -2105,6 +2148,7 @@ Return ONLY a JSON array of the consolidated features:
         print("=" * 50)
         print(f"Repository: {self.repo_root}")
         print(f"Output: {output}")
+        print(f"Parallel workers: {max_workers}")
         print()
 
         # Phase 1: Scan directory structure
@@ -2113,31 +2157,39 @@ Return ONLY a JSON array of the consolidated features:
         result.directories_scanned = len(feature_dirs)
         print(f"  Found {len(feature_dirs)} potential feature directories")
 
-        # Phase 2: Analyze each directory (LLM pass 1 - extraction)
-        print("\nPhase 2: Analyzing directories for features...")
+        # Phase 2: Analyze directories IN PARALLEL (LLM pass 1 - extraction)
+        print(f"\nPhase 2: Analyzing directories for features (parallel, {max_workers} workers)...")
         all_features: list[DetectedFeature] = []
 
-        for dir_path, files in feature_dirs.items():
-            if not files:
-                continue
+        # Use thread-safe lock for printing
+        print_lock = threading.Lock()
 
-            result.files_analyzed += len(files)
-            print(f"  Analyzing: {dir_path} ({len(files)} files)")
+        # Filter out empty directories first
+        dirs_to_analyze = [(dp, files) for dp, files in feature_dirs.items() if files]
 
-            if self.use_llm:
-                features = self._analyze_directory_with_llm(dir_path, files)
-                if not features:
-                    features = self._analyze_directory_heuristically(dir_path, files)
-            else:
-                features = self._analyze_directory_heuristically(dir_path, files)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all directory analysis tasks
+            future_to_dir = {
+                executor.submit(self._analyze_single_directory, dir_path, files): dir_path
+                for dir_path, files in dirs_to_analyze
+            }
 
-            for feature in features:
-                doc_path = self._find_existing_docs(feature)
-                if doc_path:
-                    feature.doc_path = doc_path
+            # Process results as they complete
+            for future in as_completed(future_to_dir):
+                dir_path = future_to_dir[future]
+                try:
+                    analyzed_dir, file_count, features = future.result()
+                    result.files_analyzed += file_count
 
-                all_features.append(feature)
-                print(f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)")
+                    with print_lock:
+                        print(f"  ✓ {analyzed_dir} ({file_count} files)")
+                        for feature in features:
+                            all_features.append(feature)
+                            print(f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)")
+
+                except Exception as e:
+                    with print_lock:
+                        print(f"  ✗ {dir_path}: Error - {e}")
 
         result.features_detected = all_features
         print(f"\n  Total features detected: {len(all_features)}")
