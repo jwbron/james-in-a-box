@@ -721,6 +721,183 @@ This ADR is part of a series defining the jib GCP deployment architecture:
 | [ADR-Slack-Bot-GCP-Integration](../not-implemented/ADR-Slack-Bot-GCP-Integration.md) | Defines `/sync` slash commands that trigger sync operations |
 | [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) | Defines scheduled sync jobs (sync-confluence, sync-jira, sync-github) using scheduled-job module |
 
+## Research Updates (December 2025)
+
+Based on external research into MCP ecosystem maturity, security best practices, and context engineering patterns:
+
+### 1. MCP Ecosystem Adoption - Industry-Wide Standard
+
+The MCP ecosystem has achieved **industry-standard status** in 2025, with adoption far exceeding expectations since Anthropic's November 2024 launch.
+
+| Provider | Adoption Date | Integration Points |
+|----------|---------------|-------------------|
+| Anthropic | Nov 2024 | Claude Desktop, Claude Code, Claude for Teams |
+| OpenAI | Mar 2025 | Agents SDK, ChatGPT Desktop, Responses API |
+| Google DeepMind | Apr 2025 | Gemini models (confirmed by CEO Demis Hassabis) |
+| Microsoft | 2025 | Copilot Studio, VS Code MCP extensions |
+
+OpenAI CEO Sam Altman stated: "People love MCP and we are excited to add support across our products." OpenAI has also joined the MCP steering committee.
+
+**Application to this ADR:**
+- The decision to adopt MCP aligns with industry direction; all major LLM providers now support MCP
+- Risk of MCP abandonment is now minimal given cross-industry adoption
+- Consider MCP as the long-term strategy, with custom sync as legacy fallback only
+
+### 2. GitHub MCP Server - Now Generally Available
+
+The GitHub MCP Server has matured significantly since this ADR was written:
+
+| Aspect | ADR Status (Nov 2025) | Current State (Dec 2025) |
+|--------|----------------------|-------------------------|
+| Server Status | Public Preview | **Generally Available** (Sep 2025) |
+| Authentication | PAT-based | **OAuth 2.1 + PKCE** (more secure) |
+| Hosting | Local only | **Remote hosted** at api.githubcopilot.com |
+| IDE Support | Claude Code | VS Code, Visual Studio, JetBrains, Eclipse, Xcode, Cursor |
+
+**Key New Capabilities:**
+- **CI/CD Visibility**: Inspect workflow runs, fetch logs, re-run failed jobs
+- **GitHub Projects Support**: Manage projects and items (as of Oct 2025)
+- **Security Advisories**: Access org, repo, and global level advisories
+- **Sub-issue Management**: Add, list, remove, reprioritize sub-issues
+- **Read-Only Mode**: Use `X-MCP-Readonly: true` header for safe code review workflows
+- **Toolset Configuration**: Enable/disable specific groups via `--toolsets` flag
+
+**Application to this ADR:**
+- The GitHub MCP integration is now production-ready, validating our decision
+- OAuth 2.1 is more secure than PAT-based authentication - consider migration
+- The Checks API limitation noted in this ADR may have improved; verify with latest server version
+
+### 3. Atlassian Rovo MCP Server - Official Launch
+
+Atlassian has moved beyond beta with their official **Rovo MCP Server**, hosted on Cloudflare infrastructure:
+
+| Aspect | ADR Status (Nov 2025) | Current State (Dec 2025) |
+|--------|----------------------|-------------------------|
+| Server Status | Beta (Official) | **Production** (Rovo MCP Server) |
+| Hosting | Self-hosted option | **Cloud-hosted** gateway |
+| Authentication | OAuth 2.0 | OAuth 2.1 with secure token handling |
+| Products Covered | Jira + Confluence | **Jira + Confluence + Compass** |
+
+**Rate Limits by Plan:**
+| Plan | Requests/Hour |
+|------|--------------|
+| Free | 500 |
+| Standard | Moderate thresholds |
+| Premium/Enterprise | 1,000+ per hour (higher per-user limits) |
+
+**Supported Clients:**
+- Claude (Desktop, Teams, Claude Code)
+- OpenAI ChatGPT
+- Google Gemini CLI
+- Amazon Quick Suite
+- VS Code (via mcp-remote CLI)
+
+**Application to this ADR:**
+- The JIRA MCP migration (currently pending) should now use the official Rovo server
+- Compass integration is available if needed for service catalog access
+- Rate limits align with our expected usage patterns
+
+### 4. MCP Security Landscape - Critical Considerations
+
+Security research in 2025 has identified significant MCP vulnerabilities that require attention:
+
+**Vulnerability Statistics (2025 research):**
+- 43% of open-source MCP servers have command injection flaws
+- 33% allow unrestricted URL fetches
+- 22% leak files outside intended directories
+- 492 publicly exposed MCP servers identified as vulnerable
+
+**Key Attack Vectors:**
+
+| Attack | Description | Impact |
+|--------|-------------|--------|
+| **Prompt Injection** | Malicious instructions embedded in external content | Unauthorized actions, data exfiltration |
+| **Tool Poisoning** | Altered tool metadata with hidden malicious commands | Privilege escalation, silent attacks |
+| **Rug Pull** | Dynamic tool definition changes after approval | Unexpected behavior from "trusted" tools |
+| **Command Injection** | Shell access via malformed inputs | Remote code execution (CVE-2025-6514) |
+
+**Mitigation Strategies:**
+
+1. **Input Validation**: Enforce strict input validation, use parameterized queries
+2. **Human-in-the-Loop**: MCP spec recommends treating SHOULD as MUST for human approval
+3. **Sandboxing**: Execute MCP server commands in sandboxed environments with minimal privileges
+4. **AI Prompt Shields**: Microsoft recommends implementing prompt shields to prevent injection
+5. **Supply Chain Security**: Audit MCP server metadata, verify authenticity
+6. **Continuous Monitoring**: Regular security audits of MCP deployments
+
+**Application to this ADR:**
+- Our sandboxed container architecture provides defense-in-depth
+- Use only official MCP servers (GitHub, Atlassian) - avoid untrusted community servers
+- Implement the debounce strategy (Section 5) as additional protection against rapid-fire attacks
+- Consider implementing human approval for write operations (ticket updates, PR comments)
+
+### 5. Context Engineering - Validating the Hybrid Approach
+
+Research on LLM context management validates this ADR's hybrid approach:
+
+**Key Insight:** "Most agent failures are not model failures anymore, they are context failures."
+
+**Best Practices for Context Management:**
+
+| Pattern | Description | Our Implementation |
+|---------|-------------|-------------------|
+| **Bulk Pre-sync** | Load stable documentation upfront | ✅ Confluence sync retained |
+| **Real-time Fetch** | Query transactional data on-demand | ✅ MCP for JIRA/GitHub |
+| **Token Efficiency** | Minimize context window usage | ✅ Pre-synced markdown vs API calls |
+| **Memory Management** | Persist state across sessions | ✅ Beads task tracking |
+| **Context Prioritization** | Assign scores to context elements | Consider implementing |
+
+**Research Validates Hybrid Decision:**
+- "Context engineering is providing the right information and tools in the right format"
+- LLM APIs have synchronization challenges; hybrid approach reduces complexity
+- Bulk documentation is more token-efficient than repeated API calls (supporting Confluence decision)
+- Real-time data needs on-demand access (supporting JIRA/GitHub MCP decision)
+
+**Application to this ADR:**
+- Our hybrid approach (MCP for transactional, sync for bulk) aligns with best practices
+- Consider implementing context prioritization for Confluence docs (load relevant ADRs first)
+- The "right context at the right time" principle supports our architecture
+
+### 6. Recommended ADR Updates
+
+Based on this research, the following updates to this ADR are recommended:
+
+**Update MCP Ecosystem Maturity Table (Section: Context):**
+```markdown
+| Platform | Server | Status | Capabilities |
+|----------|--------|--------|--------------|
+| **Atlassian** | Rovo MCP Server | **Production** | Jira + Confluence + Compass, OAuth 2.1 |
+| **GitHub** | github-mcp-server | **Generally Available** | Full GitHub API, OAuth 2.1 + PKCE, CI/CD |
+| **Anthropic** | Reference servers | Production | Git, Filesystem, Fetch, Memory |
+```
+
+**Add Security Section:**
+- Document the MCP security landscape and mitigations
+- Reference MCP Security Best Practices specification
+- Implement human-in-the-loop for write operations
+
+**Update Phase 1 Migration:**
+- Use Atlassian Rovo MCP Server (production, not beta)
+- Consider OAuth 2.1 migration for GitHub MCP
+- Verify Checks API support in latest GitHub MCP version
+
+### Research Sources
+
+- [Anthropic - Introducing the Model Context Protocol](https://www.anthropic.com/news/model-context-protocol) - Original MCP announcement
+- [GitHub Blog - Remote GitHub MCP Server is now GA](https://github.blog/changelog/2025-09-04-remote-github-mcp-server-is-now-generally-available/) - GA announcement
+- [GitHub Blog - Practical guide to GitHub MCP server](https://github.blog/ai-and-ml/generative-ai/a-practical-guide-on-how-to-use-the-github-mcp-server/) - Usage guide
+- [Atlassian - Introducing Remote MCP Server](https://www.atlassian.com/blog/announcements/remote-mcp-server) - Official launch
+- [Atlassian Support - Rovo MCP Server](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/) - Documentation
+- [Practical DevSecOps - MCP Security Vulnerabilities](https://www.practical-devsecops.com/mcp-security-vulnerabilities/) - Security analysis
+- [Adversa AI - Top 25 MCP Vulnerabilities](https://adversa.ai/mcp-security-top-25-mcp-vulnerabilities/) - Vulnerability catalog
+- [Microsoft - Protecting against indirect prompt injection in MCP](https://developer.microsoft.com/blog/protecting-against-indirect-injection-attacks-mcp) - Mitigation guide
+- [Model Context Protocol - Security Best Practices](https://modelcontextprotocol.io/specification/draft/basic/security_best_practices) - Official spec
+- [Anthropic - Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) - Best practices
+- [Anthropic - Writing effective tools for AI agents](https://www.anthropic.com/engineering/writing-tools-for-agents) - Tool design
+- [Anthropic - Code execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp) - Advanced patterns
+- [TechCrunch - OpenAI adopts Anthropic's MCP standard](https://techcrunch.com/2025/03/26/openai-adopts-rival-anthropics-standard-for-connecting-ai-models-to-data/) - Industry adoption
+- [Wikipedia - Model Context Protocol](https://en.wikipedia.org/wiki/Model_Context_Protocol) - Protocol overview
+
 ## References
 
 - [Model Context Protocol](https://modelcontextprotocol.io/)
@@ -731,7 +908,7 @@ This ADR is part of a series defining the jib GCP deployment architecture:
 
 ---
 
-**Last Updated:** 2025-11-30
+**Last Updated:** 2025-12-01
 **Next Review:** 2025-12-28 (Monthly)
 **Status:** Partially Implemented
 - ✅ GitHub MCP: Active via api.githubcopilot.com (mcp-token-watcher.py)
