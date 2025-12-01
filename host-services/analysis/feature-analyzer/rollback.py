@@ -18,6 +18,7 @@ Usage:
     rollback.revert_doc(path, commit_sha)
 """
 
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -100,7 +101,6 @@ class Rollback:
 
             parts = line.split(" ", 1)
             sha = parts[0]
-            parts[1] if len(parts) > 1 else ""
 
             # Get commit details
             commit = self._get_commit_details(sha)
@@ -128,8 +128,6 @@ class Rollback:
             adr_filename = None
             if "Sync with " in message:
                 # Extract ADR name from "Sync with ADR-XYZ"
-                import re
-
                 match = re.search(r"Sync with (ADR-[^\s(]+)", message)
                 if match:
                     adr_filename = match.group(1)
@@ -180,8 +178,6 @@ class Rollback:
             # Extract ADR reference from metadata comment
             try:
                 content = full_path.read_text()
-                import re
-
                 match = re.search(
                     r"<!-- Auto-updated from (ADR-[^\s]+) on (\d{4}-\d{2}-\d{2}) -->",
                     content,
