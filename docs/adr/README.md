@@ -35,7 +35,16 @@ ADRs are organized by implementation status:
 
 > **Note**: Several ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
 
-*No ADRs currently in not-implemented/ - all pending ADRs are in open PRs.*
+| ADR | Summary |
+|-----|---------|
+| [Continuous System Reinforcement](not-implemented/ADR-Continuous-System-Reinforcement.md) | Systematic learning from breakages to strengthen the system |
+| [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
+| [Internet Tool Access Lockdown](not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
+| [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
+| [Multi-Agent Pipeline](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Multi-agent pipeline design for complex tasks |
+| [Slack Bot GCP Integration](in-progress/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
+| [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
+| [Standardized Logging Interface](in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 
 ## ADR Template
 
