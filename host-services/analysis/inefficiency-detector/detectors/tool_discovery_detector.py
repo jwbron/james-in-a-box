@@ -225,7 +225,7 @@ class ToolDiscoveryDetector(BaseDetector):
             curr = events[i]
             next_event = events[i + 1]
 
-            # Same tool called twice in a row, first failed, second succeeded
+            # Same tool called twice in a row, first call failed, second succeeded
             if (
                 curr.tool_name == next_event.tool_name
                 and curr.tool_name
