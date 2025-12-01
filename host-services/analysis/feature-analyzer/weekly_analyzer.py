@@ -125,6 +125,9 @@ class WeeklyAnalyzer:
         "jib-container/shared/": "Container Infrastructure",
     }
 
+    # Maximum number of files to analyze in deep analysis mode
+    MAX_DEEP_ANALYSIS_FILES = 15
+
     def __init__(self, repo_root: Path, use_llm: bool = True):
         """
         Initialize the weekly analyzer.
@@ -604,8 +607,8 @@ If no meaningful features are found, return: `[]`
         content = self.features_md.read_text()
         paths = set()
 
-        # Match file paths in backticks, common patterns like `path/to/file.py`
-        pattern = r"`([^`]+\.py)`"
+        # Match file paths in backticks with common implementation file extensions
+        pattern = r"`([^`]+\.(?:py|ts|js|sh|go))`"
         for match in re.finditer(pattern, content):
             paths.add(match.group(1))
 
@@ -678,6 +681,10 @@ If no meaningful features are found, return: `[]`
 
         This provides more thorough analysis than commit-based extraction,
         useful for poorly named commits or large refactors.
+
+        Note: Uses a 10-minute timeout to allow thorough analysis of multiple files.
+        When running with --deep-analysis, expect longer execution times for large
+        codebases.
 
         Args:
             file_contents: Dict mapping file paths to their content
@@ -871,6 +878,8 @@ Output ONLY the markdown content, no explanation.
                 if not doc_path.exists():
                     doc_path.write_text(result.stdout.strip())
                     return str(primary_path.parent / "README.md")
+                else:
+                    print(f"    Skipping doc generation: README.md already exists at {doc_path}")
 
         except Exception as e:
             print(f"    Warning: Doc generation error: {e}")
@@ -914,7 +923,10 @@ Output ONLY the markdown content, no explanation.
                             (other.name, f"Duplicate of {best.name} (same file: {file_path})")
                         )
 
-        # Also add features without files (shouldn't happen, but be safe)
+        # Add features without files to the result.
+        # Note: Features without files won't be in by_file (due to `if feature.files:` check above),
+        # so they're only added here. This is intentional - file-based deduplication doesn't apply
+        # to features without files.
         for feature in features:
             if not feature.files:
                 deduplicated.append(feature)
@@ -1162,9 +1174,9 @@ Output ONLY the markdown content, no explanation.
 
             if all_files:
                 print(f"    Analyzing {len(all_files)} files...")
-                # Read file contents
+                # Read file contents (limited to MAX_DEEP_ANALYSIS_FILES to control LLM costs)
                 file_contents = {}
-                for file_path in list(all_files)[:15]:  # Limit to 15 files
+                for file_path in list(all_files)[: self.MAX_DEEP_ANALYSIS_FILES]:
                     content = self._read_file_content(file_path)
                     if content:
                         file_contents[file_path] = content
