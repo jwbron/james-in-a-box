@@ -269,6 +269,24 @@ class WeeklyAnalyzer:
 
         return feature_commits
 
+    # Utility file patterns that should not be listed as features
+    UTILITY_PATTERNS = [
+        r"^setup\.py$",
+        r"^__init__\.py$",
+        r"^conftest\.py$",
+        r"utils?/",  # Any file in utils/ or util/ directories
+        r"helpers?/",  # Any file in helpers/ or helper/ directories
+        r"create_symlink\.py$",
+        r"get_space_ids\.py$",
+        r"list_spaces\.py$",
+        r"maintenance\.py$",
+        r"link_to_.*\.py$",
+    ]
+
+    def _is_utility_file(self, file_path: str) -> bool:
+        """Check if a file is a utility script that shouldn't be listed as a feature."""
+        return any(re.search(pattern, file_path) for pattern in self.UTILITY_PATTERNS)
+
     def _generate_feature_extraction_prompt(self, commits: list[CommitInfo]) -> str:
         """Generate a prompt for LLM to extract features from commits."""
         commit_summaries = []
@@ -286,56 +304,75 @@ class WeeklyAnalyzer:
 
         commits_text = "\n---\n".join(commit_summaries)
 
-        return f"""Analyze these commits to identify new features that should be documented in FEATURES.md.
+        return f"""You are analyzing code commits to identify NEW FEATURES for documentation.
 
 # Commits to Analyze
 
 {commits_text}
 
-# Instructions
+# Your Task
 
-For each new feature identified, extract:
-1. **name**: A clear, concise feature name (e.g., "Weekly Code Analyzer")
-2. **description**: One sentence describing what it does
-3. **category**: One of: "Analysis & Documentation", "Context Sync", "Slack Integration", "Task Tracking", "Git & GitHub Integration", "Container Infrastructure", "Utilities"
-4. **files**: List of main implementation files (max 5)
-5. **tests**: List of test files if any
-6. **confidence**: 0.0-1.0 how confident you are this is a real user-facing feature
+Identify substantive new features from these commits. For each feature, provide:
 
-# What counts as a feature?
-- New CLI tools or commands
-- New services (systemd services, daemons)
-- New Python modules with public APIs
-- New capabilities users can interact with
+1. **name**: A clear, human-readable feature name that describes what it does (NOT the filename).
+   - Good: "Weekly Code Analyzer", "Slack Message Router", "Confluence Sync Service"
+   - Bad: "Hook Handler", "Connector", "Setup" (too generic)
 
-# What does NOT count as a feature?
-- Internal refactoring
-- Bug fixes
-- Documentation changes
-- Test improvements
-- Config file changes
-- Minor utility functions
+2. **description**: A meaningful one-sentence description explaining:
+   - What the feature does
+   - Why it's useful
+   - NOT just "New tool at <path>" - that tells us nothing
+
+3. **category**: "Analysis & Documentation", "Context Sync", "Slack Integration",
+   "Task Tracking", "Git & GitHub Integration", "Container Infrastructure", or "Utilities"
+
+4. **files**: Main implementation files (max 5)
+
+5. **tests**: Test files if any
+
+6. **confidence**: 0.0-1.0 based on how clearly this is a user-facing feature
+
+# What IS a Feature?
+
+- Standalone CLI tools users can run
+- Services with systemd units
+- Modules providing public APIs for other code
+- New capabilities that solve a user problem
+
+# What is NOT a Feature?
+
+- Internal utility functions (setup.py, create_symlink.py, maintenance.py)
+- Connector classes that are just internal plumbing
+- Hook handlers that are implementation details
+- Anything in utils/ or helpers/ directories
+- Generic-named modules without clear user benefit
+
+# Quality Requirements
+
+- NEVER use the filename as the feature name (e.g., "Connector" is not a feature name)
+- NEVER use "New tool at <path>" as a description
+- If two files provide the same logical feature, list them as ONE feature
+- If you can't write a meaningful description, don't include it (confidence < 0.3)
 
 # Output Format
 
-Return a JSON array of features. Example:
+Return ONLY a JSON array. No explanation text.
+
 ```json
 [
   {{
-    "name": "Feature Name",
-    "description": "One sentence description",
+    "name": "Descriptive Feature Name",
+    "description": "One sentence explaining what this does and why it matters",
     "category": "Category Name",
-    "files": ["path/to/main.py", "path/to/helper.py"],
-    "tests": ["tests/test_feature.py"],
+    "files": ["path/to/main.py"],
+    "tests": [],
     "confidence": 0.85,
     "introduced_in_commit": "abc12345"
   }}
 ]
 ```
 
-If no new features are found, return an empty array: `[]`
-
-Only output the JSON, no other text.
+If no meaningful features are found, return: `[]`
 """
 
     def _parse_llm_features(self, llm_output: str) -> list[DetectedFeature]:
@@ -402,6 +439,45 @@ Only output the JSON, no other text.
             print(f"    Warning: LLM extraction error: {e}")
             return []
 
+    def _extract_docstring(self, content: str) -> str:
+        """Extract the module docstring from Python source code."""
+        # Match triple-quoted strings at the start of the file
+        patterns = [
+            r'^"""(.*?)"""',  # Double quotes
+            r"^'''(.*?)'''",  # Single quotes
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, content.strip(), re.DOTALL)
+            if match:
+                docstring = match.group(1).strip()
+                # Get first paragraph (up to double newline or end)
+                first_para = docstring.split("\n\n")[0]
+                # Clean up and truncate
+                first_para = " ".join(first_para.split())  # Normalize whitespace
+                if len(first_para) > 200:
+                    first_para = first_para[:197] + "..."
+                return first_para
+        return ""
+
+    def _generate_name_from_path(self, file_path: str) -> str:
+        """Generate a human-readable name from a file path."""
+        # Get the filename without extension
+        stem = Path(file_path).stem
+
+        # Get parent directory for context
+        parent = Path(file_path).parent.name
+
+        # Convert snake_case/kebab-case to Title Case
+        name = stem.replace("_", " ").replace("-", " ").title()
+
+        # If name is generic (like "Connector"), qualify with parent directory
+        generic_names = {"connector", "handler", "processor", "manager", "service", "client"}
+        if stem.lower() in generic_names:
+            parent_name = parent.replace("_", " ").replace("-", " ").title()
+            name = f"{parent_name} {name}"
+
+        return name
+
     def extract_features_heuristically(self, commits: list[CommitInfo]) -> list[DetectedFeature]:
         """
         Extract features using heuristics (fallback when LLM unavailable).
@@ -410,6 +486,10 @@ Only output the JSON, no other text.
         - New files in feature directories with main() function
         - New systemd service files
         - New CLI scripts
+
+        Filters out:
+        - Utility scripts (setup.py, symlink helpers, etc.)
+        - Files in utils/helpers directories
         """
         features = []
         seen_files = set()
@@ -426,6 +506,10 @@ Only output the JSON, no other text.
 
                 # Skip test files
                 if "test" in file_path.lower():
+                    continue
+
+                # Skip utility files
+                if self._is_utility_file(file_path):
                     continue
 
                 # Check if in feature directory
@@ -450,14 +534,18 @@ Only output the JSON, no other text.
                 has_main = "def main(" in content or 'if __name__ == "__main__"' in content
 
                 if has_main:
-                    # Extract name from file path
-                    name = Path(file_path).stem.replace("_", " ").title()
-                    if name.endswith(" Py"):
-                        name = name[:-3]
+                    # Generate a meaningful name
+                    name = self._generate_name_from_path(file_path)
+
+                    # Try to extract description from docstring
+                    description = self._extract_docstring(content)
+                    if not description:
+                        # Fallback to generic description
+                        description = f"CLI tool providing {name.lower()} functionality"
 
                     feature = DetectedFeature(
                         name=name,
-                        description=f"New tool at {file_path}",
+                        description=description,
                         category=self.get_category_for_file(file_path),
                         files=[file_path],
                         tests=[],
@@ -485,16 +573,89 @@ Only output the JSON, no other text.
 
         return existing
 
+    def get_existing_file_paths(self) -> set[str]:
+        """Get set of file paths already documented in FEATURES.md."""
+        if not self.features_md.exists():
+            return set()
+
+        content = self.features_md.read_text()
+        paths = set()
+
+        # Match file paths in backticks, common patterns like `path/to/file.py`
+        pattern = r"`([^`]+\.py)`"
+        for match in re.finditer(pattern, content):
+            paths.add(match.group(1))
+
+        return paths
+
+    def _deduplicate_by_files(
+        self, features: list[DetectedFeature]
+    ) -> tuple[list[DetectedFeature], list[tuple[str, str]]]:
+        """
+        Deduplicate features that have the same implementation files.
+
+        If multiple features point to the same file, keep only the one with
+        the highest confidence. This prevents issues like two "Connector"
+        features from being listed.
+
+        Returns: (deduplicated_features, skipped_with_reasons)
+        """
+        # Group features by their primary implementation file
+        by_file: dict[str, list[DetectedFeature]] = {}
+        for feature in features:
+            if feature.files:
+                primary_file = feature.files[0]
+                if primary_file not in by_file:
+                    by_file[primary_file] = []
+                by_file[primary_file].append(feature)
+
+        deduplicated = []
+        skipped = []
+
+        for file_path, file_features in by_file.items():
+            if len(file_features) == 1:
+                deduplicated.append(file_features[0])
+            else:
+                # Keep the one with highest confidence
+                best = max(file_features, key=lambda f: f.confidence)
+                deduplicated.append(best)
+                for other in file_features:
+                    if other != best:
+                        skipped.append(
+                            (other.name, f"Duplicate of {best.name} (same file: {file_path})")
+                        )
+
+        # Also add features without files (shouldn't happen, but be safe)
+        for feature in features:
+            if not feature.files:
+                deduplicated.append(feature)
+
+        return deduplicated, skipped
+
     def filter_new_features(
         self, detected: list[DetectedFeature], existing: set[str]
     ) -> tuple[list[DetectedFeature], list[tuple[str, str]]]:
         """
         Filter detected features to only new ones.
 
+        Performs:
+        1. Deduplication by file path (prevents same file -> multiple features)
+        2. Name-based duplicate detection against existing FEATURES.md
+        3. File path-based duplicate detection against existing FEATURES.md
+        4. Low confidence filtering
+
         Returns: (new_features, skipped_with_reasons)
         """
+        all_skipped = []
+
+        # First, deduplicate within the detected set
+        detected, dedup_skipped = self._deduplicate_by_files(detected)
+        all_skipped.extend(dedup_skipped)
+
+        # Get existing file paths for path-based deduplication
+        existing_paths = self.get_existing_file_paths()
+
         new_features = []
-        skipped = []
 
         for feature in detected:
             name_lower = feature.name.lower()
@@ -502,9 +663,18 @@ Only output the JSON, no other text.
             name_normalized = name_lower.replace("-", " ").replace("_", " ")
             name_words = set(name_normalized.split())
 
-            # Check if already exists (exact match)
+            # Check if file path already documented
+            if feature.files:
+                already_documented = [f for f in feature.files if f in existing_paths]
+                if already_documented:
+                    all_skipped.append(
+                        (feature.name, f"File already documented: {already_documented[0]}")
+                    )
+                    continue
+
+            # Check if already exists (exact name match)
             if name_lower in existing or name_normalized in existing:
-                skipped.append((feature.name, "Already in FEATURES.md"))
+                all_skipped.append((feature.name, "Already in FEATURES.md"))
                 continue
 
             # Check for similar names (fuzzy match using word overlap)
@@ -517,7 +687,9 @@ Only output the JSON, no other text.
                     # Skip single-letter matches
                     significant_common = [w for w in common if len(w) > 3]
                     if significant_common:
-                        skipped.append((feature.name, f"Similar to existing: {existing_name}"))
+                        all_skipped.append(
+                            (feature.name, f"Similar to existing: {existing_name}")
+                        )
                         is_similar = True
                         break
 
@@ -527,17 +699,17 @@ Only output the JSON, no other text.
             # Check for substring match
             similar = [e for e in existing if name_lower in e or e in name_lower]
             if similar:
-                skipped.append((feature.name, f"Similar to existing: {similar[0]}"))
+                all_skipped.append((feature.name, f"Similar to existing: {similar[0]}"))
                 continue
 
             # Skip very low confidence
             if feature.confidence < 0.3:
-                skipped.append((feature.name, f"Low confidence ({feature.confidence:.0%})"))
+                all_skipped.append((feature.name, f"Low confidence ({feature.confidence:.0%})"))
                 continue
 
             new_features.append(feature)
 
-        return new_features, skipped
+        return new_features, all_skipped
 
     def format_feature_entry(self, feature: DetectedFeature) -> str:
         """Format a feature for FEATURES.md."""
