@@ -21,7 +21,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -255,11 +254,6 @@ Output ONLY the updated documentation content. Do not include any explanation or
 
         Returns (updated_content, confidence_score).
         """
-        # Write prompt to temp file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write(prompt)
-            prompt_file = f.name
-
         try:
             # Check if jib command exists
             jib_path = Path.home() / "khan" / "james-in-a-box" / "jib"
@@ -268,7 +262,7 @@ Output ONLY the updated documentation content. Do not include any explanation or
                 print(f"    Warning: jib not found, skipping LLM generation for {doc_path.name}")
                 return ("", 0.5)
 
-            # Run jib with the prompt
+            # Run jib with the prompt passed directly via -p argument
             result = subprocess.run(
                 [
                     str(jib_path),
@@ -303,9 +297,6 @@ Output ONLY the updated documentation content. Do not include any explanation or
         except Exception as e:
             print(f"    Warning: jib generation error: {e}")
             return ("", 0.2)
-        finally:
-            # Cleanup temp file
-            Path(prompt_file).unlink(missing_ok=True)
 
     def _generate_simple_update(
         self, adr_content: str, adr_title: str, doc_path: Path, doc_content: str

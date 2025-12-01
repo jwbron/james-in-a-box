@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
 """
-ADR Watcher - Automated ADR Detection Service (Phase 2-3)
+ADR Watcher - Automated ADR Detection Service (Phase 3)
 
 This module monitors the ADR directories for status changes (ADRs moving to
 implemented/) and triggers documentation sync automatically.
 
 It runs as a systemd service on a 15-minute interval.
 
+By default, uses Phase 3 mode which:
+- Generates documentation updates using jib containers (LLM-powered)
+- Creates PRs automatically for review
+
 State persistence:
 - Tracks which ADRs have been processed
 - Persists state across restarts in ~/.local/share/feature-analyzer/state.json
 
 Usage:
-  # Run the watcher (typically via systemd)
+  # Run the watcher (default: Phase 3 with jib)
   python adr_watcher.py watch
 
-  # Run with Phase 3 auto-generation and PR creation
-  python adr_watcher.py watch --phase3
+  # Run without jib containers (simple updates)
+  python adr_watcher.py watch --no-jib
 
   # Check for new implemented ADRs without triggering sync
   python adr_watcher.py check
@@ -296,7 +300,7 @@ class ADRWatcher:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ADR Watcher - Automated ADR Detection (Phase 2-3)"
+        description="ADR Watcher - Automated ADR Detection (Phase 3 by default)"
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -311,14 +315,9 @@ def main():
         help="Detect ADRs but do not trigger sync or update state",
     )
     watch_parser.add_argument(
-        "--phase3",
+        "--no-jib",
         action="store_true",
-        help="Enable Phase 3 mode: generate doc updates and create PRs",
-    )
-    watch_parser.add_argument(
-        "--use-jib",
-        action="store_true",
-        help="Use jib containers for LLM-powered generation (requires --phase3)",
+        help="Disable jib containers for LLM generation (use simple updates instead)",
     )
     watch_parser.add_argument(
         "--repo-root",
@@ -372,10 +371,11 @@ def main():
     watcher = ADRWatcher(repo_root)
 
     if args.command == "watch":
+        # Phase 3 with jib is now the default behavior
         count = watcher.run_watch(
             dry_run=args.dry_run,
-            phase3=args.phase3,
-            use_jib=args.use_jib,
+            phase3=True,  # Always use Phase 3
+            use_jib=not args.no_jib,  # Use jib by default unless --no-jib is passed
         )
         sys.exit(0 if count >= 0 else 1)
 

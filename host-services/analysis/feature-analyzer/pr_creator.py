@@ -21,6 +21,7 @@ Usage:
 """
 
 import contextlib
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -263,7 +264,9 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
 
         # Generate branch name from ADR slug
         adr_slug = adr_path.stem.lower()
-        adr_slug = adr_slug.replace("adr-", "").replace("_", "-")[:40]
+        adr_slug = adr_slug.replace("adr-", "").replace("_", "-")
+        # Remove any special characters that might cause issues in branch names
+        adr_slug = re.sub(r"[^a-z0-9-]", "", adr_slug)[:40]
         timestamp = datetime.now(UTC).strftime("%Y%m%d")
         branch_name = f"docs/sync-{adr_slug}-{timestamp}"
 
@@ -325,13 +328,14 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
                 )
 
             # Create PR body
+            # Note: We use relative path format that works in GitHub PR context
             pr_body = f"""## Summary
 
 Updates documentation to reflect implemented ADR: {adr_title}
 
 ### ADR Context
 
-**ADR:** [{adr_path.name}](../blob/main/{adr_path})
+**ADR:** `{adr_path}` (see Files changed for full context)
 **Decision:** See ADR for full decision details.
 
 ### Documentation Updated
