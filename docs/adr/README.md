@@ -34,7 +34,7 @@ ADRs are organized by implementation status:
 
 | ADR | Summary |
 |-----|---------|
-| [Codebase Analyzer Strategy](not-implemented/ADR-Codebase-Analyzer-Strategy.md) | Multi-layered codebase analysis with external best practices integration |
+| [Codebase Analyzer Strategy](in-progress/ADR-Codebase-Analyzer-Strategy.md) | Multi-layered codebase analysis with external best practices integration |
 | [Continuous System Reinforcement](not-implemented/ADR-Continuous-System-Reinforcement.md) | Systematic learning from breakages to strengthen the system |
 | [Feature Analyzer - Documentation Sync](in-progress/ADR-Feature-Analyzer-Documentation-Sync.md) | Automated documentation updates after ADR implementation and merge |
 | [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
