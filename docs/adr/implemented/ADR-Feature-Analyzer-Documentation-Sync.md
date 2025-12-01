@@ -775,6 +775,174 @@ The workflow pattern (ADR → implementation → doc sync) is stable, but the im
 
 **Rejected because:** ADRs are decisions, not user guides; different purposes require different docs.
 
+## Research Updates (December 2025)
+
+Based on external research into documentation automation, LLM-assisted generation, feature discovery, and ADR lifecycle management:
+
+### Docs-as-Code and Documentation Sync Best Practices
+
+The docs-as-code approach has matured significantly, with three core principles emerging for effective auto-documentation:
+
+1. **Treat docs like source files**: Version-controlled, code-reviewed, and subject to branching strategies
+2. **Enable continuous regeneration**: Documentation should never drift from reality
+3. **Integrate documentation into CI/CD**: Documentation builds, linting, and link checks belong in the same pipelines as code
+
+| Aspect | Current State | Industry Trend |
+|--------|---------------|----------------|
+| **Documentation location** | Separate from code | Co-located in repos |
+| **Update trigger** | Manual | Event-driven (PR merge, webhooks) |
+| **Validation** | Human review only | Automated + human review |
+| **Sync detection** | Manual tracking | Continuous drift detection |
+
+**Application to this ADR:**
+- The ADR's approach of triggering doc updates on PR merge aligns with industry best practices
+- Consider integrating [Swimm](https://swimm.io/)-style auto-sync where minor changes (variable renames, spacing) are fixed automatically without PR
+- Adding documentation coverage metrics to CI would align with industry standards
+
+**Relevant Sources:**
+- [Docs-as-Code - Write the Docs](https://www.writethedocs.org/guide/docs-as-code/)
+- [Swimm Continuous Documentation](https://swimm.io/blog/continuous-documentation-through-continuous-integration-with-swimm)
+- [Documentation as Code - Swimm](https://swimm.io/learn/code-documentation/documentation-as-code-why-you-need-it-and-how-to-get-started)
+
+### LLM-Assisted Documentation Generation
+
+The field has rapidly evolved, with several approaches gaining traction:
+
+**Multi-Agent Systems (2025):**
+Research from April 2025 on [DocAgent](https://arxiv.org/html/2504.08725v1) demonstrates that multi-agent systems with role-specialized LLMs and structured communication handle complex documentation tasks more effectively than single-agent approaches. This validates the ADR's use of specialized "LLM Documentation Agent" as a distinct component.
+
+**Key Tools and Patterns:**
+- **[doc-comments-ai](https://github.com/fynnfluegge/doc-comments-ai)**: Uses langchain, treesitter, and local LLMs for privacy-preserving documentation generation
+- **[Autodoc](https://github.com/context-labs/autodoc)**: Auto-generates codebase documentation using GPT-4 or local models
+- **[llm-docs-builder](https://mensfeld.pl/2025/10/llm-docs-builder/)**: Transforms documentation into AI-optimized format, reducing RAG costs by 85-95%
+
+**Application to this ADR:**
+- The multi-agent pattern supports the ADR's separation of Feature Analyzer and LLM Documentation Agent
+- Consider offering both cloud (OpenAI) and local LLM options (ollama) for documentation generation to address privacy concerns
+- The llm-docs-builder concept of AI-optimized documentation formats could improve the documentation index effectiveness
+
+**Relevant Sources:**
+- [DocAgent: Multi-Agent System for Code Documentation](https://arxiv.org/html/2504.08725v1)
+- [Automated Code Documentation with LLMs](https://arxiv.org/html/2509.14273v1)
+- [JetBrains AI Assistant Documentation](https://www.jetbrains.com/help/ai-assistant/generate-documentation-with-ai.html)
+
+### LLM Hallucination Detection and Validation
+
+Critical research for ensuring generated documentation quality:
+
+**Semantic Entropy Approach (Nature, 2024):**
+A breakthrough method measures uncertainty at the level of meaning rather than specific word sequences to detect confabulations. This works across datasets and tasks without prior knowledge of the task.
+
+**Key Detection Methods:**
+- **MHAD (Internal Representations)**: Uses neurons and layers within LLMs that demonstrate hallucination awareness
+- **[HaluCheck](https://www.sciencedirect.com/science/article/abs/pii/S0957417425003343)**: Decomposes responses into atomic facts for automated verification using AutoFactNLI
+- **ICQ Framework**: Performs targeted, question-driven validation through multi-step consistency checking
+
+| Detection Method | Pros | Cons |
+|------------------|------|------|
+| Semantic entropy | Works without ground truth | Computationally expensive |
+| Atomic fact decomposition | High precision | Requires external knowledge base |
+| Self-consistency | No retraining needed | May miss systematic errors |
+| Retrieval-augmented | Uses source docs | Limited by retrieval quality |
+
+**Application to this ADR:**
+- The ADR's 6-point validation checklist is sound but could benefit from adding:
+  - **Confidence scoring**: Flag low-confidence updates (<0.7) for additional review
+  - **Atomic fact verification**: Decompose generated claims and verify against ADR source
+  - **Cross-reference checking**: Verify new claims against existing documentation
+- Consider implementing span-level verification for specific claims rather than whole-document validation
+
+**Relevant Sources:**
+- [Detecting hallucinations using semantic entropy - Nature](https://www.nature.com/articles/s41586-024-07421-0)
+- [LLM Hallucinations Guide - Lakera](https://www.lakera.ai/blog/guide-to-hallucinations-in-large-language-models)
+- [Hallucination Detection with LLM-as-Judge - Datadog](https://www.datadoghq.com/blog/ai/llm-hallucination-detection/)
+
+### Automated Feature Discovery from Code
+
+**Commit-Level Analysis (2024):**
+Research on semantic feature extraction from commits shows promising results using CodeBERT and GraphCodeBERT models, achieving meaningful classification of commit intent and feature identification.
+
+**Key Approaches:**
+- **Conventional Commits**: Using structured commit messages (feat:, fix:, docs:) enables automated changelog and feature extraction
+- **[semantic-release/commit-analyzer](https://github.com/semantic-release/commit-analyzer)**: Plugin that determines release types by analyzing conventional commits
+- **In-context learning**: GPT-3 achieved 75.7% accuracy in commit classification without training data (ENASE 2024)
+
+**Application to this ADR:**
+- The ADR's heuristics-based approach (new files in key directories, CLI commands, etc.) aligns with industry patterns
+- Consider requiring Conventional Commits format to improve feature detection accuracy
+- The 80% detection target is realistic; research shows similar accuracy with LLM-based approaches
+- Adding AST-based analysis (using treesitter) could improve detection of new public APIs
+
+**Relevant Sources:**
+- [Commit-Level Code Change Intent Classification](https://www.mdpi.com/2227-7390/12/7/1012)
+- [Conventional Commits Specification](https://www.conventionalcommits.org/en/v1.0.0/)
+- [semantic-release commit-analyzer](https://github.com/semantic-release/commit-analyzer)
+
+### ADR Lifecycle Management Tooling
+
+**Leading Tools:**
+- **[Log4brains](https://github.com/thomvaill/log4brains)**: Most comprehensive tool, combining ADR management with static site generation
+  - Hot reload for preview
+  - Automatic CI/CD publishing
+  - Maintains ADR immutability (only status changes)
+- **adr-tools**: Command-line tool for creating, superseding, and linking ADRs
+- **MADR (Markdown ADRs)**: Widely adopted template format
+
+**Key Insight - ADR Immutability:**
+"An ADR is immutable. Only its status can change. Thanks to this, your documentation is never out-of-date! Yes, an ADR can be deprecated or superseded by another one, but it was at least true one day!" This principle from Log4brains validates the ADR's status-based directory organization (not-implemented/, in-progress/, implemented/).
+
+**Application to this ADR:**
+- The directory-based status organization matches Log4brains best practices
+- Consider adopting Log4brains for automatic static site generation of ADRs
+- The feature analyzer could integrate with Log4brains' webhook/event system for tighter coupling
+
+**Relevant Sources:**
+- [Log4brains GitHub](https://github.com/thomvaill/log4brains)
+- [Log4brains Documentation](https://thomvaill.github.io/log4brains/adr/)
+- [ADR Tools Discussion - Stack Overflow](https://stackoverflow.com/questions/72531553/general-architectural-decision-record-adr-tool)
+
+### Documentation Drift Prevention
+
+**Industry Patterns:**
+The concept of "documentation drift" parallels infrastructure configuration drift, with similar prevention strategies:
+
+1. **Single Source of Truth**: Like IaC, documentation should have one authoritative source
+2. **Automated Detection**: Regular automated scans comparing documentation state to code state
+3. **Policy-as-Code**: Define documentation requirements as enforceable policies
+4. **Real-time Monitoring**: Continuous comparison, not just point-in-time checks
+
+**Swimm's Approach:**
+Swimm's patented "Verify and Auto-sync" features provide a model for documentation drift prevention:
+- **Up to date**: Confirmed current
+- **Out of sync**: Minor changes that can be auto-fixed
+- **Outdated**: Substantial changes requiring human intervention
+
+This three-tier classification could enhance the ADR's validation strategy.
+
+**Application to this ADR:**
+- Consider implementing tiered update severity (auto-fix minor, flag major)
+- Add periodic drift scans beyond ADR-triggered updates
+- GitHub's research shows "50% productivity boost when documentation is up to date" - worth citing in business case
+
+**Relevant Sources:**
+- [Swimm Native Integrations](https://swimm.io/blog/swimm-native-integrations)
+- [Continuous Documentation - Swimm](https://docs.swimm.io/new-to-swimm/continuous-documentation/)
+- [Why Continuous Documentation is Crucial - Swimm](https://swimm.io/blog/why-continuous-documentation-is-crucial-for-scaling-teams)
+
+### Summary of Recommendations
+
+Based on this research, the following enhancements would align the Feature Analyzer with current best practices:
+
+1. **Add tiered update classification**: Auto-fix minor changes (Swimm-style), require review for major changes
+2. **Implement confidence scoring**: Flag low-confidence LLM outputs for additional review
+3. **Enhance validation with atomic fact verification**: Decompose claims and verify against source ADRs
+4. **Consider Conventional Commits requirement**: Improves feature detection accuracy
+5. **Add periodic drift scans**: Beyond ADR-triggered updates, run regular documentation health checks
+6. **Evaluate Log4brains integration**: For ADR static site generation and event handling
+7. **Support local LLM option**: Address privacy concerns with ollama/llama.cpp support
+
+---
+
 ## References
 
 - [PR #259: Comprehensive Feature List](https://github.com/jwbron/james-in-a-box/pull/259) - Feature analyzer context
