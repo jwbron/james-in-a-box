@@ -210,24 +210,48 @@ class ADRResearcher:
             )
         return adrs
 
-    def find_open_adr_prs(self) -> list[ADRInfo]:
-        """Find open PRs that modify ADR files."""
+    def find_open_adr_prs(self, pr_number: int | None = None) -> list[ADRInfo]:
+        """Find open PRs that modify ADR files.
+
+        Args:
+            pr_number: If specified, only return ADRs from this specific PR.
+                      If None, returns ADRs from all open PRs.
+        """
         adrs = []
         for repo in self.config.get("writable_repos", []):
-            prs = gh_json(
-                [
-                    "pr",
-                    "list",
-                    "--repo",
-                    repo,
-                    "--state",
-                    "open",
-                    "--json",
-                    "number,title,url,headRefName,files",
-                ]
-            )
-            if not prs:
-                continue
+            if pr_number:
+                # Fetch specific PR
+                pr = gh_json(
+                    [
+                        "pr",
+                        "view",
+                        str(pr_number),
+                        "--repo",
+                        repo,
+                        "--json",
+                        "number,title,url,headRefName,files,state",
+                    ]
+                )
+                if pr:
+                    prs = [pr]
+                else:
+                    continue
+            else:
+                # Fetch all open PRs
+                prs = gh_json(
+                    [
+                        "pr",
+                        "list",
+                        "--repo",
+                        repo,
+                        "--state",
+                        "open",
+                        "--json",
+                        "number,title,url,headRefName,files",
+                    ]
+                )
+                if not prs:
+                    continue
 
             for pr in prs:
                 files = pr.get("files", [])
@@ -736,21 +760,28 @@ class ADRResearcher:
             print("  jib command not found - is it in PATH?")
             return None
 
-    def research_open_prs(self) -> list[ResearchResult]:
-        """Research all open ADR PRs and post comments.
+    def research_open_prs(self, pr_number: int | None = None) -> list[ResearchResult]:
+        """Research open ADR PRs and post comments.
 
         Workflow:
-        1. Find open PRs that modify ADR files
+        1. Find open PRs that modify ADR files (or a specific PR if pr_number given)
         2. For each ADR, invoke jib to research the topic
         3. Post research findings as PR comment
+
+        Args:
+            pr_number: If specified, only research this specific PR.
+                      If None, research all open PRs with ADR changes.
 
         Returns:
             List of ResearchResult objects with typed, structured research findings.
         """
         results = []
-        adrs = self.find_open_adr_prs()
+        adrs = self.find_open_adr_prs(pr_number)
 
-        print(f"Found {len(adrs)} open PR(s) with ADR changes")
+        if pr_number:
+            print(f"Found {len(adrs)} ADR(s) in PR #{pr_number}")
+        else:
+            print(f"Found {len(adrs)} open PR(s) with ADR changes")
 
         for adr in adrs:
             print(f"\nResearching: {adr.title}")
@@ -931,6 +962,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s --scope open-prs              # Research open ADR PRs, post comments
+  %(prog)s --scope open-prs --pr 338     # Research specific PR only
   %(prog)s --scope merged                # Research implemented ADRs, create update PRs
   %(prog)s --generate "Topic"            # Generate new ADR from research
   %(prog)s --review path/to/ADR.md       # Review ADR against current research
@@ -964,6 +996,13 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
         "--query",
         "-q",
         help="Research query (used with --scope topic)",
+    )
+
+    parser.add_argument(
+        "--pr",
+        type=int,
+        metavar="NUMBER",
+        help="Specific PR number to research (used with --scope open-prs)",
     )
 
     parser.add_argument(
@@ -1035,11 +1074,14 @@ Note: This tool invokes jib containers for research. Ensure jib is in PATH.
             results = {"path": str(args.review), "status": "dry_run"}
 
     elif args.scope == "open-prs":
-        print("\nResearching open ADR PRs...")
-        if not args.dry_run:
-            results = researcher.research_open_prs()
+        if args.pr:
+            print(f"\nResearching PR #{args.pr}...")
         else:
-            adrs = researcher.find_open_adr_prs()
+            print("\nResearching open ADR PRs...")
+        if not args.dry_run:
+            results = researcher.research_open_prs(args.pr)
+        else:
+            adrs = researcher.find_open_adr_prs(args.pr)
             results = {
                 "prs": [{"title": a.title, "pr": a.pr_number} for a in adrs],
                 "status": "dry_run",
