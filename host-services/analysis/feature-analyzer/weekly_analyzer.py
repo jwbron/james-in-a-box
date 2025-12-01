@@ -1365,13 +1365,6 @@ class RepoAnalyzer:
                 "test",
             ]
 
-            # Check for subdirectories with their own README (would be their own features)
-            subdirs_with_readme = []
-            for subdir in dir_path.iterdir():
-                if subdir.is_dir() and not self._should_skip(str(subdir)):
-                    if (subdir / "README.md").exists():
-                        subdirs_with_readme.append(subdir)
-
             # It's a feature directory if:
             # 1. Has a README (strongest signal of a feature unit), OR
             # 2. Has source files AND is not an internal/utility directory, OR
@@ -1435,24 +1428,30 @@ class RepoAnalyzer:
 
     def _read_file_safe(self, path: Path, max_lines: int = 1000) -> str:
         """
-        Safely read file content with generous limits.
+        Safely read file content with generous limits using streaming.
 
         We want Claude to see as much code as possible to make accurate
         feature assessments, so we've increased limits significantly.
+
+        Uses line-by-line reading to avoid loading entire large files into memory.
         """
         try:
             file_size = path.stat().st_size
-            if file_size > 500_000:  # 500KB limit (increased from 100KB)
-                # For very large files, read the first portion
-                content = path.read_text(encoding="utf-8")
-                lines = content.split("\n")[:max_lines]
-                lines.append(f"\n... [truncated, file too large: {file_size} bytes]")
-                return "\n".join(lines)
-            content = path.read_text(encoding="utf-8")
-            lines = content.split("\n")
-            if len(lines) > max_lines:
-                lines = lines[:max_lines]
-                lines.append(f"\n... [truncated at {max_lines} lines]")
+            lines = []
+
+            # Stream the file line by line to avoid memory spikes on large files
+            with path.open(encoding="utf-8") as f:
+                for i, line in enumerate(f):
+                    if i >= max_lines:
+                        lines.append(f"\n... [truncated at {max_lines} lines]")
+                        break
+                    lines.append(line.rstrip("\n"))
+
+                    # Early exit if we've read enough bytes (500KB limit)
+                    if file_size > 500_000 and i >= max_lines:
+                        lines.append(f"\n... [truncated, file too large: {file_size} bytes]")
+                        break
+
             return "\n".join(lines)
         except (UnicodeDecodeError, OSError):
             return ""
