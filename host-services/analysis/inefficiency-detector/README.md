@@ -1,9 +1,9 @@
-# LLM Inefficiency Detector (Phase 2)
+# LLM Inefficiency Detector (Phase 2 + 3)
 
-**Status:** Phase 2 Implementation (Core Detectors)
+**Status:** Phase 3 Implementation (Weekly Reports + Slack Integration)
 **ADR:** [ADR-LLM-Inefficiency-Reporting.md](../../../docs/adr/in-progress/ADR-LLM-Inefficiency-Reporting.md)
 
-Analyzes LLM trace sessions to detect processing inefficiencies and generate actionable improvement recommendations.
+Analyzes LLM trace sessions to detect processing inefficiencies, generates actionable improvement recommendations, and delivers weekly reports via Slack.
 
 ## Overview
 
@@ -33,6 +33,19 @@ python inefficiency_detector.py analyze-period \
   --markdown weekly-report.md
 ```
 
+### Weekly Reports (Phase 3)
+
+```bash
+# Generate weekly report with Slack notification and PR creation
+python weekly_report_generator.py
+
+# Force run regardless of schedule
+python weekly_report_generator.py --force
+
+# Analyze custom period without Slack
+python weekly_report_generator.py --days 14 --no-slack
+```
+
 ### Programmatic Usage
 
 ```python
@@ -55,6 +68,16 @@ aggregate = detector.analyze_period(
 # Export reports
 detector.export_report(aggregate, Path("report.json"))
 detector.generate_markdown_report(aggregate, Path("report.md"))
+```
+
+### Automated Weekly Reports
+
+```python
+# Weekly report workflow (via systemd timer or manual)
+from weekly_report_generator import WeeklyReportGenerator
+
+generator = WeeklyReportGenerator(days=7)
+generator.run(send_slack=True)  # Generates report, sends Slack, creates PR
 ```
 
 ## Implemented Detectors
@@ -82,13 +105,18 @@ These remain to be implemented in future iterations:
 
 ```
 inefficiency-detector/
-├── inefficiency_detector.py      # Main orchestrator
-├── inefficiency_schema.py         # Data structures
-├── base_detector.py               # Abstract detector interface
+├── inefficiency_detector.py          # Main orchestrator (Phase 2)
+├── inefficiency_schema.py            # Data structures
+├── base_detector.py                  # Abstract detector interface
 ├── detectors/
-│   ├── tool_discovery_detector.py      # Category 1 (✅)
-│   ├── tool_execution_detector.py      # Category 4 (✅)
-│   └── resource_efficiency_detector.py # Category 7 (✅)
+│   ├── tool_discovery_detector.py        # Category 1 (✅)
+│   ├── tool_execution_detector.py        # Category 4 (✅)
+│   └── resource_efficiency_detector.py   # Category 7 (✅)
+├── weekly_report_generator.py        # Weekly report generator (Phase 3)
+├── inefficiency-reporter.service     # Systemd service unit
+├── inefficiency-reporter.timer       # Systemd timer unit (Monday 11 AM)
+├── setup.sh                          # Installation script
+├── test_detectors.py                 # Unit tests
 └── README.md
 ```
 
@@ -197,27 +225,73 @@ detector = InefficiencyDetector(config=config)
    - Evidence-based detection with clear patterns
    - Awaiting real-world validation
 
-## Integration with Phase 3 (Report Generation)
+✅ **Weekly reports generated automatically** (Phase 3)
+   - Systemd timer runs every Monday at 11:00 AM
+   - Reports saved to `docs/analysis/inefficiency/`
+   - Slack notifications with summary
 
-This detector is designed to integrate with the planned weekly report generator:
+✅ **Slack delivery** (Phase 3)
+   - Uses `notifications` library for Slack integration
+   - Fallback to file-based notifications if library unavailable
 
-```python
-# Weekly report workflow (Phase 3)
-from inefficiency_detector import InefficiencyDetector
-from datetime import datetime, timedelta
+## Weekly Report Workflow (Phase 3)
 
-detector = InefficiencyDetector()
+### Installation
 
-# Generate weekly report
-end = datetime.now()
-start = end - timedelta(days=7)
-report = detector.analyze_period(since=start, until=end)
+```bash
+# Run the setup script to install systemd timer
+./setup.sh
 
-# Export for human review
-detector.generate_markdown_report(report, Path("~/sharing/reports/weekly.md"))
+# This will:
+# - Symlink service and timer files to ~/.config/systemd/user/
+# - Enable and start the timer
+# - Create the analysis output directory
+```
 
-# Slack notification (existing infrastructure)
-slack_notify("Weekly Inefficiency Report Ready", report.top_issues)
+### Manual Run
+
+```bash
+# Force run regardless of schedule
+python weekly_report_generator.py --force
+
+# Custom time period
+python weekly_report_generator.py --days 14
+
+# Without Slack notification
+python weekly_report_generator.py --force --no-slack
+```
+
+### Report Output
+
+Reports are saved to `docs/analysis/inefficiency/` in the repo:
+- `inefficiency-report-YYYYMMDD-HHMMSS.md` - Full markdown report
+- `inefficiency-metrics-YYYYMMDD-HHMMSS.json` - Machine-readable metrics
+- `latest-report.md` / `latest-metrics.json` - Symlinks to most recent
+
+A PR is automatically created with each report, keeping only the last 5 reports.
+
+### Slack Notifications
+
+The weekly report generator sends a summary to Slack including:
+- Health Score (0-100)
+- Sessions analyzed, tokens consumed, wasted tokens
+- Top issue with recommendation
+- Severity breakdown (High/Medium/Low)
+
+### Systemd Commands
+
+```bash
+# Check timer status
+systemctl --user list-timers | grep inefficiency
+
+# Run manually
+systemctl --user start inefficiency-reporter.service
+
+# Check last run
+systemctl --user status inefficiency-reporter.service
+
+# View logs
+journalctl --user -u inefficiency-reporter.service -f
 ```
 
 ## Testing
@@ -249,13 +323,21 @@ pytest tests/host_services/test_inefficiency_detector.py::TestToolDiscoveryDetec
 
 ## Future Enhancements
 
-### Phase 3 Priorities
+### Phase 3 (COMPLETED)
+- [x] Implement weekly report generation
+- [x] Add Slack integration for notifications
+- [x] Create systemd timer for automated weekly runs
+- [x] PR creation with report files
+
+### Phase 4 Priorities (Self-Improvement Loop)
 - [ ] **Validate false positive rate** with real trace data from Phase 1b hook integration (target: <10%)
-- [ ] Implement weekly report generation and Slack integration
+- [ ] Implement improvement proposal generator
+- [ ] Create human review interface (Slack-based approval)
+- [ ] Implement impact tracking for changes
 - [ ] Convert to proper Python package with `setup.py`/`pyproject.toml` and relative imports
 
 ### Later Phases
-- [ ] Implement remaining 4 detector categories
+- [ ] Implement remaining 4 detector categories (Decision Loops, Direction/Planning, Reasoning, Communication)
 - [ ] Add ML-based anomaly detection for novel patterns
 - [ ] Real-time detection during session (hook-based)
 - [ ] Custom detector plugins
@@ -272,6 +354,6 @@ pytest tests/host_services/test_inefficiency_detector.py::TestToolDiscoveryDetec
 
 ---
 
-**Last Updated:** 2025-11-30
-**Phase:** 2 (Core Detectors Implemented)
-**Next Phase:** 3 (Report Generation & Integration)
+**Last Updated:** 2025-12-01
+**Phase:** 3 (Weekly Reports + Slack Integration)
+**Next Phase:** 4 (Self-Improvement Loop)

@@ -757,9 +757,9 @@ Week N+2 (Monday):
 | Phase | Status | PR/Reference |
 |-------|--------|--------------|
 | Phase 1a: Beads Integration Analyzer | ✅ Implemented | [PR #211](https://github.com/jwbron/james-in-a-box/pull/211) |
-| Phase 1b: Trace Collection | ✅ Implemented | In codebase (not PRed yet) |
-| Phase 2: Inefficiency Detection | ✅ Core Implemented (3/7 categories) | In codebase (not PRed yet) |
-| Phase 3: Report Generation | 🔲 Not Started | - |
+| Phase 1b: Trace Collection | ✅ Implemented | (Trace collector infrastructure) |
+| Phase 2: Inefficiency Detection | ✅ Implemented (3/7 categories) | [PR #273](https://github.com/jwbron/james-in-a-box/pull/273) |
+| Phase 3: Report Generation | ✅ Implemented | (This PR) |
 | Phase 4: Self-Improvement Loop | 🔲 Not Started | - |
 
 ### Phase 1a: Beads Integration Analyzer (IMPLEMENTED)
@@ -901,22 +901,44 @@ Categories 2, 3, 5, 6 are deferred because:
 - They benefit from tuning based on real-world data from the first 3 categories
 - They are lower-priority based on expected impact
 
-### Phase 3: Report Generation
+### Phase 3: Report Generation (IMPLEMENTED)
 
-**Dependencies:** Phase 2 (detection engine operational)
+**Status:** ✅ Implemented
+
+**Dependencies:** Phase 2 (detection engine operational) - ✅ Met
 
 **Deliverables:**
-- [ ] Build report generator
-- [ ] Create report templates
-- [ ] Integrate with existing analyzer timer
-- [ ] Set up Slack delivery
+- [x] Build report generator (`weekly_report_generator.py`)
+- [x] Create report templates (enhanced markdown with health scores)
+- [x] Integrate with existing analyzer timer (systemd timer)
+- [x] Set up Slack delivery (via notifications library)
+- [x] PR creation with reports committed to `docs/analysis/inefficiency/`
 
-**Success Criteria:** Weekly reports generated automatically and delivered via Slack.
+**Success Criteria:** Weekly reports generated automatically and delivered via Slack. ✅
+
+**Implemented Components:**
+- [x] `host-services/analysis/inefficiency-detector/weekly_report_generator.py` - Weekly report generator
+- [x] `host-services/analysis/inefficiency-detector/inefficiency-reporter.service` - Systemd service
+- [x] `host-services/analysis/inefficiency-detector/inefficiency-reporter.timer` - Systemd timer (Monday 11 AM)
+- [x] `host-services/analysis/inefficiency-detector/setup.sh` - Installation script
+- [x] Health score calculation (0-100) with severity-based deductions
+- [x] Slack notifications via `notifications` library
+- [x] Automatic PR creation with reports
+- [x] Report retention (keeps last 5 reports)
+
+**Report Features:**
+- Executive summary with key metrics
+- Health score (0-100) with emoji indicators
+- Category and severity breakdowns
+- Top 5 issues with recommendations
+- Sessions with highest inefficiency
+- Actionable improvement suggestions
 
 **Files:**
-- `jib-container/analysis/report_generator.py`
-- `jib-container/templates/inefficiency_report.md`
-- `host-services/inefficiency-analyzer.timer`
+- `host-services/analysis/inefficiency-detector/weekly_report_generator.py` - Main generator
+- `host-services/analysis/inefficiency-detector/inefficiency-reporter.service` - Service unit
+- `host-services/analysis/inefficiency-detector/inefficiency-reporter.timer` - Timer unit
+- `docs/analysis/inefficiency/` - Report output directory
 
 ### Phase 4: Self-Improvement Loop
 
@@ -1097,11 +1119,11 @@ Weekly codebase analysis can include:
 
 ---
 
-**Last Updated:** 2025-11-30
+**Last Updated:** 2025-12-01
 **Next Review:** 2025-12-28 (Monthly review)
-**Status:** In Progress
+**Status:** In Progress - Phase 3 Complete
 - Phase 1a: ✅ Implemented ([PR #211](https://github.com/jwbron/james-in-a-box/pull/211))
 - Phase 1b: ✅ Implemented (trace collection infrastructure)
-- Phase 2: ✅ Core implemented (3/7 categories with tests)
-- Phase 3: 🔲 Not started (report generation)
+- Phase 2: ✅ Implemented ([PR #273](https://github.com/jwbron/james-in-a-box/pull/273) - 3/7 categories)
+- Phase 3: ✅ Implemented (weekly reports + Slack integration)
 - Phase 4: 🔲 Not started (self-improvement loop)
