@@ -1253,22 +1253,22 @@ Only output valid JSON, no other text."""
                 }
             )
 
-        # Add symlinks as actual files pointing to latest
-        # (symlinks don't work well with git add in container, use relative links)
-        files.append(
+        # Create symlinks to latest report/metrics
+        symlinks = [
             {
                 "path": "docs/analysis/beads/latest-report.md",
-                "content": f"beads-health-{timestamp}.md",  # Symlink target
-            }
-        )
-        files.append(
+                "target": f"beads-health-{timestamp}.md",
+            },
             {
                 "path": "docs/analysis/beads/latest-metrics.json",
-                "content": f"beads-metrics-{timestamp}.json",  # Symlink target
-            }
-        )
+                "target": f"beads-metrics-{timestamp}.json",
+            },
+        ]
 
-        if not files:
+        # Convert to_delete paths to relative paths for the container
+        files_to_delete = [str(p.relative_to(REPO_ROOT)) for p in to_delete]
+
+        if not files and not symlinks:
             print("ERROR: No report files to commit", file=sys.stderr)
             return
 
@@ -1312,6 +1312,8 @@ See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for det
 
         # Call jib --exec to create PR inside container
         print(f"Invoking jib --exec to create PR on branch {branch_name}...")
+        if files_to_delete:
+            print(f"  Will delete {len(files_to_delete)} old report(s)")
         result = jib_exec(
             processor="jib-container/jib-tasks/analysis/analysis-processor.py",
             task_type="create_pr",
@@ -1319,6 +1321,8 @@ See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for det
                 "repo_name": "james-in-a-box",
                 "branch_name": branch_name,
                 "files": files,
+                "symlinks": symlinks,
+                "files_to_delete": files_to_delete,
                 "commit_message": commit_message,
                 "pr_title": pr_title,
                 "pr_body": pr_body,

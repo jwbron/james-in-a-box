@@ -189,6 +189,8 @@ def handle_create_pr(context: dict) -> int:
         - repo_name: str (e.g., "james-in-a-box")
         - branch_name: str (e.g., "beads-health-report-20251201")
         - files: list[dict] with {path: str, content: str} - files to commit
+        - symlinks: list[dict] with {path: str, target: str} - symlinks to create
+        - files_to_delete: list[str] - relative paths to delete (for cleanup)
         - commit_message: str
         - pr_title: str
         - pr_body: str
@@ -197,19 +199,22 @@ def handle_create_pr(context: dict) -> int:
         - result.pr_url: str (URL of created PR)
         - result.branch: str (branch name)
     """
+    import os
     import subprocess
 
     repo_name = context.get("repo_name", "james-in-a-box")
     branch_name = context.get("branch_name")
     files = context.get("files", [])
+    symlinks = context.get("symlinks", [])
+    files_to_delete = context.get("files_to_delete", [])
     commit_message = context.get("commit_message", "chore: Add analysis report")
     pr_title = context.get("pr_title", "Analysis Report")
     pr_body = context.get("pr_body", "")
 
     if not branch_name:
         return output_result(False, error="No branch_name provided")
-    if not files:
-        return output_result(False, error="No files provided to commit")
+    if not files and not symlinks and not files_to_delete:
+        return output_result(False, error="No files, symlinks, or deletions provided")
 
     # Get repo path - inside container, repos are at ~/khan/<repo>
     repo_path = Path.home() / "khan" / repo_name
@@ -235,16 +240,50 @@ def handle_create_pr(context: dict) -> int:
             text=True,
         )
 
-        # Write files
+        # Delete old files first (cleanup)
+        for file_rel_path in files_to_delete:
+            file_path = repo_path / file_rel_path
+            if file_path.exists():
+                file_path.unlink()
+                subprocess.run(
+                    ["git", "add", file_rel_path],
+                    check=True,
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                )
+
+        # Write regular files
         for file_info in files:
             file_path = repo_path / file_info["path"]
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(file_info["content"])
 
+        # Create symlinks
+        for symlink_info in symlinks:
+            symlink_path = repo_path / symlink_info["path"]
+            target = symlink_info["target"]
+            symlink_path.parent.mkdir(parents=True, exist_ok=True)
+            # Remove existing symlink/file if it exists
+            if symlink_path.exists() or symlink_path.is_symlink():
+                symlink_path.unlink()
+            # Create symlink (target is relative to symlink's directory)
+            os.symlink(target, symlink_path)
+
         # Stage all files
         for file_info in files:
             subprocess.run(
                 ["git", "add", file_info["path"]],
+                check=True,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+
+        # Stage all symlinks
+        for symlink_info in symlinks:
+            subprocess.run(
+                ["git", "add", symlink_info["path"]],
                 check=True,
                 cwd=repo_path,
                 capture_output=True,
