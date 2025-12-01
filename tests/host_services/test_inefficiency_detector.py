@@ -64,12 +64,12 @@ class TestToolDiscoveryDetector:
         """Test detection of multiple failing searches before success."""
         detector = ToolDiscoveryDetector()
 
-        # Pattern: 3 greeps with 0 results, then glob succeeds
+        # Pattern: 2 greps with 0 results, then glob succeeds
+        # (Using 2 failures avoids triggering search_failure which needs 3+)
         events = [
             create_event("evt-1", 1, "Grep", ToolCategory.SEARCH, "success", 0, "SpecificTerm"),
             create_event("evt-2", 2, "Grep", ToolCategory.SEARCH, "success", 0, "Term"),
-            create_event("evt-3", 3, "Grep", ToolCategory.SEARCH, "success", 0, "term"),
-            create_event("evt-4", 4, "Glob", ToolCategory.FILE_READ, "success", 5, "*term*"),
+            create_event("evt-3", 3, "Glob", ToolCategory.FILE_READ, "success", 5, "*term*"),
         ]
 
         inefficiencies = detector.detect(events)
