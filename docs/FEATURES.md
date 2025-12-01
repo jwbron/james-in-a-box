@@ -43,12 +43,14 @@ Features are tagged with status flags matching ADR lifecycle:
   - ✅ Phase 1: Manual CLI tool (`feature-analyzer sync-docs`)
   - ✅ Phase 2: Automated ADR detection via systemd timer (15min interval)
   - ✅ Phase 3: Multi-doc updates, LLM content generation, PR creation
-  - ⏳ Phase 4+: Enhanced validation, rollback tooling, weekly code analysis
+  - ✅ Phase 4: Full validation suite (6 checks), HTML metadata injection, git tagging, rollback tooling
+  - ⏳ Phase 5: Weekly code analysis for FEATURES.md updates
 - **Implementation**:
   - `host-services/analysis/feature-analyzer/feature-analyzer.py` - Main CLI tool
   - `host-services/analysis/feature-analyzer/adr_watcher.py` - Automated watcher
   - `host-services/analysis/feature-analyzer/doc_generator.py` - LLM-powered doc generation
   - `host-services/analysis/feature-analyzer/pr_creator.py` - Automated PR creation
+  - `host-services/analysis/feature-analyzer/rollback.py` - Rollback utilities (Phase 4)
   - `host-services/analysis/feature-analyzer/feature-analyzer-watcher.service` - Systemd service
   - `host-services/analysis/feature-analyzer/feature-analyzer-watcher.timer` - 15-min timer
   - `~/.local/share/feature-analyzer/state.json` - State persistence
@@ -170,4 +172,4 @@ When ADR status changes, corresponding feature entries should be updated:
 ---
 
 **Last Updated**: 2025-12-01
-**Maintained By**: Feature Analyzer (Phase 3 implemented) + Manual updates
+**Maintained By**: Feature Analyzer (Phase 4 implemented) + Manual updates

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Documentation Generator - LLM-Powered Content Generation (Phase 3)
+Documentation Generator - LLM-Powered Content Generation (Phase 3-4)
 
 This module uses jib containers to generate updated documentation content
 based on ADR changes. It spawns Claude-powered agents to analyze ADRs and
@@ -10,7 +10,9 @@ The generator:
 1. Analyzes ADR content to understand the change
 2. Maps to affected documentation files
 3. Generates updated content for each affected doc
-4. Returns proposed updates for review
+4. Injects HTML comment metadata for traceability (Phase 4)
+5. Validates updates with full validation suite (Phase 4)
+6. Returns proposed updates for review
 
 Usage:
     generator = DocGenerator(repo_root)
@@ -20,6 +22,7 @@ Usage:
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,6 +47,8 @@ class GeneratedUpdate:
     confidence: float  # 0.0-1.0
     validation_passed: bool = False
     validation_errors: list[str] = field(default_factory=list)
+    adr_reference: str = ""  # ADR filename for traceability metadata
+    update_timestamp: str = ""  # ISO timestamp of update generation
 
 
 @dataclass
@@ -395,26 +400,35 @@ Output ONLY the updated documentation content. Do not include any explanation or
 
         return result
 
-    def validate_update(self, original: str, updated: str) -> tuple[bool, list[str]]:
+    def validate_update(
+        self, original: str, updated: str, adr_content: str | None = None
+    ) -> tuple[bool, list[str]]:
         """
         Validate a proposed documentation update.
 
-        Checks:
+        Phase 4 Full Validation Suite (6 checks):
         1. Non-destructive (document length doesn't shrink >50%)
-        2. Major sections preserved
-        3. Link count doesn't decrease significantly
-        4. Diff within bounds (max 40% changed)
+        2. Major sections preserved (## headers maintained)
+        3. Link preservation (links not accidentally removed)
+        4. Diff bounds (max 40% of doc changed)
+        5. Structure preservation (document hierarchy maintained)
+        6. Traceability (new claims traceable to ADR)
+
+        Args:
+            original: Original document content
+            updated: Proposed updated content
+            adr_content: Optional ADR content for traceability validation
 
         Returns: (passed, list of errors)
         """
         errors = []
 
-        # Check 1: Document length
+        # Check 1: Non-destructive - document length doesn't shrink >50%
         if len(updated) < len(original) * 0.5:
             reduction = 100 - (len(updated) / len(original) * 100)
             errors.append(f"Document length shrunk by {reduction:.0f}% (max 50% allowed)")
 
-        # Check 2: Major sections preserved
+        # Check 2: Major sections preserved (## level headers)
         original_headers = [line for line in original.split("\n") if line.startswith("## ")]
         updated_headers = [line for line in updated.split("\n") if line.startswith("## ")]
 
@@ -430,7 +444,7 @@ Output ONLY the updated documentation content. Do not include any explanation or
         if len(updated_links) < len(original_links) * 0.7:
             errors.append(f"Links reduced from {len(original_links)} to {len(updated_links)}")
 
-        # Check 4: Diff bounds
+        # Check 4: Diff bounds (max 40% change)
         diff_chars = abs(len(original) - len(updated))
         max_allowed = len(original) * 0.4
         if diff_chars > max_allowed:
@@ -438,18 +452,160 @@ Output ONLY the updated documentation content. Do not include any explanation or
                 f"Changes exceed 40% threshold ({diff_chars} chars, max {max_allowed:.0f})"
             )
 
+        # Check 5: Structure preservation (document hierarchy maintained)
+        # Ensure heading hierarchy is valid (no # followed directly by ###)
+        original_heading_levels = self._extract_heading_levels(original)
+        updated_heading_levels = self._extract_heading_levels(updated)
+
+        # Check that we don't remove top-level structure
+        if original_heading_levels and updated_heading_levels:
+            # Verify minimum heading level is preserved
+            if min(updated_heading_levels) > min(original_heading_levels):
+                errors.append("Document hierarchy changed: top-level heading removed")
+
+            # Verify we don't have orphaned sub-headings (### without ##)
+            if self._has_orphaned_headings(updated):
+                errors.append("Invalid heading hierarchy: orphaned sub-headings detected")
+
+        # Check 6: Traceability (new content should relate to ADR)
+        if adr_content:
+            new_content = self._extract_new_content(original, updated)
+            if new_content and len(new_content) > 100:
+                # Check if new content contains terms from ADR
+                adr_terms = self._extract_key_terms(adr_content)
+                new_terms = self._extract_key_terms(new_content)
+
+                # At least some overlap expected for traceability
+                overlap = adr_terms & new_terms
+                if not overlap and len(new_content) > 200:
+                    errors.append(
+                        "Traceability warning: new content may not relate to ADR "
+                        "(no common terms found)"
+                    )
+
         return (len(errors) == 0, errors)
 
-    def validate_all_updates(self, result: GenerationResult) -> GenerationResult:
+    def _extract_heading_levels(self, content: str) -> list[int]:
+        """Extract heading levels from markdown content."""
+        levels = []
+        for line in content.split("\n"):
+            if line.startswith("#"):
+                level = len(line) - len(line.lstrip("#"))
+                if level > 0 and level <= 6:  # Valid markdown heading levels
+                    levels.append(level)
+        return levels
+
+    def _has_orphaned_headings(self, content: str) -> bool:
+        """Check if document has orphaned headings (e.g., ### without ##)."""
+        levels = self._extract_heading_levels(content)
+        if not levels:
+            return False
+
+        # Check for gaps in heading hierarchy
+        seen_levels = set()
+        for level in levels:
+            seen_levels.add(level)
+            # If we see level 3, we should have seen level 2
+            if level > 1 and (level - 1) not in seen_levels and level != min(seen_levels):
+                return True
+        return False
+
+    def _extract_new_content(self, original: str, updated: str) -> str:
+        """Extract content that was added in the update."""
+        original_lines = set(original.split("\n"))
+        updated_lines = updated.split("\n")
+        new_lines = [line for line in updated_lines if line not in original_lines]
+        return "\n".join(new_lines)
+
+    def _extract_key_terms(self, content: str) -> set[str]:
+        """Extract key terms from content for traceability checking."""
+        # Extract words longer than 4 characters, excluding common words
+        common_words = {
+            "this", "that", "with", "from", "have", "will", "would", "could",
+            "should", "about", "which", "their", "there", "these", "those",
+            "other", "being", "using", "after", "before"
+        }
+        words = re.findall(r"\b[a-zA-Z]{5,}\b", content.lower())
+        return set(words) - common_words
+
+    def validate_all_updates(
+        self, result: GenerationResult, adr_content: str | None = None
+    ) -> GenerationResult:
         """
         Validate all updates in a GenerationResult.
 
         Updates the validation_passed and validation_errors fields.
+
+        Args:
+            result: GenerationResult containing updates to validate
+            adr_content: Optional ADR content for traceability validation (Phase 4)
         """
         for update in result.updates:
-            passed, errors = self.validate_update(update.original_content, update.updated_content)
+            passed, errors = self.validate_update(
+                update.original_content, update.updated_content, adr_content
+            )
             update.validation_passed = passed
             update.validation_errors = errors
+
+        return result
+
+    def inject_metadata_comments(
+        self, content: str, adr_filename: str, timestamp: str | None = None
+    ) -> str:
+        """
+        Inject HTML comment metadata into updated documentation (Phase 4).
+
+        Adds traceability metadata as HTML comments that:
+        - Enable filtering: grep -r "Auto-updated from" docs/
+        - Provide audit trail for auto-generated changes
+        - Don't affect rendered markdown
+
+        Args:
+            content: Document content to inject metadata into
+            adr_filename: ADR filename (e.g., "ADR-Feature-Analyzer.md")
+            timestamp: Optional ISO timestamp (defaults to now)
+
+        Returns:
+            Content with metadata comment injected at the end
+        """
+        if timestamp is None:
+            timestamp = datetime.now(UTC).strftime("%Y-%m-%d")
+
+        # Create metadata comment
+        metadata_comment = f"\n<!-- Auto-updated from {adr_filename} on {timestamp} -->\n"
+
+        # Check if this metadata already exists (avoid duplicates)
+        if f"Auto-updated from {adr_filename}" in content:
+            # Update existing timestamp
+            pattern = rf"<!-- Auto-updated from {re.escape(adr_filename)} on \d{{4}}-\d{{2}}-\d{{2}} -->"
+            return re.sub(pattern, metadata_comment.strip(), content)
+
+        # Add at the end of the file, before any trailing newlines
+        content = content.rstrip("\n")
+        return content + metadata_comment
+
+    def apply_metadata_to_updates(
+        self, result: GenerationResult, adr_filename: str
+    ) -> GenerationResult:
+        """
+        Apply metadata comments to all updates in a GenerationResult (Phase 4).
+
+        Args:
+            result: GenerationResult containing updates
+            adr_filename: ADR filename for metadata
+
+        Returns:
+            GenerationResult with metadata injected into updated_content
+        """
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%d")
+
+        for update in result.updates:
+            if update.updated_content and update.validation_passed:
+                update.updated_content = self.inject_metadata_comments(
+                    update.updated_content, adr_filename, timestamp
+                )
+                update.adr_reference = adr_filename
+                update.update_timestamp = timestamp
 
         return result
 
