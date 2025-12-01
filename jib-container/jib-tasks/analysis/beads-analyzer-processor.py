@@ -360,7 +360,9 @@ def identify_issues(tasks: list[BeadsTask], metrics: BeadsMetrics) -> list[Beads
             )
         )
 
-    notes_rate = (metrics.tasks_with_notes / metrics.total_tasks * 100) if metrics.total_tasks else 0
+    notes_rate = (
+        (metrics.tasks_with_notes / metrics.total_tasks * 100) if metrics.total_tasks else 0
+    )
     if notes_rate < 50 and metrics.total_tasks >= 5:
         no_notes = [t.id for t in tasks if not t.notes]
         issues.append(
@@ -389,7 +391,9 @@ def identify_issues(tasks: list[BeadsTask], metrics: BeadsMetrics) -> list[Beads
         )
 
     searchable_rate = (
-        (metrics.tasks_with_searchable_title / metrics.total_tasks * 100) if metrics.total_tasks else 0
+        (metrics.tasks_with_searchable_title / metrics.total_tasks * 100)
+        if metrics.total_tasks
+        else 0
     )
     if searchable_rate < 60 and metrics.total_tasks >= 5:
         bad_titles = [t.id for t in tasks if not is_searchable_title(t.title)]
@@ -409,8 +413,7 @@ def identify_issues(tasks: list[BeadsTask], metrics: BeadsMetrics) -> list[Beads
             t.id
             for t in tasks
             if not any(
-                l.lower().startswith(("slack", "pr-", "github", "jira", "task-"))
-                for l in t.labels
+                l.lower().startswith(("slack", "pr-", "github", "jira", "task-")) for l in t.labels
             )
         ]
         issues.append(
@@ -509,7 +512,9 @@ def generate_recommendations(metrics: BeadsMetrics, issues: list[BeadsIssue]) ->
 
     high_issues = [i for i in issues if i.severity == "high"]
     if high_issues:
-        recommendations.append(f"**Priority**: Address {len(high_issues)} high-severity issues first")
+        recommendations.append(
+            f"**Priority**: Address {len(high_issues)} high-severity issues first"
+        )
 
     notes_rate = metrics.tasks_with_notes / metrics.total_tasks if metrics.total_tasks else 0
     if notes_rate < 0.8:
@@ -603,9 +608,15 @@ Beads is a persistent task memory system that helps track work across container 
 - Closed: {metrics.tasks_closed}
 - In Progress: {metrics.tasks_in_progress}
 - Abandoned (>24h no update): {metrics.tasks_abandoned}
-- Tasks with Notes: {metrics.tasks_with_notes} ({100 * metrics.tasks_with_notes // max(1, metrics.total_tasks)}%)
-- Tasks with Labels: {metrics.tasks_with_labels} ({100 * metrics.tasks_with_labels // max(1, metrics.total_tasks)}%)
-- Searchable Titles: {metrics.tasks_with_searchable_title} ({100 * metrics.tasks_with_searchable_title // max(1, metrics.total_tasks)}%)
+- Tasks with Notes: {metrics.tasks_with_notes} ({
+        100 * metrics.tasks_with_notes // max(1, metrics.total_tasks)
+    }%)
+- Tasks with Labels: {metrics.tasks_with_labels} ({
+        100 * metrics.tasks_with_labels // max(1, metrics.total_tasks)
+    }%)
+- Searchable Titles: {metrics.tasks_with_searchable_title} ({
+        100 * metrics.tasks_with_searchable_title // max(1, metrics.total_tasks)
+    }%)
 - Avg Time to Close: {metrics.avg_time_to_close_hours:.1f} hours
 
 ## Task Distribution by Status
@@ -620,9 +631,13 @@ Beads is a persistent task memory system that helps track work across container 
 ## Sample Tasks (most recent {len(task_summaries)})
 {json.dumps(task_summaries, indent=2)}
 
-{f'''## Previous Report Metrics (for trend comparison)
+{
+        f'''## Previous Report Metrics (for trend comparison)
 {json.dumps(previous_report, indent=2)}
-''' if previous_report else "## Previous Report: None available (first report)"}
+'''
+        if previous_report
+        else "## Previous Report: None available (first report)"
+    }
 
 ---
 
@@ -834,21 +849,32 @@ def generate_report(
     """Generate markdown report."""
     now = datetime.now()
 
-    notes_rate = (metrics.tasks_with_notes / metrics.total_tasks * 100) if metrics.total_tasks else 0
-    label_rate = (metrics.tasks_with_labels / metrics.total_tasks * 100) if metrics.total_tasks else 0
+    notes_rate = (
+        (metrics.tasks_with_notes / metrics.total_tasks * 100) if metrics.total_tasks else 0
+    )
+    label_rate = (
+        (metrics.tasks_with_labels / metrics.total_tasks * 100) if metrics.total_tasks else 0
+    )
     searchable_rate = (
-        (metrics.tasks_with_searchable_title / metrics.total_tasks * 100) if metrics.total_tasks else 0
+        (metrics.tasks_with_searchable_title / metrics.total_tasks * 100)
+        if metrics.total_tasks
+        else 0
     )
 
     health_score = calculate_health_score(metrics, issues)
     emoji_name = get_health_emoji(health_score)
-    emoji_map = {"star": "star", "check": "white_check_mark", "warning": "warning", "alert": "rotating_light"}
+    emoji_map = {
+        "star": "star",
+        "check": "white_check_mark",
+        "warning": "warning",
+        "alert": "rotating_light",
+    }
 
     report = f"""# Beads Integration Health Report
 Generated: {now.strftime("%Y-%m-%d %H:%M:%S")}
 Period: Last {days} days
 
-## Health Score: {health_score}/100 :{emoji_map.get(emoji_name, 'question')}:
+## Health Score: {health_score}/100 :{emoji_map.get(emoji_name, "question")}:
 
 ## Executive Summary
 
@@ -926,7 +952,9 @@ Period: Last {days} days
 
 """
             if issue.task_ids:
-                report += "**Affected Tasks**: " + ", ".join(f"`{tid}`" for tid in issue.task_ids[:5])
+                report += "**Affected Tasks**: " + ", ".join(
+                    f"`{tid}`" for tid in issue.task_ids[:5]
+                )
                 if len(issue.task_ids) > 5:
                     report += f" (+{len(issue.task_ids) - 5} more)"
                 report += "\n\n"
@@ -1029,10 +1057,15 @@ def should_run_analysis(force: bool = False) -> bool:
     days_since_last_run = (datetime.now() - last_run).days
 
     if days_since_last_run >= 7:
-        print(f"Last analysis was {days_since_last_run} days ago - running analysis", file=sys.stderr)
+        print(
+            f"Last analysis was {days_since_last_run} days ago - running analysis", file=sys.stderr
+        )
         return True
     else:
-        print(f"Last analysis was {days_since_last_run} days ago (< 7 days) - skipping", file=sys.stderr)
+        print(
+            f"Last analysis was {days_since_last_run} days ago (< 7 days) - skipping",
+            file=sys.stderr,
+        )
         return False
 
 
@@ -1139,7 +1172,7 @@ def handle_run_analysis(context: dict) -> int:
     os.symlink(report_file.name, latest_report)
     os.symlink(metrics_file.name, latest_metrics)
 
-    print(f"\nAnalysis complete!", file=sys.stderr)
+    print("\nAnalysis complete!", file=sys.stderr)
     print(f"  Report: {report_file}", file=sys.stderr)
     print(f"  Metrics: {metrics_file}", file=sys.stderr)
 
@@ -1281,11 +1314,16 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
 
         # Create PR
         emoji_name = get_health_emoji(health_score)
-        emoji_map = {"star": ":star:", "check": ":white_check_mark:", "warning": ":warning:", "alert": ":rotating_light:"}
+        emoji_map = {
+            "star": ":star:",
+            "check": ":white_check_mark:",
+            "warning": ":warning:",
+            "alert": ":rotating_light:",
+        }
 
         pr_body = f"""## Beads Integration Health Report
 
-**Health Score**: {health_score}/100 {emoji_map.get(emoji_name, '')}
+**Health Score**: {health_score}/100 {emoji_map.get(emoji_name, "")}
 
 ### Quick Stats
 - Total Tasks: {metrics.total_tasks}
