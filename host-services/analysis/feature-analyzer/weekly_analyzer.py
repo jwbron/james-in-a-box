@@ -58,6 +58,7 @@ class DetectedFeature:
     confidence: float = 0.0  # 0.0-1.0
     adr_reference: str = ""  # Optional ADR if detected
     needs_review: bool = False  # True if confidence < 0.7
+    primary_file: str = ""  # The main implementation file (for deduplication)
 
 
 @dataclass
@@ -101,6 +102,39 @@ class WeeklyAnalyzer:
         "jib-container/scripts/": "Container Infrastructure",
         "jib-container/shared/": "Container Infrastructure",
     }
+
+    # Filenames that are typically internal utilities, not user-facing features
+    UTILITY_SCRIPT_PATTERNS = [
+        r"^setup\.py$",
+        r"^setup_.*\.py$",
+        r"^install\.py$",
+        r"^maintenance\.py$",
+        r"^create_symlink\.py$",
+        r"^__init__\.py$",
+        r"^conftest\.py$",
+        r"^config\.py$",
+        r"^settings\.py$",
+        r"^constants\.py$",
+        r"^types\.py$",
+        r"^models\.py$",
+        r"^exceptions\.py$",
+        r"^utils\.py$",
+        r"^helpers\.py$",
+        r"^common\.py$",
+        r"^base\.py$",
+        r".*_utils\.py$",
+        r".*_helpers\.py$",
+        r".*_common\.py$",
+    ]
+
+    # Directory patterns that contain internal utilities (not features)
+    UTILITY_DIRECTORY_PATTERNS = [
+        r"/utils/",
+        r"/helpers/",
+        r"/common/",
+        r"/internal/",
+        r"/lib/",
+    ]
 
     def __init__(self, repo_root: Path, use_llm: bool = True):
         """
@@ -213,6 +247,64 @@ class WeeklyAnalyzer:
                 return category
         return "Utilities"  # Default category
 
+    def is_utility_script(self, file_path: str) -> bool:
+        """
+        Check if a file is a utility/helper script that shouldn't be a feature.
+
+        These are internal scripts used for setup, maintenance, etc. that
+        are not user-facing capabilities.
+        """
+        filename = Path(file_path).name
+
+        # Check filename patterns
+        for pattern in self.UTILITY_SCRIPT_PATTERNS:
+            if re.match(pattern, filename, re.IGNORECASE):
+                return True
+
+        # Check directory patterns
+        for pattern in self.UTILITY_DIRECTORY_PATTERNS:
+            if re.search(pattern, file_path):
+                return True
+
+        return False
+
+    def extract_docstring(self, file_path: Path) -> str | None:
+        """
+        Extract the module-level docstring from a Python file.
+
+        Returns the first paragraph of the docstring, or None if not found.
+        """
+        if not file_path.exists():
+            return None
+
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            return None
+
+        # Try to find module docstring using regex
+        # Match triple-quoted strings at the start of the file
+        docstring_pattern = r'^(?:#!/.*\n)?(?:#.*\n)*\s*(?:\'\'\'|""")(.*?)(?:\'\'\'|""")'
+        match = re.search(docstring_pattern, content, re.DOTALL)
+
+        if not match:
+            return None
+
+        docstring = match.group(1).strip()
+
+        # Get first paragraph (up to first double newline or first sentence)
+        paragraphs = re.split(r"\n\s*\n", docstring)
+        first_para = paragraphs[0].strip()
+
+        # Clean up: replace newlines with spaces, collapse whitespace
+        first_para = re.sub(r"\s+", " ", first_para)
+
+        # Limit length
+        if len(first_para) > 200:
+            first_para = first_para[:197] + "..."
+
+        return first_para if first_para else None
+
     def is_significant_change(self, diff: str) -> bool:
         """
         Check if a diff represents a significant change (not just refactoring).
@@ -295,26 +387,42 @@ class WeeklyAnalyzer:
 # Instructions
 
 For each new feature identified, extract:
-1. **name**: A clear, concise feature name (e.g., "Weekly Code Analyzer")
-2. **description**: One sentence describing what it does
+1. **name**: A clear, concise feature name using Title Case (e.g., "Weekly Code Analyzer", "Slack Thread Handler")
+2. **description**: A MEANINGFUL one-sentence description explaining:
+   - WHAT the feature does (its purpose)
+   - WHO benefits from it (user, developer, system)
+   - HOW it helps (the value it provides)
+   Example: "Automatically syncs Confluence documentation to local storage for offline access"
+   NOT: "New tool at path/to/file.py" (too generic!)
 3. **category**: One of: "Analysis & Documentation", "Context Sync", "Slack Integration", "Task Tracking", "Git & GitHub Integration", "Container Infrastructure", "Utilities"
 4. **files**: List of main implementation files (max 5)
-5. **tests**: List of test files if any
-6. **confidence**: 0.0-1.0 how confident you are this is a real user-facing feature
+5. **primary_file**: The single main implementation file (for deduplication)
+6. **tests**: List of test files if any
+7. **confidence**: 0.0-1.0 how confident you are this is a real user-facing feature
 
 # What counts as a feature?
-- New CLI tools or commands
-- New services (systemd services, daemons)
-- New Python modules with public APIs
-- New capabilities users can interact with
+- New CLI tools or commands that users run directly
+- New services (systemd services, daemons) that provide ongoing functionality
+- New Python modules with public APIs that other code can use
+- New capabilities that users or operators can interact with
+- New connectors or integrations with external systems
 
 # What does NOT count as a feature?
-- Internal refactoring
-- Bug fixes
+- Internal refactoring or code reorganization
+- Bug fixes to existing features
 - Documentation changes
 - Test improvements
 - Config file changes
-- Minor utility functions
+- Minor utility functions (helpers, utils, common code)
+- Setup scripts (setup.py, install.py, maintenance.py)
+- Internal library code in /utils/, /helpers/, /common/ directories
+- Abstract base classes or internal type definitions
+
+# IMPORTANT: Avoid Duplicates
+
+If you see multiple files that are part of the SAME logical feature, combine them into ONE feature entry.
+For example, if there's a "connector.py" in both jira/ and confluence/ directories, these are TWO separate features, not one.
+But if there's "handler.py" and "processor.py" in the same directory working together, that's ONE feature.
 
 # Output Format
 
@@ -322,11 +430,12 @@ Return a JSON array of features. Example:
 ```json
 [
   {{
-    "name": "Feature Name",
-    "description": "One sentence description",
-    "category": "Category Name",
-    "files": ["path/to/main.py", "path/to/helper.py"],
-    "tests": ["tests/test_feature.py"],
+    "name": "Confluence Documentation Sync",
+    "description": "Automatically syncs Confluence spaces to local storage for offline access and context injection",
+    "category": "Context Sync",
+    "files": ["host-services/sync/context-sync/connectors/confluence/connector.py"],
+    "primary_file": "host-services/sync/context-sync/connectors/confluence/connector.py",
+    "tests": ["tests/test_confluence_sync.py"],
     "confidence": 0.85,
     "introduced_in_commit": "abc12345"
   }}
@@ -358,16 +467,19 @@ Only output the JSON, no other text.
                     continue
 
                 confidence = float(item.get("confidence", 0.5))
+                files = item.get("files", [])
+                primary_file = item.get("primary_file", files[0] if files else "")
                 feature = DetectedFeature(
                     name=item.get("name", "Unknown"),
                     description=item.get("description", ""),
                     category=item.get("category", "Utilities"),
-                    files=item.get("files", []),
+                    files=files,
                     tests=item.get("tests", []),
                     confidence=confidence,
                     introduced_in_commit=item.get("introduced_in_commit", ""),
                     date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
                     needs_review=confidence < 0.7,
+                    primary_file=primary_file,
                 )
                 features.append(feature)
 
@@ -410,6 +522,10 @@ Only output the JSON, no other text.
         - New files in feature directories with main() function
         - New systemd service files
         - New CLI scripts
+
+        Excludes:
+        - Utility scripts (setup.py, maintenance.py, etc.)
+        - Files in utility directories (/utils/, /helpers/, etc.)
         """
         features = []
         seen_files = set()
@@ -432,6 +548,10 @@ Only output the JSON, no other text.
                 if not self.is_feature_directory(file_path):
                     continue
 
+                # Skip utility scripts
+                if self.is_utility_script(file_path):
+                    continue
+
                 # Check if file exists and has main function
                 full_path = self.repo_root / file_path
                 if not full_path.exists():
@@ -451,13 +571,40 @@ Only output the JSON, no other text.
 
                 if has_main:
                     # Extract name from file path
-                    name = Path(file_path).stem.replace("_", " ").title()
+                    file_stem = Path(file_path).stem
+                    name = file_stem.replace("_", " ").replace("-", " ").title()
                     if name.endswith(" Py"):
                         name = name[:-3]
 
+                    # For generic names like "Connector", prefix with parent directory
+                    generic_names = {"connector", "handler", "processor", "service", "client", "manager"}
+                    if file_stem.lower() in generic_names:
+                        parent_dir = Path(file_path).parent.name
+                        grandparent_dir = Path(file_path).parent.parent.name
+                        # Use grandparent if parent is also generic (like "connectors/confluence/connector.py")
+                        context_dir = grandparent_dir if parent_dir.lower() in generic_names else parent_dir
+                        name = f"{context_dir.replace('_', ' ').replace('-', ' ').title()} {name}"
+
+                    # Try to get a meaningful description from docstring
+                    docstring = self.extract_docstring(full_path)
+
+                    # Skip generic docstrings that aren't helpful
+                    generic_docstrings = {
+                        "cli entry point",
+                        "main entry point",
+                        "entry point",
+                        "main function",
+                    }
+                    if docstring and docstring.lower().strip(".") not in generic_docstrings:
+                        description = docstring
+                    else:
+                        # Fall back to generating description from name and path
+                        parent_dir = Path(file_path).parent.name
+                        description = f"{name} - provides {parent_dir.replace('_', ' ').replace('-', ' ')} functionality"
+
                     feature = DetectedFeature(
                         name=name,
-                        description=f"New tool at {file_path}",
+                        description=description,
                         category=self.get_category_for_file(file_path),
                         files=[file_path],
                         tests=[],
@@ -465,36 +612,60 @@ Only output the JSON, no other text.
                         introduced_in_commit=commit.sha[:8],
                         date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
                         needs_review=True,
+                        primary_file=file_path,
                     )
                     features.append(feature)
 
         return features
 
-    def get_existing_features(self) -> set[str]:
-        """Get set of feature names already in FEATURES.md."""
+    def get_existing_features(self) -> tuple[set[str], set[str]]:
+        """
+        Get set of feature names and file paths already in FEATURES.md.
+
+        Returns:
+            Tuple of (feature_names, file_paths) - both as lowercase sets
+        """
         if not self.features_md.exists():
-            return set()
+            return set(), set()
 
         content = self.features_md.read_text()
-        existing = set()
+        existing_names = set()
+        existing_files = set()
 
         # Match feature headers: #### Feature Name **[status]**
-        pattern = r"####\s+(.+?)\s+\*\*\["
-        for match in re.finditer(pattern, content):
-            existing.add(match.group(1).lower())
+        name_pattern = r"####\s+(.+?)\s+\*\*\["
+        for match in re.finditer(name_pattern, content):
+            existing_names.add(match.group(1).lower())
 
-        return existing
+        # Match implementation file paths: - `path/to/file.py`
+        file_pattern = r"`([^`]+\.py)`"
+        for match in re.finditer(file_pattern, content):
+            existing_files.add(match.group(1).lower())
+
+        return existing_names, existing_files
 
     def filter_new_features(
-        self, detected: list[DetectedFeature], existing: set[str]
+        self,
+        detected: list[DetectedFeature],
+        existing_names: set[str],
+        existing_files: set[str] | None = None,
     ) -> tuple[list[DetectedFeature], list[tuple[str, str]]]:
         """
         Filter detected features to only new ones.
+
+        Args:
+            detected: List of detected features
+            existing_names: Set of existing feature names (lowercase)
+            existing_files: Set of existing implementation file paths (lowercase)
 
         Returns: (new_features, skipped_with_reasons)
         """
         new_features = []
         skipped = []
+        seen_primary_files = set()  # Track primary files within this batch
+
+        if existing_files is None:
+            existing_files = set()
 
         for feature in detected:
             name_lower = feature.name.lower()
@@ -502,14 +673,36 @@ Only output the JSON, no other text.
             name_normalized = name_lower.replace("-", " ").replace("_", " ")
             name_words = set(name_normalized.split())
 
-            # Check if already exists (exact match)
-            if name_lower in existing or name_normalized in existing:
+            # Check for duplicate by primary file path (most reliable)
+            primary_file_lower = feature.primary_file.lower() if feature.primary_file else ""
+            if primary_file_lower:
+                if primary_file_lower in existing_files:
+                    skipped.append((feature.name, f"File already documented: {feature.primary_file}"))
+                    continue
+                if primary_file_lower in seen_primary_files:
+                    skipped.append((feature.name, f"Duplicate file in batch: {feature.primary_file}"))
+                    continue
+
+            # Check any of the files if primary_file is empty
+            if not primary_file_lower and feature.files:
+                duplicate_file = None
+                for f in feature.files:
+                    f_lower = f.lower()
+                    if f_lower in existing_files or f_lower in seen_primary_files:
+                        duplicate_file = f
+                        break
+                if duplicate_file:
+                    skipped.append((feature.name, f"File already documented: {duplicate_file}"))
+                    continue
+
+            # Check if already exists by name (exact match)
+            if name_lower in existing_names or name_normalized in existing_names:
                 skipped.append((feature.name, "Already in FEATURES.md"))
                 continue
 
             # Check for similar names (fuzzy match using word overlap)
             is_similar = False
-            for existing_name in existing:
+            for existing_name in existing_names:
                 existing_words = set(existing_name.split())
                 # If any significant word matches
                 common = name_words & existing_words
@@ -525,7 +718,7 @@ Only output the JSON, no other text.
                 continue
 
             # Check for substring match
-            similar = [e for e in existing if name_lower in e or e in name_lower]
+            similar = [e for e in existing_names if name_lower in e or e in name_lower]
             if similar:
                 skipped.append((feature.name, f"Similar to existing: {similar[0]}"))
                 continue
@@ -534,6 +727,10 @@ Only output the JSON, no other text.
             if feature.confidence < 0.3:
                 skipped.append((feature.name, f"Low confidence ({feature.confidence:.0%})"))
                 continue
+
+            # Track this feature's primary file to avoid duplicates within this batch
+            if primary_file_lower:
+                seen_primary_files.add(primary_file_lower)
 
             new_features.append(feature)
 
@@ -669,8 +866,8 @@ Only output the JSON, no other text.
             return result
 
         # Filter to new features
-        existing = self.get_existing_features()
-        new_features, skipped = self.filter_new_features(detected, existing)
+        existing_names, existing_files = self.get_existing_features()
+        new_features, skipped = self.filter_new_features(detected, existing_names, existing_files)
         result.features_skipped = skipped
 
         print(f"    {len(new_features)} new features (skipped {len(skipped)})")
