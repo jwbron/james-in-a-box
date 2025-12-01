@@ -1116,6 +1116,154 @@ Weekly codebase analysis can include:
 
 **Rejected because:** Human review essential for prompt changes. Automated proposals, manual approval.
 
+## Research Updates (December 2025)
+
+Based on external research into LLM agent observability, self-improvement mechanisms, and failure detection patterns, this section captures current industry trends and best practices that may inform future enhancements to this ADR.
+
+### OpenTelemetry GenAI Semantic Conventions
+
+The OpenTelemetry community has made significant progress in standardizing AI agent observability. The [AI Agent Observability standards](https://opentelemetry.io/blog/2025/ai-agent-observability/) published in 2025 provide evolving conventions specifically for agent tracing.
+
+| Aspect | Current State | Industry Trend |
+|--------|---------------|----------------|
+| Trace format | Custom JSONL schema | OpenTelemetry [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) emerging as standard |
+| Agent spans | Task-level tracing | Specific [agent span conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/) with `create_agent` and `invoke_agent` operations |
+| Tool call tracing | Custom trace events | Nested spans with standardized attributes for inputs/outputs |
+| Framework support | Framework-agnostic | Conventions being defined for CrewAI, AutoGen, LangGraph, IBM Bee Stack |
+
+**Application to this ADR:**
+- Consider migrating trace format to OpenTelemetry GenAI semantic conventions for interoperability
+- The proposed [agentic systems conventions](https://github.com/open-telemetry/semantic-conventions/issues/2664) align with our taxonomy (tasks, actions, agents)
+- [OpenLLMetry](https://github.com/traceloop/openllmetry) provides ready-made instrumentation that could replace custom hook-based collection
+
+### Multi-Agent System Failure Taxonomy (MAST)
+
+Recent research has produced the first comprehensive [Multi-Agent System Failure Taxonomy (MAST)](https://arxiv.org/abs/2503.13657), which identifies 14 unique failure modes across 3 categories based on analysis of 1600+ execution traces.
+
+| MAST Category | Description | Overlap with ADR Taxonomy |
+|---------------|-------------|---------------------------|
+| System design issues | Architectural failures in agent coordination | Maps to Category 3 (Direction/Planning) |
+| Inter-agent misalignment | Communication failures between agents | Maps to Category 6 (Communication) |
+| Task verification | Failure to validate task completion | Maps to Category 5 (Reasoning Quality) |
+
+**Key finding:** Analysis of 1642 MAS execution traces revealed a **41% to 86.7% failure rate** across 7 state-of-the-art multi-agent systems. This validates the importance of systematic failure detection.
+
+**Application to this ADR:**
+- The MAST taxonomy complements our 7-category taxonomy and could inform future detector implementations
+- [Automated failure attribution research](https://arxiv.org/abs/2505.00212) (Who&When dataset) achieved only 53.5% accuracy in identifying failure-responsible agents—suggesting our human-in-the-loop approach for improvement proposals remains appropriate
+- Consider integrating the [KnowLoop framework](https://arxiv.org/abs/2406.00430) for uncertainty-based failure detection in closed-loop planning scenarios
+
+### Self-Improvement and Metacognitive Frameworks
+
+The ADR's metacognitive framework (Knowledge → Planning → Evaluation) aligns with the latest research. A 2025 [position paper at ICML](https://openreview.net/forum?id=4KhDd0Ozqe) argues that truly self-improving agents require three components:
+
+| Component | ADR Implementation | Research Recommendation |
+|-----------|-------------------|-------------------------|
+| Metacognitive Knowledge | Inefficiency detection engine | Add self-assessment of capability gaps |
+| Metacognitive Planning | Improvement proposer | Enable agents to decide *what* and *how* to learn |
+| Metacognitive Evaluation | Impact tracker | Implement reflection on learning experiences |
+
+**Emerging approaches:**
+- [PromptWizard](https://www.microsoft.com/en-us/research/blog/promptwizard-the-future-of-prompt-optimization-through-feedback-driven-self-evolving-prompts/) (Microsoft, January 2025): Self-evolving prompt optimization through iterative critique/refine cycles
+- [Self-Refine](https://selfrefine.info/): FEEDBACK → REFINE → FEEDBACK loops without supervised training
+- [Meta-prompting](https://krrai77.medium.com/meta-prompting-scaling-prompt-engineering-with-llms-4a383e641bd0): LLMs that write, evaluate, and select their own prompts
+
+**Application to this ADR:**
+- Phase 4's improvement proposer could incorporate PromptWizard's self-critique mechanism for higher-quality proposals
+- Consider implementing Self-Refine patterns within the agent itself (real-time self-correction) as a future enhancement
+- The "automated prompt modification without human review" alternative (rejected) may be worth reconsidering with human-in-the-loop guardrails from PromptWizard
+
+### Token Efficiency and Cost Optimization
+
+Industry research shows significant cost optimization potential:
+
+| Technique | Potential Savings | Applicability |
+|-----------|------------------|---------------|
+| Prompt engineering (concise prompts) | 30-50% | High - directly addresses verbose responses (Category 6) |
+| Dynamic model routing | Up to 40% | Medium - route simple queries to cheaper models |
+| Response caching | 80% reduction per cached call | High - addresses redundant reads (Category 7) |
+| RAG for context injection | 20-30% prompt size reduction | Medium - reduces excessive context loading |
+
+**Key industry statistics:**
+- Average monthly AI spend rose from $63K (2024) to $85.5K (2025) — [36% increase](https://bitskingdom.com/blog/ai-pricing-2025-costs-openai-claude-gemini/)
+- Output tokens cost 3-5x more than input tokens, making response length control critical
+- [Academic research](https://ai.koombea.com/blog/llm-cost-optimization) shows strategic optimization can cut inference costs by up to 98%
+
+**Application to this ADR:**
+- Category 7 (Resource Efficiency) detectors should prioritize output token waste given the 3-5x cost multiplier
+- Consider adding a "model routing" inefficiency detector for tasks where a simpler model would suffice
+- Caching strategies could be added to recommendations when redundant read patterns are detected
+
+### Observability Tool Landscape
+
+The LLM observability ecosystem has matured significantly:
+
+| Tool | Strengths | Limitations |
+|------|-----------|-------------|
+| [Langfuse](https://langfuse.com/) | Production-ready, prompt management, large OSS adoption | Agent evaluation less mature, some features paywalled |
+| [Arize Phoenix](https://arize.com/docs/phoenix/) | Easy self-hosting, strong RAG/agent evaluation, drift detection | Less focus on operational metrics |
+| [OpenLLMetry](https://github.com/traceloop/openllmetry) | OpenTelemetry-native, vendor-neutral | Requires integration work |
+
+**Partnership on AI Guidelines:**
+The [Partnership on AI's guidance on real-time failure detection](https://partnershiponai.org/wp-content/uploads/2025/09/agents-real-time-failure-detection.pdf) notes:
+> "Failure detection should not trigger just because the agent tries a path that does not work out immediately. Exploration, iteration, or partial progress is often part of intelligent behavior."
+
+This aligns with our ADR's principle of "Observe, Don't Block."
+
+**Application to this ADR:**
+- Consider Langfuse or Phoenix integration for visualization layer (ADR Alternative 2 noted this as future possibility)
+- Our custom taxonomy remains valuable—generic tools lack our specific inefficiency categories
+- The observational approach in this ADR aligns with industry best practices for AI agent monitoring
+
+### Hallucination Detection Research
+
+Recent hallucination research provides improved detection methods relevant to Category 5 (Reasoning Quality):
+
+| Detection Method | Description | Relevance |
+|-----------------|-------------|-----------|
+| [Semantic entropy](https://www.nature.com/articles/s41586-024-07421-0) (Nature, 2024) | Compute uncertainty at meaning level, not word sequences | Could improve Hallucinated Context detection |
+| [Internal representation (MHAD)](https://www.ijcai.org/proceedings/2025/0929.pdf) | Use neuron outputs to form "hallucination awareness vector" | Suggests LLMs know when they hallucinate |
+| [Agent-specific taxonomy](https://ui.adsabs.harvard.edu/abs/2025arXiv250918970L/abstract) | 18 triggering causes for agent hallucinations at different stages | Complements our Category 5 sub-categories |
+
+**Key insight from MHAD:** LLMs demonstrate awareness of generating hallucinations with high confidence, making internal-representation-based detection more reliable than uncertainty-based methods.
+
+**Application to this ADR:**
+- Phase 2's remaining Category 5 (Reasoning Quality) implementation could incorporate semantic entropy approaches
+- The agent-specific hallucination taxonomy provides a more granular view of hallucination causes than our current sub-categories
+
+### Durable Agent Loops and Retry Handling
+
+Research on [durable AI loops](https://www.restate.dev/blog/durable-ai-loops-fault-tolerance-across-frameworks-and-without-handcuffs) emphasizes treating agent loops like distributed systems:
+
+> "Agents behave a lot like distributed systems: every tool call is a remote hop, every user interaction is a pause, every retry risks doing the same work twice."
+
+**Best practices for retry handling:**
+1. Wrap expensive operations in durable steps that survive crashes
+2. Classify errors as transient vs. permanent before retrying
+3. Implement state management to avoid duplicate work
+4. Use [LLM-informed retry bug detection](https://www.chameleoncloud.org/blog/2024/10/21/if-at-first-you-dont-succeed-try-try-again-insights-and-llm-informed-tooling-for-detecting-retry-bugs-in-software-systems/) (Wasabi tool) combining static analysis with semantic understanding
+
+**Application to this ADR:**
+- Category 4 (Tool Execution) retry storm detection aligns with industry concerns about indiscriminate retries
+- Consider adding error classification guidance to improvement proposals (transient vs. permanent errors)
+- The Wasabi approach (combining static analysis with LLM semantic understanding) could enhance our retry pattern detection
+
+### Research Sources
+
+- [OpenTelemetry AI Agent Observability](https://opentelemetry.io/blog/2025/ai-agent-observability/) - Evolving standards for AI agent tracing
+- [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) - Standardized trace formats
+- [Why Do Multi-Agent LLM Systems Fail? (MAST)](https://arxiv.org/abs/2503.13657) - Comprehensive failure taxonomy
+- [Automated Failure Attribution (Who&When)](https://arxiv.org/abs/2505.00212) - Research on identifying failure-responsible agents
+- [Position: Truly Self-Improving Agents](https://openreview.net/forum?id=4KhDd0Ozqe) - Metacognitive framework for self-improvement
+- [PromptWizard](https://www.microsoft.com/en-us/research/blog/promptwizard-the-future-of-prompt-optimization-through-feedback-driven-self-evolving-prompts/) - Self-evolving prompt optimization
+- [Self-Refine](https://selfrefine.info/) - Iterative refinement with self-feedback
+- [LLM Cost Optimization Guide](https://ai.koombea.com/blog/llm-cost-optimization) - Strategies for reducing AI expenses
+- [Token Optimization Best Practices](https://sparkco.ai/blog/optimizing-token-usage-for-ai-efficiency-in-2025) - 2025 efficiency techniques
+- [Langfuse vs Arize Phoenix Comparison](https://langfuse.com/faq/all/best-phoenix-arize-alternatives) - Observability tool landscape
+- [Durable AI Loops](https://www.restate.dev/blog/durable-ai-loops-fault-tolerance-across-frameworks-and-without-handcuffs) - Fault tolerance in agent loops
+- [Semantic Entropy for Hallucination Detection](https://www.nature.com/articles/s41586-024-07421-0) - Nature paper on detection methods
+- [Partnership on AI: Real-Time Failure Detection](https://partnershiponai.org/wp-content/uploads/2025/09/agents-real-time-failure-detection.pdf) - Industry guidelines
+
 ## References
 
 ### Research Papers
