@@ -486,6 +486,49 @@ def resume_pipeline(beads_id):
 
 Context engineering is **the #1 job of engineers building AI agents**. This section provides detailed guidance on how to structure and deliver context to agents effectively.
 
+### ACE Framework Reference
+
+The [ACE (Agentic Context Engineering)](https://arxiv.org/abs/2510.04618) framework provides academic grounding for context management in agent systems. Research shows ACE achieves **+10.6% improvement on agent tasks** through systematic context optimization.
+
+**ACE Core Concepts:**
+
+| Concept | Description | Application |
+|---------|-------------|-------------|
+| **Evolving Playbooks** | Context as living documents that improve over time | Store successful context patterns for reuse |
+| **Generation Phase** | Creating initial context from task requirements | Planner agent constructs initial context |
+| **Reflection Phase** | Evaluating context effectiveness after execution | Reviewer agent assesses what context helped/hurt |
+| **Curation Phase** | Refining context based on outcomes | Update templates based on success/failure patterns |
+
+**Applying ACE to jib:**
+
+```python
+class ACEContextManager:
+    """Manages context lifecycle following ACE principles."""
+
+    def generate_context(self, task: dict) -> dict:
+        """Generation phase: Create initial context from task."""
+        return {
+            "requirements": self.extract_requirements(task),
+            "relevant_files": self.identify_relevant_files(task),
+            "historical_patterns": self.load_similar_task_patterns(task),
+        }
+
+    def reflect_on_context(self, task: dict, outcome: dict) -> dict:
+        """Reflection phase: What context was useful/harmful?"""
+        return {
+            "useful_context": outcome.get("context_used", []),
+            "unused_context": self.identify_unused(task, outcome),
+            "missing_context": outcome.get("context_needed", []),
+        }
+
+    def curate_context(self, reflection: dict):
+        """Curation phase: Update templates for future tasks."""
+        if reflection["missing_context"]:
+            self.update_context_templates(reflection["missing_context"])
+        if reflection["unused_context"]:
+            self.prune_unnecessary_context(reflection["unused_context"])
+```
+
 ### The Context Hierarchy
 
 Context should be layered based on scope and relevance:
@@ -633,6 +676,80 @@ agent:
 ```
 
 ## Prompt Architecture
+
+### Cache Optimization for Prompts
+
+Based on lessons from the [Manus engineering blog](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus), cache-aware prompt design can significantly reduce latency and costs:
+
+**Key Principles:**
+
+| Principle | Description | Implementation |
+|-----------|-------------|----------------|
+| **Keep prefix stable** | System prompt and identity should rarely change | Put static content at the beginning of prompts |
+| **Make context append-only** | Add new information at the end, don't modify middle | Structure prompts so new context appends |
+| **Ensure deterministic serialization** | Same context should produce identical prompt text | Use sorted keys, consistent formatting |
+
+**Cache-Optimized Prompt Structure:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ CACHE-FRIENDLY ZONE (Stable - rarely changes)                    │
+│                                                                   │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ System Prompt (agent identity, behaviors, constraints)       │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ Organization Standards (coding style, security rules)        │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ Output Format Requirements (JSON schema, structure)          │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────────────┤
+│ VARIABLE ZONE (Append-only - changes per invocation)            │
+│                                                                   │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ Task Context (current task description)                      │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ Dynamic Context (file contents, prior stage outputs)         │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ Current Instruction (specific action for this invocation)    │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Tips:**
+
+```python
+class CacheAwarePromptComposer:
+    """Compose prompts with cache optimization in mind."""
+
+    def compose(self, agent_type: str, task_context: dict) -> str:
+        # Static prefix (cacheable) - always first
+        prompt_parts = [
+            self.get_system_prompt(agent_type),  # Stable
+            self.get_org_standards(),            # Stable
+            self.get_output_format(agent_type),  # Stable
+        ]
+
+        # Dynamic suffix (append-only) - always last
+        prompt_parts.extend([
+            self.format_task_context(task_context),
+            self.format_dynamic_context(task_context.get("files", [])),
+            self.format_instruction(task_context.get("instruction")),
+        ])
+
+        return "\n\n".join(prompt_parts)
+
+    def format_dynamic_context(self, files: list) -> str:
+        # Deterministic ordering for cache consistency
+        sorted_files = sorted(files, key=lambda f: f["path"])
+        return "\n".join(
+            f"## {f['path']}\n```\n{f['content']}\n```"
+            for f in sorted_files
+        )
+```
 
 ### Layered Prompt Structure
 
@@ -1391,6 +1508,82 @@ Based on discussion with Tyler Burleigh, review stages can be configured at diff
 
 > **Validation Note:** This recommendation should be validated empirically once the system is in production. Different workflow types (bug fixes vs. feature development vs. refactoring) may have different optimal review cadences.
 
+### Proactive vs Reactive Review Modes
+
+Reviews can operate in two distinct modes, each suited to different situations:
+
+| Mode | Description | When to Use | Cache Impact |
+|------|-------------|-------------|--------------|
+| **Proactive** | AI-led summaries generated automatically after each stage | Standard workflows, status updates | May invalidate cache if summaries inserted mid-context |
+| **Reactive** | On-demand Q&A when human requests review | Human-in-the-loop workflows, ad-hoc checks | Cache-friendly (appends to context) |
+
+**Proactive Review Pattern:**
+
+```python
+class ProactiveReviewer:
+    """Generates review summaries automatically after each stage."""
+
+    async def review_stage_output(self, stage: str, output: dict) -> dict:
+        """Proactively review and summarize stage output."""
+        return await self.review_agent.analyze({
+            "stage": stage,
+            "output": output,
+            "instruction": """
+                Provide a brief summary:
+                1. What was accomplished
+                2. Any concerns or issues
+                3. Readiness for next stage (ready/blocked/needs-review)
+            """,
+        })
+```
+
+**Reactive Review Pattern:**
+
+```python
+class ReactiveReviewer:
+    """Responds to on-demand review requests."""
+
+    async def handle_review_request(self, query: str, context: dict) -> dict:
+        """Answer specific questions about work in progress."""
+        # Append query to existing context (cache-friendly)
+        augmented_context = {
+            **context,
+            "review_query": query,
+        }
+        return await self.review_agent.respond(augmented_context)
+```
+
+**Hybrid Approach (Recommended):**
+
+Combine both modes for optimal results:
+- Use **proactive summaries** at phase boundaries (stored separately, not in prompt cache)
+- Use **reactive Q&A** for detailed investigation
+- Keep proactive summaries brief to minimize token usage
+- Store summaries in Beads notes rather than inline context
+
+```python
+class HybridReviewStrategy:
+    """Combines proactive and reactive review modes."""
+
+    async def on_phase_complete(self, phase: str, output: dict):
+        # Proactive: Generate and store summary
+        summary = await self.proactive_reviewer.review_stage_output(phase, output)
+        await self.beads.update_notes(f"Phase {phase} summary: {summary}")
+
+    async def on_human_query(self, query: str):
+        # Reactive: Answer specific questions
+        context = await self.load_current_context()
+        return await self.reactive_reviewer.handle_review_request(query, context)
+```
+
+**Cache-Aware Review Feedback:**
+
+When integrating review feedback back into agent context, follow these cache-friendly patterns:
+
+1. **Store feedback separately**: Keep review comments in Beads, reference by ID in context
+2. **Summarize before inclusion**: Include summarized feedback, not full review history
+3. **Append, don't insert**: Add feedback at the end of context, preserving stable prefix
+
 ## Model Selection Strategy
 
 ### Task-Complexity Mapping
@@ -1484,6 +1677,32 @@ async def consensus_decision(query, context):
         instruction="Identify consensus and note significant disagreements"
     )
 ```
+
+### Framework Comparison for Future Implementation
+
+While this ADR recommends a custom implementation (see [Alternative 3](#alternative-3-agentic-framework-langgraph-crewai-autogen-microsoft-agent-framework) for full analysis), the following quick reference may inform future decisions if we need to adopt or integrate an external framework:
+
+| Framework | Best For | Avoid If | jib Compatibility |
+|-----------|----------|----------|-------------------|
+| **[LangGraph](https://python.langchain.com/docs/langgraph)** | Complex workflows with cycles, sophisticated state management | Need quick iteration, simple linear pipelines | Good - graph model aligns with pipeline stages |
+| **[CrewAI](https://github.com/joaomdmoura/crewAI)** | Role-based teams, rapid prototyping, YAML-first config | Need fine-grained control, complex logging | Moderate - simpler but less flexible |
+| **[LlamaIndex](https://docs.llamaindex.ai/en/stable/)** | RAG-heavy workflows, document-centric agents | Primarily code execution tasks | Low - focused on retrieval, not code agents |
+| **[AutoGen](https://microsoft.github.io/autogen/)** | Research, multi-model conversations, LLM-to-LLM chat | Production stability, clean abstractions | Low - verbosity, no DAG support |
+| **[Microsoft Agent Framework](https://azure.microsoft.com/en-us/blog/introducing-microsoft-agent-framework/)** | Enterprise deployments, durability requirements | Avoiding Microsoft ecosystem lock-in | Unknown - too new (public preview) |
+
+**Decision Guidance:**
+
+- **Start custom, adopt later**: Build minimal custom orchestration first, adopt framework only if custom solution becomes a bottleneck
+- **Pattern borrowing**: Study framework patterns (LangGraph's graph cycles, CrewAI's role definitions) even without adopting the framework
+- **Integration points**: Consider MCP as the integration layer if external frameworks need to interact with jib agents
+
+**Framework Evaluation Criteria (when revisiting this decision):**
+
+1. Does it improve on our custom solution's weaknesses?
+2. Does it support Beads-based state management or require migration?
+3. What's the Claude Code integration story?
+4. Does the community actively maintain it?
+5. What's the lock-in risk?
 
 ## Failure Modes & Reliability
 
