@@ -520,7 +520,7 @@ The landscape for codebase analysis has evolved significantly:
 
 **Integration with Feature Analyzer ADR:**
 
-This section implements the "Weekly Code Analysis" component from the [Feature Analyzer - Documentation Sync](ADR-Feature-Analyzer-Documentation-Sync.md) ADR. While that ADR focuses on ADR-triggered documentation updates, the codebase analyzer provides the automated feature discovery mechanism.
+This section implements the "Weekly Code Analysis" component from the [Feature Analyzer - Documentation Sync](../implemented/ADR-Feature-Analyzer-Documentation-Sync.md) ADR. While that ADR focuses on ADR-triggered documentation updates, the codebase analyzer provides the automated feature discovery mechanism.
 
 #### 4.1 Feature Discovery Workflow
 
@@ -1161,7 +1161,7 @@ The multi-layered analysis approach and PR-based output pattern are established 
 | ADR | Relationship |
 |-----|--------------|
 | [LLM Documentation Index Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | Provides documentation infrastructure; Phase 6 research workflow shared |
-| [Feature Analyzer - Documentation Sync](ADR-Feature-Analyzer-Documentation-Sync.md) | Codebase analyzer provides feature discovery for FEATURES.md maintenance |
+| [Feature Analyzer - Documentation Sync](../implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Codebase analyzer provides feature discovery for FEATURES.md maintenance |
 | [Continuous System Reinforcement](ADR-Continuous-System-Reinforcement.md) | Analysis feeds into system improvement loop |
 
 ---
