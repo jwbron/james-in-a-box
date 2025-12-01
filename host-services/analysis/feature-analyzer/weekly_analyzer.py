@@ -48,7 +48,67 @@ from pathlib import Path
 
 # Add shared modules to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
+from claude import is_claude_available, run_claude
+
+
+def _run_claude_with_retry(
+    prompt: str,
+    cwd: Path,
+    context: str = "",
+    max_retries: int = 2,
+    timeout: int = 300,
+) -> tuple[bool, str, str]:
+    """Run Claude with retry logic and better error handling.
+
+    Args:
+        prompt: The prompt to send to Claude
+        cwd: Working directory for Claude
+        context: Context string for error messages (e.g., "consolidation", "dir:foo")
+        max_retries: Number of retry attempts on failure
+        timeout: Timeout in seconds (default 5 minutes)
+
+    Returns:
+        Tuple of (success, stdout, error_message)
+    """
+    context_prefix = f"[{context}] " if context else ""
+
+    # Verify Claude is available before attempting
+    if not is_claude_available():
+        return (False, "", f"{context_prefix}Claude CLI not available")
+
+    last_error = ""
+    for attempt in range(max_retries + 1):
+        try:
+            result = run_claude(
+                prompt=prompt,
+                cwd=cwd,
+                stream=False,
+                timeout=timeout,
+            )
+
+            if result.success and result.stdout.strip():
+                return (True, result.stdout, "")
+
+            # Build detailed error message
+            if not result.success:
+                last_error = f"{context_prefix}Claude exited with code {result.returncode}"
+                if result.stderr:
+                    last_error += f" - stderr: {result.stderr[:200]}"
+                if result.error:
+                    last_error += f" - error: {result.error}"
+            elif not result.stdout.strip():
+                last_error = f"{context_prefix}Claude returned empty output"
+
+            # Log retry attempt
+            if attempt < max_retries:
+                print(f"    {context_prefix}Attempt {attempt + 1} failed, retrying...")
+
+        except Exception as e:
+            last_error = f"{context_prefix}Exception: {e}"
+            if attempt < max_retries:
+                print(f"    {context_prefix}Attempt {attempt + 1} failed ({e}), retrying...")
+
+    return (False, "", last_error)
 
 
 @dataclass
@@ -485,22 +545,17 @@ If no meaningful features are found, return: `[]`
 
         prompt = self._generate_feature_extraction_prompt(commits)
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
+        success, stdout, error = _run_claude_with_retry(
+            prompt=prompt,
+            cwd=self.repo_root,
+            context="commit-extraction",
+            max_retries=1,
+        )
 
-            if result.success and result.stdout.strip():
-                return self._parse_llm_features(result.stdout, context="commit-extraction")
-            else:
-                error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown"
-                print(f"    Warning: LLM extraction failed: {error_msg}")
-                return []
-
-        except Exception as e:
-            print(f"    Warning: LLM extraction error: {e}")
+        if success:
+            return self._parse_llm_features(stdout, context="commit-extraction")
+        else:
+            print(f"    Warning: LLM extraction failed: {error}")
             return []
 
     def _extract_docstring(self, content: str) -> str:
@@ -826,22 +881,17 @@ Return ONLY a JSON array:
 If no features found, return: `[]`
 """
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
+        success, stdout, error = _run_claude_with_retry(
+            prompt=prompt,
+            cwd=self.repo_root,
+            context="code-analysis",
+            max_retries=1,
+        )
 
-            if result.success and result.stdout.strip():
-                return self._parse_llm_features(result.stdout, context="code-analysis")
-            else:
-                error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown"
-                print(f"    Warning: Code analysis failed: {error_msg}")
-                return []
-
-        except Exception as e:
-            print(f"    Warning: Code analysis error: {e}")
+        if success:
+            return self._parse_llm_features(stdout, context="code-analysis")
+        else:
+            print(f"    Warning: Code analysis failed: {error}")
             return []
 
     def generate_feature_documentation(self, feature: DetectedFeature) -> str | None:
@@ -893,28 +943,27 @@ Write clear, concise documentation suitable for developers.
 Output ONLY the markdown content, no explanation.
 """
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
+        success, stdout, error = _run_claude_with_retry(
+            prompt=prompt,
+            cwd=self.repo_root,
+            context="doc-generation",
+            max_retries=1,
+        )
 
-            if result.success and result.stdout.strip():
-                # Determine output path
-                primary_path = Path(primary_file)
-                doc_dir = self.repo_root / primary_path.parent
+        if success:
+            # Determine output path
+            primary_path = Path(primary_file)
+            doc_dir = self.repo_root / primary_path.parent
 
-                # Write the documentation
-                doc_path = doc_dir / "README.md"
-                if not doc_path.exists():
-                    doc_path.write_text(result.stdout.strip())
-                    return str(primary_path.parent / "README.md")
-                else:
-                    print(f"    Skipping doc generation: README.md already exists at {doc_path}")
-
-        except Exception as e:
-            print(f"    Warning: Doc generation error: {e}")
+            # Write the documentation
+            doc_path = doc_dir / "README.md"
+            if not doc_path.exists():
+                doc_path.write_text(stdout.strip())
+                return str(primary_path.parent / "README.md")
+            else:
+                print(f"    Skipping doc generation: README.md already exists at {doc_path}")
+        else:
+            print(f"    Warning: Doc generation failed: {error}")
 
         return None
 
@@ -1695,18 +1744,17 @@ Return ONLY a JSON array:
 If truly no features (empty directory, only tests), return: `[]`
 """
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
+        success, stdout, error = _run_claude_with_retry(
+            prompt=prompt,
+            cwd=self.repo_root,
+            context=f"dir:{dir_path}",
+            max_retries=1,
+        )
 
-            if result.success and result.stdout.strip():
-                return self._parse_llm_output(result.stdout, context=f"dir:{dir_path}")
-            return []
-        except Exception as e:
-            print(f"    Warning: LLM analysis failed for {dir_path}: {e}")
+        if success:
+            return self._parse_llm_output(stdout, context=f"dir:{dir_path}")
+        else:
+            print(f"    Warning: LLM analysis failed for {dir_path}: {error}")
             return []
 
     def _parse_llm_output(self, output: str, context: str = "") -> list[DetectedFeature]:
@@ -1853,33 +1901,24 @@ Return ONLY a JSON array of the consolidated features:
 ```
 """
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
+        success, stdout, error = _run_claude_with_retry(
+            prompt=prompt,
+            cwd=self.repo_root,
+            context="consolidation",
+            max_retries=2,  # Extra retry for consolidation since it's the final step
+        )
 
-            if not result.success:
-                print(f"    Warning: Claude returned error: {result.error}")
-                print(f"    Stderr: {result.stderr[:500] if result.stderr else '(empty)'}")
-                print("    Using raw features instead")
-                return all_features
-
-            if not result.stdout.strip():
-                print("    Warning: Claude returned empty output")
-                print("    Using raw features instead")
-                return all_features
-
-            consolidated = self._parse_llm_output(result.stdout, context="consolidation")
-            if consolidated:
-                return consolidated
-
-            print("    Warning: Consolidation parsing returned empty, using raw features")
-            return all_features  # Fall back to unprocessed list
-        except Exception as e:
-            print(f"    Warning: Consolidation failed ({e}), using raw features")
+        if not success:
+            print(f"    Warning: Consolidation failed: {error}")
+            print("    Using raw features instead")
             return all_features
+
+        consolidated = self._parse_llm_output(stdout, context="consolidation")
+        if consolidated:
+            return consolidated
+
+        print("    Warning: Consolidation returned empty, using raw features")
+        return all_features
 
     def _analyze_directory_heuristically(
         self, dir_path: str, files: list[Path]

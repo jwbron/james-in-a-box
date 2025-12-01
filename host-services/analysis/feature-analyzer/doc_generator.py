@@ -29,7 +29,64 @@ from typing import TYPE_CHECKING
 
 # Add shared modules to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
+from claude import is_claude_available, run_claude
+
+
+def _run_claude_with_retry(
+    prompt: str,
+    cwd: Path,
+    context: str = "",
+    max_retries: int = 1,
+    timeout: int = 300,
+) -> tuple[bool, str, str]:
+    """Run Claude with retry logic and better error handling.
+
+    Args:
+        prompt: The prompt to send to Claude
+        cwd: Working directory for Claude
+        context: Context string for error messages
+        max_retries: Number of retry attempts on failure
+        timeout: Timeout in seconds
+
+    Returns:
+        Tuple of (success, stdout, error_message)
+    """
+    context_prefix = f"[{context}] " if context else ""
+
+    if not is_claude_available():
+        return (False, "", f"{context_prefix}Claude CLI not available")
+
+    last_error = ""
+    for attempt in range(max_retries + 1):
+        try:
+            result = run_claude(
+                prompt=prompt,
+                cwd=cwd,
+                stream=False,
+                timeout=timeout,
+            )
+
+            if result.success and result.stdout.strip():
+                return (True, result.stdout, "")
+
+            if not result.success:
+                last_error = f"{context_prefix}Claude exited with code {result.returncode}"
+                if result.stderr:
+                    last_error += f" - stderr: {result.stderr[:200]}"
+                if result.error:
+                    last_error += f" - error: {result.error}"
+            elif not result.stdout.strip():
+                last_error = f"{context_prefix}Claude returned empty output"
+
+            if attempt < max_retries:
+                print(f"    {context_prefix}Attempt {attempt + 1} failed, retrying...")
+
+        except Exception as e:
+            last_error = f"{context_prefix}Exception: {e}"
+            if attempt < max_retries:
+                print(f"    {context_prefix}Attempt {attempt + 1} failed ({e}), retrying...")
+
+    return (False, "", last_error)
 
 
 if TYPE_CHECKING:
@@ -266,32 +323,22 @@ Output ONLY the updated documentation content. Do not include any explanation or
         --dangerously-skip-permissions (full tool access), NOT --print
         (which creates a restricted session).
         """
-        try:
-            # Use the shared claude module to run Claude
-            # This uses stdin mode with full tool access
-            result = run_claude(
-                prompt=prompt,
-                timeout=300,  # 5 minute timeout
-                cwd=self.repo_root,
-                stream=False,  # Buffer output, don't print during execution
-            )
+        success, stdout, error = _run_claude_with_retry(
+            prompt=prompt,
+            cwd=self.repo_root,
+            context=f"doc-gen:{doc_path.name}",
+            max_retries=1,
+            timeout=300,
+        )
 
-            if result.success and result.stdout.strip():
-                # Extract the generated content
-                content = result.stdout.strip()
-                # High confidence if we got substantial output
-                confidence = 0.85 if len(content) > 100 else 0.6
-                return (content, confidence)
-            else:
-                error_msg = (
-                    result.error or result.stderr[:200] if result.stderr else "Unknown error"
-                )
-                print(f"    Warning: Claude generation failed: {error_msg}")
-                return ("", 0.3)
-
-        except Exception as e:
-            print(f"    Warning: Claude generation error: {e}")
-            return ("", 0.2)
+        if success:
+            content = stdout.strip()
+            # High confidence if we got substantial output
+            confidence = 0.85 if len(content) > 100 else 0.6
+            return (content, confidence)
+        else:
+            print(f"    Warning: Claude generation failed: {error}")
+            return ("", 0.3)
 
     def _generate_simple_update(
         self, adr_content: str, adr_title: str, doc_path: Path, doc_content: str
