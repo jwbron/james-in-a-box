@@ -205,9 +205,7 @@ def jib_exec(
         )
 
 
-def _run_with_streaming(
-    cmd: list[str], log_file: Path, timeout: int | None
-) -> JibResult:
+def _run_with_streaming(cmd: list[str], log_file: Path, timeout: int | None) -> JibResult:
     """Run command with stdout streaming to a log file.
 
     This allows real-time monitoring of long-running tasks.

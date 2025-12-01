@@ -254,6 +254,7 @@ Output ONLY the JSON array, no other text.
             except json.JSONDecodeError:
                 # Try to extract JSON from markdown code block
                 import re
+
                 json_match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", result.stdout)
                 if json_match:
                     features = json.loads(json_match.group(1))

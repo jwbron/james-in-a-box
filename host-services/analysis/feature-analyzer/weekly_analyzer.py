@@ -914,7 +914,7 @@ Write clear, concise documentation suitable for developers.
 Output ONLY the markdown content, no explanation.
 """
 
-        success, stdout, error = self._run_llm_prompt(prompt, "doc-generation")
+        success, stdout, _error = self._run_llm_prompt(prompt, "doc-generation")
         if success and stdout.strip():
             # Determine output path
             primary_path = Path(primary_file)
