@@ -17,13 +17,16 @@ Usage:
     updates = generator.generate_updates_for_adr(adr_metadata, affected_docs)
 """
 
-import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+
+# Add shared modules to path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+from claude import run_claude
 
 
 if TYPE_CHECKING:
@@ -250,52 +253,37 @@ Output ONLY the updated documentation content. Do not include any explanation or
 
     def _call_jib_for_generation(self, prompt: str, doc_path: Path) -> tuple[str, float]:
         """
-        Use jib container to generate documentation update.
+        Use Claude to generate documentation update.
 
         Returns (updated_content, confidence_score).
+
+        Uses the shared claude module which runs Claude via stdin with
+        --dangerously-skip-permissions (full tool access), NOT --print
+        (which creates a restricted session).
         """
         try:
-            # Check if jib command exists
-            jib_path = Path.home() / "khan" / "james-in-a-box" / "jib"
-            if not jib_path.exists():
-                # Fallback: just return the prompt for now (Phase 3 MVP)
-                print(f"    Warning: jib not found, skipping LLM generation for {doc_path.name}")
-                return ("", 0.5)
-
-            # Run jib with the prompt passed directly via -p argument
-            result = subprocess.run(
-                [
-                    str(jib_path),
-                    "exec",
-                    "--",
-                    "claude",
-                    "--print",
-                    "-p",
-                    prompt,
-                ],
-                check=False,
-                capture_output=True,
-                text=True,
+            # Use the shared claude module to run Claude
+            # This uses stdin mode with full tool access
+            result = run_claude(
+                prompt=prompt,
                 timeout=300,  # 5 minute timeout
                 cwd=self.repo_root,
-                env={**os.environ, "CLAUDE_CODE_HEADLESS": "1"},
+                stream=False,  # Buffer output, don't print during execution
             )
 
-            if result.returncode == 0 and result.stdout.strip():
+            if result.success and result.stdout.strip():
                 # Extract the generated content
                 content = result.stdout.strip()
                 # High confidence if we got substantial output
                 confidence = 0.85 if len(content) > 100 else 0.6
                 return (content, confidence)
             else:
-                print(f"    Warning: jib generation failed: {result.stderr[:200]}")
+                error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown error"
+                print(f"    Warning: Claude generation failed: {error_msg}")
                 return ("", 0.3)
 
-        except subprocess.TimeoutExpired:
-            print(f"    Warning: jib generation timed out for {doc_path.name}")
-            return ("", 0.2)
         except Exception as e:
-            print(f"    Warning: jib generation error: {e}")
+            print(f"    Warning: Claude generation error: {e}")
             return ("", 0.2)
 
     def _generate_simple_update(

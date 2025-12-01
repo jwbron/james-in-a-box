@@ -26,15 +26,19 @@ class TestClaudePrompt:
 
     @patch.object(ClaudeWrapper, "run")
     def test_prompt_basic(self, mock_run):
-        """Test basic prompt."""
+        """Test basic prompt uses stdin mode, NOT --print."""
         mock_run.return_value = MagicMock(exit_code=0, stdout="Response text")
 
         self.wrapper.prompt("What is 2+2?")
 
         args = mock_run.call_args[0]
-        assert "--print" in args
-        assert "-p" in args
-        assert "What is 2+2?" in args
+        kwargs = mock_run.call_args[1]
+        # Should use --dangerously-skip-permissions, NOT --print
+        assert "--dangerously-skip-permissions" in args
+        assert "--print" not in args
+        # Prompt should be passed via input_text (stdin), NOT -p flag
+        assert "-p" not in args
+        assert kwargs.get("input_text") == "What is 2+2?"
 
     @patch.object(ClaudeWrapper, "run")
     def test_prompt_with_model(self, mock_run):
@@ -100,26 +104,33 @@ class TestClaudeRunWithFile:
 
     @patch.object(ClaudeWrapper, "run")
     def test_run_with_file_basic(self, mock_run):
-        """Test running with a file."""
+        """Test running with a file uses stdin mode, NOT --print."""
         mock_run.return_value = MagicMock(exit_code=0, stdout="")
 
         self.wrapper.run_with_file("code.py")
 
         args = mock_run.call_args[0]
-        assert "--print" in args
+        kwargs = mock_run.call_args[1]
+        # Should use --dangerously-skip-permissions, NOT --print
+        assert "--dangerously-skip-permissions" in args
+        assert "--print" not in args
         assert "--context" in args
         assert "code.py" in args
+        # No prompt provided, so input_text should be None
+        assert kwargs.get("input_text") is None
 
     @patch.object(ClaudeWrapper, "run")
     def test_run_with_file_and_prompt(self, mock_run):
-        """Test running with a file and prompt."""
+        """Test running with a file and prompt via stdin."""
         mock_run.return_value = MagicMock(exit_code=0, stdout="")
 
         self.wrapper.run_with_file("code.py", "Explain this code")
 
         args = mock_run.call_args[0]
-        assert "-p" in args
-        assert "Explain this code" in args
+        kwargs = mock_run.call_args[1]
+        # Prompt should be passed via input_text (stdin), NOT -p flag
+        assert "-p" not in args
+        assert kwargs.get("input_text") == "Explain this code"
 
 
 class TestClaudeResume:
@@ -131,30 +142,42 @@ class TestClaudeResume:
 
     @patch.object(ClaudeWrapper, "run")
     def test_resume_basic(self, mock_run):
-        """Test resuming a session."""
+        """Test resuming a session uses stdin mode, NOT --print."""
         mock_run.return_value = MagicMock(exit_code=0, stdout="")
 
         self.wrapper.resume("session-abc123")
 
         args = mock_run.call_args[0]
-        assert "--print" in args
+        kwargs = mock_run.call_args[1]
+        # Should use --dangerously-skip-permissions, NOT --print
+        assert "--dangerously-skip-permissions" in args
+        assert "--print" not in args
         assert "--resume" in args
         assert "session-abc123" in args
+        # No prompt provided, so input_text should be None
+        assert kwargs.get("input_text") is None
 
     @patch.object(ClaudeWrapper, "run")
     def test_resume_with_prompt(self, mock_run):
-        """Test resuming with new prompt."""
+        """Test resuming with new prompt via stdin."""
         mock_run.return_value = MagicMock(exit_code=0, stdout="")
 
         self.wrapper.resume("session-abc123", "Continue with this")
 
         args = mock_run.call_args[0]
-        assert "-p" in args
-        assert "Continue with this" in args
+        kwargs = mock_run.call_args[1]
+        # Prompt should be passed via input_text (stdin), NOT -p flag
+        assert "-p" not in args
+        assert kwargs.get("input_text") == "Continue with this"
 
 
 class TestClaudeContextExtraction:
-    """Tests for context extraction in ClaudeWrapper."""
+    """Tests for context extraction in ClaudeWrapper.
+
+    Note: Context extraction parses args tuple. With stdin mode, prompts
+    are passed via input_text, not -p flag. But model, context, max-turns,
+    session_id are still in args.
+    """
 
     def setup_method(self):
         """Create a wrapper for testing."""
@@ -163,37 +186,16 @@ class TestClaudeContextExtraction:
     def test_extracts_model(self):
         """Test that model is extracted from args."""
         context = self.wrapper._extract_context(
-            ("--print", "--model", "claude-sonnet-4-5-20250929", "-p", "Test"),
+            ("--dangerously-skip-permissions", "--model", "claude-sonnet-4-5-20250929"),
             "",
             "",
         )
         assert context.get("model") == "claude-sonnet-4-5-20250929"
 
-    def test_extracts_prompt_preview(self):
-        """Test that prompt preview is extracted."""
-        context = self.wrapper._extract_context(
-            ("--print", "-p", "What is the meaning of life?"),
-            "",
-            "",
-        )
-        assert context.get("prompt_preview") == "What is the meaning of life?"
-        assert context.get("prompt_length") == len("What is the meaning of life?")
-
-    def test_truncates_long_prompt(self):
-        """Test that long prompts are truncated."""
-        long_prompt = "x" * 300
-        context = self.wrapper._extract_context(
-            ("--print", "-p", long_prompt),
-            "",
-            "",
-        )
-        assert len(context.get("prompt_preview", "")) <= 203  # 200 + "..."
-        assert context.get("prompt_preview", "").endswith("...")
-
     def test_extracts_context_file(self):
         """Test that context file is extracted."""
         context = self.wrapper._extract_context(
-            ("--print", "--context", "myfile.py", "-p", "Explain"),
+            ("--dangerously-skip-permissions", "--context", "myfile.py"),
             "",
             "",
         )
@@ -202,7 +204,7 @@ class TestClaudeContextExtraction:
     def test_extracts_session_id(self):
         """Test that session ID is extracted."""
         context = self.wrapper._extract_context(
-            ("--print", "--resume", "session-xyz789"),
+            ("--dangerously-skip-permissions", "--resume", "session-xyz789"),
             "",
             "",
         )
@@ -211,7 +213,7 @@ class TestClaudeContextExtraction:
     def test_extracts_max_turns(self):
         """Test that max_turns is extracted."""
         context = self.wrapper._extract_context(
-            ("--print", "--max-turns", "10", "-p", "Test"),
+            ("--dangerously-skip-permissions", "--max-turns", "10"),
             "",
             "",
         )
@@ -220,7 +222,7 @@ class TestClaudeContextExtraction:
     def test_extracts_response_length(self):
         """Test that response length is extracted."""
         context = self.wrapper._extract_context(
-            ("--print", "-p", "Test"),
+            ("--dangerously-skip-permissions",),
             "This is the response from Claude.",
             "",
         )
@@ -229,7 +231,7 @@ class TestClaudeContextExtraction:
     def test_detects_stderr(self):
         """Test that stderr presence is detected."""
         context = self.wrapper._extract_context(
-            ("--print", "-p", "Test"),
+            ("--dangerously-skip-permissions",),
             "Response",
             "Some warning",
         )
@@ -239,7 +241,7 @@ class TestClaudeContextExtraction:
         """Test that JSON output with usage is parsed."""
         json_output = '{"usage": {"input_tokens": 100, "output_tokens": 50}, "model": "claude-3"}'
         context = self.wrapper._extract_context(
-            ("--print", "-p", "Test"),
+            ("--dangerously-skip-permissions",),
             json_output,
             "",
         )
