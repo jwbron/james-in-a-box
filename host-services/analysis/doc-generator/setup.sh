@@ -257,8 +257,10 @@ Description=Weekly JIB Documentation Generation
 [Timer]
 # Run weekly on Monday at 11am
 OnCalendar=Mon *-*-* 11:00:00
-Persistent=true
+# Randomize start time to avoid resource spikes
 RandomizedDelaySec=300
+# Note: No Persistent=true to avoid immediate execution during setup
+# If a scheduled run is missed, it will simply run at the next scheduled time
 
 [Install]
 WantedBy=timers.target

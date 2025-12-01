@@ -3,9 +3,12 @@ Description=Weekly ADR Researcher Timer
 Documentation=file://%h/khan/james-in-a-box/host-services/analysis/adr-researcher/README.md
 
 [Timer]
+# Run weekly on Monday at 11:00 AM
 OnCalendar=Mon *-*-* 11:00:00
-Persistent=true
+# Randomize start time by up to 5 minutes to avoid resource spikes
 RandomizedDelaySec=5min
+# Note: No Persistent=true to avoid immediate execution during setup
+# If a scheduled run is missed, it will simply run at the next scheduled time
 
 [Install]
 WantedBy=timers.target
