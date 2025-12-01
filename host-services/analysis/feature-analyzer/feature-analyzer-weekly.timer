@@ -1,6 +1,6 @@
 [Unit]
 Description=Weekly feature analyzer run for FEATURES.md updates
-Documentation=https://github.com/jwbron/james-in-a-box/blob/main/docs/adr/in-progress/ADR-Feature-Analyzer-Documentation-Sync.md
+Documentation=https://github.com/jwbron/james-in-a-box/blob/main/docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md
 Requires=feature-analyzer-weekly.service
 
 [Timer]
