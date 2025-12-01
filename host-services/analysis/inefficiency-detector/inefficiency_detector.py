@@ -23,19 +23,19 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+
 # Add trace-collector to path
 trace_collector_path = Path(__file__).parent.parent / "trace-collector"
 sys.path.insert(0, str(trace_collector_path))
 
-from trace_reader import TraceReader
-
+from detectors.resource_efficiency_detector import ResourceEfficiencyDetector
 from detectors.tool_discovery_detector import ToolDiscoveryDetector
 from detectors.tool_execution_detector import ToolExecutionDetector
-from detectors.resource_efficiency_detector import ResourceEfficiencyDetector
 from inefficiency_schema import (
     AggregateInefficiencyReport,
     SessionInefficiencyReport,
 )
+from trace_reader import TraceReader
 
 
 class InefficiencyDetector:
@@ -214,9 +214,7 @@ class InefficiencyDetector:
             f.write("## Inefficiency Breakdown by Category\n\n")
             if report.category_counts:
                 total_count = sum(report.category_counts.values())
-                for category, count in sorted(
-                    report.category_counts.items(), key=lambda x: -x[1]
-                ):
+                for category, count in sorted(report.category_counts.items(), key=lambda x: -x[1]):
                     percentage = (count / total_count * 100) if total_count > 0 else 0
                     bar = "█" * int(percentage / 2)  # 2% per block
                     f.write(f"{category.replace('_', ' ').title():<25} {bar} {percentage:.0f}%\n")
@@ -232,9 +230,9 @@ class InefficiencyDetector:
 
             # Detailed Sessions (top 5 by inefficiency rate)
             f.write("## Sessions with Highest Inefficiency\n\n")
-            top_sessions = sorted(
-                report.sessions, key=lambda s: s.inefficiency_rate, reverse=True
-            )[:5]
+            top_sessions = sorted(report.sessions, key=lambda s: s.inefficiency_rate, reverse=True)[
+                :5
+            ]
 
             for session in top_sessions:
                 f.write(f"### Session {session.session_id}\n\n")
@@ -268,7 +266,9 @@ def main():
     analyze_parser.add_argument("--output", "-o", help="Output JSON file (default: stdout)")
 
     # Analyze period
-    period_parser = subparsers.add_parser("analyze-period", help="Analyze sessions over time period")
+    period_parser = subparsers.add_parser(
+        "analyze-period", help="Analyze sessions over time period"
+    )
     period_parser.add_argument("--since", help="Start date (YYYY-MM-DD)")
     period_parser.add_argument("--until", help="End date (YYYY-MM-DD)")
     period_parser.add_argument("--task", help="Filter by task ID")

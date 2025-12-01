@@ -125,9 +125,7 @@ def get_all_pricing() -> dict[str, ModelPricing]:
     return dict(MODEL_PRICING)
 
 
-def calculate_cost(
-    input_tokens: int, output_tokens: int, model: str | None = None
-) -> float:
+def calculate_cost(input_tokens: int, output_tokens: int, model: str | None = None) -> float:
     """
     Calculate the cost for a given number of tokens.
 
@@ -145,7 +143,9 @@ def calculate_cost(
     return input_cost + output_cost
 
 
-def calculate_blended_cost(tokens: int, input_ratio: float = 0.4, model: str | None = None) -> float:
+def calculate_blended_cost(
+    tokens: int, input_ratio: float = 0.4, model: str | None = None
+) -> float:
     """
     Calculate cost using a blended rate (for when input/output split is unknown).
 

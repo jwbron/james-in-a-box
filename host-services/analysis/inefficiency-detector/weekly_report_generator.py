@@ -31,14 +31,19 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+
 # Add the inefficiency-detector and config to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+import contextlib
+
 from inefficiency_detector import InefficiencyDetector
 from inefficiency_schema import AggregateInefficiencyReport, Severity
-from config.model_pricing import get_model_pricing, get_active_model, calculate_blended_cost
+
+from config.model_pricing import calculate_blended_cost, get_active_model, get_model_pricing
+
 
 # Constants
 ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "inefficiency"
@@ -100,7 +105,7 @@ class WeeklyReportGenerator:
         latest_report.symlink_to(report_file.name)
         latest_metrics.symlink_to(metrics_file.name)
 
-        print(f"\n✓ Report generated!")
+        print("\n✓ Report generated!")
         print(f"  Markdown: {report_file}")
         print(f"  JSON: {metrics_file}")
 
@@ -112,13 +117,15 @@ class WeeklyReportGenerator:
         """Generate an enhanced markdown report with additional formatting."""
         with open(output_path, "w") as f:
             # Header
-            f.write(f"# LLM Inefficiency Report\n\n")
+            f.write("# LLM Inefficiency Report\n\n")
             f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
             f.write(f"**Period:** {report.time_period}\n\n")
 
             # Health Score
             health_score = self._calculate_health_score(report)
-            f.write(f"## Health Score: {health_score}/100 {self._get_health_emoji(health_score)}\n\n")
+            f.write(
+                f"## Health Score: {health_score}/100 {self._get_health_emoji(health_score)}\n\n"
+            )
 
             # Executive Summary
             f.write("## Executive Summary\n\n")
@@ -140,7 +147,9 @@ class WeeklyReportGenerator:
                     report.total_wasted_tokens, input_ratio=0.4, model=active_model
                 )
                 f.write(f"| Estimated Weekly Savings | ~${potential_savings:.2f} |\n")
-                f.write(f"| *(Based on {active_model} pricing: ${pricing['input']}/MTok in, ${pricing['output']}/MTok out)* | |\n")
+                f.write(
+                    f"| *(Based on {active_model} pricing: ${pricing['input']}/MTok in, ${pricing['output']}/MTok out)* | |\n"
+                )
 
             f.write("\n")
 
@@ -160,7 +169,9 @@ class WeeklyReportGenerator:
                     percentage = (count / total_count * 100) if total_count > 0 else 0
                     bar_len = int(percentage / 2.5)  # 40 chars max
                     bar = "█" * bar_len
-                    f.write(f"{category.replace('_', ' ').title():<25} {bar:<40} {percentage:.0f}%\n")
+                    f.write(
+                        f"{category.replace('_', ' ').title():<25} {bar:<40} {percentage:.0f}%\n"
+                    )
                 f.write("```\n\n")
             else:
                 f.write("*No inefficiencies detected this period!*\n\n")
@@ -190,16 +201,18 @@ class WeeklyReportGenerator:
 
             # Sessions with Highest Inefficiency
             f.write("## Sessions with Highest Inefficiency\n\n")
-            top_sessions = sorted(
-                report.sessions, key=lambda s: s.inefficiency_rate, reverse=True
-            )[:5]
+            top_sessions = sorted(report.sessions, key=lambda s: s.inefficiency_rate, reverse=True)[
+                :5
+            ]
 
             if top_sessions:
                 for session in top_sessions:
                     f.write(f"### Session: `{session.session_id}`\n\n")
                     f.write(f"- **Task:** {session.task_id or 'N/A'}\n")
                     f.write(f"- **Inefficiency Rate:** {session.inefficiency_rate:.1f}%\n")
-                    f.write(f"- **Wasted Tokens:** {session.total_wasted_tokens:,} / {session.total_tokens:,}\n")
+                    f.write(
+                        f"- **Wasted Tokens:** {session.total_wasted_tokens:,} / {session.total_tokens:,}\n"
+                    )
                     f.write(f"- **Issues Found:** {len(session.inefficiencies)}\n\n")
 
                     if session.inefficiencies:
@@ -208,7 +221,7 @@ class WeeklyReportGenerator:
                             severity_emoji = {
                                 Severity.HIGH: "🔴",
                                 Severity.MEDIUM: "🟡",
-                                Severity.LOW: "🟢"
+                                Severity.LOW: "🟢",
                             }.get(ineff.severity, "⚪")
                             f.write(f"- {severity_emoji} {ineff.description}\n")
                         if len(session.inefficiencies) > 5:
@@ -236,8 +249,12 @@ class WeeklyReportGenerator:
 
             # Footer
             f.write("---\n\n")
-            f.write(f"*Report generated from {report.total_sessions} sessions over {self.days} days*\n")
-            f.write(f"*Analysis performed by [LLM Inefficiency Detector](../../../docs/adr/in-progress/ADR-LLM-Inefficiency-Reporting.md)*\n")
+            f.write(
+                f"*Report generated from {report.total_sessions} sessions over {self.days} days*\n"
+            )
+            f.write(
+                "*Analysis performed by [LLM Inefficiency Detector](../../../docs/adr/in-progress/ADR-LLM-Inefficiency-Reporting.md)*\n"
+            )
 
     def _calculate_health_score(self, report: AggregateInefficiencyReport) -> int:
         """Calculate an overall health score (0-100)."""
@@ -338,12 +355,12 @@ class WeeklyReportGenerator:
         report_files = sorted(
             self.analysis_dir.glob("inefficiency-report-*.md"),
             key=lambda p: p.stat().st_mtime,
-            reverse=True
+            reverse=True,
         )
         metrics_files = sorted(
             self.analysis_dir.glob("inefficiency-metrics-*.json"),
             key=lambda p: p.stat().st_mtime,
-            reverse=True
+            reverse=True,
         )
 
         to_delete = []
@@ -413,7 +430,7 @@ Health Score: {health_score}/100
 - Wasted Tokens: {report.total_wasted_tokens:,}
 - Inefficiency Rate: {report.average_inefficiency_rate:.1f}%
 
-High-severity issues: {report.severity_counts.get('high', 0)}
+High-severity issues: {report.severity_counts.get("high", 0)}
 """
             subprocess.run(
                 ["git", "commit", "-m", commit_message],
@@ -447,9 +464,9 @@ High-severity issues: {report.severity_counts.get('high', 0)}
 - 📈 Inefficiency Rate: {report.average_inefficiency_rate:.1f}%
 
 ### Severity Summary
-- 🔴 High: {report.severity_counts.get('high', 0)}
-- 🟡 Medium: {report.severity_counts.get('medium', 0)}
-- 🟢 Low: {report.severity_counts.get('low', 0)}
+- 🔴 High: {report.severity_counts.get("high", 0)}
+- 🟡 Medium: {report.severity_counts.get("medium", 0)}
+- 🟢 Low: {report.severity_counts.get("low", 0)}
 
 ### Top Issues
 """
@@ -469,7 +486,19 @@ See the full report for detailed analysis and actionable recommendations.
                 pr_body += f"\n### Cleanup\n- Removed {len(to_delete)} old report(s) to maintain max 5 reports\n"
 
             result = subprocess.run(
-                ["gh", "pr", "create", "--title", pr_title, "--body", pr_body, "--base", "main", "--head", branch_name],
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--title",
+                    pr_title,
+                    "--body",
+                    pr_body,
+                    "--base",
+                    "main",
+                    "--head",
+                    branch_name,
+                ],
                 check=True,
                 cwd=REPO_ROOT,
                 capture_output=True,
@@ -484,14 +513,13 @@ See the full report for detailed analysis and actionable recommendations.
             print(f"  stdout: {e.stdout}", file=sys.stderr)
             print(f"  stderr: {e.stderr}", file=sys.stderr)
             # Try to return to original branch
-            try:
+            with contextlib.suppress(Exception):
                 subprocess.run(
                     ["git", "checkout", "-"],
+                    check=False,
                     cwd=REPO_ROOT,
                     capture_output=True,
                 )
-            except Exception:
-                pass
             return None
 
     def run(self) -> bool:
@@ -578,12 +606,8 @@ Examples:
     parser.add_argument(
         "--days", type=int, default=7, help="Number of days to analyze (default: 7)"
     )
-    parser.add_argument(
-        "--force", action="store_true", help="Force analysis even if run recently"
-    )
-    parser.add_argument(
-        "--stdout", action="store_true", help="Print report to stdout"
-    )
+    parser.add_argument("--force", action="store_true", help="Force analysis even if run recently")
+    parser.add_argument("--stdout", action="store_true", help="Print report to stdout")
 
     args = parser.parse_args()
 

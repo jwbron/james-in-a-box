@@ -12,6 +12,7 @@ Detects token and computational resource usage patterns:
 import sys
 from pathlib import Path
 
+
 # Add paths for imports
 base_path = Path(__file__).parent.parent
 sys.path.insert(0, str(base_path))
@@ -138,7 +139,9 @@ class ResourceEfficiencyDetector(BaseDetector):
                     # Check if this was a limited read
                     limited_read = False
                     if event.tool_params and event.tool_params.raw:
-                        limited_read = "limit" in event.tool_params.raw or "offset" in event.tool_params.raw
+                        limited_read = (
+                            "limit" in event.tool_params.raw or "offset" in event.tool_params.raw
+                        )
 
                     # Large file read without limits
                     if lines >= LARGE_FILE_THRESHOLD and not limited_read:

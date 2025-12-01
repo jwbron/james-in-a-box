@@ -9,12 +9,13 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+
 # Add necessary paths
 sys.path.insert(0, str(Path(__file__).parent.parent / "trace-collector"))
 
+from detectors.resource_efficiency_detector import ResourceEfficiencyDetector
 from detectors.tool_discovery_detector import ToolDiscoveryDetector
 from detectors.tool_execution_detector import ToolExecutionDetector
-from detectors.resource_efficiency_detector import ResourceEfficiencyDetector
 from schemas import EventType, ToolCallParams, ToolCategory, ToolResult, TraceEvent
 
 
