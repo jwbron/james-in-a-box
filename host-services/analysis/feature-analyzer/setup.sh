@@ -4,6 +4,7 @@
 #
 # Phase 1: Installs the feature-analyzer CLI tool to ~/.local/bin
 # Phase 2: Installs systemd timer for automated ADR detection
+# Phase 3: Adds doc generator and PR creator modules
 #
 
 set -euo pipefail
@@ -24,6 +25,12 @@ echo "=== Phase 1: CLI Tool ==="
 
 # Create install directory if it doesn't exist
 mkdir -p "$INSTALL_DIR"
+
+# Ensure Python files are executable
+chmod +x "$SCRIPT_DIR/feature-analyzer.py"
+chmod +x "$SCRIPT_DIR/adr_watcher.py"
+chmod +x "$SCRIPT_DIR/doc_generator.py" 2>/dev/null || true
+chmod +x "$SCRIPT_DIR/pr_creator.py" 2>/dev/null || true
 
 # Create symlink for main CLI tool
 ln -sf "$SCRIPT_DIR/feature-analyzer.py" "$INSTALL_DIR/feature-analyzer"
@@ -90,4 +97,14 @@ echo "  systemctl --user start feature-analyzer-watcher.service"
 echo ""
 echo "  # Check watcher status"
 echo "  adr-watcher status"
+echo ""
+echo "Phase 3 - Multi-Doc Updates with PR Creation:"
+echo "  # Generate updates and create PR"
+echo "  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md"
+echo ""
+echo "  # With LLM assistance (requires jib)"
+echo "  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --use-jib"
+echo ""
+echo "  # Run watcher in Phase 3 mode"
+echo "  adr-watcher watch --phase3"
 echo ""

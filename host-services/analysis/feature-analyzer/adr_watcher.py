@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ADR Watcher - Automated ADR Detection Service (Phase 2)
+ADR Watcher - Automated ADR Detection Service (Phase 2-3)
 
 This module monitors the ADR directories for status changes (ADRs moving to
 implemented/) and triggers documentation sync automatically.
@@ -14,6 +14,9 @@ State persistence:
 Usage:
   # Run the watcher (typically via systemd)
   python adr_watcher.py watch
+
+  # Run with Phase 3 auto-generation and PR creation
+  python adr_watcher.py watch --phase3
 
   # Check for new implemented ADRs without triggering sync
   python adr_watcher.py check
@@ -145,26 +148,48 @@ class ADRWatcher:
         self._save_state()
         print("State reset. All ADRs will be reprocessed on next run.")
 
-    def trigger_sync(self, adr: NewADR, dry_run: bool = False) -> bool:
+    def trigger_sync(
+        self, adr: NewADR, dry_run: bool = False, phase3: bool = False, use_jib: bool = False
+    ) -> bool:
         """
         Trigger documentation sync for a newly implemented ADR.
+
+        Args:
+            adr: The newly detected ADR
+            dry_run: If True, don't make actual changes
+            phase3: If True, use Phase 3 generation and PR creation
+            use_jib: If True and phase3, use jib containers for LLM generation
 
         Returns True if sync was successful.
         """
         relative_path = adr.path.relative_to(self.repo_root)
 
         if dry_run:
-            print(f"  [DRY RUN] Would sync docs for: {relative_path}")
+            mode = "generate (Phase 3)" if phase3 else "sync-docs (Phase 2)"
+            print(f"  [DRY RUN] Would run {mode} for: {relative_path}")
             return True
 
         # Import and use the existing sync functionality
         try:
-            # Run the feature-analyzer sync-docs command
             script_dir = Path(__file__).parent
             analyzer_script = script_dir / "feature-analyzer.py"
 
-            result = subprocess.run(
-                [
+            if phase3:
+                # Phase 3: Generate updates and create PR
+                cmd = [
+                    sys.executable,
+                    str(analyzer_script),
+                    "generate",
+                    "--adr",
+                    str(relative_path),
+                    "--repo-root",
+                    str(self.repo_root),
+                ]
+                if use_jib:
+                    cmd.append("--use-jib")
+            else:
+                # Phase 2: Sync analysis only (dry-run)
+                cmd = [
                     sys.executable,
                     str(analyzer_script),
                     "sync-docs",
@@ -173,7 +198,10 @@ class ADRWatcher:
                     "--repo-root",
                     str(self.repo_root),
                     "--dry-run",  # Phase 2 still uses dry-run by default
-                ],
+                ]
+
+            result = subprocess.run(
+                cmd,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -181,16 +209,21 @@ class ADRWatcher:
             )
 
             if result.returncode == 0:
-                print(f"  ✓ Sync analysis complete for: {relative_path}")
+                mode = "Generation" if phase3 else "Sync analysis"
+                print(f"  ✓ {mode} complete for: {relative_path}")
                 if result.stdout:
                     # Indent the output
                     for line in result.stdout.strip().split("\n"):
                         print(f"    {line}")
                 return True
             else:
-                print(f"  ✗ Sync failed for: {relative_path}")
+                print(f"  ✗ Processing failed for: {relative_path}")
                 if result.stderr:
                     print(f"    Error: {result.stderr}")
+                if result.stdout:
+                    # Show output even on failure
+                    for line in result.stdout.strip().split("\n")[-10:]:
+                        print(f"    {line}")
                 return False
 
         except Exception as e:
@@ -214,13 +247,22 @@ class ADRWatcher:
 
         return new_adrs
 
-    def run_watch(self, dry_run: bool = False) -> int:
+    def run_watch(
+        self, dry_run: bool = False, phase3: bool = False, use_jib: bool = False
+    ) -> int:
         """
         Main watch loop - detect and process new ADRs.
 
+        Args:
+            dry_run: If True, don't make actual changes
+            phase3: If True, use Phase 3 generation and PR creation
+            use_jib: If True and phase3, use jib containers for LLM generation
+
         Returns the number of ADRs processed.
         """
+        mode_str = "Phase 3 (with PR creation)" if phase3 else "Phase 2 (analysis only)"
         print(f"ADR Watcher starting at {datetime.now(UTC).isoformat()}")
+        print(f"Mode: {mode_str}")
         print(f"Checking: {self.implemented_dir}")
 
         if self.state.last_check_timestamp:
@@ -241,7 +283,7 @@ class ADRWatcher:
         for adr in new_adrs:
             print(f"\nProcessing: {adr.filename}")
 
-            success = self.trigger_sync(adr, dry_run=dry_run)
+            success = self.trigger_sync(adr, dry_run=dry_run, phase3=phase3, use_jib=use_jib)
 
             if success:
                 if not dry_run:
@@ -255,7 +297,7 @@ class ADRWatcher:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ADR Watcher - Automated ADR Detection (Phase 2)")
+    parser = argparse.ArgumentParser(description="ADR Watcher - Automated ADR Detection (Phase 2-3)")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -267,6 +309,16 @@ def main():
         "--dry-run",
         action="store_true",
         help="Detect ADRs but do not trigger sync or update state",
+    )
+    watch_parser.add_argument(
+        "--phase3",
+        action="store_true",
+        help="Enable Phase 3 mode: generate doc updates and create PRs",
+    )
+    watch_parser.add_argument(
+        "--use-jib",
+        action="store_true",
+        help="Use jib containers for LLM-powered generation (requires --phase3)",
     )
     watch_parser.add_argument(
         "--repo-root",
@@ -320,7 +372,11 @@ def main():
     watcher = ADRWatcher(repo_root)
 
     if args.command == "watch":
-        count = watcher.run_watch(dry_run=args.dry_run)
+        count = watcher.run_watch(
+            dry_run=args.dry_run,
+            phase3=args.phase3,
+            use_jib=args.use_jib,
+        )
         sys.exit(0 if count >= 0 else 1)
 
     elif args.command == "check":
