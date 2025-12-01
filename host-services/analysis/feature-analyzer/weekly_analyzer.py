@@ -414,19 +414,42 @@ Return ONLY a JSON array. No explanation text.
 If no meaningful features are found, return: `[]`
 """
 
-    def _parse_llm_features(self, llm_output: str) -> list[DetectedFeature]:
-        """Parse LLM output to extract features."""
-        features = []
+    def _parse_llm_features(self, llm_output: str, context: str = "") -> list[DetectedFeature]:
+        """Parse LLM output to extract features.
 
-        # Try to extract JSON from the output
-        # Look for JSON array pattern
+        Args:
+            llm_output: Raw LLM output that may contain JSON
+            context: Optional context string for better error messages
+
+        Returns:
+            List of detected features, or empty list if parsing fails
+        """
+        features = []
+        context_prefix = f"[{context}] " if context else ""
+
+        # Try multiple patterns to extract JSON array
+        # Pattern 1: JSON array anywhere in the output
         json_match = re.search(r"\[[\s\S]*\]", llm_output)
+
+        # Pattern 2: JSON in markdown code block (```json ... ```)
         if not json_match:
+            code_block_match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", llm_output)
+            if code_block_match:
+                json_match = code_block_match
+
+        if not json_match:
+            # Log the first 500 chars of output to help debug
+            preview = llm_output[:500].replace("\n", "\\n") if llm_output else "(empty)"
+            print(f"    {context_prefix}Warning: No JSON array found in LLM output")
+            print(f"    {context_prefix}Output preview: {preview}...")
             return []
 
+        json_str = json_match.group(1) if json_match.lastindex else json_match.group()
+
         try:
-            data = json.loads(json_match.group())
+            data = json.loads(json_str)
             if not isinstance(data, list):
+                print(f"    {context_prefix}Warning: JSON is not a list, got {type(data).__name__}")
                 return []
 
             for item in data:
@@ -448,7 +471,10 @@ If no meaningful features are found, return: `[]`
                 features.append(feature)
 
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"    Warning: Failed to parse LLM output: {e}")
+            # Log more context about the parsing error
+            print(f"    {context_prefix}Warning: Failed to parse LLM JSON: {e}")
+            json_preview = json_str[:300].replace("\n", "\\n") if json_str else "(empty)"
+            print(f"    {context_prefix}JSON preview: {json_preview}...")
 
         return features
 
@@ -467,7 +493,7 @@ If no meaningful features are found, return: `[]`
             )
 
             if result.success and result.stdout.strip():
-                return self._parse_llm_features(result.stdout)
+                return self._parse_llm_features(result.stdout, context="commit-extraction")
             else:
                 error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown"
                 print(f"    Warning: LLM extraction failed: {error_msg}")
@@ -808,7 +834,7 @@ If no features found, return: `[]`
             )
 
             if result.success and result.stdout.strip():
-                return self._parse_llm_features(result.stdout)
+                return self._parse_llm_features(result.stdout, context="code-analysis")
             else:
                 error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown"
                 print(f"    Warning: Code analysis failed: {error_msg}")
@@ -1612,23 +1638,48 @@ If truly no features (empty directory, only tests), return: `[]`
             )
 
             if result.success and result.stdout.strip():
-                return self._parse_llm_output(result.stdout)
+                return self._parse_llm_output(result.stdout, context=f"dir:{dir_path}")
             return []
         except Exception as e:
             print(f"    Warning: LLM analysis failed for {dir_path}: {e}")
             return []
 
-    def _parse_llm_output(self, output: str) -> list[DetectedFeature]:
-        """Parse LLM JSON output into DetectedFeature objects."""
-        features = []
+    def _parse_llm_output(self, output: str, context: str = "") -> list[DetectedFeature]:
+        """Parse LLM JSON output into DetectedFeature objects.
 
+        Args:
+            output: Raw LLM output that may contain JSON
+            context: Optional context string for better error messages
+
+        Returns:
+            List of detected features, or empty list if parsing fails
+        """
+        features = []
+        context_prefix = f"[{context}] " if context else ""
+
+        # Try multiple patterns to extract JSON array
+        # Pattern 1: JSON array anywhere in the output
         json_match = re.search(r"\[[\s\S]*\]", output)
+
+        # Pattern 2: JSON in markdown code block (```json ... ```)
         if not json_match:
+            code_block_match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", output)
+            if code_block_match:
+                json_match = code_block_match
+
+        if not json_match:
+            # Log the first 500 chars of output to help debug
+            preview = output[:500].replace("\n", "\\n") if output else "(empty)"
+            print(f"    {context_prefix}Warning: No JSON array found in LLM output")
+            print(f"    {context_prefix}Output preview: {preview}...")
             return []
 
+        json_str = json_match.group(1) if json_match.lastindex else json_match.group()
+
         try:
-            data = json.loads(json_match.group())
+            data = json.loads(json_str)
             if not isinstance(data, list):
+                print(f"    {context_prefix}Warning: JSON is not a list, got {type(data).__name__}")
                 return []
 
             for item in data:
@@ -1649,7 +1700,10 @@ If truly no features (empty directory, only tests), return: `[]`
                 features.append(feature)
 
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"    Warning: Failed to parse LLM output: {e}")
+            # Log more context about the parsing error
+            print(f"    {context_prefix}Warning: Failed to parse LLM JSON: {e}")
+            json_preview = json_str[:300].replace("\n", "\\n") if json_str else "(empty)"
+            print(f"    {context_prefix}JSON preview: {json_preview}...")
 
         return features
 
@@ -1741,11 +1795,22 @@ Return ONLY a JSON array of the consolidated features:
                 stream=False,
             )
 
-            if result.success and result.stdout.strip():
-                consolidated = self._parse_llm_output(result.stdout)
-                if consolidated:
-                    return consolidated
-            print("    Warning: Consolidation returned empty, using raw features")
+            if not result.success:
+                print(f"    Warning: Claude returned error: {result.error}")
+                print(f"    Stderr: {result.stderr[:500] if result.stderr else '(empty)'}")
+                print("    Using raw features instead")
+                return all_features
+
+            if not result.stdout.strip():
+                print("    Warning: Claude returned empty output")
+                print("    Using raw features instead")
+                return all_features
+
+            consolidated = self._parse_llm_output(result.stdout, context="consolidation")
+            if consolidated:
+                return consolidated
+
+            print("    Warning: Consolidation parsing returned empty, using raw features")
             return all_features  # Fall back to unprocessed list
         except Exception as e:
             print(f"    Warning: Consolidation failed ({e}), using raw features")
