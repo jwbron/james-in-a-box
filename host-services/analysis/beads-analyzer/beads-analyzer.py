@@ -29,6 +29,8 @@ Example:
 """
 
 import argparse
+import builtins
+import contextlib
 import json
 import subprocess
 import sys
@@ -842,12 +844,12 @@ Period: Last {self.days} days
         report_files = sorted(
             self.analysis_dir.glob("beads-health-*.md"),
             key=lambda p: p.stat().st_mtime,
-            reverse=True
+            reverse=True,
         )
         metrics_files = sorted(
             self.analysis_dir.glob("beads-metrics-*.json"),
             key=lambda p: p.stat().st_mtime,
-            reverse=True
+            reverse=True,
         )
 
         to_delete = []
@@ -926,7 +928,7 @@ High-severity issues: {len([i for i in issues if i.severity == "high"])}
                 capture_output=True,
                 text=True,
             )
-            print(f"✓ Committed changes")
+            print("✓ Committed changes")
 
             # Push branch
             subprocess.run(
@@ -966,7 +968,19 @@ See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for det
 """
 
             result = subprocess.run(
-                ["gh", "pr", "create", "--title", pr_title, "--body", pr_body, "--base", "main", "--head", branch_name],
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--title",
+                    pr_title,
+                    "--body",
+                    pr_body,
+                    "--base",
+                    "main",
+                    "--head",
+                    branch_name,
+                ],
                 check=True,
                 cwd=REPO_ROOT,
                 capture_output=True,
@@ -980,14 +994,13 @@ See the full report in `docs/analysis/beads/beads-health-{timestamp}.md` for det
             print(f"  stdout: {e.stdout}", file=sys.stderr)
             print(f"  stderr: {e.stderr}", file=sys.stderr)
             # Try to return to main branch
-            try:
+            with contextlib.suppress(builtins.BaseException):
                 subprocess.run(
                     ["git", "checkout", "main"],
+                    check=False,
                     cwd=REPO_ROOT,
                     capture_output=True,
                 )
-            except:
-                pass
 
 
 def check_last_run(analysis_dir: Path) -> datetime | None:

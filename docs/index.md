@@ -45,6 +45,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Reference Overview](reference/README.md) | Quick reference guides and troubleshooting |
 | [Beads Task Tracking](reference/beads.md) | Persistent task memory system - commands, workflows, best practices |
+| [Features - Source Mapping](FEATURES.md) | Map of all features to their implementation locations |
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Khan Academy Culture](reference/khan-academy-culture.md) | L3-L4 engineering behavioral standards |
 | [Conversation Analysis Criteria](reference/conversation-analysis-criteria.md) | Assessment criteria for agent performance |
@@ -76,6 +77,8 @@ When working on specific tasks, consult these documents first:
 | **GCP deployment changes** | [ADR: GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | [ADR: Slack GCP](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) |
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
 | **ADR research/generation** | [ADR Researcher](../host-services/analysis/adr-researcher/README.md) | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) |
+| **Feature discovery** | [Features - Source Mapping](FEATURES.md) | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) |
+| **Documentation sync** | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) | [ADR: Feature Analyzer](adr/in-progress/ADR-Feature-Analyzer-Documentation-Sync.md) |
 
 ## Machine-Readable Indexes
 
@@ -108,4 +111,4 @@ These files are auto-generated and provide structured data for programmatic acce
 ---
 
 *This index follows the [llms.txt](https://llmstxt.org/) convention for LLM-friendly documentation.*
-*Last updated: 2025-11-28*
+*Last updated: 2025-11-30*

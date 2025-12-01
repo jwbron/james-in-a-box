@@ -788,6 +788,25 @@ def main():
     message_file = Path(sys.argv[1])
     logger.info("Starting incoming-processor", file=str(message_file))
 
+    # Refresh GitHub MCP authentication using existing mcp-token-watcher script
+    # This ensures GitHub MCP stays authenticated in long-running containers
+    try:
+        watcher_script = (
+            Path.home() / "khan/james-in-a-box/jib-container/scripts/mcp-token-watcher.py"
+        )
+        result = subprocess.run(
+            ["python3", str(watcher_script), "--once"],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            logger.info("GitHub MCP authentication refreshed")
+        else:
+            logger.warning("MCP token refresh returned non-zero", returncode=result.returncode)
+    except Exception as e:
+        logger.warning("Failed to refresh GitHub MCP auth - continuing anyway", error=str(e))
+
     if not message_file.exists():
         logger.error("File not found", file=str(message_file))
         return 1
