@@ -26,6 +26,7 @@ This mirrors the interface of shared/claude/runner.py but uses jib --exec
 to run Claude inside the container.
 """
 
+import contextlib
 import json
 import subprocess
 import tempfile
@@ -93,9 +94,7 @@ def run_claude(
         ClaudeResult with success status, output, and any error information.
     """
     # Container path for the claude-runner script
-    runner_path = (
-        "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/claude-runner.py"
-    )
+    runner_path = "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/claude-runner.py"
 
     # Write prompt to a temp file to avoid shell escaping issues with large prompts
     with tempfile.NamedTemporaryFile(
@@ -194,10 +193,8 @@ def run_claude(
 
     finally:
         # Clean up temp file
-        try:
+        with contextlib.suppress(OSError):
             Path(prompt_file).unlink()
-        except OSError:
-            pass
 
 
 def is_claude_available() -> bool:

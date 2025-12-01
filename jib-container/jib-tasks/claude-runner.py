@@ -32,7 +32,7 @@ from pathlib import Path
 
 # Import shared modules - navigate from jib-tasks up to repo root, then shared
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
-from claude import run_claude, ClaudeResult
+from claude import ClaudeResult, run_claude
 
 
 def main():
