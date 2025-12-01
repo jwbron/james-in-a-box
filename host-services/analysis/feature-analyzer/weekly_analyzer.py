@@ -1321,6 +1321,7 @@ class RepoAnalyzer:
     ]
 
     # Basic patterns to skip (obvious non-features)
+    # Note: Most patterns are now handled via .gitignore - these are just fallback/hardcoded patterns
     SKIP_PATTERNS = [
         r"__pycache__",
         r"\.pyc$",
@@ -1340,6 +1341,53 @@ class RepoAnalyzer:
         self.repo_root = repo_root
         self.use_llm = use_llm
         self.features_md = repo_root / "docs" / "FEATURES.md"
+        # Cache for gitignore check results to avoid repeated subprocess calls
+        self._gitignore_cache: dict[str, bool] = {}
+
+    def _is_git_ignored(self, path: Path | str) -> bool:
+        """
+        Check if a path is ignored by git using 'git check-ignore'.
+
+        This respects all .gitignore files in the repository hierarchy,
+        including .venv, node_modules, build directories, etc.
+
+        Args:
+            path: Path to check (relative to repo root or absolute)
+
+        Returns:
+            True if the path is ignored by git, False otherwise
+        """
+        # Convert to string for cache lookup
+        if isinstance(path, Path):
+            try:
+                rel_path = str(path.relative_to(self.repo_root))
+            except ValueError:
+                rel_path = str(path)
+        else:
+            rel_path = path
+
+        # Check cache first
+        if rel_path in self._gitignore_cache:
+            return self._gitignore_cache[rel_path]
+
+        try:
+            result = subprocess.run(
+                ["git", "check-ignore", "-q", rel_path],
+                cwd=self.repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            # Exit code 0 means the path IS ignored
+            # Exit code 1 means the path is NOT ignored
+            # Exit code 128 means git error (not in a repo, etc.)
+            is_ignored = result.returncode == 0
+            self._gitignore_cache[rel_path] = is_ignored
+            return is_ignored
+        except Exception:
+            # If git command fails, fall back to not ignoring
+            self._gitignore_cache[rel_path] = False
+            return False
 
     def _should_skip(self, path: str) -> bool:
         """Check if a path should be skipped (obvious non-features only)."""
@@ -1406,8 +1454,17 @@ class RepoAnalyzer:
             files = []
             for pattern in ["*.py", "*.sh", "*.md"]:
                 for f in dir_path.rglob(pattern):
-                    if not self._should_skip(str(f)):
-                        files.append(f)
+                    # Skip files that match hardcoded patterns or are git-ignored
+                    if self._should_skip(str(f)):
+                        continue
+                    # Check if file is git-ignored
+                    try:
+                        rel_path = str(f.relative_to(self.repo_root))
+                        if self._is_git_ignored(rel_path):
+                            continue
+                    except ValueError:
+                        pass  # If we can't get relative path, include the file
+                    files.append(f)
             return files
 
         def scan_recursively(base_path: Path, depth: int = 0, max_depth: int = 10):
@@ -1420,6 +1477,14 @@ class RepoAnalyzer:
 
             if self._should_skip(str(base_path)):
                 return
+
+            # Check if directory is git-ignored (e.g., .venv, node_modules, etc.)
+            try:
+                rel_path = str(base_path.relative_to(self.repo_root))
+                if self._is_git_ignored(rel_path):
+                    return
+            except ValueError:
+                pass  # If we can't get relative path, continue scanning
 
             # Check if this is a feature directory
             if is_feature_directory(base_path):
