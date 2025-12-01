@@ -2195,9 +2195,7 @@ Notes:
                 sorted_categories.append(cat)
 
         # Count total features including sub-features
-        total_features = sum(
-            1 + len(f.sub_features) for f in features
-        )
+        total_features = sum(1 + len(f.sub_features) for f in features)
 
         lines = [
             f"# {repo_name} Feature List",
