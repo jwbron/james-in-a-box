@@ -848,7 +848,7 @@ WantedBy=multi-user.target
 
 | ADR | Relationship |
 |-----|--------------|
-| [ADR-LLM-Inefficiency-Reporting](../in-progress/ADR-LLM-Inefficiency-Reporting.md) | Best practices feed improvement proposals; model evaluations may reduce inefficiencies |
+| [ADR-LLM-Inefficiency-Reporting](../implemented/ADR-LLM-Inefficiency-Reporting.md) | Best practices feed improvement proposals; model evaluations may reduce inefficiencies |
 | [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) | Research informs core system capabilities and model selection |
 | [ADR-Continuous-System-Reinforcement](../not-implemented/ADR-Continuous-System-Reinforcement.md) | Research provides context for understanding breakages and solutions |
 | [ADR-LLM-Documentation-Index-Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | Best practices documented in llms.txt format for future LLM reference |
