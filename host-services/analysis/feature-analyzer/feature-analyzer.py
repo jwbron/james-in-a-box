@@ -10,8 +10,9 @@ Claude-powered documentation agents inside containers.
 
 Workflows:
 1. sync-docs --adr <path>: Manually sync documentation for a specific implemented ADR
-2. watch (Phase 2+): Automatically detect ADR status changes and trigger sync
-3. weekly-analysis (Phase 5): Scan merged code and update FEATURES.md
+2. generate --adr <path>: Generate and optionally create PR with doc updates (Phase 3)
+3. watch (Phase 2+): Automatically detect ADR status changes and trigger sync
+4. weekly-analysis (Phase 5): Scan merged code and update FEATURES.md
 
 Usage (Phase 1 - Manual):
   # Sync documentation for a specific implemented ADR
@@ -22,6 +23,16 @@ Usage (Phase 1 - Manual):
 
   # Validate only (check if docs need updating)
   feature-analyzer sync-docs --adr docs/adr/implemented/ADR-Example.md --validate-only
+
+Usage (Phase 3 - Multi-Doc Updates with PR):
+  # Generate doc updates and create PR (uses jib by default)
+  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md
+
+  # Generate without jib containers
+  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --no-jib
+
+  # Dry-run (show what would be done)
+  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --dry-run
 """
 
 import argparse
@@ -253,14 +264,14 @@ class FeatureAnalyzer:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Feature Analyzer - Documentation Sync Tool (Phase 1 MVP)"
+        description="Feature Analyzer - Documentation Sync Tool (Phase 1-3)"
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # sync-docs command
+    # sync-docs command (Phase 1)
     sync_parser = subparsers.add_parser(
-        "sync-docs", help="Manually sync documentation for a specific ADR"
+        "sync-docs", help="Manually sync documentation for a specific ADR (Phase 1)"
     )
     sync_parser.add_argument(
         "--adr",
@@ -277,6 +288,38 @@ def main():
         help="Only validate and report, do not propose updates",
     )
     sync_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root directory (default: current directory)",
+    )
+
+    # generate command (Phase 3)
+    gen_parser = subparsers.add_parser(
+        "generate", help="Generate doc updates and create PR (Phase 3)"
+    )
+    gen_parser.add_argument(
+        "--adr",
+        type=Path,
+        required=True,
+        help="Path to ADR file (e.g., docs/adr/implemented/ADR-Example.md)",
+    )
+    gen_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without creating PR",
+    )
+    gen_parser.add_argument(
+        "--no-jib",
+        action="store_true",
+        help="Disable jib containers for LLM-powered generation",
+    )
+    gen_parser.add_argument(
+        "--no-pr",
+        action="store_true",
+        help="Generate updates but don't create PR",
+    )
+    gen_parser.add_argument(
         "--repo-root",
         type=Path,
         default=Path.cwd(),
@@ -327,10 +370,102 @@ def main():
                 print("\n[VALIDATE ONLY] No updates proposed.")
             else:
                 print("\n✓ Documentation sync analysis complete.")
-                print("\nPhase 1 Note: This is the MVP. Future phases will:")
-                print("  - Use LLM to generate actual content updates")
-                print("  - Create PRs automatically")
-                print("  - Run on schedule via systemd timer")
+                print("\nPhase 1 Note: This is the MVP. Use 'generate' command for Phase 3:")
+                print("  feature-analyzer generate --adr <path>")
+
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    elif args.command == "generate":
+        # Phase 3: Multi-doc updates with PR creation
+        from doc_generator import DocGenerator
+        from pr_creator import PRCreator
+
+        analyzer = FeatureAnalyzer(args.repo_root)
+
+        try:
+            # Parse ADR
+            print(f"Parsing ADR: {args.adr}")
+            adr_metadata = analyzer.parse_adr(args.adr)
+
+            print(f"ADR: {adr_metadata.title}")
+            print(f"Status: {adr_metadata.status}")
+            print()
+
+            # Generate updates
+            print("Generating documentation updates...")
+            generator = DocGenerator(args.repo_root, use_jib=not args.no_jib)
+            gen_result = generator.generate_updates_for_adr(adr_metadata)
+
+            # Validate all updates
+            gen_result = generator.validate_all_updates(gen_result)
+
+            # Report results
+            print("\nGeneration Results:")
+            print(f"  Updates generated: {len(gen_result.updates)}")
+            print(f"  Docs skipped: {len(gen_result.skipped_docs)}")
+
+            valid_updates = [u for u in gen_result.updates if u.validation_passed]
+            invalid_updates = [u for u in gen_result.updates if not u.validation_passed]
+
+            print(f"  Valid updates: {len(valid_updates)}")
+            print(f"  Failed validation: {len(invalid_updates)}")
+
+            for update in gen_result.updates:
+                status = "✓" if update.validation_passed else "✗"
+                print(f"\n  {status} {update.doc_path.relative_to(args.repo_root)}")
+                print(f"    Confidence: {update.confidence:.0%}")
+                print(f"    Summary: {update.changes_summary}")
+                if update.validation_errors:
+                    for error in update.validation_errors:
+                        print(f"    Error: {error}")
+
+            for path, reason in gen_result.skipped_docs:
+                print(f"\n  - Skipped {path.name}: {reason}")
+
+            if gen_result.errors:
+                print("\nErrors:")
+                for error in gen_result.errors:
+                    print(f"  - {error}")
+
+            # Create PR if requested and we have valid updates
+            if not args.no_pr and valid_updates:
+                print("\n" + "=" * 50)
+                print("Creating Pull Request...")
+
+                pr_creator = PRCreator(args.repo_root)
+                pr_result = pr_creator.create_doc_sync_pr(
+                    adr_title=adr_metadata.title,
+                    adr_path=adr_metadata.path,
+                    updates=gen_result.updates,
+                    dry_run=args.dry_run,
+                )
+
+                if pr_result.success:
+                    print("\n✓ PR created successfully!")
+                    print(f"  Branch: {pr_result.branch_name}")
+                    if pr_result.pr_url:
+                        print(f"  PR URL: {pr_result.pr_url}")
+                else:
+                    print(f"\n✗ PR creation failed: {pr_result.error}")
+                    if pr_result.branch_name:
+                        print(f"  Branch (may have partial changes): {pr_result.branch_name}")
+                    sys.exit(1)
+
+            elif args.no_pr:
+                print("\n[--no-pr] Skipping PR creation.")
+            elif not valid_updates:
+                print("\nNo valid updates to create PR from.")
+
+            if args.dry_run:
+                print("\n[DRY RUN] No actual changes were made.")
 
         except FileNotFoundError as e:
             print(f"Error: {e}", file=sys.stderr)

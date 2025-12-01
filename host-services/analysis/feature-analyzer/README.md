@@ -8,13 +8,13 @@ The Feature Analyzer implements [ADR-Feature-Analyzer-Documentation-Sync](../../
 
 - **Phase 1 (MVP)**: Manual CLI tool for syncing documentation with implemented ADRs
 - **Phase 2**: Automated ADR detection via systemd polling (15-minute interval)
-- **Phase 3**: Multi-document batch updates
+- **Phase 3**: Multi-document batch updates with LLM generation and PR creation
 - **Phase 4**: Enhanced validation and rollback
 - **Phase 5**: Weekly code analysis for FEATURES.md updates
 
-## Current Status: Phase 2 (Automated Detection)
+## Current Status: Phase 3 (Multi-Doc Updates)
 
-Phase 2 adds automated detection of newly implemented ADRs via a systemd timer that runs every 15 minutes.
+Phase 3 adds LLM-powered documentation generation and automated PR creation.
 
 ### Phase 1 Capabilities (Manual CLI)
 
@@ -30,11 +30,21 @@ Phase 2 adds automated detection of newly implemented ADRs via a systemd timer t
 3. **Auto-triggers sync** - Runs sync analysis for newly detected ADRs
 4. **Systemd integration** - Runs as a user service on 15-minute intervals
 
+### Phase 3 Capabilities (Multi-Doc Updates)
+
+1. **FEATURES.md querying** - Finds related features based on ADR concepts
+2. **Concept extraction** - Identifies technologies, components, and terms from ADR
+3. **Multi-doc mapping** - Identifies all documentation files affected by an ADR
+4. **LLM generation** - Uses jib containers to generate updated documentation (optional)
+5. **Batch validation** - Validates each update independently with failure handling
+6. **PR creation** - Creates consolidated PR with all documentation changes
+
 ### What It Does NOT Do (Yet)
 
-- Auto-generate updated documentation content (Phase 3+)
-- Create PRs automatically (Phase 3+)
-- Analyze code for new features (Phase 5)
+- HTML comment metadata injection (Phase 4)
+- Git tagging for traceability (Phase 4)
+- Rollback tooling (Phase 4)
+- Weekly code analysis for new features (Phase 5)
 
 ## Installation
 
@@ -115,6 +125,37 @@ systemctl --user start feature-analyzer-watcher.service
 
 # View live logs
 journalctl --user -u feature-analyzer-watcher.service -f
+```
+
+### Phase 3: Multi-Doc Updates with PR Creation
+
+#### Generate and Create PR
+
+```bash
+# Generate documentation updates and create PR
+feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md
+
+# With LLM assistance (requires jib containers)
+feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --use-jib
+
+# Dry-run mode (show what would be done)
+feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --dry-run
+
+# Generate updates without creating PR
+feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --no-pr
+```
+
+#### Run Watcher in Phase 3 Mode
+
+```bash
+# Process new ADRs with auto-PR creation
+adr-watcher watch --phase3
+
+# With LLM-powered generation
+adr-watcher watch --phase3 --use-jib
+
+# Dry-run Phase 3
+adr-watcher watch --phase3 --dry-run
 ```
 
 ## Validation Checks
@@ -209,20 +250,14 @@ This ensures:
 
 ## Future Phases
 
-### Phase 3: Multi-Doc Updates (Weeks 5-6)
-
-- Use LLM to generate updated content
-- Batch updates per ADR
-- Create PR with all changes
-
-### Phase 4: Enhanced Validation (Weeks 7-8)
+### Phase 4: Enhanced Validation (Future)
 
 - Full validation suite (6 checks)
 - HTML comment metadata injection
 - Git tagging for traceability
 - Rollback documentation
 
-### Phase 5: Weekly Code Analysis (Weeks 9-10)
+### Phase 5: Weekly Code Analysis (Future)
 
 - Scan merged commits from past week
 - Extract new features using LLM
@@ -233,10 +268,12 @@ This ensures:
 
 ```
 feature-analyzer/
-├── feature-analyzer.py                  # Phase 1: Main CLI tool
-├── adr_watcher.py                       # Phase 2: Automated watcher
-├── feature-analyzer-watcher.service     # Phase 2: Systemd service
-├── feature-analyzer-watcher.timer       # Phase 2: Systemd timer (15 min)
+├── feature-analyzer.py                  # Main CLI tool (Phase 1-3)
+├── adr_watcher.py                       # Automated watcher (Phase 2-3)
+├── doc_generator.py                     # LLM-powered doc generation (Phase 3)
+├── pr_creator.py                        # Automated PR creation (Phase 3)
+├── feature-analyzer-watcher.service     # Systemd service (Phase 2)
+├── feature-analyzer-watcher.timer       # Systemd timer - 15 min (Phase 2)
 ├── README.md                            # This file
 └── setup.sh                             # Installation script
 
