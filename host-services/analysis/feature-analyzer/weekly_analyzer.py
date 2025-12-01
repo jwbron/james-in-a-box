@@ -687,9 +687,7 @@ If no meaningful features are found, return: `[]`
                     # Skip single-letter matches
                     significant_common = [w for w in common if len(w) > 3]
                     if significant_common:
-                        all_skipped.append(
-                            (feature.name, f"Similar to existing: {existing_name}")
-                        )
+                        all_skipped.append((feature.name, f"Similar to existing: {existing_name}"))
                         is_similar = True
                         break
 
