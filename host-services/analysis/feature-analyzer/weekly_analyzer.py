@@ -1624,7 +1624,9 @@ If this directory doesn't contain a clear feature, return: `[]`
                         feature.description += "."
                     # Append key capabilities
                     components_str = ", ".join(key_components[:3])
-                    feature.description = f"{feature.description} Key capabilities: {components_str}."
+                    feature.description = (
+                        f"{feature.description} Key capabilities: {components_str}."
+                    )
 
                 features.append(feature)
 

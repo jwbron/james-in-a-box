@@ -897,12 +897,8 @@ Full repository analysis generated a comprehensive FEATURES.md with {feature_cou
                 # Create update object for PR creator
                 features_md_path = args.repo_root / "docs" / "FEATURES.md"
                 # Preserve original content for accurate PR diff generation
-                original_content = (
-                    features_md_path.read_text() if features_md_path.exists() else ""
-                )
-                updated_content = (
-                    features_md_path.read_text() if features_md_path.exists() else ""
-                )
+                original_content = features_md_path.read_text() if features_md_path.exists() else ""
+                updated_content = features_md_path.read_text() if features_md_path.exists() else ""
                 update = GeneratedUpdate(
                     doc_path=features_md_path,
                     original_content=original_content,
