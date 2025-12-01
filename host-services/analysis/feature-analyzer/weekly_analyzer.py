@@ -1314,6 +1314,12 @@ class RepoAnalyzer:
         """
         Scan the repository and group files by potential feature directories.
 
+        Scans one level deep into FEATURE_DIRECTORIES, treating each
+        top-level subdirectory as a feature unit. For example, if
+        FEATURE_DIRECTORIES includes "host-services/", this will identify
+        "host-services/slack/" and "host-services/sync/" as separate features,
+        but won't recurse further to treat subdirectories of those as features.
+
         Returns:
             Dict mapping directory paths to lists of relevant files
         """
@@ -1513,6 +1519,7 @@ If no clear features, return: `[]`
                     description=item.get("description", ""),
                     category=item.get("category", "Utilities"),
                     files=item.get("files", []),
+                    tests=item.get("tests", []),
                     confidence=confidence,
                     date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
                     needs_review=confidence < 0.7,
@@ -1563,6 +1570,7 @@ Consolidate this list by:
 3. **Fixing categories**: Ensure each feature has the most appropriate category
 4. **Improving descriptions**: Make descriptions clear and consistent
 5. **Filtering noise**: Remove low-confidence items that aren't real user-facing features
+6. **Preserving test info**: If any feature has associated tests, include them
 
 # Categories to use
 
@@ -1589,6 +1597,7 @@ Return ONLY a JSON array of the consolidated features:
     "description": "Clear 2-3 sentence description",
     "category": "Category",
     "files": ["path/to/file.py"],
+    "tests": ["path/to/test.py"],
     "confidence": 0.85
   }}
 ]
@@ -1603,10 +1612,13 @@ Return ONLY a JSON array of the consolidated features:
             )
 
             if result.success and result.stdout.strip():
-                return self._parse_llm_output(result.stdout)
+                consolidated = self._parse_llm_output(result.stdout)
+                if consolidated:
+                    return consolidated
+            print("    Warning: Consolidation returned empty, using raw features")
             return all_features  # Fall back to unprocessed list
         except Exception as e:
-            print(f"    Warning: Consolidation failed: {e}")
+            print(f"    Warning: Consolidation failed ({e}), using raw features")
             return all_features
 
     def _analyze_directory_heuristically(
@@ -1807,6 +1819,10 @@ Return ONLY a JSON array of the consolidated features:
         result.features_detected = all_features
         print(f"\n  Total features detected: {len(all_features)}")
 
+        if not all_features:
+            print("\n  No features detected. Skipping consolidation and generation.")
+            return result
+
         # Phase 3: Consolidate features (LLM pass 2 - deduplication/organization)
         print("\nPhase 3: Consolidating and organizing (LLM)...")
         if self.use_llm and len(all_features) > 1:
@@ -1815,6 +1831,10 @@ Return ONLY a JSON array of the consolidated features:
         else:
             consolidated_features = all_features
             print(f"  Using {len(consolidated_features)} features (no consolidation)")
+
+        # Re-evaluate needs_review based on post-consolidation confidence
+        for feature in consolidated_features:
+            feature.needs_review = feature.confidence < 0.7
 
         # Group by category for result
         for feature in consolidated_features:
