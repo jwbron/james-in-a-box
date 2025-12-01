@@ -9,12 +9,16 @@
 
 ---
 
-> **2025 Research Update**: This ADR has been enhanced with latest industry research and best practices:
-> - [Anthropic's multi-agent system](https://www.anthropic.com/engineering/multi-agent-research-system) achieved **90% performance improvement** over single-agent
+> **2025 Research Update (December 2025)**: This ADR has been enhanced with the latest industry research and best practices:
+> - [Anthropic's multi-agent system](https://www.anthropic.com/engineering/multi-agent-research-system) achieved **90% performance improvement** over single-agent using Opus 4 lead + Sonnet 4 subagents
 > - Multi-agent systems use **~15× more tokens** than single-agent chats - economic viability requires high-value tasks
 > - **Context engineering** (clear objectives, task boundaries, termination criteria) is the #1 success factor
 > - [40% of agentic AI projects](https://galileo.ai/blog/hidden-cost-of-agentic-ai) are canceled before production due to cost/complexity
 > - Industry has converged on core patterns: Sequential, Parallel, Hierarchical, Consensus, Iterative
+> - **New:** [UC Berkeley's MAST taxonomy](https://arxiv.org/abs/2503.13657) identifies 14 failure modes across 3 categories - essential reading for reliability
+> - **New:** [A2A (Agent2Agent) protocol](https://a2a-protocol.org/) + [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) emerging as interoperability standards
+> - **New:** [OpenAI Agents SDK](https://openai.com/index/new-tools-for-building-agents/) replaced Swarm; parallel execution reducing latency by 20-50%
+> - **New:** Enterprise deployments showing real ROI: Wiley 40%+ case resolution, 1-800Accountant 70% autonomous resolution
 
 ---
 
@@ -25,6 +29,10 @@
 - [Decision Matrix](#decision-matrix)
 - [Multi-Agent Architecture](#multi-agent-architecture)
 - [Pipeline Patterns](#pipeline-patterns)
+- [Failure Modes & Reliability](#failure-modes--reliability) *(New)*
+- [Security & Isolation](#security--isolation) *(New)*
+- [Interoperability Standards](#interoperability-standards) *(New)*
+- [Enterprise Case Studies](#enterprise-case-studies) *(New)*
 - [Implementation Phases](#implementation-phases)
 - [Consequences](#consequences)
 - [Decision Permanence](#decision-permanence)
@@ -680,6 +688,429 @@ Given that multi-agent systems use **~15× more tokens** than single-agent chats
 - Compare multi-agent vs single-agent baselines
 - Target: multi-agent should provide >2× quality improvement to justify 15× token cost
 
+## Failure Modes & Reliability
+
+Understanding how multi-agent systems fail is critical for building reliable pipelines. The [UC Berkeley MAST (Multi-Agent System Failure Taxonomy)](https://arxiv.org/abs/2503.13657) study provides the first comprehensive analysis of failure modes across 7 popular frameworks and 150+ tasks.
+
+### The MAST Taxonomy: 14 Failure Modes
+
+The research identifies **14 unique failure modes** organized into 3 categories, distributed almost evenly:
+
+| Category | % of Failures | Key Failure Modes |
+|----------|---------------|-------------------|
+| **Specification & System Design** | 37% | Unclear task boundaries, poor role definitions, missing termination criteria |
+| **Inter-Agent Misalignment** | 31% | Task misalignment, reasoning-action mismatches, coordination failures |
+| **Task Verification & Termination** | 31% | Incomplete verification, premature termination, infinite loops |
+
+**Key Findings:**
+- Even state-of-the-art open-source MASs like ChatDev achieve only **33% correctness** on benchmark tasks
+- Unlike single-agent frameworks, MAS must address **inter-agent misalignment**, conversation resets, and incomplete task verification
+- The research team developed an **LLM-as-a-Judge pipeline** that detects failure modes with **94% accuracy** vs human experts
+
+### Reliability Best Practices
+
+Based on [industry reliability research](https://www.getmaxim.ai/articles/ensuring-ai-agent-reliability-in-production-environments-strategies-and-solutions/), production-grade agents require:
+
+**1. Error Handling for Probabilistic Systems**
+
+```python
+# Graceful degradation pattern
+class AgentExecutor:
+    def execute_with_fallback(self, stage, inputs):
+        try:
+            return self.primary_agent.execute(stage, inputs)
+        except AgentTimeout:
+            return self.fallback_agent.execute(stage, inputs)
+        except AgentError as e:
+            if self.can_retry(e):
+                return self.retry_with_backoff(stage, inputs)
+            return self.graceful_degradation(stage, inputs)
+```
+
+**2. Circuit Breaker Pattern**
+
+Detect persistent failures and route traffic away from failing components:
+
+```python
+class CircuitBreaker:
+    def __init__(self, failure_threshold=3, reset_timeout=60):
+        self.failures = 0
+        self.state = "closed"  # closed, open, half-open
+
+    def call(self, func, *args):
+        if self.state == "open":
+            raise CircuitOpenError("Agent unavailable")
+        try:
+            result = func(*args)
+            self.reset()
+            return result
+        except Exception as e:
+            self.record_failure()
+            if self.failures >= self.failure_threshold:
+                self.trip()
+            raise
+```
+
+**3. Observability Requirements**
+
+[Effective observability](https://dev.to/nexaitech/ai-agent-orchestration-in-2025-how-to-build-scalable-secure-and-observable-multi-agent-systems-2flc) must monitor four interdependent components:
+
+| Component | Metrics |
+|-----------|---------|
+| **Data Quality** | Input validation rates, context completeness |
+| **System Performance** | Token usage, latency distributions, error rates |
+| **Code Behavior** | Tool invocation success, stage completion rates |
+| **Model Responses** | Output quality scores, task completion success |
+
+**4. Distributed Tracing**
+
+Enable precise diagnosis of bottlenecks and failure points:
+
+```python
+@trace_stage("implement_changes")
+async def implement_changes(self, plan, files):
+    with self.tracer.span("load_context"):
+        context = await self.load_relevant_files(files)
+
+    with self.tracer.span("invoke_agent"):
+        result = await self.implementer.execute(plan, context)
+
+    with self.tracer.span("validate_output"):
+        self.validate_changes(result)
+
+    return result
+```
+
+### Reliability Metrics to Track
+
+A simple AI agent workflow involving document retrieval, LLM inference, external API calls, and response formatting can achieve only **98% combined reliability** when individual components maintain 99-99.9% uptime. Track:
+
+- **Task completion rate** by workflow type
+- **Stage failure rates** to identify weak points
+- **Mean time to recovery** from failures
+- **False positive/negative rates** for validation stages
+
+## Security & Isolation
+
+Multi-agent systems introduce security challenges beyond existing cyber-security frameworks. When agents interact directly or through shared environments, [novel threats emerge](https://arxiv.org/html/2505.02077v1) that cannot be addressed by securing individual agents in isolation.
+
+### Security Threat Model
+
+| Threat Category | Examples | Mitigation |
+|-----------------|----------|------------|
+| **Inter-Agent Attacks** | Steganographic collusion, coordinated manipulation | Agent isolation, communication auditing |
+| **Prompt Injection** | Malicious inputs exploiting agent prompts | Input sanitization, prompt firewalling |
+| **Privilege Escalation** | Agents exceeding intended permissions | Principle of least privilege, RBAC |
+| **Data Exfiltration** | Agents leaking sensitive context | Network isolation, output filtering |
+
+### Production Security Best Practices
+
+**1. Sandboxing and Isolation**
+
+[Maintain strict sandboxing](https://dev.to/nexaitech/ai-agent-orchestration-in-2025-how-to-build-scalable-secure-and-observable-multi-agent-systems-2flc) between environments:
+
+```python
+class SandboxedAgentExecutor:
+    def __init__(self, config):
+        self.container_config = {
+            "network_mode": "none",  # No network by default
+            "read_only": True,
+            "mem_limit": "2g",
+            "cpu_quota": 50000,  # 50% CPU
+            "security_opt": ["no-new-privileges:true"],
+        }
+
+    def execute(self, agent, inputs):
+        # Run in isolated container
+        with self.create_sandbox() as sandbox:
+            result = sandbox.run(agent, inputs)
+            # Validate output before returning
+            self.validate_output(result)
+            return result
+```
+
+**2. Principle of Least Privilege**
+
+Apply strict, granular access controls to every agent:
+
+```python
+class AgentPermissions:
+    READ_FILES = "read_files"
+    WRITE_FILES = "write_files"
+    EXECUTE_COMMANDS = "execute_commands"
+    NETWORK_ACCESS = "network_access"
+
+# Example: Planner agent only needs read access
+planner_permissions = {AgentPermissions.READ_FILES}
+
+# Example: Implementer needs read/write but no network
+implementer_permissions = {
+    AgentPermissions.READ_FILES,
+    AgentPermissions.WRITE_FILES,
+}
+```
+
+**3. Dynamic LLM Firewalls**
+
+[Recent research introduces dynamic firewalls](https://arxiv.org/html/2505.02077v1) to secure agent interactions:
+
+- **LlamaFirewall** (Meta): Runtime filtering of agent outputs
+- **Prompt injection defense**: Sanitize inputs before agent processing
+- **Output validation**: Verify agent actions before execution
+
+**4. Audit Logging**
+
+Every agent action must be traceable:
+
+```python
+class AuditLogger:
+    def log_agent_action(self, agent_id, action, inputs, outputs, permissions_used):
+        self.log({
+            "timestamp": datetime.utcnow().isoformat(),
+            "agent_id": agent_id,
+            "action": action,
+            "inputs_hash": self.hash_sensitive(inputs),
+            "outputs_hash": self.hash_sensitive(outputs),
+            "permissions": list(permissions_used),
+            "trace_id": self.current_trace_id,
+        })
+```
+
+### jib-Specific Security Considerations
+
+Given jib's sandboxed Docker environment:
+
+| jib Security Feature | How It Helps Multi-Agent |
+|---------------------|--------------------------|
+| Network isolation | Prevents agents from making unauthorized external calls |
+| No production credentials | Limits blast radius of compromised agents |
+| Git-backed state (Beads) | Audit trail for all agent actions |
+| Container isolation | Each agent invocation is isolated |
+| GitHub App token scope | Limited to specific repository operations |
+
+## Interoperability Standards
+
+Two emerging protocols are shaping how agents communicate and integrate with tools:
+
+### Model Context Protocol (MCP)
+
+[MCP](https://modelcontextprotocol.io/) is an open standard introduced by Anthropic in November 2024 for agent-to-tool communication.
+
+**Adoption Status (December 2025):**
+- OpenAI adopted MCP in March 2025 across ChatGPT, Agents SDK, and Responses API
+- Google DeepMind confirmed MCP support in Gemini models
+- ~90% of organizations expected to use MCP by end of 2025
+- Block has developed 60+ MCP servers internally
+
+**Production Challenges:**
+- Security: Prompt injection, over-permissive defaults, lack of tenant isolation
+- Scalability: stdio transport creates issues at enterprise scale
+- Authentication: Lacking OAuth compliance, SSO integration, granular permissions
+- Latency: Remote servers introduce delays for time-sensitive applications
+
+**MCP Integration for jib:**
+
+```python
+# Example MCP tool registration for pipeline stages
+mcp_tools = {
+    "git_operations": MCPServer("https://github.com/mcp/git"),
+    "code_analysis": MCPServer("https://internal/mcp/analysis"),
+    "test_runner": MCPServer("https://internal/mcp/testing"),
+}
+
+class AgentWithMCP(Agent):
+    def __init__(self, name, tools: list[str]):
+        self.tools = [mcp_tools[t] for t in tools]
+
+    def execute(self, inputs):
+        # Tools available via MCP during execution
+        return self.run_with_tools(inputs, self.tools)
+```
+
+### Agent2Agent (A2A) Protocol
+
+[A2A](https://a2a-protocol.org/) is Google's open protocol (April 2025) for agent-to-agent communication, now under Linux Foundation governance.
+
+**Key Features:**
+- **Capability Discovery**: Agents advertise capabilities via JSON "Agent Cards"
+- **Task Management**: Client/remote agent model for task delegation
+- **Multimodal Support**: Supports text, audio, and video streaming
+- **Built on Web Standards**: JSON-RPC 2.0 over HTTPS
+
+**How A2A and MCP Complement Each Other:**
+
+| Protocol | Purpose | Use Case |
+|----------|---------|----------|
+| **MCP** | Agent-to-tool | Connecting agents to APIs, databases, file systems |
+| **A2A** | Agent-to-agent | Cross-system agent collaboration, delegation |
+
+**A2A for jib Multi-Agent Pipelines:**
+
+```python
+# Hypothetical A2A integration for external agent delegation
+class ExternalAgentDelegate:
+    def __init__(self, agent_card_url):
+        self.agent = A2AClient(agent_card_url)
+        self.capabilities = self.agent.discover_capabilities()
+
+    async def delegate_task(self, task_type, inputs):
+        if task_type not in self.capabilities:
+            raise UnsupportedTaskError(f"Agent doesn't support {task_type}")
+
+        # A2A task submission
+        task_id = await self.agent.submit_task(task_type, inputs)
+        return await self.agent.await_result(task_id)
+```
+
+**Industry Adoption:**
+- 100+ technology companies supporting A2A
+- Partners include Atlassian, Box, Salesforce, SAP, ServiceNow, PayPal
+- Service providers: Accenture, Deloitte, Cognizant, Capgemini
+
+### Implications for jib
+
+**Short-term:**
+- Monitor MCP ecosystem for useful tool integrations
+- Design agent templates with standard input/output contracts (future A2A compatibility)
+
+**Medium-term:**
+- Consider MCP for tool integrations (code analysis, testing)
+- Evaluate A2A for delegating specialized tasks to external agents
+
+**Long-term:**
+- jib agents could expose A2A Agent Cards for external consumption
+- Enable hybrid workflows with internal + external agents
+
+## Enterprise Case Studies
+
+Real-world deployments provide valuable insights into what works at scale.
+
+### Salesforce Agentforce (2025)
+
+[Salesforce's Agentforce](https://salesforcedevops.net/index.php/2025/06/23/salesforce-agentforce-3/) represents one of the largest enterprise multi-agent deployments:
+
+**Results:**
+- **5,000+ businesses** using Agentforce (Indeed, OpenTable, Heathrow Airport)
+- **Wiley**: 40%+ increase in case resolution vs old bot
+- **1-800Accountant**: 70% autonomous resolution during tax season
+- **Engine**: 15% reduction in average case handle time
+- **Grupo Globo**: 22% increase in subscriber retention
+
+**Success Factors:**
+1. **Data Readiness**: AI quality depends on data quality - extensive data cleansing required
+2. **Team Upskilling**: New roles like "AI Operations Manager" emerging
+3. **Governance First**: Built-in safeguards for bias detection, role-based access, explainability
+4. **Observability**: Performance dashboards tracking adoption, feedback, success rates, costs
+
+### Anthropic Research System
+
+[Anthropic's multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) (June 2025) demonstrates best-in-class architecture:
+
+**Architecture:**
+- Lead agent (Claude Opus 4) coordinates research strategy
+- Subagents (Claude Sonnet 4) execute parallel searches
+- 90.2% performance improvement over single-agent Opus 4
+
+**Key Engineering Lessons:**
+1. **Claude as Prompt Engineer**: Given a prompt and failure mode, Claude can diagnose and suggest improvements
+2. **Tool-Testing Agent**: Attempts flawed MCP tools, then rewrites descriptions to avoid failures - **40% decrease in task completion time**
+3. **Search Strategy**: "Start broad, then narrow" - agents default to overly specific queries
+
+### Block (Square) MCP Deployment
+
+Block has developed **60+ MCP servers** reflecting patterns observed across their ecosystem:
+
+**Lessons:**
+- Standardization pays off: Consistent MCP interface across tools
+- Security is paramount: Enterprise-grade access control
+- Observability is essential: OpenTelemetry integration across all agents
+
+### Common Enterprise Deployment Challenges
+
+| Challenge | Small Orgs (<500) | Large Orgs (>10,000) |
+|-----------|-------------------|----------------------|
+| Primary blocker | **Cost** | **Compliance & Security** |
+| Adoption rate | Higher experimentation | More governance required |
+| Key success factor | ROI demonstration | Audit trails, RBAC |
+
+**Industry Outlook:**
+- **93%** of IT leaders plan to deploy autonomous agents within 2 years
+- **282%** increase in AI adoption among CIOs (Salesforce 2025 study)
+- **50%** of enterprises expected to adopt agent-based modeling by 2027 (Gartner)
+
+### Latency Optimization Techniques
+
+Enterprise deployments have validated several latency optimization techniques:
+
+**1. Parallel Execution**
+
+[Switching from serial to parallel execution](https://georgian.io/reduce-llm-costs-and-latency-guide/) for independent queries can reduce latency by **20-50%**:
+
+```python
+# Serial (slow)
+result1 = await agent.search(query1)
+result2 = await agent.search(query2)
+result3 = await agent.search(query3)
+
+# Parallel (fast)
+results = await asyncio.gather(
+    agent.search(query1),
+    agent.search(query2),
+    agent.search(query3),
+)
+```
+
+**2. Parallel SLM/LLM Architecture**
+
+Run Small Language Model (SLM) for quick initial responses while Large Language Model (LLM) generates higher-quality results:
+
+```python
+async def hybrid_response(query):
+    # Start both in parallel
+    quick_task = asyncio.create_task(slm.generate(query))
+    full_task = asyncio.create_task(llm.generate(query))
+
+    # Return quick response immediately, full response when ready
+    quick_result = await quick_task
+    yield quick_result  # Immediate response
+
+    full_result = await full_task
+    yield full_result  # Higher quality follow-up
+```
+
+**3. Smart Caching**
+
+[Caching can reduce latency by up to 70%](https://superagi.com/optimizing-ai-agent-performance-advanced-techniques-and-tools-for-open-source-agentic-frameworks-in-2025/):
+
+```python
+class SemanticCache:
+    def __init__(self, similarity_threshold=0.95):
+        self.cache = {}
+        self.embeddings = {}
+
+    async def get_or_compute(self, query, compute_fn):
+        query_embedding = await self.embed(query)
+
+        # Check for semantically similar cached queries
+        for cached_query, cached_embedding in self.embeddings.items():
+            if self.similarity(query_embedding, cached_embedding) > self.threshold:
+                return self.cache[cached_query]
+
+        # Cache miss - compute and store
+        result = await compute_fn(query)
+        self.cache[query] = result
+        self.embeddings[query] = query_embedding
+        return result
+```
+
+**4. Graph-Based Parallel Decomposition**
+
+[Research on agentic graph compilation](https://arxiv.org/html/2511.19635) shows complex problems can be partitioned into independent subgraphs for parallel solving:
+
+- Heavy models (Opus) for ahead-of-time workflow planning
+- Lightweight models (Haiku) for executing individual nodes
+- Recursive concurrent task decomposition without global bottlenecks
+
 ## Implementation Phases
 
 ### Phase 1: Core Framework
@@ -970,33 +1401,73 @@ Based on [comprehensive 2025 framework comparison](https://latenode.com/blog/lan
 
 ### Industry Research & Best Practices (2025)
 - [Anthropic: How we built our multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) - 90% performance improvement with multi-agent
+- [Anthropic: Building agents with the Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk) - SDK best practices
 - [Multi-Agent and Multi-LLM Architecture: Complete Guide for 2025](https://collabnix.com/multi-agent-and-multi-llm-architecture-complete-guide-for-2025/)
 - [Microsoft Azure: AI Agent Orchestration Patterns](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/ai-agent-design-patterns) - Sequential, concurrent, group chat patterns
 - [Microsoft: Agent Factory - Agentic AI Design Patterns](https://azure.microsoft.com/en-us/blog/agent-factory-the-new-era-of-agentic-ai-common-use-cases-and-design-patterns/)
 - [Google Cloud: Choose a design pattern for your agentic AI system](https://cloud.google.com/architecture/choose-design-pattern-agentic-ai-system)
 - [LangChain: How and when to build multi-agent systems](https://blog.langchain.com/how-and-when-to-build-multi-agent-systems/)
+- [ZenML: LLM Agents in Production](https://www.zenml.io/blog/llm-agents-in-production-architectures-challenges-and-best-practices) - Production deployment challenges
+
+### Failure Modes & Reliability Research (New)
+- [UC Berkeley: Why Do Multi-Agent LLM Systems Fail? (MAST)](https://arxiv.org/abs/2503.13657) - 14 failure modes taxonomy
+- [MAST Project Page](https://sky.cs.berkeley.edu/project/mast/) - Dataset and LLM annotator
+- [Understanding and Mitigating Failure Modes in LLM-Based Multi-Agent Systems](https://www.marktechpost.com/2025/03/25/understanding-and-mitigating-failure-modes-in-llm-based-multi-agent-systems/)
+- [Ensuring AI Agent Reliability in Production Environments](https://www.getmaxim.ai/articles/ensuring-ai-agent-reliability-in-production-environments-strategies-and-solutions/)
+- [AI Agent Orchestration in 2025: Scalable, Secure, Observable](https://dev.to/nexaitech/ai-agent-orchestration-in-2025-how-to-build-scalable-secure-and-observable-multi-agent-systems-2flc)
+
+### Security & Isolation (New)
+- [Open Challenges in Multi-Agent Security](https://arxiv.org/html/2505.02077v1) - Novel security threats in MAS
+- [The attack surface you can't see: Securing autonomous AI](https://www.cio.com/article/4071216/the-attack-surface-you-cant-see-securing-your-autonomous-ai-and-agentic-systems.html)
+- [Unit 42: Top 10 AI Agent Security Risks](https://chapinindustries.com/2025/05/04/ai-agents-are-here-so-are-the-threats-unit-42-unveils-the-top-10-ai-agent-security-risks/)
+
+### Interoperability Protocols (New)
+- [A2A Protocol (Agent2Agent)](https://a2a-protocol.org/) - Official protocol documentation
+- [Google: Announcing the Agent2Agent Protocol](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/)
+- [Linux Foundation: A2A Protocol Project Launch](https://www.linuxfoundation.org/press/linux-foundation-launches-the-agent2agent-protocol-project-to-enable-secure-intelligent-communication-between-ai-agents)
+- [Inside Google's A2A Protocol](https://towardsdatascience.com/inside-googles-agent2agent-a2a-protocol-teaching-ai-agents-to-talk-to-each-other/)
+- [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) - Official documentation
+- [MCP: Landscape, Security Threats, and Future Directions](https://arxiv.org/abs/2503.23278)
+- [Enterprise Challenges in Deploying Remote MCP Servers](https://www.descope.com/blog/post/enterprise-mcp)
+
+### Enterprise Case Studies (New)
+- [Salesforce Agentforce 3: Building Production Infrastructure](https://salesforcedevops.net/index.php/2025/06/23/salesforce-agentforce-3/)
+- [Salesforce: Top AI Agent Statistics for 2025](https://www.salesforce.com/news/stories/ai-agents-statistics/)
+- [AI agents move from demos to deployment at enterprise scale](https://siliconangle.com/2025/10/23/ai-agents-move-demos-deployment-enterprise-scale-dreamforce/)
+- [OpenAI: New tools for building agents](https://openai.com/index/new-tools-for-building-agents/) - Agents SDK announcement
 
 ### Economic & Cost Optimization
 - [Agentic AI Automation: Optimize Efficiency, Minimize Token Costs](https://medium.com/@anishnarayan09/agentic-ai-automation-optimize-efficiency-minimize-token-costs-69185687713c)
 - [AI Costs in 2025: Cheaper Tokens, Pricier Workflows](https://adam.holter.com/ai-costs-in-2025-cheaper-tokens-pricier-workflows-why-your-bill-is-still-rising/)
 - [The Hidden Costs of Agentic AI](https://galileo.ai/blog/hidden-cost-of-agentic-ai) - 40% of projects fail before production
+- [A Practical Guide to Reducing Latency and Costs in Agentic AI](https://georgian.io/reduce-llm-costs-and-latency-guide/)
 
 ### State Management & Checkpointing
 - [Checkpoint/Restore Systems: Evolution and Applications in AI Agents](https://eunomia.dev/blog/2025/05/11/checkpointrestore-systems-evolution-techniques-and-applications-in-ai-agents/)
 - [Bulletproof agents with durable task extension](https://techcommunity.microsoft.com/blog/appsonazureblog/bulletproof-agents-with-the-durable-task-extension-for-microsoft-agent-framework/4467122)
 - [LangGraph State Machines: Managing Complex Agent Task Flows in Production](https://dev.to/jamesli/langgraph-state-machines-managing-complex-agent-task-flows-in-production-36f4)
 - [Multi-Agent AI Failure Recovery That Actually Works](https://galileo.ai/blog/multi-agent-ai-system-failure-recovery)
+- [Beyond context windows: How AI agent memory is evolving](https://bdtechtalks.com/2025/08/31/ai-agent-memory-frameworks/)
+- [Context Engineering for Agents](https://rlancemartin.github.io/2025/06/23/context_engineering/)
+
+### Benchmarks & Evaluation (New)
+- [Benchmarking Multi-Agent AI: Insights & Practical Use](https://galileo.ai/blog/benchmarks-multi-agent-ai)
+- [MultiAgentBench: Evaluating Collaboration and Competition](https://arxiv.org/abs/2503.01935)
+- [TheAgentCompany: Benchmarking LLM Agents on Real World Tasks](https://arxiv.org/abs/2412.14161)
+- [A Comprehensive Guide to Evaluating Multi-Agent LLM Systems](https://orq.ai/blog/multi-agent-llm-eval-system)
 
 ### Framework Comparisons
 - [LangGraph vs AutoGen vs CrewAI: Complete Comparison 2025](https://latenode.com/blog/langgraph-vs-autogen-vs-crewai-complete-ai-agent-framework-comparison-architecture-analysis-2025)
 - [A Detailed Comparison of Top 6 AI Agent Frameworks in 2025](https://www.turing.com/resources/ai-agent-frameworks)
 - [Comparing Open-Source AI Agent Frameworks](https://langfuse.com/blog/2025-03-19-ai-agent-comparison)
 - [Microsoft Agent Framework](https://azure.microsoft.com/en-us/blog/introducing-microsoft-agent-framework/) - Converges AutoGen + Semantic Kernel
+- [OpenAI Agents SDK (replaced Swarm)](https://github.com/openai/swarm) - Production-ready evolution
 
 ### Orchestration Patterns
 - [9 Agentic AI Workflow Patterns Transforming AI Agents in 2025](https://www.marktechpost.com/2025/08/09/9-agentic-ai-workflow-patterns-transforming-ai-agents-in-2025/)
 - [Top 10+ Agentic Orchestration Frameworks & Tools](https://research.aimultiple.com/agentic-orchestration/)
 - [Agent Orchestration Patterns: Linear and Adaptive Approaches](https://www.getdynamiq.ai/post/agent-orchestration-patterns-in-multi-agent-systems-linear-and-adaptive-approaches-with-dynamiq)
+- [Agentic Graph Compilation for Software Engineering Agents](https://arxiv.org/html/2511.19635) - Parallel decomposition research
 
 ### Legacy References
 - [LangGraph Documentation](https://python.langchain.com/docs/langgraph) - Graph-based multi-agent patterns
@@ -1006,6 +1477,6 @@ Based on [comprehensive 2025 framework comparison](https://latenode.com/blog/lan
 
 ---
 
-**Last Updated:** 2025-11-30
-**Next Review:** 2025-12-30 (Monthly)
+**Last Updated:** 2025-12-01
+**Next Review:** 2026-01-01 (Monthly)
 **Status:** Proposed (Not Implemented)
