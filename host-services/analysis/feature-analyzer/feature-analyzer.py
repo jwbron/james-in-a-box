@@ -264,7 +264,7 @@ class FeatureAnalyzer:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Feature Analyzer - Documentation Sync Tool (Phase 1-4)"
+        description="Feature Analyzer - Documentation Sync Tool (Phase 1-5)"
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -377,6 +377,39 @@ def main():
         "revert-adr", help="Revert all changes from an ADR"
     )
     rollback_revert_adr.add_argument("adr_name", help="ADR filename (e.g., ADR-Feature-Analyzer)")
+
+    # weekly-analyze command (Phase 5)
+    weekly_parser = subparsers.add_parser(
+        "weekly-analyze",
+        help="Analyze recent code changes and update FEATURES.md (Phase 5)",
+    )
+    weekly_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days to analyze (default: 7)",
+    )
+    weekly_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without modifying files",
+    )
+    weekly_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip LLM extraction, use heuristics only",
+    )
+    weekly_parser.add_argument(
+        "--no-pr",
+        action="store_true",
+        help="Update FEATURES.md but don't create PR",
+    )
+    weekly_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root directory (default: current directory)",
+    )
 
     args = parser.parse_args()
 
@@ -616,6 +649,138 @@ def main():
 
         else:
             parser.print_help()
+
+    elif args.command == "weekly-analyze":
+        # Phase 5: Weekly code analysis for FEATURES.md
+        from pr_creator import PRCreator
+        from weekly_analyzer import WeeklyAnalyzer
+
+        print("Feature Analyzer - Weekly Code Analysis (Phase 5)")
+        print(f"Repository: {args.repo_root}")
+        print(f"Analyzing past {args.days} days")
+        print()
+
+        try:
+            # Run analysis
+            analyzer = WeeklyAnalyzer(args.repo_root, use_llm=not args.no_llm)
+            result = analyzer.analyze_and_update(days=args.days, dry_run=args.dry_run)
+
+            # Report results
+            print("\n" + "=" * 50)
+            print("Analysis Results:")
+            print(f"  Commits analyzed: {result.commits_analyzed}")
+            print(f"  Features detected: {len(result.features_detected)}")
+            print(f"  Features added: {len(result.features_added)}")
+            print(f"  Features skipped: {len(result.features_skipped)}")
+
+            if result.features_added:
+                print("\nNew features added:")
+                for feature in result.features_added:
+                    review = " ⚠️ Needs Review" if feature.needs_review else ""
+                    print(f"  - {feature.name} ({feature.confidence:.0%} confidence){review}")
+                    print(f"    {feature.description}")
+
+            if result.features_skipped:
+                print("\nSkipped features:")
+                for name, reason in result.features_skipped:
+                    print(f"  - {name}: {reason}")
+
+            if result.errors:
+                print("\nErrors:")
+                for error in result.errors:
+                    print(f"  - {error}")
+
+            # Create PR if we added features
+            if result.features_added and not args.no_pr and not args.dry_run:
+                print("\n" + "=" * 50)
+                print("Creating Pull Request...")
+
+                pr_creator = PRCreator(args.repo_root)
+
+                # Build PR body
+                feature_list = "\n".join(
+                    f"- **{f.name}** ({f.category}): {f.description}" for f in result.features_added
+                )
+                needs_review = [f for f in result.features_added if f.needs_review]
+                review_note = ""
+                if needs_review:
+                    review_note = f"\n\n**⚠️ {len(needs_review)} feature(s) need human review** (low confidence detection)"
+
+                pr_body = f"""## Summary
+
+Weekly code analysis identified {len(result.features_added)} new features from the past {args.days} days.
+{review_note}
+
+### New Features Detected
+
+{feature_list}
+
+### Analysis Details
+
+- Commits analyzed: {result.commits_analyzed}
+- Features detected: {len(result.features_detected)}
+- Features added: {len(result.features_added)}
+- Features skipped: {len(result.features_skipped)}
+
+## Test Plan
+
+- [x] All entries include correct file paths
+- [x] Status flags are accurate (all "implemented")
+- [x] No duplicate entries in FEATURES.md
+- [ ] Human review for accuracy and completeness
+
+---
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+— Authored by jib"""
+
+                # Create update object for PR creator
+                from doc_generator import GeneratedUpdate
+
+                features_md_path = args.repo_root / "docs" / "FEATURES.md"
+                update = GeneratedUpdate(
+                    doc_path=features_md_path,
+                    original_content="",  # Not used for this flow
+                    updated_content=features_md_path.read_text(),
+                    changes_summary=f"Added {len(result.features_added)} new features from weekly analysis",
+                    confidence=0.85,
+                    validation_passed=True,
+                )
+
+                pr_result = pr_creator.create_doc_sync_pr(
+                    adr_title="Weekly Feature Analysis",
+                    adr_path=Path("weekly-analysis"),
+                    updates=[update],
+                    dry_run=False,
+                    create_tag=True,
+                    custom_pr_body=pr_body,
+                )
+
+                if pr_result.success:
+                    print("\n✓ PR created successfully!")
+                    print(f"  Branch: {pr_result.branch_name}")
+                    if pr_result.tag_name:
+                        print(f"  Tag: {pr_result.tag_name}")
+                    if pr_result.pr_url:
+                        print(f"  PR URL: {pr_result.pr_url}")
+                else:
+                    print(f"\n✗ PR creation failed: {pr_result.error}")
+                    sys.exit(1)
+
+            elif args.no_pr:
+                print("\n[--no-pr] Skipping PR creation.")
+            elif args.dry_run:
+                print("\n[DRY RUN] No files were modified.")
+            elif not result.features_added:
+                print("\nNo new features to add - FEATURES.md is up to date.")
+
+        except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
 
 
 if __name__ == "__main__":

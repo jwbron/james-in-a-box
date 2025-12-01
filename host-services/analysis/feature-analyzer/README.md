@@ -12,9 +12,9 @@ The Feature Analyzer implements [ADR-Feature-Analyzer-Documentation-Sync](../../
 - **Phase 4**: Enhanced validation, traceability metadata, git tagging, and rollback tooling
 - **Phase 5**: Weekly code analysis for FEATURES.md updates
 
-## Current Status: Phase 4 (Enhanced Validation & Rollback)
+## Current Status: Phase 5 (Weekly Code Analysis)
 
-Phase 4 adds production-ready quality gates and traceability features.
+Phase 5 adds automated code analysis to discover and document new features in FEATURES.md.
 
 ### Phase 1 Capabilities (Manual CLI)
 
@@ -52,9 +52,15 @@ Phase 4 adds production-ready quality gates and traceability features.
 3. **Git tagging** - Creates `auto-doc-sync-YYYYMMDD` tags for audit trail
 4. **Rollback tooling** - CLI commands to find and revert auto-generated changes
 
-### What It Does NOT Do (Yet)
+### Phase 5 Capabilities (Weekly Code Analysis)
 
-- Weekly code analysis for new features (Phase 5)
+1. **Git commit analysis** - Scans commits from past 7 days
+2. **Feature extraction** - Uses LLM to identify new features from code diffs
+3. **Heuristic detection** - Fallback detection for CLI tools, services, and major classes
+4. **Confidence scoring** - Each feature gets a 0.0-1.0 confidence score
+5. **Duplicate detection** - Skips features already in FEATURES.md
+6. **FEATURES.md updates** - Adds new entries with proper formatting
+7. **Weekly systemd timer** - Runs automatically on Monday mornings
 
 ## Installation
 
@@ -65,10 +71,12 @@ cd ~/khan/james-in-a-box/host-services/analysis/feature-analyzer
 ```
 
 This installs:
-- `~/.local/bin/feature-analyzer` - Manual CLI tool (Phase 1)
+- `~/.local/bin/feature-analyzer` - Manual CLI tool (Phase 1-5)
 - `~/.local/bin/adr-watcher` - Automated watcher CLI (Phase 2)
-- `feature-analyzer-watcher.timer` - Systemd timer (every 15 min)
-- `feature-analyzer-watcher.service` - Systemd service
+- `feature-analyzer-watcher.timer` - Systemd timer for ADR detection (every 15 min)
+- `feature-analyzer-watcher.service` - Systemd service for ADR watcher
+- `feature-analyzer-weekly.timer` - Systemd timer for weekly analysis (Mondays 11am)
+- `feature-analyzer-weekly.service` - Systemd service for weekly analysis
 
 ## Usage
 
@@ -322,26 +330,78 @@ This ensures:
 - Processing resumes correctly after restarts
 - You can audit which ADRs have been handled
 
-## Future Phases
+### Phase 5: Weekly Code Analysis
 
-### Phase 5: Weekly Code Analysis (Future)
+#### Run Weekly Analysis Manually
 
-- Scan merged commits from past week
-- Extract new features using LLM
-- Update FEATURES.md
-- Create PR for review
+```bash
+# Dry-run (show what would be done)
+feature-analyzer weekly-analyze --dry-run
+
+# Run analysis with LLM extraction
+feature-analyzer weekly-analyze
+
+# Run without LLM (heuristics only)
+feature-analyzer weekly-analyze --no-llm
+
+# Update FEATURES.md but don't create PR
+feature-analyzer weekly-analyze --no-pr
+
+# Analyze more or fewer days
+feature-analyzer weekly-analyze --days 14
+```
+
+#### Weekly Timer Management
+
+```bash
+# Check timer status
+systemctl --user status feature-analyzer-weekly.timer
+
+# View next scheduled run
+systemctl --user list-timers feature-analyzer-weekly.timer
+
+# Run manually (same as timer does)
+systemctl --user start feature-analyzer-weekly.service
+
+# View logs
+journalctl --user -u feature-analyzer-weekly.service -n 50
+
+# Disable weekly analysis
+systemctl --user stop feature-analyzer-weekly.timer
+systemctl --user disable feature-analyzer-weekly.timer
+```
+
+#### Feature Detection Heuristics
+
+The analyzer identifies features using:
+
+1. **LLM Analysis** (primary): Analyzes commit diffs to identify new capabilities
+2. **Heuristic Fallback**: Detects patterns like:
+   - New files in `host-services/` with `main()` function
+   - New CLI tools with `argparse.ArgumentParser`
+   - New systemd services
+   - New Python classes >50 LOC
+
+#### Confidence Scoring
+
+- **0.7+**: High confidence, auto-added to FEATURES.md
+- **0.3-0.7**: Added with "⚠️ Needs Review" flag
+- **<0.3**: Skipped (likely not a user-facing feature)
 
 ## Architecture
 
 ```
 feature-analyzer/
-├── feature-analyzer.py                  # Main CLI tool (Phase 1-4)
+├── feature-analyzer.py                  # Main CLI tool (Phase 1-5)
 ├── adr_watcher.py                       # Automated watcher (Phase 2-3)
 ├── doc_generator.py                     # LLM-powered doc generation (Phase 3-4)
-├── pr_creator.py                        # Automated PR creation (Phase 3-4)
+├── pr_creator.py                        # Automated PR creation (Phase 3-5)
 ├── rollback.py                          # Rollback utilities (Phase 4)
-├── feature-analyzer-watcher.service     # Systemd service (Phase 2)
+├── weekly_analyzer.py                   # Weekly code analysis (Phase 5)
+├── feature-analyzer-watcher.service     # Systemd service - ADR watcher (Phase 2)
 ├── feature-analyzer-watcher.timer       # Systemd timer - 15 min (Phase 2)
+├── feature-analyzer-weekly.service      # Systemd service - weekly analysis (Phase 5)
+├── feature-analyzer-weekly.timer        # Systemd timer - Mondays 11am (Phase 5)
 ├── README.md                            # This file
 └── setup.sh                             # Installation script
 
