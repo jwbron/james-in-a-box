@@ -17,7 +17,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Context Sync Strategy](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | How external data (Confluence, JIRA, GitHub) is synced |
 | [Slack Integration Strategy](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Bidirectional Slack communication approach |
 | [Message Queue Integration](adr/not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub migration plan for Slack |
-| [Slack Bot GCP Integration](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
+| [Slack Bot GCP Integration](adr/in-progress/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
 | [GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment strategy |
 | [Internet Tool Access Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on network access |
 
@@ -74,7 +74,7 @@ When working on specific tasks, consult these documents first:
 | **Adding new host services** | [Architecture Overview](architecture/README.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Security-related changes** | [ADR: Internet Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Context sync modifications** | [ADR: Context Sync](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |
-| **GCP deployment changes** | [ADR: GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | [ADR: Slack GCP](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) |
+| **GCP deployment changes** | [ADR: GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | [ADR: Slack GCP](adr/in-progress/ADR-Slack-Bot-GCP-Integration.md) |
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
 | **ADR research/generation** | [ADR Researcher](../host-services/analysis/adr-researcher/README.md) | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) |
 | **Feature discovery** | [Features - Source Mapping](FEATURES.md) | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) |
