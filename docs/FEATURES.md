@@ -68,7 +68,7 @@ Features are tagged with status flags matching ADR lifecycle:
 
 #### Slack Notifier **[implemented]**
 - **Description**: Sends notifications from container to Slack DM via file-based queue
-- **ADR**: [ADR-Slack-Integration-Strategy-MCP-vs-Custom](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md)
+- **ADR**: [ADR-Slack-Integration-Strategy-MCP-vs-Custom](adr/in-progress/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md)
 - **Implementation**:
   - `host-services/slack/slack-notifier/` - Notification sender service
   - `jib-container/shared/notifications.py` - Python library for container use
@@ -77,7 +77,7 @@ Features are tagged with status flags matching ADR lifecycle:
 
 #### Slack Receiver **[implemented]**
 - **Description**: Receives Slack messages and delivers them to container as task files
-- **ADR**: [ADR-Slack-Integration-Strategy-MCP-vs-Custom](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md)
+- **ADR**: [ADR-Slack-Integration-Strategy-MCP-vs-Custom](adr/in-progress/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md)
 - **Implementation**:
   - `host-services/slack/slack-receiver/` - Message receiver service
   - `~/sharing/incoming/` - Incoming task directory

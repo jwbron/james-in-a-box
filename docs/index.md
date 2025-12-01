@@ -15,7 +15,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Autonomous Software Engineer](adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, and design decisions |
 | [LLM Documentation Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation (this index) |
 | [Context Sync Strategy](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | How external data (Confluence, JIRA, GitHub) is synced |
-| [Slack Integration Strategy](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Bidirectional Slack communication approach |
+| [Slack Integration Strategy](adr/in-progress/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Bidirectional Slack communication approach |
 | [Message Queue Integration](adr/not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub migration plan for Slack |
 | [Slack Bot GCP Integration](adr/not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
 | [GCP Deployment](adr/not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment strategy |
@@ -70,7 +70,7 @@ When working on specific tasks, consult these documents first:
 | Task Type | Read First | Also Helpful |
 |-----------|------------|--------------|
 | **ANY new task** | [Beads Task Tracking](reference/beads.md) | Check for existing work before starting |
-| **Slack integration changes** | [Slack Integration](architecture/slack-integration.md) | [ADR: Slack Strategy](adr/not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) |
+| **Slack integration changes** | [Slack Integration](architecture/slack-integration.md) | [ADR: Slack Strategy](adr/in-progress/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) |
 | **Adding new host services** | [Architecture Overview](architecture/README.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Security-related changes** | [ADR: Internet Lockdown](adr/not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Context sync modifications** | [ADR: Context Sync](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |

@@ -1112,7 +1112,7 @@ If agent drifts from Khan Academy engineering culture, analyzer recommends:
 **Detailed specifications in companion ADRs:**
 - [ADR-Message-Queue-Slack-Integration](../not-implemented/ADR-Message-Queue-Slack-Integration.md) - Cloud Pub/Sub for Slack messaging
 - [ADR-Context-Sync-Strategy-Custom-vs-MCP](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) - MCP for Jira/GitHub, custom for Confluence
-- [ADR-Slack-Integration-Strategy-MCP-vs-Custom](../not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) - MCP for reading, Pub/Sub for sending
+- [ADR-Slack-Integration-Strategy-MCP-vs-Custom](ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) - MCP for reading, Pub/Sub for sending
 - [ADR-Slack-Bot-GCP-Integration](../not-implemented/ADR-Slack-Bot-GCP-Integration.md) - Full slash command interface
 - [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) - Complete Terraform infrastructure
 
@@ -1760,7 +1760,7 @@ This ADR is the foundational document for jib. The following companion ADRs prov
 |-----|---------|
 | [ADR-Message-Queue-Slack-Integration](../not-implemented/ADR-Message-Queue-Slack-Integration.md) | Cloud Pub/Sub messaging to replace file-based Slack notifications |
 | [ADR-Context-Sync-Strategy-Custom-vs-MCP](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Hybrid approach: MCP for Jira/GitHub, keep custom sync for Confluence |
-| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](../not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | MCP for reading Slack, Pub/Sub for sending messages |
+| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | MCP for reading Slack, Pub/Sub for sending messages |
 | [ADR-Slack-Bot-GCP-Integration](../not-implemented/ADR-Slack-Bot-GCP-Integration.md) | Full slash command interface replacing host-based commands |
 | [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) | Complete Terraform infrastructure following ADR #889 patterns |
 

@@ -717,7 +717,7 @@ This ADR is part of a series defining the jib GCP deployment architecture:
 | ADR | Relationship to This ADR |
 |-----|-------------------------|
 | [ADR-Message-Queue-Slack-Integration](../not-implemented/ADR-Message-Queue-Slack-Integration.md) | Sync jobs use Pub/Sub to send notifications about sync status and errors |
-| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](../not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Parallel decision - MCP for Slack reading, similar hybrid approach |
+| [ADR-Slack-Integration-Strategy-MCP-vs-Custom](../in-progress/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Parallel decision - MCP for Slack reading, similar hybrid approach |
 | [ADR-Slack-Bot-GCP-Integration](../not-implemented/ADR-Slack-Bot-GCP-Integration.md) | Defines `/sync` slash commands that trigger sync operations |
 | [ADR-GCP-Deployment-Terraform](../not-implemented/ADR-GCP-Deployment-Terraform.md) | Defines scheduled sync jobs (sync-confluence, sync-jira, sync-github) using scheduled-job module |
 

@@ -583,7 +583,7 @@ The receiver service writes to Pub/Sub instead of files, but the message format 
 ## References
 
 - [ADR: Message Queue for Slack Integration](./ADR-Message-Queue-Slack-Integration.md)
-- [ADR: Context Sync Strategy - Custom vs MCP](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md)
+- [ADR: Context Sync Strategy - Custom vs MCP](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md)
 - [Slack MCP Server (archived)](https://github.com/modelcontextprotocol/servers-archived/tree/main/src/slack)
 - [korotovsky/slack-mcp-server](https://github.com/korotovsky/slack-mcp-server)
 - [Slack MCP Announcement](https://slack.dev/secure-data-connectivity-for-the-modern-ai-era/)
