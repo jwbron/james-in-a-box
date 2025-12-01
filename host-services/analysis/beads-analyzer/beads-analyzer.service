@@ -1,18 +1,16 @@
 [Unit]
 Description=JIB Beads Integration Analyzer
 Documentation=https://github.com/jwbron/james-in-a-box
-After=network-online.target
+After=network-online.target docker.service
 Wants=network-online.target
+Requires=docker.service
 OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot
 
-# Ensure PATH includes common binary locations (systemd has minimal PATH by default)
-# bd is installed via Go at ~/go/bin/bd
-Environment="PATH=%h/go/bin:/usr/local/bin:/usr/bin:/bin:%h/khan/james-in-a-box/bin"
-
-# Execute the beads analyzer directly from the repo
+# Execute the beads analyzer - delegates to jib container for isolated worktree
+# The container-side processor handles all file operations to avoid tainting main worktree
 ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/beads-analyzer/beads-analyzer.py --days 7
 
 # Logging
@@ -22,6 +20,9 @@ SyslogIdentifier=beads-analyzer
 
 # Restart behavior
 Restart=no
+
+# Environment for jib
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:%h/khan/james-in-a-box/bin"
 
 [Install]
 WantedBy=multi-user.target
