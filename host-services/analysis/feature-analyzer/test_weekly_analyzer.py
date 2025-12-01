@@ -1,8 +1,7 @@
 """Unit tests for weekly_analyzer.py utility functions."""
 
 import pytest
-from pathlib import Path
-from weekly_analyzer import WeeklyAnalyzer, DetectedFeature
+from weekly_analyzer import DetectedFeature, WeeklyAnalyzer
 
 
 @pytest.fixture
@@ -62,7 +61,9 @@ class TestGenerateNameFromPath:
 
     def test_generic_name_gets_qualified_with_parent(self, analyzer):
         # Generic names like "connector" should be qualified with parent directory
-        assert analyzer._generate_name_from_path("confluence/connector.py") == "Confluence Connector"
+        assert (
+            analyzer._generate_name_from_path("confluence/connector.py") == "Confluence Connector"
+        )
         assert analyzer._generate_name_from_path("slack/handler.py") == "Slack Handler"
         assert analyzer._generate_name_from_path("github/client.py") == "Github Client"
 
@@ -96,7 +97,9 @@ class TestDeduplicateByFiles:
     def test_keeps_highest_confidence_for_same_file(self, analyzer):
         features = [
             DetectedFeature(name="Low Conf", description="Desc", files=["same.py"], confidence=0.5),
-            DetectedFeature(name="High Conf", description="Desc", files=["same.py"], confidence=0.9),
+            DetectedFeature(
+                name="High Conf", description="Desc", files=["same.py"], confidence=0.9
+            ),
             DetectedFeature(name="Med Conf", description="Desc", files=["same.py"], confidence=0.7),
         ]
         deduplicated, skipped = analyzer._deduplicate_by_files(features)
