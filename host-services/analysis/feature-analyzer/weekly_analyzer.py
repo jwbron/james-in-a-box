@@ -1339,6 +1339,12 @@ class RepoAnalyzer:
         """
         Scan the repository and group files by potential feature directories.
 
+        Note: This intentionally scans only one level deep into FEATURE_DIRECTORIES.
+        Each top-level subdirectory (e.g., host-services/slack/, jib-container/scripts/)
+        is treated as a single feature unit. Deeper nesting (e.g., host-services/analysis/
+        feature-analyzer/submodule/) is included in the parent feature's file list via
+        rglob, but not treated as a separate feature directory.
+
         Returns:
             Dict mapping directory paths to lists of relevant files
         """
@@ -1377,9 +1383,18 @@ class RepoAnalyzer:
         return feature_dirs
 
     def _read_file_safe(self, path: Path, max_lines: int = 500) -> str:
-        """Safely read file content with size limits."""
+        """Safely read file content with size limits.
+
+        Limits:
+        - 100KB file size (reasonable for LLM context; also truncated at max_lines anyway)
+        - max_lines line count (default 500)
+
+        Files exceeding these limits or with encoding issues are skipped with a warning.
+        """
         try:
-            if path.stat().st_size > 500_000:  # 500KB limit
+            file_size = path.stat().st_size
+            if file_size > 100_000:  # 100KB limit (reasonable for LLM context)
+                print(f"      [skip] {path.name}: file too large ({file_size // 1024}KB)")
                 return ""
             content = path.read_text(encoding="utf-8")
             lines = content.split("\n")
@@ -1387,7 +1402,11 @@ class RepoAnalyzer:
                 lines = lines[:max_lines]
                 lines.append(f"\n... [truncated at {max_lines} lines]")
             return "\n".join(lines)
-        except (UnicodeDecodeError, OSError):
+        except UnicodeDecodeError:
+            print(f"      [skip] {path.name}: encoding error (not UTF-8)")
+            return ""
+        except OSError as e:
+            print(f"      [skip] {path.name}: read error ({e})")
             return ""
 
     def _extract_docstring(self, content: str) -> str:
@@ -1414,6 +1433,21 @@ class RepoAnalyzer:
             return str(readme.relative_to(self.repo_root))
         return None
 
+    # Priority file names that likely contain entry points or main logic
+    PRIORITY_FILE_NAMES = {"main.py", "cli.py", "app.py", "__main__.py", "server.py", "service.py"}
+
+    def _prioritize_files(self, files: list[Path]) -> list[Path]:
+        """Sort files to prioritize likely entry points for LLM analysis.
+
+        Prioritization order:
+        1. Files with priority names (main.py, cli.py, app.py, etc.)
+        2. Smaller files (more likely to be focused/readable)
+        """
+        return sorted(
+            files,
+            key=lambda f: (f.name not in self.PRIORITY_FILE_NAMES, f.stat().st_size),
+        )
+
     def _analyze_directory_with_llm(
         self, dir_path: str, files: list[Path]
     ) -> list[DetectedFeature]:
@@ -1427,9 +1461,12 @@ class RepoAnalyzer:
         Returns:
             List of detected features
         """
-        # Read file contents (limited)
+        # Sort files to prioritize entry points
+        prioritized_files = self._prioritize_files(files)
+
+        # Read file contents (limited to 5 files)
         file_contents = {}
-        for f in files[:5]:  # Limit to 5 files per directory
+        for f in prioritized_files[:5]:
             content = self._read_file_safe(f)
             if content:
                 rel_path = str(f.relative_to(self.repo_root))
@@ -1579,10 +1616,15 @@ If this directory doesn't contain a clear feature, return: `[]`
                     needs_review=confidence < 0.7,
                 )
 
-                # Store key_components in description if provided
+                # Enrich description with key_components if provided
                 key_components = item.get("key_components", [])
-                if key_components and not feature.description.endswith("."):
-                    feature.description += "."
+                if key_components:
+                    # Ensure description ends with a period
+                    if feature.description and not feature.description.endswith("."):
+                        feature.description += "."
+                    # Append key capabilities
+                    components_str = ", ".join(key_components[:3])
+                    feature.description = f"{feature.description} Key capabilities: {components_str}."
 
                 features.append(feature)
 
@@ -1858,7 +1900,15 @@ If this directory doesn't contain a clear feature, return: `[]`
         return result
 
     def _deduplicate_features(self, features: list[DetectedFeature]) -> list[DetectedFeature]:
-        """Remove duplicate features based on name similarity and file overlap."""
+        """Remove duplicate features based on name similarity and file overlap.
+
+        Uses a sophisticated similarity check requiring either:
+        - At least 2 significant common words (>3 chars), OR
+        - At least 1 significant word AND 50%+ word overlap ratio
+
+        This prevents false positives like "Slack Message Router" and "Slack Notification
+        Service" being flagged as duplicates just because they share "Slack".
+        """
         seen_names: set[str] = set()
         seen_files: set[str] = set()
         unique: list[DetectedFeature] = []
@@ -1872,14 +1922,22 @@ If this directory doesn't contain a clear feature, return: `[]`
             # Check for name similarity
             is_duplicate = False
             for seen in seen_names:
-                # Simple word overlap check
                 name_words = set(name_lower.split())
                 seen_words = set(seen.split())
                 common = name_words & seen_words
                 significant = [w for w in common if len(w) > 3]
-                if significant:
+
+                # Require at least 2 significant common words, OR
+                # at least 1 significant word with 50%+ word overlap ratio
+                if len(significant) >= 2:
                     is_duplicate = True
                     break
+                elif len(significant) >= 1:
+                    max_words = max(len(name_words), len(seen_words))
+                    overlap_ratio = len(significant) / max_words if max_words > 0 else 0
+                    if overlap_ratio >= 0.5:
+                        is_duplicate = True
+                        break
 
             if is_duplicate:
                 continue
