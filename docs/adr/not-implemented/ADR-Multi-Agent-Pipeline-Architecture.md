@@ -2,7 +2,7 @@
 
 **Driver:** James Wiesebron
 **Approver:** TBD
-**Contributors:** James Wiesebron, Claude (AI Pair Programming)
+**Contributors:** James Wiesebron, Tyler Burleigh, Claude (AI Pair Programming)
 **Informed:** Engineering teams
 **Proposed:** November 2025
 **Status:** Proposed (Not Implemented)
@@ -15,7 +15,12 @@
 - [Decision](#decision)
 - [Decision Matrix](#decision-matrix)
 - [Multi-Agent Architecture](#multi-agent-architecture)
+- [Context Engineering Principles](#context-engineering-principles)
+- [Prompt Architecture](#prompt-architecture)
+- [Agent Design Patterns](#agent-design-patterns)
 - [Pipeline Patterns](#pipeline-patterns)
+- [Review and Feedback Loops](#review-and-feedback-loops)
+- [Model Selection Strategy](#model-selection-strategy)
 - [Failure Modes & Reliability](#failure-modes--reliability)
 - [Security & Isolation](#security--isolation)
 - [Interoperability Standards](#interoperability-standards)
@@ -477,6 +482,531 @@ def resume_pipeline(beads_id):
     execute_stages(remaining_stages, previous_outputs=pipeline_state["outputs"])
 ```
 
+## Context Engineering Principles
+
+Context engineering is **the #1 job of engineers building AI agents**. This section provides detailed guidance on how to structure and deliver context to agents effectively.
+
+### The Context Hierarchy
+
+Context should be layered based on scope and relevance:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Context Hierarchy                            │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ Layer 1: PERMANENT CONTEXT (Always Included)                 │ │
+│  │                                                               │ │
+│  │ - Agent identity and role                                    │ │
+│  │ - Organization standards (Khan Academy values)               │ │
+│  │ - Security boundaries (what NOT to do)                       │ │
+│  │ - Output format requirements                                 │ │
+│  │                                                               │ │
+│  │ Size: ~500-1000 tokens                                       │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ Layer 2: WORKFLOW CONTEXT (Per Pipeline)                     │ │
+│  │                                                               │ │
+│  │ - Pipeline goal and current stage                            │ │
+│  │ - Previous stage outputs (summaries, not raw)                │ │
+│  │ - Relevant ADRs and standards                                │ │
+│  │ - Quality criteria for this workflow                         │ │
+│  │                                                               │ │
+│  │ Size: ~1000-3000 tokens                                      │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ Layer 3: TASK CONTEXT (Per Stage)                            │ │
+│  │                                                               │ │
+│  │ - Specific files to read/modify                              │ │
+│  │ - Test requirements                                          │ │
+│  │ - Related code examples                                      │ │
+│  │ - Error messages or failure context                          │ │
+│  │                                                               │ │
+│  │ Size: Variable (loaded on-demand)                            │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ Layer 4: DYNAMIC CONTEXT (On-Demand)                         │ │
+│  │                                                               │ │
+│  │ - Tool outputs (file reads, command results)                 │ │
+│  │ - External data (API responses, web searches)                │ │
+│  │ - User clarifications                                        │ │
+│  │ - Error recovery information                                 │ │
+│  │                                                               │ │
+│  │ Size: As needed                                              │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Context Selection Guidelines
+
+**What to Include:**
+
+| Context Type | When to Include | How to Include |
+|--------------|-----------------|----------------|
+| **Requirements** | Always | Summarized, not raw JIRA |
+| **Relevant Files** | When modifying | Full content or key sections |
+| **Test Patterns** | When writing tests | Examples from same codebase |
+| **ADRs** | For architectural work | Relevant decisions only |
+| **Error Messages** | When debugging | Full stack trace + context |
+| **Previous Decisions** | Multi-stage workflows | Summary from prior stages |
+
+**What to Exclude:**
+
+| Context Type | Why Exclude | Alternative |
+|--------------|-------------|-------------|
+| **Entire codebase** | Overwhelms reasoning | Targeted file loading |
+| **Historical discussions** | Noise | Summarized decisions |
+| **Unrelated ADRs** | Distraction | Index-based lookup |
+| **Raw API responses** | Token waste | Parsed, relevant fields |
+| **Sensitive data** | Security risk | Redacted or excluded |
+
+### Context Compression Techniques
+
+**1. Summarization Before Inclusion:**
+
+```python
+# Bad: Include entire JIRA ticket
+context["jira"] = full_ticket_json  # 5000 tokens
+
+# Good: Extract relevant fields
+context["requirements"] = {
+    "summary": ticket.summary,  # 50 tokens
+    "acceptance_criteria": extract_criteria(ticket),  # 200 tokens
+    "priority": ticket.priority,  # 10 tokens
+}
+```
+
+**2. Progressive Disclosure:**
+
+```python
+# Stage 1: Planning - high-level only
+context["codebase"] = get_file_tree()  # Structure, not content
+
+# Stage 2: Implementation - targeted files
+context["files"] = read_files(plan.files_to_modify)  # Only needed files
+
+# Stage 3: Testing - test patterns
+context["test_examples"] = get_similar_tests(plan.component)  # Relevant tests
+```
+
+**3. Reference Instead of Inline:**
+
+```markdown
+# Bad: Inline entire document
+Here is our security policy: [5000 words of security docs]
+
+# Good: Reference with summary
+Security Policy: See ~/context-sync/confluence/security-policy.md
+Key points for this task:
+- Authentication: OAuth2 required for all endpoints
+- Data: No PII in logs
+- Validation: Input validation required
+```
+
+### Termination Criteria
+
+Every agent must have explicit stopping conditions:
+
+```yaml
+agent:
+  name: code_researcher
+  termination_criteria:
+    success:
+      - "Found relevant code examples"
+      - "Identified all files to modify"
+      - "Confirmed no blocking dependencies"
+    failure:
+      - "No relevant code found after 3 search attempts"
+      - "Circular dependency detected"
+      - "Required file not found in codebase"
+    timeout:
+      max_duration: "5 minutes"
+      max_tool_calls: 20
+```
+
+## Prompt Architecture
+
+### Layered Prompt Structure
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Prompt Composition                          │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ SYSTEM PROMPT (Identity Layer)                               │ │
+│  │                                                               │ │
+│  │ You are {agent_name}, a specialized agent for {purpose}.     │ │
+│  │                                                               │ │
+│  │ Core Behaviors:                                               │ │
+│  │ - {behavior_1}                                               │ │
+│  │ - {behavior_2}                                               │ │
+│  │                                                               │ │
+│  │ You MUST NOT:                                                │ │
+│  │ - {constraint_1}                                             │ │
+│  │ - {constraint_2}                                             │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ CONTEXT BLOCK (Information Layer)                            │ │
+│  │                                                               │ │
+│  │ ## Task Context                                               │ │
+│  │ {task_description}                                           │ │
+│  │                                                               │ │
+│  │ ## Available Information                                      │ │
+│  │ {structured_context}                                         │ │
+│  │                                                               │ │
+│  │ ## Previous Stage Results                                     │ │
+│  │ {prior_outputs}                                              │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ INSTRUCTION BLOCK (Action Layer)                             │ │
+│  │                                                               │ │
+│  │ ## Your Task                                                  │ │
+│  │ {specific_instruction}                                       │ │
+│  │                                                               │ │
+│  │ ## Expected Output                                            │ │
+│  │ {output_format}                                              │ │
+│  │                                                               │ │
+│  │ ## Quality Criteria                                           │ │
+│  │ {success_criteria}                                           │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                            │                                      │
+│                            ▼                                      │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ EXAMPLE BLOCK (Optional - Demonstration Layer)               │ │
+│  │                                                               │ │
+│  │ ## Example Input                                              │ │
+│  │ {example_input}                                              │ │
+│  │                                                               │ │
+│  │ ## Example Output                                             │ │
+│  │ {example_output}                                             │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Prompt Composition Engine
+
+```python
+class PromptComposer:
+    """Composes prompts from templates and context."""
+
+    def __init__(self, template_dir: str = ".claude/templates"):
+        self.env = Environment(loader=FileSystemLoader(template_dir))
+
+    def compose(
+        self,
+        agent_type: str,
+        task_context: dict,
+        workflow_context: Optional[dict] = None,
+        examples: Optional[list] = None,
+    ) -> str:
+        """Compose a complete prompt from layers."""
+
+        # Load agent template
+        template = self.env.get_template(f"{agent_type}.jinja2")
+
+        # Build context hierarchy
+        context = {
+            # Layer 1: Permanent context (from agent definition)
+            **self.load_agent_defaults(agent_type),
+
+            # Layer 2: Workflow context
+            **(workflow_context or {}),
+
+            # Layer 3: Task context
+            **task_context,
+
+            # Layer 4: Examples (optional)
+            "examples": examples or [],
+        }
+
+        return template.render(**context)
+
+    def load_agent_defaults(self, agent_type: str) -> dict:
+        """Load permanent context for agent type."""
+        config_path = f".claude/agents/{agent_type}.yaml"
+        with open(config_path) as f:
+            return yaml.safe_load(f)
+```
+
+### Extended Planner Agent Template
+
+**Planner Agent (`templates/planner.jinja2`):**
+
+```jinja2
+{# System Prompt #}
+You are the Planning Agent for james-in-a-box.
+
+Your role is to analyze requirements and create actionable implementation plans.
+
+## Core Behaviors
+- Break complex tasks into discrete, testable steps
+- Identify all files that need modification
+- Estimate complexity (simple/moderate/complex)
+- Flag risks and dependencies
+- Consider edge cases and error scenarios
+
+## You MUST NOT
+- Write any code (planning only)
+- Make architectural decisions without ADR references
+- Skip the complexity assessment
+- Ignore existing patterns in the codebase
+
+{# Context Block #}
+## Task Description
+{{ task_description }}
+
+## Codebase Structure
+{{ codebase_summary }}
+
+{% if related_adrs %}
+## Relevant ADRs
+{% for adr in related_adrs %}
+- {{ adr.title }}: {{ adr.summary }}
+{% endfor %}
+{% endif %}
+
+{% if beads_context %}
+## Previous Work Context
+{{ beads_context }}
+{% endif %}
+
+{# Instruction Block #}
+## Your Task
+
+Analyze the task description and create a detailed implementation plan.
+
+## Expected Output
+
+Return a JSON object with this structure:
+
+```json
+{
+  "summary": "One-sentence summary of the plan",
+  "complexity": "simple|moderate|complex",
+  "phases": [
+    {
+      "name": "Phase name",
+      "description": "What this phase accomplishes",
+      "files_to_modify": ["path/to/file.py"],
+      "dependencies": ["ADR-042", "existing-auth-module"],
+      "risks": ["Risk description"],
+      "success_criteria": ["Testable criteria"]
+    }
+  ],
+  "total_files": 5,
+  "estimated_tests": 12,
+  "blockers": ["Any blocking issues identified"]
+}
+```
+
+## Quality Criteria
+- [ ] All acceptance criteria from task are addressed
+- [ ] File paths are accurate (verify with codebase structure)
+- [ ] Complexity rating justified
+- [ ] Risks are specific and actionable
+- [ ] Success criteria are testable
+```
+
+## Agent Design Patterns
+
+### Agent Types and Responsibilities
+
+| Agent Type | Purpose | Inputs | Outputs | Constraints |
+|------------|---------|--------|---------|-------------|
+| **Planner** | Analyze requirements, create plans | Task description, codebase summary | Implementation plan (JSON) | No code writing |
+| **Implementer** | Write code per plan | Plan, target files | Code changes, commits | Follow plan exactly |
+| **Tester** | Write and run tests | Changed files, test patterns | Test code, results | No production code |
+| **Reviewer** | Evaluate code quality | Code changes, standards | Review comments, score | No modifications |
+| **Fixer** | Resolve failures | Error logs, failing code | Fix commits | Minimal changes |
+| **Documenter** | Write documentation | Code, API specs | Docs, READMEs | No code changes |
+| **Researcher** | Find information | Query, context | Summary, sources | Read-only tools |
+
+### Agent Definition Schema
+
+```yaml
+# .claude/agents/implementer.yaml
+name: implementer
+version: "1.0"
+description: "Writes code based on implementation plans"
+
+identity:
+  role: "Code Implementation Agent"
+  persona: "A senior engineer who writes clean, tested code"
+
+capabilities:
+  tools:
+    - read_file
+    - write_file
+    - run_command
+    - git_commit
+  permissions:
+    - modify_code: true
+    - run_tests: true
+    - create_commits: true
+    - push_code: false  # Human must push
+    - modify_config: false
+
+constraints:
+  must_not:
+    - "Deviate from the provided plan"
+    - "Skip writing tests"
+    - "Introduce new dependencies without plan approval"
+    - "Make architectural changes beyond plan scope"
+  must:
+    - "Follow existing code patterns"
+    - "Include error handling"
+    - "Write descriptive commit messages"
+    - "Update related documentation"
+
+context_requirements:
+  required:
+    - implementation_plan
+    - target_files
+    - test_patterns
+  optional:
+    - related_tests
+    - style_guide
+    - error_handling_patterns
+
+output_format:
+  type: structured
+  schema:
+    changed_files: "list[str]"
+    commit_shas: "list[str]"
+    tests_written: "list[str]"
+    documentation_updated: "bool"
+
+quality_criteria:
+  - "All plan phases completed"
+  - "Tests pass locally"
+  - "No linter errors"
+  - "Commits are atomic and well-described"
+
+termination:
+  success:
+    - "All planned changes implemented"
+    - "Tests pass"
+  failure:
+    - "Cannot resolve merge conflicts"
+    - "Tests fail after 3 fix attempts"
+    - "Blocked by missing dependency"
+  timeout:
+    max_duration: "30 minutes"
+    max_iterations: 5
+```
+
+### Agent Template Inheritance
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Agent Template Hierarchy                      │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ BASE AGENT (base.yaml)                                       │ │
+│  │                                                               │ │
+│  │ - Organization standards (Khan Academy)                      │ │
+│  │ - Security constraints (no credentials)                      │ │
+│  │ - Communication style (concise, technical)                   │ │
+│  │ - Error handling patterns                                    │ │
+│  └──────────────────────────┬──────────────────────────────────┘ │
+│                             │                                     │
+│            ┌────────────────┼────────────────┐                   │
+│            │                │                │                    │
+│            ▼                ▼                ▼                    │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │ READING     │  │ WRITING     │  │ REVIEWING   │              │
+│  │ AGENTS      │  │ AGENTS      │  │ AGENTS      │              │
+│  │             │  │             │  │             │              │
+│  │ - Planner   │  │ - Implmtr   │  │ - Reviewer  │              │
+│  │ - Researcher│  │ - Tester    │  │ - Auditor   │              │
+│  │ - Analyzer  │  │ - Fixer     │  │ - Validator │              │
+│  │             │  │ - Documtr   │  │             │              │
+│  │ Read-only   │  │ Read-write  │  │ Read-only   │              │
+│  │ tools       │  │ tools       │  │ + scoring   │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Specialized Agent Examples
+
+**Researcher Agent (Reading):**
+
+```yaml
+name: researcher
+extends: base
+category: reading
+
+identity:
+  role: "Research Agent"
+  persona: "A thorough investigator who finds relevant information"
+
+capabilities:
+  tools:
+    - read_file
+    - glob_search
+    - grep_search
+    - web_search
+  permissions:
+    - modify_code: false
+    - run_tests: false
+
+termination:
+  success:
+    - "Found sufficient relevant information"
+    - "Identified all related files"
+  failure:
+    - "No relevant information after exhaustive search"
+    - "Information contradictory, needs human input"
+```
+
+**Reviewer Agent (Reviewing):**
+
+```yaml
+name: reviewer
+extends: base
+category: reviewing
+
+identity:
+  role: "Code Review Agent"
+  persona: "A constructive critic focused on code quality"
+
+capabilities:
+  tools:
+    - read_file
+    - git_diff
+  permissions:
+    - modify_code: false
+    - post_comments: true
+
+output_format:
+  type: review
+  schema:
+    overall_score: "1-5"
+    summary: "string"
+    issues:
+      - severity: "critical|major|minor|suggestion"
+        file: "string"
+        line: "int"
+        message: "string"
+        suggestion: "string"
+    approved: "bool"
+
+quality_criteria:
+  - "All critical issues must be flagged"
+  - "Suggestions are actionable"
+  - "Feedback is constructive, not dismissive"
+```
+
 ## Pipeline Patterns
 
 ### Pattern 1: Sequential Specialization
@@ -672,6 +1202,277 @@ Given that multi-agent systems use **~15× more tokens** than single-agent chats
 - Track token usage per stage
 - Compare multi-agent vs single-agent baselines
 - Target: multi-agent should provide >2× quality improvement to justify 15× token cost
+
+## Review and Feedback Loops
+
+### Automated Review Stages
+
+Quality gates are workflow stages, not afterthoughts. Every pipeline should include automated review stages before human review.
+
+**Plan Review Criteria:**
+
+```yaml
+# .claude/review/plan_criteria.yaml
+plan_review:
+  required_fields:
+    - summary
+    - complexity
+    - phases
+    - success_criteria
+
+  complexity_validation:
+    simple:
+      max_files: 3
+      max_phases: 2
+    moderate:
+      max_files: 10
+      max_phases: 4
+    complex:
+      requires: "ADR reference or justification"
+
+  quality_checks:
+    - name: "specific_files"
+      description: "All file paths must be verifiable"
+      validator: "file_exists_check"
+
+    - name: "testable_criteria"
+      description: "Success criteria must be testable"
+      validator: "criteria_specificity_check"
+
+    - name: "risk_assessment"
+      description: "Complex changes must identify risks"
+      condition: "complexity in ['moderate', 'complex']"
+      validator: "has_risks_field"
+```
+
+**Code Review Criteria:**
+
+```yaml
+# .claude/review/code_criteria.yaml
+code_review:
+  severity_levels:
+    critical:
+      must_fix: true
+      examples:
+        - "Security vulnerability"
+        - "Data loss risk"
+        - "Breaking change without migration"
+    major:
+      must_fix: true
+      examples:
+        - "Missing error handling"
+        - "No tests for new functionality"
+        - "Performance regression"
+    minor:
+      must_fix: false
+      examples:
+        - "Code style inconsistency"
+        - "Missing documentation"
+        - "Unnecessary complexity"
+    suggestion:
+      must_fix: false
+      examples:
+        - "Alternative approach possible"
+        - "Refactoring opportunity"
+
+  automatic_checks:
+    - name: "tests_exist"
+      rule: "new_files.any(f => f.is_code) implies new_files.any(f => f.is_test)"
+    - name: "no_debug_code"
+      rule: "not changes.contains('console.log') and not changes.contains('print(')"
+    - name: "error_handling"
+      rule: "new_functions.all(f => f.has_try_catch or f.has_error_return)"
+
+  human_escalation:
+    conditions:
+      - "security_issues.count > 0"
+      - "breaking_changes.count > 0"
+      - "review_score < 3"
+```
+
+### Feedback Integration
+
+**How Review Feedback Flows:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Feedback Integration Flow                     │
+│                                                                   │
+│  ┌───────────────┐     ┌───────────────┐     ┌───────────────┐  │
+│  │   Agent       │     │   Review      │     │   Feedback    │  │
+│  │   Output      │────▶│   Stage       │────▶│   Parser      │  │
+│  └───────────────┘     └───────────────┘     └───────┬───────┘  │
+│                                                       │          │
+│                                   ┌───────────────────┴───────┐  │
+│                                   │                           │  │
+│                                   ▼                           ▼  │
+│                        ┌───────────────┐           ┌──────────┐ │
+│                        │   Actionable  │           │ Context  │ │
+│                        │   Issues      │           │ Updates  │ │
+│                        └───────┬───────┘           └────┬─────┘ │
+│                                │                        │       │
+│                                ▼                        ▼       │
+│                        ┌───────────────┐     ┌───────────────┐  │
+│                        │   Fixer       │     │   Next Stage  │  │
+│                        │   Agent       │     │   Context     │  │
+│                        │               │     │               │  │
+│                        │ Addresses     │     │ Includes      │  │
+│                        │ specific      │     │ review        │  │
+│                        │ issues        │     │ learnings     │  │
+│                        └───────────────┘     └───────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Feedback Format:**
+
+```json
+{
+  "review_id": "rev-abc123",
+  "overall_assessment": {
+    "approved": false,
+    "score": 3,
+    "summary": "Good implementation but missing edge case handling"
+  },
+  "issues": [
+    {
+      "id": "issue-1",
+      "severity": "major",
+      "file": "src/auth/oauth.py",
+      "line": 45,
+      "message": "Missing null check for token response",
+      "suggestion": "Add: if not token_response: raise AuthError(...)",
+      "actionable": true,
+      "auto_fixable": true
+    },
+    {
+      "id": "issue-2",
+      "severity": "minor",
+      "file": "src/auth/oauth.py",
+      "line": 67,
+      "message": "Magic number should be constant",
+      "suggestion": "Extract 3600 to TOKEN_EXPIRY_SECONDS constant",
+      "actionable": true,
+      "auto_fixable": true
+    }
+  ],
+  "praise": [
+    {
+      "file": "src/auth/oauth.py",
+      "line": 12,
+      "message": "Good use of dependency injection for the HTTP client"
+    }
+  ],
+  "context_for_next_stage": {
+    "key_concerns": ["null safety", "token validation"],
+    "patterns_to_follow": ["existing error handling in auth module"],
+    "tests_needed": ["test_oauth_null_token", "test_oauth_expired_token"]
+  }
+}
+```
+
+### Review Cadence Patterns
+
+Based on discussion with Tyler Burleigh, review stages can be configured at different cadences:
+
+| Cadence | Review After | Best For | Trade-off |
+|---------|--------------|----------|-----------|
+| **Task** | Each individual task | Maximum quality, catches issues early | Higher latency, more token usage |
+| **Phase** | Each pipeline phase | Balance of quality and speed | Recommended default |
+| **Plan** | Entire plan implementation | Faster end-to-end | May miss issues until late |
+
+**Recommendation:** Phase-level review is the sweet spot for most workflows. Entire-plan-level review tends to catch too much at once and is harder to act on.
+
+## Model Selection Strategy
+
+### Task-Complexity Mapping
+
+| Task Complexity | Characteristics | Recommended Model | Rationale |
+|-----------------|-----------------|-------------------|-----------|
+| **Simple** | Single file, well-defined, < 50 lines | Haiku | Fast, cheap, sufficient |
+| **Moderate** | Multiple files, some ambiguity, tests needed | Sonnet | Good balance |
+| **Complex** | Architectural, multi-phase, high stakes | Opus | Best reasoning |
+| **Validation** | Format checking, linting, simple review | Haiku | Speed matters |
+| **Research** | Web search, doc synthesis, exploration | Sonnet | Good comprehension |
+| **Decision** | Architecture, trade-offs, high impact | Opus | Deep reasoning |
+
+### Dynamic Model Selection
+
+```python
+class ModelSelector:
+    """Selects appropriate model based on task characteristics."""
+
+    def select_model(
+        self,
+        task_type: str,
+        complexity: str,
+        stage: str,
+        token_budget: Optional[int] = None,
+    ) -> str:
+        """Select model based on task requirements."""
+
+        # Stage-specific overrides
+        stage_models = {
+            "validation": "haiku",
+            "formatting": "haiku",
+            "planning": "sonnet",
+            "implementation": "sonnet",
+            "architecture_decision": "opus",
+            "security_review": "opus",
+        }
+
+        if stage in stage_models:
+            return stage_models[stage]
+
+        # Complexity-based selection
+        complexity_models = {
+            "simple": "haiku",
+            "moderate": "sonnet",
+            "complex": "opus",
+        }
+
+        base_model = complexity_models.get(complexity, "sonnet")
+
+        # Budget constraints can force downgrade
+        if token_budget and token_budget < 1000:
+            return "haiku"
+
+        return base_model
+```
+
+### Cost-Quality Trade-offs
+
+| Model | Cost Factor | Quality Factor | Best For |
+|-------|-------------|----------------|----------|
+| Haiku | 1x | Good enough | Validation, formatting, simple tasks |
+| Sonnet | 3x | Better | Most development work |
+| Opus | 15x | Best | Critical decisions, complex reasoning |
+
+**Optimization Guidelines:**
+
+1. **Use Haiku for:** Validation stages, format checking, simple transformations
+2. **Use Sonnet for:** Implementation, testing, standard reviews, research
+3. **Use Opus for:** Architectural decisions, security reviews, complex debugging
+
+**Multi-Model Consensus (Advanced):**
+
+For high-stakes decisions, consider running multiple models in parallel and synthesizing results:
+
+```python
+async def consensus_decision(query, context):
+    # Run multiple models in parallel
+    results = await asyncio.gather(
+        sonnet.analyze(query, context),
+        opus.analyze(query, context),
+        # Optionally include external models via MCP
+    )
+
+    # Synthesize with lead model
+    return await opus.synthesize(
+        query=query,
+        perspectives=results,
+        instruction="Identify consensus and note significant disagreements"
+    )
+```
 
 ## Failure Modes & Reliability
 
@@ -1383,6 +2184,12 @@ Based on [comprehensive 2025 framework comparison](https://latenode.com/blog/lan
 ### Internal Documentation
 - [ADR: Autonomous Software Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) - Core jib architecture
 - [ADR: LLM Documentation Index Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) - Multi-agent doc generation example
+
+### Related Slack Discussion
+- Multi-agent pipeline discussion (2025-12-01)
+  - Tyler Burleigh's plugin patterns: [claude-sdd-toolkit](https://github.com/tylerburleigh/claude-sdd-toolkit) - Multi-provider agent consultation
+  - Multi-model chorus concept: [claude-model-chorus](https://github.com/tylerburleigh/claude-model-chorus) - Ensemble approaches
+  - Review cadence patterns: task, phase, or entire plan implementation review
 
 ### Industry Research & Best Practices (2025)
 - [Anthropic: How we built our multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) - 90% performance improvement with multi-agent
