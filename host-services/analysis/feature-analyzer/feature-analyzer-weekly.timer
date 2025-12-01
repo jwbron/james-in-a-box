@@ -1,0 +1,15 @@
+[Unit]
+Description=Weekly feature analyzer run for FEATURES.md updates
+Documentation=https://github.com/jwbron/james-in-a-box/blob/main/docs/adr/in-progress/ADR-Feature-Analyzer-Documentation-Sync.md
+Requires=feature-analyzer-weekly.service
+
+[Timer]
+# Runs Mondays at 11:00 AM (local time)
+# Note: Uses system timezone. Ensure host is configured to desired timezone
+# or use explicit UTC offset if needed
+OnCalendar=Mon *-*-* 11:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
