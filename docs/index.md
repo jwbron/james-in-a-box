@@ -15,6 +15,10 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Autonomous Software Engineer](adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, and design decisions |
 | [LLM Documentation Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | Strategy for LLM-navigable documentation (this index) |
 | [Context Sync Strategy](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | How external data (Confluence, JIRA, GitHub) is synced |
+| [Feature Analyzer - Doc Sync](adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Automated documentation updates after ADR implementation |
+| [LLM Inefficiency Reporting](adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Self-improvement through inefficiency detection and reporting |
+| [Standardized Logging](adr/in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
+| [Multi-Agent Pipeline](adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Multi-agent pipeline design for complex tasks |
 
 ### Architecture
 
@@ -44,6 +48,8 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Khan Academy Culture](reference/khan-academy-culture.md) | L3-L4 engineering behavioral standards |
 | [Conversation Analysis Criteria](reference/conversation-analysis-criteria.md) | Assessment criteria for agent performance |
+| [Log Persistence](reference/log-persistence.md) | Container log persistence and correlation |
+| [Prompt Caching](reference/prompt-caching.md) | Claude prompt caching optimization and monitoring |
 
 ### Development
 
@@ -51,12 +57,31 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Development Overview](development/README.md) | Contributing and development guidelines |
 | [Project Structure](development/STRUCTURE.md) | Directory conventions and organization |
+| [Beads Integration](development/beads-integration.md) | How to integrate Beads into container tools |
 
 ### User Guide
 
 | Document | Description |
 |----------|-------------|
 | [User Guide](user-guide/README.md) | Day-to-day usage and common tasks |
+
+### Features
+
+| Document | Description |
+|----------|-------------|
+| [Workflow Context](features/workflow-context.md) | Workflow traceability - tracking which job generated each output |
+
+### Analysis Reports
+
+| Document | Description |
+|----------|-------------|
+| [Beads Health Reports](analysis/beads/README.md) | Automated health analysis for Beads task tracking |
+
+### System Improvement
+
+| Document | Description |
+|----------|-------------|
+| [Reinforcements](reinforcements/README.md) | Records of system reinforcements from breakages |
 
 ## Task-Specific Guides
 
@@ -74,10 +99,14 @@ When working on specific tasks, consult these documents first:
 | **ADR research/generation** | [ADR Researcher](../host-services/analysis/adr-researcher/README.md) | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) |
 | **Feature discovery** | [Features - Source Mapping](FEATURES.md) | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) |
 | **Documentation sync** | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) | [ADR: Feature Analyzer](adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md) |
+| **Logging changes** | [ADR: Standardized Logging](adr/in-progress/ADR-Standardized-Logging-Interface.md) | [Log Persistence](reference/log-persistence.md) |
+| **LLM efficiency analysis** | [ADR: Inefficiency Reporting](adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | [Prompt Caching](reference/prompt-caching.md) |
+| **Beads integration** | [Beads Integration](development/beads-integration.md) | [Beads Task Tracking](reference/beads.md) |
 
 ## Machine-Readable Indexes
 
-These files are auto-generated and provide structured data for programmatic access:
+These files are auto-generated and provide structured data for programmatic access.
+See [Generated Indexes README](generated/README.md) for details on structure and access.
 
 | File | Description | Update Frequency |
 |------|-------------|------------------|
