@@ -1,0 +1,321 @@
+"""
+Host-side jib execution wrapper for running container-side tasks.
+
+This module provides a standardized way for host services to invoke container-side
+processors via `jib --exec`. All host services that need to run code inside the
+container should use this module instead of directly calling Claude or other
+container-only resources.
+
+The pattern:
+1. Host service detects a task (file, event, etc.)
+2. Host service calls jib_exec() with task type and context
+3. Container-side processor handles the task (may call Claude, access tools, etc.)
+4. Result is returned to host service
+
+IMPORTANT: This is the ONLY way host services should interact with container code.
+Do NOT import container modules directly (they won't work on the host).
+
+Usage:
+    from jib_exec import jib_exec, JibResult
+
+    # Run a container-side processor
+    result = jib_exec(
+        processor="jib-tasks/analysis/analysis-processor.py",
+        task_type="doc_generation",
+        context={"adr_path": "/path/to/adr.md", "prompt": "..."},
+        timeout=300,
+    )
+
+    if result.success:
+        data = result.json_output  # Parsed JSON from processor
+    else:
+        print(f"Failed: {result.error}")
+
+See also:
+- slack-receiver.py: Example of triggering processing via jib --exec
+- github-watcher.py: Example of parallel task execution via jib --exec
+"""
+
+import json
+import os
+import subprocess
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+@dataclass
+class JibResult:
+    """Result from a jib --exec invocation.
+
+    Attributes:
+        success: True if jib and the processor both exited with code 0
+        stdout: Raw stdout from the process
+        stderr: Raw stderr from the process
+        returncode: Exit code from the process
+        error: Human-readable error message if something went wrong
+        json_output: Parsed JSON from stdout if processor returned JSON
+    """
+
+    success: bool
+    stdout: str
+    stderr: str
+    returncode: int
+    error: str | None = None
+    json_output: dict | None = None
+
+
+def get_container_username() -> str:
+    """Get the username used inside the container.
+
+    The container mirrors the host user, so we use the current user.
+    """
+    return os.environ.get("USER", "jwies")
+
+
+def get_jib_path() -> Path:
+    """Get the path to the jib executable."""
+    return Path.home() / "khan" / "james-in-a-box" / "bin" / "jib"
+
+
+def host_to_container_path(host_path: str | Path) -> str:
+    """Convert a host path to the equivalent container path.
+
+    Host paths like ~/.jib-sharing/... become ~/sharing/... in the container.
+    Host paths like ~/khan/... remain the same (mounted at same location).
+
+    Args:
+        host_path: Path on the host system
+
+    Returns:
+        Equivalent path inside the container
+    """
+    host_path = str(Path(host_path).expanduser())
+    username = get_container_username()
+
+    # ~/.jib-sharing on host -> ~/sharing in container
+    jib_sharing = str(Path.home() / ".jib-sharing")
+    if host_path.startswith(jib_sharing):
+        return host_path.replace(jib_sharing, f"/home/{username}/sharing")
+
+    # ~/khan is mounted at same location
+    return host_path
+
+
+def jib_exec(
+    processor: str,
+    task_type: str,
+    context: dict[str, Any],
+    *,
+    timeout: int | None = None,
+    stream_to_log: Path | None = None,
+) -> JibResult:
+    """Execute a container-side processor via jib --exec.
+
+    This is the standard way for host services to run tasks inside the container.
+    The processor receives the task type and context as command-line arguments.
+
+    Args:
+        processor: Path to the processor script relative to ~/khan/james-in-a-box/
+                  or an absolute path inside the container.
+                  Examples:
+                    - "jib-container/jib-tasks/github/github-processor.py"
+                    - "jib-container/jib-tasks/analysis/analysis-processor.py"
+        task_type: Type of task for the processor (e.g., "check_failure", "doc_generation")
+        context: Dictionary of context data for the processor
+        timeout: Optional timeout in seconds. If None, waits indefinitely.
+        stream_to_log: Optional path to stream stdout to a log file in real-time.
+
+    Returns:
+        JibResult with success status, output, and any errors.
+
+    Example:
+        result = jib_exec(
+            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            task_type="doc_generation",
+            context={"prompt": "Generate documentation for this ADR", "adr_path": "/..."},
+        )
+    """
+    jib_path = get_jib_path()
+    username = get_container_username()
+
+    # Build container-side processor path
+    if processor.startswith("/"):
+        container_processor = processor
+    else:
+        container_processor = f"/home/{username}/khan/james-in-a-box/{processor}"
+
+    # Serialize context to JSON
+    context_json = json.dumps(context)
+
+    # Build command
+    cmd = [
+        str(jib_path),
+        "--exec",
+        "python3",
+        container_processor,
+        "--task",
+        task_type,
+        "--context",
+        context_json,
+    ]
+
+    try:
+        if stream_to_log:
+            # Stream output to log file while capturing stderr
+            return _run_with_streaming(cmd, stream_to_log, timeout)
+        else:
+            # Simple capture mode
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+
+            return _process_result(result)
+
+    except subprocess.TimeoutExpired:
+        return JibResult(
+            success=False,
+            stdout="",
+            stderr="",
+            returncode=-1,
+            error=f"jib --exec timed out after {timeout} seconds",
+        )
+
+    except FileNotFoundError:
+        return JibResult(
+            success=False,
+            stdout="",
+            stderr="",
+            returncode=-1,
+            error=f"jib command not found at {jib_path}",
+        )
+
+    except Exception as e:
+        return JibResult(
+            success=False,
+            stdout="",
+            stderr="",
+            returncode=-1,
+            error=f"Error running jib: {e}",
+        )
+
+
+def _run_with_streaming(
+    cmd: list[str], log_file: Path, timeout: int | None
+) -> JibResult:
+    """Run command with stdout streaming to a log file.
+
+    This allows real-time monitoring of long-running tasks.
+    """
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    stdout_lines = []
+    stderr_lines = []
+
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    # Thread to read stderr
+    def read_stderr():
+        if process.stderr:
+            for line in process.stderr:
+                stderr_lines.append(line)
+
+    stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+    stderr_thread.start()
+
+    # Stream stdout to log file
+    with open(log_file, "w") as f:
+        if process.stdout:
+            for line in process.stdout:
+                stdout_lines.append(line)
+                f.write(line)
+                f.flush()
+
+    # Wait for completion
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return JibResult(
+            success=False,
+            stdout="".join(stdout_lines),
+            stderr="".join(stderr_lines),
+            returncode=-1,
+            error=f"Process timed out after {timeout} seconds",
+        )
+
+    stderr_thread.join(timeout=5)
+
+    stdout = "".join(stdout_lines)
+    stderr = "".join(stderr_lines)
+
+    return _process_result_from_parts(process.returncode, stdout, stderr)
+
+
+def _process_result(result: subprocess.CompletedProcess) -> JibResult:
+    """Process a completed subprocess result into a JibResult."""
+    return _process_result_from_parts(result.returncode, result.stdout, result.stderr)
+
+
+def _process_result_from_parts(returncode: int, stdout: str, stderr: str) -> JibResult:
+    """Build a JibResult from return code and output strings."""
+    success = returncode == 0
+    error = None
+    json_output = None
+
+    if not success:
+        # Extract error message from stderr
+        error = f"jib --exec exited with code {returncode}"
+        if stderr:
+            # Look for error patterns
+            for line in stderr.split("\n"):
+                line_lower = line.lower()
+                if any(kw in line_lower for kw in ["error:", "failed:", "exception:"]):
+                    error = f"{error}: {line.strip()[:200]}"
+                    break
+
+    # Try to parse JSON from stdout
+    if stdout.strip():
+        try:
+            json_output = json.loads(stdout.strip())
+        except json.JSONDecodeError:
+            # Not JSON output, that's okay
+            pass
+
+    return JibResult(
+        success=success,
+        stdout=stdout,
+        stderr=stderr,
+        returncode=returncode,
+        error=error,
+        json_output=json_output,
+    )
+
+
+def is_jib_available() -> bool:
+    """Check if jib is available and working.
+
+    Returns:
+        True if `jib --help` succeeds, False otherwise.
+    """
+    jib_path = get_jib_path()
+    try:
+        result = subprocess.run(
+            [str(jib_path), "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return False
