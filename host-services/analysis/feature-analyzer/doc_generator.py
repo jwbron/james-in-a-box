@@ -27,9 +27,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 
-# Add shared modules to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
+# Add host-services shared modules to path (for jib_exec)
+# NOTE: Host-side code must use jib_exec which invokes processors via jib --exec
+# because Claude CLI is only available inside the container.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from jib_exec import jib_exec
 
 
 if TYPE_CHECKING:
@@ -258,39 +260,46 @@ Output ONLY the updated documentation content. Do not include any explanation or
 
     def _call_jib_for_generation(self, prompt: str, doc_path: Path) -> tuple[str, float]:
         """
-        Use Claude to generate documentation update.
+        Use jib container to generate documentation update via LLM.
 
         Returns (updated_content, confidence_score).
 
-        Uses the shared claude module which runs Claude via stdin with
-        --dangerously-skip-permissions (full tool access), NOT --print
-        (which creates a restricted session).
+        Uses jib_exec to invoke the container-side analysis processor,
+        which has access to Claude CLI. Host-side code cannot directly
+        call Claude (it's only available inside the container).
         """
         try:
-            # Use the shared claude module to run Claude
-            # This uses stdin mode with full tool access
-            result = run_claude(
-                prompt=prompt,
-                timeout=300,  # 5 minute timeout
-                cwd=self.repo_root,
-                stream=False,  # Buffer output, don't print during execution
+            # Use jib_exec to run the analysis processor in the container
+            # The processor handles the LLM call and returns JSON
+            result = jib_exec(
+                processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+                task_type="llm_prompt",
+                context={
+                    "prompt": prompt,
+                    "timeout": 300,
+                    "cwd": str(self.repo_root),
+                    "stream": False,
+                },
+                timeout=420,  # Extra time for container startup
             )
 
-            if result.success and result.stdout.strip():
-                # Extract the generated content
-                content = result.stdout.strip()
-                # High confidence if we got substantial output
-                confidence = 0.85 if len(content) > 100 else 0.6
-                return (content, confidence)
-            else:
-                error_msg = (
-                    result.error or result.stderr[:200] if result.stderr else "Unknown error"
-                )
-                print(f"    Warning: Claude generation failed: {error_msg}")
-                return ("", 0.3)
+            if result.success and result.json_output:
+                output = result.json_output.get("result", {})
+                content = output.get("stdout", "").strip()
+                if content:
+                    # High confidence if we got substantial output
+                    confidence = 0.85 if len(content) > 100 else 0.6
+                    return (content, confidence)
+
+            # Handle failure
+            error_msg = result.error or "Unknown error"
+            if result.json_output:
+                error_msg = result.json_output.get("error") or error_msg
+            print(f"    Warning: jib generation failed: {error_msg}")
+            return ("", 0.3)
 
         except Exception as e:
-            print(f"    Warning: Claude generation error: {e}")
+            print(f"    Warning: jib generation error: {e}")
             return ("", 0.2)
 
     def _generate_simple_update(

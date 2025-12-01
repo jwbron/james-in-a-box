@@ -46,9 +46,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
-# Add shared modules to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
+# Add host-services shared modules to path (for jib_exec)
+# NOTE: Host-side code must use jib_exec which invokes processors via jib --exec
+# because Claude CLI is only available inside the container.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from jib_exec import jib_exec
 
 
 @dataclass
@@ -152,6 +154,47 @@ class WeeklyAnalyzer:
         self.repo_root = repo_root
         self.use_llm = use_llm
         self.features_md = repo_root / "docs" / "FEATURES.md"
+
+    def _run_llm_prompt(self, prompt: str, context_name: str = "") -> tuple[bool, str, str | None]:
+        """
+        Run an LLM prompt via jib container.
+
+        Host-side code cannot directly call Claude - it's only available inside
+        the container. This method uses jib_exec to invoke the analysis processor.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            context_name: Optional name for logging/debugging
+
+        Returns:
+            Tuple of (success, stdout, error_message)
+        """
+        try:
+            result = jib_exec(
+                processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+                task_type="llm_prompt",
+                context={
+                    "prompt": prompt,
+                    "timeout": 300,
+                    "cwd": str(self.repo_root),
+                    "stream": False,
+                },
+                timeout=420,  # Extra time for container startup
+            )
+
+            if result.success and result.json_output:
+                output = result.json_output.get("result", {})
+                stdout = output.get("stdout", "")
+                return (True, stdout, None)
+
+            # Handle failure
+            error_msg = result.error or "Unknown error"
+            if result.json_output:
+                error_msg = result.json_output.get("error") or error_msg
+            return (False, "", error_msg)
+
+        except Exception as e:
+            return (False, "", str(e))
 
     def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
         """Run a git command in the repo root."""
@@ -485,22 +528,11 @@ If no meaningful features are found, return: `[]`
 
         prompt = self._generate_feature_extraction_prompt(commits)
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
-
-            if result.success and result.stdout.strip():
-                return self._parse_llm_features(result.stdout, context="commit-extraction")
-            else:
-                error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown"
-                print(f"    Warning: LLM extraction failed: {error_msg}")
-                return []
-
-        except Exception as e:
-            print(f"    Warning: LLM extraction error: {e}")
+        success, stdout, error = self._run_llm_prompt(prompt, "commit-extraction")
+        if success and stdout.strip():
+            return self._parse_llm_features(stdout, context="commit-extraction")
+        else:
+            print(f"    Warning: LLM extraction failed: {error or 'Unknown'}")
             return []
 
     def _extract_docstring(self, content: str) -> str:
@@ -826,22 +858,11 @@ Return ONLY a JSON array:
 If no features found, return: `[]`
 """
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
-
-            if result.success and result.stdout.strip():
-                return self._parse_llm_features(result.stdout, context="code-analysis")
-            else:
-                error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown"
-                print(f"    Warning: Code analysis failed: {error_msg}")
-                return []
-
-        except Exception as e:
-            print(f"    Warning: Code analysis error: {e}")
+        success, stdout, error = self._run_llm_prompt(prompt, "code-analysis")
+        if success and stdout.strip():
+            return self._parse_llm_features(stdout, context="code-analysis")
+        else:
+            print(f"    Warning: Code analysis failed: {error or 'Unknown'}")
             return []
 
     def generate_feature_documentation(self, feature: DetectedFeature) -> str | None:
@@ -893,28 +914,19 @@ Write clear, concise documentation suitable for developers.
 Output ONLY the markdown content, no explanation.
 """
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
+        success, stdout, _error = self._run_llm_prompt(prompt, "doc-generation")
+        if success and stdout.strip():
+            # Determine output path
+            primary_path = Path(primary_file)
+            doc_dir = self.repo_root / primary_path.parent
 
-            if result.success and result.stdout.strip():
-                # Determine output path
-                primary_path = Path(primary_file)
-                doc_dir = self.repo_root / primary_path.parent
-
-                # Write the documentation
-                doc_path = doc_dir / "README.md"
-                if not doc_path.exists():
-                    doc_path.write_text(result.stdout.strip())
-                    return str(primary_path.parent / "README.md")
-                else:
-                    print(f"    Skipping doc generation: README.md already exists at {doc_path}")
-
-        except Exception as e:
-            print(f"    Warning: Doc generation error: {e}")
+            # Write the documentation
+            doc_path = doc_dir / "README.md"
+            if not doc_path.exists():
+                doc_path.write_text(stdout.strip())
+                return str(primary_path.parent / "README.md")
+            else:
+                print(f"    Skipping doc generation: README.md already exists at {doc_path}")
 
         return None
 
@@ -1695,19 +1707,12 @@ Return ONLY a JSON array:
 If truly no features (empty directory, only tests), return: `[]`
 """
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
-
-            if result.success and result.stdout.strip():
-                return self._parse_llm_output(result.stdout, context=f"dir:{dir_path}")
-            return []
-        except Exception as e:
-            print(f"    Warning: LLM analysis failed for {dir_path}: {e}")
-            return []
+        success, stdout, error = self._run_llm_prompt(prompt, f"dir:{dir_path}")
+        if success and stdout.strip():
+            return self._parse_llm_output(stdout, context=f"dir:{dir_path}")
+        if error:
+            print(f"    Warning: LLM analysis failed for {dir_path}: {error}")
+        return []
 
     def _parse_llm_output(self, output: str, context: str = "") -> list[DetectedFeature]:
         """Parse LLM JSON output into DetectedFeature objects.
@@ -1853,33 +1858,24 @@ Return ONLY a JSON array of the consolidated features:
 ```
 """
 
-        try:
-            result = run_claude(
-                prompt=prompt,
-                cwd=self.repo_root,
-                stream=False,
-            )
+        success, stdout, error = self._run_llm_prompt(prompt, "consolidation")
 
-            if not result.success:
-                print(f"    Warning: Claude returned error: {result.error}")
-                print(f"    Stderr: {result.stderr[:500] if result.stderr else '(empty)'}")
-                print("    Using raw features instead")
-                return all_features
-
-            if not result.stdout.strip():
-                print("    Warning: Claude returned empty output")
-                print("    Using raw features instead")
-                return all_features
-
-            consolidated = self._parse_llm_output(result.stdout, context="consolidation")
-            if consolidated:
-                return consolidated
-
-            print("    Warning: Consolidation parsing returned empty, using raw features")
-            return all_features  # Fall back to unprocessed list
-        except Exception as e:
-            print(f"    Warning: Consolidation failed ({e}), using raw features")
+        if not success:
+            print(f"    Warning: LLM returned error: {error}")
+            print("    Using raw features instead")
             return all_features
+
+        if not stdout.strip():
+            print("    Warning: LLM returned empty output")
+            print("    Using raw features instead")
+            return all_features
+
+        consolidated = self._parse_llm_output(stdout, context="consolidation")
+        if consolidated:
+            return consolidated
+
+        print("    Warning: Consolidation parsing returned empty, using raw features")
+        return all_features  # Fall back to unprocessed list
 
     def _analyze_directory_heuristically(
         self, dir_path: str, files: list[Path]
