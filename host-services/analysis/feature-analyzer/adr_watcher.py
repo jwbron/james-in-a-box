@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """
-ADR Watcher - Automated ADR Detection Service (Phase 2)
+ADR Watcher - Automated ADR Detection Service (Phase 3)
 
 This module monitors the ADR directories for status changes (ADRs moving to
 implemented/) and triggers documentation sync automatically.
 
 It runs as a systemd service on a 15-minute interval.
 
+By default, uses Phase 3 mode which:
+- Generates documentation updates using jib containers (LLM-powered)
+- Creates PRs automatically for review
+
 State persistence:
 - Tracks which ADRs have been processed
 - Persists state across restarts in ~/.local/share/feature-analyzer/state.json
 
 Usage:
-  # Run the watcher (typically via systemd)
+  # Run the watcher (default: Phase 3 with jib)
   python adr_watcher.py watch
+
+  # Run without jib containers (simple updates)
+  python adr_watcher.py watch --no-jib
 
   # Check for new implemented ADRs without triggering sync
   python adr_watcher.py check
@@ -145,35 +152,43 @@ class ADRWatcher:
         self._save_state()
         print("State reset. All ADRs will be reprocessed on next run.")
 
-    def trigger_sync(self, adr: NewADR, dry_run: bool = False) -> bool:
+    def trigger_sync(self, adr: NewADR, dry_run: bool = False, use_jib: bool = True) -> bool:
         """
         Trigger documentation sync for a newly implemented ADR.
+
+        Args:
+            adr: The newly detected ADR
+            dry_run: If True, don't make actual changes
+            use_jib: If True (default), use jib containers for LLM generation
 
         Returns True if sync was successful.
         """
         relative_path = adr.path.relative_to(self.repo_root)
 
         if dry_run:
-            print(f"  [DRY RUN] Would sync docs for: {relative_path}")
+            print(f"  [DRY RUN] Would run generate for: {relative_path}")
             return True
 
         # Import and use the existing sync functionality
         try:
-            # Run the feature-analyzer sync-docs command
             script_dir = Path(__file__).parent
             analyzer_script = script_dir / "feature-analyzer.py"
 
+            # Always use generate command (Phase 3)
+            cmd = [
+                sys.executable,
+                str(analyzer_script),
+                "generate",
+                "--adr",
+                str(relative_path),
+                "--repo-root",
+                str(self.repo_root),
+            ]
+            if not use_jib:
+                cmd.append("--no-jib")
+
             result = subprocess.run(
-                [
-                    sys.executable,
-                    str(analyzer_script),
-                    "sync-docs",
-                    "--adr",
-                    str(relative_path),
-                    "--repo-root",
-                    str(self.repo_root),
-                    "--dry-run",  # Phase 2 still uses dry-run by default
-                ],
+                cmd,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -181,16 +196,20 @@ class ADRWatcher:
             )
 
             if result.returncode == 0:
-                print(f"  ✓ Sync analysis complete for: {relative_path}")
+                print(f"  ✓ Generation complete for: {relative_path}")
                 if result.stdout:
                     # Indent the output
                     for line in result.stdout.strip().split("\n"):
                         print(f"    {line}")
                 return True
             else:
-                print(f"  ✗ Sync failed for: {relative_path}")
+                print(f"  ✗ Processing failed for: {relative_path}")
                 if result.stderr:
                     print(f"    Error: {result.stderr}")
+                if result.stdout:
+                    # Show output even on failure
+                    for line in result.stdout.strip().split("\n")[-10:]:
+                        print(f"    {line}")
                 return False
 
         except Exception as e:
@@ -214,13 +233,19 @@ class ADRWatcher:
 
         return new_adrs
 
-    def run_watch(self, dry_run: bool = False) -> int:
+    def run_watch(self, dry_run: bool = False, use_jib: bool = True) -> int:
         """
         Main watch loop - detect and process new ADRs.
 
+        Args:
+            dry_run: If True, don't make actual changes
+            use_jib: If True (default), use jib containers for LLM generation
+
         Returns the number of ADRs processed.
         """
+        jib_str = "with jib" if use_jib else "without jib"
         print(f"ADR Watcher starting at {datetime.now(UTC).isoformat()}")
+        print(f"Mode: Generate documentation updates {jib_str}")
         print(f"Checking: {self.implemented_dir}")
 
         if self.state.last_check_timestamp:
@@ -241,7 +266,7 @@ class ADRWatcher:
         for adr in new_adrs:
             print(f"\nProcessing: {adr.filename}")
 
-            success = self.trigger_sync(adr, dry_run=dry_run)
+            success = self.trigger_sync(adr, dry_run=dry_run, use_jib=use_jib)
 
             if success:
                 if not dry_run:
@@ -255,7 +280,9 @@ class ADRWatcher:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ADR Watcher - Automated ADR Detection (Phase 2)")
+    parser = argparse.ArgumentParser(
+        description="ADR Watcher - Automated ADR Detection (Phase 3 by default)"
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -267,6 +294,11 @@ def main():
         "--dry-run",
         action="store_true",
         help="Detect ADRs but do not trigger sync or update state",
+    )
+    watch_parser.add_argument(
+        "--no-jib",
+        action="store_true",
+        help="Disable jib containers for LLM generation (use simple updates instead)",
     )
     watch_parser.add_argument(
         "--repo-root",
@@ -320,7 +352,10 @@ def main():
     watcher = ADRWatcher(repo_root)
 
     if args.command == "watch":
-        count = watcher.run_watch(dry_run=args.dry_run)
+        count = watcher.run_watch(
+            dry_run=args.dry_run,
+            use_jib=not args.no_jib,  # Use jib by default unless --no-jib is passed
+        )
         sys.exit(0 if count >= 0 else 1)
 
     elif args.command == "check":

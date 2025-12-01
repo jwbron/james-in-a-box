@@ -35,6 +35,12 @@ Post research findings as comments on open PRs that modify ADR files:
 bin/adr-researcher --scope open-prs
 ```
 
+To research a specific PR only:
+
+```bash
+bin/adr-researcher --scope open-prs --pr 338
+```
+
 ### Update Implemented ADRs
 
 Create PRs with "Research Updates" sections for implemented ADRs:
@@ -73,6 +79,7 @@ bin/adr-researcher --scope topic --query "Docker sandbox isolation" --report-onl
 | Flag | Description |
 |------|-------------|
 | `--scope` | Research scope: `open-prs`, `merged`, `topic` |
+| `--pr NUMBER` | Specific PR number to research (with `--scope open-prs`) |
 | `--generate TOPIC` | Generate new ADR from research |
 | `--review PATH` | Review existing ADR file |
 | `--query QUERY` | Research query (with `--scope topic`) |

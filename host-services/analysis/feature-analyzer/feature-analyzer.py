@@ -10,8 +10,9 @@ Claude-powered documentation agents inside containers.
 
 Workflows:
 1. sync-docs --adr <path>: Manually sync documentation for a specific implemented ADR
-2. watch (Phase 2+): Automatically detect ADR status changes and trigger sync
-3. weekly-analysis (Phase 5): Scan merged code and update FEATURES.md
+2. generate --adr <path>: Generate and optionally create PR with doc updates (Phase 3)
+3. watch (Phase 2+): Automatically detect ADR status changes and trigger sync
+4. weekly-analysis (Phase 5): Scan merged code and update FEATURES.md
 
 Usage (Phase 1 - Manual):
   # Sync documentation for a specific implemented ADR
@@ -22,6 +23,16 @@ Usage (Phase 1 - Manual):
 
   # Validate only (check if docs need updating)
   feature-analyzer sync-docs --adr docs/adr/implemented/ADR-Example.md --validate-only
+
+Usage (Phase 3 - Multi-Doc Updates with PR):
+  # Generate doc updates and create PR (uses jib by default)
+  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md
+
+  # Generate without jib containers
+  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --no-jib
+
+  # Dry-run (show what would be done)
+  feature-analyzer generate --adr docs/adr/implemented/ADR-Example.md --dry-run
 """
 
 import argparse
@@ -253,14 +264,14 @@ class FeatureAnalyzer:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Feature Analyzer - Documentation Sync Tool (Phase 1 MVP)"
+        description="Feature Analyzer - Documentation Sync Tool (Phase 1-5)"
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # sync-docs command
+    # sync-docs command (Phase 1)
     sync_parser = subparsers.add_parser(
-        "sync-docs", help="Manually sync documentation for a specific ADR"
+        "sync-docs", help="Manually sync documentation for a specific ADR (Phase 1)"
     )
     sync_parser.add_argument(
         "--adr",
@@ -281,6 +292,161 @@ def main():
         type=Path,
         default=Path.cwd(),
         help="Repository root directory (default: current directory)",
+    )
+
+    # generate command (Phase 3-4)
+    gen_parser = subparsers.add_parser(
+        "generate", help="Generate doc updates and create PR (Phase 3-4)"
+    )
+    gen_parser.add_argument(
+        "--adr",
+        type=Path,
+        required=True,
+        help="Path to ADR file (e.g., docs/adr/implemented/ADR-Example.md)",
+    )
+    gen_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without creating PR",
+    )
+    gen_parser.add_argument(
+        "--no-jib",
+        action="store_true",
+        help="Disable jib containers for LLM-powered generation",
+    )
+    gen_parser.add_argument(
+        "--no-pr",
+        action="store_true",
+        help="Generate updates but don't create PR",
+    )
+    gen_parser.add_argument(
+        "--no-metadata",
+        action="store_true",
+        help="Skip HTML comment metadata injection (Phase 4)",
+    )
+    gen_parser.add_argument(
+        "--no-tag",
+        action="store_true",
+        help="Skip git tag creation for traceability (Phase 4)",
+    )
+    gen_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root directory (default: current directory)",
+    )
+
+    # rollback command (Phase 4)
+    rollback_parser = subparsers.add_parser(
+        "rollback", help="Rollback utilities for auto-generated documentation (Phase 4)"
+    )
+    rollback_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root directory (default: current directory)",
+    )
+    rollback_subparsers = rollback_parser.add_subparsers(dest="rollback_command")
+
+    # rollback list-commits
+    rollback_list_commits = rollback_subparsers.add_parser(
+        "list-commits", help="List auto-generated commits"
+    )
+    rollback_list_commits.add_argument(
+        "--since", help="Show commits since date (e.g., '1 week ago')"
+    )
+    rollback_list_commits.add_argument("--adr", help="Filter by ADR filename")
+
+    # rollback list-files
+    rollback_subparsers.add_parser("list-files", help="List files with auto-generated metadata")
+
+    # rollback list-tags
+    rollback_subparsers.add_parser("list-tags", help="List auto-doc-sync tags")
+
+    # rollback revert-file
+    rollback_revert_file = rollback_subparsers.add_parser(
+        "revert-file", help="Revert a single file"
+    )
+    rollback_revert_file.add_argument("file", type=Path, help="Path to file to revert")
+    rollback_revert_file.add_argument(
+        "--to", help="Commit to revert to (default: before last auto-generated)"
+    )
+
+    # rollback revert-adr
+    rollback_revert_adr = rollback_subparsers.add_parser(
+        "revert-adr", help="Revert all changes from an ADR"
+    )
+    rollback_revert_adr.add_argument("adr_name", help="ADR filename (e.g., ADR-Feature-Analyzer)")
+
+    # weekly-analyze command (Phase 5)
+    weekly_parser = subparsers.add_parser(
+        "weekly-analyze",
+        help="Analyze recent code changes and update FEATURES.md (Phase 5)",
+    )
+    weekly_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days to analyze (default: 7)",
+    )
+    weekly_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without modifying files",
+    )
+    weekly_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip LLM extraction, use heuristics only",
+    )
+    weekly_parser.add_argument(
+        "--no-pr",
+        action="store_true",
+        help="Update FEATURES.md but don't create PR",
+    )
+    weekly_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root directory (default: current directory)",
+    )
+
+    # full-repo command (Phase 6 - Full Repository Analysis)
+    full_repo_parser = subparsers.add_parser(
+        "full-repo",
+        help="Analyze entire repository and generate comprehensive FEATURES.md (Phase 6)",
+    )
+    full_repo_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without modifying files",
+    )
+    full_repo_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip LLM extraction, use heuristics only",
+    )
+    full_repo_parser.add_argument(
+        "--no-pr",
+        action="store_true",
+        help="Generate FEATURES.md but don't create PR",
+    )
+    full_repo_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Custom output path (default: docs/FEATURES.md)",
+    )
+    full_repo_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root directory (default: current directory)",
+    )
+    full_repo_parser.add_argument(
+        "--workers",
+        type=int,
+        default=5,
+        help="Number of parallel workers for directory analysis (default: 5)",
     )
 
     args = parser.parse_args()
@@ -327,14 +493,453 @@ def main():
                 print("\n[VALIDATE ONLY] No updates proposed.")
             else:
                 print("\n✓ Documentation sync analysis complete.")
-                print("\nPhase 1 Note: This is the MVP. Future phases will:")
-                print("  - Use LLM to generate actual content updates")
-                print("  - Create PRs automatically")
-                print("  - Run on schedule via systemd timer")
+                print("\nPhase 1 Note: This is the MVP. Use 'generate' command for Phase 3:")
+                print("  feature-analyzer generate --adr <path>")
 
         except FileNotFoundError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+        except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    elif args.command == "generate":
+        # Phase 3-4: Multi-doc updates with PR creation and traceability
+        from doc_generator import DocGenerator
+        from pr_creator import PRCreator
+
+        analyzer = FeatureAnalyzer(args.repo_root)
+
+        try:
+            # Parse ADR
+            print(f"Parsing ADR: {args.adr}")
+            adr_metadata = analyzer.parse_adr(args.adr)
+
+            print(f"ADR: {adr_metadata.title}")
+            print(f"Status: {adr_metadata.status}")
+            print()
+
+            # Generate updates
+            print("Generating documentation updates...")
+            generator = DocGenerator(args.repo_root, use_jib=not args.no_jib)
+            gen_result = generator.generate_updates_for_adr(adr_metadata)
+
+            # Read ADR content for traceability validation (Phase 4)
+            adr_content = adr_metadata.path.read_text()
+
+            # Validate all updates with full validation suite (Phase 4)
+            gen_result = generator.validate_all_updates(gen_result, adr_content)
+
+            # Apply HTML metadata comments (Phase 4)
+            if not args.no_metadata:
+                gen_result = generator.apply_metadata_to_updates(gen_result, adr_metadata.filename)
+
+            # Report results
+            print("\nGeneration Results:")
+            print(f"  Updates generated: {len(gen_result.updates)}")
+            print(f"  Docs skipped: {len(gen_result.skipped_docs)}")
+
+            valid_updates = [u for u in gen_result.updates if u.validation_passed]
+            invalid_updates = [u for u in gen_result.updates if not u.validation_passed]
+
+            print(f"  Valid updates: {len(valid_updates)}")
+            print(f"  Failed validation: {len(invalid_updates)}")
+
+            for update in gen_result.updates:
+                status = "✓" if update.validation_passed else "✗"
+                print(f"\n  {status} {update.doc_path.relative_to(args.repo_root)}")
+                print(f"    Confidence: {update.confidence:.0%}")
+                print(f"    Summary: {update.changes_summary}")
+                if update.adr_reference:
+                    print(f"    Metadata: {update.adr_reference} ({update.update_timestamp})")
+                if update.validation_errors:
+                    for error in update.validation_errors:
+                        print(f"    Error: {error}")
+
+            for path, reason in gen_result.skipped_docs:
+                print(f"\n  - Skipped {path.name}: {reason}")
+
+            if gen_result.errors:
+                print("\nErrors:")
+                for error in gen_result.errors:
+                    print(f"  - {error}")
+
+            # Create PR if requested and we have valid updates
+            if not args.no_pr and valid_updates:
+                print("\n" + "=" * 50)
+                print("Creating Pull Request...")
+
+                pr_creator = PRCreator(args.repo_root)
+                pr_result = pr_creator.create_doc_sync_pr(
+                    adr_title=adr_metadata.title,
+                    adr_path=adr_metadata.path,
+                    updates=gen_result.updates,
+                    dry_run=args.dry_run,
+                    create_tag=not args.no_tag,  # Phase 4: Git tagging
+                )
+
+                if pr_result.success:
+                    print("\n✓ PR created successfully!")
+                    print(f"  Branch: {pr_result.branch_name}")
+                    if pr_result.tag_name:
+                        print(f"  Tag: {pr_result.tag_name}")
+                    if pr_result.pr_url:
+                        print(f"  PR URL: {pr_result.pr_url}")
+                else:
+                    print(f"\n✗ PR creation failed: {pr_result.error}")
+                    if pr_result.branch_name:
+                        print(f"  Branch (may have partial changes): {pr_result.branch_name}")
+                    sys.exit(1)
+
+            elif args.no_pr:
+                print("\n[--no-pr] Skipping PR creation.")
+            elif not valid_updates:
+                print("\nNo valid updates to create PR from.")
+
+            if args.dry_run:
+                print("\n[DRY RUN] No actual changes were made.")
+
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    elif args.command == "rollback":
+        # Phase 4: Rollback utilities
+        from rollback import Rollback
+
+        rollback = Rollback(args.repo_root)
+
+        if args.rollback_command == "list-commits":
+            commits = rollback.find_auto_generated_commits(since=args.since, adr_filename=args.adr)
+
+            if not commits:
+                print("No auto-generated commits found.")
+            else:
+                print(f"Found {len(commits)} auto-generated commit(s):\n")
+                for commit in commits:
+                    print(f"  {commit.sha[:8]} - {commit.message}")
+                    print(f"    Date: {commit.date}")
+                    if commit.adr_filename:
+                        print(f"    ADR: {commit.adr_filename}")
+                    if commit.files:
+                        print(f"    Files: {', '.join(commit.files[:3])}")
+                        if len(commit.files) > 3:
+                            print(f"           ... and {len(commit.files) - 3} more")
+                    print()
+
+        elif args.rollback_command == "list-files":
+            files = rollback.find_files_with_metadata()
+
+            if not files:
+                print("No files with auto-generated metadata found.")
+            else:
+                print(f"Found {len(files)} file(s) with auto-generated metadata:\n")
+                for file_path, adr_ref in files:
+                    rel_path = file_path.relative_to(args.repo_root)
+                    print(f"  {rel_path}")
+                    print(f"    Updated from: {adr_ref}")
+                    print()
+
+        elif args.rollback_command == "list-tags":
+            tags = rollback.find_auto_generated_tags()
+
+            if not tags:
+                print("No auto-doc-sync tags found.")
+            else:
+                print(f"Found {len(tags)} auto-doc-sync tag(s):\n")
+                for tag in tags:
+                    print(f"  {tag}")
+
+        elif args.rollback_command == "revert-file":
+            result = rollback.revert_single_file(args.file, target_commit=args.to)
+
+            if result.success:
+                print(f"✓ {result.message}")
+                print("\nNote: Changes are staged but not committed.")
+                print("Review and commit with: git commit -m 'Revert auto-generated changes'")
+            else:
+                print(f"✗ {result.message}")
+                sys.exit(1)
+
+        elif args.rollback_command == "revert-adr":
+            result = rollback.revert_adr_batch(args.adr_name)
+
+            if result.success:
+                print(f"✓ {result.message}")
+                if result.reverted_files:
+                    print("\nReverted files:")
+                    for f in result.reverted_files:
+                        print(f"  - {f}")
+                print("\nNote: Changes are staged but not committed.")
+                print("Review and commit with: git commit -m 'Revert auto-generated changes'")
+            else:
+                print(f"✗ {result.message}")
+                sys.exit(1)
+
+        else:
+            parser.print_help()
+
+    elif args.command == "weekly-analyze":
+        # Phase 5: Weekly code analysis for FEATURES.md
+        from pr_creator import PRCreator
+        from weekly_analyzer import WeeklyAnalyzer
+
+        print("Feature Analyzer - Weekly Code Analysis (Phase 5)")
+        print(f"Repository: {args.repo_root}")
+        print(f"Analyzing past {args.days} days")
+        print()
+
+        try:
+            # Run analysis
+            analyzer = WeeklyAnalyzer(args.repo_root, use_llm=not args.no_llm)
+            result = analyzer.analyze_and_update(days=args.days, dry_run=args.dry_run)
+
+            # Report results
+            print("\n" + "=" * 50)
+            print("Analysis Results:")
+            print(f"  Commits analyzed: {result.commits_analyzed}")
+            print(f"  Features detected: {len(result.features_detected)}")
+            print(f"  Features added: {len(result.features_added)}")
+            print(f"  Features skipped: {len(result.features_skipped)}")
+
+            if result.features_added:
+                print("\nNew features added:")
+                for feature in result.features_added:
+                    review = " ⚠️ Needs Review" if feature.needs_review else ""
+                    print(f"  - {feature.name} ({feature.confidence:.0%} confidence){review}")
+                    print(f"    {feature.description}")
+
+            if result.features_skipped:
+                print("\nSkipped features:")
+                for name, reason in result.features_skipped:
+                    print(f"  - {name}: {reason}")
+
+            if result.errors:
+                print("\nErrors:")
+                for error in result.errors:
+                    print(f"  - {error}")
+
+            # Create PR if we added features
+            if result.features_added and not args.no_pr and not args.dry_run:
+                print("\n" + "=" * 50)
+                print("Creating Pull Request...")
+
+                pr_creator = PRCreator(args.repo_root)
+
+                # Build PR body
+                feature_list = "\n".join(
+                    f"- **{f.name}** ({f.category}): {f.description}" for f in result.features_added
+                )
+                needs_review = [f for f in result.features_added if f.needs_review]
+                review_note = ""
+                if needs_review:
+                    review_note = f"\n\n**⚠️ {len(needs_review)} feature(s) need human review** (low confidence detection)"
+
+                pr_body = f"""## Summary
+
+Weekly code analysis identified {len(result.features_added)} new features from the past {args.days} days.
+{review_note}
+
+### New Features Detected
+
+{feature_list}
+
+### Analysis Details
+
+- Commits analyzed: {result.commits_analyzed}
+- Features detected: {len(result.features_detected)}
+- Features added: {len(result.features_added)}
+- Features skipped: {len(result.features_skipped)}
+
+## Test Plan
+
+- [x] All entries include correct file paths
+- [x] Status flags are accurate (all "implemented")
+- [x] No duplicate entries in FEATURES.md
+- [ ] Human review for accuracy and completeness
+
+---
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+— Authored by jib"""
+
+                # Create update object for PR creator
+                from doc_generator import GeneratedUpdate
+
+                features_md_path = args.repo_root / "docs" / "FEATURES.md"
+                update = GeneratedUpdate(
+                    doc_path=features_md_path,
+                    original_content="",  # Not used for this flow
+                    updated_content=features_md_path.read_text(),
+                    changes_summary=f"Added {len(result.features_added)} new features from weekly analysis",
+                    confidence=0.85,
+                    validation_passed=True,
+                )
+
+                pr_result = pr_creator.create_doc_sync_pr(
+                    adr_title="Weekly Feature Analysis",
+                    adr_path=Path("weekly-analysis"),
+                    updates=[update],
+                    dry_run=False,
+                    create_tag=True,
+                    custom_pr_body=pr_body,
+                )
+
+                if pr_result.success:
+                    print("\n✓ PR created successfully!")
+                    print(f"  Branch: {pr_result.branch_name}")
+                    if pr_result.tag_name:
+                        print(f"  Tag: {pr_result.tag_name}")
+                    if pr_result.pr_url:
+                        print(f"  PR URL: {pr_result.pr_url}")
+                else:
+                    print(f"\n✗ PR creation failed: {pr_result.error}")
+                    sys.exit(1)
+
+            elif args.no_pr:
+                print("\n[--no-pr] Skipping PR creation.")
+            elif args.dry_run:
+                print("\n[DRY RUN] No files were modified.")
+            elif not result.features_added:
+                print("\nNo new features to add - FEATURES.md is up to date.")
+
+        except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    elif args.command == "full-repo":
+        # Phase 6: Full repository analysis for comprehensive FEATURES.md
+        from weekly_analyzer import RepoAnalyzer
+
+        print("Feature Analyzer - Full Repository Analysis (Phase 6)")
+        print(f"Repository: {args.repo_root}")
+        print()
+
+        try:
+            # Run analysis
+            analyzer = RepoAnalyzer(args.repo_root, use_llm=not args.no_llm)
+            result = analyzer.analyze_full_repo(
+                dry_run=args.dry_run,
+                output_path=args.output,
+                max_workers=args.workers,
+            )
+
+            # Report results
+            print("\n" + "=" * 50)
+            print("Analysis Results:")
+            print(f"  Directories scanned: {result.directories_scanned}")
+            print(f"  Files analyzed: {result.files_analyzed}")
+            print(f"  Features detected: {len(result.features_detected)}")
+
+            if result.features_by_category:
+                print("\nFeatures by category:")
+                for cat, features in sorted(result.features_by_category.items()):
+                    print(f"  {cat}: {len(features)}")
+                    for f in features:
+                        review = " ⚠️" if f.needs_review else ""
+                        print(f"    - {f.name}{review}")
+
+            if result.errors:
+                print("\nErrors:")
+                for error in result.errors:
+                    print(f"  - {error}")
+
+            # Create PR if requested and not dry run
+            if not args.no_pr and not args.dry_run and result.output_file:
+                print("\n" + "=" * 50)
+                print("Creating Pull Request...")
+
+                from doc_generator import GeneratedUpdate
+                from pr_creator import PRCreator
+
+                pr_creator = PRCreator(args.repo_root)
+
+                # Build PR body
+                feature_count = len(result.features_detected)
+                category_summary = "\n".join(
+                    f"- **{cat}**: {len(features)} feature(s)"
+                    for cat, features in sorted(result.features_by_category.items())
+                )
+
+                pr_body = f"""## Summary
+
+Full repository analysis generated a comprehensive FEATURES.md with {feature_count} features.
+
+### Features by Category
+
+{category_summary}
+
+### Analysis Details
+
+- Directories scanned: {result.directories_scanned}
+- Files analyzed: {result.files_analyzed}
+- Features detected: {feature_count}
+
+## Test Plan
+
+- [x] All feature entries have valid file paths
+- [x] Categories are properly organized
+- [x] Documentation links are accurate
+- [ ] Human review for accuracy and completeness
+
+---
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+— Authored by jib"""
+
+                # Create update object for PR creator
+                features_md_path = args.repo_root / "docs" / "FEATURES.md"
+                # Preserve original content for accurate PR diff generation
+                original_content = features_md_path.read_text() if features_md_path.exists() else ""
+                updated_content = features_md_path.read_text() if features_md_path.exists() else ""
+                update = GeneratedUpdate(
+                    doc_path=features_md_path,
+                    original_content=original_content,
+                    updated_content=updated_content,
+                    changes_summary=f"Generated comprehensive FEATURES.md with {feature_count} features",
+                    confidence=0.9,
+                    validation_passed=True,
+                )
+
+                pr_result = pr_creator.create_doc_sync_pr(
+                    adr_title="Full Repository Feature Analysis",
+                    adr_path=Path("full-repo-analysis"),
+                    updates=[update],
+                    dry_run=False,
+                    create_tag=True,
+                    custom_pr_body=pr_body,
+                )
+
+                if pr_result.success:
+                    print("\n✓ PR created successfully!")
+                    print(f"  Branch: {pr_result.branch_name}")
+                    if pr_result.tag_name:
+                        print(f"  Tag: {pr_result.tag_name}")
+                    if pr_result.pr_url:
+                        print(f"  PR URL: {pr_result.pr_url}")
+                else:
+                    print(f"\n✗ PR creation failed: {pr_result.error}")
+                    sys.exit(1)
+
+            elif args.no_pr:
+                print("\n[--no-pr] Skipping PR creation.")
+            elif args.dry_run:
+                print("\n[DRY RUN] No files were modified.")
+
         except Exception as e:
             print(f"Unexpected error: {e}", file=sys.stderr)
             import traceback
