@@ -302,9 +302,17 @@ def _process_result_from_parts(returncode: int, stdout: str, stderr: str) -> Jib
     if stdout.strip():
         try:
             json_output = json.loads(stdout.strip())
-        except json.JSONDecodeError:
-            # Not JSON output, that's okay
-            pass
+        except json.JSONDecodeError as e:
+            # Not JSON output - log a warning if it looks like it should have been JSON
+            # (e.g., starts with { or [)
+            stripped = stdout.strip()
+            if stripped.startswith(("{", "[")):
+                # This looks like it should be JSON but failed to parse
+                # Include the parse error in the result for debugging
+                if error:
+                    error = f"{error}; JSON parse error: {e}"
+                else:
+                    error = f"JSON parse error: {e} (output starts with: {stripped[:100]}...)"
 
     return JibResult(
         success=success,

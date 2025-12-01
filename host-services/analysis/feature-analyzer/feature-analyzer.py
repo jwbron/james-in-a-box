@@ -442,6 +442,12 @@ def main():
         default=Path.cwd(),
         help="Repository root directory (default: current directory)",
     )
+    full_repo_parser.add_argument(
+        "--workers",
+        type=int,
+        default=5,
+        help="Number of parallel workers for directory analysis (default: 5)",
+    )
 
     args = parser.parse_args()
 
@@ -828,6 +834,7 @@ Weekly code analysis identified {len(result.features_added)} new features from t
             result = analyzer.analyze_full_repo(
                 dry_run=args.dry_run,
                 output_path=args.output,
+                max_workers=args.workers,
             )
 
             # Report results
