@@ -479,6 +479,91 @@ def check_docker() -> bool:
 
 
 
+def _copy_directory_atomic(src: Path, dest: Path, name: str, quiet: bool = False) -> bool:
+    """Copy a directory atomically with retry logic for race conditions.
+
+    When multiple jib --exec instances run simultaneously, they may all try to
+    update the same build context directories. This function uses atomic operations
+    to handle race conditions:
+    1. Copy to a temporary directory
+    2. Remove existing destination (with retry on ENOTEMPTY/ENOENT)
+    3. Rename temp to destination (atomic on same filesystem)
+
+    Args:
+        src: Source directory to copy
+        dest: Destination path
+        name: Human-readable name for logging
+        quiet: If True, suppress info messages
+
+    Returns:
+        True if successful, False otherwise
+    """
+    import shutil
+    import tempfile
+    import uuid
+
+    max_retries = 3
+    retry_delay = 0.1  # seconds
+
+    for attempt in range(max_retries):
+        try:
+            # Create a unique temp directory in the same parent (for atomic rename)
+            temp_dir = dest.parent / f".tmp-{uuid.uuid4().hex[:8]}"
+
+            # Copy source to temp location
+            shutil.copytree(src, temp_dir)
+
+            # Try to remove existing destination
+            if dest.exists():
+                try:
+                    shutil.rmtree(dest)
+                except FileNotFoundError:
+                    # Another process already removed it - that's fine
+                    pass
+                except OSError as e:
+                    # Directory not empty (ENOTEMPTY) - another process is writing
+                    # Clean up temp and retry
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay * (attempt + 1))
+                        continue
+                    raise
+
+            # Atomic rename from temp to destination
+            try:
+                temp_dir.rename(dest)
+            except OSError:
+                # Destination appeared between rmtree and rename - another process won
+                # Clean up our temp and use their copy
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                if dest.exists():
+                    # Other process succeeded, we're done
+                    if not quiet:
+                        info(f"{name} directory ready (from another process)")
+                    return True
+                # Neither exists - retry
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (attempt + 1))
+                    continue
+                raise
+
+            if not quiet:
+                info(f"{name} copied to build context")
+            return True
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (attempt + 1))
+                continue
+            warn(f"Failed to copy {name} directory after {max_retries} attempts: {e}")
+            # Clean up temp if it exists
+            if 'temp_dir' in locals() and temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            return False
+
+    return False
+
+
 def is_dangerous_dir(path: Path) -> bool:
     """Check if a directory is dangerous to mount (contains credentials)"""
     for dangerous in Config.DANGEROUS_DIRS:
@@ -513,40 +598,32 @@ def create_dockerfile() -> None:
         warn("docker-setup.py not found, skipping dev tools installation")
 
     # Copy claude-commands directory to config directory
+    # Use atomic copy with retry to handle race conditions when multiple
+    # jib --exec instances run simultaneously
     commands_src = script_dir / "claude-commands"
     commands_dest = Config.CONFIG_DIR / "claude-commands"
     if commands_src.exists():
-        if commands_dest.exists():
-            shutil.rmtree(commands_dest)
-        shutil.copytree(commands_src, commands_dest)
-        if not _quiet_mode:
-            info("Claude commands copied to build context")
+        _copy_directory_atomic(commands_src, commands_dest, "Claude commands", _quiet_mode)
     else:
         warn("claude-commands directory not found")
 
     # Copy claude-rules directory to build context
+    # Use atomic copy with retry to handle race conditions
     rules_src = script_dir / "claude-rules"
     rules_dest = Config.CONFIG_DIR / "claude-rules"
     if rules_src.exists():
-        if rules_dest.exists():
-            shutil.rmtree(rules_dest)
-        shutil.copytree(rules_src, rules_dest)
-        if not _quiet_mode:
-            info("Claude rules directory copied to build context")
+        _copy_directory_atomic(rules_src, rules_dest, "Claude rules", _quiet_mode)
     else:
         warn("claude-rules directory not found, skipping agent rules")
 
     # Copy .claude/hooks directory to build context
+    # Use atomic copy with retry to handle race conditions
     hooks_src = script_dir / ".claude" / "hooks"
     hooks_dest = Config.CONFIG_DIR / ".claude" / "hooks"
     if hooks_src.exists():
-        if hooks_dest.exists():
-            shutil.rmtree(hooks_dest)
         # Ensure parent directory exists
         hooks_dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(hooks_src, hooks_dest)
-        if not _quiet_mode:
-            info("Claude hooks directory copied to build context")
+        _copy_directory_atomic(hooks_src, hooks_dest, "Claude hooks", _quiet_mode)
     else:
         warn(".claude/hooks directory not found, skipping hooks")
 
@@ -930,11 +1007,94 @@ def get_default_branch(repo_path: Path) -> str:
     return "main"
 
 
+def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> Optional[int]:
+    """Acquire an exclusive lock for git operations on a repository.
+
+    Git doesn't handle concurrent operations well. When multiple jib --exec
+    containers try to create worktrees simultaneously, they can conflict on
+    the same repo's config/index files. This function provides file-based
+    locking to serialize git operations per repository.
+
+    Args:
+        repo_path: Path to the git repository
+        timeout: Maximum time to wait for lock in seconds
+
+    Returns:
+        File descriptor for the lock (must be closed to release), or None if failed
+    """
+    import fcntl
+    import errno
+
+    # Create lock file in the repo's .git directory
+    git_dir = repo_path / ".git"
+    if git_dir.is_file():
+        # Worktree - read the actual git dir path
+        try:
+            content = git_dir.read_text().strip()
+            if content.startswith("gitdir:"):
+                git_dir = Path(content[7:].strip())
+        except Exception:
+            pass
+
+    if not git_dir.is_dir():
+        return None
+
+    lock_file = git_dir / ".jib-worktree-lock"
+
+    start_time = time.time()
+    retry_delay = 0.1
+
+    while True:
+        try:
+            # Open lock file (create if doesn't exist)
+            fd = os.open(str(lock_file), os.O_CREAT | os.O_RDWR)
+
+            # Try to acquire exclusive lock (non-blocking)
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            # Got the lock
+            return fd
+
+        except (OSError, IOError) as e:
+            if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES):
+                # Lock held by another process
+                elapsed = time.time() - start_time
+                if elapsed >= timeout:
+                    warn(f"Timeout waiting for git lock on {repo_path.name}")
+                    if 'fd' in locals():
+                        os.close(fd)
+                    return None
+
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 1.5, 1.0)  # Exponential backoff, max 1s
+                continue
+            else:
+                # Other error
+                if 'fd' in locals():
+                    os.close(fd)
+                return None
+
+
+def _release_git_lock(fd: int) -> None:
+    """Release a git lock acquired with _acquire_git_lock."""
+    import fcntl
+
+    if fd is not None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        except Exception:
+            pass
+
+
 def create_worktrees(container_id: str) -> dict:
     """Create git worktrees for all repos in ~/khan/
 
     Worktrees are always based on the default branch (main or master),
     regardless of what branch is currently checked out on the host.
+
+    Uses file-based locking to prevent conflicts when multiple jib --exec
+    containers try to create worktrees simultaneously.
 
     Returns:
         Dictionary mapping repo names to worktree paths
@@ -964,7 +1124,12 @@ def create_worktrees(container_id: str) -> dict:
         # Note: git worktree add works even when source repo is a worktree
         # It creates a new worktree of the same underlying main repository
         worktree_path = worktree_dir / repo_name
-        is_source_worktree = git_dir.is_file()
+
+        # Acquire lock to prevent concurrent git operations on same repo
+        lock_fd = _acquire_git_lock(repo_path, timeout=60.0)
+        if lock_fd is None:
+            warn(f"  ✗ Could not acquire lock for {repo_name}, skipping worktree")
+            continue
 
         try:
             # Determine the default branch for this repo
@@ -993,6 +1158,8 @@ def create_worktrees(container_id: str) -> dict:
 
         except Exception as e:
             warn(f"  ✗ Error creating worktree for {repo_name}: {e}")
+        finally:
+            _release_git_lock(lock_fd)
 
     return worktrees
 
