@@ -95,6 +95,19 @@ class AnalysisResult:
     analysis_date: str = ""
 
 
+@dataclass
+class FullRepoAnalysisResult:
+    """Result of full repository analysis."""
+
+    directories_scanned: int = 0
+    files_analyzed: int = 0
+    features_detected: list[DetectedFeature] = field(default_factory=list)
+    features_by_category: dict = field(default_factory=dict)  # category -> list[DetectedFeature]
+    errors: list[str] = field(default_factory=list)
+    analysis_date: str = ""
+    output_file: str = ""
+
+
 class WeeklyAnalyzer:
     """Analyzes weekly code changes and updates FEATURES.md."""
 
@@ -1233,6 +1246,655 @@ Output ONLY the markdown content, no explanation.
                 print(f"    Generated {len(result.docs_generated)} documentation files")
 
         return result
+
+
+class RepoAnalyzer:
+    """
+    Analyzes an entire repository from scratch to generate a comprehensive feature list.
+
+    Unlike WeeklyAnalyzer which looks at recent commits, this class scans the entire
+    repository structure to identify all features, generating a complete FEATURES.md.
+
+    This is useful for:
+    - Initial feature list generation for new repos
+    - Regenerating feature lists from scratch
+    - Auditing existing features against actual code
+    """
+
+    # Standard categories for feature organization
+    CATEGORIES = [
+        "Core Architecture",
+        "Communication",
+        "Context Management",
+        "GitHub Integration",
+        "Self-Improvement System",
+        "Documentation System",
+        "Custom Commands",
+        "Container Infrastructure",
+        "Utilities",
+        "Security Features",
+        "Configuration",
+    ]
+
+    # Directories that contain features
+    FEATURE_DIRECTORIES = [
+        "host-services/",
+        "jib-container/",
+        ".claude/commands/",
+        "scripts/",
+        "bin/",
+    ]
+
+    # Files/patterns to skip
+    SKIP_PATTERNS = [
+        r"__pycache__",
+        r"\.pyc$",
+        r"\.git/",
+        r"node_modules/",
+        r"\.egg-info",
+        r"test_.*\.py$",
+        r".*_test\.py$",
+        r"conftest\.py$",
+        r"setup\.py$",
+        r"__init__\.py$",
+    ]
+
+    # Category mapping based on directory structure
+    CATEGORY_MAPPINGS = {
+        "host-services/analysis/": "Self-Improvement System",
+        "host-services/sync/": "Context Management",
+        "host-services/slack/": "Communication",
+        "host-services/utilities/": "Utilities",
+        "jib-container/scripts/": "Container Infrastructure",
+        "jib-container/shared/": "Container Infrastructure",
+        ".claude/commands/": "Custom Commands",
+        ".claude/rules/": "Configuration",
+        "Dockerfile": "Core Architecture",
+    }
+
+    def __init__(self, repo_root: Path, use_llm: bool = True):
+        """
+        Initialize the repo analyzer.
+
+        Args:
+            repo_root: Path to the repository root
+            use_llm: If True, use LLM for feature extraction
+        """
+        self.repo_root = repo_root
+        self.use_llm = use_llm
+        self.features_md = repo_root / "docs" / "FEATURES.md"
+
+    def _should_skip(self, path: str) -> bool:
+        """Check if a path should be skipped."""
+        return any(re.search(pattern, path) for pattern in self.SKIP_PATTERNS)
+
+    def _get_category(self, path: str) -> str:
+        """Determine category for a file path."""
+        for prefix, category in self.CATEGORY_MAPPINGS.items():
+            if prefix in path:
+                return category
+        return "Utilities"
+
+    def scan_directory_structure(self) -> dict[str, list[Path]]:
+        """
+        Scan the repository and group files by potential feature directories.
+
+        Returns:
+            Dict mapping directory paths to lists of relevant files
+        """
+        feature_dirs: dict[str, list[Path]] = {}
+
+        for feature_dir in self.FEATURE_DIRECTORIES:
+            base_path = self.repo_root / feature_dir
+            if not base_path.exists():
+                continue
+
+            # Find subdirectories that likely represent features
+            if base_path.is_dir():
+                for item in base_path.iterdir():
+                    if item.is_dir() and not self._should_skip(str(item)):
+                        # This subdirectory likely represents a feature
+                        dir_key = str(item.relative_to(self.repo_root))
+                        feature_dirs[dir_key] = []
+
+                        # Collect Python files in this directory
+                        for py_file in item.rglob("*.py"):
+                            if not self._should_skip(str(py_file)):
+                                feature_dirs[dir_key].append(py_file)
+
+                        # Also check for shell scripts
+                        for sh_file in item.rglob("*.sh"):
+                            if not self._should_skip(str(sh_file)):
+                                feature_dirs[dir_key].append(sh_file)
+
+        # Also check for standalone scripts in root directories
+        for pattern in ["*.py", "*.sh"]:
+            for script in self.repo_root.glob(pattern):
+                if not self._should_skip(str(script)):
+                    key = str(script.relative_to(self.repo_root))
+                    feature_dirs[key] = [script]
+
+        return feature_dirs
+
+    def _read_file_safe(self, path: Path, max_lines: int = 500) -> str:
+        """Safely read file content with size limits."""
+        try:
+            if path.stat().st_size > 500_000:  # 500KB limit
+                return ""
+            content = path.read_text(encoding="utf-8")
+            lines = content.split("\n")
+            if len(lines) > max_lines:
+                lines = lines[:max_lines]
+                lines.append(f"\n... [truncated at {max_lines} lines]")
+            return "\n".join(lines)
+        except (UnicodeDecodeError, OSError):
+            return ""
+
+    def _extract_docstring(self, content: str) -> str:
+        """Extract the module docstring from source code."""
+        patterns = [
+            r'^"""(.*?)"""',
+            r"^'''(.*?)'''",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, content.strip(), re.DOTALL)
+            if match:
+                docstring = match.group(1).strip()
+                first_para = docstring.split("\n\n")[0]
+                first_para = " ".join(first_para.split())
+                if len(first_para) > 300:
+                    first_para = first_para[:297] + "..."
+                return first_para
+        return ""
+
+    def _find_readme(self, dir_path: Path) -> str | None:
+        """Find README.md in a directory."""
+        readme = dir_path / "README.md"
+        if readme.exists():
+            return str(readme.relative_to(self.repo_root))
+        return None
+
+    def _analyze_directory_with_llm(
+        self, dir_path: str, files: list[Path]
+    ) -> list[DetectedFeature]:
+        """
+        Use LLM to analyze a directory and extract features.
+
+        Args:
+            dir_path: Relative path to the directory
+            files: List of files in the directory
+
+        Returns:
+            List of detected features
+        """
+        # Read file contents (limited)
+        file_contents = {}
+        for f in files[:5]:  # Limit to 5 files per directory
+            content = self._read_file_safe(f)
+            if content:
+                rel_path = str(f.relative_to(self.repo_root))
+                file_contents[rel_path] = content
+
+        if not file_contents:
+            return []
+
+        # Check for README first
+        readme_content = ""
+        readme_path = self.repo_root / dir_path / "README.md"
+        if readme_path.exists():
+            readme_content = self._read_file_safe(readme_path, max_lines=200)
+
+        # Build prompt
+        code_sections = []
+        for file_path, content in file_contents.items():
+            ext = Path(file_path).suffix
+            lang = "python" if ext == ".py" else "bash" if ext == ".sh" else ""
+            code_sections.append(f"""
+## File: {file_path}
+
+```{lang}
+{content}
+```
+""")
+
+        code_text = "\n---\n".join(code_sections)
+
+        readme_section = ""
+        if readme_content:
+            readme_section = f"""
+## README.md Content
+
+```markdown
+{readme_content}
+```
+"""
+
+        prompt = f"""Analyze this code directory to identify user-facing FEATURES for documentation.
+
+# Directory: {dir_path}
+
+{readme_section}
+
+# Source Files
+
+{code_text}
+
+# Task
+
+Identify the main feature(s) in this directory. For each feature:
+
+1. **name**: Clear, descriptive name (NOT the directory name)
+   - Good: "Slack Message Router", "GitHub Token Refresher", "Conversation Analyzer"
+   - Bad: "Slack Notifier" (too vague), "Utils" (too generic)
+
+2. **description**: 2-3 sentence description explaining:
+   - What it does
+   - The problem it solves
+   - Key capabilities
+
+3. **category**: One of:
+   - "Core Architecture", "Communication", "Context Management", "GitHub Integration",
+   - "Self-Improvement System", "Documentation System", "Custom Commands",
+   - "Container Infrastructure", "Utilities", "Security Features", "Configuration"
+
+4. **key_components**: List 3-5 key components/capabilities
+
+5. **files**: Main implementation files
+
+6. **confidence**: 0.0-1.0 based on how clearly this is a user-facing feature
+
+# What IS a Feature?
+
+- Services that run as systemd units
+- CLI tools users can invoke
+- Libraries providing public APIs
+- Standalone capabilities solving user problems
+
+# What is NOT a Feature?
+
+- Internal utilities
+- Test files
+- Configuration helpers
+- Generic "connector" classes without clear purpose
+
+# Output
+
+Return ONLY a JSON array:
+
+```json
+[
+  {{
+    "name": "Feature Name",
+    "description": "2-3 sentence description",
+    "category": "Category Name",
+    "key_components": ["Component 1", "Component 2", "Component 3"],
+    "files": ["path/to/main.py"],
+    "confidence": 0.85
+  }}
+]
+```
+
+If this directory doesn't contain a clear feature, return: `[]`
+"""
+
+        try:
+            result = run_claude(
+                prompt=prompt,
+                cwd=self.repo_root,
+                stream=False,
+            )
+
+            if result.success and result.stdout.strip():
+                return self._parse_llm_output(result.stdout, dir_path)
+            return []
+        except Exception as e:
+            print(f"    Warning: LLM analysis failed for {dir_path}: {e}")
+            return []
+
+    def _parse_llm_output(self, output: str, dir_path: str) -> list[DetectedFeature]:
+        """Parse LLM JSON output into DetectedFeature objects."""
+        features = []
+
+        json_match = re.search(r"\[[\s\S]*\]", output)
+        if not json_match:
+            return []
+
+        try:
+            data = json.loads(json_match.group())
+            if not isinstance(data, list):
+                return []
+
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+
+                confidence = float(item.get("confidence", 0.5))
+                feature = DetectedFeature(
+                    name=item.get("name", "Unknown"),
+                    description=item.get("description", ""),
+                    category=item.get("category", self._get_category(dir_path)),
+                    files=item.get("files", []),
+                    confidence=confidence,
+                    date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
+                    needs_review=confidence < 0.7,
+                )
+
+                # Store key_components in description if provided
+                key_components = item.get("key_components", [])
+                if key_components and not feature.description.endswith("."):
+                    feature.description += "."
+
+                features.append(feature)
+
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"    Warning: Failed to parse LLM output: {e}")
+
+        return features
+
+    def _analyze_directory_heuristically(
+        self, dir_path: str, files: list[Path]
+    ) -> list[DetectedFeature]:
+        """
+        Analyze a directory using heuristics (fallback when LLM unavailable).
+        """
+        features = []
+
+        # Check for main Python file
+        main_file = None
+        for f in files:
+            if f.suffix == ".py":
+                content = self._read_file_safe(f)
+                if "def main(" in content or 'if __name__ == "__main__"' in content:
+                    main_file = f
+                    break
+
+        if main_file:
+            content = self._read_file_safe(main_file)
+            docstring = self._extract_docstring(content)
+
+            # Generate name from directory
+            dir_name = Path(dir_path).name
+            name = dir_name.replace("_", " ").replace("-", " ").title()
+
+            description = docstring if docstring else f"Tool providing {name.lower()} functionality"
+
+            feature = DetectedFeature(
+                name=name,
+                description=description,
+                category=self._get_category(dir_path),
+                files=[str(main_file.relative_to(self.repo_root))],
+                confidence=0.5,
+                date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
+                needs_review=True,
+            )
+            features.append(feature)
+
+        return features
+
+    def _find_existing_docs(self, feature: DetectedFeature) -> str | None:
+        """Find existing documentation for a feature."""
+        if not feature.files:
+            return None
+
+        primary_file = Path(feature.files[0])
+        parent = self.repo_root / primary_file.parent
+
+        # Check for README in same directory
+        readme = parent / "README.md"
+        if readme.exists():
+            return str(primary_file.parent / "README.md")
+
+        # Check docs/reference/
+        slug = feature.name.lower().replace(" ", "-")
+        for pattern in [
+            f"docs/reference/{slug}.md",
+            f"docs/{slug}.md",
+        ]:
+            if (self.repo_root / pattern).exists():
+                return pattern
+
+        return None
+
+    def generate_features_md(
+        self, features: list[DetectedFeature], repo_name: str = "Repository"
+    ) -> str:
+        """
+        Generate complete FEATURES.md content.
+
+        Args:
+            features: List of detected features
+            repo_name: Name of the repository for the title
+
+        Returns:
+            Complete FEATURES.md content as string
+        """
+        # Group features by category
+        by_category: dict[str, list[DetectedFeature]] = {}
+        for feature in features:
+            cat = feature.category or "Utilities"
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append(feature)
+
+        # Sort categories by standard order
+        sorted_categories = []
+        for cat in self.CATEGORIES:
+            if cat in by_category:
+                sorted_categories.append(cat)
+        # Add any categories not in standard list
+        for cat in by_category:
+            if cat not in sorted_categories:
+                sorted_categories.append(cat)
+
+        # Build document
+        lines = [
+            f"# {repo_name} Feature List",
+            "",
+            "> **Purpose:** This list enables automated codebase and document analyzers to systematically assess each feature for quality, security, and improvement opportunities.",
+            ">",
+            "> **Generated:** This document was auto-generated by the Feature Analyzer.",
+            "",
+            "## Table of Contents",
+            "",
+        ]
+
+        # Generate TOC
+        for cat in sorted_categories:
+            anchor = cat.lower().replace(" ", "-").replace("&", "and")
+            lines.append(f"- [{cat}](#{anchor})")
+
+        lines.extend(["", "---", ""])
+
+        # Generate feature sections
+        feature_num = 1
+        for cat in sorted_categories:
+            cat_features = by_category[cat]
+            lines.append(f"## {cat}")
+            lines.append("")
+
+            for feature in cat_features:
+                # Feature header
+                review_flag = " ⚠️ *needs review*" if feature.needs_review else ""
+                lines.append(f"### {feature_num}. {feature.name}{review_flag}")
+
+                lines.append(f"**Category:** {feature.category}")
+
+                # Location
+                if feature.files:
+                    files_str = ", ".join(f"`{f}`" for f in feature.files[:3])
+                    lines.append(f"**Location:** {files_str}")
+
+                # Description
+                lines.append(f"**Description:** {feature.description}")
+
+                # Documentation link
+                if feature.doc_path:
+                    lines.append(f"**Documentation:** [{feature.doc_path}]({feature.doc_path})")
+
+                lines.append("")
+                feature_num += 1
+
+        # Add footer
+        lines.extend([
+            "---",
+            "",
+            "## Maintaining This List",
+            "",
+            "This feature list is maintained by the Feature Analyzer tool.",
+            "",
+            "### Update Commands",
+            "",
+            "```bash",
+            "# Regenerate entire list from scratch",
+            "feature-analyzer full-repo --repo-root /path/to/repo",
+            "",
+            "# Weekly incremental updates",
+            "feature-analyzer weekly-analyze --days 7",
+            "```",
+            "",
+            f"**Last Updated:** {datetime.now(UTC).strftime('%Y-%m-%d')}",
+            "",
+        ])
+
+        return "\n".join(lines)
+
+    def analyze_full_repo(
+        self,
+        dry_run: bool = False,
+        output_path: Path | None = None,
+    ) -> FullRepoAnalysisResult:
+        """
+        Analyze entire repository and generate comprehensive FEATURES.md.
+
+        Args:
+            dry_run: If True, don't write files
+            output_path: Custom output path (default: docs/FEATURES.md)
+
+        Returns:
+            FullRepoAnalysisResult with analysis details
+        """
+        result = FullRepoAnalysisResult(
+            analysis_date=datetime.now(UTC).isoformat(),
+        )
+
+        output = output_path or self.features_md
+
+        print("Full Repository Feature Analysis")
+        print("=" * 50)
+        print(f"Repository: {self.repo_root}")
+        print(f"Output: {output}")
+        print()
+
+        # Scan directory structure
+        print("Phase 1: Scanning directory structure...")
+        feature_dirs = self.scan_directory_structure()
+        result.directories_scanned = len(feature_dirs)
+        print(f"  Found {len(feature_dirs)} potential feature directories")
+
+        # Analyze each directory
+        print("\nPhase 2: Analyzing directories for features...")
+        all_features: list[DetectedFeature] = []
+
+        for dir_path, files in feature_dirs.items():
+            if not files:
+                continue
+
+            result.files_analyzed += len(files)
+            print(f"  Analyzing: {dir_path} ({len(files)} files)")
+
+            if self.use_llm:
+                features = self._analyze_directory_with_llm(dir_path, files)
+                if not features:
+                    features = self._analyze_directory_heuristically(dir_path, files)
+            else:
+                features = self._analyze_directory_heuristically(dir_path, files)
+
+            for feature in features:
+                # Find existing documentation
+                doc_path = self._find_existing_docs(feature)
+                if doc_path:
+                    feature.doc_path = doc_path
+
+                all_features.append(feature)
+                print(f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)")
+
+        result.features_detected = all_features
+        print(f"\n  Total features detected: {len(all_features)}")
+
+        # Deduplicate features
+        print("\nPhase 3: Deduplicating and organizing...")
+        unique_features = self._deduplicate_features(all_features)
+        print(f"  Unique features: {len(unique_features)}")
+
+        # Group by category
+        for feature in unique_features:
+            cat = feature.category or "Utilities"
+            if cat not in result.features_by_category:
+                result.features_by_category[cat] = []
+            result.features_by_category[cat].append(feature)
+
+        # Generate FEATURES.md
+        print("\nPhase 4: Generating FEATURES.md...")
+        repo_name = self.repo_root.name
+        content = self.generate_features_md(unique_features, repo_name=repo_name)
+
+        if dry_run:
+            print("\n[DRY RUN] Would write to:", output)
+            print("\nPreview (first 50 lines):")
+            preview_lines = content.split("\n")[:50]
+            for line in preview_lines:
+                print(f"  {line}")
+            if len(content.split("\n")) > 50:
+                print("  ...")
+        else:
+            # Ensure output directory exists
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(content)
+            result.output_file = str(output)
+            print(f"  ✓ Written to: {output}")
+
+        return result
+
+    def _deduplicate_features(
+        self, features: list[DetectedFeature]
+    ) -> list[DetectedFeature]:
+        """Remove duplicate features based on name similarity and file overlap."""
+        seen_names: set[str] = set()
+        seen_files: set[str] = set()
+        unique: list[DetectedFeature] = []
+
+        # Sort by confidence to keep best matches
+        sorted_features = sorted(features, key=lambda f: f.confidence, reverse=True)
+
+        for feature in sorted_features:
+            name_lower = feature.name.lower()
+
+            # Check for name similarity
+            is_duplicate = False
+            for seen in seen_names:
+                # Simple word overlap check
+                name_words = set(name_lower.split())
+                seen_words = set(seen.split())
+                common = name_words & seen_words
+                significant = [w for w in common if len(w) > 3]
+                if significant:
+                    is_duplicate = True
+                    break
+
+            if is_duplicate:
+                continue
+
+            # Check for file overlap
+            if feature.files:
+                primary = feature.files[0]
+                if primary in seen_files:
+                    continue
+                seen_files.add(primary)
+
+            seen_names.add(name_lower)
+            unique.append(feature)
+
+        return unique
 
 
 def main():
