@@ -387,7 +387,7 @@ The following questions require clarification before implementation:
 ## Related ADRs
 
 - [ADR: Autonomous Software Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) - Parent architecture for the jib agent
-- [ADR: Context Sync Strategy](../in-progress/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) - How external data is synced (note: PR reviewer intentionally does NOT use most synced context)
+- [ADR: Context Sync Strategy](../implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) - How external data is synced (note: PR reviewer intentionally does NOT use most synced context)
 - [ADR: Internet Tool Access Lockdown](ADR-Internet-Tool-Access-Lockdown.md) - Security restrictions relevant to bounded context principle
 
 ---
