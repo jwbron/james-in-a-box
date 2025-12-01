@@ -151,6 +151,117 @@ Features are tagged with status flags matching ADR lifecycle:
   - `host-services/analysis/trace-collector/` - Trace collection service
 - **Tests**: `tests/analysis/test_trace_collector.py`
 
+
+### Analysis & Documentation (Auto-detected)
+
+#### Pr Creator **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/analysis/feature-analyzer/pr_creator.py
+- **Implementation**:
+  - `host-services/analysis/feature-analyzer/pr_creator.py`
+- **Introduced in**: commit 3e6fb05d
+
+#### Doc Generator **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/analysis/feature-analyzer/doc_generator.py
+- **Implementation**:
+  - `host-services/analysis/feature-analyzer/doc_generator.py`
+- **Introduced in**: commit e6c404d5
+
+#### Rollback **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/analysis/feature-analyzer/rollback.py
+- **Implementation**:
+  - `host-services/analysis/feature-analyzer/rollback.py`
+- **Introduced in**: commit e6c404d5
+
+#### Weekly Report Generator **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/analysis/inefficiency-detector/weekly_report_generator.py
+- **Implementation**:
+  - `host-services/analysis/inefficiency-detector/weekly_report_generator.py`
+- **Introduced in**: commit 1b9a93f6
+
+#### Inefficiency Detector **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/analysis/inefficiency-detector/inefficiency_detector.py
+- **Implementation**:
+  - `host-services/analysis/inefficiency-detector/inefficiency_detector.py`
+- **Introduced in**: commit 15460d91
+
+#### Hook Handler **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/analysis/trace-collector/hook_handler.py
+- **Implementation**:
+  - `host-services/analysis/trace-collector/hook_handler.py`
+- **Introduced in**: commit 5a376b07
+
+#### Doc-Generator **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/analysis/doc-generator/doc-generator.py
+- **Implementation**:
+  - `host-services/analysis/doc-generator/doc-generator.py`
+- **Introduced in**: commit 831fd3a8
+
+#### Drift-Detector **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/analysis/doc-generator/drift-detector.py
+- **Implementation**:
+  - `host-services/analysis/doc-generator/drift-detector.py`
+- **Introduced in**: commit 9752995e
+
+
+### Context Sync (Auto-detected)
+
+#### Connector **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/sync/context-sync/connectors/confluence/connector.py
+- **Implementation**:
+  - `host-services/sync/context-sync/connectors/confluence/connector.py`
+- **Introduced in**: commit eb796988
+
+#### Connector **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/sync/context-sync/connectors/jira/connector.py
+- **Implementation**:
+  - `host-services/sync/context-sync/connectors/jira/connector.py`
+- **Introduced in**: commit eb796988
+
+#### Create Symlink **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/sync/context-sync/utils/create_symlink.py
+- **Implementation**:
+  - `host-services/sync/context-sync/utils/create_symlink.py`
+- **Introduced in**: commit eb796988
+
+#### Get Space Ids **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/sync/context-sync/utils/get_space_ids.py
+- **Implementation**:
+  - `host-services/sync/context-sync/utils/get_space_ids.py`
+- **Introduced in**: commit eb796988
+
+#### Link To Khan Projects **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/sync/context-sync/utils/link_to_khan_projects.py
+- **Implementation**:
+  - `host-services/sync/context-sync/utils/link_to_khan_projects.py`
+- **Introduced in**: commit eb796988
+
+#### List Spaces **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/sync/context-sync/utils/list_spaces.py
+- **Implementation**:
+  - `host-services/sync/context-sync/utils/list_spaces.py`
+- **Introduced in**: commit eb796988
+
+#### Maintenance **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/sync/context-sync/utils/maintenance.py
+- **Implementation**:
+  - `host-services/sync/context-sync/utils/maintenance.py`
+- **Introduced in**: commit eb796988
+
+#### Setup **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/sync/context-sync/utils/setup.py
+- **Implementation**:
+  - `host-services/sync/context-sync/utils/setup.py`
+- **Introduced in**: commit eb796988
+
+
+### Slack Integration (Auto-detected)
+
+#### Host Command Handler **[implemented]** **[needs review]**
+- **Description**: New tool at host-services/slack/slack-receiver/host_command_handler.py
+- **Implementation**:
+  - `host-services/slack/slack-receiver/host_command_handler.py`
+- **Introduced in**: commit 17754e63
+
 ## Feature Lifecycle
 
 When ADR status changes, corresponding feature entries should be updated:
