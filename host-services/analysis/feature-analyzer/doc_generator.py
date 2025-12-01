@@ -278,7 +278,9 @@ Output ONLY the updated documentation content. Do not include any explanation or
                 confidence = 0.85 if len(content) > 100 else 0.6
                 return (content, confidence)
             else:
-                error_msg = result.error or result.stderr[:200] if result.stderr else "Unknown error"
+                error_msg = (
+                    result.error or result.stderr[:200] if result.stderr else "Unknown error"
+                )
                 print(f"    Warning: Claude generation failed: {error_msg}")
                 return ("", 0.3)
 
