@@ -2336,6 +2336,9 @@ Your output should be a JSON array of consolidated features with this structure:
             consolidated_features = all_features
             print(f"  Using {len(consolidated_features)} features (no consolidation)")
 
+        # Update result with consolidated features (not the raw pre-consolidation list)
+        result.features_detected = consolidated_features
+
         # Re-evaluate needs_review based on post-consolidation confidence
         for feature in consolidated_features:
             feature.needs_review = feature.confidence < 0.7
