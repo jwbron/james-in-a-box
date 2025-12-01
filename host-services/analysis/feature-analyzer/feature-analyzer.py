@@ -653,7 +653,7 @@ def main():
     elif args.command == "weekly-analyze":
         # Phase 5: Weekly code analysis for FEATURES.md
         from pr_creator import PRCreator
-        from weekly_analyzer import AnalysisResult, WeeklyAnalyzer
+        from weekly_analyzer import WeeklyAnalyzer
 
         print("Feature Analyzer - Weekly Code Analysis (Phase 5)")
         print(f"Repository: {args.repo_root}")
@@ -699,15 +699,14 @@ def main():
 
                 # Build PR body
                 feature_list = "\n".join(
-                    f"- **{f.name}** ({f.category}): {f.description}"
-                    for f in result.features_added
+                    f"- **{f.name}** ({f.category}): {f.description}" for f in result.features_added
                 )
                 needs_review = [f for f in result.features_added if f.needs_review]
                 review_note = ""
                 if needs_review:
                     review_note = f"\n\n**⚠️ {len(needs_review)} feature(s) need human review** (low confidence detection)"
 
-                pr_body = f"""## Summary
+                f"""## Summary
 
 Weekly code analysis identified {len(result.features_added)} new features from the past {args.days} days.
 {review_note}

@@ -219,10 +219,7 @@ class WeeklyAnalyzer:
 
         Returns True if the diff likely introduces new functionality.
         """
-        for pattern in self.SIGNIFICANT_PATTERNS:
-            if re.search(pattern, diff):
-                return True
-        return False
+        return any(re.search(pattern, diff) for pattern in self.SIGNIFICANT_PATTERNS)
 
     def filter_feature_commits(self, commits: list[CommitInfo]) -> list[CommitInfo]:
         """
@@ -281,7 +278,7 @@ class WeeklyAnalyzer:
 **Message:** {commit.message}
 **Date:** {commit.date}
 **Files changed:**
-{chr(10).join('- ' + f for f in commit.files[:20])}
+{chr(10).join("- " + f for f in commit.files[:20])}
 """
             if len(commit.files) > 20:
                 summary += f"\n... and {len(commit.files) - 20} more files"
@@ -614,9 +611,7 @@ Only output the JSON, no other text.
 
         return new_content
 
-    def analyze_and_update(
-        self, days: int = 7, dry_run: bool = False
-    ) -> AnalysisResult:
+    def analyze_and_update(self, days: int = 7, dry_run: bool = False) -> AnalysisResult:
         """
         Main entry point: analyze recent commits and update FEATURES.md.
 
@@ -717,7 +712,7 @@ def main():
 
     args = parser.parse_args()
 
-    print(f"Weekly Code Analyzer - Phase 5")
+    print("Weekly Code Analyzer - Phase 5")
     print(f"Repository: {args.repo_root}")
     print(f"Analyzing past {args.days} days")
     print()
