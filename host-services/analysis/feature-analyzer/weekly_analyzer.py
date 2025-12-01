@@ -216,6 +216,9 @@ class DetectedFeature:
     needs_review: bool = False  # True if confidence < 0.7
     doc_path: str = ""  # Path to documentation file if exists
     doc_generated: bool = False  # True if doc was auto-generated
+    # Hierarchical structure support
+    sub_features: list["DetectedFeature"] = field(default_factory=list)
+    is_symlink_duplicate: bool = False  # True if this is a symlinked copy
 
 
 @dataclass
@@ -1932,6 +1935,8 @@ If truly no features (empty directory, only tests), return: `[]`
         This is used when we get JSON directly from a file (via the file-based
         LLM approach) rather than parsing it from stdout.
 
+        Supports hierarchical features with sub_features.
+
         Args:
             json_data: List of dicts with feature data
 
@@ -1944,16 +1949,38 @@ If truly no features (empty directory, only tests), return: `[]`
                 continue
 
             confidence = float(item.get("confidence", 0.5))
+            category = item.get("category", "Utilities")
+
+            # Parse sub_features if present
+            sub_features = []
+            if "sub_features" in item and isinstance(item["sub_features"], list):
+                for sub_item in item["sub_features"]:
+                    if not isinstance(sub_item, dict):
+                        continue
+                    sub_confidence = float(sub_item.get("confidence", 0.5))
+                    sub_feature = DetectedFeature(
+                        name=sub_item.get("name", "Unknown"),
+                        description=sub_item.get("description", ""),
+                        category=category,  # Inherit parent category
+                        files=sub_item.get("files", []),
+                        tests=sub_item.get("tests", []),
+                        confidence=sub_confidence,
+                        date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
+                        needs_review=sub_confidence < 0.7,
+                    )
+                    sub_features.append(sub_feature)
+
             feature = DetectedFeature(
                 name=item.get("name", "Unknown"),
                 description=item.get("description", ""),
-                category=item.get("category", "Utilities"),
+                category=category,
                 files=item.get("files", []),
                 tests=item.get("tests", []),
                 confidence=confidence,
                 introduced_in_commit=item.get("introduced_in_commit", ""),
                 date_added=datetime.now(UTC).strftime("%Y-%m-%d"),
                 needs_review=confidence < 0.7,
+                sub_features=sub_features,
             )
             features.append(feature)
         return features
@@ -1990,14 +2017,26 @@ If truly no features (empty directory, only tests), return: `[]`
 
 # Task
 
-Consolidate this list. PRESERVE as many features as possible - only remove TRUE duplicates.
+Consolidate this list into a HIERARCHICAL structure with proper deduplication.
 
-1. **Remove TRUE duplicates ONLY**: Only merge features if they are EXACTLY the same thing with the same files
-2. **DON'T over-merge**: Related but distinct features should stay separate (e.g., "Slack Notifier" and "Slack Receiver" are different)
-3. **Fix categories**: Ensure each feature has the most appropriate category
-4. **Improve descriptions**: Make descriptions clear and consistent
-5. **KEEP low-confidence items**: Mark them for review but don't remove them
-6. **Preserve all file paths**: Include ALL relevant files
+## Key Consolidation Rules
+
+1. **REMOVE SYMLINK DUPLICATES**: Files in `.claude/commands/` are symlinked to `claude-commands/`.
+   Same for `.claude/rules/` → `claude-rules/`. Keep ONLY the canonical location (`.claude/` paths).
+   Do NOT list the same command/rule twice.
+
+2. **CREATE HIERARCHICAL FEATURES**: Group related sub-components under parent features:
+   - "LLM Inefficiency Analysis System" with sub_features: [Tool Discovery Detector, Tool Execution Detector, etc.]
+   - "Beads Health Analysis" with sub_features: [Beads Metrics Collection, Claude-Powered Task Analysis, etc.]
+   - "Claude Agent Rules System" with sub_features: [Mission Rules, Environment Rules, etc.]
+
+3. **MERGE HOST/CONTAINER PAIRS**: When host-side triggers container-side execution, combine into ONE feature:
+   - "PR Review Request Handler" (host: github-watcher.py, container: github-processor.py)
+   - NOT two separate "PR Review Request Handler (Host)" and "PR Review Request Handler (Container)"
+
+4. **DON'T over-merge distinct features**: "Slack Notifier" and "Slack Receiver" are different features.
+
+5. **Fix categories and descriptions**: Ensure clarity and consistency.
 
 # Categories to use
 
@@ -2013,28 +2052,34 @@ Consolidate this list. PRESERVE as many features as possible - only remove TRUE 
 - Security Features
 - Configuration
 
-# IMPORTANT: Be INCLUSIVE
-
-The goal is a COMPREHENSIVE feature list. When in doubt, KEEP the feature.
-It's better to have a few extras than to miss important features.
-
-There should be approximately {len(all_features)} features (or more if you split some).
-If you output significantly fewer, you're probably over-consolidating.
-
 # Output Format
 
-Your output should be a JSON array of consolidated features with this structure:
+Your output should be a JSON array with HIERARCHICAL features:
 
 [
   {{
     "name": "Feature Name",
     "description": "Clear 2-3 sentence description",
     "category": "Category",
-    "files": ["path/to/file.py"],
+    "files": ["host-services/path/file.py", "jib-container/path/file.py"],
     "tests": ["path/to/test.py"],
-    "confidence": 0.85
+    "confidence": 0.85,
+    "sub_features": [
+      {{
+        "name": "Sub-Component Name",
+        "description": "Brief description of this sub-component",
+        "files": ["path/to/sub.py"],
+        "confidence": 0.85
+      }}
+    ]
   }}
 ]
+
+Notes:
+- sub_features is OPTIONAL - only use for features with distinct sub-components
+- For simple features, omit sub_features entirely (don't include empty array)
+- Each sub_feature inherits the parent's category
+- Aim for ~100-130 top-level features after proper consolidation (from {len(all_features)} raw)
 """
 
         # Use file-based approach to avoid JSON parsing issues when LLM includes
@@ -2134,7 +2179,7 @@ Your output should be a JSON array of consolidated features with this structure:
     def generate_features_md(
         self, features: list[DetectedFeature], repo_name: str = "Repository"
     ) -> str:
-        """Generate complete FEATURES.md content."""
+        """Generate complete FEATURES.md content with hierarchical structure."""
         # Group by category
         by_category: dict[str, list[DetectedFeature]] = {}
         for feature in features:
@@ -2149,12 +2194,19 @@ Your output should be a JSON array of consolidated features with this structure:
             if cat not in sorted_categories:
                 sorted_categories.append(cat)
 
+        # Count total features including sub-features
+        total_features = sum(
+            1 + len(f.sub_features) for f in features
+        )
+
         lines = [
             f"# {repo_name} Feature List",
             "",
             "> **Purpose:** This list enables automated codebase and document analyzers to systematically assess each feature for quality, security, and improvement opportunities.",
             ">",
             "> **Generated:** This document was auto-generated by the Feature Analyzer.",
+            ">",
+            f"> **Total Features:** {len(features)} top-level features ({total_features} including sub-features)",
             "",
             "## Table of Contents",
             "",
@@ -2175,16 +2227,37 @@ Your output should be a JSON array of consolidated features with this structure:
             for feature in cat_features:
                 review_flag = " ⚠️ *needs review*" if feature.needs_review else ""
                 lines.append(f"### {feature_num}. {feature.name}{review_flag}")
-                lines.append(f"**Category:** {feature.category}")
 
                 if feature.files:
-                    files_str = ", ".join(f"`{f}`" for f in feature.files[:3])
-                    lines.append(f"**Location:** {files_str}")
+                    # Show multiple files on separate lines if there are many
+                    if len(feature.files) <= 2:
+                        files_str = ", ".join(f"`{f}`" for f in feature.files)
+                        lines.append(f"**Location:** {files_str}")
+                    else:
+                        lines.append("**Location:**")
+                        for f in feature.files[:5]:
+                            lines.append(f"- `{f}`")
+                        if len(feature.files) > 5:
+                            lines.append(f"- *...and {len(feature.files) - 5} more*")
 
-                lines.append(f"**Description:** {feature.description}")
+                lines.append("")
+                lines.append(f"{feature.description}")
 
                 if feature.doc_path:
+                    lines.append("")
                     lines.append(f"**Documentation:** [{feature.doc_path}]({feature.doc_path})")
+
+                # Render sub-features if present
+                if feature.sub_features:
+                    lines.append("")
+                    lines.append("**Components:**")
+                    lines.append("")
+                    for sub in feature.sub_features:
+                        sub_review = " ⚠️" if sub.needs_review else ""
+                        sub_files = f" (`{sub.files[0]}`)" if sub.files else ""
+                        lines.append(f"- **{sub.name}**{sub_review}{sub_files}")
+                        if sub.description:
+                            lines.append(f"  - {sub.description}")
 
                 lines.append("")
                 feature_num += 1
