@@ -152,18 +152,21 @@ class ToolDiscoveryDetector(BaseDetector):
 
         consecutive_failures = []
         for event in events:
-            if event.tool_category in (ToolCategory.SEARCH, ToolCategory.FILE_READ):
-                if event.tool_name in ("Grep", "Glob") and event.tool_result:
-                    match_count = event.tool_result.match_count or event.tool_result.file_count or 0
-                    if match_count == 0:
-                        consecutive_failures.append(event)
-                    else:
-                        # Success - check if we had a pattern
-                        if len(consecutive_failures) >= 3:
-                            self._create_search_failure_inefficiency(
-                                consecutive_failures, inefficiencies
-                            )
-                        consecutive_failures = []
+            if (
+                event.tool_category in (ToolCategory.SEARCH, ToolCategory.FILE_READ)
+                and event.tool_name in ("Grep", "Glob")
+                and event.tool_result
+            ):
+                match_count = event.tool_result.match_count or event.tool_result.file_count or 0
+                if match_count == 0:
+                    consecutive_failures.append(event)
+                else:
+                    # Success - check if we had a pattern
+                    if len(consecutive_failures) >= 3:
+                        self._create_search_failure_inefficiency(
+                            consecutive_failures, inefficiencies
+                        )
+                    consecutive_failures = []
 
         # Check final sequence
         if len(consecutive_failures) >= 3:
@@ -222,51 +225,54 @@ class ToolDiscoveryDetector(BaseDetector):
             curr = events[i]
             next_event = events[i + 1]
 
-            # Same tool called twice in a row
-            if curr.tool_name == next_event.tool_name and curr.tool_name:
-                # First call failed
-                if curr.tool_result and curr.tool_result.status == "error":
-                    # Second call succeeded
-                    if next_event.tool_result and next_event.tool_result.status == "success":
-                        both_events = [curr, next_event]
-                        actual_cost = self._calculate_token_cost(both_events)
-                        optimal_cost = self._calculate_token_cost([next_event])
-                        wasted_tokens = actual_cost - optimal_cost
+            # Same tool called twice in a row, first call failed, second succeeded
+            if (
+                curr.tool_name == next_event.tool_name
+                and curr.tool_name
+                and curr.tool_result
+                and curr.tool_result.status == "error"
+                and next_event.tool_result
+                and next_event.tool_result.status == "success"
+            ):
+                both_events = [curr, next_event]
+                actual_cost = self._calculate_token_cost(both_events)
+                optimal_cost = self._calculate_token_cost([next_event])
+                wasted_tokens = actual_cost - optimal_cost
 
-                        if wasted_tokens > 50:  # Even small API confusion is notable
-                            session_id = curr.session_id
-                            task_id = curr.task_id
+                if wasted_tokens > 50:  # Even small API confusion is notable
+                    session_id = curr.session_id
+                    task_id = curr.task_id
 
-                            inefficiencies.append(
-                                DetectedInefficiency(
-                                    category=InefficiencyCategory.TOOL_DISCOVERY,
-                                    sub_category="api_confusion",
-                                    severity=Severity(self._determine_severity(wasted_tokens)),
-                                    trace_event_ids=self._extract_event_ids(both_events),
-                                    session_id=session_id,
-                                    task_id=task_id,
-                                    token_cost=actual_cost,
-                                    estimated_optimal_cost=optimal_cost,
-                                    wasted_tokens=wasted_tokens,
-                                    wasted_percentage=(wasted_tokens / actual_cost * 100)
-                                    if actual_cost > 0
-                                    else 0,
-                                    description=f"{curr.tool_name} called with incorrect parameters, then retried with correct parameters",
-                                    recommendation=f"Review {curr.tool_name} API documentation. Add clearer parameter examples to tool descriptions.",
-                                    turn_range=self._get_turn_range(both_events),
-                                    timestamp_range=self._get_timestamp_range(both_events),
-                                    evidence={
-                                        "tool": curr.tool_name,
-                                        "error_message": curr.tool_result.error_message,
-                                        "failed_params": curr.tool_params.raw
-                                        if curr.tool_params
-                                        else {},
-                                        "success_params": next_event.tool_params.raw
-                                        if next_event.tool_params
-                                        else {},
-                                    },
-                                )
-                            )
+                    inefficiencies.append(
+                        DetectedInefficiency(
+                            category=InefficiencyCategory.TOOL_DISCOVERY,
+                            sub_category="api_confusion",
+                            severity=Severity(self._determine_severity(wasted_tokens)),
+                            trace_event_ids=self._extract_event_ids(both_events),
+                            session_id=session_id,
+                            task_id=task_id,
+                            token_cost=actual_cost,
+                            estimated_optimal_cost=optimal_cost,
+                            wasted_tokens=wasted_tokens,
+                            wasted_percentage=(wasted_tokens / actual_cost * 100)
+                            if actual_cost > 0
+                            else 0,
+                            description=f"{curr.tool_name} called with incorrect parameters, then retried with correct parameters",
+                            recommendation=f"Review {curr.tool_name} API documentation. Add clearer parameter examples to tool descriptions.",
+                            turn_range=self._get_turn_range(both_events),
+                            timestamp_range=self._get_timestamp_range(both_events),
+                            evidence={
+                                "tool": curr.tool_name,
+                                "error_message": curr.tool_result.error_message,
+                                "failed_params": curr.tool_params.raw
+                                if curr.tool_params
+                                else {},
+                                "success_params": next_event.tool_params.raw
+                                if next_event.tool_params
+                                else {},
+                            },
+                        )
+                    )
 
         return inefficiencies
 
