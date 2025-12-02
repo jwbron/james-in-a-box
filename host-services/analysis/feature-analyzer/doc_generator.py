@@ -45,6 +45,7 @@ def _is_inside_container() -> bool:
     """
     try:
         from claude import is_claude_available
+
         return is_claude_available()
     except ImportError:
         return False

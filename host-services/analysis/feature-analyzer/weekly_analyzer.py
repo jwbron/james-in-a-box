@@ -66,6 +66,7 @@ def _is_inside_container() -> bool:
     """
     try:
         from claude import is_claude_available
+
         return is_claude_available()
     except ImportError:
         return False
@@ -251,6 +252,7 @@ def _run_llm_prompt_to_file_direct(
         # Create a temp file for the output
         fd, output_file = tempfile.mkstemp(suffix=".json", prefix="llm_output_")
         import os
+
         os.close(fd)
         output_path = Path(output_file)
 
@@ -263,7 +265,7 @@ Use the Write tool to write the JSON array to {output_file}. Do NOT just print t
 
 After writing the file, confirm by saying "JSON written to {output_file}" but do NOT include the JSON content in your response."""
 
-        result = run_claude(
+        run_claude(
             prompt=enhanced_prompt,
             cwd=repo_root,
             stream=False,

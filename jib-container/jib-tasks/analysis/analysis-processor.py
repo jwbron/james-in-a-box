@@ -582,9 +582,8 @@ def handle_weekly_feature_analysis(context: dict) -> int:
         - result.pr_url: str (URL of created PR, if not dry_run)
         - result.branch: str (branch name)
     """
-    import os
     import subprocess
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     repo_name = context.get("repo_name", "james-in-a-box")
     days = context.get("days", 7)
@@ -603,7 +602,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
     sys.path.insert(0, str(repo_path / "host-services" / "analysis" / "feature-analyzer"))
 
     try:
-        from weekly_analyzer import WeeklyAnalyzer, AnalysisResult
+        from weekly_analyzer import AnalysisResult, WeeklyAnalyzer
     except ImportError as e:
         return output_result(False, error=f"Failed to import WeeklyAnalyzer: {e}")
 
@@ -732,7 +731,11 @@ Features added: {features_summary}
         # Build PR body
         feature_bullets = []
         for feature in analysis_result.features_added[:10]:
-            desc = feature.description[:100] + "..." if len(feature.description) > 100 else feature.description
+            desc = (
+                feature.description[:100] + "..."
+                if len(feature.description) > 100
+                else feature.description
+            )
             feature_bullets.append(f"- **{feature.name}** ({feature.category}): {desc}")
         if len(analysis_result.features_added) > 10:
             feature_bullets.append(f"- *...and {len(analysis_result.features_added) - 10} more*")
@@ -801,6 +804,7 @@ Weekly code analysis identified {len(analysis_result.features_added)} new featur
         )
     except Exception as e:
         import traceback
+
         return output_result(
             False,
             error=f"Error in weekly analysis: {e}\n{traceback.format_exc()}",
