@@ -311,13 +311,15 @@ class CommandHandler:
                             print(f"  Skipping low-confidence command: {cmd.command_type}")
                         continue
 
-                    commands.append({
-                        "type": cmd.command_type,
-                        "pr_number": cmd.pr_number,
-                        "repo": cmd.repo,
-                        "context": cmd.additional_context,
-                        "source": "claude",
-                    })
+                    commands.append(
+                        {
+                            "type": cmd.command_type,
+                            "pr_number": cmd.pr_number,
+                            "repo": cmd.repo,
+                            "context": cmd.additional_context,
+                            "source": "claude",
+                        }
+                    )
 
                 if commands:
                     return commands
@@ -351,12 +353,14 @@ class CommandHandler:
 
                 # Avoid duplicates
                 if not any(c["pr_number"] == pr_num and c.get("repo") == repo for c in commands):
-                    commands.append({
-                        "type": "review_pr",
-                        "pr_number": pr_num,
-                        "repo": repo,
-                        "source": "regex",
-                    })
+                    commands.append(
+                        {
+                            "type": "review_pr",
+                            "pr_number": pr_num,
+                            "repo": repo,
+                            "source": "regex",
+                        }
+                    )
 
         return commands
 
@@ -372,12 +376,11 @@ class CommandHandler:
             # Fix commands could trigger specific fix workflows
             self.review_pr(command.get("pr_number"), command.get("repo"))
             if self.verbose:
-                print(f"  Note: fix_pr mapped to review_pr for now")
+                print("  Note: fix_pr mapped to review_pr for now")
         elif cmd_type == "list_prs":
             self.list_prs(command.get("repo"))
-        else:
-            if self.verbose:
-                print(f"  Unknown command type: {cmd_type}")
+        elif self.verbose:
+            print(f"  Unknown command type: {cmd_type}")
 
     def review_pr(self, pr_num: int | None, repo: str | None = None):
         """Trigger PR review"""
@@ -453,7 +456,7 @@ class CommandHandler:
 
     def list_prs(self, repo: str | None = None):
         """List open PRs in a repository"""
-        print(f"Listing open PRs" + (f" in {repo}" if repo else ""))
+        print("Listing open PRs" + (f" in {repo}" if repo else ""))
 
         # Use gh CLI to list PRs
         try:
@@ -472,7 +475,7 @@ class CommandHandler:
             if result.returncode == 0:
                 print(result.stdout)
             else:
-                print(f"  ⚠️ Failed to list PRs")
+                print("  ⚠️ Failed to list PRs")
                 if result.stderr:
                     print(f"     Error: {result.stderr}")
 
