@@ -14,6 +14,7 @@ Task types:
     - comment: New PR comments -> generates appropriate responses
     - review_request: New PR needing review -> performs code review
     - merge_conflict: PR has merge conflicts -> resolves conflicts with base branch
+    - pr_review_response: Reviews on bot's own PRs -> addresses feedback and iterates
 
 Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B":
     - Host-side watcher queries GitHub and triggers container
@@ -23,6 +24,7 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B":
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -986,6 +988,412 @@ Begin conflict resolution now.
     return prompt
 
 
+# Maximum iterations for PR review response cycle
+# This prevents infinite loops if approval never comes
+MAX_REVIEW_ITERATIONS = 5
+
+
+def is_full_approval(reviews: list[dict]) -> bool:
+    """Determine if the PR has received a full approval without caveats.
+
+    A full approval is:
+    - At least one APPROVED review
+    - No CHANGES_REQUESTED reviews after the approval
+    - The approval comment doesn't contain caveats like "LGTM but...", "Approved with..."
+
+    Args:
+        reviews: List of review dicts with 'state', 'body', 'submitted_at'
+
+    Returns:
+        True if there's a clean approval, False otherwise
+    """
+    if not reviews:
+        return False
+
+    # Sort by submitted_at to get chronological order
+    sorted_reviews = sorted(reviews, key=lambda r: r.get("submitted_at", ""))
+
+    # Check most recent review first
+    latest_review = sorted_reviews[-1] if sorted_reviews else None
+    if not latest_review:
+        return False
+
+    state = latest_review.get("state", "").upper()
+    body = latest_review.get("body", "").lower()
+
+    # Must be an APPROVED state
+    if state != "APPROVED":
+        return False
+
+    # Check for caveats in the approval message
+    # Use word boundaries for short words to avoid false positives (e.g., "button" matching "but")
+    caveat_phrases = [
+        r"\bbut\b",
+        r"\bhowever\b",
+        r"\bthough\b",
+        r"\balthough\b",
+        r"\bexcept\b",
+        "with the caveat",
+        "one thing",
+        r"\bminor\b",
+        r"\bnitpick\b",
+        "nit:",
+        "suggestion:",
+        r"\bconsider\b",
+        "might want to",
+        "could you",
+        "would be nice",
+        "future improvement",
+        "follow-up",
+        "followup",
+        r"\btodo\b",
+        "fix later",
+    ]
+
+    for phrase in caveat_phrases:
+        if phrase.startswith(r"\b"):
+            # Regex pattern with word boundaries
+            if re.search(phrase, body, re.IGNORECASE):
+                return False
+        elif phrase in body:
+            return False
+
+    # Check if there are any CHANGES_REQUESTED reviews at or after the approval
+    # This handles the case where another reviewer requests changes around the same time
+    approval_time = latest_review.get("submitted_at", "")
+    for review in sorted_reviews:
+        if review.get("id") == latest_review.get("id"):
+            continue  # Skip the approval itself
+        submitted = review.get("submitted_at", "")
+        # If another reviewer requested changes around the same time or after
+        if submitted >= approval_time and review.get("state", "").upper() == "CHANGES_REQUESTED":
+            return False
+
+    return True
+
+
+def get_review_iteration_count(beads_context: dict | None) -> int:
+    """Extract the current iteration count from beads context.
+
+    Args:
+        beads_context: Dict with 'content' from beads task
+
+    Returns:
+        Current iteration count (0 if not found)
+    """
+    if not beads_context or not beads_context.get("content"):
+        return 0
+
+    content = beads_context.get("content", "")
+
+    # Look for iteration marker in notes
+    # Format: "Review iteration: N" - must be at start of line or after newline
+    # This avoids matching the phrase in other contexts
+    match = re.search(r"(?:^|\n)Review iteration:\s*(\d+)", content)
+    if match:
+        return int(match.group(1))
+
+    return 0
+
+
+def handle_pr_review_response(context: dict):
+    """Handle PR review response by invoking Claude to address review feedback.
+
+    This function processes reviews on the bot's own PRs and:
+    1. Analyzes review feedback (approved, changes requested, comments)
+    2. Addresses requested changes by implementing fixes
+    3. Responds to review comments
+    4. Tracks iteration count to prevent infinite loops
+    5. Stops when full approval is received or max iterations reached
+
+    Context expected:
+        - repository: str (e.g., "jwbron/james-in-a-box")
+        - pr_number: int
+        - pr_title: str
+        - pr_url: str
+        - pr_branch: str
+        - base_branch: str
+        - reviews: list[dict] with id, author, state, body, submitted_at
+        - line_comments: list[dict] with id, author, body, path, line, diff_hunk
+        - diff: str
+    """
+    repo = context.get("repository", "unknown")
+    pr_num = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", f"PR #{pr_num}")
+    reviews = context.get("reviews", [])
+
+    print(f"Handling review response for PR #{pr_num} in {repo}")
+    print(f"  Reviews: {len(reviews)}")
+    print(f"  Line comments: {len(context.get('line_comments', []))}")
+
+    # Get or create beads task for this PR (persistent context across sessions)
+    beads_id = pr_context_manager.get_or_create_context(
+        repo, pr_num, pr_title, task_type="github-pr"
+    )
+
+    beads_context = None
+    if beads_id:
+        print(f"  Beads task: {beads_id}")
+        beads_context = pr_context_manager.get_context(repo, pr_num)
+
+    # Check iteration count
+    iteration_count = get_review_iteration_count(beads_context)
+    print(f"  Current iteration: {iteration_count + 1}/{MAX_REVIEW_ITERATIONS}")
+
+    # Check if we've reached max iterations
+    if iteration_count >= MAX_REVIEW_ITERATIONS:
+        print(
+            f"  Max iterations ({MAX_REVIEW_ITERATIONS}) reached. Stopping review response cycle."
+        )
+        if beads_id:
+            pr_context_manager.update_context(
+                beads_id,
+                f"Review iteration: {iteration_count + 1} (MAX REACHED)\n"
+                f"Stopping automatic review response. Human intervention may be needed.",
+                status="blocked",
+            )
+        # Create notification about max iterations
+        create_notification(
+            f"PR #{pr_num} Review Cycle Limit Reached",
+            f"**Repository**: {repo}\n"
+            f"**PR**: #{pr_num} - {pr_title}\n\n"
+            f"The automatic review response cycle has reached the maximum of {MAX_REVIEW_ITERATIONS} iterations.\n\n"
+            f"Human intervention may be needed to complete the review process.\n",
+        )
+        return
+
+    # Check if we have a clean approval
+    if is_full_approval(reviews):
+        print("  Full approval received! No further action needed.")
+        if beads_id:
+            reviewer = reviews[-1].get("author", "Unknown") if reviews else "Unknown"
+            pr_context_manager.update_context(
+                beads_id,
+                f"Review iteration: {iteration_count + 1}\n"
+                f"Full approval received from @{reviewer}. PR ready to merge!",
+                status="closed",
+            )
+        return
+
+    # Update beads to track this review response
+    if beads_id:
+        reviewer_states = [
+            f"@{r.get('author', 'unknown')}: {r.get('state', 'COMMENTED')}" for r in reviews
+        ]
+        pr_context_manager.update_context(
+            beads_id,
+            f"Review iteration: {iteration_count + 1}\n"
+            f"Responding to review feedback: {', '.join(reviewer_states)}",
+            status="in_progress",
+        )
+
+    # Build prompt for Claude (includes beads context if available)
+    prompt = build_pr_review_response_prompt(context, beads_id, iteration_count + 1)
+
+    # Get repo path for working directory
+    repo_name = repo.split("/")[-1]
+    repo_path = Path.home() / "khan" / repo_name
+
+    # Run Claude Code via stdin
+    print("Invoking Claude for review response...")
+    cwd = repo_path if repo_path.exists() else Path.home() / "khan"
+    result = run_claude(prompt, cwd=cwd)
+
+    if result.success:
+        print("Claude review response completed successfully")
+        if result.stdout:
+            print(f"Output: {result.stdout[:500]}...")
+    else:
+        print(f"{result.error}")
+        if result.stderr:
+            print(f"Error: {result.stderr[:500]}")
+        # Update beads with error status so future sessions know what happened
+        if beads_id:
+            pr_context_manager.update_context(
+                beads_id,
+                f"Review iteration: {iteration_count + 1}\n"
+                f"Error during review response: {result.error}",
+                status="blocked",
+            )
+
+
+def build_pr_review_response_prompt(
+    context: dict, beads_id: str | None = None, iteration: int = 1
+) -> str:
+    """Build the prompt for Claude to respond to PR review feedback."""
+    repo = context.get("repository", "unknown")
+    pr_num = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", "")
+    pr_url = context.get("pr_url", "")
+    pr_branch = context.get("pr_branch", "")
+    base_branch = context.get("base_branch", "main")
+    reviews = context.get("reviews", [])
+    line_comments = context.get("line_comments", [])
+    diff = context.get("diff", "")
+
+    # Get beads context summary if available
+    beads_context = ""
+    if beads_id:
+        beads_context = pr_context_manager.get_context_summary(repo, pr_num)
+
+    repo_parts = repo.split("/")
+    owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
+    repo_name = repo_parts[-1]
+
+    # Format reviews
+    reviews_text = ""
+    for r in reviews:
+        reviewer = r.get("author", "unknown")
+        state = r.get("state", "COMMENTED")
+        body = r.get("body", "")
+        submitted = r.get("submitted_at", "")
+        reviews_text += f"\n### @{reviewer} - {state}\n*{submitted}*\n\n{body}\n"
+
+    # Format line comments
+    line_comments_text = ""
+    for c in line_comments:
+        author = c.get("author", "unknown")
+        path = c.get("path", "unknown")
+        line = c.get("line", "?")
+        body = c.get("body", "")
+        diff_hunk = c.get("diff_hunk", "")
+        line_comments_text += f"\n### @{author} on `{path}:{line}`\n"
+        if diff_hunk:
+            line_comments_text += f"```diff\n{diff_hunk[-500:]}\n```\n"
+        line_comments_text += f"\n{body}\n"
+
+    prompt = f"""# PR Review Response
+
+You are jib, an AI software engineering agent. Someone has reviewed your PR and you need to respond to their feedback.
+
+## PR Information
+- **Repository**: {repo}
+- **PR Number**: #{pr_num}
+- **Title**: {pr_title}
+- **URL**: {pr_url}
+- **Branch**: {pr_branch} -> {base_branch}
+- **Review Iteration**: {iteration} of {MAX_REVIEW_ITERATIONS}
+
+## Reviews Received
+{reviews_text if reviews_text else "No review body comments."}
+
+## Inline Comments
+{line_comments_text if line_comments_text else "No inline comments."}
+
+## Current Diff
+```diff
+{diff[:20000] if diff else "Diff not available"}
+{"...(truncated)" if diff and len(diff) > 20000 else ""}
+```
+
+{beads_context}
+
+## CRITICAL: Branch Verification (MUST DO FIRST)
+
+Before making ANY changes, you MUST checkout the correct branch:
+
+**Target PR Branch**: `{pr_branch}`
+
+```bash
+cd ~/khan/{repo_name}
+git fetch origin {pr_branch} {base_branch}
+git checkout {pr_branch}
+git pull origin {pr_branch}
+git branch --show-current  # VERIFY: must show {pr_branch}
+```
+
+**WARNING**: Your container starts on a temporary branch (jib-temp-*), NOT the PR branch!
+
+## Your Task
+
+Respond to the review feedback:
+
+### Step 1: Analyze the Feedback
+
+**Check review states:**
+- **APPROVED**: Acknowledge and thank the reviewer
+- **CHANGES_REQUESTED**: Must address all requested changes before merging
+- **COMMENTED**: Respond to questions/suggestions as appropriate
+
+**Check if this is a clean approval:**
+- If APPROVED with no caveats ("LGTM", "Looks great", etc.) → Thank reviewer, no code changes needed
+- If APPROVED with caveats ("LGTM but...", "Minor suggestion...") → Address the suggestions
+
+### Step 2: Address Requested Changes (if any)
+
+For each CHANGES_REQUESTED review or inline comment requesting changes:
+
+1. **Read the relevant code** to understand the context
+2. **Implement the requested changes** thoughtfully
+3. **Verify branch**: `git branch --show-current` should show `{pr_branch}`
+4. **Commit with clear message**:
+   ```bash
+   git add <changed_files>
+   git commit -m "Address review feedback: <brief description>
+
+   - Change 1
+   - Change 2
+
+   Review iteration: {iteration}"
+   ```
+5. **Push to PR branch**: `git push origin {pr_branch}`
+
+### Step 3: Respond to Inline Comments
+
+Reply to each inline comment that requires a response:
+
+```bash
+gh pr comment {pr_num} --repo {repo} --body "Response to @reviewer's feedback...
+
+— Authored by jib"
+```
+
+For comments on specific lines, you can reply in the review thread.
+
+### Step 4: Update PR Description (if significant changes)
+
+If you made substantial changes, update the PR description:
+```python
+# Use MCP: mcp__github__update_pull_request(
+#     owner="{owner}",
+#     repo="{repo_name}",
+#     pullNumber={pr_num},
+#     body="<existing body>\\n\\n## Updates (Iteration {iteration})\\n- Addressed review feedback: <summary>"
+# )
+```
+
+### Step 5: Update Beads
+
+Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}:
+```bash
+cd ~/beads
+bd --allow-stale update {beads_id if beads_id else "<task_id>"} --notes "Review iteration: {iteration}
+Addressed feedback from: <reviewers>
+Changes made: <summary>
+Status: <pending next review / ready for approval>"
+```
+
+## Important Guidelines
+
+- **Be thorough**: Address ALL requested changes before pushing
+- **Be responsive**: Reply to each comment, even if just acknowledging
+- **Be professional**: Thank reviewers for their time and feedback
+- **Don't over-iterate**: If you've addressed all feedback, say so and wait for re-review
+- **Know when to stop**: If the same feedback keeps coming, ask for clarification
+
+## Iteration Limit
+
+This is iteration {iteration} of {MAX_REVIEW_ITERATIONS}. If you reach the maximum without approval:
+- The automatic response cycle will stop
+- A notification will be sent for human intervention
+- Focus on quality over speed
+
+Begin by checking out the PR branch now.
+"""
+
+    return prompt
+
+
 def main():
     """Main entry point - parse arguments and dispatch to handler."""
     parser = argparse.ArgumentParser(
@@ -994,7 +1402,13 @@ def main():
     parser.add_argument(
         "--task",
         required=True,
-        choices=["check_failure", "comment", "review_request", "merge_conflict"],
+        choices=[
+            "check_failure",
+            "comment",
+            "review_request",
+            "merge_conflict",
+            "pr_review_response",
+        ],
         help="Type of task to process",
     )
     parser.add_argument(
@@ -1040,6 +1454,7 @@ def main():
             "comment": handle_comment,
             "review_request": handle_review_request,
             "merge_conflict": handle_merge_conflict,
+            "pr_review_response": handle_pr_review_response,
         }
 
         handler = handlers.get(args.task)

@@ -98,6 +98,26 @@ MAX_PARALLEL_JIB = 20  # Max concurrent jib containers
 # The slack-notifier service monitors this directory for notification files
 HOST_NOTIFICATIONS_DIR = Path.home() / ".jib-sharing" / "notifications"
 
+# Maximum diff size to include in context
+MAX_DIFF_SIZE = 50000
+
+
+def truncate_diff(diff: str, max_size: int = MAX_DIFF_SIZE) -> str:
+    """Truncate diff at a line boundary to avoid cutting mid-line.
+
+    Args:
+        diff: The diff content to truncate
+        max_size: Maximum size in characters
+
+    Returns:
+        Truncated diff ending at a line boundary
+    """
+    if not diff or len(diff) <= max_size:
+        return diff or ""
+    # Find last newline before limit to avoid cutting mid-line
+    truncated = diff[:max_size].rsplit("\n", 1)[0]
+    return truncated
+
 
 @dataclass
 class JibTask:
@@ -201,6 +221,7 @@ def load_state() -> dict:
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
                 state.setdefault("processed_conflicts", {})
+                state.setdefault("processed_review_responses", {})
                 state.setdefault("failed_tasks", {})
                 state.setdefault("last_run_start", None)
                 logger.debug(
@@ -233,6 +254,7 @@ def load_state() -> dict:
         "processed_comments": {},
         "processed_reviews": {},
         "processed_conflicts": {},
+        "processed_review_responses": {},
         "failed_tasks": {},
         "last_run_start": None,
     }
@@ -453,6 +475,11 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         log_extra["pr_title"] = context.get("pr_title", "")[:60]
         log_extra["author"] = context.get("author")
         log_extra["is_rereview"] = context.get("is_rereview", False)
+    elif task_type == "pr_review_response":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["review_count"] = len(context.get("reviews", []))
+        log_extra["line_comment_count"] = len(context.get("line_comments", []))
 
     logger.info("Invoking jib", **log_extra)
 
@@ -521,7 +548,13 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         return False
 
 
-VALID_READONLY_TASK_TYPES = ["check_failure", "comment", "review_request", "merge_conflict"]
+VALID_READONLY_TASK_TYPES = [
+    "check_failure",
+    "comment",
+    "review_request",
+    "merge_conflict",
+    "pr_review_response",
+]
 
 
 def send_readonly_notification(task_type: str, context: dict) -> bool:
@@ -645,6 +678,52 @@ This PR has merge conflicts that need to be resolved.
 
 This is a **read-only repository**. jib cannot resolve conflicts automatically.
 Please resolve the conflicts manually by merging `{base_branch}` into `{pr_branch}`."""
+
+    elif task_type == "pr_review_response":
+        reviews = context.get("reviews", [])
+        line_comments = context.get("line_comments", [])
+
+        # Format reviews
+        reviews_text = ""
+        for r in reviews[:5]:
+            reviewer = r.get("author", "Unknown")
+            state = r.get("state", "COMMENTED")
+            review_body = r.get("body", "")[:300]
+            if len(r.get("body", "")) > 300:
+                review_body += "..."
+            reviews_text += f"\n**{reviewer}** ({state}):\n> {review_body}\n"
+
+        # Format line comments
+        comments_text = ""
+        for c in line_comments[:5]:
+            author = c.get("author", "Unknown")
+            path = c.get("path", "unknown")
+            line = c.get("line", "?")
+            comment_body = c.get("body", "")[:200]
+            if len(c.get("body", "")) > 200:
+                comment_body += "..."
+            comments_text += f"\n**{author}** on `{path}:{line}`:\n> {comment_body}\n"
+
+        if len(line_comments) > 5:
+            comments_text += f"\n- ... and {len(line_comments) - 5} more comments"
+
+        title = f"PR Review Feedback: {repo} #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Branch**: `{pr_branch}` -> `{base_branch}`
+
+## Reviews ({len(reviews)} total)
+
+{reviews_text if reviews_text else "No review body comments."}
+
+## Line Comments ({len(line_comments)} total)
+
+{comments_text if comments_text else "No inline comments."}
+
+## Note
+
+This is a **read-only repository**. jib cannot respond to reviews or push changes.
+Please address the feedback manually."""
 
     else:
         logger.error(
@@ -1196,6 +1275,165 @@ def check_pr_for_merge_conflict(repo: str, pr_data: dict, state: dict) -> dict |
     }
 
 
+def check_pr_for_review_response(
+    repo: str,
+    pr_data: dict,
+    state: dict,
+    bot_username: str,
+    since_timestamp: str | None = None,
+) -> dict | None:
+    """Check a bot's PR for reviews that need response.
+
+    This function detects when someone reviews a PR created by the bot,
+    and creates a task for the bot to respond to the review feedback.
+
+    Args:
+        repo: Repository in owner/repo format
+        pr_data: PR data dict with number, title, url, etc.
+        state: State dict with processed_review_responses
+        bot_username: Bot's username (to identify bot's own PRs)
+        since_timestamp: ISO timestamp to filter reviews (only show newer)
+
+    Returns context dict if new reviews found that need response.
+    """
+    pr_num = pr_data["number"]
+
+    # Get reviews on this PR
+    reviews_data = gh_json(
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "reviews,reviewRequests",
+        ],
+        repo=repo,
+    )
+
+    if reviews_data is None:
+        return None
+
+    reviews = reviews_data.get("reviews", [])
+    if not reviews:
+        return None
+
+    # Filter to reviews NOT from the bot
+    bot_variants = {
+        bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
+        f"app/{bot_username.lower()}",
+    }
+
+    # Find reviews that aren't from the bot
+    other_reviews = [
+        r for r in reviews if r.get("author", {}).get("login", "").lower() not in bot_variants
+    ]
+
+    if not other_reviews:
+        logger.debug(
+            "No reviews from others on bot PR",
+            pr_number=pr_num,
+        )
+        return None
+
+    # Filter by since_timestamp if provided
+    if since_timestamp:
+        other_reviews = [r for r in other_reviews if r.get("submittedAt", "") >= since_timestamp]
+        if not other_reviews:
+            return None  # No new reviews since last run
+
+    # Get the most recent review
+    # Sort by submittedAt descending
+    other_reviews.sort(key=lambda r: r.get("submittedAt", ""), reverse=True)
+    latest_review = other_reviews[0]
+
+    # Create signature based on latest review
+    review_id = latest_review.get("id", "")
+    review_response_signature = f"{repo}-{pr_num}:review_response:{review_id}"
+
+    if review_response_signature in state.get("processed_review_responses", {}):
+        processed_at = state["processed_review_responses"].get(review_response_signature, "unknown")
+        logger.debug(
+            "Review already processed for response",
+            pr_number=pr_num,
+            processed_at=processed_at,
+            reviewer=latest_review.get("author", {}).get("login", "unknown"),
+        )
+        return None  # Already processed
+
+    # Get line-level review comments for this PR
+    review_comments = gh_json(
+        [
+            "api",
+            f"repos/{repo}/pulls/{pr_num}/comments",
+        ],
+        repo=repo,
+    )
+
+    # Compile review information
+    review_info = []
+    for r in other_reviews:
+        review_entry = {
+            "id": r.get("id", ""),
+            "author": r.get("author", {}).get("login", "unknown"),
+            "state": r.get(
+                "state", "COMMENTED"
+            ),  # APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED
+            "body": r.get("body", ""),
+            "submitted_at": r.get("submittedAt", ""),
+        }
+        review_info.append(review_entry)
+
+    # Parse line-level comments
+    line_comments = []
+    if review_comments:
+        for rc in review_comments:
+            # Only include comments from non-bot users
+            rc_author = rc.get("user", {}).get("login", "").lower()
+            if rc_author not in bot_variants:
+                line_comments.append(
+                    {
+                        "id": str(rc.get("id", "")),
+                        "author": rc.get("user", {}).get("login", "unknown"),
+                        "body": rc.get("body", ""),
+                        "path": rc.get("path", ""),
+                        "line": rc.get("line"),
+                        "original_line": rc.get("original_line"),
+                        "diff_hunk": rc.get("diff_hunk", ""),
+                        "created_at": rc.get("created_at", ""),
+                    }
+                )
+
+    logger.info(
+        "Bot PR has reviews needing response",
+        pr_number=pr_num,
+        pr_title=pr_data.get("title", "")[:80],
+        review_count=len(review_info),
+        line_comment_count=len(line_comments),
+        latest_reviewer=latest_review.get("author", {}).get("login", "unknown"),
+        latest_state=latest_review.get("state", "COMMENTED"),
+    )
+
+    # Get PR diff for context
+    diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
+
+    return {
+        "type": "pr_review_response",
+        "repository": repo,
+        "pr_number": pr_num,
+        "pr_title": pr_data.get("title", ""),
+        "pr_url": pr_data.get("url", ""),
+        "pr_branch": pr_data.get("headRefName", ""),
+        "base_branch": pr_data.get("baseRefName", "main"),
+        "reviews": review_info,
+        "line_comments": line_comments,
+        "diff": truncate_diff(diff),
+        "review_response_signature": review_response_signature,
+    }
+
+
 def check_prs_for_review(
     repo: str,
     all_prs: list[dict],
@@ -1321,7 +1559,7 @@ def check_prs_for_review(
                 "additions": pr.get("additions", 0),
                 "deletions": pr.get("deletions", 0),
                 "files": [f.get("path", "") for f in pr.get("files", [])],
-                "diff": diff[:50000] if diff else "",  # Limit diff size
+                "diff": truncate_diff(diff),
                 "review_signature": review_signature,
                 "is_rereview": is_rereview,
             }
@@ -1510,6 +1748,21 @@ def process_repo_prs(
                         context=conflict_ctx,
                         signature_key="processed_conflicts",
                         signature_value=conflict_ctx["conflict_signature"],
+                        is_readonly=False,
+                    )
+                )
+
+            # Check for reviews on bot's PRs that need response
+            review_response_ctx = check_pr_for_review_response(
+                repo, pr, state, bot_username, since_timestamp
+            )
+            if review_response_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="pr_review_response",
+                        context=review_response_ctx,
+                        signature_key="processed_review_responses",
+                        signature_value=review_response_ctx["review_response_signature"],
                         is_readonly=False,
                     )
                 )
