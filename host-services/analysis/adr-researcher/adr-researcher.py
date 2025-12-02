@@ -49,6 +49,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 from jib_exec import jib_exec
 
+# Processor path for GitHub operations via jib
+ANALYSIS_PROCESSOR = "jib-container/jib-tasks/analysis/analysis-processor.py"
 
 # Rate limiting configuration
 RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
@@ -194,11 +196,12 @@ def jib_github_pr_comment(repo: str, pr_number: int, body: str) -> bool:
         True if comment was posted successfully
     """
     result = jib_exec(
+        ANALYSIS_PROCESSOR,
         "github_pr_comment",
         {"repo": repo, "pr_number": pr_number, "body": body},
     )
-    if result.success and result.result:
-        return result.result.get("commented", False)
+    if result.success and result.json_output:
+        return result.json_output.get("commented", False)
     if result.error:
         print(f"  jib github_pr_comment failed: {result.error}")
     return False
@@ -217,11 +220,12 @@ def jib_github_pr_close(repo: str, pr_number: int) -> bool:
         True if PR was closed successfully
     """
     result = jib_exec(
+        ANALYSIS_PROCESSOR,
         "github_pr_close",
         {"repo": repo, "pr_number": pr_number},
     )
-    if result.success and result.result:
-        return result.result.get("closed", False)
+    if result.success and result.json_output:
+        return result.json_output.get("closed", False)
     if result.error:
         print(f"  jib github_pr_close failed: {result.error}")
     return False

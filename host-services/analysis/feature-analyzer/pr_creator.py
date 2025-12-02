@@ -37,7 +37,11 @@ from typing import TYPE_CHECKING
 
 # Add host-services shared modules to path for jib_exec
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from git_utils import get_repo_name_from_remote
 from jib_exec import jib_exec
+
+# Processor path for GitHub operations via jib
+ANALYSIS_PROCESSOR = "jib-container/jib-tasks/analysis/analysis-processor.py"
 
 
 if TYPE_CHECKING:
@@ -80,18 +84,7 @@ class PRCreator:
 
     def _get_repo_name(self) -> str | None:
         """Get the full repo name (owner/repo) from git remote."""
-        try:
-            result = self._run_git("remote", "get-url", "origin")
-            url = result.stdout.strip()
-            # Parse repo name from URL (https://github.com/owner/repo.git or git@github.com:owner/repo.git)
-            import re
-
-            match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
-            if match:
-                return match.group(1)
-        except subprocess.CalledProcessError:
-            pass
-        return None
+        return get_repo_name_from_remote(self.repo_root)
 
     def _get_current_branch(self) -> str:
         """Get the current git branch name."""
@@ -264,6 +257,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
 
         # Create PR via jib container
         result = jib_exec(
+            ANALYSIS_PROCESSOR,
             "github_pr_create",
             {
                 "repo": repo,
@@ -274,11 +268,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
             },
         )
 
-        if result.success and result.result:
+        if result.success and result.json_output:
             return PRResult(
                 success=True,
-                pr_url=result.result.get("pr_url"),
-                pr_number=result.result.get("pr_number"),
+                pr_url=result.json_output.get("pr_url"),
+                pr_number=result.json_output.get("pr_number"),
                 branch_name=branch_name,
             )
 

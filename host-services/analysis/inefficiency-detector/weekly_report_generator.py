@@ -46,6 +46,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 import contextlib
 
+from git_utils import get_repo_name_from_remote
 from impact_tracker import ImpactTracker
 from improvement_proposer import ImprovementProposer
 from inefficiency_detector import InefficiencyDetector
@@ -61,27 +62,8 @@ ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "inefficiency"
 PROPOSALS_DIR = REPO_ROOT / "docs" / "analysis" / "proposals"
 IMPACT_DIR = REPO_ROOT / "docs" / "analysis" / "impact"
 
-
-def _get_repo_name() -> str | None:
-    """Get the full repo name (owner/repo) from git remote."""
-    import re
-
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        url = result.stdout.strip()
-        # Parse repo name from URL (https://github.com/owner/repo.git or git@github.com:owner/repo.git)
-        match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
-        if match:
-            return match.group(1)
-    except subprocess.CalledProcessError:
-        pass
-    return None
+# Processor path for GitHub operations via jib
+ANALYSIS_PROCESSOR = "jib-container/jib-tasks/analysis/analysis-processor.py"
 
 
 class WeeklyReportGenerator:
@@ -565,12 +547,13 @@ See the full report for detailed analysis and actionable recommendations.
                 pr_body += f"\n### Cleanup\n- Removed {len(to_delete)} old report(s) to maintain max 5 reports\n"
 
             # Create PR via jib container (uses jib identity)
-            repo = _get_repo_name()
+            repo = get_repo_name_from_remote(REPO_ROOT)
             if not repo:
                 print("ERROR: Could not determine repository name from git remote", file=sys.stderr)
                 return None
 
             jib_result = jib_exec(
+                ANALYSIS_PROCESSOR,
                 "github_pr_create",
                 {
                     "repo": repo,
@@ -581,8 +564,8 @@ See the full report for detailed analysis and actionable recommendations.
                 },
             )
 
-            if jib_result.success and jib_result.result:
-                pr_url = jib_result.result.get("pr_url")
+            if jib_result.success and jib_result.json_output:
+                pr_url = jib_result.json_output.get("pr_url")
                 print(f"✓ Created PR: {pr_url}")
                 return pr_url
             else:
