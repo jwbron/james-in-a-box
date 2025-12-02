@@ -926,7 +926,9 @@ Examples:
             print(latest.read_text())
             print("=" * 80)
 
-    sys.exit(0 if success else 1)
+    # Exit 0 even when no data - "no sessions to analyze" is not an error
+    # Only exit 1 on actual failures (exceptions, etc.)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
