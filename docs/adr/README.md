@@ -33,9 +33,12 @@ ADRs are organized by implementation status:
 
 ### Not Implemented
 
-> **Note**: Several ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
+| ADR | Summary |
+|-----|---------|
+| [Model Tier Optimization](not-implemented/ADR-Model-Tier-Optimization.md) | Claude-assisted assessment and routing to optimize token costs with Haiku/Sonnet/Opus |
+| [Multi-Agent Pipeline Architecture](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Multi-agent coordination for complex workflows with specialized agents |
 
-*No ADRs currently in not-implemented/ - all pending ADRs are in open PRs.*
+> **Note**: Several ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
 
 ## ADR Template
 
