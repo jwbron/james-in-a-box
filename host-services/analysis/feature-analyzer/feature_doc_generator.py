@@ -189,7 +189,7 @@ class FeatureDocGenerator:
                         current_feature.doc_path = doc_match.group(2)
                     continue
 
-                if line.startswith("**") or line.startswith("---"):
+                if line.startswith(("**", "---")):
                     in_location = False
                     in_components = False
 
@@ -248,7 +248,9 @@ class FeatureDocGenerator:
                 continue
             seen_files.add(cat_info.doc_file)
 
-            scripts = ", ".join(f"`{s}`" for s in cat_info.key_scripts) if cat_info.key_scripts else "-"
+            scripts = (
+                ", ".join(f"`{s}`" for s in cat_info.key_scripts) if cat_info.key_scripts else "-"
+            )
             lines.append(
                 f"| [{cat_name}]({cat_info.doc_file}) | {cat_info.description[:50]}{'...' if len(cat_info.description) > 50 else ''} | {scripts} |"
             )
@@ -304,11 +306,11 @@ class FeatureDocGenerator:
         """Generate a summary of features by category for updating existing docs."""
         summaries = {}
 
-        for cat_name, cat_info in categories.items():
+        for _cat_name, cat_info in categories.items():
             if not cat_info.features:
                 continue
 
-            lines = [f"\n## Features from FEATURES.md\n"]
+            lines = ["\n## Features from FEATURES.md\n"]
             for feature in cat_info.features:
                 lines.append(f"### {feature.name}")
                 lines.append("")
