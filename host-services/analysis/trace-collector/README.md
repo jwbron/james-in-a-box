@@ -94,6 +94,11 @@ Or configure manually:
 
 1. **Add hooks to `~/.claude/settings.json`:**
 
+> **Note on hook format:** Claude Code hooks use a matcher-based structure. The `matcher`
+> field is a regex pattern that filters which tools trigger the hook. For `PostToolUse`,
+> we use `".*"` to match all tools. `SessionEnd` doesn't need a matcher since it's a
+> session-level event, not tool-specific.
+
 ```json
 {
   "hooks": {
