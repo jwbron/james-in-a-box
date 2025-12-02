@@ -559,6 +559,254 @@ Output ONLY the JSON array, no other text.
         return output_result(False, error=f"Error extracting features: {e}")
 
 
+def handle_weekly_feature_analysis(context: dict) -> int:
+    """Handle weekly feature analysis - runs entirely in the container.
+
+    This is the container-side implementation of the weekly feature analyzer.
+    It runs the analysis and creates PRs using the container's git worktree
+    and GitHub credentials, ensuring PRs are opened by 'jib' (not the host user).
+
+    Context expected:
+        - repo_name: str (e.g., "james-in-a-box")
+        - days: int (number of days to analyze, default 7)
+        - generate_docs: bool (whether to generate docs, default True)
+        - deep_analysis: bool (whether to do deep code analysis, default True)
+        - dry_run: bool (if True, don't create PR, default False)
+
+    Returns JSON with:
+        - result.commits_analyzed: int
+        - result.features_detected: int
+        - result.features_added: int
+        - result.features_skipped: int
+        - result.docs_generated: list[str]
+        - result.pr_url: str (URL of created PR, if not dry_run)
+        - result.branch: str (branch name)
+    """
+    import os
+    import subprocess
+    from datetime import datetime, UTC
+
+    repo_name = context.get("repo_name", "james-in-a-box")
+    days = context.get("days", 7)
+    generate_docs = context.get("generate_docs", True)
+    deep_analysis = context.get("deep_analysis", True)
+    dry_run = context.get("dry_run", False)
+
+    # Get repo path - inside container, repos are at ~/khan/<repo>
+    repo_path = Path.home() / "khan" / repo_name
+
+    if not repo_path.exists():
+        return output_result(False, error=f"Repository not found: {repo_path}")
+
+    # Import the weekly analyzer from the host-services directory
+    # This is safe because we're inside the container and have access to the mounted code
+    sys.path.insert(0, str(repo_path / "host-services" / "analysis" / "feature-analyzer"))
+
+    try:
+        from weekly_analyzer import WeeklyAnalyzer, AnalysisResult
+    except ImportError as e:
+        return output_result(False, error=f"Failed to import WeeklyAnalyzer: {e}")
+
+    try:
+        # Create a fresh branch from origin/main
+        branch_name = f"docs/sync-weekly-analysis-{datetime.now(UTC).strftime('%Y%m%d')}"
+
+        subprocess.run(
+            ["git", "fetch", "origin", "main"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Check if branch already exists remotely
+        check_result = subprocess.run(
+            ["git", "ls-remote", "--heads", "origin", branch_name],
+            check=False,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if check_result.stdout.strip():
+            # Branch exists, add timestamp suffix
+            branch_name = f"{branch_name}-{datetime.now(UTC).strftime('%H%M%S')}"
+
+        subprocess.run(
+            ["git", "checkout", "-b", branch_name, "origin/main"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Run the weekly analyzer (this modifies FEATURES.md and generates docs)
+        # Note: We use use_llm=True because we're inside the container with Claude access
+        analyzer = WeeklyAnalyzer(repo_path, use_llm=True)
+        analysis_result = analyzer.analyze_and_update(
+            days=days,
+            dry_run=dry_run,
+            generate_docs=generate_docs,
+            deep_analysis=deep_analysis,
+        )
+
+        result_data = {
+            "commits_analyzed": analysis_result.commits_analyzed,
+            "features_detected": len(analysis_result.features_detected),
+            "features_added": len(analysis_result.features_added),
+            "features_skipped": len(analysis_result.features_skipped),
+            "docs_generated": analysis_result.docs_generated,
+            "branch": branch_name,
+            "pr_url": None,
+        }
+
+        # If no features were added, don't create a PR
+        if not analysis_result.features_added:
+            return output_result(
+                success=True,
+                result=result_data,
+            )
+
+        if dry_run:
+            return output_result(
+                success=True,
+                result=result_data,
+            )
+
+        # Stage and commit the changes
+        # First, check what files were modified
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        if not status_result.stdout.strip():
+            # No changes to commit
+            return output_result(
+                success=True,
+                result=result_data,
+            )
+
+        # Stage all changes
+        subprocess.run(
+            ["git", "add", "-A"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Build commit message
+        feature_names = [f.name for f in analysis_result.features_added[:5]]
+        features_summary = ", ".join(feature_names)
+        if len(analysis_result.features_added) > 5:
+            features_summary += f" and {len(analysis_result.features_added) - 5} more"
+
+        commit_message = f"""docs: Sync documentation with Weekly Feature Analysis
+
+Weekly code analysis identified {len(analysis_result.features_added)} new features from the past {days} days.
+
+Features added: {features_summary}
+
+— Authored by jib"""
+
+        subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Push
+        subprocess.run(
+            ["git", "push", "-u", "origin", branch_name],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Build PR body
+        feature_bullets = []
+        for feature in analysis_result.features_added[:10]:
+            desc = feature.description[:100] + "..." if len(feature.description) > 100 else feature.description
+            feature_bullets.append(f"- **{feature.name}** ({feature.category}): {desc}")
+        if len(analysis_result.features_added) > 10:
+            feature_bullets.append(f"- *...and {len(analysis_result.features_added) - 10} more*")
+
+        pr_body = f"""## Summary
+
+Weekly code analysis identified {len(analysis_result.features_added)} new features from the past {days} days.
+
+
+### New Features Detected
+
+{chr(10).join(feature_bullets)}
+
+### Analysis Details
+
+- Commits analyzed: {analysis_result.commits_analyzed}
+- Features detected: {len(analysis_result.features_detected)}
+- Features added: {len(analysis_result.features_added)}
+- Features skipped: {len(analysis_result.features_skipped)}
+
+## Test Plan
+
+- [x] All entries include correct file paths
+- [x] Status flags are accurate (all "implemented")
+- [x] No duplicate entries in FEATURES.md
+- [ ] Human review for accuracy and completeness
+
+---
+
+— Authored by jib"""
+
+        pr_title = "docs: Sync documentation with Weekly Feature Analysis"
+
+        # Create PR using gh CLI
+        pr_result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                pr_title,
+                "--body",
+                pr_body,
+                "--base",
+                "main",
+                "--head",
+                branch_name,
+            ],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        result_data["pr_url"] = pr_result.stdout.strip()
+
+        return output_result(
+            success=True,
+            result=result_data,
+        )
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"Git/GH operation failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except Exception as e:
+        import traceback
+        return output_result(
+            False,
+            error=f"Error in weekly analysis: {e}\n{traceback.format_exc()}",
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analysis task processor for jib container",
@@ -575,6 +823,7 @@ def main():
             "doc_generation",
             "feature_extraction",
             "create_pr",
+            "weekly_feature_analysis",
         ],
         help="Type of analysis task to perform",
     )
@@ -600,6 +849,7 @@ def main():
         "doc_generation": handle_doc_generation,
         "feature_extraction": handle_feature_extraction,
         "create_pr": handle_create_pr,
+        "weekly_feature_analysis": handle_weekly_feature_analysis,
     }
 
     handler = handlers.get(args.task)

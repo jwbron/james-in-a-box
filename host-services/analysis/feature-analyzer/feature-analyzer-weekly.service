@@ -6,13 +6,23 @@ OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/feature-analyzer weekly-analyze --repo-root %h/khan/james-in-a-box
+# Run the analysis INSIDE the jib container so that:
+# 1. Git operations happen in the container's isolated worktree
+# 2. PRs are created using the container's GITHUB_TOKEN (jib identity)
+# 3. File changes stay in the container worktree until PR is merged
+#
+# This invokes the weekly_feature_analysis task in the analysis-processor.py
+# via jib --exec, passing the context as JSON.
+ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 \
+    /home/%u/khan/james-in-a-box/jib-container/jib-tasks/analysis/analysis-processor.py \
+    --task weekly_feature_analysis \
+    --context '{"repo_name": "james-in-a-box", "days": 7, "generate_docs": true, "deep_analysis": true}'
 WorkingDirectory=%h/khan/james-in-a-box
 Environment=HOME=%h
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 
-# Timeout after 30 minutes (LLM analysis can take time)
-TimeoutStartSec=1800
+# Timeout after 45 minutes (LLM analysis + container startup can take time)
+TimeoutStartSec=2700
 
 # Restart on failure with delay
 Restart=on-failure
