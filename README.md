@@ -125,7 +125,7 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 |--------|-------------|---------|
 | **Confluence** | Hourly file sync | ADRs, runbooks, engineering docs |
 | **JIRA** | Hourly file sync | Open tickets, epics, sprint data |
-| **GitHub** | MCP (real-time) | PRs, issues, commits, file contents |
+| **GitHub** | MCP (on-demand) | PRs, issues, commits, file contents |
 | **Web (on-demand)** | As needed | Latest docs, research, advisories |
 
 **Post-Sync Intelligence:**
@@ -412,7 +412,7 @@ jib separates concerns between the host machine and the sandboxed container:
 │  ├── Access to synced context (read-only)                           │
 │  ├── Code workspace (read-write, isolated worktree)                 │
 │  ├── Beads task memory (persistent, git-backed, shared across runs) │
-│  └── GitHub MCP server (real-time PR/issue operations)              │
+│  └── GitHub MCP server (PR/issue operations)                        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
