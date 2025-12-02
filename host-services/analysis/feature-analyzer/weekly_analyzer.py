@@ -37,13 +37,10 @@ CLI:
     python weekly_analyzer.py --no-docs           # Skip doc generation
 """
 
-import contextlib
 import json
-import os
 import re
 import subprocess
 import sys
-import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
