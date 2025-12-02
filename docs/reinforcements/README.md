@@ -6,7 +6,7 @@ This directory contains records of system reinforcements - learnings captured fr
 
 When jib causes or encounters a breakage, we don't just fix the immediate issue. We analyze the root cause at a process level and apply reinforcements to prevent similar failures in the future.
 
-See [ADR-Continuous-System-Reinforcement.md](../adr/not-implemented/ADR-Continuous-System-Reinforcement.md) for the full process.
+The full process documentation is planned for a future ADR.
 
 ## Creating a New Record
 

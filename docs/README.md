@@ -45,7 +45,6 @@ For contributors and developers.
 Architecture Decision Records.
 
 - **[Autonomous Software Engineer](adr/in-progress/ADR-Autonomous-Software-Engineer.md)** - Main system architecture
-- **[Message Queue Integration](adr/not-implemented/ADR-Message-Queue-Slack-Integration.md)** - Pub/Sub migration plan
 
 ## Quick Links
 
