@@ -91,6 +91,8 @@ def build_research_prompt(context: dict) -> str:
     pr_number = context.get("pr_number")
     pr_url = context.get("pr_url")
     output_mode = context.get("output_mode", "report")
+    prior_research = context.get("prior_research", "")
+    prior_pr_numbers = context.get("prior_pr_numbers", [])
 
     # Extract key sections from ADR for focused research
     adr_excerpt = adr_content[:15000] if adr_content else "No content available"
@@ -108,6 +110,24 @@ def build_research_prompt(context: dict) -> str:
 {adr_excerpt}
 ```
 
+{
+        f'''## Prior Research to Integrate
+
+**IMPORTANT:** There are {len(prior_pr_numbers)} prior research PR(s) for this ADR that will be closed when this new research is created: {", ".join(f"#{n}" for n in prior_pr_numbers)}
+
+You MUST integrate the relevant findings from the prior research below into your new research. Update findings that are still valid, and note which prior findings have been superseded by newer information.
+
+{prior_research}
+
+When creating the new PR:
+1. Reference that this PR supersedes the prior research PRs
+2. Preserve valuable findings from prior research where still relevant
+3. Note any findings that have been updated or superseded
+
+'''
+        if prior_research
+        else ""
+    }
 ## Research Instructions
 
 You are tasked with researching current industry best practices and trends related to this ADR.
@@ -186,6 +206,12 @@ EOF
 ```
 """
     elif output_mode == "update_pr":
+        supersedes_note = ""
+        if prior_pr_numbers:
+            supersedes_note = f"""
+   - In the PR body, add a "Supersedes" section listing: {", ".join(f"#{n}" for n in prior_pr_numbers)}
+   - Note which findings from prior PRs are integrated vs updated vs superseded"""
+
         prompt += f"""Create a PR with your research findings:
 
 1. Create a new branch from main
@@ -193,7 +219,7 @@ EOF
 3. Commit with message: "Add research updates to {adr_title}"
 4. Create a PR with:
    - Title: "Research updates for {adr_title}"
-   - Body explaining what was researched and key findings
+   - Body explaining what was researched and key findings{supersedes_note}
 5. Output the PR URL at the end of your response as: `PR_URL: <url>`
 """
     else:  # report mode
