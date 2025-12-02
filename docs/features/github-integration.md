@@ -93,7 +93,7 @@ JIB monitors GitHub repositories for events and responds autonomously:
 
 - [GitHub App Setup](../setup/github-app-setup.md)
 - [PR Context Manager](workflow-context.md)
-- [GitHub MCP Environment](../reference/environment.md)
+- [GitHub MCP Environment](../../jib-container/.claude/rules/environment.md)
 
 ## Source Files
 

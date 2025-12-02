@@ -76,8 +76,8 @@ The jib container provides a sandboxed development environment:
 
 ## Related Documentation
 
-- [Environment Reference](../reference/environment.md)
-- [Mission Guide](../reference/mission.md)
+- [Environment Reference](../../jib-container/.claude/rules/environment.md)
+- [Mission Guide](../../jib-container/.claude/rules/mission.md)
 
 ## Source Files
 
