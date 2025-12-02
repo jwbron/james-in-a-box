@@ -1172,6 +1172,7 @@ def handle_github_pr_close(context: dict) -> int:
     except Exception as e:
         return output_result(False, error=f"Error closing PR: {e}")
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analysis task processor for jib container",
