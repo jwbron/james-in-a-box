@@ -58,18 +58,20 @@ class LogAnalyzer:
         self,
         logs_dir: Path | None = None,
         model: str = "claude-3-5-haiku-latest",
+        timeout: int = 60,
     ):
         """Initialize the analyzer.
 
         Args:
             logs_dir: Base directory for logs (default: ~/.jib-sharing/logs)
             model: Claude model for classification
+            timeout: Timeout in seconds for Claude CLI calls (default: 60)
         """
         self.logs_dir = logs_dir or (Path.home() / ".jib-sharing" / "logs")
 
         self.aggregator = LogAggregator(output_dir=self.logs_dir)
         self.extractor = ErrorExtractor(logs_dir=self.logs_dir)
-        self.classifier = ErrorClassifier(logs_dir=self.logs_dir, model=model)
+        self.classifier = ErrorClassifier(logs_dir=self.logs_dir, model=model, timeout=timeout)
 
         self.summaries_dir = self.logs_dir / "analysis" / "summaries"
         self.summaries_dir.mkdir(parents=True, exist_ok=True)
@@ -437,6 +439,12 @@ def main():
         help="Claude model for classification",
     )
     parser.add_argument(
+        "--timeout",
+        type=int,
+        default=60,
+        help="Timeout in seconds for Claude CLI calls (default: 60)",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -451,7 +459,7 @@ def main():
 
         logging.getLogger().setLevel(logging.DEBUG)
 
-    analyzer = LogAnalyzer(model=args.model)
+    analyzer = LogAnalyzer(model=args.model, timeout=args.timeout)
 
     if args.analyze or not any([args.aggregate, args.extract, args.classify, args.summary]):
         # Default: full analysis

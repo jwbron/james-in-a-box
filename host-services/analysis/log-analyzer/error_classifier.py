@@ -47,6 +47,7 @@ class ClassifiedError:
     # Claude classification
     category: str  # transient, configuration, bug, external, resource, unknown
     severity: str  # low, medium, high, critical
+    confidence: str  # high, medium, low - how confident Claude is in this classification
     root_cause: str
     recommendation: str
     related_errors: list[str] = field(default_factory=list)
@@ -68,6 +69,7 @@ class ClassifiedError:
             "context": self.context,
             "category": self.category,
             "severity": self.severity,
+            "confidence": self.confidence,
             "root_cause": self.root_cause,
             "recommendation": self.recommendation,
             "related_errors": self.related_errors,
@@ -89,6 +91,7 @@ class ClassifiedError:
             context=data.get("context", {}),
             category=data["category"],
             severity=data["severity"],
+            confidence=data.get("confidence", "medium"),
             root_cause=data["root_cause"],
             recommendation=data["recommendation"],
             related_errors=data.get("related_errors", []),
@@ -113,7 +116,10 @@ class ErrorClassifier:
         classifier.save_classifications(classified, output_file)
     """
 
-    # Classification prompt template
+    # Prompt version - increment when prompt changes significantly to invalidate cache
+    PROMPT_VERSION = "1.1"
+
+    # Classification prompt template with few-shot examples
     CLASSIFICATION_PROMPT = """You are analyzing errors from a software system called "jib" (james-in-a-box).
 
 jib is a Docker-sandboxed Claude Code agent system with these components:
@@ -137,9 +143,76 @@ For each error below, provide a JSON response with:
    - `high`: Feature broken, user impacted
    - `critical`: System down or data loss risk
 
-3. **root_cause**: Your analysis of the most likely cause (1-2 sentences)
+3. **confidence**: One of:
+   - `high`: Clear error pattern, confident in classification
+   - `medium`: Reasonable classification but some uncertainty
+   - `low`: Unclear error, classification is a best guess
 
-4. **recommendation**: Specific steps to investigate or fix (1-3 bullet points)
+4. **root_cause**: Your analysis of the most likely cause (1-2 sentences)
+
+5. **recommendation**: Specific steps to investigate or fix (1-3 bullet points)
+
+## Examples
+
+**Example 1 - Transient error:**
+Error: "GitHub API rate limit exceeded. Retry after 2025-01-15T10:30:00Z"
+```json
+{{
+  "category": "transient",
+  "severity": "medium",
+  "confidence": "high",
+  "root_cause": "The GitHub API is rate limiting requests due to high request volume.",
+  "recommendation": "- Wait for rate limit to reset\\n- Implement exponential backoff\\n- Consider batching requests"
+}}
+```
+
+**Example 2 - Configuration error:**
+Error: "GITHUB_TOKEN environment variable not set"
+```json
+{{
+  "category": "configuration",
+  "severity": "high",
+  "confidence": "high",
+  "root_cause": "Required environment variable is missing from the container configuration.",
+  "recommendation": "- Add GITHUB_TOKEN to .env file\\n- Verify token has required permissions\\n- Restart the container after adding"
+}}
+```
+
+**Example 3 - Bug:**
+Error: "TypeError: Cannot read property 'id' of undefined at processTask"
+```json
+{{
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "root_cause": "Code is accessing a property on an undefined object, likely due to missing null check.",
+  "recommendation": "- Add null/undefined check before accessing .id\\n- Investigate why the object is undefined\\n- Add defensive coding patterns"
+}}
+```
+
+**Example 4 - External service:**
+Error: "Connection refused to api.slack.com:443"
+```json
+{{
+  "category": "external",
+  "severity": "medium",
+  "confidence": "medium",
+  "root_cause": "Cannot connect to Slack API - could be network issue or Slack outage.",
+  "recommendation": "- Check Slack status page\\n- Verify network connectivity\\n- Implement retry with backoff"
+}}
+```
+
+**Example 5 - Resource exhaustion:**
+Error: "OSError: [Errno 28] No space left on device"
+```json
+{{
+  "category": "resource",
+  "severity": "critical",
+  "confidence": "high",
+  "root_cause": "Disk is full, preventing file operations.",
+  "recommendation": "- Clear old logs and temp files\\n- Increase disk allocation\\n- Add disk space monitoring"
+}}
+```
 
 ---
 
@@ -154,15 +227,7 @@ Occurrences: {occurrence_count} time(s)
 
 ---
 
-Respond with ONLY a JSON object like:
-```json
-{{
-  "category": "transient",
-  "severity": "medium",
-  "root_cause": "The GitHub API is rate limiting requests due to high volume.",
-  "recommendation": "- Wait for rate limit to reset\\n- Consider implementing exponential backoff\\n- Check if requests can be batched"
-}}
-```
+Respond with ONLY a JSON object (no markdown, no explanation):
 """
 
     def __init__(
@@ -170,6 +235,7 @@ Respond with ONLY a JSON object like:
         logs_dir: Path | None = None,
         cache_file: Path | None = None,
         model: str = "claude-3-5-haiku-latest",
+        timeout: int = 60,
     ):
         """Initialize the classifier.
 
@@ -177,6 +243,7 @@ Respond with ONLY a JSON object like:
             logs_dir: Base directory for logs (default: ~/.jib-sharing/logs)
             cache_file: Path to classification cache (default: logs/analysis/classification_cache.json)
             model: Claude model to use for classification
+            timeout: Timeout in seconds for Claude CLI calls (default: 60)
         """
         self.logs_dir = logs_dir or (Path.home() / ".jib-sharing" / "logs")
         self.classifications_dir = self.logs_dir / "analysis" / "classifications"
@@ -184,21 +251,48 @@ Respond with ONLY a JSON object like:
 
         self.cache_file = cache_file or (self.logs_dir / "analysis" / "classification_cache.json")
         self.model = model
+        self.timeout = timeout
 
         # Load cache
         self._cache = self._load_cache()
 
     def _load_cache(self) -> dict:
-        """Load classification cache from file."""
+        """Load classification cache from file.
+
+        Cache entries are versioned by prompt version. When the prompt changes
+        significantly, increment PROMPT_VERSION to invalidate old cache entries.
+        """
         if not self.cache_file.exists():
-            return {}
+            return {"_meta": {"version": self.PROMPT_VERSION}, "entries": {}}
 
         try:
             with open(self.cache_file) as f:
-                return json.load(f)
+                data = json.load(f)
+
+            # Check cache version - if different, start fresh
+            meta = data.get("_meta", {})
+            cached_version = meta.get("version", "1.0")
+
+            if cached_version != self.PROMPT_VERSION:
+                logger.info(
+                    f"Cache version mismatch ({cached_version} vs {self.PROMPT_VERSION}), "
+                    f"starting with fresh cache"
+                )
+                return {"_meta": {"version": self.PROMPT_VERSION}, "entries": {}}
+
+            # Handle old cache format (flat dict without _meta)
+            if "entries" not in data:
+                # Migrate old format
+                logger.info("Migrating old cache format to new versioned format")
+                return {
+                    "_meta": {"version": self.PROMPT_VERSION},
+                    "entries": {k: v for k, v in data.items() if k != "_meta"},
+                }
+
+            return data
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"Error loading cache: {e}")
-            return {}
+            return {"_meta": {"version": self.PROMPT_VERSION}, "entries": {}}
 
     def _save_cache(self) -> None:
         """Save classification cache to file."""
@@ -212,23 +306,64 @@ Respond with ONLY a JSON object like:
         """Generate a signature for grouping similar errors.
 
         Uses a hash of normalized message + source + severity.
+        Normalizes variable parts like UUIDs, timestamps, numbers, paths, IPs, URLs.
         """
         import re
 
         message = error.message
 
-        # Normalize variable parts
+        # Normalize variable parts (order matters - more specific patterns first)
+
+        # UUIDs
         message = re.sub(
             r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
             "<UUID>",
             message,
+            flags=re.IGNORECASE,
         )
+
+        # Timestamps (ISO format and common variants)
         message = re.sub(
-            r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}",
+            r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?",
             "<TIMESTAMP>",
             message,
         )
-        message = re.sub(r"\d+", "<N>", message)
+
+        # HTTP/HTTPS URLs (before paths to avoid partial matches)
+        message = re.sub(
+            r"https?://[^\s\"'<>]+",
+            "<URL>",
+            message,
+        )
+
+        # IP addresses (IPv4)
+        message = re.sub(
+            r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",
+            "<IP>",
+            message,
+        )
+
+        # File paths (Unix and Windows style)
+        message = re.sub(
+            r"(/[\w./-]+)+",
+            "<PATH>",
+            message,
+        )
+        message = re.sub(
+            r"[A-Za-z]:\\[\w\\.-]+",
+            "<PATH>",
+            message,
+        )
+
+        # Port numbers (after IP to avoid double-matching)
+        message = re.sub(
+            r":\d{2,5}\b",
+            ":<PORT>",
+            message,
+        )
+
+        # Generic numbers (last, as other patterns contain numbers)
+        message = re.sub(r"\b\d+\b", "<N>", message)
 
         signature_input = f"{error.source}:{error.severity}:{message[:200]}"
         return hashlib.sha256(signature_input.encode()).hexdigest()[:16]
@@ -253,10 +388,10 @@ Respond with ONLY a JSON object like:
                     "-p",
                     prompt,
                 ],
-                check=False,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=self.timeout,
+                check=False,
             )
 
             if result.returncode != 0:
@@ -331,6 +466,7 @@ Respond with ONLY a JSON object like:
             context=error.context,
             category=result.get("category", "unknown"),
             severity=result.get("severity", "medium"),
+            confidence=result.get("confidence", "medium"),
             root_cause=result.get("root_cause", "Unable to determine"),
             recommendation=result.get("recommendation", "Investigate manually"),
             signature=self._get_signature(error),
@@ -372,11 +508,13 @@ Respond with ONLY a JSON object like:
         classified = []
         new_classifications = 0
 
+        cache_entries = self._cache.get("entries", {})
+
         for signature, group in groups.items():
             # Check cache first
-            if signature in self._cache:
+            if signature in cache_entries:
                 logger.debug(f"Using cached classification for {signature}")
-                cached = self._cache[signature]
+                cached = cache_entries[signature]
                 for error in group:
                     classified_error = ClassifiedError(
                         error_id=error.id,
@@ -387,6 +525,7 @@ Respond with ONLY a JSON object like:
                         context=error.context,
                         category=cached["category"],
                         severity=cached["severity"],
+                        confidence=cached.get("confidence", "medium"),
                         root_cause=cached["root_cause"],
                         recommendation=cached["recommendation"],
                         signature=signature,
@@ -415,6 +554,7 @@ Respond with ONLY a JSON object like:
                             context=error.context,
                             category="unknown",
                             severity="medium",
+                            confidence="low",
                             root_cause="Classification limit reached",
                             recommendation="Run classifier again to process remaining errors",
                             signature=signature,
@@ -431,9 +571,12 @@ Respond with ONLY a JSON object like:
 
             if result:
                 # Cache the classification
-                self._cache[signature] = {
+                if "entries" not in self._cache:
+                    self._cache["entries"] = {}
+                self._cache["entries"][signature] = {
                     "category": result.category,
                     "severity": result.severity,
+                    "confidence": result.confidence,
                     "root_cause": result.root_cause,
                     "recommendation": result.recommendation,
                     "model": self.model,
@@ -451,6 +594,7 @@ Respond with ONLY a JSON object like:
                         context=error.context,
                         category=result.category,
                         severity=result.severity,
+                        confidence=result.confidence,
                         root_cause=result.root_cause,
                         recommendation=result.recommendation,
                         signature=signature,
@@ -472,6 +616,7 @@ Respond with ONLY a JSON object like:
                             context=error.context,
                             category="unknown",
                             severity="medium",
+                            confidence="low",
                             root_cause="Classification failed",
                             recommendation="Review error manually",
                             signature=signature,
@@ -573,6 +718,12 @@ def main():
         help="Claude model to use (default: claude-3-5-haiku-latest)",
     )
     parser.add_argument(
+        "--timeout",
+        type=int,
+        default=60,
+        help="Timeout in seconds for Claude CLI calls (default: 60)",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -604,7 +755,7 @@ def main():
     print(f"Found {len(errors)} errors to classify")
 
     # Classify
-    classifier = ErrorClassifier(model=args.model)
+    classifier = ErrorClassifier(model=args.model, timeout=args.timeout)
     classified = classifier.classify_errors(errors, max_classifications=args.max_calls)
 
     # Save
