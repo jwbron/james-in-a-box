@@ -412,6 +412,273 @@ class SlackNotificationService(NotificationService):
             context=context,
         )
 
+    # Read-only repo notification methods
+
+    def notify_readonly_check_failure(
+        self,
+        repo: str,
+        pr_number: int,
+        pr_title: str,
+        pr_url: str,
+        pr_branch: str,
+        base_branch: str,
+        failed_checks: list[dict],
+        analysis: str | None = None,
+        task_id: str | None = None,
+    ) -> NotificationResult:
+        """Notify about check failures in a read-only repo.
+
+        For read-only repos, jib cannot push fixes. Instead, it sends a
+        Slack notification with analysis and suggestions.
+
+        Args:
+            repo: Repository name (e.g., "owner/repo").
+            pr_number: The PR number.
+            pr_title: PR title.
+            pr_url: URL of the PR.
+            pr_branch: Source branch.
+            base_branch: Target branch.
+            failed_checks: List of failed check dicts with 'name' and optionally 'full_log'.
+            analysis: Optional analysis/suggestions from jib.
+            task_id: Optional task ID for threading.
+
+        Returns:
+            NotificationResult with success status.
+        """
+        # Format failed checks
+        check_list = "\n".join(f"- {c.get('name', 'Unknown')}" for c in failed_checks)
+
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Branch**: `{pr_branch}` -> `{base_branch}`
+
+## Failed Checks
+
+{check_list}
+
+## Note
+
+This is a **read-only repository**. jib cannot push fixes directly.
+Please review the failures and make changes manually."""
+
+        if analysis:
+            body += f"\n\n## Analysis\n\n{analysis}"
+
+        context = NotificationContext(
+            task_id=task_id or f"readonly-failure-{repo.split('/')[-1]}-{pr_number}",
+            source="readonly-watcher",
+            repository=repo,
+            pr_number=pr_number,
+            branch=pr_branch,
+        )
+
+        return self.notify_warning(
+            title=f"Check Failures in {repo} PR #{pr_number}",
+            body=body,
+            context=context,
+        )
+
+    def notify_readonly_comment(
+        self,
+        repo: str,
+        pr_number: int,
+        pr_title: str,
+        pr_url: str,
+        comments: list[dict],
+        analysis: str | None = None,
+        task_id: str | None = None,
+    ) -> NotificationResult:
+        """Notify about new comments in a read-only repo.
+
+        For read-only repos, jib cannot respond on GitHub. Instead, it sends a
+        Slack notification with the comments and any analysis.
+
+        Args:
+            repo: Repository name (e.g., "owner/repo").
+            pr_number: The PR number.
+            pr_title: PR title.
+            pr_url: URL of the PR.
+            comments: List of comment dicts with 'author', 'body', 'type'.
+            analysis: Optional analysis/suggestions from jib.
+            task_id: Optional task ID for threading.
+
+        Returns:
+            NotificationResult with success status.
+        """
+        # Format comments
+        comment_sections = []
+        for c in comments[:5]:  # Limit to 5 most recent
+            author = c.get("author", "Unknown")
+            body_preview = c.get("body", "")[:300]
+            if len(c.get("body", "")) > 300:
+                body_preview += "..."
+            comment_type = c.get("type", "comment")
+            comment_sections.append(f"**{author}** ({comment_type}):\n> {body_preview}")
+
+        comments_text = "\n\n".join(comment_sections)
+
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+
+## New Comments ({len(comments)} total)
+
+{comments_text}
+
+## Note
+
+This is a **read-only repository**. jib cannot respond on GitHub.
+If you'd like jib to respond, please paste your response in this thread."""
+
+        if analysis:
+            body += f"\n\n## Analysis\n\n{analysis}"
+
+        context = NotificationContext(
+            task_id=task_id or f"readonly-comment-{repo.split('/')[-1]}-{pr_number}",
+            source="readonly-watcher",
+            repository=repo,
+            pr_number=pr_number,
+        )
+
+        return self.notify(
+            title=f"New Comments in {repo} PR #{pr_number}",
+            body=body,
+            context=context,
+        )
+
+    def notify_readonly_review_request(
+        self,
+        repo: str,
+        pr_number: int,
+        pr_title: str,
+        pr_url: str,
+        pr_branch: str,
+        base_branch: str,
+        author: str,
+        additions: int,
+        deletions: int,
+        files: list[str],
+        diff_summary: str | None = None,
+        analysis: str | None = None,
+        task_id: str | None = None,
+    ) -> NotificationResult:
+        """Notify about a PR needing review in a read-only repo.
+
+        For read-only repos, jib cannot post review comments on GitHub.
+        Instead, it sends a Slack notification with analysis and feedback.
+
+        Args:
+            repo: Repository name (e.g., "owner/repo").
+            pr_number: The PR number.
+            pr_title: PR title.
+            pr_url: URL of the PR.
+            pr_branch: Source branch.
+            base_branch: Target branch.
+            author: PR author.
+            additions: Lines added.
+            deletions: Lines deleted.
+            files: List of files changed.
+            diff_summary: Optional summary of the diff.
+            analysis: Optional code review analysis from jib.
+            task_id: Optional task ID for threading.
+
+        Returns:
+            NotificationResult with success status.
+        """
+        # Format files list (limit to 10)
+        files_preview = files[:10]
+        files_text = "\n".join(f"- `{f}`" for f in files_preview)
+        if len(files) > 10:
+            files_text += f"\n- ... and {len(files) - 10} more files"
+
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Author**: @{author}
+**Branch**: `{pr_branch}` -> `{base_branch}`
+**Changes**: +{additions} / -{deletions}
+
+## Files Changed
+
+{files_text}
+
+## Note
+
+This is a **read-only repository**. jib cannot post review comments on GitHub.
+Feedback is provided in this Slack thread instead."""
+
+        if diff_summary:
+            body += f"\n\n## Diff Summary\n\n{diff_summary}"
+
+        if analysis:
+            body += f"\n\n## Code Review\n\n{analysis}"
+
+        context = NotificationContext(
+            task_id=task_id or f"readonly-review-{repo.split('/')[-1]}-{pr_number}",
+            source="readonly-watcher",
+            repository=repo,
+            pr_number=pr_number,
+            branch=pr_branch,
+        )
+
+        return self.notify(
+            title=f"PR Review Request: {repo} #{pr_number}",
+            body=body,
+            context=context,
+        )
+
+    def notify_readonly_merge_conflict(
+        self,
+        repo: str,
+        pr_number: int,
+        pr_title: str,
+        pr_url: str,
+        pr_branch: str,
+        base_branch: str,
+        task_id: str | None = None,
+    ) -> NotificationResult:
+        """Notify about merge conflicts in a read-only repo.
+
+        For read-only repos, jib cannot resolve conflicts. Instead, it sends
+        a Slack notification alerting about the conflict.
+
+        Args:
+            repo: Repository name (e.g., "owner/repo").
+            pr_number: The PR number.
+            pr_title: PR title.
+            pr_url: URL of the PR.
+            pr_branch: Source branch.
+            base_branch: Target branch.
+            task_id: Optional task ID for threading.
+
+        Returns:
+            NotificationResult with success status.
+        """
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Branch**: `{pr_branch}` -> `{base_branch}`
+
+## Merge Conflict Detected
+
+This PR has merge conflicts that need to be resolved.
+
+## Note
+
+This is a **read-only repository**. jib cannot resolve conflicts automatically.
+Please resolve the conflicts manually by merging `{base_branch}` into `{pr_branch}`."""
+
+        context = NotificationContext(
+            task_id=task_id or f"readonly-conflict-{repo.split('/')[-1]}-{pr_number}",
+            source="readonly-watcher",
+            repository=repo,
+            pr_number=pr_number,
+            branch=pr_branch,
+        )
+
+        return self.notify_warning(
+            title=f"Merge Conflict in {repo} PR #{pr_number}",
+            body=body,
+            context=context,
+        )
+
 
 # Singleton instance for easy import
 _default_instance: SlackNotificationService | None = None

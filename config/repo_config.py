@@ -110,6 +110,27 @@ def get_writable_repos() -> list[str]:
     return config.get("writable_repos", [])
 
 
+def get_readable_repos() -> list[str]:
+    """
+    Get list of repositories where jib has read-only access.
+
+    These are repos where jib can:
+    - Sync and analyze PRs, comments, and check failures
+    - Send Slack notifications with feedback/analysis
+
+    jib CANNOT:
+    - Push code, create PRs, post comments
+    - Make any modifications to these repos
+
+    Read-only repos only require a GitHub PAT with read access.
+
+    Returns:
+        List of repo strings in "owner/repo" format
+    """
+    config = _load_config()
+    return config.get("readable_repos", [])
+
+
 def is_writable_repo(repo: str) -> bool:
     """
     Check if a repository is in the writable repos list.
@@ -124,6 +145,39 @@ def is_writable_repo(repo: str) -> bool:
     # Normalize comparison (case-insensitive)
     repo_lower = repo.lower()
     return any(r.lower() == repo_lower for r in writable)
+
+
+def is_readable_repo(repo: str) -> bool:
+    """
+    Check if a repository is in the readable repos list.
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        True if jib has read-only access to this repo
+    """
+    readable = get_readable_repos()
+    # Normalize comparison (case-insensitive)
+    repo_lower = repo.lower()
+    return any(r.lower() == repo_lower for r in readable)
+
+
+def get_repo_access_level(repo: str) -> str:
+    """
+    Get the access level for a repository.
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        One of: "writable", "readable", or "none"
+    """
+    if is_writable_repo(repo):
+        return "writable"
+    if is_readable_repo(repo):
+        return "readable"
+    return "none"
 
 
 def get_default_reviewer() -> str:
@@ -160,13 +214,17 @@ def get_repos_for_sync() -> list[str]:
     """
     Get list of repositories to sync from GitHub.
 
-    Currently returns writable repos, but could be extended
-    to include read-only repos in the future.
+    Returns both writable and readable repos, as both need
+    to be monitored for activity.
 
     Returns:
         List of repo strings in "owner/repo" format
     """
-    return get_writable_repos()
+    writable = get_writable_repos()
+    readable = get_readable_repos()
+    # Combine and deduplicate (in case a repo is in both lists)
+    all_repos = list(dict.fromkeys(writable + readable))
+    return all_repos
 
 
 # Convenience function for shell scripts
@@ -182,9 +240,25 @@ def main():
         "--list-writable", action="store_true", help="List all writable repos (one per line)"
     )
     parser.add_argument(
+        "--list-readable", action="store_true", help="List all readable repos (one per line)"
+    )
+    parser.add_argument(
+        "--list-all", action="store_true", help="List all repos for sync (one per line)"
+    )
+    parser.add_argument(
         "--check-writable",
         metavar="REPO",
         help="Check if REPO is writable (exit 0 if yes, 1 if no)",
+    )
+    parser.add_argument(
+        "--check-readable",
+        metavar="REPO",
+        help="Check if REPO is readable (exit 0 if yes, 1 if no)",
+    )
+    parser.add_argument(
+        "--access-level",
+        metavar="REPO",
+        help="Print access level for REPO (writable, readable, or none)",
     )
     parser.add_argument(
         "--default-reviewer", action="store_true", help="Print default reviewer username"
@@ -200,10 +274,22 @@ def main():
     elif args.list_writable:
         for repo in get_writable_repos():
             print(repo)
+    elif args.list_readable:
+        for repo in get_readable_repos():
+            print(repo)
+    elif args.list_all:
+        for repo in get_repos_for_sync():
+            print(repo)
     elif args.check_writable:
         import sys
 
         sys.exit(0 if is_writable_repo(args.check_writable) else 1)
+    elif args.check_readable:
+        import sys
+
+        sys.exit(0 if is_readable_repo(args.check_readable) else 1)
+    elif args.access_level:
+        print(get_repo_access_level(args.access_level))
     elif args.default_reviewer:
         print(get_default_reviewer())
     elif args.sync_all_prs:
@@ -217,6 +303,9 @@ def main():
         print(f"\nGitHub username: {get_github_username()}")
         print(f"\nWritable repos ({len(get_writable_repos())}):")
         for repo in get_writable_repos():
+            print(f"  - {repo}")
+        print(f"\nReadable repos ({len(get_readable_repos())}):")
+        for repo in get_readable_repos():
             print(f"  - {repo}")
         print(f"\nDefault reviewer: {get_default_reviewer()}")
         sync = get_sync_config()

@@ -10,11 +10,40 @@ JIB monitors GitHub repositories for events and responds autonomously:
 - **Comment Response**: Responds to comments on your PRs
 - **CI/CD Fixes**: Automatically fixes failing tests and builds
 
+## Repository Access Levels
+
+JIB supports two access levels for repositories:
+
+### Writable Repos (Full Access)
+Repositories where jib has write access via GitHub App:
+- Creates PRs, pushes fixes, posts comments
+- Automatically fixes CI/CD failures
+- Responds to PR comments directly on GitHub
+- Resolves merge conflicts
+
+### Read-Only Repos (PAT Access)
+Repositories where jib only has read access via Personal Access Token (PAT):
+- Monitors PRs for events (failures, comments, conflicts)
+- Sends Slack notifications with analysis and feedback
+- Cannot push code, create PRs, or post comments
+- Useful for external repos or repos without GitHub App integration
+
+Configure access levels in `config/repositories.yaml`:
+```yaml
+# Full access repos (GitHub App)
+writable_repos:
+  - owner/repo-name
+
+# Read-only repos (PAT only)
+readable_repos:
+  - external/repo-name
+```
+
 ## Features
 
 ### GitHub Watcher Service
 
-**Purpose**: Host-side systemd timer service that monitors GitHub repositories every 5 minutes for PR events including check failures, new comments, merge conflicts, and review requests. Automatically triggers jib container analysis via jib --exec when events are detected.
+**Purpose**: Host-side systemd timer service that monitors GitHub repositories every 5 minutes for PR events including check failures, new comments, merge conflicts, and review requests. For writable repos, automatically triggers jib container analysis via jib --exec. For read-only repos, sends Slack notifications with event details instead.
 
 **Location**:
 - `host-services/analysis/github-watcher/github-watcher.py`
