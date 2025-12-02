@@ -98,6 +98,26 @@ MAX_PARALLEL_JIB = 20  # Max concurrent jib containers
 # The slack-notifier service monitors this directory for notification files
 HOST_NOTIFICATIONS_DIR = Path.home() / ".jib-sharing" / "notifications"
 
+# Maximum diff size to include in context
+MAX_DIFF_SIZE = 50000
+
+
+def truncate_diff(diff: str, max_size: int = MAX_DIFF_SIZE) -> str:
+    """Truncate diff at a line boundary to avoid cutting mid-line.
+
+    Args:
+        diff: The diff content to truncate
+        max_size: Maximum size in characters
+
+    Returns:
+        Truncated diff ending at a line boundary
+    """
+    if not diff or len(diff) <= max_size:
+        return diff or ""
+    # Find last newline before limit to avoid cutting mid-line
+    truncated = diff[:max_size].rsplit("\n", 1)[0]
+    return truncated
+
 
 @dataclass
 class JibTask:
@@ -1409,7 +1429,7 @@ def check_pr_for_review_response(
         "base_branch": pr_data.get("baseRefName", "main"),
         "reviews": review_info,
         "line_comments": line_comments,
-        "diff": diff[:50000] if diff else "",  # Limit diff size
+        "diff": truncate_diff(diff),
         "review_response_signature": review_response_signature,
     }
 
@@ -1539,7 +1559,7 @@ def check_prs_for_review(
                 "additions": pr.get("additions", 0),
                 "deletions": pr.get("deletions", 0),
                 "files": [f.get("path", "") for f in pr.get("files", [])],
-                "diff": diff[:50000] if diff else "",  # Limit diff size
+                "diff": truncate_diff(diff),
                 "review_signature": review_signature,
                 "is_rereview": is_rereview,
             }

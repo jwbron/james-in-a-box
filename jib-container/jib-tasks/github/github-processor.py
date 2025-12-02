@@ -1026,41 +1026,47 @@ def is_full_approval(reviews: list[dict]) -> bool:
         return False
 
     # Check for caveats in the approval message
+    # Use word boundaries for short words to avoid false positives (e.g., "button" matching "but")
     caveat_phrases = [
-        "but",
-        "however",
-        "though",
-        "although",
-        "except",
+        r"\bbut\b",
+        r"\bhowever\b",
+        r"\bthough\b",
+        r"\balthough\b",
+        r"\bexcept\b",
         "with the caveat",
         "one thing",
-        "minor",
-        "nitpick",
+        r"\bminor\b",
+        r"\bnitpick\b",
         "nit:",
         "suggestion:",
-        "consider",
+        r"\bconsider\b",
         "might want to",
         "could you",
         "would be nice",
         "future improvement",
         "follow-up",
         "followup",
-        "todo",
+        r"\btodo\b",
         "fix later",
     ]
 
     for phrase in caveat_phrases:
-        if phrase in body:
+        if phrase.startswith(r"\b"):
+            # Regex pattern with word boundaries
+            if re.search(phrase, body, re.IGNORECASE):
+                return False
+        elif phrase in body:
             return False
 
-    # Check if there are any unaddressed CHANGES_REQUESTED reviews after the approval
-    # This handles the case where someone approves but another reviewer requests changes
+    # Check if there are any CHANGES_REQUESTED reviews at or after the approval
+    # This handles the case where another reviewer requests changes around the same time
+    approval_time = latest_review.get("submitted_at", "")
     for review in sorted_reviews:
+        if review.get("id") == latest_review.get("id"):
+            continue  # Skip the approval itself
         submitted = review.get("submitted_at", "")
-        if (
-            submitted > latest_review.get("submitted_at", "")
-            and review.get("state", "").upper() == "CHANGES_REQUESTED"
-        ):
+        # If another reviewer requested changes around the same time or after
+        if submitted >= approval_time and review.get("state", "").upper() == "CHANGES_REQUESTED":
             return False
 
     return True
@@ -1081,13 +1087,13 @@ def get_review_iteration_count(beads_context: dict | None) -> int:
     content = beads_context.get("content", "")
 
     # Look for iteration marker in notes
-    # Format: "Review iteration: N"
-    match = re.search(r"Review iteration:\s*(\d+)", content)
+    # Format: "Review iteration: N" - must be at start of line or after newline
+    # This avoids matching the phrase in other contexts
+    match = re.search(r"(?:^|\n)Review iteration:\s*(\d+)", content)
     if match:
         return int(match.group(1))
 
-    # Count occurrences of "Responding to review" as fallback
-    return content.lower().count("responding to review")
+    return 0
 
 
 def handle_pr_review_response(context: dict):
@@ -1201,6 +1207,14 @@ def handle_pr_review_response(context: dict):
         print(f"{result.error}")
         if result.stderr:
             print(f"Error: {result.stderr[:500]}")
+        # Update beads with error status so future sessions know what happened
+        if beads_id:
+            pr_context_manager.update_context(
+                beads_id,
+                f"Review iteration: {iteration_count + 1}\n"
+                f"Error during review response: {result.error}",
+                status="blocked",
+            )
 
 
 def build_pr_review_response_prompt(
