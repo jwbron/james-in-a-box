@@ -154,6 +154,17 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 
 **Cultural Alignment**: Agent behavior continuously refined to match Khan Academy engineering values (clear communication, systematic problem-solving, thorough testing, user-focused decisions)
 
+### 9. Structured Logging & Observability
+
+**Standardized logging across all jib components:**
+- **jib_logging library**: Python library providing structured JSON logging with consistent formatting
+- **Tool wrappers**: Logged wrappers for bd, git, gh, and claude commands that capture all interactions
+- **Model output capture**: Records LLM inputs/outputs following OpenTelemetry GenAI semantic conventions
+- **GCP Cloud Logging ready**: Structured output compatible with Google Cloud Logging ingestion
+- **Operation tracking**: Hierarchical operation context with correlation IDs for tracing workflows
+
+**Benefits**: Enables debugging, performance analysis, and cost tracking across all agent operations
+
 ## How It Works
 
 ```
@@ -328,14 +339,20 @@ jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly docum
 
 **[Documentation Index](docs/index.md)** - Central hub linking all documentation
 
+**[Features Overview](docs/FEATURES.md)** - Complete list of capabilities and feature status
+
 ### Architecture Decision Records (ADRs)
 
-| ADR | Description |
-|-----|-------------|
-| [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, self-improvement |
-| [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | How documentation is structured for efficient LLM navigation |
-| [Context Sync Strategy](docs/adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Current connectors and MCP migration plan |
-| [ADR Index](docs/adr/README.md) | Full list of all ADRs by status |
+| ADR | Status | Description |
+|-----|--------|-------------|
+| [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | In Progress | Core system architecture, security model, self-improvement |
+| [Standardized Logging Interface](docs/adr/in-progress/ADR-Standardized-Logging-Interface.md) | Implemented | Structured JSON logging with tool wrappers and OpenTelemetry alignment |
+| [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | Implemented | How documentation is structured for efficient LLM navigation |
+| [Context Sync Strategy](docs/adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Implemented | Current connectors and MCP migration plan |
+| [Feature Analyzer Documentation Sync](docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Implemented | Automated sync between ADRs and FEATURES.md |
+| [LLM Inefficiency Reporting](docs/adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Implemented | Detecting and reporting inefficient LLM operations |
+| [Multi-Agent Pipeline Architecture](docs/adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Arriving Shortly | Multi-agent orchestration with sequential, parallel, and conditional patterns |
+| [ADR Index](docs/adr/README.md) | — | Full list of all ADRs by status |
 
 ### Quick References
 
@@ -424,6 +441,9 @@ For detailed component documentation, see:
 - Bi-directional operations (update JIRA tickets, comment on PRs)
 - Enhanced security filtering (content classification, allowlists)
 - Documentation drift detection and auto-update
+
+**Arriving Shortly**:
+- **Multi-Agent Pipeline Architecture**: Orchestrated multi-agent workflows with sequential, parallel, and conditional execution patterns. Enables complex tasks to be broken down and executed by specialized agents coordinated through Beads state management. See [ADR: Multi-Agent Pipeline Architecture](docs/adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md).
 
 **Phase 3** (Planned):
 - Cloud Run deployment for multi-engineer support
