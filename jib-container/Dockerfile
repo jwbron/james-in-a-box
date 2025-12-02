@@ -523,7 +523,8 @@ CURRENT_TOKEN=$(get_github_token)
 if [ -n "$CURRENT_TOKEN" ]; then
     # OPTIMIZATION: Skip reconfiguration if already configured with same token
     MCP_SETTINGS="${USER_HOME}/.claude/settings.local.json"
-    TOKEN_HASH=$(echo -n "${CURRENT_TOKEN}" | md5sum | cut -d' ' -f1)
+    # Use sha256 truncated to 16 chars to match mcp-token-watcher.py algorithm
+    TOKEN_HASH=$(echo -n "${CURRENT_TOKEN}" | sha256sum | cut -c1-16)
     CACHE_FILE="${USER_HOME}/.claude/.mcp_token_hash"
     CACHED_HASH=""
     [ -f "$CACHE_FILE" ] && CACHED_HASH=$(cat "$CACHE_FILE" 2>/dev/null)
