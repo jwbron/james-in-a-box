@@ -145,10 +145,9 @@ If no commands are found, return:
             return []
 
         # Build prompt (with truncation warning in verbose mode)
-        if len(content) > self.MAX_MESSAGE_LENGTH:
-            if self.verbose:
-                print(f"  Message truncated from {len(content)} to {self.MAX_MESSAGE_LENGTH} chars")
-        prompt = self.COMMAND_PARSE_PROMPT.format(message=content[:self.MAX_MESSAGE_LENGTH])
+        if len(content) > self.MAX_MESSAGE_LENGTH and self.verbose:
+            print(f"  Message truncated from {len(content)} to {self.MAX_MESSAGE_LENGTH} chars")
+        prompt = self.COMMAND_PARSE_PROMPT.format(message=content[: self.MAX_MESSAGE_LENGTH])
 
         # Call Claude
         result = run_claude(
