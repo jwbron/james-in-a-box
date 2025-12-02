@@ -50,53 +50,137 @@ class CategoryInfo:
 CATEGORY_CONFIG = {
     "Communication": {
         "file": "communication.md",
+        "title": "Communication Features",
         "description": "Bidirectional Slack integration for human-agent communication.",
+        "overview": [
+            "JIB provides seamless two-way communication with humans via Slack:",
+            "- **Outbound**: Agent sends notifications, status updates, and questions",
+            "- **Inbound**: Humans send tasks, commands, and feedback via DMs",
+        ],
         "key_scripts": ["slack-notifier", "slack-receiver"],
+        "related_docs": [
+            "[Slack Integration Architecture](../architecture/slack-integration.md)",
+            "[Host Slack Notifier Details](../architecture/host-slack-notifier.md)",
+            "[Slack Quickstart](../setup/slack-quickstart.md)",
+            "[Slack App Setup](../setup/slack-app-setup.md)",
+        ],
     },
     "Context Management": {
         "file": "context-management.md",
+        "title": "Context Management Features",
         "description": "External knowledge synchronization and persistent task tracking.",
+        "overview": [
+            "JIB maintains context through multiple systems:",
+            "- **External Sync**: Confluence docs and JIRA tickets synced locally",
+            "- **Task Tracking**: Beads system for persistent memory across restarts",
+            "- **PR Context**: Manages PR lifecycle state in Beads",
+        ],
         "key_scripts": ["context-sync", "beads"],
+        "related_docs": [
+            "[Context Sync ADR](../adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md)",
+            "[Beads Reference](../reference/beads.md)",
+        ],
     },
     "GitHub Integration": {
         "file": "github-integration.md",
+        "title": "GitHub Integration Features",
         "description": "Automated PR monitoring, code reviews, and CI/CD failure handling.",
+        "overview": [
+            "JIB monitors GitHub repositories for events and responds autonomously:",
+            "- **PR Monitoring**: Detects check failures, comments, merge conflicts",
+            "- **Auto-Review**: Reviews PRs from other developers",
+            "- **Comment Response**: Responds to comments on your PRs",
+            "- **CI/CD Fixes**: Automatically fixes failing tests and builds",
+        ],
         "key_scripts": ["github-watcher", "pr-reviewer"],
+        "related_docs": [
+            "[GitHub App Setup](../setup/github-app-setup.md)",
+            "[PR Context Manager](workflow-context.md)",
+            "[GitHub MCP Environment](../reference/environment.md)",
+        ],
     },
     "Self-Improvement System": {
         "file": "self-improvement.md",
+        "title": "Self-Improvement Features",
         "description": "LLM efficiency analysis, inefficiency detection, and automated optimization.",
+        "overview": [
+            "JIB continuously improves through automated analysis:",
+            "- **Trace Collection**: Captures conversation traces for analysis",
+            "- **Inefficiency Detection**: Identifies wasteful patterns",
+            "- **Optimization**: Suggests and implements improvements",
+        ],
         "key_scripts": ["trace-collector", "inefficiency-detector"],
+        "related_docs": [
+            "[LLM Inefficiency ADR](../adr/implemented/ADR-LLM-Inefficiency-Reporting.md)",
+        ],
     },
     "Documentation System": {
         "file": "documentation-system.md",
+        "title": "Documentation System Features",
         "description": "Automated documentation generation, sync, and maintenance.",
+        "overview": [
+            "JIB maintains documentation automatically:",
+            "- **Feature Analysis**: Tracks features and their source locations",
+            "- **Doc Generation**: Creates and updates documentation",
+            "- **Drift Detection**: Identifies stale or inconsistent docs",
+        ],
         "key_scripts": ["feature-analyzer", "doc-generator"],
+        "related_docs": [
+            "[Documentation Index Strategy](../index.md)",
+        ],
     },
     "Custom Commands": {
         "file": "container-infrastructure.md",
+        "title": "Container Infrastructure Features",
         "description": "Part of container infrastructure - slash commands for common operations.",
+        "overview": [],
         "key_scripts": [],
+        "merge_into": "Container Infrastructure",
     },
     "Container Infrastructure": {
         "file": "container-infrastructure.md",
+        "title": "Container Infrastructure Features",
         "description": "Core jib container management, development environment, and analysis tasks.",
+        "overview": [
+            "The jib container provides a sandboxed development environment:",
+            "- **Container Management**: Build, run, exec operations",
+            "- **Custom Commands**: Slash commands for common operations",
+            "- **Analysis Tasks**: Automated codebase analysis",
+        ],
         "key_scripts": ["jib", "docker-setup.py"],
+        "related_docs": [
+            "[Environment Reference](../reference/environment.md)",
+            "[Mission Guide](../reference/mission.md)",
+        ],
     },
     "Utilities": {
         "file": "utilities.md",
+        "title": "Utility Features",
         "description": "Helper tools, maintenance scripts, and supporting services.",
+        "overview": [
+            "Supporting tools and utilities:",
+            "- **Worktree Management**: Git worktree watcher for isolation",
+            "- **Test Discovery**: Finds test frameworks in codebases",
+            "- **Maintenance**: Various helper scripts",
+        ],
         "key_scripts": ["worktree-watcher", "test discovery"],
+        "related_docs": [],
     },
     "Security Features": {
         "file": "utilities.md",
+        "title": "Utility Features",
         "description": "Part of utilities - security-related tools.",
+        "overview": [],
         "key_scripts": [],
+        "merge_into": "Utilities",
     },
     "Configuration": {
         "file": "utilities.md",
+        "title": "Utility Features",
         "description": "Part of utilities - configuration and setup tools.",
+        "overview": [],
         "key_scripts": [],
+        "merge_into": "Utilities",
     },
 }
 
@@ -194,23 +278,43 @@ class FeatureDocGenerator:
                     in_components = False
 
                 # Collect location lines (bullet points with paths)
-                if in_location and line.startswith("- `"):
-                    path_match = re.search(r"`([^`]+)`", line)
-                    if path_match:
-                        current_feature.files.append(path_match.group(1))
-                    continue
+                if in_location:
+                    if line.startswith("- `"):
+                        path_match = re.search(r"`([^`]+)`", line)
+                        if path_match:
+                            current_feature.files.append(path_match.group(1))
+                        continue
+                    elif line.strip() and not line.startswith("**") and not line.startswith("#"):
+                        # Non-empty line that's not a bullet - it's a description
+                        in_location = False
+                        # Fall through to description collection below
+                    elif not line.strip():
+                        # Empty line - might be end of location section
+                        continue
 
                 # Collect component info
-                if in_components and line.startswith("- **"):
-                    comp_match = re.match(r"- \*\*(.+?)\*\*(?:\s+⚠️)?\s*(?:\(`([^`]+)`\))?", line)
-                    if comp_match:
-                        current_feature.sub_features.append(
-                            {
-                                "name": comp_match.group(1),
-                                "file": comp_match.group(2) if comp_match.group(2) else "",
-                            }
+                if in_components:
+                    if line.startswith("- **"):
+                        comp_match = re.match(
+                            r"- \*\*(.+?)\*\*(?:\s+⚠️)?\s*(?:\(`([^`]+)`\))?", line
                         )
-                    continue
+                        if comp_match:
+                            current_feature.sub_features.append(
+                                {
+                                    "name": comp_match.group(1),
+                                    "file": comp_match.group(2) if comp_match.group(2) else "",
+                                }
+                            )
+                        continue
+                    elif line.strip().startswith("- "):
+                        # Sub-component description line (indented bullet)
+                        continue
+                    elif line.strip() and not line.startswith("**") and not line.startswith("#"):
+                        # Non-empty line that's not a component - it's a description
+                        in_components = False
+                        # Fall through to description collection below
+                    elif not line.strip():
+                        continue
 
                 # Collect description (non-empty lines that aren't special)
                 if (
@@ -302,40 +406,134 @@ class FeatureDocGenerator:
 
         return content
 
-    def generate_feature_summary(self, categories: dict[str, CategoryInfo]) -> dict[str, str]:
-        """Generate a summary of features by category for updating existing docs."""
-        summaries = {}
+    def generate_category_doc(
+        self, doc_file: str, all_categories: dict[str, CategoryInfo], dry_run: bool = False
+    ) -> str:
+        """Generate a full category documentation file."""
+        # Find the primary category for this doc file
+        primary_cat_name = None
+        primary_config = None
+        for cat_name, config in CATEGORY_CONFIG.items():
+            if config["file"] == doc_file and not config.get("merge_into"):
+                primary_cat_name = cat_name
+                primary_config = config
+                break
 
-        for _cat_name, cat_info in categories.items():
-            if not cat_info.features:
-                continue
+        if not primary_config:
+            return ""
 
-            lines = ["\n## Features from FEATURES.md\n"]
-            for feature in cat_info.features:
-                lines.append(f"### {feature.name}")
+        # Collect all features for this doc file
+        all_features: list[ParsedFeature] = []
+        for cat_name, cat_info in all_categories.items():
+            if cat_info.doc_file == doc_file:
+                all_features.extend(cat_info.features)
+
+        if not all_features:
+            return ""
+
+        # Build the document
+        lines = [
+            f"# {primary_config['title']}",
+            "",
+            primary_config["description"],
+            "",
+        ]
+
+        # Overview section
+        if primary_config.get("overview"):
+            lines.append("## Overview")
+            lines.append("")
+            for line in primary_config["overview"]:
+                lines.append(line)
+            lines.append("")
+
+        # Features section
+        lines.append("## Features")
+        lines.append("")
+
+        for feature in all_features:
+            lines.append(f"### {feature.name}")
+            lines.append("")
+
+            # Purpose (from description)
+            if feature.description:
+                lines.append(f"**Purpose**: {feature.description}")
                 lines.append("")
-                if feature.description:
-                    lines.append(feature.description)
-                    lines.append("")
-                if feature.files:
-                    lines.append("**Location:**")
+
+            # Location
+            if feature.files:
+                if len(feature.files) == 1:
+                    lines.append(f"**Location**: `{feature.files[0]}`")
+                else:
+                    lines.append("**Location**:")
                     for f in feature.files[:5]:
                         lines.append(f"- `{f}`")
                     if len(feature.files) > 5:
                         lines.append(f"- *...and {len(feature.files) - 5} more*")
-                    lines.append("")
-                if feature.sub_features:
-                    lines.append("**Components:**")
-                    for sub in feature.sub_features:
-                        if sub.get("file"):
-                            lines.append(f"- **{sub['name']}** (`{sub['file']}`)")
-                        else:
-                            lines.append(f"- **{sub['name']}**")
-                    lines.append("")
+                lines.append("")
 
-            summaries[cat_info.doc_file] = "\n".join(lines)
+            # Sub-features / Components
+            if feature.sub_features:
+                lines.append("**Components**:")
+                for sub in feature.sub_features:
+                    if sub.get("file"):
+                        lines.append(f"- **{sub['name']}** (`{sub['file']}`)")
+                    else:
+                        lines.append(f"- **{sub['name']}**")
+                lines.append("")
 
-        return summaries
+        # Related Documentation section
+        if primary_config.get("related_docs"):
+            lines.append("## Related Documentation")
+            lines.append("")
+            for doc in primary_config["related_docs"]:
+                lines.append(f"- {doc}")
+            lines.append("")
+
+        # Source Files table
+        lines.append("## Source Files")
+        lines.append("")
+        lines.append("| Component | Path |")
+        lines.append("|-----------|------|")
+        for feature in all_features:
+            if feature.files:
+                # Use the first file as the primary path
+                primary_file = feature.files[0]
+                lines.append(f"| {feature.name} | `{primary_file}` |")
+        lines.append("")
+
+        # Footer
+        lines.append("---")
+        lines.append("")
+        lines.append("*Auto-generated by Feature Analyzer*")
+        lines.append("")
+
+        content = "\n".join(lines)
+
+        if not dry_run:
+            doc_path = self.features_dir / doc_file
+            doc_path.write_text(content)
+            print(f"  Generated: {doc_path.relative_to(self.repo_root)}")
+
+        return content
+
+    def generate_all_category_docs(
+        self, categories: dict[str, CategoryInfo], dry_run: bool = False
+    ) -> int:
+        """Generate all category documentation files."""
+        # Get unique doc files (excluding merge_into categories)
+        doc_files = set()
+        for config in CATEGORY_CONFIG.values():
+            if not config.get("merge_into"):
+                doc_files.add(config["file"])
+
+        generated = 0
+        for doc_file in sorted(doc_files):
+            content = self.generate_category_doc(doc_file, categories, dry_run=dry_run)
+            if content:
+                generated += 1
+
+        return generated
 
     def run(self, dry_run: bool = False) -> dict:
         """Run the feature doc generation."""
@@ -362,21 +560,22 @@ class FeatureDocGenerator:
         print("Generating feature docs...")
         self.generate_readme(categories, dry_run=dry_run)
 
-        # Generate feature summaries (for reference)
-        summaries = self.generate_feature_summary(categories)
-        print(f"  Generated summaries for {len(summaries)} doc files")
+        # Generate all category documentation files
+        print("\nGenerating category documentation...")
+        generated_docs = self.generate_all_category_docs(categories, dry_run=dry_run)
+        print(f"  Generated {generated_docs} category docs")
 
-        # List existing feature docs
+        # List all feature docs
         existing_docs = list(self.features_dir.glob("*.md")) if self.features_dir.exists() else []
-        print(f"\nExisting feature docs: {len(existing_docs)}")
-        for doc in existing_docs:
+        print(f"\nTotal feature docs: {len(existing_docs)}")
+        for doc in sorted(existing_docs, key=lambda x: x.name):
             print(f"  - {doc.name}")
 
         return {
             "categories": len(categories),
             "features": total_features,
-            "summaries": len(summaries),
-            "existing_docs": len(existing_docs),
+            "generated_docs": generated_docs,
+            "total_docs": len(existing_docs),
         }
 
 
@@ -405,7 +604,7 @@ def main():
         print("Summary:")
         print(f"  Categories parsed: {result['categories']}")
         print(f"  Features found: {result['features']}")
-        print(f"  Doc files updated: {result['summaries']}")
+        print(f"  Category docs generated: {result['generated_docs']}")
 
         if args.dry_run:
             print("\n[DRY RUN] No files were modified.")

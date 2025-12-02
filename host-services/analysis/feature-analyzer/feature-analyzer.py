@@ -981,7 +981,8 @@ Full repository analysis generated a comprehensive FEATURES.md with {feature_cou
             print("Summary:")
             print(f"  Categories parsed: {result['categories']}")
             print(f"  Features found: {result['features']}")
-            print(f"  Doc files: {result['existing_docs']}")
+            print(f"  Category docs generated: {result['generated_docs']}")
+            print(f"  Total doc files: {result['total_docs']}")
 
             if args.dry_run:
                 print("\n[DRY RUN] No files were modified.")
@@ -989,7 +990,7 @@ Full repository analysis generated a comprehensive FEATURES.md with {feature_cou
                 print("\n✓ Feature documentation generated successfully!")
                 print("\nGenerated files in docs/features/:")
                 print("  - README.md (navigation index)")
-                print("  - Individual category docs")
+                print("  - Category docs (communication.md, github-integration.md, etc.)")
 
         except FileNotFoundError as e:
             print(f"Error: {e}", file=sys.stderr)

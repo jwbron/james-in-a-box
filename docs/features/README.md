@@ -6,13 +6,13 @@ This directory contains detailed documentation for each major feature category i
 
 | Category | Description | Key Scripts |
 |----------|-------------|-------------|
-| [Communication](communication.md) | Slack integration and notifications | `slack-notifier`, `slack-receiver` |
-| [Context Management](context-management.md) | External knowledge sync and task tracking | `context-sync`, `beads` |
-| [GitHub Integration](github-integration.md) | PR monitoring, reviews, and CI/CD automation | `github-watcher`, `pr-reviewer` |
-| [Self-Improvement](self-improvement.md) | LLM efficiency analysis and optimization | `trace-collector`, `inefficiency-detector` |
-| [Documentation System](documentation-system.md) | Automated doc generation and sync | `feature-analyzer`, `doc-generator` |
-| [Container Infrastructure](container-infrastructure.md) | Core jib container management | `jib`, `docker-setup.py` |
-| [Utilities](utilities.md) | Helper tools and maintenance scripts | `worktree-watcher`, `test discovery` |
+| [Communication](communication.md) | Bidirectional Slack integration for human-agent co... | `slack-notifier`, `slack-receiver` |
+| [Context Management](context-management.md) | External knowledge synchronization and persistent ... | `context-sync`, `beads` |
+| [GitHub Integration](github-integration.md) | Automated PR monitoring, code reviews, and CI/CD f... | `github-watcher`, `pr-reviewer` |
+| [Self-Improvement System](self-improvement.md) | LLM efficiency analysis, inefficiency detection, a... | `trace-collector`, `inefficiency-detector` |
+| [Documentation System](documentation-system.md) | Automated documentation generation, sync, and main... | `feature-analyzer`, `doc-generator` |
+| [Custom Commands](container-infrastructure.md) | Part of container infrastructure - slash commands ... | - |
+| [Utilities](utilities.md) | Helper tools, maintenance scripts, and supporting ... | `worktree-watcher`, `test discovery` |
 
 ## How to Use These Docs
 

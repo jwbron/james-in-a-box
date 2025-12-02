@@ -4,276 +4,109 @@ External knowledge synchronization and persistent task tracking.
 
 ## Overview
 
-JIB maintains context across container restarts and external systems through:
-- **Context Sync**: Automated syncing of Confluence, JIRA, and other knowledge sources
-- **Beads**: Persistent task tracking system for memory across sessions
-- **PR Context**: Lifecycle tracking for GitHub PRs
+JIB maintains context through multiple systems:
+- **External Sync**: Confluence docs and JIRA tickets synced locally
+- **Task Tracking**: Beads system for persistent memory across restarts
+- **PR Context**: Manages PR lifecycle state in Beads
 
 ## Features
 
 ### Context Sync Service
 
-**Purpose**: Syncs external knowledge sources (Confluence, JIRA) to local files for agent access.
+**Purpose**: Multi-connector tool that automatically syncs external knowledge sources (Confluence, JIRA) to ~/context-sync/ for AI agent access. Runs hourly via systemd timer, supports incremental sync, and provides search functionality.
 
-**Location**: `host-services/sync/context-sync/`
+**Location**:
+- `host-services/sync/context-sync/sync_all.py`
+- `host-services/sync/context-sync/manage_scheduler.sh`
+- `host-services/sync/context-sync/context-sync.service`
+- `host-services/sync/context-sync/setup.sh`
 
-**Helper Scripts**:
-```bash
-# Manual sync
-python host-services/sync/context-sync/sync_all.py
-
-# Search synced docs
-python host-services/sync/context-sync/utils/search.py "search term"
-
-# Check sync status
-python host-services/sync/context-sync/utils/maintenance.py status
-```
-
-**Service Management**:
-```bash
-systemctl --user status context-sync.service
-systemctl --user start context-sync.timer  # Enable hourly sync
-journalctl --user -u context-sync.service -f
-```
-
-**Configuration**: `~/.jib-sharing/.env`
-```bash
-# Confluence
-CONFLUENCE_URL=https://your-domain.atlassian.net
-CONFLUENCE_USER=email@example.com
-CONFLUENCE_TOKEN=api_token
-CONFLUENCE_SPACES=SPACE1,SPACE2
-
-# JIRA
-JIRA_URL=https://your-domain.atlassian.net
-JIRA_USER=email@example.com
-JIRA_TOKEN=api_token
-JIRA_JQL="project = PROJ AND assignee = currentUser()"
-```
-
-**Key Capabilities**:
-- Incremental sync with change detection
-- HTML to Markdown conversion
-- Hierarchical directory structure
-- Comment synchronization
+**Components**:
+- **Base Connector Framework** (`host-services/sync/context-sync/connectors/base.py`)
+- **Systemd Timer Scheduler** (`host-services/sync/context-sync/systemd/context-sync.service`)
 
 ### Confluence Connector
 
-**Purpose**: Syncs Confluence pages including ADRs, runbooks, and team docs.
+**Purpose**: Syncs Confluence documentation including ADRs, runbooks, and team docs to local markdown files. Preserves page hierarchy, includes comments, creates hierarchical navigation indexes, and supports incremental sync.
 
-**Location**: `host-services/sync/context-sync/connectors/confluence/`
+**Location**:
+- `host-services/sync/context-sync/connectors/confluence/connector.py`
+- `host-services/sync/context-sync/connectors/confluence/sync.py`
+- `host-services/sync/context-sync/connectors/confluence/config.py`
 
-**Synced Data**:
-```
-~/context-sync/confluence/
-├── SPACE1/
-│   ├── README.md      # Space index
-│   ├── page1.md
-│   └── subdirectory/
-│       └── page2.md
-└── SPACE2/
-    └── ...
-```
-
-**Commands**:
-```bash
-# Sync specific space
-python -c "from connectors.confluence import sync; sync.sync_space('SPACE1')"
-
-# Sync single page by ID
-python -c "from connectors.confluence import sync; sync.sync_page('12345')"
-
-# List available spaces
-python host-services/sync/context-sync/utils/list_spaces.py
-```
+**Components**:
+- **Confluence Page Comments Sync** (`host-services/sync/context-sync/connectors/confluence/sync.py`)
+- **Hierarchical Directory Index Generation** (`host-services/sync/context-sync/connectors/confluence/sync.py`)
+- **Incremental Sync State Management** (`host-services/sync/context-sync/connectors/confluence/sync.py`)
+- **Single Page Sync** (`host-services/sync/context-sync/connectors/confluence/sync.py`)
+- **Confluence Space Discovery** (`host-services/sync/context-sync/utils/list_spaces.py`)
+- **HTML to Markdown Converter** (`host-services/sync/context-sync/connectors/confluence/sync.py`)
 
 ### JIRA Connector
 
-**Purpose**: Syncs JIRA tickets to local markdown files.
+**Purpose**: Syncs JIRA tickets to local markdown files based on configurable JQL queries. Includes ticket comments, attachment metadata, work logs, and converts Atlassian Document Format to clean markdown with incremental sync support.
 
-**Location**: `host-services/sync/context-sync/connectors/jira/`
+**Location**:
+- `host-services/sync/context-sync/connectors/jira/connector.py`
+- `host-services/sync/context-sync/connectors/jira/sync.py`
+- `host-services/sync/context-sync/connectors/jira/config.py`
 
-**Synced Data**:
-```
-~/context-sync/jira/
-├── README.md          # Query summary
-├── PROJ-123.md        # Individual tickets
-├── PROJ-124.md
-└── ...
-```
+**Components**:
+- **Atlassian Document Format Converter** (`host-services/sync/context-sync/connectors/jira/sync.py`)
+- **JIRA Incremental Sync** (`host-services/sync/context-sync/connectors/jira/sync.py`)
 
-**Ticket Format**:
-```markdown
-# PROJ-123: Ticket Title
+### Beads Task Tracking System
 
-**Status**: In Progress
-**Assignee**: user@example.com
-**Priority**: High
+**Purpose**: Persistent task tracking system that enables memory across container restarts. Provides commands for creating, updating, and completing tasks with status values, labeling conventions, and workflow patterns for ephemeral containers.
 
-## Description
-[Ticket description converted from ADF]
-
-## Comments
-### Comment by user (2025-12-01)
-[Comment text]
-```
-
-### Beads Task Tracking
-
-**Purpose**: Persistent task memory across container restarts.
-
-**Location**: `~/beads/` (shared directory)
-
-**Commands**:
-```bash
-# Always use --allow-stale in ephemeral containers
-cd ~/beads
-
-# List tasks
-bd --allow-stale list --status in_progress
-bd --allow-stale list --label "slack-thread"
-
-# Create task
-bd --allow-stale create "Task description" --labels feature,jira-1234
-
-# Update task
-bd --allow-stale update bd-xxxx --status in_progress
-bd --allow-stale update bd-xxxx --notes "Progress: completed step 1"
-bd --allow-stale update bd-xxxx --status closed --notes "Done. PR #42 created."
-
-# Search (title/description only)
-bd --allow-stale search "keyword"
-
-# Show task details
-bd --allow-stale show bd-xxxx
-
-# Find ready work
-bd --allow-stale ready
-```
-
-**Status Values**:
-- `open`: Task created, not started
-- `in_progress`: Actively working
-- `blocked`: Waiting on external dependency
-- `closed`: Work complete
-
-**Common Labels**:
-- Source: `slack`, `slack-thread`, `jira-XXXX`, `github-pr-XX`
-- Type: `feature`, `bug`, `refactor`, `docs`, `test`
-- Priority: `urgent`, `important`
+**Location**:
+- `jib-container/.claude/rules/beads-usage.md`
+- `jib-container/.claude/rules/context-tracking.md`
 
 ### JIRA Ticket Processor
 
-**Purpose**: Monitors and analyzes assigned JIRA tickets.
+**Purpose**: Monitors and analyzes JIRA tickets assigned to the user, using Claude to parse requirements, extract action items, assess scope, and send proactive Slack notifications. Creates Beads tasks for new tickets.
 
 **Location**: `jib-container/jib-tasks/jira/jira-processor.py`
 
-**Invoked by**: Scheduled jobs or manual trigger
-
-**Key Capabilities**:
-- Parses requirements from ticket descriptions
-- Extracts action items
-- Assesses scope and complexity
-- Creates Beads tasks for tracking
-- Sends proactive Slack notifications
-
 ### Sprint Ticket Analyzer
 
-**Purpose**: Analyzes active sprint tickets for recommendations.
+**Purpose**: Analyzes tickets in the active sprint to provide actionable recommendations including next steps and suggestions for backlog tickets to pull in. Generates grouped Slack notifications.
 
 **Location**: `jib-container/jib-tasks/jira/analyze-sprint.py`
 
-**Output**: Grouped Slack notifications with:
-- Next steps for each ticket
-- Suggestions for backlog tickets to pull in
-- Risk identification
-
 ### PR Context Manager
 
-**Purpose**: Tracks PR lifecycle in Beads for persistent memory.
+**Purpose**: Manages persistent PR context in Beads task tracking system, enabling memory across container restarts. Each PR gets a unique task tracking its lifecycle including comments, CI failures, and review feedback.
 
-**Location**: `jib-container/jib-tasks/github/`
+**Location**:
+- `jib-container/jib-tasks/github/comment-responder.py`
+- `jib-container/jib-tasks/github/pr-reviewer.py`
+- `jib-container/jib-tasks/github/github-processor.py`
 
-**Key Capabilities**:
-- Unique task per PR
-- Tracks comments, CI failures, reviews
-- Enables context continuity across sessions
+### Beads Task Memory Initialization
 
-## Architecture
+**Purpose**: Sets up the Beads persistent task tracking system in the shared directory for task creation, progress tracking, and cross-session context.
 
-```
-┌──────────────────────────────────────────────────────┐
-│                  External Sources                     │
-│  ┌─────────┐   ┌─────────┐   ┌─────────┐            │
-│  │Confluence│   │  JIRA   │   │ GitHub  │            │
-│  └────┬────┘   └────┬────┘   └────┬────┘            │
-│       │             │             │                  │
-└───────┼─────────────┼─────────────┼──────────────────┘
-        │             │             │
-        ▼             ▼             ▼
-┌──────────────────────────────────────────────────────┐
-│              Context Sync Service                     │
-│  ┌─────────────┐  ┌─────────────┐                   │
-│  │  Confluence │  │    JIRA     │                   │
-│  │  Connector  │  │  Connector  │                   │
-│  └──────┬──────┘  └──────┬──────┘                   │
-│         │                │                           │
-│         ▼                ▼                           │
-│  ~/context-sync/confluence/  ~/context-sync/jira/   │
-└──────────────────────────────────────────────────────┘
-                        │
-                        ▼
-┌──────────────────────────────────────────────────────┐
-│                Container Access                       │
-│  ┌─────────────────────────────────────────┐        │
-│  │      ~/context-sync/ (read-only)         │        │
-│  │      ~/beads/ (read-write)               │        │
-│  └─────────────────────────────────────────┘        │
-└──────────────────────────────────────────────────────┘
-```
-
-## Troubleshooting
-
-### Context sync not running
-
-1. Check timer: `systemctl --user status context-sync.timer`
-2. Check service: `systemctl --user status context-sync.service`
-3. Manual run: `python host-services/sync/context-sync/sync_all.py`
-
-### Confluence pages missing
-
-1. Verify space is in `CONFLUENCE_SPACES`
-2. Check permissions for API token
-3. Run: `python host-services/sync/context-sync/utils/list_spaces.py`
-
-### Beads commands failing
-
-1. Always use `--allow-stale` in containers
-2. Ensure `cd ~/beads` before commands
-3. Check `~/beads/.git` exists
-
-### JIRA tickets not syncing
-
-1. Verify JQL query syntax
-2. Check API token permissions
-3. Test query in JIRA web UI first
+**Location**: `setup.sh`
 
 ## Related Documentation
 
-- [Beads Task Tracking Reference](../reference/beads.md)
-- [Beads Integration Guide](../development/beads-integration.md)
 - [Context Sync ADR](../adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md)
+- [Beads Reference](../reference/beads.md)
 
 ## Source Files
 
 | Component | Path |
 |-----------|------|
 | Context Sync Service | `host-services/sync/context-sync/sync_all.py` |
-| Confluence Connector | `host-services/sync/context-sync/connectors/confluence/` |
-| JIRA Connector | `host-services/sync/context-sync/connectors/jira/` |
-| Beads Rules | `jib-container/.claude/rules/beads-usage.md` |
-| JIRA Processor | `jib-container/jib-tasks/jira/jira-processor.py` |
-| Sprint Analyzer | `jib-container/jib-tasks/jira/analyze-sprint.py` |
+| Confluence Connector | `host-services/sync/context-sync/connectors/confluence/connector.py` |
+| JIRA Connector | `host-services/sync/context-sync/connectors/jira/connector.py` |
+| Beads Task Tracking System | `jib-container/.claude/rules/beads-usage.md` |
+| JIRA Ticket Processor | `jib-container/jib-tasks/jira/jira-processor.py` |
+| Sprint Ticket Analyzer | `jib-container/jib-tasks/jira/analyze-sprint.py` |
+| PR Context Manager | `jib-container/jib-tasks/github/comment-responder.py` |
+| Beads Task Memory Initialization | `setup.sh` |
 
 ---
 
