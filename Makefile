@@ -9,6 +9,7 @@
         lint-shell lint-shell-fix \
         lint-yaml lint-yaml-fix \
         lint-docker lint-workflows \
+        lint-host-services \
         install-linters check-linters
 
 # Default target
@@ -34,6 +35,7 @@ help:
 	@echo "  make lint-yaml-fix     - Fix common YAML issues (trailing spaces)"
 	@echo "  make lint-docker       - Lint Dockerfiles with hadolint"
 	@echo "  make lint-workflows    - Lint GitHub Actions with actionlint"
+	@echo "  make lint-host-services - Check host-services for forbidden patterns"
 	@echo ""
 	@echo "Setup:"
 	@echo "  make install-linters   - Install all linting tools"
@@ -64,7 +66,7 @@ test-bash:
 # ============================================================================
 
 # Run all linters
-lint: lint-python lint-shell lint-yaml lint-docker
+lint: lint-python lint-shell lint-yaml lint-docker lint-host-services
 	@echo ""
 	@echo "All linters completed!"
 
@@ -191,6 +193,17 @@ lint-workflows:
 	else \
 		echo "No .github/workflows directory found."; \
 	fi
+
+# ----------------------------------------------------------------------------
+# Host Services Checks (custom linters)
+# ----------------------------------------------------------------------------
+lint-host-services:
+	@echo "==> Checking host-services for forbidden patterns..."
+	@echo "  Checking for Claude imports..."
+	@python3 scripts/check-claude-imports.py
+	@echo "  Checking for gh CLI write operations..."
+	@python3 scripts/check-gh-cli-usage.py
+	@echo "Host services checks passed!"
 
 # ============================================================================
 # Setup Targets
