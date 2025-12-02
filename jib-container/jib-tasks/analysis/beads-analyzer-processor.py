@@ -818,8 +818,8 @@ def run_claude_analysis(
     """
     print("Running Claude-powered analysis...", file=sys.stderr)
 
-    # Import claude module
-    sys.path.insert(0, str(REPO_ROOT / "jib-container" / "shared"))
+    # Import claude module (shared/ is at repo root, not jib-container/shared)
+    sys.path.insert(0, str(REPO_ROOT / "shared"))
     from claude import run_claude
 
     task_summaries = []
