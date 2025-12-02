@@ -39,6 +39,8 @@ readable_repos:
   - external/repo-name
 ```
 
+**Note**: If a repo appears in both lists, it's treated as writable.
+
 ## Features
 
 ### GitHub Watcher Service

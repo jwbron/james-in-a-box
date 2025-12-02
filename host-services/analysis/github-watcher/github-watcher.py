@@ -88,16 +88,28 @@ RATE_LIMIT_BASE_WAIT = 60  # Base wait time in seconds for exponential backoff
 # Parallel execution configuration
 MAX_PARALLEL_JIB = 10  # Max concurrent jib containers
 
+# Host-side notification directory (different from container's ~/sharing/notifications)
+# The slack-notifier service monitors this directory for notification files
+HOST_NOTIFICATIONS_DIR = Path.home() / ".jib-sharing" / "notifications"
+
 
 @dataclass
 class JibTask:
-    """A task to be executed by jib."""
+    """A task to be executed by jib.
 
-    task_type: str  # 'check_failure', 'comment', 'merge_conflict', 'review_request'
+    Attributes:
+        task_type: One of 'check_failure', 'comment', 'merge_conflict', 'review_request'
+        context: Task-specific context dict
+        signature_key: Key for processed_* dict (e.g., 'processed_failures')
+        signature_value: The signature to mark as processed
+        is_readonly: If True, send notification instead of invoking jib (for read-only repos)
+    """
+
+    task_type: str
     context: dict
-    signature_key: str  # Key for processed_* dict (e.g., 'processed_failures')
-    signature_value: str  # The signature to mark as processed
-    is_readonly: bool = False  # If True, send notification instead of invoking jib
+    signature_key: str
+    signature_value: str
+    is_readonly: bool = False
 
 
 class ThreadSafeState:
@@ -502,6 +514,9 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         return False
 
 
+VALID_READONLY_TASK_TYPES = ["check_failure", "comment", "review_request", "merge_conflict"]
+
+
 def send_readonly_notification(task_type: str, context: dict) -> bool:
     """Send a Slack notification for a read-only repo event.
 
@@ -515,11 +530,7 @@ def send_readonly_notification(task_type: str, context: dict) -> bool:
     Returns:
         True if notification was sent successfully
     """
-    # Import the notification service
-    # Note: This runs on the HOST, so we need to write notification files
-    # to the shared directory that the slack-notifier service monitors
-    notifications_dir = Path.home() / ".jib-sharing" / "notifications"
-    notifications_dir.mkdir(parents=True, exist_ok=True)
+    HOST_NOTIFICATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
     repo = context.get("repository", "unknown")
     pr_number = context.get("pr_number", 0)
@@ -621,7 +632,11 @@ This is a **read-only repository**. jib cannot resolve conflicts automatically.
 Please resolve the conflicts manually by merging `{base_branch}` into `{pr_branch}`."""
 
     else:
-        logger.error("Unknown task type for readonly notification", task_type=task_type)
+        logger.error(
+            "Unknown task type for readonly notification",
+            task_type=task_type,
+            valid_types=VALID_READONLY_TASK_TYPES,
+        )
         return False
 
     # Build notification file content with YAML frontmatter
@@ -639,7 +654,7 @@ Repo: {repo} | PR: #{pr_number} | Branch: `{pr_branch}` | Source: readonly-watch
 
     # Write notification file
     filename = f"{timestamp}-{task_id}.md"
-    filepath = notifications_dir / filename
+    filepath = HOST_NOTIFICATIONS_DIR / filename
 
     try:
         filepath.write_text(file_content)

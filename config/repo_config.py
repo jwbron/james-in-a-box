@@ -222,7 +222,8 @@ def get_repos_for_sync() -> list[str]:
     """
     writable = get_writable_repos()
     readable = get_readable_repos()
-    # Combine and deduplicate (in case a repo is in both lists)
+    # Combine and deduplicate, preserving order (writable repos first)
+    # Note: If a repo appears in both lists, it's treated as writable
     all_repos = list(dict.fromkeys(writable + readable))
     return all_repos
 
