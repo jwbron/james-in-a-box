@@ -88,15 +88,28 @@ RATE_LIMIT_BASE_WAIT = 60  # Base wait time in seconds for exponential backoff
 # Parallel execution configuration
 MAX_PARALLEL_JIB = 20  # Max concurrent jib containers
 
+# Host-side notification directory (different from container's ~/sharing/notifications)
+# The slack-notifier service monitors this directory for notification files
+HOST_NOTIFICATIONS_DIR = Path.home() / ".jib-sharing" / "notifications"
+
 
 @dataclass
 class JibTask:
-    """A task to be executed by jib."""
+    """A task to be executed by jib.
 
-    task_type: str  # 'check_failure', 'comment', 'merge_conflict', 'review_request'
+    Attributes:
+        task_type: One of 'check_failure', 'comment', 'merge_conflict', 'review_request'
+        context: Task-specific context dict
+        signature_key: Key for processed_* dict (e.g., 'processed_failures')
+        signature_value: The signature to mark as processed
+        is_readonly: If True, send notification instead of invoking jib (for read-only repos)
+    """
+
+    task_type: str
     context: dict
-    signature_key: str  # Key for processed_* dict (e.g., 'processed_failures')
-    signature_value: str  # The signature to mark as processed
+    signature_key: str
+    signature_value: str
+    is_readonly: bool = False
 
 
 class ThreadSafeState:
@@ -151,6 +164,7 @@ def load_config() -> dict:
 
     Returns dict with:
         - writable_repos: List of repos jib can modify
+        - readable_repos: List of repos jib can only read (notify via Slack)
         - github_username: Configured GitHub username (for filtering)
     """
     config_paths = [
@@ -161,9 +175,12 @@ def load_config() -> dict:
     for config_path in config_paths:
         if config_path.exists():
             with open(config_path) as f:
-                return yaml.safe_load(f)
+                config = yaml.safe_load(f)
+                # Ensure readable_repos exists
+                config.setdefault("readable_repos", [])
+                return config
 
-    return {"writable_repos": [], "github_username": "jib"}
+    return {"writable_repos": [], "readable_repos": [], "github_username": "jib"}
 
 
 def load_state() -> dict:
@@ -497,8 +514,174 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         return False
 
 
+VALID_READONLY_TASK_TYPES = ["check_failure", "comment", "review_request", "merge_conflict"]
+
+
+def send_readonly_notification(task_type: str, context: dict) -> bool:
+    """Send a Slack notification for a read-only repo event.
+
+    For read-only repos, we don't invoke jib to make changes.
+    Instead, we send a Slack notification with the event details.
+
+    Args:
+        task_type: One of 'check_failure', 'comment', 'review_request', 'merge_conflict'
+        context: Dict containing task-specific context
+
+    Returns:
+        True if notification was sent successfully
+    """
+    HOST_NOTIFICATIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    repo = context.get("repository", "unknown")
+    pr_number = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", "")
+    pr_url = context.get("pr_url", "")
+    pr_branch = context.get("pr_branch", "")
+    base_branch = context.get("base_branch", "main")
+
+    # Generate task ID for threading
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    task_id = f"readonly-{task_type}-{repo.replace('/', '-')}-{pr_number}-{timestamp}"
+
+    # Build notification content based on task type
+    if task_type == "check_failure":
+        failed_checks = context.get("failed_checks", [])
+        check_list = "\n".join(f"- {c.get('name', 'Unknown')}" for c in failed_checks)
+
+        title = f"Check Failures in {repo} PR #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Branch**: `{pr_branch}` -> `{base_branch}`
+
+## Failed Checks
+
+{check_list}
+
+## Note
+
+This is a **read-only repository**. jib cannot push fixes directly.
+Please review the failures and make changes manually."""
+
+    elif task_type == "comment":
+        comments = context.get("comments", [])
+        # Format comments (limit to 5)
+        comment_sections = []
+        for c in comments[:5]:
+            author = c.get("author", "Unknown")
+            body_preview = c.get("body", "")[:300]
+            if len(c.get("body", "")) > 300:
+                body_preview += "..."
+            comment_type = c.get("type", "comment")
+            comment_sections.append(f"**{author}** ({comment_type}):\n> {body_preview}")
+        comments_text = "\n\n".join(comment_sections)
+
+        title = f"New Comments in {repo} PR #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+
+## New Comments ({len(comments)} total)
+
+{comments_text}
+
+## Note
+
+This is a **read-only repository**. jib cannot respond on GitHub.
+If you'd like jib to respond, please paste your response in this thread."""
+
+    elif task_type == "review_request":
+        author = context.get("author", "unknown")
+        additions = context.get("additions", 0)
+        deletions = context.get("deletions", 0)
+        files = context.get("files", [])
+
+        # Format files list (limit to 10)
+        files_preview = files[:10]
+        files_text = "\n".join(f"- `{f}`" for f in files_preview)
+        if len(files) > 10:
+            files_text += f"\n- ... and {len(files) - 10} more files"
+
+        title = f"PR Review Request: {repo} #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Author**: @{author}
+**Branch**: `{pr_branch}` -> `{base_branch}`
+**Changes**: +{additions} / -{deletions}
+
+## Files Changed
+
+{files_text}
+
+## Note
+
+This is a **read-only repository**. jib cannot post review comments on GitHub.
+Feedback is provided in this Slack thread instead."""
+
+    elif task_type == "merge_conflict":
+        title = f"Merge Conflict in {repo} PR #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Branch**: `{pr_branch}` -> `{base_branch}`
+
+## Merge Conflict Detected
+
+This PR has merge conflicts that need to be resolved.
+
+## Note
+
+This is a **read-only repository**. jib cannot resolve conflicts automatically.
+Please resolve the conflicts manually by merging `{base_branch}` into `{pr_branch}`."""
+
+    else:
+        logger.error(
+            "Unknown task type for readonly notification",
+            task_type=task_type,
+            valid_types=VALID_READONLY_TASK_TYPES,
+        )
+        return False
+
+    # Build notification file content with YAML frontmatter
+    file_content = f"""---
+task_id: "{task_id}"
+---
+
+# {title}
+
+{body}
+
+---
+Repo: {repo} | PR: #{pr_number} | Branch: `{pr_branch}` | Source: readonly-watcher
+"""
+
+    # Write notification file
+    filename = f"{timestamp}-{task_id}.md"
+    filepath = HOST_NOTIFICATIONS_DIR / filename
+
+    try:
+        filepath.write_text(file_content)
+        logger.info(
+            "Read-only notification sent",
+            task_type=task_type,
+            repository=repo,
+            pr_number=pr_number,
+            notification_file=str(filepath),
+        )
+        return True
+    except Exception as e:
+        logger.error(
+            "Failed to write readonly notification",
+            task_type=task_type,
+            repository=repo,
+            pr_number=pr_number,
+            error=str(e),
+        )
+        return False
+
+
 def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
     """Execute a single jib task and update state (thread-safe).
+
+    For writable repos, invokes jib to handle the task (push fixes, post comments).
+    For read-only repos, sends a Slack notification instead.
 
     Args:
         task: The JibTask to execute
@@ -507,7 +690,13 @@ def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
     Returns:
         True if task completed successfully
     """
-    success = invoke_jib(task.task_type, task.context)
+    if task.is_readonly:
+        # Read-only repo: send notification instead of invoking jib
+        success = send_readonly_notification(task.task_type, task.context)
+    else:
+        # Writable repo: invoke jib to handle the task
+        success = invoke_jib(task.task_type, task.context)
+
     if success:
         safe_state.mark_processed(task.signature_key, task.signature_value)
     else:
@@ -1117,10 +1306,191 @@ def get_since_timestamp(state: dict) -> str | None:
     return state.get("last_run_start")
 
 
+def process_repo_prs(
+    repo: str,
+    state: dict,
+    github_username: str,
+    bot_username: str,
+    since_timestamp: str | None,
+    is_readonly: bool = False,
+) -> list[JibTask]:
+    """Process a single repository's PRs and collect tasks.
+
+    This is shared logic for both writable and readable repos.
+
+    Args:
+        repo: Repository in owner/repo format
+        state: State dict for deduplication
+        github_username: User's GitHub username
+        bot_username: Bot's GitHub username
+        since_timestamp: Filter for comments since this timestamp
+        is_readonly: If True, tasks will be marked for notification instead of jib invocation
+
+    Returns:
+        List of JibTask objects for this repo
+    """
+    tasks: list[JibTask] = []
+
+    # Fetch ALL open PRs in a single API call
+    all_prs = gh_json(
+        [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
+        ],
+        repo=repo,
+    )
+
+    if all_prs is None:
+        logger.warning("Failed to fetch PRs, skipping repository")
+        return tasks
+
+    logger.info("Fetched open PRs", count=len(all_prs))
+
+    # Filter PRs locally by author
+    my_prs = [
+        p
+        for p in all_prs
+        if p.get("author", {}).get("login", "").lower() == github_username.lower()
+    ]
+
+    # Bot PRs can have author login in different formats
+    bot_author_variants = {
+        bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
+        f"app/{bot_username.lower()}",
+    }
+    bot_prs = [
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() in bot_author_variants
+    ]
+
+    # Collect tasks from user's PRs
+    if my_prs:
+        logger.info(
+            "Found user's open PRs",
+            count=len(my_prs),
+            username=github_username,
+        )
+
+        for pr in my_prs:
+            # Check for failures
+            failure_ctx = check_pr_for_failures(repo, pr, state)
+            if failure_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="check_failure",
+                        context=failure_ctx,
+                        signature_key="processed_failures",
+                        signature_value=failure_ctx["failure_signature"],
+                        is_readonly=is_readonly,
+                    )
+                )
+
+            # Check for comments
+            comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
+            if comment_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="comment",
+                        context=comment_ctx,
+                        signature_key="processed_comments",
+                        signature_value=comment_ctx["comment_signature"],
+                        is_readonly=is_readonly,
+                    )
+                )
+
+            # Check for merge conflicts
+            conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
+            if conflict_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="merge_conflict",
+                        context=conflict_ctx,
+                        signature_key="processed_conflicts",
+                        signature_value=conflict_ctx["conflict_signature"],
+                        is_readonly=is_readonly,
+                    )
+                )
+    else:
+        logger.debug("No open PRs authored by user", username=github_username)
+
+    # Collect tasks from bot's PRs (only for writable repos - bot doesn't create PRs in readonly)
+    if bot_prs and not is_readonly:
+        logger.info(
+            "Found bot's open PRs",
+            count=len(bot_prs),
+            bot_username=bot_username,
+        )
+
+        for pr in bot_prs:
+            # Check for failures on bot's PRs
+            failure_ctx = check_pr_for_failures(repo, pr, state)
+            if failure_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="check_failure",
+                        context=failure_ctx,
+                        signature_key="processed_failures",
+                        signature_value=failure_ctx["failure_signature"],
+                        is_readonly=False,
+                    )
+                )
+
+            # Check for comments on bot's PRs
+            comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
+            if comment_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="comment",
+                        context=comment_ctx,
+                        signature_key="processed_comments",
+                        signature_value=comment_ctx["comment_signature"],
+                        is_readonly=False,
+                    )
+                )
+
+            # Check for merge conflicts on bot's PRs
+            conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
+            if conflict_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="merge_conflict",
+                        context=conflict_ctx,
+                        signature_key="processed_conflicts",
+                        signature_value=conflict_ctx["conflict_signature"],
+                        is_readonly=False,
+                    )
+                )
+
+    # Collect review tasks for PRs from others
+    review_contexts = check_prs_for_review(
+        repo, all_prs, state, github_username, bot_username, since_timestamp
+    )
+    for review_ctx in review_contexts:
+        tasks.append(
+            JibTask(
+                task_type="review_request",
+                context=review_ctx,
+                signature_key="processed_reviews",
+                signature_value=review_ctx["review_signature"],
+                is_readonly=is_readonly,
+            )
+        )
+
+    return tasks
+
+
 def main():
     """Main entry point - scan configured repos and trigger jib as needed.
 
     Tasks are collected first, then executed in parallel for faster processing.
+    Writable repos get full jib handling (push, comment, PR creation).
+    Readable repos get Slack notifications only.
     """
     # Record when this run STARTS - this is what we'll use for next run's "since"
     current_run_start = utc_now_iso()
@@ -1134,11 +1504,13 @@ def main():
 
     # Load config
     config = load_config()
-    repos = config.get("writable_repos", [])
+    writable_repos = config.get("writable_repos", [])
+    readable_repos = config.get("readable_repos", [])
     github_username = config.get("github_username", "jib")
     bot_username = config.get("bot_username", "jib")
 
-    if not repos:
+    all_repos = writable_repos + readable_repos
+    if not all_repos:
         logger.warning("No repositories configured - check config/repositories.yaml")
         return 0
 
@@ -1146,8 +1518,10 @@ def main():
         "Configuration loaded",
         github_username=github_username,
         bot_username=bot_username,
-        repo_count=len(repos),
-        repositories=repos,
+        writable_repo_count=len(writable_repos),
+        readable_repo_count=len(readable_repos),
+        writable_repos=writable_repos,
+        readable_repos=readable_repos,
     )
 
     # Load state
@@ -1173,179 +1547,48 @@ def main():
         logger.info("First run - checking all open items")
     logger.debug("PR check failures: checking ALL open PRs unconditionally")
 
-    logger.info("Scanning repositories", count=len(repos))
+    logger.info(
+        "Scanning repositories",
+        total=len(all_repos),
+        writable=len(writable_repos),
+        readable=len(readable_repos),
+    )
 
     # Collect all tasks first, then execute in parallel
     all_tasks: list[JibTask] = []
 
-    for repo in repos:
-        # Use ContextScope to automatically include repository in all logs within this block
-        with ContextScope(repository=repo):
-            logger.info("Processing repository")
-
-            # OPTIMIZATION: Fetch ALL open PRs in a single API call, then filter locally
-            # This reduces 3 API calls to 1 per repository
-            all_prs = gh_json(
-                [
-                    "pr",
-                    "list",
-                    "--repo",
-                    repo,
-                    "--state",
-                    "open",
-                    "--json",
-                    "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
-                ],
-                repo=repo,
+    # Process writable repos (full jib handling)
+    for repo in writable_repos:
+        with ContextScope(repository=repo, access_level="writable"):
+            logger.info("Processing writable repository")
+            tasks = process_repo_prs(
+                repo, state, github_username, bot_username, since_timestamp, is_readonly=False
             )
+            all_tasks.extend(tasks)
 
-            if all_prs is None:
-                logger.warning("Failed to fetch PRs, skipping repository")
-                continue
-
-            logger.info("Fetched open PRs", count=len(all_prs))
-
-            # Filter PRs locally by author
-            my_prs = [
-                p
-                for p in all_prs
-                if p.get("author", {}).get("login", "").lower() == github_username.lower()
-            ]
-
-            # Bot PRs can have author login in different formats depending on the API:
-            # - "bot_username" - base name
-            # - "bot_username[bot]" - GitHub web UI format
-            # - "app/bot_username" - gh CLI format (gh pr list --json author returns this)
-            bot_author_variants = {
-                bot_username.lower(),
-                f"{bot_username.lower()}[bot]",
-                f"app/{bot_username.lower()}",
-            }
-            bot_prs = [
-                p
-                for p in all_prs
-                if p.get("author", {}).get("login", "").lower() in bot_author_variants
-            ]
-
-            # Collect tasks from user's PRs
-            if my_prs:
-                logger.info(
-                    "Found user's open PRs",
-                    count=len(my_prs),
-                    username=github_username,
-                )
-
-                for pr in my_prs:
-                    # Check for failures
-                    failure_ctx = check_pr_for_failures(repo, pr, state)
-                    if failure_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="check_failure",
-                                context=failure_ctx,
-                                signature_key="processed_failures",
-                                signature_value=failure_ctx["failure_signature"],
-                            )
-                        )
-
-                    # Check for comments (filter out bot's own comments, not human's)
-                    comment_ctx = check_pr_for_comments(
-                        repo, pr, state, bot_username, since_timestamp
-                    )
-                    if comment_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="comment",
-                                context=comment_ctx,
-                                signature_key="processed_comments",
-                                signature_value=comment_ctx["comment_signature"],
-                            )
-                        )
-
-                    # Check for merge conflicts
-                    conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-                    if conflict_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="merge_conflict",
-                                context=conflict_ctx,
-                                signature_key="processed_conflicts",
-                                signature_value=conflict_ctx["conflict_signature"],
-                            )
-                        )
-            else:
-                logger.debug("No open PRs authored by user", username=github_username)
-
-            # Collect tasks from bot's PRs
-            if bot_prs:
-                logger.info(
-                    "Found bot's open PRs",
-                    count=len(bot_prs),
-                    bot_username=bot_username,
-                )
-
-                for pr in bot_prs:
-                    # Check for failures on bot's PRs
-                    failure_ctx = check_pr_for_failures(repo, pr, state)
-                    if failure_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="check_failure",
-                                context=failure_ctx,
-                                signature_key="processed_failures",
-                                signature_value=failure_ctx["failure_signature"],
-                            )
-                        )
-
-                    # Check for comments on bot's PRs (filter out bot's own comments)
-                    comment_ctx = check_pr_for_comments(
-                        repo, pr, state, bot_username, since_timestamp
-                    )
-                    if comment_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="comment",
-                                context=comment_ctx,
-                                signature_key="processed_comments",
-                                signature_value=comment_ctx["comment_signature"],
-                            )
-                        )
-
-                    # Check for merge conflicts on bot's PRs
-                    conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-                    if conflict_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="merge_conflict",
-                                context=conflict_ctx,
-                                signature_key="processed_conflicts",
-                                signature_value=conflict_ctx["conflict_signature"],
-                            )
-                        )
-
-            # Collect review tasks for PRs from others
-            review_contexts = check_prs_for_review(
-                repo, all_prs, state, github_username, bot_username, since_timestamp
+    # Process readable repos (notification only)
+    for repo in readable_repos:
+        with ContextScope(repository=repo, access_level="readable"):
+            logger.info("Processing read-only repository")
+            tasks = process_repo_prs(
+                repo, state, github_username, bot_username, since_timestamp, is_readonly=True
             )
-            for review_ctx in review_contexts:
-                all_tasks.append(
-                    JibTask(
-                        task_type="review_request",
-                        context=review_ctx,
-                        signature_key="processed_reviews",
-                        signature_value=review_ctx["review_signature"],
-                    )
-                )
+            all_tasks.extend(tasks)
 
     # Log task summary
     if all_tasks:
         task_types = {}
+        readonly_count = 0
         for task in all_tasks:
             task_types[task.task_type] = task_types.get(task.task_type, 0) + 1
+            if task.is_readonly:
+                readonly_count += 1
         logger.info(
             "Tasks collected",
             total=len(all_tasks),
             by_type=task_types,
+            readonly_tasks=readonly_count,
+            writable_tasks=len(all_tasks) - readonly_count,
         )
 
         # Execute all tasks in parallel
@@ -1366,7 +1609,9 @@ def main():
         "GitHub Watcher completed",
         tasks_completed=tasks_completed,
         tasks_collected=len(all_tasks),
-        repositories_scanned=len(repos),
+        repositories_scanned=len(all_repos),
+        writable_repos_scanned=len(writable_repos),
+        readable_repos_scanned=len(readable_repos),
         next_check_since=current_run_start,
         processed_failures_count=len(state.get("processed_failures", {})),
         processed_comments_count=len(state.get("processed_comments", {})),
