@@ -45,6 +45,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+
 # Configure logging for debugging
 logging.basicConfig(level=logging.DEBUG, format="%(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
