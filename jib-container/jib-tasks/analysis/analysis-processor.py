@@ -587,7 +587,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
         - result.branch: str (branch name)
     """
     import subprocess
-    from datetime import UTC, datetime, timedelta
+    from datetime import UTC, datetime
 
     repo_name = context.get("repo_name", "james-in-a-box")
     days = context.get("days", 7)
@@ -719,7 +719,9 @@ def handle_weekly_feature_analysis(context: dict) -> int:
             )
 
         # Phase 3: Analyze directories with LLM (parallel)
-        print(f"\nPhase 3: Analyzing {len(filtered_dirs)} directories (parallel, {max_workers} workers)...")
+        print(
+            f"\nPhase 3: Analyzing {len(filtered_dirs)} directories (parallel, {max_workers} workers)..."
+        )
         import threading
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
