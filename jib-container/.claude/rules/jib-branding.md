@@ -17,7 +17,7 @@ When creating git commits, **NEVER** include:
 Authored-by: jib
 ```
 
-**IMPORTANT**: The git author is already configured as `jib <jib@khan.org>`. You do NOT need to add author information to commit messages - git tracks authorship automatically.
+**IMPORTANT**: The git author is already configured as `jib <jib@jameswiesebron.com>`. You do NOT need to add author information to commit messages - git tracks authorship automatically.
 
 ### Pull Request Descriptions
 
