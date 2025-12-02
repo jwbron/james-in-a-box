@@ -174,6 +174,20 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+@dataclass
+class PriorResearchPR:
+    """Information about a prior research PR for the same ADR."""
+
+    pr_number: int
+    pr_url: str
+    title: str
+    body: str
+    created_at: str
+    branch: str
+    key_findings: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
+
+
 class ADRResearcher:
     """Main ADR research orchestrator.
 
@@ -808,10 +822,12 @@ class ADRResearcher:
     def research_merged_adrs(self) -> list[ResearchResult]:
         """Research all merged/implemented ADRs and create update PRs.
 
-        Workflow:
+        Enhanced workflow:
         1. Find ADRs in implemented/ directory
-        2. For each ADR, invoke jib to research for updates
-        3. If updates found, create PR with Research Updates section
+        2. For each ADR, find and collect prior research PRs
+        3. Invoke jib to research with prior findings as context
+        4. If updates found, create PR with Research Updates section
+        5. Close prior research PRs with references to the new PR
 
         Returns:
             List of ResearchResult objects with typed, structured research findings.
@@ -825,17 +841,42 @@ class ADRResearcher:
             print(f"\nResearching: {adr.title}")
             print(f"  Path: {adr.path}")
 
+            adr_rel_path = str(adr.path.relative_to(self.project_root))
+
+            # Find prior research PRs for this ADR
+            prior_prs = self.find_prior_research_prs(adr_rel_path, adr.title)
+            if prior_prs:
+                print(f"  Found {len(prior_prs)} prior research PR(s) to integrate:")
+                for pr in prior_prs:
+                    print(f"    - PR #{pr.pr_number}: {pr.title}")
+
+            # Format prior findings for context
+            prior_findings_context = self.format_prior_findings_for_context(prior_prs)
+
             context = {
                 "task_type": "research_adr",
                 "adr_title": adr.title,
-                "adr_path": str(adr.path.relative_to(self.project_root)),
+                "adr_path": adr_rel_path,
                 "adr_content": adr.content[:20000],
                 "topics": adr.topics,
                 "output_mode": "update_pr",
+                "prior_research": prior_findings_context,
+                "prior_pr_numbers": [pr.pr_number for pr in prior_prs],
             }
 
             raw_result = self.invoke_jib_research("research_adr", context)
             research_result = self._parse_research_result(raw_result, adr.title)
+
+            # If a new PR was created, close the prior PRs
+            if research_result.success and research_result.pr_url and prior_prs:
+                print(f"  New PR created: {research_result.pr_url}")
+                print(f"  Closing {len(prior_prs)} prior research PR(s)...")
+                closure_results = self.close_prior_research_prs(
+                    prior_prs, research_result.pr_url, adr.title
+                )
+                closed_count = sum(1 for r in closure_results if r.get("success"))
+                print(f"  Closed {closed_count}/{len(prior_prs)} prior PR(s)")
+
             results.append(research_result)
 
         return results
@@ -932,6 +973,249 @@ class ADRResearcher:
                     return {"number": pr["number"], "url": pr["url"]}
 
         return None
+
+    def find_prior_research_prs(self, adr_path: str, adr_title: str) -> list[PriorResearchPR]:
+        """Find existing open research PRs for the same ADR.
+
+        Searches for PRs that:
+        1. Modify the same ADR file, OR
+        2. Have "research" in the title and reference the same ADR title
+
+        Args:
+            adr_path: Relative path to the ADR file (e.g., docs/adr/implemented/ADR-Foo.md)
+            adr_title: Title of the ADR for matching PR titles
+
+        Returns:
+            List of PriorResearchPR objects with PR info and extracted findings
+        """
+        prior_prs = []
+
+        for repo in self.config.get("writable_repos", []):
+            # Search for PRs with "research" in title
+            prs = gh_json(
+                [
+                    "pr",
+                    "list",
+                    "--repo",
+                    repo,
+                    "--state",
+                    "open",
+                    "--search",
+                    "research in:title",
+                    "--json",
+                    "number,title,url,body,createdAt,headRefName,files",
+                ]
+            )
+            if not prs:
+                continue
+
+            for pr in prs:
+                # Check if PR modifies the same ADR file
+                files = pr.get("files", [])
+                modifies_same_file = any(f.get("path") == adr_path for f in files)
+
+                # Or check if title references the same ADR
+                pr_title = pr.get("title", "")
+                # Extract ADR name from path (e.g., ADR-Foo from docs/adr/.../ADR-Foo.md)
+                adr_name = Path(adr_path).stem if adr_path else ""
+                title_matches = (
+                    adr_name
+                    and (adr_name.lower() in pr_title.lower() or adr_title.lower() in pr_title.lower())
+                    and "research" in pr_title.lower()
+                )
+
+                if modifies_same_file or title_matches:
+                    # Extract findings and sources from PR body
+                    body = pr.get("body", "")
+                    key_findings = self._extract_findings_from_body(body)
+                    sources = self._extract_sources_from_body(body)
+
+                    prior_prs.append(
+                        PriorResearchPR(
+                            pr_number=pr["number"],
+                            pr_url=pr["url"],
+                            title=pr_title,
+                            body=body,
+                            created_at=pr.get("createdAt", ""),
+                            branch=pr.get("headRefName", ""),
+                            key_findings=key_findings,
+                            sources=sources,
+                        )
+                    )
+
+        return prior_prs
+
+    def _extract_findings_from_body(self, body: str) -> list[str]:
+        """Extract key findings from a PR body.
+
+        Looks for bullet points under "Key" or "Findings" sections.
+        """
+        import re
+
+        findings = []
+
+        # Look for key findings sections
+        sections = ["Key Research Areas", "Key Findings", "Main Findings", "Research Findings"]
+        for section in sections:
+            pattern = rf"#+\s*{re.escape(section)}\s*\n([\s\S]*?)(?=\n#+|\Z)"
+            match = re.search(pattern, body, re.IGNORECASE)
+            if match:
+                section_content = match.group(1)
+                # Extract numbered items or bullet points
+                items = re.findall(r"(?:^|\n)\s*(?:\d+\.\s+|\*\s+|-\s+)\**([^*\n]+)\**", section_content)
+                findings.extend([f.strip() for f in items if f.strip()][:10])
+
+        return findings
+
+    def _extract_sources_from_body(self, body: str) -> list[str]:
+        """Extract source URLs from a PR body."""
+        import re
+
+        # Match markdown links
+        urls = re.findall(r"\[([^\]]+)\]\((https?://[^\)]+)\)", body)
+        # Return unique URLs with their titles
+        seen = set()
+        sources = []
+        for title, url in urls:
+            if url not in seen:
+                seen.add(url)
+                sources.append(f"[{title}]({url})")
+        return sources[:20]
+
+    def close_prior_research_prs(
+        self, prior_prs: list[PriorResearchPR], new_pr_url: str, adr_title: str
+    ) -> list[dict]:
+        """Close prior research PRs with a comment explaining they're superseded.
+
+        Args:
+            prior_prs: List of PriorResearchPR objects to close
+            new_pr_url: URL of the new PR that supersedes these
+            adr_title: Title of the ADR for the comment
+
+        Returns:
+            List of dicts with results for each PR closure attempt
+        """
+        results = []
+
+        for pr in prior_prs:
+            print(f"  Closing prior research PR #{pr.pr_number}: {pr.title}")
+
+            # Post a comment explaining the closure
+            comment_body = f"""## Superseded by New Research
+
+This PR has been superseded by a newer research update: {new_pr_url}
+
+The new PR incorporates findings from this PR where still relevant, along with updated research from {datetime.now(UTC).strftime("%B %Y")}.
+
+**Original PR findings integrated:** {"Yes - key findings preserved" if pr.key_findings else "No significant findings to integrate"}
+
+---
+*Automatically closed by adr-researcher*
+"""
+
+            # Post comment
+            for repo in self.config.get("writable_repos", []):
+                comment_result = subprocess.run(
+                    [
+                        "gh",
+                        "pr",
+                        "comment",
+                        str(pr.pr_number),
+                        "--repo",
+                        repo,
+                        "--body",
+                        comment_body,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+                if comment_result.returncode == 0:
+                    break
+
+            # Close the PR
+            for repo in self.config.get("writable_repos", []):
+                close_result = subprocess.run(
+                    [
+                        "gh",
+                        "pr",
+                        "close",
+                        str(pr.pr_number),
+                        "--repo",
+                        repo,
+                        "--comment",
+                        f"Superseded by {new_pr_url}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+                if close_result.returncode == 0:
+                    print(f"    Closed PR #{pr.pr_number}")
+                    results.append(
+                        {
+                            "pr_number": pr.pr_number,
+                            "success": True,
+                            "superseded_by": new_pr_url,
+                        }
+                    )
+                    break
+            else:
+                print(f"    Failed to close PR #{pr.pr_number}")
+                results.append(
+                    {
+                        "pr_number": pr.pr_number,
+                        "success": False,
+                        "error": close_result.stderr if close_result else "Unknown error",
+                    }
+                )
+
+            time.sleep(RATE_LIMIT_DELAY)
+
+        return results
+
+    def format_prior_findings_for_context(self, prior_prs: list[PriorResearchPR]) -> str:
+        """Format findings from prior PRs for inclusion in research context.
+
+        Args:
+            prior_prs: List of prior research PRs
+
+        Returns:
+            Markdown-formatted summary of prior findings
+        """
+        if not prior_prs:
+            return ""
+
+        lines = [
+            "## Prior Research (to be integrated or updated)",
+            "",
+            "The following findings from prior research PRs should be integrated or updated:",
+            "",
+        ]
+
+        for pr in prior_prs:
+            lines.append(f"### From PR #{pr.pr_number}: {pr.title}")
+            lines.append(f"*Created: {pr.created_at[:10] if pr.created_at else 'Unknown'}*")
+            lines.append("")
+
+            if pr.key_findings:
+                lines.append("**Key Findings:**")
+                for finding in pr.key_findings[:5]:
+                    lines.append(f"- {finding}")
+                lines.append("")
+
+            if pr.sources:
+                lines.append("**Sources:**")
+                for source in pr.sources[:5]:
+                    lines.append(f"- {source}")
+                lines.append("")
+
+        lines.append("---")
+        lines.append("")
+
+        return "\n".join(lines)
 
     def research_topic(self, query: str, report_only: bool = False) -> ResearchResult:
         """Research a specific topic and output findings.
