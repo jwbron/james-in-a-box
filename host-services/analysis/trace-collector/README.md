@@ -99,14 +99,23 @@ Or configure manually:
   "hooks": {
     "PostToolUse": [
       {
-        "type": "command",
-        "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
+          }
+        ]
       }
     ],
     "SessionEnd": [
       {
-        "type": "command",
-        "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
+          }
+        ]
       }
     ]
   }
