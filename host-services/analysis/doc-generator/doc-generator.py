@@ -331,27 +331,35 @@ Provide the final formatted markdown document. Include all content, properly for
             return None
 
         # Build summaries from context
-        patterns_summary = "\n".join(
-            f"- **{p.get('name', 'Unknown')}**: {p.get('description', 'No description')}"
-            for p in context.patterns[:5]
-        ) or "No patterns detected"
+        patterns_summary = (
+            "\n".join(
+                f"- **{p.get('name', 'Unknown')}**: {p.get('description', 'No description')}"
+                for p in context.patterns[:5]
+            )
+            or "No patterns detected"
+        )
 
-        components_summary = "\n".join(
-            f"- **{c.get('name', 'Unknown')}** ({c.get('type', 'unknown')}): {c.get('file', '')}"
-            for c in context.components[:10]
-        ) or "No components found"
+        components_summary = (
+            "\n".join(
+                f"- **{c.get('name', 'Unknown')}** ({c.get('type', 'unknown')}): {c.get('file', '')}"
+                for c in context.components[:10]
+            )
+            or "No components found"
+        )
 
         insights = ""
         if claude_context:
-            insights = "\n".join(
-                f"- {insight}" for insight in claude_context.code_insights
-            ) or "No additional insights"
+            insights = (
+                "\n".join(f"- {insight}" for insight in claude_context.code_insights)
+                or "No additional insights"
+            )
         else:
             insights = "No semantic analysis available"
 
-        conventions = "\n".join(
-            f"- {conv}" for conv in context.conventions
-        ) or "No specific conventions documented"
+        conventions = (
+            "\n".join(f"- {conv}" for conv in context.conventions)
+            or "No specific conventions documented"
+        )
 
         prompt = self.DRAFT_GENERATION_PROMPT.format(
             doc_type=doc_type,
@@ -391,8 +399,10 @@ Provide the final formatted markdown document. Include all content, properly for
             topic=topic,
             draft_content=draft_content[:8000],  # Limit size
             patterns_json=json.dumps(
-                [{"name": p.get("name"), "description": p.get("description", "")[:200]}
-                 for p in context.patterns[:5]],
+                [
+                    {"name": p.get("name"), "description": p.get("description", "")[:200]}
+                    for p in context.patterns[:5]
+                ],
                 indent=2,
             ),
             code_examples="\n".join(context.code_examples[:10]) or "None",
@@ -540,9 +550,7 @@ class DocumentationGenerator:
 
         # Initialize Claude agent if enabled
         self.claude_agent = (
-            ClaudeDocAgent(verbose=verbose, project_root=self.project_root)
-            if use_claude
-            else None
+            ClaudeDocAgent(verbose=verbose, project_root=self.project_root) if use_claude else None
         )
 
         # Load existing indexes if available
@@ -634,7 +642,7 @@ class DocumentationGenerator:
         claude_context = None
         if self.claude_agent and self.claude_agent.is_available():
             if self.verbose:
-                print(f"        Using Claude for semantic context analysis...")
+                print("        Using Claude for semantic context analysis...")
             claude_context = self.claude_agent.analyze_context(
                 topic=topic,
                 patterns=context.patterns,
@@ -642,7 +650,9 @@ class DocumentationGenerator:
                 existing_docs=context.existing_docs,
             )
             if claude_context and self.verbose:
-                print(f"        Claude found {len(claude_context.semantic_patterns)} semantic patterns")
+                print(
+                    f"        Claude found {len(claude_context.semantic_patterns)} semantic patterns"
+                )
 
         return context, claude_context
 
@@ -674,7 +684,7 @@ class DocumentationGenerator:
         # Try Claude-based draft generation first
         if self.claude_agent and self.claude_agent.is_available():
             if self.verbose:
-                print(f"        Using Claude for draft generation...")
+                print("        Using Claude for draft generation...")
 
             claude_draft = self.claude_agent.generate_draft(
                 topic=context.topic,
@@ -826,7 +836,7 @@ class DocumentationGenerator:
         # Try Claude-based review first
         if self.claude_agent and self.claude_agent.is_available():
             if self.verbose:
-                print(f"        Using Claude for draft review...")
+                print("        Using Claude for draft review...")
 
             claude_review = self.claude_agent.review_draft(
                 topic=context.topic,
@@ -908,9 +918,13 @@ class DocumentationGenerator:
 
         # Try Claude-based formatting if there are issues/suggestions to address
         final_content = draft.content
-        if self.claude_agent and self.claude_agent.is_available() and (review.issues or review.suggestions):
+        if (
+            self.claude_agent
+            and self.claude_agent.is_available()
+            and (review.issues or review.suggestions)
+        ):
             if self.verbose:
-                print(f"        Using Claude for output formatting...")
+                print("        Using Claude for output formatting...")
 
             formatted = self.claude_agent.format_output(
                 draft_content=draft.content,
@@ -981,13 +995,12 @@ class DocumentationGenerator:
         # Check Claude availability
         claude_available = self.claude_agent and self.claude_agent.is_available()
         if claude_available:
-            print(f"  Claude analysis: enabled")
+            print("  Claude analysis: enabled")
             result["analysis_source"] = "claude"
+        elif self.use_claude:
+            print("  Claude analysis: unavailable (using heuristics)")
         else:
-            if self.use_claude:
-                print(f"  Claude analysis: unavailable (using heuristics)")
-            else:
-                print(f"  Claude analysis: disabled (using heuristics)")
+            print("  Claude analysis: disabled (using heuristics)")
 
         # Step 1: Context Agent
         print("  [1/4] Gathering context...")
@@ -996,8 +1009,10 @@ class DocumentationGenerator:
             f"        Found {len(context.patterns)} patterns, {len(context.components)} components"
         )
         if claude_context:
-            print(f"        Claude insights: {len(claude_context.code_insights)} insights, "
-                  f"{len(claude_context.semantic_patterns)} semantic patterns")
+            print(
+                f"        Claude insights: {len(claude_context.code_insights)} insights, "
+                f"{len(claude_context.semantic_patterns)} semantic patterns"
+            )
 
         if not context.patterns and not context.components:
             print(f"  Warning: No patterns or components found for topic '{topic}'")
@@ -1008,7 +1023,7 @@ class DocumentationGenerator:
         draft = self.generate_draft(context, doc_type, claude_context)
         print(f"        Generated: {draft.title}")
         if "claude-generated" in str(draft.sources):
-            print(f"        Source: Claude-generated")
+            print("        Source: Claude-generated")
 
         # Step 3: Review Agent
         print("  [3/4] Reviewing draft...")
