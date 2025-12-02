@@ -1,9 +1,11 @@
 [Unit]
 Description=JIB Beads Integration Analyzer
 Documentation=https://github.com/jwbron/james-in-a-box
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
-Requires=docker.service
+# Use ConditionPathExists instead of Requires=docker.service
+# User units cannot depend on system services
+ConditionPathExists=/var/run/docker.sock
 OnFailure=service-failure-notify@%n.service
 
 [Service]
