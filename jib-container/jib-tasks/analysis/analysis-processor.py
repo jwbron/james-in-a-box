@@ -727,7 +727,6 @@ def handle_weekly_feature_analysis(context: dict) -> int:
 
         all_features = []
         print_lock = threading.Lock()
-        files_analyzed = 0
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_dir = {
@@ -740,7 +739,6 @@ def handle_weekly_feature_analysis(context: dict) -> int:
                 dir_path = future_to_dir[future]
                 try:
                     analyzed_dir, file_count, features = future.result()
-                    files_analyzed += file_count
 
                     with print_lock:
                         print(f"  ✓ {analyzed_dir} ({file_count} files)")

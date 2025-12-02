@@ -37,10 +37,13 @@ CLI:
     python weekly_analyzer.py --no-docs           # Skip doc generation
 """
 
+import contextlib
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -54,22 +57,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 # Add repo-level shared modules (for direct Claude access when inside container)
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 
-# Import jib_exec for host-side execution
+# Import shared utilities
+from container_utils import is_inside_container
 from jib_exec import jib_exec
-
-
-def _is_inside_container() -> bool:
-    """
-    Detect if we're running inside the jib container.
-
-    Returns True if Claude CLI is available (only inside container).
-    """
-    try:
-        from claude import is_claude_available
-
-        return is_claude_available()
-    except ImportError:
-        return False
 
 
 def _run_llm_prompt_shared(
@@ -91,7 +81,7 @@ def _run_llm_prompt_shared(
         Tuple of (success, stdout, error_message)
     """
     # If we're inside the container, call Claude directly
-    if _is_inside_container():
+    if is_inside_container():
         return _run_llm_prompt_direct(repo_root, prompt, context_name)
 
     # Otherwise, use jib_exec to run in container
@@ -222,7 +212,7 @@ def _run_llm_prompt_to_file_shared(
         Tuple of (success, parsed_json_content, error_message)
     """
     # If we're inside the container, use direct approach
-    if _is_inside_container():
+    if is_inside_container():
         return _run_llm_prompt_to_file_direct(repo_root, prompt, context_name)
 
     # Otherwise, use jib_exec
@@ -243,16 +233,11 @@ def _run_llm_prompt_to_file_direct(
     Returns:
         Tuple of (success, parsed_json_content, error_message)
     """
-    import contextlib
-    import tempfile
-
     try:
         from claude import run_claude
 
         # Create a temp file for the output
         fd, output_file = tempfile.mkstemp(suffix=".json", prefix="llm_output_")
-        import os
-
         os.close(fd)
         output_path = Path(output_file)
 
@@ -265,11 +250,15 @@ Use the Write tool to write the JSON array to {output_file}. Do NOT just print t
 
 After writing the file, confirm by saying "JSON written to {output_file}" but do NOT include the JSON content in your response."""
 
-        run_claude(
+        result = run_claude(
             prompt=enhanced_prompt,
             cwd=repo_root,
             stream=False,
         )
+
+        # Check if Claude execution failed
+        if not result.success:
+            return (False, None, f"Claude execution failed: {result.error or result.stderr}")
 
         # Read the JSON from the output file
         json_content = None

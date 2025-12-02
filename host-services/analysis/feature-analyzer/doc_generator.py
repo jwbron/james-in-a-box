@@ -33,22 +33,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 # Add repo-level shared modules (for direct Claude access when inside container)
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 
-# Import jib_exec for host-side execution
+# Import shared utilities
+from container_utils import is_inside_container
 from jib_exec import jib_exec
-
-
-def _is_inside_container() -> bool:
-    """
-    Detect if we're running inside the jib container.
-
-    Returns True if Claude CLI is available (only inside container).
-    """
-    try:
-        from claude import is_claude_available
-
-        return is_claude_available()
-    except ImportError:
-        return False
 
 
 if TYPE_CHECKING:
@@ -283,7 +270,7 @@ Output ONLY the updated documentation content. Do not include any explanation or
         Automatically detects whether to call Claude directly (inside container)
         or via jib_exec (from host).
         """
-        if _is_inside_container():
+        if is_inside_container():
             return self._call_claude_direct(prompt, doc_path)
         return self._call_claude_via_jib(prompt, doc_path)
 
@@ -304,7 +291,10 @@ Output ONLY the updated documentation content. Do not include any explanation or
 
             if result.success and result.stdout.strip():
                 content = result.stdout.strip()
-                # High confidence if we got substantial output
+                # Confidence heuristic: longer responses typically indicate more complete
+                # generation (0.85 for >100 chars), while shorter responses may be truncated
+                # or incomplete (0.6). These thresholds are conservative estimates based on
+                # typical documentation update sizes.
                 confidence = 0.85 if len(content) > 100 else 0.6
                 return (content, confidence)
 
