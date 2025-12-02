@@ -83,3 +83,20 @@ jobs:
           # Ignoring: E003 (indent not multiple of 4), E006 (long lines), E042 (local hides errors)
           find . -name "*.sh" -type f ! -path "./.git/*" -print0 | \
             xargs -0 -r bashate -i E003,E006,E042
+
+  host-services-checks:
+    name: Host Services Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check for Claude imports in host-services
+        run: python3 scripts/check-claude-imports.py
+
+      - name: Check for gh CLI write operations in host-services
+        run: python3 scripts/check-gh-cli-usage.py
