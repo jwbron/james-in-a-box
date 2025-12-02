@@ -584,7 +584,7 @@ feature-analyzer weekly-analyze --days 7
 
 #### Feature Sub-Documentation System **[implemented]**
 - **Description**: Generates categorized feature documentation pages for improved discoverability, organizing features by communication, infrastructure, and other domains
-- **Documentation**: [docs/features/README.md](docs/features/README.md) 
+- **Documentation**: [features/README.md](features/README.md)
 - **Implementation**:
   - `docs/features/README.md`
   - `host-services/analysis/feature-analyzer/feature_doc_generator.py`
@@ -598,7 +598,7 @@ feature-analyzer weekly-analyze --days 7
 
 #### Container Log Persistence **[implemented]**
 - **Description**: Persists container logs with correlation IDs for debugging and analysis across container restarts
-- **Documentation**: [docs/reference/README.md](docs/reference/README.md) 
+- **Documentation**: [reference/README.md](reference/README.md)
 - **Implementation**:
   - `docs/reference/log-persistence.md`
   - `jib-container/jib`
@@ -607,7 +607,7 @@ feature-analyzer weekly-analyze --days 7
 
 #### Interactive JIB Progress Bar **[implemented]**
 - **Description**: Displays a real-time progress bar during interactive jib sessions with verbose mode for detailed output
-- **Documentation**: [jib-container/README.md](jib-container/README.md) 
+- **Documentation**: [../jib-container/README.md](../jib-container/README.md)
 - **Implementation**:
   - `jib-container/jib`
   - `jib-container/statusbar.py`
@@ -615,7 +615,6 @@ feature-analyzer weekly-analyze --days 7
 
 #### Shared Claude Runner Module **[implemented]**
 - **Description**: Provides a unified interface for running Claude CLI commands with consistent error handling and output parsing
-- **Documentation**: [shared/claude/README.md](shared/claude/README.md) (auto-generated)
 - **Implementation**:
   - `shared/claude/__init__.py`
   - `shared/claude/runner.py`
@@ -626,7 +625,7 @@ feature-analyzer weekly-analyze --days 7
 
 #### Workflow Context Tracking **[implemented]**
 - **Description**: Automatically tracks workflow context across PRs, comments, and Slack messages using signatures for conversation continuity
-- **Documentation**: [docs/features/README.md](docs/features/README.md) 
+- **Documentation**: [features/workflow-context.md](features/workflow-context.md)
 - **Implementation**:
   - `docs/features/workflow-context.md`
   - `shared/jib_logging/context.py`
@@ -639,7 +638,7 @@ feature-analyzer weekly-analyze --days 7
 
 #### PR Creator for Doc Sync **[implemented]**
 - **Description**: Creates GitHub pull requests with documentation updates triggered by ADR implementations. Handles branch creation, commits with traceability, git tagging for audit trails, and PR creation via GitHub CLI.
-- **Documentation**: [host-services/analysis/feature-analyzer/README.md](host-services/analysis/feature-analyzer/README.md) 
+- **Documentation**: [../host-services/analysis/feature-analyzer/README.md](../host-services/analysis/feature-analyzer/README.md)
 - **Implementation**:
   - `host-services/analysis/feature-analyzer/pr_creator.py`
 
@@ -648,7 +647,6 @@ feature-analyzer weekly-analyze --days 7
 
 #### Service Failure Notification System **[implemented]**
 - **Description**: Automatically sends Slack notifications when systemd services fail, enabling rapid incident response without manual monitoring
-- **Documentation**: [host-services/utilities/service-failure-notify/README.md](host-services/utilities/service-failure-notify/README.md) (auto-generated)
 - **Implementation**:
   - `host-services/utilities/service-failure-notify/service-failure-notify@.service`
   - `host-services/utilities/service-failure-notify/setup.sh`
@@ -656,7 +654,6 @@ feature-analyzer weekly-analyze --days 7
 
 #### Shared Text Utilities Library **[implemented]**
 - **Description**: Provides reusable text processing functions for chunking and frontmatter parsing across multiple services
-- **Documentation**: [shared/text_utils/README.md](shared/text_utils/README.md) (auto-generated)
 - **Implementation**:
   - `shared/text_utils/__init__.py`
   - `shared/text_utils/chunking.py`
