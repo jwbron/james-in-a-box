@@ -267,11 +267,11 @@ Review the output carefully. Note which failures match the CI logs vs new/differ
 11. **Update PR description** - Update the PR description to document the fixes:
     ```python
     # First, get the current PR to retrieve the existing body
-    # Use MCP: mcp__github__pull_request_read(owner="{repo.split('/')[0]}", repo="{repo.split('/')[-1]}", pullNumber={pr_num}, method="get")
+    # Use MCP: mcp__github__pull_request_read(owner="{repo.split("/")[0]}", repo="{repo.split("/")[-1]}", pullNumber={pr_num}, method="get")
     # Then update with the fixes documented:
     # Use MCP: mcp__github__update_pull_request(
-    #     owner="{repo.split('/')[0]}",
-    #     repo="{repo.split('/')[-1]}",
+    #     owner="{repo.split("/")[0]}",
+    #     repo="{repo.split("/")[-1]}",
     #     pullNumber={pr_num},
     #     body="<existing body>\\n\\n## Updates\\n- Fixed: <list what was fixed>"
     # )
@@ -950,11 +950,11 @@ git push origin {pr_branch}
 Update the PR description to document the merge conflict resolution:
 ```python
 # First, get the current PR body:
-# Use MCP: mcp__github__pull_request_read(owner="{repo.split('/')[0]}", repo="{repo.split('/')[-1]}", pullNumber={pr_num}, method="get")
+# Use MCP: mcp__github__pull_request_read(owner="{repo.split("/")[0]}", repo="{repo.split("/")[-1]}", pullNumber={pr_num}, method="get")
 # Then update with conflict resolution details:
 # Use MCP: mcp__github__update_pull_request(
-#     owner="{repo.split('/')[0]}",
-#     repo="{repo.split('/')[-1]}",
+#     owner="{repo.split("/")[0]}",
+#     repo="{repo.split("/")[-1]}",
 #     pullNumber={pr_num},
 #     body="<existing body>\\n\\n## Updates\\n- Resolved merge conflicts with {base_branch}: <summary of resolution>"
 # )
