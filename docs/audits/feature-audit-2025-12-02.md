@@ -1,12 +1,12 @@
 # Feature Audit Report - December 2, 2025
 
 **Auditor:** jib (Autonomous Software Engineering Agent)
-**Scope:** Features 1-40 from FEATURES.md
+**Scope:** Features 1-51 from FEATURES.md (Complete)
 **Task ID:** task-20251201-190016
 
 ## Executive Summary
 
-Audited 40 features from the james-in-a-box project for bugs, consistency, maintainability, and opportunities to leverage Claude more effectively. Found several issues related to code duplication, missing helper functions, and opportunities for Claude-based improvements.
+Audited all 51 features from the james-in-a-box project for bugs, consistency, maintainability, and opportunities to leverage Claude more effectively. Found several issues related to code duplication, missing helper functions, and opportunities for Claude-based improvements.
 
 **Part 1 (Features 1-10):** Found code duplication in text utilities, a JIRAConfig instantiation bug, and identified Sprint Analyzer as a high-priority candidate for Claude enhancement.
 
@@ -15,6 +15,8 @@ Audited 40 features from the james-in-a-box project for bugs, consistency, maint
 **Part 3 (Features 21-30):** Found excellent analysis infrastructure with sophisticated multi-agent patterns. The LLM analysis pipeline demonstrates mature architecture. Identified regex parsing issue in ADR Researcher.
 
 **Part 4 (Features 31-40):** Found solid container management and documentation infrastructure. Identified missing Claude custom commands documented in README but not implemented. The overall container architecture is well-designed with good security boundaries.
+
+**Part 5 (Features 41-51):** Found well-implemented utilities and configuration systems. Identified missing rate limiting in JIRA sync (Confluence has it), code duplication in symlink utilities, and comprehensive setup.sh implementation. The Claude Agent Rules System is well-documented with good separation of concerns.
 
 ---
 
@@ -1106,6 +1108,310 @@ Only 3 actual command files exist (beads-status.md, beads-sync.md, show-metrics.
 
 ---
 
+# Part 5: Features 41-51
+
+## Feature 41: Documentation Search Utility
+
+**Files:** `host-services/sync/context-sync/utils/search.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Clean regex-based search implementation | - | Positive |
+| Multiple output formats (console, JSON) | - | Positive |
+| Good field extraction (title, body, combined) | - | Positive |
+| Case-insensitive search with word boundary support | - | Positive |
+| YAML frontmatter parsing for structured results | - | Positive |
+| Hardcoded output path `context-sync/output/` | Low | Configuration |
+
+### Recommendations
+
+1. **Externalize output path** - Make the search output directory configurable
+
+### Claude Leverage Opportunity
+
+- **Semantic Search Agent** - Claude could provide semantic search beyond keyword matching
+- **Query Expansion** - Claude could expand search queries to include related terms
+
+---
+
+## Feature 42: Sync Maintenance Tools
+
+**Files:** `host-services/sync/context-sync/utils/maintenance.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good file cleanup functions (find_old_files, delete_old_files) | - | Positive |
+| Age-based retention with configurable max_age_days | - | Positive |
+| Safe dry-run mode by default | - | Positive |
+| Size reporting in human-readable format | - | Positive |
+| Clean separation of find vs delete operations | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-implemented maintenance utilities
+
+### Claude Leverage Opportunity
+
+- **None identified** - This is deterministic file cleanup
+
+---
+
+## Feature 43: Symlink Management for Projects
+
+**Files:**
+- `host-services/sync/context-sync/utils/create_symlink.py`
+- `host-services/sync/context-sync/utils/link_to_khan_projects.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good path validation before symlink creation | - | Positive |
+| Handles existing symlinks gracefully | - | Positive |
+| Verbose mode for debugging | - | Positive |
+| link_to_khan_projects.py duplicates symlink logic | Medium | Code Duplication |
+| Hardcoded project list in link_to_khan_projects.py | Low | Configuration |
+
+### Recommendations
+
+1. **Refactor to use shared module** - link_to_khan_projects.py should use create_symlink.py instead of duplicating logic
+2. **Externalize project list** - Move project list to config file
+
+### Claude Leverage Opportunity
+
+- **None identified** - This is filesystem utility code
+
+---
+
+## Feature 44: Rate Limiting Handler
+
+**Files:**
+- `host-services/sync/context-sync/connectors/confluence/sync.py` (lines 327-338, 384-395)
+- `host-services/sync/context-sync/connectors/jira/sync.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Confluence sync has proper rate limiting with Retry-After header handling | - | Positive |
+| Confluence uses exponential backoff on 429 errors | - | Positive |
+| **JIRA sync is missing rate limiting** | Medium | Bug |
+| JIRA sync doesn't handle 429 responses | Medium | Missing Feature |
+
+### Bug Details
+
+The JIRA sync (`connectors/jira/sync.py`) does NOT implement rate limiting, while the Confluence sync (`connectors/confluence/sync.py`) has comprehensive rate limiting with:
+- Retry-After header parsing
+- Exponential backoff
+- Maximum retry limits
+
+This inconsistency could cause JIRA sync failures during heavy API usage.
+
+### Recommendations
+
+1. **Add rate limiting to JIRA sync** - Port the rate limiting logic from Confluence to JIRA connector
+2. **Create shared rate limiter** - Extract rate limiting to `shared/rate_limit.py` for consistency
+
+### Claude Leverage Opportunity
+
+- **None identified** - This is infrastructure code
+
+---
+
+## Feature 45: Codebase Index Query Tool
+
+**Files:** `host-services/analysis/index-generator/query-index.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Clean query interface for codebase indexes | - | Positive |
+| Multiple query modes (files, functions, classes, imports) | - | Positive |
+| Fuzzy matching option for flexible searches | - | Positive |
+| JSON output for automation | - | Positive |
+| Good CLI with argparse | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-implemented query tool
+
+### Claude Leverage Opportunity
+
+- **Natural Language Queries** - Claude could translate natural language questions into query parameters
+- **Cross-Index Correlation** - Claude could correlate results across codebase.json, patterns.json, and dependencies.json
+
+---
+
+## Feature 46: Worktree Watcher Service
+
+**Files:** `host-services/utilities/worktree-watcher/worktree-watcher.sh`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good orphaned worktree detection | - | Positive |
+| Safe cleanup with confirmation prompts | - | Positive |
+| Dry-run mode available | - | Positive |
+| Logs cleanup activity | - | Positive |
+| Bash-only implementation (no Python) | - | Note |
+
+### Recommendations
+
+- **None significant** - Effective cleanup utility
+
+### Claude Leverage Opportunity
+
+- **None identified** - This is filesystem cleanup
+
+---
+
+## Feature 47: Test Discovery Tool
+
+**Files:** `jib-container/jib-tools/discover-tests.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Excellent multi-framework support (pytest, jest, mocha, vitest, playwright, go, gradle, maven) | - | Positive |
+| Good configuration file detection for each framework | - | Positive |
+| Test file counting with smart exclusions (node_modules, vendor, etc.) | - | Positive |
+| Watch mode and coverage command suggestions | - | Positive |
+| Makefile target detection | - | Positive |
+| JSON output for automation | - | Positive |
+| Well-structured dataclasses (TestFramework, TestDiscoveryResult) | - | Positive |
+| Could detect more frameworks (Rust's cargo test, Ruby's rspec) | Low | Enhancement |
+
+### Recommendations
+
+1. **Add Rust support** - Detect Cargo.toml and suggest `cargo test`
+2. **Add Ruby support** - Detect Gemfile and suggest `bundle exec rspec`
+
+### Claude Leverage Opportunity
+
+- **Test Selection Agent** - Claude could analyze code changes and suggest which tests to run
+- **Test Pattern Recognition** - Claude could identify test naming convention inconsistencies
+
+---
+
+## Feature 48: GitHub Token Refresher Service
+
+**Files:** `host-services/utilities/github-token-refresher/github-token-refresher.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good daemon mode with configurable refresh interval | - | Positive |
+| Atomic token file writes with temp file + rename | - | Positive |
+| Proper file permissions (0o600) for token security | - | Positive |
+| Token expiry tracking with 20-minute safety margin | - | Positive |
+| Good error handling and logging with jib_logging | - | Positive |
+| Fallback Python detection (venv first, then system) | - | Positive |
+| Uses shared jib_logging module | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-implemented security-conscious service
+
+### Claude Leverage Opportunity
+
+- **None identified** - This is security infrastructure that should remain deterministic
+
+---
+
+## Feature 49: Master Setup System
+
+**Files:** `setup.sh`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Comprehensive multi-component installation | - | Positive |
+| Good update mode (--update) for config refresh | - | Positive |
+| Force mode (--force) for clean reinstall | - | Positive |
+| Interactive prompts with clear options | - | Positive |
+| Broken symlink cleanup in update mode | - | Positive |
+| Dependency checking (python3, systemctl, docker, uv, beads) | - | Positive |
+| GitHub App configuration wizard | - | Positive |
+| Token generation testing during setup | - | Positive |
+| Docker image pre-build for fast first run | - | Positive |
+| Clear post-setup instructions | - | Positive |
+| Large script (~1095 lines) | Low | Maintainability |
+
+### Recommendations
+
+1. **Consider modularization** - Could split into `setup-services.sh`, `setup-github.sh`, `setup-docker.sh`
+
+### Claude Leverage Opportunity
+
+- **Setup Assistant Agent** - Claude could provide interactive troubleshooting during setup failures
+- **Configuration Advisor** - Claude could suggest optimal configurations based on user's environment
+
+---
+
+## Feature 50: Interactive Configuration Setup
+
+**Files:** `host-services/sync/context-sync/utils/setup.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good interactive prompts with defaults | - | Positive |
+| API token guidance with step-by-step instructions | - | Positive |
+| Output format validation (html/markdown) | - | Positive |
+| Connection testing functionality | - | Positive |
+| Overwrite confirmation for existing .env | - | Positive |
+| Writes to local .env file (not centralized) | Low | Configuration |
+
+### Recommendations
+
+1. **Migrate to centralized config** - Write to `~/.config/jib/secrets.env` instead of local `.env`
+
+### Claude Leverage Opportunity
+
+- **Setup Wizard Agent** - Claude could provide more intelligent default suggestions based on user context
+- **Error Explanation** - Claude could explain connection failures in plain language
+
+---
+
+## Feature 51: Claude Agent Rules System
+
+**Files:**
+- `jib-container/.claude/README.md`
+- `jib-container/.claude/rules/README.md`
+- `jib-container/.claude/rules/*.md`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Excellent documentation structure with clear file purposes | - | Positive |
+| Good separation of concerns (mission, environment, beads, context) | - | Positive |
+| Follows CLAUDE.md convention for Claude Code integration | - | Positive |
+| Reference to ADR-LLM-Documentation-Index-Strategy for design principles | - | Positive |
+| Clear maintenance instructions | - | Positive |
+| Rules are concise with detailed docs referenced elsewhere | - | Positive |
+| Multiple overlapping context tracking docs (context-tracking.md, slack-thread-context.md, github-pr-context.md) | Low | Redundancy |
+
+### Recommendations
+
+1. **Consolidate context docs** - Consider merging overlapping context tracking documentation
+
+### Claude Leverage Opportunity
+
+- **None identified** - This IS the Claude configuration
+
+---
+
 ## Cross-Cutting Issues (Updated)
 
 ### 1. Code Duplication Summary
@@ -1119,6 +1425,8 @@ Only 3 actual command files exist (beads-status.md, beads-sync.md, show-metrics.
 | State file management | multiple processors | `shared/state_manager.py` |
 | Retry logic (gh_json/gh_text) | github-watcher.py | `shared/retry_utils.py` |
 | Prompt template structure | github-processor.py handlers | `shared/prompt_templates/` |
+| Symlink creation logic | create_symlink.py, link_to_khan_projects.py | Refactor to use create_symlink.py |
+| Rate limiting logic | confluence/sync.py only (missing from JIRA) | `shared/rate_limit.py` |
 
 ### 2. Helper Functions Needed
 
@@ -1170,6 +1478,12 @@ Create `shared/prompt_templates/`:
 ### Phase 1.7: Documentation Fixes (This PR - Features 31-40)
 - [ ] Create missing Claude custom command files (load-context.md, save-context.md, create-pr.md, update-confluence-doc.md) OR update README to reflect actual commands
 - [ ] Consider modularizing bin/jib (~900 lines) into smaller scripts
+
+### Phase 1.8: Bug Fixes and Code Quality (This PR - Features 41-51)
+- [ ] Add rate limiting to JIRA sync connector (port from Confluence connector)
+- [ ] Refactor link_to_khan_projects.py to use create_symlink.py
+- [ ] Add Rust and Ruby support to test discovery tool (enhancement)
+- [ ] Consolidate overlapping context tracking documentation
 
 ### Phase 2: Claude Enhancements (Future PR - HIGH PRIORITY)
 - [ ] Add Claude agent for Sprint Ticket Analyzer (#10)
@@ -1262,6 +1576,27 @@ The container management and documentation infrastructure is well-designed:
    - Documentation Link Fixer (#32) - semantic link detection
    - Session End Hook (#39) - session summary generation
 
+### Part 5 Summary (Features 41-51)
+
+The utility and configuration infrastructure is well-implemented:
+
+1. **Strong positives:**
+   - Excellent test discovery tool with multi-framework support
+   - Secure GitHub token refresher with atomic writes and proper permissions
+   - Comprehensive setup.sh with interactive wizard
+   - Well-documented Claude Agent Rules System
+   - Good maintenance utilities for file cleanup
+
+2. **Areas for improvement:**
+   - **JIRA sync missing rate limiting** (Confluence has it) - consistency issue
+   - Symlink management code is duplicated between two files
+   - Large setup.sh (~1095 lines) could be modularized
+
+3. **New Claude opportunities:**
+   - Test Discovery Tool (#47) - intelligent test selection based on code changes
+   - Codebase Index Query (#45) - natural language query support
+   - Documentation Search (#41) - semantic search beyond keyword matching
+
 ### Overall Assessment
 
 The james-in-a-box project has solid foundations with thoughtful error handling and state management. The highest-impact improvements would be:
@@ -1270,10 +1605,12 @@ The james-in-a-box project has solid foundations with thoughtful error handling 
 2. **GitHub Command Handler (#18)** - Replace regex with Claude command parsing
 3. **Documentation Generator (#28)** - Add Claude to the existing 4-agent architecture
 4. **Prompt Template Extraction** - Improve maintainability of github-processor.py
+5. **JIRA Rate Limiting (#44)** - Port rate limiting from Confluence to JIRA sync
 
 **Key Bugs Found:**
 - Regex syntax error in ADR Researcher `_extract_section()` method (line 679) - `{1, 4}` should be `{1,4}`
 - Claude custom commands README documents commands that don't exist (load-context, save-context, create-pr, update-confluence-doc)
+- JIRA sync is missing rate limiting (Confluence has it)
 
 ---
 
