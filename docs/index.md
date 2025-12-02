@@ -19,6 +19,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [LLM Inefficiency Reporting](adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Self-improvement through inefficiency detection and reporting |
 | [Standardized Logging](adr/in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 | [Multi-Agent Pipeline](adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Multi-agent pipeline design for complex tasks |
+| [Review Artifacts](adr/not-implemented/ADR-Review-Artifacts-Async-Human-Review.md) | Standardized artifacts for async human review |
 
 ### Architecture
 

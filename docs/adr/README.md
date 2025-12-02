@@ -33,9 +33,12 @@ ADRs are organized by implementation status:
 
 ### Not Implemented
 
-> **Note**: Several ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
+| ADR | Summary |
+|-----|---------|
+| [Multi-Agent Pipeline Architecture](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Multi-agent pipeline design for complex tasks with specialized agents |
+| [Review Artifacts for Async Human Review](not-implemented/ADR-Review-Artifacts-Async-Human-Review.md) | Standardized artifacts for effective async human review of jib's work |
 
-*No ADRs currently in not-implemented/ - all pending ADRs are in open PRs.*
+> **Note**: Several additional ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
 
 ## ADR Template
 
