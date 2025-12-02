@@ -460,18 +460,27 @@ cat > "${USER_HOME}/.claude/settings.json" << SETTINGS
   "hooks": {
     "PostToolUse": [
       {
-        "type": "command",
-        "command": "python3 ${TRACE_COLLECTOR} post-tool-use"
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${TRACE_COLLECTOR} post-tool-use"
+          }
+        ]
       }
     ],
     "SessionEnd": [
       {
-        "type": "command",
-        "command": "python3 ${TRACE_COLLECTOR} session-end"
-      },
-      {
-        "type": "command",
-        "command": "bash ${BEADS_HOOK}"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${TRACE_COLLECTOR} session-end"
+          },
+          {
+            "type": "command",
+            "command": "bash ${BEADS_HOOK}"
+          }
+        ]
       }
     ]
   }
