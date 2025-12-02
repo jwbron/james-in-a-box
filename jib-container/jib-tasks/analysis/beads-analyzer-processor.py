@@ -104,6 +104,21 @@ class BeadsIssue:
 
 
 @dataclass
+class TaskQualityAssessment:
+    """Quality assessment for an individual task."""
+
+    task_id: str
+    title: str
+    status: str
+    score: int  # 0-100
+    grade: str  # A, B, C, D, F
+    strengths: list[str]
+    weaknesses: list[str]
+    recommendations: list[str]
+    flags: list[str]  # warning flags like "abandoned", "no_context", etc.
+
+
+@dataclass
 class ClaudeAnalysis:
     """Claude-generated analysis of beads usage."""
 
@@ -250,6 +265,243 @@ def count_duplicates(tasks: list[BeadsTask]) -> int:
             duplicates += 1
         seen.add(normalized)
     return duplicates
+
+
+def has_pr_reference(text: str) -> bool:
+    """Check if text contains a PR reference (URL or number)."""
+    if not text:
+        return False
+    text_lower = text.lower()
+    # Check for PR URLs
+    if "github.com" in text_lower and "/pull/" in text_lower:
+        return True
+    # Check for PR number references
+    pr_patterns = ["pr #", "pr#", "pull request #", "pr-", "pull/"]
+    return any(p in text_lower for p in pr_patterns)
+
+
+def has_outcome_description(notes: str) -> bool:
+    """Check if notes describe what was accomplished."""
+    if not notes:
+        return False
+    notes_lower = notes.lower()
+    # Outcome indicators
+    outcome_patterns = [
+        "completed",
+        "finished",
+        "done",
+        "fixed",
+        "implemented",
+        "created",
+        "updated",
+        "added",
+        "resolved",
+        "merged",
+        "closed",
+        "deployed",
+        "pushed",
+        "committed",
+    ]
+    return any(p in notes_lower for p in outcome_patterns)
+
+
+def has_source_label(labels: list[str]) -> bool:
+    """Check if task has a source tracking label."""
+    for label in labels:
+        label_lower = label.lower()
+        if any(
+            s in label_lower
+            for s in ["slack", "github", "jira", "task-", "pr-", "infra-", "cp-", "kt-"]
+        ):
+            return True
+    return False
+
+
+def has_type_label(labels: list[str]) -> bool:
+    """Check if task has a type/category label."""
+    type_labels = [
+        "feature",
+        "bug",
+        "fix",
+        "refactor",
+        "docs",
+        "test",
+        "investigation",
+        "review",
+        "chore",
+        "adr",
+    ]
+    return any(label.lower() in type_labels for label in labels)
+
+
+def assess_task_quality(task: BeadsTask) -> TaskQualityAssessment:
+    """Assess the quality of an individual task's usage.
+
+    Evaluates how well jib is using beads for this specific task by checking:
+    - Title quality (searchable, descriptive)
+    - Description presence and value
+    - Notes quality (progress tracking, outcome description)
+    - Label completeness (source, type)
+    - Lifecycle correctness (proper status, no abandonment)
+    - Context continuity (PR links, references)
+
+    Returns a TaskQualityAssessment with score, grade, and specific feedback.
+    """
+    score = 100
+    strengths = []
+    weaknesses = []
+    recommendations = []
+    flags = []
+
+    now = datetime.now()
+
+    # === Title Quality (20 points max) ===
+    if is_searchable_title(task.title):
+        strengths.append("Searchable title with identifiers")
+    else:
+        score -= 10
+        weaknesses.append("Generic/unsearchable title")
+        recommendations.append("Include PR#, repo name, or feature keyword in title")
+
+    if len(task.title) < 15:
+        score -= 5
+        weaknesses.append("Title too short")
+    elif len(task.title) > 100:
+        score -= 3
+        weaknesses.append("Title excessively long")
+
+    # Vague title check
+    vague_starts = ["slack:", "fix", "update", "work on", "do"]
+    if any(task.title.lower().startswith(v) for v in vague_starts) and len(task.title) < 30:
+        score -= 5
+        weaknesses.append("Vague title lacking specifics")
+
+    # === Description Quality (15 points max) ===
+    if task.description:
+        if len(task.description) > 50:
+            strengths.append("Has meaningful description")
+        else:
+            score -= 5
+            weaknesses.append("Description too brief")
+        # Check if description just duplicates title
+        if task.description.lower().strip() == task.title.lower().strip():
+            score -= 8
+            weaknesses.append("Description duplicates title (no added value)")
+    elif task.status == "closed" and not task.notes:
+        # Description not required for all tasks, but helpful when no notes
+        score -= 10
+        weaknesses.append("Closed without description or notes")
+        flags.append("no_context")
+
+    # === Notes Quality (30 points max) ===
+    if task.notes:
+        notes_len = len(task.notes)
+        if notes_len > 100:
+            strengths.append("Detailed notes")
+        elif notes_len > 30:
+            pass  # Acceptable
+        else:
+            score -= 5
+            weaknesses.append("Notes too brief")
+
+        if has_outcome_description(task.notes):
+            strengths.append("Notes describe outcome")
+        elif task.status == "closed":
+            score -= 10
+            weaknesses.append("Closed task notes lack outcome description")
+            recommendations.append("Include what was accomplished in closure notes")
+
+        if has_pr_reference(task.notes):
+            strengths.append("Notes include PR reference")
+    elif task.status == "closed":
+        score -= 20
+        weaknesses.append("Closed without notes")
+        flags.append("no_closure_context")
+        recommendations.append("Always add notes when closing a task")
+    elif task.status == "in_progress":
+        hours_in_progress = (now - task.updated_at).total_seconds() / 3600
+        if hours_in_progress > 2:
+            score -= 10
+            weaknesses.append("In-progress >2h without progress notes")
+            flags.append("stale_in_progress")
+            recommendations.append("Add progress notes while working")
+        else:
+            score -= 3  # Minor penalty for new in-progress task
+
+    # === Label Quality (20 points max) ===
+    if task.labels:
+        if has_source_label(task.labels):
+            strengths.append("Has source tracking label")
+        else:
+            score -= 8
+            weaknesses.append("Missing source label (slack/github/jira)")
+            recommendations.append("Add source label for traceability")
+
+        if has_type_label(task.labels):
+            strengths.append("Has type/category label")
+        else:
+            score -= 5
+            weaknesses.append("Missing type label (feature/bug/etc)")
+
+        if len(task.labels) >= 3:
+            strengths.append("Well-labeled task")
+    else:
+        score -= 15
+        weaknesses.append("No labels")
+        flags.append("unlabeled")
+        recommendations.append("Add labels: source (slack/github), type (feature/bug)")
+
+    # === Lifecycle Quality (15 points max) ===
+    if task.status == "in_progress":
+        hours_since_update = (now - task.updated_at).total_seconds() / 3600
+        if hours_since_update > ABANDONED_THRESHOLD_HOURS:
+            score -= 15
+            weaknesses.append(f"Abandoned: in_progress for {hours_since_update:.0f}h without update")
+            flags.append("abandoned")
+            recommendations.append("Update status or add progress notes")
+        elif hours_since_update > 12:
+            score -= 5
+            weaknesses.append("Stale: no update in >12h")
+            flags.append("stale")
+
+    if task.status == "closed" and task.closed_at and task.created_at:
+        hours_to_close = (task.closed_at - task.created_at).total_seconds() / 3600
+        if hours_to_close < 0.5 and not task.notes:
+            # Quick close without notes might indicate rushed work
+            score -= 5
+            weaknesses.append("Closed quickly without context")
+        elif hours_to_close < 168:  # Less than a week
+            strengths.append("Task completed in reasonable time")
+
+    # Calculate grade
+    if score >= 90:
+        grade = "A"
+    elif score >= 80:
+        grade = "B"
+    elif score >= 70:
+        grade = "C"
+    elif score >= 60:
+        grade = "D"
+    else:
+        grade = "F"
+
+    return TaskQualityAssessment(
+        task_id=task.id,
+        title=task.title[:60] + "..." if len(task.title) > 60 else task.title,
+        status=task.status,
+        score=max(0, score),
+        grade=grade,
+        strengths=strengths,
+        weaknesses=weaknesses,
+        recommendations=recommendations,
+        flags=flags,
+    )
+
+
+def assess_all_tasks(tasks: list[BeadsTask]) -> list[TaskQualityAssessment]:
+    """Assess quality of all tasks and return sorted by score (worst first)."""
+    assessments = [assess_task_quality(task) for task in tasks]
+    return sorted(assessments, key=lambda a: a.score)
 
 
 def calculate_metrics(tasks: list[BeadsTask], days: int) -> BeadsMetrics:
@@ -839,12 +1091,131 @@ def format_claude_analysis_section(analysis: ClaudeAnalysis) -> str:
     return "\n".join(sections)
 
 
+def format_task_level_analysis(assessments: list[TaskQualityAssessment]) -> str:
+    """Format the task-level quality analysis as markdown."""
+    if not assessments:
+        return ""
+
+    # Calculate grade distribution
+    grade_counts = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
+    flag_counts: dict[str, int] = {}
+    total_score = 0
+
+    for a in assessments:
+        grade_counts[a.grade] = grade_counts.get(a.grade, 0) + 1
+        total_score += a.score
+        for flag in a.flags:
+            flag_counts[flag] = flag_counts.get(flag, 0) + 1
+
+    avg_score = total_score / len(assessments) if assessments else 0
+
+    sections = []
+
+    # Overall task quality summary
+    sections.append(f"""
+## Task-Level Quality Analysis
+
+**Average Task Quality Score**: {avg_score:.0f}/100
+
+### Grade Distribution
+
+| Grade | Count | Percentage |
+|-------|-------|------------|
+| A (90-100) | {grade_counts['A']} | {100 * grade_counts['A'] // len(assessments)}% |
+| B (80-89) | {grade_counts['B']} | {100 * grade_counts['B'] // len(assessments)}% |
+| C (70-79) | {grade_counts['C']} | {100 * grade_counts['C'] // len(assessments)}% |
+| D (60-69) | {grade_counts['D']} | {100 * grade_counts['D'] // len(assessments)}% |
+| F (<60) | {grade_counts['F']} | {100 * grade_counts['F'] // len(assessments)}% |
+""")
+
+    # Warning flags summary
+    if flag_counts:
+        flag_lines = []
+        flag_descriptions = {
+            "abandoned": "Tasks left in_progress without updates for >24h",
+            "stale": "Tasks without recent updates (>12h)",
+            "stale_in_progress": "In-progress tasks without progress notes",
+            "no_context": "Tasks closed without any context",
+            "no_closure_context": "Tasks closed without completion notes",
+            "unlabeled": "Tasks missing labels for searchability",
+        }
+        for flag, count in sorted(flag_counts.items(), key=lambda x: -x[1]):
+            desc = flag_descriptions.get(flag, flag)
+            flag_lines.append(f"| `{flag}` | {count} | {desc} |")
+
+        sections.append(f"""
+### Warning Flags Detected
+
+| Flag | Count | Description |
+|------|-------|-------------|
+{chr(10).join(flag_lines)}
+""")
+
+    # Worst performing tasks (F and D grades)
+    poor_tasks = [a for a in assessments if a.grade in ("F", "D")][:10]
+    if poor_tasks:
+        task_lines = []
+        for a in poor_tasks:
+            weaknesses_short = ", ".join(a.weaknesses[:2])
+            if len(a.weaknesses) > 2:
+                weaknesses_short += f" (+{len(a.weaknesses) - 2} more)"
+            task_lines.append(
+                f"| `{a.task_id}` | {a.title[:35]}{'...' if len(a.title) > 35 else ''} | "
+                f"{a.status} | {a.grade} ({a.score}) | {weaknesses_short} |"
+            )
+
+        sections.append(f"""
+### Tasks Needing Improvement
+
+| ID | Title | Status | Grade | Issues |
+|----|-------|--------|-------|--------|
+{chr(10).join(task_lines)}
+""")
+
+    # Best performing tasks (A grade)
+    excellent_tasks = [a for a in assessments if a.grade == "A"][:5]
+    if excellent_tasks:
+        task_lines = []
+        for a in excellent_tasks:
+            strengths_short = ", ".join(a.strengths[:2])
+            task_lines.append(
+                f"| `{a.task_id}` | {a.title[:35]}{'...' if len(a.title) > 35 else ''} | "
+                f"{a.status} | {a.score} | {strengths_short} |"
+            )
+
+        sections.append(f"""
+### Exemplary Tasks
+
+| ID | Title | Status | Score | Strengths |
+|----|-------|--------|-------|-----------|
+{chr(10).join(task_lines)}
+""")
+
+    # Common recommendations
+    rec_counts: dict[str, int] = {}
+    for a in assessments:
+        for rec in a.recommendations:
+            rec_counts[rec] = rec_counts.get(rec, 0) + 1
+
+    if rec_counts:
+        top_recs = sorted(rec_counts.items(), key=lambda x: -x[1])[:5]
+        rec_lines = [f"{i+1}. {rec} ({count} tasks)" for i, (rec, count) in enumerate(top_recs)]
+        sections.append(f"""
+### Most Common Improvement Recommendations
+
+{chr(10).join(rec_lines)}
+""")
+
+    return "\n".join(sections)
+
+
 def generate_report(
     tasks: list[BeadsTask],
     metrics: BeadsMetrics,
     issues: list[BeadsIssue],
     days: int,
     claude_analysis: ClaudeAnalysis | None = None,
+    task_assessments: list[TaskQualityAssessment] | None = None,
 ) -> str:
     """Generate markdown report."""
     now = datetime.now()
@@ -992,6 +1363,10 @@ Period: Last {days} days
         updated = task.updated_at.strftime("%m/%d %H:%M")
         report += f"| `{task.id}` | {title_short} | {task.status} | {source} | {updated} |\n"
 
+    # Add task-level quality analysis
+    if task_assessments:
+        report += format_task_level_analysis(task_assessments)
+
     if claude_analysis:
         report += format_claude_analysis_section(claude_analysis)
 
@@ -1099,6 +1474,7 @@ def handle_run_analysis(context: dict) -> int:
     print(f"  Found {len(tasks)} tasks", file=sys.stderr)
 
     claude_analysis = None
+    task_assessments = []
 
     if not tasks:
         print("WARNING: No tasks found for analysis", file=sys.stderr)
@@ -1111,11 +1487,18 @@ def handle_run_analysis(context: dict) -> int:
         print("Identifying issues...", file=sys.stderr)
         issues = identify_issues(tasks, metrics)
 
+        print("Running task-level quality assessment...", file=sys.stderr)
+        task_assessments = assess_all_tasks(tasks)
+        avg_score = sum(a.score for a in task_assessments) / len(task_assessments) if task_assessments else 0
+        grade_f_count = sum(1 for a in task_assessments if a.grade == "F")
+        print(f"  Average task quality: {avg_score:.0f}/100", file=sys.stderr)
+        print(f"  Tasks needing improvement (F grade): {grade_f_count}", file=sys.stderr)
+
         if not skip_claude:
             claude_analysis = run_claude_analysis(tasks, metrics, issues, days)
 
     print("Generating report...", file=sys.stderr)
-    report = generate_report(tasks, metrics, issues, days, claude_analysis)
+    report = generate_report(tasks, metrics, issues, days, claude_analysis, task_assessments)
 
     # Ensure output directory exists
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1128,6 +1511,24 @@ def handle_run_analysis(context: dict) -> int:
     # Save metrics as JSON
     metrics_file = ANALYSIS_DIR / f"beads-metrics-{timestamp}.json"
     health_score = calculate_health_score(metrics, issues)
+
+    # Calculate task-level metrics
+    task_quality_metrics = {}
+    if task_assessments:
+        grade_counts = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
+        flag_counts: dict[str, int] = {}
+        for a in task_assessments:
+            grade_counts[a.grade] = grade_counts.get(a.grade, 0) + 1
+            for flag in a.flags:
+                flag_counts[flag] = flag_counts.get(flag, 0) + 1
+        task_quality_metrics = {
+            "avg_task_quality_score": sum(a.score for a in task_assessments) / len(task_assessments),
+            "grade_distribution": grade_counts,
+            "flag_counts": flag_counts,
+            "tasks_grade_f": grade_counts["F"],
+            "tasks_grade_a": grade_counts["A"],
+        }
+
     metrics_file.write_text(
         json.dumps(
             {
@@ -1155,6 +1556,7 @@ def handle_run_analysis(context: dict) -> int:
                     "low": len([i for i in issues if i.severity == "low"]),
                 },
                 "health_score": health_score,
+                "task_quality": task_quality_metrics,
             },
             indent=2,
         )
@@ -1197,6 +1599,9 @@ def handle_run_analysis(context: dict) -> int:
             "issues_high": len([i for i in issues if i.severity == "high"]),
             "issues_medium": len([i for i in issues if i.severity == "medium"]),
             "issues_low": len([i for i in issues if i.severity == "low"]),
+            "avg_task_quality_score": task_quality_metrics.get("avg_task_quality_score", 0),
+            "tasks_grade_f": task_quality_metrics.get("tasks_grade_f", 0),
+            "tasks_grade_a": task_quality_metrics.get("tasks_grade_a", 0),
             "report_path": str(report_file),
             "metrics_path": str(metrics_file),
             "pr_url": pr_result.get("pr_url") if pr_result else None,
