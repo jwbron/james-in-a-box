@@ -676,7 +676,7 @@ class ADRResearcher:
         for section_name in section_names:
             # Match headers like ## Section Name or ### Section Name
             pattern = re.compile(
-                rf"^(#{1,4})\s*{re.escape(section_name)}\s*$", re.MULTILINE | re.IGNORECASE
+                rf"^(#{1, 4})\s*{re.escape(section_name)}\s*$", re.MULTILINE | re.IGNORECASE
             )
 
             match = pattern.search(content)
