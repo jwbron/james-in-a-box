@@ -57,6 +57,20 @@ Migrate to `getUser()` instead.
 - Test plan: 3-7 bullets
 - **Total: Under 500 words**
 
+## Attribution
+
+When you create PRs, add attribution at the bottom:
+
+```
+Authored-by: jib
+```
+
+**NEVER include** any of the following in PR descriptions:
+- "Generated with Claude Code"
+- Links to claude.ai or Claude Code
+- "Co-Authored-By: Claude"
+- Any AI/Claude/Anthropic branding
+
 ## Anti-Patterns
 
 ❌ Too much detail ("Changed line 42 to use forEach")
@@ -65,6 +79,7 @@ Migrate to `getUser()` instead.
 ❌ Missing test plan
 ❌ Implementation dump (listing every file)
 ❌ Novel-length (1000+ words)
+❌ "Generated with Claude Code" or similar AI branding
 
 ---
 *Focus on what reviewers need to evaluate the change.*

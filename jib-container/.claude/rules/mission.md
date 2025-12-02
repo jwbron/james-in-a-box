@@ -123,6 +123,11 @@ git commit -m "Brief description
 git push origin <branch>
 ```
 
+**IMPORTANT - Commit Attribution**:
+- Git author is already configured as `jib <jib@khan.org>` - no need to add author info
+- **NEVER** include "Generated with Claude Code" or "Co-Authored-By: Claude" in commits
+- See `jib-branding.md` for full attribution guidelines
+
 Then use GitHub MCP to create the PR:
 ```python
 # Use MCP: create_pull_request(owner, repo, title, head, base, body)
