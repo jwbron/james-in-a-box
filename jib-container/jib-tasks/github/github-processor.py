@@ -1057,7 +1057,10 @@ def is_full_approval(reviews: list[dict]) -> bool:
     # This handles the case where someone approves but another reviewer requests changes
     for review in sorted_reviews:
         submitted = review.get("submitted_at", "")
-        if submitted > latest_review.get("submitted_at", "") and review.get("state", "").upper() == "CHANGES_REQUESTED":
+        if (
+            submitted > latest_review.get("submitted_at", "")
+            and review.get("state", "").upper() == "CHANGES_REQUESTED"
+        ):
             return False
 
     return True
@@ -1133,7 +1136,9 @@ def handle_pr_review_response(context: dict):
 
     # Check if we've reached max iterations
     if iteration_count >= MAX_REVIEW_ITERATIONS:
-        print(f"  Max iterations ({MAX_REVIEW_ITERATIONS}) reached. Stopping review response cycle.")
+        print(
+            f"  Max iterations ({MAX_REVIEW_ITERATIONS}) reached. Stopping review response cycle."
+        )
         if beads_id:
             pr_context_manager.update_context(
                 beads_id,
@@ -1147,7 +1152,7 @@ def handle_pr_review_response(context: dict):
             f"**Repository**: {repo}\n"
             f"**PR**: #{pr_num} - {pr_title}\n\n"
             f"The automatic review response cycle has reached the maximum of {MAX_REVIEW_ITERATIONS} iterations.\n\n"
-            f"Human intervention may be needed to complete the review process.\n"
+            f"Human intervention may be needed to complete the review process.\n",
         )
         return
 
@@ -1166,7 +1171,9 @@ def handle_pr_review_response(context: dict):
 
     # Update beads to track this review response
     if beads_id:
-        reviewer_states = [f"@{r.get('author', 'unknown')}: {r.get('state', 'COMMENTED')}" for r in reviews]
+        reviewer_states = [
+            f"@{r.get('author', 'unknown')}: {r.get('state', 'COMMENTED')}" for r in reviews
+        ]
         pr_context_manager.update_context(
             beads_id,
             f"Review iteration: {iteration_count + 1}\n"
@@ -1196,7 +1203,9 @@ def handle_pr_review_response(context: dict):
             print(f"Error: {result.stderr[:500]}")
 
 
-def build_pr_review_response_prompt(context: dict, beads_id: str | None = None, iteration: int = 1) -> str:
+def build_pr_review_response_prompt(
+    context: dict, beads_id: str | None = None, iteration: int = 1
+) -> str:
     """Build the prompt for Claude to respond to PR review feedback."""
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
@@ -1379,7 +1388,13 @@ def main():
     parser.add_argument(
         "--task",
         required=True,
-        choices=["check_failure", "comment", "review_request", "merge_conflict", "pr_review_response"],
+        choices=[
+            "check_failure",
+            "comment",
+            "review_request",
+            "merge_conflict",
+            "pr_review_response",
+        ],
         help="Type of task to process",
     )
     parser.add_argument(

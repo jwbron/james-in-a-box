@@ -521,7 +521,13 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         return False
 
 
-VALID_READONLY_TASK_TYPES = ["check_failure", "comment", "review_request", "merge_conflict", "pr_review_response"]
+VALID_READONLY_TASK_TYPES = [
+    "check_failure",
+    "comment",
+    "review_request",
+    "merge_conflict",
+    "pr_review_response",
+]
 
 
 def send_readonly_notification(task_type: str, context: dict) -> bool:
@@ -1287,8 +1293,7 @@ def check_pr_for_review_response(
 
     # Find reviews that aren't from the bot
     other_reviews = [
-        r for r in reviews
-        if r.get("author", {}).get("login", "").lower() not in bot_variants
+        r for r in reviews if r.get("author", {}).get("login", "").lower() not in bot_variants
     ]
 
     if not other_reviews:
@@ -1300,10 +1305,7 @@ def check_pr_for_review_response(
 
     # Filter by since_timestamp if provided
     if since_timestamp:
-        other_reviews = [
-            r for r in other_reviews
-            if r.get("submittedAt", "") >= since_timestamp
-        ]
+        other_reviews = [r for r in other_reviews if r.get("submittedAt", "") >= since_timestamp]
         if not other_reviews:
             return None  # No new reviews since last run
 
@@ -1341,7 +1343,9 @@ def check_pr_for_review_response(
         review_entry = {
             "id": r.get("id", ""),
             "author": r.get("author", {}).get("login", "unknown"),
-            "state": r.get("state", "COMMENTED"),  # APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED
+            "state": r.get(
+                "state", "COMMENTED"
+            ),  # APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED
             "body": r.get("body", ""),
             "submitted_at": r.get("submittedAt", ""),
         }
@@ -1354,16 +1358,18 @@ def check_pr_for_review_response(
             # Only include comments from non-bot users
             rc_author = rc.get("user", {}).get("login", "").lower()
             if rc_author not in bot_variants:
-                line_comments.append({
-                    "id": str(rc.get("id", "")),
-                    "author": rc.get("user", {}).get("login", "unknown"),
-                    "body": rc.get("body", ""),
-                    "path": rc.get("path", ""),
-                    "line": rc.get("line"),
-                    "original_line": rc.get("original_line"),
-                    "diff_hunk": rc.get("diff_hunk", ""),
-                    "created_at": rc.get("created_at", ""),
-                })
+                line_comments.append(
+                    {
+                        "id": str(rc.get("id", "")),
+                        "author": rc.get("user", {}).get("login", "unknown"),
+                        "body": rc.get("body", ""),
+                        "path": rc.get("path", ""),
+                        "line": rc.get("line"),
+                        "original_line": rc.get("original_line"),
+                        "diff_hunk": rc.get("diff_hunk", ""),
+                        "created_at": rc.get("created_at", ""),
+                    }
+                )
 
     logger.info(
         "Bot PR has reviews needing response",
