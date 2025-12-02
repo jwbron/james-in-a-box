@@ -58,6 +58,9 @@ class ParsedCommand:
     additional_context: str | None  # Extra context from the message
     confidence: str  # "high", "medium", "low"
 
+    def __str__(self) -> str:
+        return f"ParsedCommand({self.command_type}, PR#{self.pr_number}, repo={self.repo}, confidence={self.confidence})"
+
 
 class ClaudeCommandParser:
     """Claude-based agent for natural language command parsing.
@@ -65,6 +68,9 @@ class ClaudeCommandParser:
     Uses Claude to understand natural language variations of commands,
     supporting flexible phrasing and multi-intent messages.
     """
+
+    PARSE_TIMEOUT_SECONDS = 30  # Timeout for Claude parsing requests
+    MAX_MESSAGE_LENGTH = 2000  # Maximum message length before truncation
 
     COMMAND_PARSE_PROMPT = """You are a command parser for a GitHub PR assistant bot.
 
@@ -138,13 +144,16 @@ If no commands are found, return:
         if not self.is_available():
             return []
 
-        # Build prompt
-        prompt = self.COMMAND_PARSE_PROMPT.format(message=content[:2000])
+        # Build prompt (with truncation warning in verbose mode)
+        if len(content) > self.MAX_MESSAGE_LENGTH:
+            if self.verbose:
+                print(f"  Message truncated from {len(content)} to {self.MAX_MESSAGE_LENGTH} chars")
+        prompt = self.COMMAND_PARSE_PROMPT.format(message=content[:self.MAX_MESSAGE_LENGTH])
 
         # Call Claude
         result = run_claude(
             prompt=prompt,
-            timeout=30,  # 30 seconds should be plenty for parsing
+            timeout=self.PARSE_TIMEOUT_SECONDS,
             stream=self.verbose,
             cwd=Path.home() / "khan",
         )
@@ -176,7 +185,7 @@ If no commands are found, return:
                     print(f"  Ambiguities: {parsed_data['ambiguities']}")
 
                 return commands
-        except Exception as e:
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
             if self.verbose:
                 print(f"  Failed to parse Claude response: {e}")
 
@@ -195,15 +204,16 @@ If no commands are found, return:
                 if line.startswith("```"):
                     in_block = not in_block
                     continue
-                if in_block or not line.startswith("```"):
+                if in_block:
                     json_lines.append(line)
             text = "\n".join(json_lines)
 
         # Try to parse as JSON directly
         try:
             return json.loads(text)
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            if self.verbose:
+                print(f"  Direct JSON parse failed: {e}")
 
         # Try to find JSON object in text
         start = text.find("{")
@@ -211,8 +221,9 @@ If no commands are found, return:
         if start != -1 and end > start:
             try:
                 return json.loads(text[start:end])
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                if self.verbose:
+                    print(f"  Extracted JSON parse failed: {e}")
 
         return None
 
@@ -223,6 +234,8 @@ class CommandHandler:
     Supports both regex-based parsing (fast, exact matches) and
     Claude-based parsing (flexible natural language understanding).
     """
+
+    DEFAULT_OWNER = "jwbron"  # Default GitHub owner for repository operations
 
     def __init__(self, use_claude: bool = True, verbose: bool = False):
         self.incoming_dir = Path.home() / "sharing" / "incoming"
@@ -388,6 +401,10 @@ class CommandHandler:
             print("  ⚠️ Cannot review PR: no PR number specified")
             return
 
+        if pr_num <= 0:
+            print(f"  ⚠️ Cannot review PR: invalid PR number {pr_num}")
+            return
+
         print(f"Triggering review for PR #{pr_num}" + (f" in {repo}" if repo else ""))
 
         try:
@@ -424,8 +441,10 @@ class CommandHandler:
         print(f"Triggering analysis for PR #{pr_num}" + (f" in {repo}" if repo else ""))
 
         if not self.analyzer_script.exists():
+            # TODO: Implement pr-analyzer.py for dedicated PR analysis
+            # For now, fall back to review
             print(f"  ⚠️ Analyzer script not found: {self.analyzer_script}")
-            # Fall back to review
+            print("  Falling back to PR review...")
             self.review_pr(pr_num, repo)
             return
 
@@ -462,7 +481,8 @@ class CommandHandler:
         try:
             cmd = ["gh", "pr", "list", "--state", "open"]
             if repo:
-                cmd.extend(["--repo", f"jwbron/{repo}"])
+                # TODO: Make default owner configurable instead of hardcoding
+                cmd.extend(["--repo", f"{self.DEFAULT_OWNER}/{repo}"])
 
             result = subprocess.run(
                 cmd,
