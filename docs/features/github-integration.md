@@ -91,6 +91,25 @@ readable_repos:
 - `jib-container/jib-tasks/github/comment-responder.py`
 - `jib-container/jib-tasks/github/README.md`
 
+### PR Review Response System
+
+**Purpose**: Automatically responds to PR reviews on jib's own PRs. When someone reviews a PR created by jib, this system:
+- Analyzes review feedback (APPROVED, CHANGES_REQUESTED, COMMENTED)
+- Addresses requested changes by implementing fixes
+- Responds to inline review comments
+- Tracks iteration count to prevent infinite loops (max 5 iterations)
+- Stops when a clean approval is received (no caveats like "LGTM but...")
+
+**Components**:
+- **Review Detection** (`host-services/analysis/github-watcher/github-watcher.py`) - Detects reviews on bot PRs
+- **Review Response Handler** (`jib-container/jib-tasks/github/github-processor.py`) - Processes reviews and takes action
+- **Iteration Tracking** - Uses Beads to track review iterations across container sessions
+- **Approval Detection** - Determines when a full approval without caveats has been received
+
+**Location**:
+- `host-services/analysis/github-watcher/github-watcher.py` - `check_pr_for_review_response()`
+- `jib-container/jib-tasks/github/github-processor.py` - `handle_pr_review_response()`
+
 ### PR Analyzer Tool
 
 **Purpose**: Analyzes GitHub Pull Requests by fetching comprehensive context (metadata, diff, comments, reviews, CI status, failed check logs) and uses Claude to analyze issues and suggest solutions. Supports analysis-only, fix mode, interactive sessions, and context-only modes.
@@ -134,6 +153,7 @@ readable_repos:
 | GitHub CI/CD Failure Processor | `jib-container/jib-tasks/github/github-processor.py` |
 | PR Auto-Review System | `jib-container/jib-tasks/github/pr-reviewer.py` |
 | PR Comment Auto-Responder | `jib-container/jib-tasks/github/comment-responder.py` |
+| PR Review Response System | `jib-container/jib-tasks/github/github-processor.py` |
 | PR Analyzer Tool | `host-services/analysis/analyze-pr/analyze-pr.py` |
 | GitHub Command Handler | `jib-container/jib-tasks/github/command-handler.py` |
 | GitHub App Token Generator | `jib-container/jib-tools/github-app-token.py` |
