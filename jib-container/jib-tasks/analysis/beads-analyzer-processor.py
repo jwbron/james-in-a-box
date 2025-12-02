@@ -456,7 +456,9 @@ def assess_task_quality(task: BeadsTask) -> TaskQualityAssessment:
         hours_since_update = (now - task.updated_at).total_seconds() / 3600
         if hours_since_update > ABANDONED_THRESHOLD_HOURS:
             score -= 15
-            weaknesses.append(f"Abandoned: in_progress for {hours_since_update:.0f}h without update")
+            weaknesses.append(
+                f"Abandoned: in_progress for {hours_since_update:.0f}h without update"
+            )
             flags.append("abandoned")
             recommendations.append("Update status or add progress notes")
         elif hours_since_update > 12:
@@ -1121,11 +1123,11 @@ def format_task_level_analysis(assessments: list[TaskQualityAssessment]) -> str:
 
 | Grade | Count | Percentage |
 |-------|-------|------------|
-| A (90-100) | {grade_counts['A']} | {100 * grade_counts['A'] // len(assessments)}% |
-| B (80-89) | {grade_counts['B']} | {100 * grade_counts['B'] // len(assessments)}% |
-| C (70-79) | {grade_counts['C']} | {100 * grade_counts['C'] // len(assessments)}% |
-| D (60-69) | {grade_counts['D']} | {100 * grade_counts['D'] // len(assessments)}% |
-| F (<60) | {grade_counts['F']} | {100 * grade_counts['F'] // len(assessments)}% |
+| A (90-100) | {grade_counts["A"]} | {100 * grade_counts["A"] // len(assessments)}% |
+| B (80-89) | {grade_counts["B"]} | {100 * grade_counts["B"] // len(assessments)}% |
+| C (70-79) | {grade_counts["C"]} | {100 * grade_counts["C"] // len(assessments)}% |
+| D (60-69) | {grade_counts["D"]} | {100 * grade_counts["D"] // len(assessments)}% |
+| F (<60) | {grade_counts["F"]} | {100 * grade_counts["F"] // len(assessments)}% |
 """)
 
     # Warning flags summary
@@ -1199,7 +1201,7 @@ def format_task_level_analysis(assessments: list[TaskQualityAssessment]) -> str:
 
     if rec_counts:
         top_recs = sorted(rec_counts.items(), key=lambda x: -x[1])[:5]
-        rec_lines = [f"{i+1}. {rec} ({count} tasks)" for i, (rec, count) in enumerate(top_recs)]
+        rec_lines = [f"{i + 1}. {rec} ({count} tasks)" for i, (rec, count) in enumerate(top_recs)]
         sections.append(f"""
 ### Most Common Improvement Recommendations
 
@@ -1489,7 +1491,11 @@ def handle_run_analysis(context: dict) -> int:
 
         print("Running task-level quality assessment...", file=sys.stderr)
         task_assessments = assess_all_tasks(tasks)
-        avg_score = sum(a.score for a in task_assessments) / len(task_assessments) if task_assessments else 0
+        avg_score = (
+            sum(a.score for a in task_assessments) / len(task_assessments)
+            if task_assessments
+            else 0
+        )
         grade_f_count = sum(1 for a in task_assessments if a.grade == "F")
         print(f"  Average task quality: {avg_score:.0f}/100", file=sys.stderr)
         print(f"  Tasks needing improvement (F grade): {grade_f_count}", file=sys.stderr)
@@ -1522,7 +1528,8 @@ def handle_run_analysis(context: dict) -> int:
             for flag in a.flags:
                 flag_counts[flag] = flag_counts.get(flag, 0) + 1
         task_quality_metrics = {
-            "avg_task_quality_score": sum(a.score for a in task_assessments) / len(task_assessments),
+            "avg_task_quality_score": sum(a.score for a in task_assessments)
+            / len(task_assessments),
             "grade_distribution": grade_counts,
             "flag_counts": flag_counts,
             "tasks_grade_f": grade_counts["F"],
