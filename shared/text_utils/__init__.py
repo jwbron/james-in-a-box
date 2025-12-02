@@ -16,6 +16,7 @@ Usage:
 from .chunking import chunk_message
 from .frontmatter import parse_yaml_frontmatter
 
+
 __all__ = [
     "chunk_message",
     "parse_yaml_frontmatter",
