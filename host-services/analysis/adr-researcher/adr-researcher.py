@@ -49,6 +49,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 from jib_exec import jib_exec
 
+
 # Processor path for GitHub operations via jib
 ANALYSIS_PROCESSOR = "jib-container/jib-tasks/analysis/analysis-processor.py"
 
