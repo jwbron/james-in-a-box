@@ -35,7 +35,10 @@ ADRs are organized by implementation status:
 
 > **Note**: Several ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
 
-*No ADRs currently in not-implemented/ - all pending ADRs are in open PRs.*
+| ADR | Summary |
+|-----|---------|
+| [Declarative Setup Architecture](not-implemented/ADR-Declarative-Setup-Architecture.md) | Registry-based setup with YAML component definitions and Python orchestrator |
+| [Multi-Agent Pipeline Architecture](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Decomposed workflows with specialized agents and orchestration |
 
 ## ADR Template
 
