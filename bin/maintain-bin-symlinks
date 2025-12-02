@@ -5,7 +5,7 @@
 # This script ensures all user-facing commands are properly symlinked in bin/.
 # Run periodically or after adding new commands to keep bin/ up to date.
 #
-# Usage: maintain-bin-symlinks [--dry-run] [--verbose]
+# Usage: maintain-bin-symlinks [--dry-run] [--verbose] [--check]
 #
 
 set -euo pipefail
@@ -23,6 +23,7 @@ NC='\033[0m' # No Color
 # Options
 DRY_RUN=false
 VERBOSE=false
+CHECK_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -34,14 +35,20 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
+        --check|-c)
+            CHECK_MODE=true
+            DRY_RUN=true  # Check mode implies dry-run
+            shift
+            ;;
         --help|-h)
-            echo "Usage: maintain-bin-symlinks [--dry-run] [--verbose]"
+            echo "Usage: maintain-bin-symlinks [--dry-run] [--verbose] [--check]"
             echo ""
             echo "Automatically maintain bin/ directory symlinks."
             echo ""
             echo "Options:"
             echo "  --dry-run, -n   Show what would be done without making changes"
             echo "  --verbose, -v   Show all symlinks, not just changes"
+            echo "  --check, -c     Check mode: exit non-zero if changes needed (for CI)"
             echo "  --help, -h      Show this help message"
             exit 0
             ;;
@@ -207,6 +214,19 @@ fi
 if [[ "$DRY_RUN" == true ]]; then
     echo ""
     echo "(Dry run - no changes made)"
+fi
+
+# In check mode, exit non-zero if any changes would be needed
+if [[ "$CHECK_MODE" == true ]]; then
+    if [[ $created -gt 0 || $removed -gt 0 || $errors -gt 0 ]]; then
+        echo ""
+        echo -e "${RED}Check failed: bin/ symlinks need maintenance${NC}"
+        echo "Run './bin/maintain-bin-symlinks' to fix."
+        exit 1
+    else
+        echo ""
+        echo -e "${GREEN}Check passed: all symlinks are up to date${NC}"
+    fi
 fi
 
 exit 0
