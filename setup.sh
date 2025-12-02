@@ -501,6 +501,7 @@ print_header "Setting Up Components"
 
 # Component descriptions for pretty output
 declare -A component_descriptions=(
+    ["service-failure-notify"]="Service Failure Notify (OnFailure notifications)"
     ["slack-notifier"]="Slack Notifier (Claude → You)"
     ["slack-receiver"]="Slack Receiver (You → Claude)"
     ["context-sync"]="Context Sync (Confluence, JIRA → Local)"
@@ -518,6 +519,7 @@ declare -A component_descriptions=(
 # Desired installation order - ALL components are listed explicitly
 # Core services (required for basic functionality)
 component_order=(
+    "utilities/service-failure-notify"  # Must be first - other services depend on this for OnFailure=
     "slack/slack-notifier"
     "slack/slack-receiver"
     "sync/context-sync"
