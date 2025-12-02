@@ -1,18 +1,20 @@
 # Feature Audit Report - December 2, 2025
 
 **Auditor:** jib (Autonomous Software Engineering Agent)
-**Scope:** Features 1-30 from FEATURES.md
+**Scope:** Features 1-40 from FEATURES.md
 **Task ID:** task-20251201-190016
 
 ## Executive Summary
 
-Audited 30 features from the james-in-a-box project for bugs, consistency, maintainability, and opportunities to leverage Claude more effectively. Found several issues related to code duplication, missing helper functions, and opportunities for Claude-based improvements.
+Audited 40 features from the james-in-a-box project for bugs, consistency, maintainability, and opportunities to leverage Claude more effectively. Found several issues related to code duplication, missing helper functions, and opportunities for Claude-based improvements.
 
 **Part 1 (Features 1-10):** Found code duplication in text utilities, a JIRAConfig instantiation bug, and identified Sprint Analyzer as a high-priority candidate for Claude enhancement.
 
 **Part 2 (Features 11-20):** Found strong GitHub integration architecture with good error handling. Identified opportunities for shared prompt building utilities and improved command parsing flexibility.
 
 **Part 3 (Features 21-30):** Found excellent analysis infrastructure with sophisticated multi-agent patterns. The LLM analysis pipeline demonstrates mature architecture. Identified regex parsing issue in ADR Researcher.
+
+**Part 4 (Features 31-40):** Found solid container management and documentation infrastructure. Identified missing Claude custom commands documented in README but not implemented. The overall container architecture is well-designed with good security boundaries.
 
 ---
 
@@ -831,6 +833,279 @@ The `{1, 4}` should be `{1,4}` (no space in repetition quantifier). With a space
 
 ---
 
+# Part 4: Features 31-40
+
+## Feature 31: Spec Enricher CLI
+
+**Files:**
+- `host-services/analysis/spec-enricher/spec-enricher.py`
+- `shared/enrichment/enricher.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good use of shared enrichment module | - | Positive |
+| Support for multiple output formats (markdown, json, yaml) | - | Positive |
+| Context gathering from multiple sources (codebase, patterns, deps) | - | Positive |
+| Streaming output support for real-time feedback | - | Positive |
+| Uses Claude for intelligent spec enrichment | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-architected CLI with proper dependency injection
+
+### Claude Leverage Opportunity
+
+- **Already using Claude effectively** - The enricher invokes Claude for spec enhancement
+- **Enhancement:** Could add validation agent to verify enriched specs are complete
+
+---
+
+## Feature 32: Documentation Link Fixer
+
+**Files:** `scripts/fix-doc-links.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Comprehensive regex patterns for different link types | - | Positive |
+| Handles markdown links, file:line refs, and path refs | - | Positive |
+| Dry-run mode for safe preview | - | Positive |
+| Interactive mode for selective fixes | - | Positive |
+| Good reporting with summary statistics | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-implemented utility with appropriate modes
+
+### Claude Leverage Opportunity
+
+- **Smart Fix Suggestions** - Claude could analyze context to suggest the correct fix when multiple files match
+- **Semantic Link Detection** - Claude could detect links that are syntactically valid but semantically broken (pointing to wrong version of code)
+
+---
+
+## Feature 33: Confluence Documentation Watcher
+
+**Files:** `jib-container/jib-tasks/confluence/confluence-processor.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good task dispatcher pattern | - | Positive |
+| Analyzes document changes with diff context | - | Positive |
+| Uses Claude for intelligent document analysis | - | Positive |
+| Supports multiple task types (change_analysis, semantic_check, update_review) | - | Positive |
+| Structured output with JSON for host parsing | - | Positive |
+
+### Recommendations
+
+- **None significant** - Good use of Claude for document analysis
+
+### Claude Leverage Opportunity
+
+- **Already using Claude effectively** - Each handler invokes Claude with appropriate context
+- **Enhancement:** Could add cross-document consistency checking agent
+
+---
+
+## Feature 34: Documentation Index (llms.txt)
+
+**Files:** `docs/index.md`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Follows llms.txt convention for AI navigation | - | Positive |
+| Well-organized with clear section structure | - | Positive |
+| Includes task-specific guides and reference docs | - | Positive |
+| Good separation of guides vs reference vs ADRs | - | Positive |
+| Links are relative and consistent | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-structured navigation hub
+
+### Claude Leverage Opportunity
+
+- **Auto-Indexing Agent** - Claude could automatically update the index when new documents are added
+- **Relevance Scoring** - Claude could add relevance hints for different task types
+
+---
+
+## Feature 35: Claude Custom Commands
+
+**Files:** `jib-container/.claude/commands/`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good README documentation for available commands | - | Positive |
+| beads-status.md provides quick task overview | - | Positive |
+| beads-sync.md handles database synchronization | - | Positive |
+| show-metrics.md displays conversation analytics | - | Positive |
+| **BUG:** README documents commands that don't exist as files | Medium | Documentation Gap |
+
+### Bug Details
+
+The README mentions the following commands that are NOT implemented as .md files:
+- `@load-context` - documented but no `load-context.md` file
+- `@save-context` - documented but no `save-context.md` file
+- `@create-pr` - documented but no `create-pr.md` file
+- `@update-confluence-doc` - documented but no `update-confluence-doc.md` file
+
+Only 3 actual command files exist (beads-status.md, beads-sync.md, show-metrics.md).
+
+### Recommendations
+
+1. **Create missing command files** - Either implement the documented commands or update README to reflect actual available commands
+2. **Audit command documentation** - Ensure README stays in sync with actual commands
+
+### Claude Leverage Opportunity
+
+- **Command Generator** - Claude could help users create custom commands based on their needs
+- **Command Discovery** - Claude could suggest relevant commands based on current task context
+
+---
+
+## Feature 36: JIB Container Management System
+
+**Files:** `bin/jib`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Comprehensive container lifecycle management | - | Positive |
+| Good default configuration with override support | - | Positive |
+| Support for multiple execution modes (interactive, exec, shell) | - | Positive |
+| Git worktree isolation for safe commits | - | Positive |
+| MCP server configuration with GitHub integration | - | Positive |
+| Proper cleanup handling | - | Positive |
+| Service management (start, stop, status) | - | Positive |
+| Large script (~900 lines) | Low | Maintainability |
+
+### Recommendations
+
+1. **Consider modularization** - Could split into `jib-core.sh`, `jib-docker.sh`, `jib-mcp.sh`
+
+### Claude Leverage Opportunity
+
+- **Intelligent Error Recovery** - Claude could analyze container errors and suggest fixes
+- **Configuration Assistant** - Claude could help users configure jib based on their use case
+
+---
+
+## Feature 37: Docker Development Environment Setup
+
+**Files:** `bin/docker-setup.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Comprehensive package installation for Khan dev environment | - | Positive |
+| Multi-distro support (Ubuntu, Fedora) | - | Positive |
+| Good dependency ordering | - | Positive |
+| Clear separation of concerns (Java, Go, Node, Python, etc.) | - | Positive |
+| Handles architecture differences (x86_64, aarch64) | - | Positive |
+| Version pinning where appropriate | - | Positive |
+| Add-apt-repository Python 3.10 workaround documented | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-implemented setup script
+
+### Claude Leverage Opportunity
+
+- **None identified** - This is infrastructure setup that should remain deterministic
+
+---
+
+## Feature 38: Analysis Task Processor
+
+**Files:** `jib-container/jib-tasks/analysis/analysis-processor.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Clean dispatcher pattern for different task types | - | Positive |
+| Good use of shared `run_claude` module | - | Positive |
+| Multiple task handlers (llm_prompt, llm_prompt_to_file, doc_generation, feature_extraction, create_pr) | - | Positive |
+| Structured JSON output for host consumption | - | Positive |
+| Enhanced prompts for file-based output (llm_prompt_to_file) | - | Positive |
+| Good error handling with meaningful messages | - | Positive |
+| PR creation handles files, symlinks, and deletions | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-designed container-side dispatcher
+
+### Claude Leverage Opportunity
+
+- **Already using Claude effectively** - All analysis tasks delegate to Claude via run_claude
+- **Enhancement:** Could add task complexity estimation to predict Claude usage
+
+---
+
+## Feature 39: Session End Hook
+
+**Files:** `jib-container/.claude/hooks/session-end.sh`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good beads cleanup protocol | - | Positive |
+| Shows in-progress and open tasks before exit | - | Positive |
+| Provides actionable instructions for task closure | - | Positive |
+| Syncs beads database on exit | - | Positive |
+| Silent exit if beads not available | - | Positive |
+
+### Recommendations
+
+- **None significant** - Good session cleanup hook
+
+### Claude Leverage Opportunity
+
+- **Session Summary Agent** - Claude could generate a brief summary of what was accomplished in the session
+- **Unfinished Work Detection** - Claude could analyze task notes to estimate what remains
+
+---
+
+## Feature 40: Container Directory Communication System
+
+**Files:**
+- `jib-container/README.md` (documentation)
+- Directory structure: `~/sharing/`, `~/context-sync/`, `~/khan/`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Clear directory structure documentation | - | Positive |
+| Good security model documentation | - | Positive |
+| Proper separation of read-only (context-sync) vs read-write (sharing) | - | Positive |
+| Well-defined capability boundaries (can/cannot) | - | Positive |
+| GitHub MCP tools documented with use cases | - | Positive |
+| Container lifecycle commands documented | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-documented communication system
+
+### Claude Leverage Opportunity
+
+- **None identified** - This is infrastructure documentation
+
+---
+
 ## Cross-Cutting Issues (Updated)
 
 ### 1. Code Duplication Summary
@@ -891,6 +1166,10 @@ Create `shared/prompt_templates/`:
 - [x] Fix regex syntax error in ADR Researcher `_extract_section()` (line 679: `{1, 4}` → `{1,4}`)
 - [ ] Locate or document Conversation Analyzer Service (Feature 24)
 - [ ] Verify Feature Analyzer dependencies exist (doc_generator.py, pr_creator.py, etc.)
+
+### Phase 1.7: Documentation Fixes (This PR - Features 31-40)
+- [ ] Create missing Claude custom command files (load-context.md, save-context.md, create-pr.md, update-confluence-doc.md) OR update README to reflect actual commands
+- [ ] Consider modularizing bin/jib (~900 lines) into smaller scripts
 
 ### Phase 2: Claude Enhancements (Future PR - HIGH PRIORITY)
 - [ ] Add Claude agent for Sprint Ticket Analyzer (#10)
@@ -964,6 +1243,25 @@ The analysis and documentation infrastructure demonstrates sophisticated design:
    - Codebase Index Generator (#30) - semantic pattern detection
    - Inefficiency Detector (#22) - contextual analysis
 
+### Part 4 Summary (Features 31-40)
+
+The container management and documentation infrastructure is well-designed:
+
+1. **Strong positives:**
+   - Comprehensive container lifecycle management in bin/jib
+   - Good security model with clear capability boundaries
+   - Well-structured Docker setup with multi-distro support
+   - Effective use of Claude in analysis tasks (spec enricher, confluence processor)
+   - Good session cleanup with beads sync
+
+2. **Areas for improvement:**
+   - Large scripts (bin/jib ~900 lines) could be modularized
+   - **Documentation gap:** Claude custom commands README lists commands that don't exist as files
+
+3. **New Claude opportunities:**
+   - Documentation Link Fixer (#32) - semantic link detection
+   - Session End Hook (#39) - session summary generation
+
 ### Overall Assessment
 
 The james-in-a-box project has solid foundations with thoughtful error handling and state management. The highest-impact improvements would be:
@@ -973,7 +1271,9 @@ The james-in-a-box project has solid foundations with thoughtful error handling 
 3. **Documentation Generator (#28)** - Add Claude to the existing 4-agent architecture
 4. **Prompt Template Extraction** - Improve maintainability of github-processor.py
 
-**Key Bug Found:** Regex syntax error in ADR Researcher `_extract_section()` method (line 679) - `{1, 4}` should be `{1,4}`.
+**Key Bugs Found:**
+- Regex syntax error in ADR Researcher `_extract_section()` method (line 679) - `{1, 4}` should be `{1,4}`
+- Claude custom commands README documents commands that don't exist (load-context, save-context, create-pr, update-confluence-doc)
 
 ---
 
