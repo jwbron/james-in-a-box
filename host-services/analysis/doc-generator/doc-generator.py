@@ -48,6 +48,7 @@ import json
 import sys
 from pathlib import Path
 
+
 # Add host-services/shared to path for jib_exec
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared"))
 from jib_exec import is_jib_available, jib_exec
@@ -234,7 +235,7 @@ Note: For best practice research, use the adr-researcher tool instead.
                     print("\n--- Preview ---")
                     print(output.get("preview")[:1500])
                     if len(output.get("preview", "")) > 1500:
-                        print(f"\n... (truncated)")
+                        print("\n... (truncated)")
 
                 if output.get("issues"):
                     print("\nIssues:")

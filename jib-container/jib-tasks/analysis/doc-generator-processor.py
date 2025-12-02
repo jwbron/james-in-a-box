@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format="%(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -1048,7 +1049,9 @@ class DocumentationGenerator:
             )
 
         if not context.patterns and not context.components:
-            print(f"  Warning: No patterns or components found for topic '{topic}'", file=sys.stderr)
+            print(
+                f"  Warning: No patterns or components found for topic '{topic}'", file=sys.stderr
+            )
             result["issues"].append(f"No patterns or components found for topic '{topic}'")
 
         # Step 2: Draft Agent
