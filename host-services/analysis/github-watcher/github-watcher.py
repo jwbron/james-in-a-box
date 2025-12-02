@@ -1351,9 +1351,7 @@ def process_repo_prs(
         f"app/{bot_username.lower()}",
     }
     bot_prs = [
-        p
-        for p in all_prs
-        if p.get("author", {}).get("login", "").lower() in bot_author_variants
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() in bot_author_variants
     ]
 
     # Collect tasks from user's PRs
@@ -1379,9 +1377,7 @@ def process_repo_prs(
                 )
 
             # Check for comments
-            comment_ctx = check_pr_for_comments(
-                repo, pr, state, bot_username, since_timestamp
-            )
+            comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
             if comment_ctx:
                 tasks.append(
                     JibTask(
@@ -1431,9 +1427,7 @@ def process_repo_prs(
                 )
 
             # Check for comments on bot's PRs
-            comment_ctx = check_pr_for_comments(
-                repo, pr, state, bot_username, since_timestamp
-            )
+            comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
             if comment_ctx:
                 tasks.append(
                     JibTask(
