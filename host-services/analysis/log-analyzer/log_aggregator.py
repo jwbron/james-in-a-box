@@ -11,19 +11,20 @@ Aggregates into unified location (~/.jib-sharing/logs/) for analysis.
 """
 
 import json
-import os
-import shutil
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Iterator
 
 # Add shared library to path
 import sys
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from pathlib import Path
+
+
 jib_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(jib_root / "shared"))
 
 from jib_logging import get_logger
+
 
 logger = get_logger("log-aggregator")
 
@@ -206,9 +207,7 @@ class LogAggregator:
 
                         # Extract standard fields
                         timestamp = entry.get("timestamp", entry.get("time", ""))
-                        severity = entry.get(
-                            "severity", entry.get("level", "INFO")
-                        ).upper()
+                        severity = entry.get("severity", entry.get("level", "INFO")).upper()
                         message = entry.get("message", entry.get("msg", str(entry)))
 
                         # Filter by time if specified
@@ -316,9 +315,7 @@ class LogAggregator:
         }
 
         # Remove existing entry for same date
-        index["files"] = [
-            f for f in index.get("files", []) if f.get("date") != log_file.stem
-        ]
+        index["files"] = [f for f in index.get("files", []) if f.get("date") != log_file.stem]
         index["files"].append(file_entry)
         index["last_updated"] = datetime.now().isoformat()
 
@@ -382,6 +379,7 @@ def main():
     # Configure logging
     if args.verbose:
         import logging
+
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Run aggregation

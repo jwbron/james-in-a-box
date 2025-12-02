@@ -26,17 +26,18 @@ Components:
     - ReportGenerator: Creates summaries and alerts
 """
 
-from .log_aggregator import LogAggregator
+from .error_classifier import ClassifiedError, ErrorClassifier
 from .error_extractor import ErrorExtractor, ExtractedError
-from .error_classifier import ErrorClassifier, ClassifiedError
+from .log_aggregator import LogAggregator
 from .log_analyzer import LogAnalyzer
 
+
 __all__ = [
-    "LogAggregator",
+    "ClassifiedError",
+    "ErrorClassifier",
     "ErrorExtractor",
     "ExtractedError",
-    "ErrorClassifier",
-    "ClassifiedError",
+    "LogAggregator",
     "LogAnalyzer",
 ]
 

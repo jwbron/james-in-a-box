@@ -9,17 +9,19 @@ Extracts errors based on:
 
 import json
 import re
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Iterator
 
 # Add shared library to path
 import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+
 jib_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(jib_root / "shared"))
 
 from jib_logging import get_logger
+
 
 logger = get_logger("error-extractor")
 
@@ -159,10 +161,7 @@ class ErrorExtractor:
             return True
 
         # Check for exception info
-        if entry.get("exc_info") or entry.get("exception"):
-            return True
-
-        return False
+        return bool(entry.get("exc_info") or entry.get("exception"))
 
     def _extract_stack_trace(self, entry: dict) -> str | None:
         """Extract stack trace from log entry.
@@ -239,7 +238,7 @@ class ErrorExtractor:
         logger.info(f"Extracting errors from {log_file}")
 
         with open(log_file) as f:
-            for line_num, line in enumerate(f, 1):
+            for _line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if not line:
                     continue
@@ -363,7 +362,9 @@ class ErrorExtractor:
         message = error.message
 
         # Remove UUIDs, timestamps, numbers
-        message = re.sub(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "<UUID>", message)
+        message = re.sub(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "<UUID>", message
+        )
         message = re.sub(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}", "<TIMESTAMP>", message)
         message = re.sub(r"\d+", "<N>", message)
         message = re.sub(r"'[^']*'", "'<STR>'", message)
@@ -405,6 +406,7 @@ def main():
     # Configure logging
     if args.verbose:
         import logging
+
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Run extraction

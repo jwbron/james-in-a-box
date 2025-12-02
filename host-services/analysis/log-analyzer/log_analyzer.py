@@ -18,19 +18,22 @@ Usage:
 
 import argparse
 import json
-from datetime import datetime, timedelta
-from pathlib import Path
 
 # Add shared library to path
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+
 jib_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(jib_root / "shared"))
 
 from jib_logging import get_logger
 
-from .log_aggregator import LogAggregator
+from .error_classifier import ClassifiedError, ErrorClassifier
 from .error_extractor import ErrorExtractor, ExtractedError
-from .error_classifier import ErrorClassifier, ClassifiedError
+from .log_aggregator import LogAggregator
+
 
 logger = get_logger("log-analyzer")
 
@@ -200,26 +203,22 @@ class LogAnalyzer:
 
         # Count by category, severity, source
         for c in classifications:
-            summary["by_category"][c.category] = (
-                summary["by_category"].get(c.category, 0) + 1
-            )
-            summary["by_severity"][c.severity] = (
-                summary["by_severity"].get(c.severity, 0) + 1
-            )
-            summary["by_source"][c.source] = (
-                summary["by_source"].get(c.source, 0) + 1
-            )
+            summary["by_category"][c.category] = summary["by_category"].get(c.category, 0) + 1
+            summary["by_severity"][c.severity] = summary["by_severity"].get(c.severity, 0) + 1
+            summary["by_source"][c.source] = summary["by_source"].get(c.source, 0) + 1
 
         # Collect critical errors
         for c in classifications:
             if c.severity == "critical":
-                summary["critical_errors"].append({
-                    "error_id": c.error_id,
-                    "source": c.source,
-                    "message": c.message[:200],
-                    "root_cause": c.root_cause,
-                    "recommendation": c.recommendation,
-                })
+                summary["critical_errors"].append(
+                    {
+                        "error_id": c.error_id,
+                        "source": c.source,
+                        "message": c.message[:200],
+                        "root_cause": c.root_cause,
+                        "recommendation": c.recommendation,
+                    }
+                )
 
         # Find high-priority patterns (high severity + multiple occurrences)
         patterns_seen = {}
@@ -299,74 +298,90 @@ class LogAnalyzer:
         for severity in ["critical", "high", "medium", "low"]:
             count = summary["by_severity"].get(severity, 0)
             if count > 0:
-                emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(severity, "⚪")
+                emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(
+                    severity, "⚪"
+                )
                 lines.append(f"- {emoji} **{severity}**: {count}")
 
-        lines.extend([
-            "",
-            "### By Category",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "### By Category",
+                "",
+            ]
+        )
 
         for category, count in sorted(summary["by_category"].items(), key=lambda x: -x[1]):
             lines.append(f"- **{category}**: {count}")
 
-        lines.extend([
-            "",
-            "### By Source",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "### By Source",
+                "",
+            ]
+        )
 
         for source, count in sorted(summary["by_source"].items(), key=lambda x: -x[1]):
             lines.append(f"- {source}: {count}")
 
         # Critical errors section
         if summary["critical_errors"]:
-            lines.extend([
-                "",
-                "## 🚨 Critical Errors",
-                "",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "## 🚨 Critical Errors",
+                    "",
+                ]
+            )
 
             for error in summary["critical_errors"]:
-                lines.extend([
-                    f"### {error['source']}",
-                    "",
-                    f"**Message:** {error['message']}",
-                    "",
-                    f"**Root Cause:** {error['root_cause']}",
-                    "",
-                    f"**Recommendation:** {error['recommendation']}",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        f"### {error['source']}",
+                        "",
+                        f"**Message:** {error['message']}",
+                        "",
+                        f"**Root Cause:** {error['root_cause']}",
+                        "",
+                        f"**Recommendation:** {error['recommendation']}",
+                        "",
+                    ]
+                )
 
         # High priority patterns
         if summary["high_priority_patterns"]:
-            lines.extend([
-                "",
-                "## ⚠️ High Priority Patterns",
-                "",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "## ⚠️ High Priority Patterns",
+                    "",
+                ]
+            )
 
             for pattern in summary["high_priority_patterns"][:5]:
-                lines.extend([
-                    f"### {pattern['category']} ({pattern['count']} occurrences)",
-                    "",
-                    f"**Message:** {pattern['message']}",
-                    "",
-                    f"**Root Cause:** {pattern['root_cause']}",
-                    "",
-                    f"**Recommendation:** {pattern['recommendation']}",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        f"### {pattern['category']} ({pattern['count']} occurrences)",
+                        "",
+                        f"**Message:** {pattern['message']}",
+                        "",
+                        f"**Root Cause:** {pattern['root_cause']}",
+                        "",
+                        f"**Recommendation:** {pattern['recommendation']}",
+                        "",
+                    ]
+                )
 
         # Recommendations
         if summary["recommendations"]:
-            lines.extend([
-                "",
-                "## 📋 Recommendations",
-                "",
-            ])
+            lines.extend(
+                [
+                    "",
+                    "## 📋 Recommendations",
+                    "",
+                ]
+            )
 
             for i, rec in enumerate(summary["recommendations"][:10], 1):
                 lines.append(f"{i}. {rec}")
@@ -377,9 +392,7 @@ class LogAnalyzer:
 
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Log Analyzer - Claude-powered error analysis"
-    )
+    parser = argparse.ArgumentParser(description="Log Analyzer - Claude-powered error analysis")
 
     parser.add_argument(
         "--analyze",
@@ -435,6 +448,7 @@ def main():
     # Configure logging
     if args.verbose:
         import logging
+
         logging.getLogger().setLevel(logging.DEBUG)
 
     analyzer = LogAnalyzer(model=args.model)
@@ -448,7 +462,7 @@ def main():
         print("=" * 60)
         print(f"\nTotal errors: {result['total_errors']}")
         print(f"Classified: {result['classified_errors']}")
-        print(f"\nFiles created:")
+        print("\nFiles created:")
         print(f"  Aggregated: {result['aggregated_file']}")
         print(f"  Errors:     {result['errors_file']}")
         print(f"  Classified: {result['classifications_file']}")

@@ -12,20 +12,22 @@ Includes caching to avoid re-classifying known error patterns.
 
 import hashlib
 import json
-import os
 import subprocess
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
-from typing import Iterator
 
 # Add shared library to path
 import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+
 jib_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(jib_root / "shared"))
 
 from jib_logging import get_logger
+
 from .error_extractor import ExtractedError
+
 
 logger = get_logger("error-classifier")
 
@@ -180,9 +182,7 @@ Respond with ONLY a JSON object like:
         self.classifications_dir = self.logs_dir / "analysis" / "classifications"
         self.classifications_dir.mkdir(parents=True, exist_ok=True)
 
-        self.cache_file = cache_file or (
-            self.logs_dir / "analysis" / "classification_cache.json"
-        )
+        self.cache_file = cache_file or (self.logs_dir / "analysis" / "classification_cache.json")
         self.model = model
 
         # Load cache
@@ -196,7 +196,7 @@ Respond with ONLY a JSON object like:
         try:
             with open(self.cache_file) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
+        except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"Error loading cache: {e}")
             return {}
 
@@ -205,7 +205,7 @@ Respond with ONLY a JSON object like:
         try:
             with open(self.cache_file, "w") as f:
                 json.dump(self._cache, f, indent=2)
-        except IOError as e:
+        except OSError as e:
             logger.warning(f"Error saving cache: {e}")
 
     def _get_signature(self, error: ExtractedError) -> str:
@@ -248,9 +248,12 @@ Respond with ONLY a JSON object like:
                 [
                     "claude",
                     "--print",
-                    "--model", self.model,
-                    "-p", prompt,
+                    "--model",
+                    self.model,
+                    "-p",
+                    prompt,
                 ],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -479,10 +482,7 @@ Respond with ONLY a JSON object like:
         # Save cache
         self._save_cache()
 
-        logger.info(
-            f"Classified {len(classified)} errors "
-            f"({new_classifications} new API calls)"
-        )
+        logger.info(f"Classified {len(classified)} errors ({new_classifications} new API calls)")
 
         return classified
 
@@ -584,6 +584,7 @@ def main():
     # Configure logging
     if args.verbose:
         import logging
+
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Load errors
