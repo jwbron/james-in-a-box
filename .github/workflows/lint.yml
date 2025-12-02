@@ -95,8 +95,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Check for Claude imports in host-services
-        run: python3 scripts/check-claude-imports.py
-
-      - name: Check for gh CLI write operations in host-services
-        run: python3 scripts/check-gh-cli-usage.py
+      - name: Run host-services checks
+        run: |
+          python3 scripts/check-claude-imports.py && \
+          python3 scripts/check-gh-cli-usage.py

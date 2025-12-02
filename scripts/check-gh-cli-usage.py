@@ -24,7 +24,15 @@ INCORRECT pattern:
 ALLOWED pattern (READ operations):
     - subprocess.run(["gh", "run", "view", ...])   # READ - fetches logs
     - subprocess.run(["gh", "pr", "view", ...])    # READ - fetches PR data
-    - subprocess.run(["gh", "api", ...])           # READ - API calls (GET)
+    - subprocess.run(["gh", "api", ...])           # READ - API calls (GET only)
+
+Note: `gh api -X POST/PUT/DELETE/PATCH` are WRITE operations and will be flagged.
+
+Limitations:
+    - Variable-based commands are NOT detected. The following will NOT be caught:
+        cmd = ["gh", "pr", "create", ...]
+        subprocess.run(cmd)  # Not detected because cmd is a variable
+    - Commands built dynamically at runtime are not detected
 
 Available container handlers for WRITE operations:
     - github_pr_create: Create a PR
@@ -45,6 +53,7 @@ import ast
 import re
 import sys
 from pathlib import Path
+
 
 # gh CLI subcommands that perform WRITE operations (affect identity)
 # These must go through jib container to use jib's identity
@@ -95,6 +104,9 @@ WRITE_SUBCOMMANDS = {
     ("workflow", "run"),
 }
 
+# HTTP methods that indicate write operations when used with `gh api -X`
+API_WRITE_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
 
 def is_write_operation(subcommand1: str, subcommand2: str | None) -> bool:
     """Check if a gh CLI command is a write operation."""
@@ -143,11 +155,11 @@ class GhCliVisitor(ast.NodeVisitor):
                 subcommand2 = None
                 if len(first_arg.elts) > 1:
                     second_elem = first_arg.elts[1]
-                    if isinstance(second_elem, ast.Constant):
+                    if isinstance(second_elem, ast.Constant) and isinstance(second_elem.value, str):
                         subcommand1 = second_elem.value
                 if len(first_arg.elts) > 2:
                     third_elem = first_arg.elts[2]
-                    if isinstance(third_elem, ast.Constant):
+                    if isinstance(third_elem, ast.Constant) and isinstance(third_elem.value, str):
                         subcommand2 = third_elem.value
 
                 # Only flag write operations
@@ -158,6 +170,9 @@ class GhCliVisitor(ast.NodeVisitor):
                     self.violations.append(
                         (node.lineno, f"subprocess WRITE call: [{cmd_str}, ...]")
                     )
+                # Check for gh api -X POST/PUT/DELETE/PATCH
+                elif subcommand1 == "api":
+                    self._check_api_write_operation(node, first_arg)
 
         # Check for string commands like "gh pr create ..."
         elif isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
@@ -172,8 +187,46 @@ class GhCliVisitor(ast.NodeVisitor):
                         self.violations.append(
                             (node.lineno, f"subprocess WRITE call: '{cmd[:50]}...'")
                         )
+                    # Check for gh api -X POST/PUT/DELETE/PATCH in string form
+                    elif subcommand1 == "api":
+                        for i, part in enumerate(parts):
+                            if part in ("-X", "--method") and i + 1 < len(parts):
+                                method = parts[i + 1].upper()
+                                if method in API_WRITE_METHODS:
+                                    self.violations.append(
+                                        (
+                                            node.lineno,
+                                            f"subprocess WRITE call: 'gh api -X {method}...'",
+                                        )
+                                    )
+                                    break
 
         self.generic_visit(node)
+
+    def _check_api_write_operation(self, node: ast.Call, list_arg: ast.List) -> None:
+        """Check for gh api -X POST/PUT/DELETE/PATCH patterns."""
+        # Look for -X or --method followed by a write method
+        elts = list_arg.elts
+        for i, elem in enumerate(elts):
+            if not (isinstance(elem, ast.Constant) and isinstance(elem.value, str)):
+                continue
+            if elem.value not in ("-X", "--method"):
+                continue
+            # Check if next element is a write method
+            if i + 1 >= len(elts):
+                continue
+            next_elem = elts[i + 1]
+            if not (isinstance(next_elem, ast.Constant) and isinstance(next_elem.value, str)):
+                continue
+            method = next_elem.value.upper()
+            if method in API_WRITE_METHODS:
+                self.violations.append(
+                    (
+                        node.lineno,
+                        f"subprocess WRITE call: [gh api -X {method}, ...]",
+                    )
+                )
+                return
 
     def _get_call_name(self, node: ast.Call) -> str:
         """Extract the full name of a function call."""
@@ -221,7 +274,11 @@ def check_file_with_regex(file_path: Path) -> list[tuple[int, str]]:
         # Pattern for list format: ["gh", "pr", "create", ...]
         write_patterns.append(
             (
-                rf'\[\s*["\']gh["\']\s*,\s*["\'{category}["\']\s*,\s*["\']{action}["\']',
+                r'\[\s*["\']gh["\']\s*,\s*["\']'
+                + category
+                + r'["\']\s*,\s*["\']'
+                + action
+                + r'["\']',
                 f"subprocess WRITE call: gh {category} {action}",
             )
         )
@@ -230,6 +287,25 @@ def check_file_with_regex(file_path: Path) -> list[tuple[int, str]]:
             (
                 rf'["\']gh\s+{category}\s+{action}\b',
                 f"subprocess WRITE call: gh {category} {action}",
+            )
+        )
+
+    # Add patterns for gh api -X POST/PUT/DELETE/PATCH
+    for method in API_WRITE_METHODS:
+        # Pattern for list format: ["gh", "api", ..., "-X", "POST", ...]
+        write_patterns.append(
+            (
+                r'\[\s*["\']gh["\']\s*,\s*["\']api["\'].*["\'](-X|--method)["\']\s*,\s*["\']'
+                + method
+                + r'["\']',
+                f"subprocess WRITE call: gh api -X {method}",
+            )
+        )
+        # Pattern for string format: "gh api -X POST ..."
+        write_patterns.append(
+            (
+                r'["\']gh\s+api\s+.*(-X|--method)\s+' + method + r"\b",
+                f"subprocess WRITE call: gh api -X {method}",
             )
         )
 
