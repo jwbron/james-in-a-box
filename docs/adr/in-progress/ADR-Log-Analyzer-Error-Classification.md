@@ -141,15 +141,18 @@ class ClassifiedError:
     stack_trace: str | None
 
     # Claude classification
-    category: str          # transient, configuration, bug, external, unknown
+    category: str          # transient, configuration, bug, external, resource, unknown
     severity: str          # low, medium, high, critical
+    confidence: str        # high, medium, low - how confident in this classification
     root_cause: str        # Claude's analysis of likely cause
     recommendation: str    # Suggested fix or investigation steps
     related_errors: list   # IDs of similar/related errors
 
     # Metadata
+    signature: str         # Hash for grouping similar errors
     classification_model: str
     classification_timestamp: str
+    occurrence_count: int  # Number of similar errors
 ```
 
 ### Error Categories
@@ -222,6 +225,62 @@ class LogAnalyzer:
 3. **Batch limits**: Max 50 unique patterns per run
 4. **Model selection**: Use Claude 3 Haiku for classification (fast, cheap)
 5. **Frequency**: Run analysis hourly or on-demand
+
+### Prompt Versioning and Iteration
+
+The classification prompt is critical to accuracy. To manage prompt evolution while maintaining cache validity:
+
+**Version-based Cache Invalidation:**
+```python
+class ErrorClassifier:
+    # Increment when prompt changes significantly
+    PROMPT_VERSION = "1.1"
+
+    def _load_cache(self):
+        # Cache includes version metadata
+        if cached_version != self.PROMPT_VERSION:
+            # Start fresh - old classifications may be incorrect
+            return {"_meta": {"version": self.PROMPT_VERSION}, "entries": {}}
+```
+
+**When to increment `PROMPT_VERSION`:**
+- Adding/removing classification categories
+- Changing the meaning of severity levels
+- Modifying the confidence scale
+- Adding/changing few-shot examples
+- Significant prompt rewording that changes classification behavior
+
+**When NOT to increment:**
+- Minor wording/grammar fixes
+- Adding clarifying comments
+- Code refactoring without prompt changes
+
+**Iteration Process:**
+1. **Identify issues**: Review classification output for systematic errors
+2. **Update prompt**: Modify classification prompt or few-shot examples
+3. **Bump version**: Increment `PROMPT_VERSION` (e.g., "1.1" → "1.2")
+4. **Test**: Run classifier on sample errors, verify improvement
+5. **Document**: Note significant changes in commit message
+
+**Cache Structure:**
+```json
+{
+  "_meta": {
+    "version": "1.1"
+  },
+  "entries": {
+    "<signature>": {
+      "category": "transient",
+      "severity": "medium",
+      "confidence": "high",
+      "root_cause": "...",
+      "recommendation": "...",
+      "model": "claude-3-5-haiku-latest",
+      "timestamp": "2025-12-01T12:00:00Z"
+    }
+  }
+}
+```
 
 ## Implementation Plan
 
