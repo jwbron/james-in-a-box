@@ -675,8 +675,9 @@ class ADRResearcher:
 
         for section_name in section_names:
             # Match headers like ## Section Name or ### Section Name
+            # Note: {{1,4}} doubles the braces to escape them in f-string (produces literal {1,4})
             pattern = re.compile(
-                rf"^(#{1, 4})\s*{re.escape(section_name)}\s*$", re.MULTILINE | re.IGNORECASE
+                rf"^(#{{1,4}})\s*{re.escape(section_name)}\s*$", re.MULTILINE | re.IGNORECASE
             )
 
             match = pattern.search(content)

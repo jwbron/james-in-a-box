@@ -84,12 +84,19 @@ def format_checks(ctx: dict) -> str:
 
     # Group by status
     # Note: gh pr checks uses 'state' (e.g., 'FAILURE', 'SUCCESS') not 'conclusion'
-    failed = [c for c in checks if c.get("state", "").upper() in ("FAILURE", "FAILED")]
+    # Handle variations: FAILURE/FAILED, SUCCESS/SUCCESSFUL/PASSED, CANCELLED/TIMED_OUT
+    failed = [
+        c
+        for c in checks
+        if c.get("state", "").upper() in ("FAILURE", "FAILED", "CANCELLED", "TIMED_OUT")
+    ]
     pending = [
         c for c in checks if c.get("state", "").upper() in ("PENDING", "IN_PROGRESS", "QUEUED")
     ]
-    passed = [c for c in checks if c.get("state", "").upper() == "SUCCESS"]
-    [c for c in checks if c not in failed and c not in pending and c not in passed]
+    passed = [
+        c for c in checks if c.get("state", "").upper() in ("SUCCESS", "SUCCESSFUL", "PASSED")
+    ]
+    # Note: checks not in any category are skipped (e.g., SKIPPED, NEUTRAL)
 
     if failed:
         lines.append("### Failed")
