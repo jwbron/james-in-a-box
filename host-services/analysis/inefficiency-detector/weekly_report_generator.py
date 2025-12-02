@@ -42,6 +42,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+# Add host-services shared modules to path for jib_exec
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from jib_exec import jib_exec
+
 import contextlib
 
 from impact_tracker import ImpactTracker
@@ -57,6 +61,28 @@ from config.model_pricing import calculate_blended_cost, get_active_model, get_m
 ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "inefficiency"
 PROPOSALS_DIR = REPO_ROOT / "docs" / "analysis" / "proposals"
 IMPACT_DIR = REPO_ROOT / "docs" / "analysis" / "impact"
+
+
+def _get_repo_name() -> str | None:
+    """Get the full repo name (owner/repo) from git remote."""
+    import re
+
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        url = result.stdout.strip()
+        # Parse repo name from URL (https://github.com/owner/repo.git or git@github.com:owner/repo.git)
+        match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+        if match:
+            return match.group(1)
+    except subprocess.CalledProcessError:
+        pass
+    return None
 
 
 class WeeklyReportGenerator:
@@ -539,31 +565,41 @@ See the full report for detailed analysis and actionable recommendations.
             if to_delete:
                 pr_body += f"\n### Cleanup\n- Removed {len(to_delete)} old report(s) to maintain max 5 reports\n"
 
-            result = subprocess.run(
-                [
-                    "gh",
-                    "pr",
-                    "create",
-                    "--title",
-                    pr_title,
-                    "--body",
-                    pr_body,
-                    "--base",
-                    "main",
-                    "--head",
-                    branch_name,
-                ],
-                check=True,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
+            # Create PR via jib container (uses jib identity)
+            repo = _get_repo_name()
+            if not repo:
+                print("ERROR: Could not determine repository name from git remote", file=sys.stderr)
+                return None
+
+            jib_result = jib_exec(
+                "github_pr_create",
+                {
+                    "repo": repo,
+                    "title": pr_title,
+                    "body": pr_body,
+                    "head": branch_name,
+                    "base": "main",
+                },
             )
-            pr_url = result.stdout.strip()
-            print(f"✓ Created PR: {pr_url}")
-            return pr_url
+
+            if jib_result.success and jib_result.result:
+                pr_url = jib_result.result.get("pr_url")
+                print(f"✓ Created PR: {pr_url}")
+                return pr_url
+            else:
+                print(f"ERROR creating PR: {jib_result.error}", file=sys.stderr)
+                # Try to return to original branch
+                with contextlib.suppress(Exception):
+                    subprocess.run(
+                        ["git", "checkout", "-"],
+                        check=False,
+                        cwd=REPO_ROOT,
+                        capture_output=True,
+                    )
+                return None
 
         except subprocess.CalledProcessError as e:
-            print(f"ERROR creating PR: {e}", file=sys.stderr)
+            print(f"ERROR in git operations: {e}", file=sys.stderr)
             print(f"  stdout: {e.stdout}", file=sys.stderr)
             print(f"  stderr: {e.stderr}", file=sys.stderr)
             # Try to return to original branch

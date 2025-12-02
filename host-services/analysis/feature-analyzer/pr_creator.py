@@ -34,6 +34,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# Add host-services shared modules to path for jib_exec
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from jib_exec import jib_exec
+
 
 if TYPE_CHECKING:
     from doc_generator import GeneratedUpdate
@@ -72,6 +76,21 @@ class PRCreator:
             text=True,
             check=check,
         )
+
+    def _get_repo_name(self) -> str | None:
+        """Get the full repo name (owner/repo) from git remote."""
+        try:
+            result = self._run_git("remote", "get-url", "origin")
+            url = result.stdout.strip()
+            # Parse repo name from URL (https://github.com/owner/repo.git or git@github.com:owner/repo.git)
+            import re
+
+            match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+            if match:
+                return match.group(1)
+        except subprocess.CalledProcessError:
+            pass
+        return None
 
     def _get_current_branch(self) -> str:
         """Get the current git branch name."""
@@ -227,54 +246,46 @@ Co-Authored-By: Claude <noreply@anthropic.com>"""
         body: str,
         base: str = "main",
     ) -> PRResult:
-        """Create a PR using the gh CLI."""
-        try:
-            result = subprocess.run(
-                [
-                    "gh",
-                    "pr",
-                    "create",
-                    "--title",
-                    title,
-                    "--body",
-                    body,
-                    "--base",
-                    base,
-                    "--head",
-                    branch_name,
-                ],
-                cwd=self.repo_root,
-                capture_output=True,
-                text=True,
-                check=True,
+        """Create a PR using jib container's gh CLI (jib identity).
+
+        Uses jib_exec to invoke the github_pr_create task in the container,
+        which uses the GITHUB_TOKEN (GitHub App token) so PRs are created
+        as jib rather than the host user.
+        """
+        # Get repo name from git remote
+        repo = self._get_repo_name()
+        if not repo:
+            return PRResult(
+                success=False,
+                branch_name=branch_name,
+                error="Could not determine repository name from git remote",
             )
 
-            # Parse PR URL from output
-            pr_url = result.stdout.strip()
-            pr_number = None
-            if pr_url and "/" in pr_url:
-                with contextlib.suppress(ValueError):
-                    pr_number = int(pr_url.split("/")[-1])
+        # Create PR via jib container
+        result = jib_exec(
+            "github_pr_create",
+            {
+                "repo": repo,
+                "title": title,
+                "body": body,
+                "head": branch_name,
+                "base": base,
+            },
+        )
 
+        if result.success and result.result:
             return PRResult(
                 success=True,
-                pr_url=pr_url,
-                pr_number=pr_number,
+                pr_url=result.result.get("pr_url"),
+                pr_number=result.result.get("pr_number"),
                 branch_name=branch_name,
             )
 
-        except subprocess.CalledProcessError as e:
-            return PRResult(
-                success=False,
-                branch_name=branch_name,
-                error=f"gh pr create failed: {e.stderr}",
-            )
-        except FileNotFoundError:
-            return PRResult(
-                success=False,
-                branch_name=branch_name,
-                error="gh CLI not found. Install GitHub CLI to create PRs.",
-            )
+        return PRResult(
+            success=False,
+            branch_name=branch_name,
+            error=result.error or "jib github_pr_create failed",
+        )
 
     def _write_updates_to_files(self, updates: list["GeneratedUpdate"]) -> list[Path]:
         """Write the updated content to files."""
