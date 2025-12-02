@@ -1865,7 +1865,7 @@ If truly no features (empty directory, only tests), return: `[]`
 
         if not success:
             # Fallback: try the original stdout parsing approach
-            success_fallback, stdout, error_fallback = self._run_llm_prompt(
+            success_fallback, stdout, _error_fallback = self._run_llm_prompt(
                 prompt, f"dir:{dir_path}-fallback"
             )
 
