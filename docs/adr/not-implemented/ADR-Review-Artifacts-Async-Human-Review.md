@@ -567,8 +567,8 @@ The artifact categories and human-in-the-loop principle are stable, but specific
 
 - [ADR-Autonomous-Software-Engineer](../in-progress/ADR-Autonomous-Software-Engineer.md) - Core architecture and human-in-the-loop model
 - [ADR-Multi-Agent-Pipeline-Architecture](./ADR-Multi-Agent-Pipeline-Architecture.md) - Pipeline stage outputs and checkpointing
-- [pr-descriptions.md](../../.claude/rules/pr-descriptions.md) - Existing PR format guidelines
-- [mission.md](../../.claude/rules/mission.md) - Agent operating model
+- [pr-descriptions.md](../../../jib-container/.claude/rules/pr-descriptions.md) - Existing PR format guidelines
+- [mission.md](../../../jib-container/.claude/rules/mission.md) - Agent operating model
 - [ADR-Feature-Analyzer-Documentation-Sync](../implemented/ADR-Feature-Analyzer-Documentation-Sync.md) - Related artifact production patterns
 
 ### Related ADRs
