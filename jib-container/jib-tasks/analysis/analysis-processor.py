@@ -975,6 +975,204 @@ This analysis uses the same high-quality pipeline as `feature-analyzer full-repo
         )
 
 
+def handle_github_pr_create(context: dict) -> int:
+    """Create a GitHub PR using gh CLI (with jib identity via GITHUB_TOKEN).
+
+    This handler is used by host-side services that need to create PRs
+    under jib's identity. The gh CLI inside the container uses the
+    GITHUB_TOKEN environment variable (GitHub App token), so PRs are
+    created as jib rather than the host user.
+
+    Context expected:
+        - repo: str (full repo name, e.g., "jwbron/james-in-a-box")
+        - title: str (PR title)
+        - body: str (PR body/description)
+        - head: str (branch name with changes)
+        - base: str (target branch, default "main")
+        - cwd: str (optional, working directory for gh CLI)
+
+    Returns JSON with:
+        - result.pr_url: URL of the created PR
+        - result.pr_number: PR number
+    """
+    import subprocess
+
+    repo = context.get("repo")
+    title = context.get("title")
+    body = context.get("body", "")
+    head = context.get("head")
+    base = context.get("base", "main")
+    cwd = context.get("cwd")
+
+    if not repo:
+        return output_result(False, error="Missing required field: repo")
+    if not title:
+        return output_result(False, error="Missing required field: title")
+    if not head:
+        return output_result(False, error="Missing required field: head")
+
+    try:
+        cmd = [
+            "gh",
+            "pr",
+            "create",
+            "--repo",
+            repo,
+            "--title",
+            title,
+            "--body",
+            body,
+            "--base",
+            base,
+            "--head",
+            head,
+        ]
+
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+        )
+
+        pr_url = result.stdout.strip()
+        pr_number = None
+        if pr_url and "/" in pr_url:
+            with contextlib.suppress(ValueError):
+                pr_number = int(pr_url.split("/")[-1])
+
+        return output_result(
+            success=True,
+            result={
+                "pr_url": pr_url,
+                "pr_number": pr_number,
+            },
+        )
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"gh pr create failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except FileNotFoundError:
+        return output_result(False, error="gh CLI not found")
+    except Exception as e:
+        return output_result(False, error=f"Error creating PR: {e}")
+
+
+def handle_github_pr_comment(context: dict) -> int:
+    """Add a comment to a GitHub PR using gh CLI (with jib identity).
+
+    Context expected:
+        - repo: str (full repo name, e.g., "jwbron/james-in-a-box")
+        - pr_number: int (PR number to comment on)
+        - body: str (comment body)
+
+    Returns JSON with:
+        - result.success: bool
+    """
+    import subprocess
+
+    repo = context.get("repo")
+    pr_number = context.get("pr_number")
+    body = context.get("body")
+
+    if not repo:
+        return output_result(False, error="Missing required field: repo")
+    if not pr_number:
+        return output_result(False, error="Missing required field: pr_number")
+    if not body:
+        return output_result(False, error="Missing required field: body")
+
+    try:
+        cmd = [
+            "gh",
+            "pr",
+            "comment",
+            str(pr_number),
+            "--repo",
+            repo,
+            "--body",
+            body,
+        ]
+
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        return output_result(success=True, result={"commented": True})
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"gh pr comment failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except subprocess.TimeoutExpired:
+        return output_result(False, error="gh pr comment timed out")
+    except FileNotFoundError:
+        return output_result(False, error="gh CLI not found")
+    except Exception as e:
+        return output_result(False, error=f"Error commenting on PR: {e}")
+
+
+def handle_github_pr_close(context: dict) -> int:
+    """Close a GitHub PR using gh CLI (with jib identity).
+
+    Context expected:
+        - repo: str (full repo name, e.g., "jwbron/james-in-a-box")
+        - pr_number: int (PR number to close)
+
+    Returns JSON with:
+        - result.closed: bool
+    """
+    import subprocess
+
+    repo = context.get("repo")
+    pr_number = context.get("pr_number")
+
+    if not repo:
+        return output_result(False, error="Missing required field: repo")
+    if not pr_number:
+        return output_result(False, error="Missing required field: pr_number")
+
+    try:
+        cmd = [
+            "gh",
+            "pr",
+            "close",
+            str(pr_number),
+            "--repo",
+            repo,
+        ]
+
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        return output_result(success=True, result={"closed": True})
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"gh pr close failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except subprocess.TimeoutExpired:
+        return output_result(False, error="gh pr close timed out")
+    except FileNotFoundError:
+        return output_result(False, error="gh CLI not found")
+    except Exception as e:
+        return output_result(False, error=f"Error closing PR: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analysis task processor for jib container",
@@ -992,6 +1190,9 @@ def main():
             "feature_extraction",
             "create_pr",
             "weekly_feature_analysis",
+            "github_pr_create",
+            "github_pr_comment",
+            "github_pr_close",
         ],
         help="Type of analysis task to perform",
     )
@@ -1018,6 +1219,9 @@ def main():
         "feature_extraction": handle_feature_extraction,
         "create_pr": handle_create_pr,
         "weekly_feature_analysis": handle_weekly_feature_analysis,
+        "github_pr_create": handle_github_pr_create,
+        "github_pr_comment": handle_github_pr_comment,
+        "github_pr_close": handle_github_pr_close,
     }
 
     handler = handlers.get(args.task)
