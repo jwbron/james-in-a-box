@@ -579,3 +579,108 @@ feature-analyzer weekly-analyze --days 7
 ```
 
 **Last Updated:** 2025-12-02
+
+### Analysis & Documentation (Auto-detected)
+
+#### Feature Sub-Documentation System **[implemented]**
+- **Description**: Generates categorized feature documentation pages organized by capability area (communication, context management, etc.) for improved discoverability
+- **Documentation**: [docs/features/README.md](docs/features/README.md) 
+- **Implementation**:
+  - `docs/features/README.md`
+  - `host-services/analysis/feature-analyzer/feature_doc_generator.py`
+  - `docs/features/communication.md`
+  - `docs/features/container-infrastructure.md`
+  - `docs/features/context-management.md`
+- **Introduced in**: commit d58cff34
+
+#### Weekly Code Analysis Service **[implemented]**
+- **Description**: Scheduled weekly service that analyzes code changes and automatically generates documentation update PRs
+- **Documentation**: [host-services/analysis/feature-analyzer/README.md](host-services/analysis/feature-analyzer/README.md) 
+- **Implementation**:
+  - `host-services/analysis/feature-analyzer/weekly_analyzer.py`
+  - `host-services/analysis/feature-analyzer/feature-analyzer-weekly.service`
+  - `host-services/analysis/feature-analyzer/feature-analyzer-weekly.timer`
+  - `host-services/analysis/feature-analyzer/pr_creator.py`
+- **Tests**: `host-services/analysis/feature-analyzer/test_weekly_analyzer.py`
+- **Introduced in**: commit 3e6fb05d
+
+#### Feature Documentation Generator **[implemented]**
+- **Description**: Generates detailed feature documentation files from FEATURES.md. Parses the features file to extract features by category, generates individual feature docs in docs/features/, and updates the README with navigation. Can be run manually or by the feature-analyzer CLI.
+- **Documentation**: [host-services/analysis/feature-analyzer/README.md](host-services/analysis/feature-analyzer/README.md) 
+- **Implementation**:
+  - `host-services/analysis/feature-analyzer/feature_doc_generator.py`
+
+
+### Container Infrastructure (Auto-detected)
+
+#### Container Log Persistence **[implemented]**
+- **Description**: Persists container logs with correlation IDs to enable debugging and tracing across container restarts and multiple sessions
+- **Documentation**: [docs/reference/README.md](docs/reference/README.md) 
+- **Implementation**:
+  - `docs/reference/log-persistence.md`
+  - `jib-container/jib`
+  - `jib-container/scripts/jib-logs`
+- **Introduced in**: commit 6b535f52
+
+#### Interactive Progress Bar Mode **[implemented]**
+- **Description**: Displays a real-time progress bar during interactive jib sessions using the -v flag for better user feedback on long-running operations
+- **Documentation**: [jib-container/README.md](jib-container/README.md) 
+- **Implementation**:
+  - `jib-container/jib`
+  - `jib-container/statusbar.py`
+- **Introduced in**: commit ccdb1565
+
+#### Shared Claude Runner Module **[implemented]**
+- **Description**: Provides a unified interface for running Claude CLI commands across all jib components with consistent error handling
+- **Documentation**: [shared/claude/README.md](shared/claude/README.md) (auto-generated)
+- **Implementation**:
+  - `shared/claude/__init__.py`
+  - `shared/claude/runner.py`
+- **Introduced in**: commit 0753b471
+
+#### Git Command Safety Wrapper **[implemented]**
+- **Description**: Wraps git commands to block potentially dangerous remote-modifying operations in containers
+- **Documentation**: [jib-container/scripts/README.md](jib-container/scripts/README.md) (auto-generated)
+- **Implementation**:
+  - `jib-container/scripts/git`
+- **Introduced in**: commit d4b13152
+
+
+### Context Sync (Auto-detected)
+
+#### Workflow Context Tracking **[implemented]**
+- **Description**: Automatically tracks and correlates workflow context across PRs, comments, and Slack messages using signatures for end-to-end traceability
+- **Documentation**: [docs/features/README.md](docs/features/README.md) 
+- **Implementation**:
+  - `docs/features/workflow-context.md`
+  - `shared/jib_logging/context.py`
+  - `shared/jib_logging/signatures.py`
+- **Tests**: `tests/shared/jib_logging/test_signatures.py`
+- **Introduced in**: commit db6fd7c1
+
+#### Context Sync Orchestrator **[implemented]**
+- **Description**: Main sync orchestrator that runs all configured connectors and syncs content to ~/context-sync/<connector-name>/. Coordinates Confluence and JIRA connectors for incremental or full synchronization, providing external knowledge to the LLM agent. Supports incremental sync by default with full sync option.
+- **Documentation**: [host-services/sync/context-sync/README.md](host-services/sync/context-sync/README.md) 
+- **Implementation**:
+  - `host-services/sync/context-sync/context-sync.py`
+
+
+### Utilities (Auto-detected)
+
+#### Service Failure Notification System **[implemented]**
+- **Description**: Automatically sends Slack notifications when any systemd service fails, enabling proactive monitoring and faster incident response for all jib host services
+- **Documentation**: [host-services/utilities/service-failure-notify/README.md](host-services/utilities/service-failure-notify/README.md) (auto-generated)
+- **Implementation**:
+  - `host-services/utilities/service-failure-notify/service-failure-notify@.service`
+  - `host-services/utilities/service-failure-notify/setup.sh`
+- **Introduced in**: commit 8b5be4ca
+
+#### Shared Text Utilities Library **[implemented]**
+- **Description**: Provides reusable text processing functions for chunking large documents and parsing YAML frontmatter across all jib components
+- **Documentation**: [shared/text_utils/README.md](shared/text_utils/README.md) (auto-generated)
+- **Implementation**:
+  - `shared/text_utils/__init__.py`
+  - `shared/text_utils/chunking.py`
+  - `shared/text_utils/frontmatter.py`
+- **Introduced in**: commit f9134128
+
