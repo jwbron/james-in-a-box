@@ -33,11 +33,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+
 # Add shared modules to path
 sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 
 try:
-    from claude import run_claude, is_claude_available
+    from claude import is_claude_available, run_claude
 except ImportError:
     # Fallback if shared module not available
     def is_claude_available() -> bool:
@@ -65,7 +66,7 @@ class TicketAnalysis:
 class ClaudeAnalysisAgent:
     """Claude-based agent for intelligent ticket analysis."""
 
-    ANALYSIS_PROMPT_TEMPLATE = '''You are a sprint planning assistant analyzing JIRA tickets.
+    ANALYSIS_PROMPT_TEMPLATE = """You are a sprint planning assistant analyzing JIRA tickets.
 
 Analyze the following ticket and provide a structured assessment.
 
@@ -108,9 +109,9 @@ Consider:
 6. **Priority Score**: 1-10 considering business impact, urgency, and blocking other work
 
 Be specific and actionable. Avoid generic advice like "continue working on this".
-'''
+"""
 
-    BATCH_PRIORITIZATION_PROMPT = '''You are a sprint planning assistant helping prioritize a backlog of tickets.
+    BATCH_PRIORITIZATION_PROMPT = """You are a sprint planning assistant helping prioritize a backlog of tickets.
 
 ## Context
 The developer has the following tickets assigned and needs help deciding which to work on next.
@@ -143,7 +144,7 @@ Respond with JSON only (no markdown code blocks):
     "overall_strategy": "Brief summary of recommended sprint strategy",
     "warnings": ["Any concerns about the current workload or priorities"]
 }}
-'''
+"""
 
     def __init__(self, verbose: bool = False):
         self.verbose = verbose
@@ -216,10 +217,12 @@ Respond with JSON only (no markdown code blocks):
             return None
 
         # Build summaries
-        in_progress_summary = "\n".join(
-            f"- {t.get('key')}: {t.get('title')} ({t.get('status')})"
-            for t in in_progress[:5]
-        ) or "No work currently in progress"
+        in_progress_summary = (
+            "\n".join(
+                f"- {t.get('key')}: {t.get('title')} ({t.get('status')})" for t in in_progress[:5]
+            )
+            or "No work currently in progress"
+        )
 
         tickets_json = json.dumps(
             [
@@ -399,6 +402,7 @@ class SprintAnalyzer:
 
         # Check environment variables first
         import os
+
         jira_user = os.environ.get("JIRA_USER", "").lower()
         if jira_user and jira_user in assignee:
             return True
@@ -433,10 +437,7 @@ class SprintAnalyzer:
         # Default for jib container: assume the host user is James Wiesebron
         # This handles the case where git config shows "jib" but tickets are
         # assigned to the actual developer
-        if "james" in assignee and "wiesebron" in assignee:
-            return True
-
-        return False
+        return bool("james" in assignee and "wiesebron" in assignee)
 
     def is_in_active_sprint(self, ticket: dict) -> bool:
         """Check if ticket is in active sprint (heuristic based on labels/status)."""
@@ -562,8 +563,7 @@ class SprintAnalyzer:
 
             # Skip tickets already in progress
             if any(
-                s in status
-                for s in ["in progress", "in review", "testing", "done", "construction"]
+                s in status for s in ["in progress", "in review", "testing", "done", "construction"]
             ):
                 continue
 
@@ -582,9 +582,7 @@ class SprintAnalyzer:
                 print("  Using Claude for backlog prioritization...")
 
             in_progress = in_progress_tickets or []
-            claude_result = self.claude_agent.prioritize_backlog(
-                backlog_candidates, in_progress
-            )
+            claude_result = self.claude_agent.prioritize_backlog(backlog_candidates, in_progress)
 
             if claude_result and "recommendations" in claude_result:
                 # Build results from Claude's recommendations
@@ -598,19 +596,19 @@ class SprintAnalyzer:
                         (t for t in backlog_candidates if t.get("key") == key), None
                     )
                     if matching_ticket:
-                        results.append({
-                            "ticket": matching_ticket,
-                            "score": 10 - rec.get("priority_rank", 5),  # Convert rank to score
-                            "action": rec.get("action", "unknown"),
-                            "reasoning": rec.get("reasoning", ""),
-                            "analysis_source": "claude",
-                        })
+                        results.append(
+                            {
+                                "ticket": matching_ticket,
+                                "score": 10 - rec.get("priority_rank", 5),  # Convert rank to score
+                                "action": rec.get("action", "unknown"),
+                                "reasoning": rec.get("reasoning", ""),
+                                "analysis_source": "claude",
+                            }
+                        )
 
                 # Add overall strategy to results metadata
                 if results:
-                    results[0]["overall_strategy"] = claude_result.get(
-                        "overall_strategy", ""
-                    )
+                    results[0]["overall_strategy"] = claude_result.get("overall_strategy", "")
                     results[0]["warnings"] = claude_result.get("warnings", [])
 
                 if results:
@@ -651,11 +649,13 @@ class SprintAnalyzer:
             elif "bug" in ticket_type:
                 score += 5  # Bugs often need quick attention
 
-            backlog.append({
-                "ticket": ticket,
-                "score": score,
-                "analysis_source": "heuristic",
-            })
+            backlog.append(
+                {
+                    "ticket": ticket,
+                    "score": score,
+                    "analysis_source": "heuristic",
+                }
+            )
 
         # Sort by score descending
         backlog.sort(key=lambda x: -x["score"])
@@ -855,7 +855,7 @@ Full analysis in thread below
 
             for item in backlog_suggestions:
                 ticket = item["ticket"]
-                score = item.get("score", 0)
+                item.get("score", 0)
 
                 detail_content += f"**{ticket['key']}: {ticket['title']}**\n"
                 detail_content += f"- Priority: {ticket.get('priority', 'Unknown')}\n"
@@ -958,11 +958,9 @@ Run again with: `bin/jib --exec ~/khan/james-in-a-box/jib-container/jib-tasks/ji
 
         # Get in-progress tickets for backlog prioritization context
         in_progress_tickets = [
-            t for t in assigned_tickets
-            if any(
-                s in t.get("status", "").lower()
-                for s in ["progress", "construction", "review"]
-            )
+            t
+            for t in assigned_tickets
+            if any(s in t.get("status", "").lower() for s in ["progress", "construction", "review"])
         ]
 
         # Get backlog suggestions
@@ -1003,7 +1001,8 @@ Examples:
     )
 
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Show verbose output including Claude analysis progress",
     )
