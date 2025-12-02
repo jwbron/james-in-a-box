@@ -1,208 +1,102 @@
-# LLM-Assisted Code Review Guide
+# LLM-Assisted Code Review: A New Approach
 
-A practical guide for dramatically increasing PR review efficiency through LLM automation.
+This guide introduces our approach to code review in a world where LLMs generate code faster than humans can review it.
 
-## The Core Insight
+## What's Changing
 
-> **LLM agents review every PR first. LLM agents auto-apply their own feedback. Humans approve the refined result.**
+**The old way:** You write code → You open a PR → A human reviewer checks everything → You fix their feedback → They re-review → Eventually it merges.
+
+**The new way:** You write code → You open a PR → LLMs automatically review and fix issues → A human does a final approval → It merges.
+
+The key insight:
+
+> **If you as a reviewer see a pattern of feedback on a specific topic, it's your responsibility to add a linter to solve the problem systematically.**
 >
-> **When humans request changes, that's a failure of the automated review process—and a signal to improve it.**
+> **If you're not able to do that, you should assess the value-add of the feedback.**
 
-This inverts the traditional review model:
+In other words: every piece of recurring feedback is a process failure. It should either be automated or questioned.
 
-| Traditional | LLM-First |
-|-------------|-----------|
-| PR created → Human reviews → Developer fixes → Human re-reviews → Merge | PR created → LLM reviews → LLM fixes → Human approves → Merge |
+## Why This Matters
 
-Human reviewers become the *escalation path*, not the primary gate.
+Traditional code review has problems:
+
+- **Reviewers give the same feedback over and over** — "Add type hints," "Use const instead of let," "Missing docstring"
+- **Different reviewers catch different things** — Inconsistent quality enforcement
+- **Feedback comes late** — Issues found at PR time could've been caught at commit time
+- **It doesn't scale** — When LLMs can generate PRs in minutes, human review becomes the bottleneck
+
+We're solving this by flipping the model: **LLMs review first, humans approve last**.
+
+## What This Means for Reviewers
+
+Your job changes from "catch everything" to "focus on what matters":
+
+**Still your job:**
+- Does this meet the business requirements?
+- Does the architecture make sense?
+- Are there security implications I should flag?
+- Is this the right direction strategically?
+
+**No longer your job:**
+- Checking for style issues (linters do this)
+- Catching missing type hints (type checkers do this)
+- Spotting common anti-patterns (LLM reviewers do this)
+- Requesting minor fixes (LLM agents apply these automatically)
+
+When you *do* find something the automated tools missed, don't just request a fix—ask yourself: "Can I add this to the automation so no one has to catch this manually again?"
+
+## What This Means for PR Authors
+
+Your workflow stays mostly the same, but with faster feedback:
+
+1. **Pre-commit hooks catch issues immediately** — Before you even push, linters and formatters clean things up
+2. **LLM reviewers catch semantic issues** — Over-engineering, unclear naming, missing error handling
+3. **LLM agents apply fixes** — Many issues get auto-fixed without you lifting a finger
+4. **Human review is the final step** — Focused on high-level concerns, not nitpicks
+
+Result: Less back-and-forth, faster merges, cleaner code.
 
 ## The Review Stack
 
-Different concerns belong at different layers:
+Different tools handle different concerns:
 
-| Layer | Handled By | Examples |
-|-------|------------|----------|
-| **Syntax & Style** | Linters (ruff, ESLint, prettier) | Formatting, import order, naming conventions |
-| **Type Safety** | Type checkers (mypy, TypeScript) | Missing types, type mismatches |
-| **Security Basics** | SAST tools (detect-secrets, semgrep) | Hardcoded secrets, common vulnerabilities |
-| **Pattern Compliance** | LLM reviewer | Over-engineering, scope creep, naming clarity, code duplication, missing tests |
-| **Implementation Quality** | LLM reviewer | Error handling, edge cases, performance concerns |
-| **Business Logic** | Human reviewer (final pass) | Requirements fit, domain correctness |
-| **Architecture** | Human reviewer (final pass) | Design decisions, system impact |
-| **Strategy** | Human reviewer (final pass) | Direction, priorities, novel concerns |
+| What | Who handles it |
+|------|----------------|
+| Formatting, style, syntax | Linters (ruff, ESLint, prettier) |
+| Type safety | Type checkers (mypy, TypeScript) |
+| Security basics | SAST tools (detect-secrets, semgrep) |
+| Code patterns, naming, duplication | LLM reviewer |
+| Business logic, architecture, strategy | Human reviewer |
 
-**Key principle:** Human reviewers should rarely request changes. When they do, it signals the automated layer needs improvement.
+The goal: by the time a human sees the PR, all the mechanical issues are already resolved.
 
-## The Reviewer's New Role
+## The Key Principle
 
-```
-When reviewing a PR:
-├─ Does it meet business requirements? → Approve or discuss
-├─ Does the architecture make sense? → Approve or discuss
-├─ Did I find an issue the LLM missed?
-│   ├─ Yes → Add to LLM review prompt, then request changes
-│   │        (Make the automated process catch this next time)
-│   └─ No → Approve
-└─ Am I leaving line-by-line feedback?
-    └─ Yes → STOP. The LLM should be doing this.
-             Add this feedback pattern to the LLM reviewer.
-```
+> **When you find yourself giving the same feedback twice, stop and automate it.**
 
-## The Automation Responsibility
+This applies to everyone—not just tooling experts. If you don't know how to create an automated check yourself, raise it with the team. But "I'll just keep commenting this manually" is not an acceptable long-term answer.
 
-> **If you as a reviewer see a pattern of feedback on a specific topic, it's your responsibility to add it to the LLM review prompt or create an automated check.**
->
-> **If you can't create the automated check yourself, escalate it. But if you're repeatedly giving the same feedback without automating it, you're wasting everyone's time—including your own.**
+Over time, this creates a self-improving system:
 
-This is a forcing function. Reviewers who repeatedly provide low-level feedback instead of automating it will be visible through metrics:
+1. Human gives feedback on a PR
+2. System notices "this feedback has appeared 3+ times"
+3. A new automated check is proposed
+4. Team approves the check
+5. Future PRs never have this issue
 
-- **Comments per PR** — High numbers indicate operating at wrong level
-- **% of comments that become automated checks** — Low % after coaching = problem
-- **Comment abstraction level** — Architecture/strategy vs style/syntax
+Reviewers become *trainers* of the automation, not gatekeepers.
 
-These metrics are diagnostic, not punitive—until coaching fails.
+## Getting Started
 
-## The Self-Improving Review Loop
+If you're new to this approach:
 
-The **PR Review Reviewer** pattern closes the feedback loop:
+1. **Trust the linters** — If something passed pre-commit, don't comment on formatting
+2. **Focus on the big picture** — Architecture, business logic, security
+3. **When in doubt, approve** — If the automated tools passed and you don't have high-level concerns, approve
+4. **Document patterns** — When you give feedback, consider whether it should become a rule
 
-```
-Human provides feedback → Pattern detected → New check auto-generated → Human approves → Future PRs pass automatically
-```
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    The Self-Improving Review Loop                            │
-│                                                                              │
-│    Human provides      PR Review Reviewer     New check auto-                │
-│    feedback on PR  ──▶ detects pattern   ──▶  generated and     ◀──┐        │
-│                        (3+ occurrences)       proposed as PR       │        │
-│                                                                     │        │
-│                                    │                                │        │
-│                                    ▼                                │        │
-│                         ┌──────────────────────┐                    │        │
-│                         │  Human approves      │                    │        │
-│                         │  or rejects check    │────────────────────┘        │
-│                         └──────────────────────┘                             │
-│                                    │                                         │
-│                                    ▼                                         │
-│                         ┌──────────────────────┐                             │
-│                         │  Check catches       │                             │
-│                         │  future issues       │                             │
-│                         │  automatically       │                             │
-│                         └──────────────────────┘                             │
-│                                                                              │
-│  Result: Human feedback becomes rarer over time as the system learns         │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-Human reviewers become *trainers* of the automated system. Their feedback improves not just the current PR, but all future PRs.
-
-## The Two-Agent Pattern
-
-The most efficient implementation uses two LLM agents:
-
-1. **Reviewer Agent**: Analyzes the PR, identifies issues, posts review comments
-2. **Fixer Agent**: Reads the review comments, applies the suggested changes, pushes fixes
-
-```
-Author creates PR
-       ↓
-Reviewer Agent analyzes → Posts comments
-       ↓
-Fixer Agent reads comments → Applies fixes → Pushes
-       ↓
-Reviewer Agent re-analyzes → Approves (or iterates)
-       ↓
-Human does final review → Approves or provides high-level feedback
-```
-
-Most issues are resolved without human involvement.
-
-## Why LLMs Can Review Better Than Linters
-
-Traditional linters catch issues expressible as AST patterns or regex. But many recurring PR feedback themes require semantic understanding:
-
-- "This is over-engineered for the current requirements"
-- "This PR includes changes unrelated to its stated purpose"
-- "These variable names don't clearly communicate intent"
-- "This abstraction is premature"
-- "Missing test coverage for this edge case"
-- "This duplicates logic from X module"
-
-**LLMs can catch all of these.** And critically, another LLM agent can usually *fix* them automatically.
-
-## Acknowledging LLM Limitations
-
-LLMs are not perfect reviewers. They can:
-
-- Miss subtle bugs requiring deep domain knowledge
-- Overlook security implications depending on deployment context
-- Suggest changes that technically work but don't fit the architecture
-- Generate false positives, especially on unfamiliar codebases
-
-**The goal is not perfection—it's efficiency.** If LLM review catches 80% of issues automatically, that's an 80% reduction in human review effort. The remaining 20% is where human expertise adds the most value.
-
-## Pattern Detection and Check Generation
-
-When the PR Review Reviewer detects patterns in human feedback:
-
-| Feedback Pattern | Generated Check Type | Example |
-|-----------------|---------------------|---------|
-| "Add type hints" | Ruff rule enablement | Enable ANN rules, create PR |
-| "Use pathlib instead of os.path" | Custom linter rule | Add PTH rules to ruff config |
-| "Missing error handling for X" | LLM review prompt update | Add to REVIEW_PROMPT |
-| "This duplicates code in Y" | Custom cross-file check | Generate semgrep pattern |
-| "Follow the pattern in Z" | LLM review prompt example | Add example to prompt |
-
-## Success Metrics
-
-**System-level:**
-- % of PRs that pass human review with no requested changes
-- Average human review comments per PR (should decrease over time)
-- % of LLM suggestions auto-applied vs manually addressed
-- Reduction in recurring feedback patterns over time
-
-**Reviewer-level (creates accountability):**
-- Comments per PR by reviewer
-- % of comments that trigger new automated checks
-- Comment abstraction level (architecture/strategy vs style/syntax)
-
-## The Workflow: Complain → Automate → Enforce
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    Complain → Automate → Enforce                         │
-│                                                                          │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐             │
-│  │   COMPLAIN   │────▶│   AUTOMATE   │────▶│   ENFORCE    │             │
-│  │              │     │              │     │              │             │
-│  │ "I've given  │     │ Write a      │     │ Add to CI,   │             │
-│  │  this same   │     │ linter rule, │     │ pre-commit,  │             │
-│  │  feedback    │     │ custom check,│     │ or editor    │             │
-│  │  3+ times"   │     │ or script    │     │ config       │             │
-│  └──────────────┘     └──────────────┘     └──────────────┘             │
-│                                                                          │
-│  Outputs:                                                                │
-│  - No PR ever has this issue again                                      │
-│  - Reviewer time freed for higher-value work                            │
-│  - Standard is explicit and documented                                  │
-│  - Agent (jib) learns the rule automatically                            │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-## Quick Reference
-
-| Traditional Behavior | LLM-First Behavior |
-|---------------------|-------------------|
-| Leave detailed line comments | Add pattern to LLM reviewer |
-| Manually check for style issues | Trust linters |
-| Re-review after fixes | Let LLM handle iterations |
-| Approve when "good enough" | Approve when architecture/strategy is sound |
-| Give same feedback repeatedly | Automate after 2nd occurrence |
+The goal is not to eliminate human judgment—it's to focus human judgment where it matters most.
 
 ---
 
-**Related:** See [ADR: Coding Standards in a Post-LLM World](../adr/in-progress/ADR-Coding-Standards-Post-LLM-World.md) for the full architectural decision record.
+**Want the full details?** See [ADR: Coding Standards in a Post-LLM World](../adr/in-progress/ADR-PR-Review-Efficiency.md) for the complete architectural decision record, including implementation phases, success metrics, and technical specifications.
