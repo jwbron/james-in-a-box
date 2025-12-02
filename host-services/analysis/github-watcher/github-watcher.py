@@ -1277,8 +1277,10 @@ def check_prs_for_review(
             continue
 
         # Determine if this is a re-review (different commit was previously reviewed)
+        # Check if any previous review exists for this PR (regardless of commit)
+        pr_review_prefix = f"{repo}-{pr_num}-"
         is_rereview = any(
-            sig.startswith(f"{repo}-{pr_num}-") and sig.endswith(":review")
+            sig.startswith(pr_review_prefix) and sig.endswith(":review")
             for sig in state.get("processed_reviews", {})
         )
 
