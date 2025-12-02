@@ -33,6 +33,7 @@ Usage:
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -433,8 +434,6 @@ class ADRResearcher:
         - [Title](URL) - Description
         - **Source:** [URL]
         """
-        import re
-
         sources = []
         # Match markdown links: [Title](URL)
         # Optional: followed by " - description" (handles hyphen, en dash, em dash)
@@ -475,8 +474,6 @@ class ADRResearcher:
 
         Looks for patterns in "Key Findings" or similar sections.
         """
-        import re
-
         findings = []
 
         # Find the Key Findings section
@@ -522,8 +519,6 @@ class ADRResearcher:
 
         Looks for tables with Organization/Project, Approach, Notes columns.
         """
-        import re
-
         adoptions = []
 
         # Find the Industry Adoption section
@@ -568,8 +563,6 @@ class ADRResearcher:
 
     def _parse_recommendations(self, content: str) -> list[Recommendation]:
         """Parse recommendations from markdown content."""
-        import re
-
         recommendations = []
 
         # Find the Recommendations section
@@ -612,8 +605,6 @@ class ADRResearcher:
 
     def _parse_anti_patterns(self, content: str) -> list[str]:
         """Parse anti-patterns from markdown content."""
-        import re
-
         anti_patterns = []
 
         # Find the Anti-Patterns section
@@ -685,8 +676,6 @@ class ADRResearcher:
         Returns:
             Section content (between this header and next header), or None
         """
-        import re
-
         for section_name in section_names:
             # Match headers like ## Section Name or ### Section Name
             # Note: {{1,4}} doubles the braces to escape them in f-string (produces literal {1,4})
@@ -819,7 +808,7 @@ class ADRResearcher:
 
         return results
 
-    def research_merged_adrs(self) -> list[ResearchResult]:
+    def research_merged_adrs(self, dry_run: bool = False) -> list[ResearchResult]:
         """Research all merged/implemented ADRs and create update PRs.
 
         Enhanced workflow:
@@ -828,6 +817,9 @@ class ADRResearcher:
         3. Invoke jib to research with prior findings as context
         4. If updates found, create PR with Research Updates section
         5. Close prior research PRs with references to the new PR
+
+        Args:
+            dry_run: If True, only report what would be done without making changes
 
         Returns:
             List of ResearchResult objects with typed, structured research findings.
@@ -872,10 +864,13 @@ class ADRResearcher:
                 print(f"  New PR created: {research_result.pr_url}")
                 print(f"  Closing {len(prior_prs)} prior research PR(s)...")
                 closure_results = self.close_prior_research_prs(
-                    prior_prs, research_result.pr_url, adr.title
+                    prior_prs, research_result.pr_url, adr.title, dry_run=dry_run
                 )
                 closed_count = sum(1 for r in closure_results if r.get("success"))
-                print(f"  Closed {closed_count}/{len(prior_prs)} prior PR(s)")
+                if dry_run:
+                    print(f"  [DRY RUN] Would close {closed_count}/{len(prior_prs)} prior PR(s)")
+                else:
+                    print(f"  Closed {closed_count}/{len(prior_prs)} prior PR(s)")
 
             results.append(research_result)
 
@@ -1053,8 +1048,6 @@ class ADRResearcher:
 
         Looks for bullet points under "Key" or "Findings" sections.
         """
-        import re
-
         findings = []
 
         # Look for key findings sections
@@ -1074,8 +1067,6 @@ class ADRResearcher:
 
     def _extract_sources_from_body(self, body: str) -> list[str]:
         """Extract source URLs from a PR body."""
-        import re
-
         # Match markdown links
         urls = re.findall(r"\[([^\]]+)\]\((https?://[^\)]+)\)", body)
         # Return unique URLs with their titles
@@ -1088,7 +1079,11 @@ class ADRResearcher:
         return sources[:20]
 
     def close_prior_research_prs(
-        self, prior_prs: list[PriorResearchPR], new_pr_url: str, adr_title: str
+        self,
+        prior_prs: list[PriorResearchPR],
+        new_pr_url: str,
+        adr_title: str,
+        dry_run: bool = False,
     ) -> list[dict]:
         """Close prior research PRs with a comment explaining they're superseded.
 
@@ -1096,11 +1091,25 @@ class ADRResearcher:
             prior_prs: List of PriorResearchPR objects to close
             new_pr_url: URL of the new PR that supersedes these
             adr_title: Title of the ADR for the comment
+            dry_run: If True, only report what would be done without making changes
 
         Returns:
             List of dicts with results for each PR closure attempt
         """
         results = []
+
+        if dry_run:
+            for pr in prior_prs:
+                print(f"  [DRY RUN] Would close PR #{pr.pr_number}: {pr.title}")
+                results.append(
+                    {
+                        "pr_number": pr.pr_number,
+                        "success": True,
+                        "dry_run": True,
+                        "superseded_by": new_pr_url,
+                    }
+                )
+            return results
 
         for pr in prior_prs:
             print(f"  Closing prior research PR #{pr.pr_number}: {pr.title}")
@@ -1139,7 +1148,7 @@ The new PR incorporates findings from this PR where still relevant, along with u
                 if comment_result.returncode == 0:
                     break
 
-            # Close the PR
+            # Close the PR (comment already posted above)
             for repo in self.config.get("writable_repos", []):
                 close_result = subprocess.run(
                     [
@@ -1149,8 +1158,6 @@ The new PR incorporates findings from this PR where still relevant, along with u
                         str(pr.pr_number),
                         "--repo",
                         repo,
-                        "--comment",
-                        f"Superseded by {new_pr_url}",
                     ],
                     capture_output=True,
                     text=True,
