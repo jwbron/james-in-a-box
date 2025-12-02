@@ -64,7 +64,11 @@ class TicketAnalysis:
 
 
 class ClaudeAnalysisAgent:
-    """Claude-based agent for intelligent ticket analysis."""
+    """Claude-based agent for intelligent ticket analysis.
+
+    Note: The availability check is cached for the lifetime of the agent instance.
+    If Claude availability changes during execution (unlikely), create a new agent.
+    """
 
     ANALYSIS_PROMPT_TEMPLATE = """You are a sprint planning assistant analyzing JIRA tickets.
 
@@ -434,10 +438,16 @@ class SprintAnalyzer:
         except (OSError, subprocess.SubprocessError):
             pass
 
-        # Default for jib container: assume the host user is James Wiesebron
-        # This handles the case where git config shows "jib" but tickets are
-        # assigned to the actual developer
-        return bool("james" in assignee and "wiesebron" in assignee)
+        # Check DEFAULT_JIRA_USER environment variable as fallback
+        # This allows configuration for any user, not just a hardcoded default
+        default_user = os.environ.get("DEFAULT_JIRA_USER", "").lower()
+        if default_user:
+            # Check if all parts of the name match (e.g., "james wiesebron" matches "James Wiesebron")
+            name_parts = default_user.split()
+            if all(part in assignee for part in name_parts):
+                return True
+
+        return False
 
     def is_in_active_sprint(self, ticket: dict) -> bool:
         """Check if ticket is in active sprint (heuristic based on labels/status)."""
@@ -855,7 +865,6 @@ Full analysis in thread below
 
             for item in backlog_suggestions:
                 ticket = item["ticket"]
-                item.get("score", 0)
 
                 detail_content += f"**{ticket['key']}: {ticket['title']}**\n"
                 detail_content += f"- Priority: {ticket.get('priority', 'Unknown')}\n"
