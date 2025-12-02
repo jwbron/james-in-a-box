@@ -1841,9 +1841,8 @@ For each feature provide:
 
 # Output
 
-Return ONLY a JSON array:
+Your output should be a JSON array:
 
-```json
 [
   {{
     "name": "Feature Name",
@@ -1853,16 +1852,29 @@ Return ONLY a JSON array:
     "confidence": 0.85
   }}
 ]
-```
 
 If truly no features (empty directory, only tests), return: `[]`
 """
 
-        success, stdout, error = self._run_llm_prompt(prompt, f"dir:{dir_path}")
-        if success and stdout.strip():
-            return self._parse_llm_output(stdout, context=f"dir:{dir_path}")
-        if error:
-            print(f"    Warning: LLM analysis failed for {dir_path}: {error}")
+        # Use file-based approach to avoid JSON parsing issues when LLM includes
+        # explanatory text before/after the JSON array
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, f"dir:{dir_path}")
+
+        if success and json_content and isinstance(json_content, list):
+            return self._json_to_features(json_content)
+
+        if not success:
+            # Fallback: try the original stdout parsing approach
+            success_fallback, stdout, _error_fallback = self._run_llm_prompt(
+                prompt, f"dir:{dir_path}-fallback"
+            )
+
+            if success_fallback and stdout.strip():
+                return self._parse_llm_output(stdout, context=f"dir:{dir_path}")
+
+            if error:
+                print(f"    Warning: LLM analysis failed for {dir_path}: {error}")
+
         return []
 
     def _parse_llm_output(self, output: str, context: str = "") -> list[DetectedFeature]:
