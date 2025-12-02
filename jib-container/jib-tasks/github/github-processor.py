@@ -264,7 +264,19 @@ Review the output carefully. Note which failures match the CI logs vs new/differ
 8. **Verify branch again**: Run `git branch --show-current` - confirm still on `{pr_branch}`
 9. **Commit** - Commit fixes with clear message
 10. **Push** - Push to the PR branch: `git push origin {pr_branch}`
-11. **Comment** - Add PR comment explaining fixes. Use the signature helper to add workflow context:
+11. **Update PR description** - Update the PR description to document the fixes:
+    ```python
+    # First, get the current PR to retrieve the existing body
+    # Use MCP: mcp__github__pull_request_read(owner="{repo.split("/")[0]}", repo="{repo.split("/")[-1]}", pullNumber={pr_num}, method="get")
+    # Then update with the fixes documented:
+    # Use MCP: mcp__github__update_pull_request(
+    #     owner="{repo.split("/")[0]}",
+    #     repo="{repo.split("/")[-1]}",
+    #     pullNumber={pr_num},
+    #     body="<existing body>\\n\\n## Updates\\n- Fixed: <list what was fixed>"
+    # )
+    ```
+12. **Comment** - Add PR comment explaining fixes. Use the signature helper to add workflow context:
     ```python
     try:
         from jib_logging.signatures import add_signature_to_comment
@@ -275,7 +287,7 @@ Review the output carefully. Note which failures match the CI logs vs new/differ
     # Then post to GitHub with comment_with_sig
     ```
     The try/except ensures that signature failures don't block the primary task.
-12. **Update beads** - Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
+13. **Update beads** - Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
 
 **IMPORTANT**: All PR comments you post should include the workflow signature (automatically added by the helper).
 
@@ -513,7 +525,21 @@ git branch --show-current  # VERIFY still on {pr_branch}
 git push origin {pr_branch}
 ```
 
-**d. Comment on the PR to explain what you did:**
+**d. Update the PR description:**
+If changes were significant, update the PR description to document what was addressed:
+```python
+# First, get the current PR body:
+# Use MCP: mcp__github__pull_request_read(owner="{owner}", repo="{repo_name}", pullNumber={pr_num}, method="get")
+# Then update with a new "Updates" section:
+# Use MCP: mcp__github__update_pull_request(
+#     owner="{owner}",
+#     repo="{repo_name}",
+#     pullNumber={pr_num},
+#     body="<existing body>\\n\\n## Updates\\n- Addressed review feedback: <summary>"
+# )
+```
+
+**e. Comment on the PR to explain what you did:**
 ```bash
 gh pr comment {pr_num} --body "I've addressed the review feedback:
 - Fixed issue X in file Y
@@ -920,7 +946,21 @@ Resolved merge conflicts to integrate latest {base_branch} changes."
 git push origin {pr_branch}
 ```
 
-### Step 8: Comment on the PR
+### Step 8: Update the PR description
+Update the PR description to document the merge conflict resolution:
+```python
+# First, get the current PR body:
+# Use MCP: mcp__github__pull_request_read(owner="{repo.split("/")[0]}", repo="{repo.split("/")[-1]}", pullNumber={pr_num}, method="get")
+# Then update with conflict resolution details:
+# Use MCP: mcp__github__update_pull_request(
+#     owner="{repo.split("/")[0]}",
+#     repo="{repo.split("/")[-1]}",
+#     pullNumber={pr_num},
+#     body="<existing body>\\n\\n## Updates\\n- Resolved merge conflicts with {base_branch}: <summary of resolution>"
+# )
+```
+
+### Step 9: Comment on the PR
 Use `gh pr comment {pr_num} --repo {repo}` to explain:
 - What conflicts were found
 - How you resolved them
@@ -928,7 +968,7 @@ Use `gh pr comment {pr_num} --repo {repo}` to explain:
 
 Sign with: "— Authored by jib"
 
-### Step 9: Update beads
+### Step 10: Update beads
 Update the beads task with what you did{f" (task: {beads_id})" if beads_id else ""}
 
 {beads_context}
