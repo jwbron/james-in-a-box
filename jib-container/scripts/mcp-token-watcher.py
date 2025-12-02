@@ -216,8 +216,12 @@ def main():
 
     args = parser.parse_args()
 
-    # Note: verbose flag is acknowledged but jib_logging sets level in get_logger
-    # For verbose mode, pass level to get_logger or use configure_root_logging
+    # Configure logging level based on verbose flag
+    if args.verbose:
+        import logging
+
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Verbose logging enabled")
 
     if args.once or args.force:
         updated = check_and_update(force=args.force)

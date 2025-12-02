@@ -118,7 +118,7 @@ class SprintAnalyzer:
                 email_name = git_email.split("@")[0].replace(".", " ")
                 if email_name in assignee:
                     return True
-        except:
+        except (OSError, subprocess.SubprocessError):
             pass
 
         return False
