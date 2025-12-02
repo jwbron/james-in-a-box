@@ -110,7 +110,8 @@ def build_research_prompt(context: dict) -> str:
 {adr_excerpt}
 ```
 
-{f'''## Prior Research to Integrate
+{
+        f'''## Prior Research to Integrate
 
 **IMPORTANT:** There are {len(prior_pr_numbers)} prior research PR(s) for this ADR that will be closed when this new research is created: {", ".join(f"#{n}" for n in prior_pr_numbers)}
 
@@ -123,7 +124,10 @@ When creating the new PR:
 2. Preserve valuable findings from prior research where still relevant
 3. Note any findings that have been updated or superseded
 
-''' if prior_research else ""}
+'''
+        if prior_research
+        else ""
+    }
 ## Research Instructions
 
 You are tasked with researching current industry best practices and trends related to this ADR.

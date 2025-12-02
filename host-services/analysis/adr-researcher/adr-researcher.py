@@ -1020,7 +1020,10 @@ class ADRResearcher:
                 adr_name = Path(adr_path).stem if adr_path else ""
                 title_matches = (
                     adr_name
-                    and (adr_name.lower() in pr_title.lower() or adr_title.lower() in pr_title.lower())
+                    and (
+                        adr_name.lower() in pr_title.lower()
+                        or adr_title.lower() in pr_title.lower()
+                    )
                     and "research" in pr_title.lower()
                 )
 
@@ -1062,7 +1065,9 @@ class ADRResearcher:
             if match:
                 section_content = match.group(1)
                 # Extract numbered items or bullet points
-                items = re.findall(r"(?:^|\n)\s*(?:\d+\.\s+|\*\s+|-\s+)\**([^*\n]+)\**", section_content)
+                items = re.findall(
+                    r"(?:^|\n)\s*(?:\d+\.\s+|\*\s+|-\s+)\**([^*\n]+)\**", section_content
+                )
                 findings.extend([f.strip() for f in items if f.strip()][:10])
 
         return findings
