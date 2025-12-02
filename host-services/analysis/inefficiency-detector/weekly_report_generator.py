@@ -916,7 +916,7 @@ Examples:
         generate_proposals=not args.no_proposals,
         send_slack=not args.no_slack,
     )
-    success = generator.run()
+    generator.run()
 
     # Optionally print to stdout
     if args.stdout:
