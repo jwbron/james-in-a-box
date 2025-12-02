@@ -411,11 +411,9 @@ class FeatureDocGenerator:
     ) -> str:
         """Generate a full category documentation file."""
         # Find the primary category for this doc file
-        primary_cat_name = None
         primary_config = None
-        for cat_name, config in CATEGORY_CONFIG.items():
+        for _cat_name, config in CATEGORY_CONFIG.items():
             if config["file"] == doc_file and not config.get("merge_into"):
-                primary_cat_name = cat_name
                 primary_config = config
                 break
 
@@ -424,7 +422,7 @@ class FeatureDocGenerator:
 
         # Collect all features for this doc file
         all_features: list[ParsedFeature] = []
-        for cat_name, cat_info in all_categories.items():
+        for _cat_name, cat_info in all_categories.items():
             if cat_info.doc_file == doc_file:
                 all_features.extend(cat_info.features)
 
