@@ -1,16 +1,18 @@
 # Feature Audit Report - December 2, 2025
 
 **Auditor:** jib (Autonomous Software Engineering Agent)
-**Scope:** Features 1-20 from FEATURES.md
+**Scope:** Features 1-30 from FEATURES.md
 **Task ID:** task-20251201-190016
 
 ## Executive Summary
 
-Audited 20 features from the james-in-a-box project for bugs, consistency, maintainability, and opportunities to leverage Claude more effectively. Found several issues related to code duplication, missing helper functions, and opportunities for Claude-based improvements.
+Audited 30 features from the james-in-a-box project for bugs, consistency, maintainability, and opportunities to leverage Claude more effectively. Found several issues related to code duplication, missing helper functions, and opportunities for Claude-based improvements.
 
 **Part 1 (Features 1-10):** Found code duplication in text utilities, a JIRAConfig instantiation bug, and identified Sprint Analyzer as a high-priority candidate for Claude enhancement.
 
 **Part 2 (Features 11-20):** Found strong GitHub integration architecture with good error handling. Identified opportunities for shared prompt building utilities and improved command parsing flexibility.
+
+**Part 3 (Features 21-30):** Found excellent analysis infrastructure with sophisticated multi-agent patterns. The LLM analysis pipeline demonstrates mature architecture. Identified regex parsing issue in ADR Researcher.
 
 ---
 
@@ -532,6 +534,303 @@ This is a strong candidate for Claude replacement as it's currently limited by r
 
 ---
 
+# Part 3: Features 21-30
+
+## Feature 21: LLM Trace Collector
+
+**Files:**
+- `host-services/analysis/trace-collector/trace_collector.py`
+- `host-services/analysis/trace-collector/hook_handler.py`
+- `host-services/analysis/trace-collector/schemas.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Excellent dataclass-based schema design with comprehensive typing | - | Positive |
+| Good validation of trace data with clear error messages | - | Positive |
+| Proper use of Pydantic-style validation patterns | - | Positive |
+| SQLite storage for traces with proper indexing | - | Positive |
+| TraceCollector uses singleton pattern for thread safety | - | Positive |
+| Hook handler integrates well with Claude's hook system | - | Positive |
+| Large combined file structure (~600 lines across modules) | Low | Maintainability |
+
+### Recommendations
+
+- **None significant** - Well-architected tracing system
+
+### Claude Leverage Opportunity
+
+- **None identified** - This is data collection infrastructure that should remain deterministic
+
+---
+
+## Feature 22: LLM Inefficiency Detector
+
+**Files:**
+- `host-services/analysis/inefficiency-detector/inefficiency_detector.py`
+- `host-services/analysis/inefficiency-detector/base_detector.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good abstract base class pattern for extensible detectors | - | Positive |
+| Well-defined inefficiency categories (redundant_reads, missed_parallel, etc.) | - | Positive |
+| Clear severity levels (warning, error, info) | - | Positive |
+| Threshold-based detection is configurable | - | Positive |
+| Good pattern matching for detecting inefficiencies | - | Positive |
+| Generates actionable recommendations | - | Positive |
+| Hardcoded thresholds could be externalized | Low | Configuration |
+
+### Recommendations
+
+1. **Externalize thresholds** - Move detection thresholds to config file for tuning
+
+### Claude Leverage Opportunity
+
+- **Contextual Analysis Agent** - Claude could analyze the *context* of detected inefficiencies to provide more nuanced recommendations (e.g., "this redundant read might be intentional for caching")
+- **Pattern Learning** - Claude could learn from resolved inefficiencies to improve detection
+
+---
+
+## Feature 23: Beads Integration Analyzer
+
+**Files:**
+- `host-services/analysis/beads-analyzer/beads-analyzer.py`
+- `jib-container/jib-tasks/analysis/beads-analyzer-processor.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Good two-part architecture (host collector + container analyzer) | - | Positive |
+| Analyzes beads usage patterns across conversations | - | Positive |
+| Identifies common task patterns and failure modes | - | Positive |
+| Uses Claude for pattern analysis | - | Positive |
+| Output includes actionable recommendations | - | Positive |
+| Good time-range filtering for analysis scope | - | Positive |
+
+### Recommendations
+
+- **None significant** - Good use of host/container separation
+
+### Claude Leverage Opportunity
+
+- **Already using Claude effectively** - Container processor delegates analysis to Claude
+- **Enhancement:** Could add trend detection across multiple analysis runs
+
+---
+
+## Feature 24: Conversation Analyzer Service
+
+**Files:** Documented in FEATURES.md but no dedicated file found
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Feature documented but implementation not found | Medium | Missing |
+
+### Recommendations
+
+1. **Locate or implement** - Either find the implementation or mark feature as planned in FEATURES.md
+
+### Claude Leverage Opportunity
+
+- **N/A** - Implementation needs to be located
+
+---
+
+## Feature 25: Feature Analyzer Service
+
+**Files:** `host-services/analysis/feature-analyzer/feature-analyzer.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Comprehensive phased implementation (Phase 1-6) | - | Positive |
+| Good ADR metadata extraction with status detection | - | Positive |
+| Multiple workflow modes (sync-docs, generate, rollback, weekly-analyze, full-repo) | - | Positive |
+| Non-destructive validation with clear thresholds | - | Positive |
+| Link preservation checking in documentation updates | - | Positive |
+| Good CLI design with subcommands | - | Positive |
+| Uses jib containers for Claude-powered generation | - | Positive |
+| Large monolithic file (~950 lines) | Medium | Maintainability |
+| Import of `doc_generator`, `pr_creator`, `rollback`, `weekly_analyzer` modules suggests missing files | Medium | Dependencies |
+
+### Recommendations
+
+1. **Modularize** - Split into separate modules matching the import statements
+2. **Verify dependencies** - Ensure `doc_generator.py`, `pr_creator.py`, etc. exist
+
+### Claude Leverage Opportunity
+
+- **Already using Claude effectively** - Uses jib containers for documentation generation
+- **Enhancement:** Could add an ADR impact analysis agent to predict which docs need updating
+
+---
+
+## Feature 26: ADR Researcher Service
+
+**Files:** `host-services/analysis/adr-researcher/adr-researcher.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Excellent structured output with typed dataclasses | - | Positive |
+| Good ResearchResult with detailed field documentation | - | Positive |
+| Rate limiting built into gh_json calls | - | Positive |
+| Multiple research modes (open-prs, merged, topic, generate, review) | - | Positive |
+| Good error handling in parse methods with fallback to raw_output | - | Positive |
+| CLI supports JSON output for automation | - | Positive |
+| **BUG:** Regex pattern in `_extract_section()` has syntax error | High | Bug |
+| Complex parsing logic could be fragile | Medium | Maintainability |
+
+### Bug Details
+
+Line 679 has an invalid regex pattern:
+```python
+pattern = re.compile(
+    rf"^(#{1, 4})\s*{re.escape(section_name)}\s*$", re.MULTILINE | re.IGNORECASE
+)
+```
+
+The `{1, 4}` should be `{1,4}` (no space in repetition quantifier). With a space, it's invalid regex syntax.
+
+### Recommendations
+
+1. **Fix regex syntax** - Remove space in `{1, 4}` → `{1,4}` in line 679
+2. **Add unit tests for parsing** - The parsing methods are complex and need test coverage
+
+### Claude Leverage Opportunity
+
+- **Already using Claude effectively** - Invokes jib for research tasks
+- **Enhancement:** The parsing logic for extracting structured data from Claude output is complex - could use Claude for self-parsing of its own research output
+
+---
+
+## Feature 27: ADR Processor (Container-side)
+
+**Files:** `jib-container/jib-tasks/adr/adr-processor.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Clean task dispatcher pattern | - | Positive |
+| Comprehensive prompt templates for each task type | - | Positive |
+| Good timestamp handling with UTC | - | Positive |
+| Structured output with JSON for host to parse | - | Positive |
+| Supports PR comment mode and report mode | - | Positive |
+| Uses shared `run_claude` from shared module | - | Positive |
+| Output truncation at 5000 chars may lose important data | Low | Limitation |
+
+### Recommendations
+
+1. **Increase output limit** - 5000 chars may truncate valuable research findings
+
+### Claude Leverage Opportunity
+
+- **Already using Claude effectively** - Each handler invokes Claude with comprehensive prompts
+- **Enhancement:** Could add citation validation agent to verify URLs are accessible
+
+---
+
+## Feature 28: Documentation Generator Pipeline (4-Agent)
+
+**Files:** `host-services/analysis/doc-generator/doc-generator.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Excellent 4-agent pipeline design (Context → Draft → Review → Output) | - | Positive |
+| Good separation between doc types (status-quo, pattern, best-practice) | - | Positive |
+| Topic keyword mapping for pattern detection | - | Positive |
+| Loads indexes (codebase.json, patterns.json) for context | - | Positive |
+| Review agent validates drafts with specific criteria | - | Positive |
+| Dry-run mode for preview | - | Positive |
+| Doesn't actually invoke Claude - uses local heuristics | Medium | Missed Opportunity |
+| Review notes appended to output could clutter docs | Low | Output Quality |
+
+### Recommendations
+
+1. **Add Claude integration** - The 4-agent architecture is excellent but currently uses heuristics. Could invoke Claude for each agent phase.
+2. **Separate review notes** - Output review notes to separate file instead of appending
+
+### Claude Leverage Opportunity (HIGH PRIORITY)
+
+- **Not currently using Claude** - This is a strong candidate for Claude enhancement:
+  - Context Agent: Use Claude to understand code semantics
+  - Draft Agent: Use Claude to write documentation
+  - Review Agent: Use Claude for accuracy validation
+  - Output Agent: Use Claude for formatting consistency
+
+---
+
+## Feature 29: Documentation Drift Detector
+
+**Files:** `host-services/analysis/doc-generator/drift-detector.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Comprehensive pattern matching for file references | - | Positive |
+| Good ignore patterns for placeholders/templates | - | Positive |
+| Lenient mode for ADRs (appropriate given illustrative examples) | - | Positive |
+| Checks markdown links, file:line refs, path refs | - | Positive |
+| Similar file detection for suggested fixes | - | Positive |
+| Handles code blocks and tables appropriately (skips) | - | Positive |
+| Good report formatting (text and JSON) | - | Positive |
+| Exit code reflects drift status (0 = clean, 1 = issues) | - | Positive |
+
+### Recommendations
+
+- **None significant** - Well-implemented static analysis tool
+
+### Claude Leverage Opportunity
+
+- **Semantic Drift Detection** - Claude could detect semantic drift where documentation is technically accurate but conceptually outdated
+- **Auto-Fix Suggestions** - Claude could generate more intelligent fix suggestions than filename matching
+
+---
+
+## Feature 30: Codebase Index Generator
+
+**Files:** `host-services/analysis/index-generator/index-generator.py`
+
+### Findings
+
+| Issue | Severity | Type |
+|-------|----------|------|
+| Comprehensive AST parsing for Python files | - | Positive |
+| Good handling of package → import name mappings | - | Positive |
+| Complete Python stdlib list for filtering | - | Positive |
+| Pattern detection with configurable indicators | - | Positive |
+| Requirements.txt and pyproject.toml parsing for versions | - | Positive |
+| Generates three index files (codebase.json, patterns.json, dependencies.json) | - | Positive |
+| Sorted output for deterministic results | - | Positive |
+| Good directory skip list for common irrelevant dirs | - | Positive |
+| Large file (~770 lines) could be modularized | Low | Maintainability |
+| Pattern conventions are hardcoded | Low | Configuration |
+
+### Recommendations
+
+1. **Externalize patterns** - Move pattern definitions and conventions to config file
+2. **Consider modularization** - Split into `ast_analyzer.py`, `pattern_detector.py`, `index_writer.py`
+
+### Claude Leverage Opportunity
+
+- **Semantic Pattern Detection** - Claude could detect patterns based on code semantics, not just naming conventions
+- **Component Description Generation** - Claude could generate better descriptions for components based on code analysis
+- **Dependency Purpose Inference** - Claude could explain why each external dependency is used
+
+---
+
 ## Cross-Cutting Issues (Updated)
 
 ### 1. Code Duplication Summary
@@ -567,9 +866,11 @@ Create `shared/prompt_templates/`:
 |---------|--------------|----------------|----------|
 | Sprint Analyzer (#10) | No Claude | Add dedicated analysis agent | HIGH |
 | GitHub Command Handler (#18) | Regex | Add command parsing agent | HIGH |
+| Documentation Generator (#28) | Local heuristics | Add Claude for all 4 agent phases | HIGH |
 | Slack Message Classification (#2) | Regex | Add classification agent | MEDIUM |
 | ADF Conversion (#7) | Rule-based | Add conversion agent | LOW |
 | PR Prioritization (#13) | FIFO | Add prioritization agent | LOW |
+| Codebase Index Generator (#30) | AST only | Add semantic pattern detection | LOW |
 
 ---
 
@@ -585,6 +886,11 @@ Create `shared/prompt_templates/`:
 - [x] Implement `--verbose` flag in MCP Token Watcher
 - [x] Fix check state handling in pr-analyzer.py (handle CANCELLED, TIMED_OUT, remove unused list)
 - [ ] Verify and fix `pr-reviewer.py` path reference in command-handler.py (file missing)
+
+### Phase 1.6: Bug Fixes (This PR - Features 21-30)
+- [x] Fix regex syntax error in ADR Researcher `_extract_section()` (line 679: `{1, 4}` → `{1,4}`)
+- [ ] Locate or document Conversation Analyzer Service (Feature 24)
+- [ ] Verify Feature Analyzer dependencies exist (doc_generator.py, pr_creator.py, etc.)
 
 ### Phase 2: Claude Enhancements (Future PR - HIGH PRIORITY)
 - [ ] Add Claude agent for Sprint Ticket Analyzer (#10)
@@ -636,13 +942,38 @@ The GitHub integration features demonstrate mature architecture:
    - GitHub Command Handler (#18) - HIGH PRIORITY candidate for Claude agent
    - PR Prioritization could use intelligent batching
 
+### Part 3 Summary (Features 21-30)
+
+The analysis and documentation infrastructure demonstrates sophisticated design:
+
+1. **Strong positives:**
+   - Excellent 4-agent pipeline architecture in Documentation Generator
+   - Comprehensive tracing and inefficiency detection
+   - Good host/container separation pattern
+   - Well-structured dataclasses with typed outputs
+   - ADR Researcher has excellent structured output design
+
+2. **Areas for improvement:**
+   - Several large files (~700-950 lines) could be modularized
+   - Documentation Generator Pipeline doesn't actually use Claude (missed opportunity)
+   - Regex syntax bug in ADR Researcher needs fixing
+   - Conversation Analyzer Service implementation not found
+
+3. **New Claude opportunities:**
+   - Documentation Generator (#28) - HIGH PRIORITY for Claude integration across all 4 agent phases
+   - Codebase Index Generator (#30) - semantic pattern detection
+   - Inefficiency Detector (#22) - contextual analysis
+
 ### Overall Assessment
 
 The james-in-a-box project has solid foundations with thoughtful error handling and state management. The highest-impact improvements would be:
 
 1. **Sprint Ticket Analyzer (#10)** - Replace hardcoded heuristics with Claude analysis
 2. **GitHub Command Handler (#18)** - Replace regex with Claude command parsing
-3. **Prompt Template Extraction** - Improve maintainability of github-processor.py
+3. **Documentation Generator (#28)** - Add Claude to the existing 4-agent architecture
+4. **Prompt Template Extraction** - Improve maintainability of github-processor.py
+
+**Key Bug Found:** Regex syntax error in ADR Researcher `_extract_section()` method (line 679) - `{1, 4}` should be `{1,4}`.
 
 ---
 
