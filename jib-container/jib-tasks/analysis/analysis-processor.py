@@ -623,10 +623,8 @@ def handle_github_pr_create(context: dict) -> int:
         pr_url = result.stdout.strip()
         pr_number = None
         if pr_url and "/" in pr_url:
-            try:
+            with contextlib.suppress(ValueError):
                 pr_number = int(pr_url.split("/")[-1])
-            except ValueError:
-                pass
 
         return output_result(
             success=True,

@@ -44,14 +44,13 @@ sys.path.insert(0, str(REPO_ROOT))
 
 # Add host-services shared modules to path for jib_exec
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
-from jib_exec import jib_exec
-
 import contextlib
 
 from impact_tracker import ImpactTracker
 from improvement_proposer import ImprovementProposer
 from inefficiency_detector import InefficiencyDetector
 from inefficiency_schema import AggregateInefficiencyReport, Severity
+from jib_exec import jib_exec
 from proposal_schema import ProposalBatch, ProposalPriority
 
 from config.model_pricing import calculate_blended_cost, get_active_model, get_model_pricing

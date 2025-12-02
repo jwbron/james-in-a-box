@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+
 # Add host-services shared modules to path for jib_exec
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 from jib_exec import jib_exec
