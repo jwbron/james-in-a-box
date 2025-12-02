@@ -2,6 +2,7 @@
 Description=Weekly feature analyzer - scans code and updates FEATURES.md
 Documentation=https://github.com/jwbron/james-in-a-box/blob/main/docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md
 After=network.target
+OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot

@@ -1,0 +1,21 @@
+[Unit]
+Description=Send Slack notification when %i fails
+Documentation=https://github.com/jwbron/james-in-a-box
+
+[Service]
+Type=oneshot
+
+# Write a notification file that slack-notifier will pick up and send
+# %i is the instance name (the failed service name)
+# %H is the hostname (useful for multi-host environments)
+# Using printf instead of heredoc for reliability in systemd
+ExecStart=/bin/bash -c '\
+    NOTIF_DIR="${HOME}/sharing/notifications"; \
+    mkdir -p "$NOTIF_DIR"; \
+    TIMESTAMP=$(date +%%Y%%m%%d-%%H%%M%%S); \
+    printf "# Service Failure: %%s\\n\\n**Priority**: High\\n\\n**Host**: %%s\\n\\n**Time**: %%s\\n\\n## Details\\n\\nThe systemd service \`%%s\` has failed.\\n\\nCheck logs with:\\n\`\`\`bash\\njournalctl --user -u %%s -n 50\\n\`\`\`\\n" "%i" "%H" "$(date +%%Y-%%m-%%d\\ %%H:%%M:%%S)" "%i" "%i" > "$NOTIF_DIR/${TIMESTAMP}-service-failure.md"'
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=service-failure-notify

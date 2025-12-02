@@ -3,6 +3,7 @@ Description=JIB Slack Receiver - Bidirectional Slack communication
 Documentation=file://%h/khan/james-in-a-box/host-services/slack/slack-receiver/README.md
 After=network-online.target
 Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=simple
