@@ -33,9 +33,12 @@ ADRs are organized by implementation status:
 
 ### Not Implemented
 
-> **Note**: Several ADRs are pending in open PRs. See PRs #239, #240, #243, #244, #245, #246 for ADRs not yet merged.
+| ADR | Summary |
+|-----|---------|
+| [Model-Agnostic Architecture](not-implemented/ADR-Model-Agnostic-Architecture.md) | Support multiple LLM providers with task-based routing |
+| [Multi-Agent Pipeline Architecture](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Coordinated multi-agent pipelines for complex task execution |
 
-*No ADRs currently in not-implemented/ - all pending ADRs are in open PRs.*
+> **Note**: Additional ADRs may be pending in open PRs.
 
 ## ADR Template
 
