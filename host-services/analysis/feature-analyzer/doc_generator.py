@@ -27,10 +27,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 
-# Add host-services shared modules to path (for jib_exec)
-# NOTE: Host-side code must use jib_exec which invokes processors via jib --exec
-# because Claude CLI is only available inside the container.
+# Add shared modules to path - we need both jib_exec (for host-side) and
+# optionally claude (if running inside container)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+# Add repo-level shared modules (for direct Claude access when inside container)
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+
+# Import shared utilities
+from container_utils import is_inside_container
 from jib_exec import jib_exec
 
 
@@ -259,13 +263,55 @@ Output ONLY the updated documentation content. Do not include any explanation or
 
     def _call_jib_for_generation(self, prompt: str, doc_path: Path) -> tuple[str, float]:
         """
-        Use jib container to generate documentation update via LLM.
+        Generate documentation update via LLM.
 
         Returns (updated_content, confidence_score).
 
-        Uses jib_exec to invoke the container-side analysis processor,
-        which has access to Claude CLI. Host-side code cannot directly
-        call Claude (it's only available inside the container).
+        Automatically detects whether to call Claude directly (inside container)
+        or via jib_exec (from host).
+        """
+        if is_inside_container():
+            return self._call_claude_direct(prompt, doc_path)
+        return self._call_claude_via_jib(prompt, doc_path)
+
+    def _call_claude_direct(self, prompt: str, doc_path: Path) -> tuple[str, float]:
+        """
+        Call Claude CLI directly (inside container).
+
+        Returns (updated_content, confidence_score).
+        """
+        try:
+            from claude import run_claude
+
+            result = run_claude(
+                prompt=prompt,
+                cwd=self.repo_root,
+                stream=False,
+            )
+
+            if result.success and result.stdout.strip():
+                content = result.stdout.strip()
+                # Confidence heuristic: longer responses typically indicate more complete
+                # generation (0.85 for >100 chars), while shorter responses may be truncated
+                # or incomplete (0.6). These thresholds are conservative estimates based on
+                # typical documentation update sizes.
+                confidence = 0.85 if len(content) > 100 else 0.6
+                return (content, confidence)
+
+            # Handle failure
+            error_msg = result.error or result.stderr or "Unknown error"
+            print(f"    Warning: Claude generation failed: {error_msg}")
+            return ("", 0.3)
+
+        except Exception as e:
+            print(f"    Warning: Claude direct call error: {e}")
+            return ("", 0.2)
+
+    def _call_claude_via_jib(self, prompt: str, doc_path: Path) -> tuple[str, float]:
+        """
+        Use jib_exec to call Claude via container (from host).
+
+        Returns (updated_content, confidence_score).
         """
         try:
             # Use jib_exec to run the analysis processor in the container
