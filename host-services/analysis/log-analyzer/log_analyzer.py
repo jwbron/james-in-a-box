@@ -246,10 +246,13 @@ class LogAnalyzer:
         # Collect unique recommendations
         recommendations_seen = set()
         for c in classifications:
-            if c.severity in ("high", "critical") and c.recommendation:
-                if c.recommendation not in recommendations_seen:
-                    summary["recommendations"].append(c.recommendation)
-                    recommendations_seen.add(c.recommendation)
+            if (
+                c.severity in ("high", "critical")
+                and c.recommendation
+                and c.recommendation not in recommendations_seen
+            ):
+                summary["recommendations"].append(c.recommendation)
+                recommendations_seen.add(c.recommendation)
 
         return summary
 

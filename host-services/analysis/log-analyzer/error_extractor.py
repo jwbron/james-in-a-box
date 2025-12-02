@@ -173,9 +173,9 @@ class ErrorExtractor:
             Stack trace string or None
         """
         # Check for explicit stack trace fields
-        for field in ["stack_trace", "stackTrace", "traceback", "exc_info"]:
-            if field in entry:
-                trace = entry[field]
+        for field_name in ["stack_trace", "stackTrace", "traceback", "exc_info"]:
+            if field_name in entry:
+                trace = entry[field_name]
                 if isinstance(trace, list):
                     return "\n".join(trace)
                 return str(trace)
@@ -210,9 +210,9 @@ class ErrorExtractor:
             "component",
         ]
 
-        for field in context_fields:
-            if field in entry:
-                context[field] = entry[field]
+        for field_name in context_fields:
+            if field_name in entry:
+                context[field_name] = entry[field_name]
 
         # Check nested context
         if "context" in entry and isinstance(entry["context"], dict):
