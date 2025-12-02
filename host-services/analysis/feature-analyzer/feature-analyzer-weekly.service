@@ -1,18 +1,34 @@
 [Unit]
-Description=Weekly feature analyzer - scans code and updates FEATURES.md
+Description=Weekly feature analyzer - intelligent multi-agent analysis for FEATURES.md
 Documentation=https://github.com/jwbron/james-in-a-box/blob/main/docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md
 After=network.target
 OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/feature-analyzer weekly-analyze --repo-root %h/khan/james-in-a-box
+# Run the analysis INSIDE the jib container so that:
+# 1. Git operations happen in the container's isolated worktree
+# 2. PRs are created using the container's GITHUB_TOKEN (jib identity)
+# 3. File changes stay in the container worktree until PR is merged
+#
+# This invokes the weekly_feature_analysis task in the analysis-processor.py
+# via jib --exec, passing the context as JSON.
+#
+# The intelligent analysis pipeline:
+# - Scopes to directories with recent commits (past N days)
+# - Uses multi-agent LLM analysis for each directory (parallel processing)
+# - Consolidates and deduplicates with LLM (handles symlinks, merges related)
+# - Only adds NEW features not already in FEATURES.md
+ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 \
+    /home/%u/khan/james-in-a-box/jib-container/jib-tasks/analysis/analysis-processor.py \
+    --task weekly_feature_analysis \
+    --context '{"repo_name": "james-in-a-box", "days": 7, "max_workers": 5}'
 WorkingDirectory=%h/khan/james-in-a-box
 Environment=HOME=%h
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 
-# Timeout after 30 minutes (LLM analysis can take time)
-TimeoutStartSec=1800
+# Timeout after 60 minutes (multi-agent LLM analysis with parallel workers)
+TimeoutStartSec=3600
 
 # Restart on failure with delay
 Restart=on-failure

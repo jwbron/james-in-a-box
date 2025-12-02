@@ -37,10 +37,13 @@ CLI:
     python weekly_analyzer.py --no-docs           # Skip doc generation
 """
 
+import contextlib
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -48,10 +51,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
-# Add host-services shared modules to path (for jib_exec)
-# NOTE: Host-side code must use jib_exec which invokes processors via jib --exec
-# because Claude CLI is only available inside the container.
+# Add shared modules to path - we need both jib_exec (for host-side) and
+# optionally claude (if running inside container)
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+# Add repo-level shared modules (for direct Claude access when inside container)
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+
+# Import shared utilities
+from container_utils import is_inside_container
 from jib_exec import jib_exec
 
 
@@ -59,11 +66,65 @@ def _run_llm_prompt_shared(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, str, str | None]:
     """
-    Run an LLM prompt via jib container.
+    Run an LLM prompt, automatically detecting whether to use direct Claude or jib_exec.
 
     This shared function is used by both WeeklyAnalyzer and RepoAnalyzer.
-    Host-side code cannot directly call Claude - it's only available inside
-    the container. This method uses jib_exec to invoke the analysis processor.
+    - If running inside the container (Claude available): calls Claude directly
+    - If running on host: uses jib_exec to invoke the analysis processor
+
+    Args:
+        repo_root: Path to the repository root
+        prompt: The prompt to send to the LLM
+        context_name: Optional name for logging/debugging
+
+    Returns:
+        Tuple of (success, stdout, error_message)
+    """
+    # If we're inside the container, call Claude directly
+    if is_inside_container():
+        return _run_llm_prompt_direct(repo_root, prompt, context_name)
+
+    # Otherwise, use jib_exec to run in container
+    return _run_llm_prompt_via_jib(repo_root, prompt, context_name)
+
+
+def _run_llm_prompt_direct(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, str, str | None]:
+    """
+    Run an LLM prompt directly using the Claude CLI (inside container).
+
+    Args:
+        repo_root: Path to the repository root
+        prompt: The prompt to send to the LLM
+        context_name: Optional name for logging/debugging
+
+    Returns:
+        Tuple of (success, stdout, error_message)
+    """
+    try:
+        from claude import run_claude
+
+        result = run_claude(
+            prompt=prompt,
+            cwd=repo_root,
+            stream=False,
+        )
+
+        if result.success:
+            return (True, result.stdout, None)
+        else:
+            return (False, "", result.error or result.stderr or "Claude execution failed")
+
+    except Exception as e:
+        return (False, "", f"Error running Claude directly: {e}")
+
+
+def _run_llm_prompt_via_jib(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, str, str | None]:
+    """
+    Run an LLM prompt via jib_exec (from host).
 
     Args:
         repo_root: Path to the repository root
@@ -140,9 +201,98 @@ def _run_llm_prompt_to_file_shared(
     before/after the JSON in its stdout. The LLM writes JSON to a temp file,
     which is then read and parsed.
 
+    Automatically detects whether to use direct Claude or jib_exec.
+
     Args:
         repo_root: Path to the repository root
         prompt: The prompt to send to the LLM (should request JSON output)
+        context_name: Optional name for logging/debugging
+
+    Returns:
+        Tuple of (success, parsed_json_content, error_message)
+    """
+    # If we're inside the container, use direct approach
+    if is_inside_container():
+        return _run_llm_prompt_to_file_direct(repo_root, prompt, context_name)
+
+    # Otherwise, use jib_exec
+    return _run_llm_prompt_to_file_via_jib(repo_root, prompt, context_name)
+
+
+def _run_llm_prompt_to_file_direct(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, list | dict | None, str | None]:
+    """
+    Run an LLM prompt to file directly using Claude CLI (inside container).
+
+    Args:
+        repo_root: Path to the repository root
+        prompt: The prompt to send to the LLM
+        context_name: Optional name for logging/debugging
+
+    Returns:
+        Tuple of (success, parsed_json_content, error_message)
+    """
+    try:
+        from claude import run_claude
+
+        # Create a temp file for the output
+        fd, output_file = tempfile.mkstemp(suffix=".json", prefix="llm_output_")
+        os.close(fd)
+        output_path = Path(output_file)
+
+        # Enhance the prompt to explicitly instruct writing to the file
+        enhanced_prompt = f"""{prompt}
+
+CRITICAL INSTRUCTION: You MUST write your JSON output to this file: {output_file}
+
+Use the Write tool to write the JSON array to {output_file}. Do NOT just print the JSON to stdout - write it to the file.
+
+After writing the file, confirm by saying "JSON written to {output_file}" but do NOT include the JSON content in your response."""
+
+        result = run_claude(
+            prompt=enhanced_prompt,
+            cwd=repo_root,
+            stream=False,
+        )
+
+        # Check if Claude execution failed
+        if not result.success:
+            return (False, None, f"Claude execution failed: {result.error or result.stderr}")
+
+        # Read the JSON from the output file
+        json_content = None
+        if output_path.exists():
+            try:
+                file_content = output_path.read_text().strip()
+                if file_content:
+                    json_content = json.loads(file_content)
+            except json.JSONDecodeError as e:
+                return (False, None, f"Failed to parse JSON from output file: {e}")
+            finally:
+                # Clean up the temp file
+                with contextlib.suppress(OSError):
+                    output_path.unlink()
+        else:
+            return (False, None, f"Output file was not created: {output_file}")
+
+        if json_content is not None:
+            return (True, json_content, None)
+        return (False, None, "LLM did not write JSON to file")
+
+    except Exception as e:
+        return (False, None, f"Error running Claude directly: {e}")
+
+
+def _run_llm_prompt_to_file_via_jib(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, list | dict | None, str | None]:
+    """
+    Run an LLM prompt to file via jib_exec (from host).
+
+    Args:
+        repo_root: Path to the repository root
+        prompt: The prompt to send to the LLM
         context_name: Optional name for logging/debugging
 
     Returns:
