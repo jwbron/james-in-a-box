@@ -449,6 +449,23 @@ def main():
         help="Number of parallel workers for directory analysis (default: 5)",
     )
 
+    # generate-feature-docs command (Phase 7 - Feature Sub-Documentation)
+    feature_docs_parser = subparsers.add_parser(
+        "generate-feature-docs",
+        help="Generate feature category documentation in docs/features/ (Phase 7)",
+    )
+    feature_docs_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without modifying files",
+    )
+    feature_docs_parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root directory (default: current directory)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync-docs":
@@ -940,6 +957,43 @@ Full repository analysis generated a comprehensive FEATURES.md with {feature_cou
             elif args.dry_run:
                 print("\n[DRY RUN] No files were modified.")
 
+        except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+    elif args.command == "generate-feature-docs":
+        # Phase 7: Generate feature category documentation
+        from feature_doc_generator import FeatureDocGenerator
+
+        print("Feature Analyzer - Generate Feature Docs (Phase 7)")
+        print(f"Repository: {args.repo_root}")
+        print()
+
+        try:
+            generator = FeatureDocGenerator(args.repo_root)
+            result = generator.run(dry_run=args.dry_run)
+
+            print()
+            print("=" * 50)
+            print("Summary:")
+            print(f"  Categories parsed: {result['categories']}")
+            print(f"  Features found: {result['features']}")
+            print(f"  Doc files: {result['existing_docs']}")
+
+            if args.dry_run:
+                print("\n[DRY RUN] No files were modified.")
+            else:
+                print("\n✓ Feature documentation generated successfully!")
+                print("\nGenerated files in docs/features/:")
+                print("  - README.md (navigation index)")
+                print("  - Individual category docs")
+
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         except Exception as e:
             print(f"Unexpected error: {e}", file=sys.stderr)
             import traceback
