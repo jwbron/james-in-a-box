@@ -44,6 +44,12 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 - Each unique (repo, PR, commit SHA) conflict combination is tracked
 - Pushing a new commit resets the processed state, allowing fresh retry
 
+### Re-review on new commits:
+- Review signatures include the head commit SHA
+- When new commits are pushed to a PR branch, the signature changes
+- This triggers a re-review so reviewers always see the latest code
+- The `is_rereview` flag is set in the context to distinguish re-reviews from initial reviews
+
 ### What happens when jib is invoked:
 - jib runs Claude with the task context (check failures, comments, or review request)
 - Claude analyzes the issue and takes action (fix code, respond to comments, etc.)
@@ -448,6 +454,7 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         log_extra["pr_number"] = context.get("pr_number")
         log_extra["pr_title"] = context.get("pr_title", "")[:60]
         log_extra["author"] = context.get("author")
+        log_extra["is_rereview"] = context.get("is_rereview", False)
     elif task_type == "pr_review_response":
         log_extra["pr_number"] = context.get("pr_number")
         log_extra["pr_title"] = context.get("pr_title", "")[:60]
@@ -606,6 +613,7 @@ If you'd like jib to respond, please paste your response in this thread."""
         additions = context.get("additions", 0)
         deletions = context.get("deletions", 0)
         files = context.get("files", [])
+        is_rereview = context.get("is_rereview", False)
 
         # Format files list (limit to 10)
         files_preview = files[:10]
@@ -613,12 +621,19 @@ If you'd like jib to respond, please paste your response in this thread."""
         if len(files) > 10:
             files_text += f"\n- ... and {len(files) - 10} more files"
 
-        title = f"PR Review Request: {repo} #{pr_number}"
+        if is_rereview:
+            title = f"PR Re-Review Request: {repo} #{pr_number}"
+            review_type_note = "**Type**: Re-review (new commits since last review)"
+        else:
+            title = f"PR Review Request: {repo} #{pr_number}"
+            review_type_note = ""
+
         body = f"""**Repository**: {repo} _(read-only)_
 **PR**: [{pr_title}]({pr_url}) (#{pr_number})
 **Author**: @{author}
 **Branch**: `{pr_branch}` -> `{base_branch}`
 **Changes**: +{additions} / -{deletions}
+{review_type_note}
 
 ## Files Changed
 
@@ -1418,6 +1433,9 @@ def check_prs_for_review(
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
     Returns list of context dicts for PRs needing review.
+
+    Note: Review signatures include head_sha to trigger re-reviews when new commits
+    are pushed to a PR branch. This ensures the reviewer sees the latest code.
     """
     if not all_prs:
         return []
@@ -1459,23 +1477,51 @@ def check_prs_for_review(
     results = []
     for pr in other_prs:
         pr_num = pr["number"]
-        review_signature = f"{repo}-{pr_num}:review"
+        head_sha = pr.get("headRefOid", "")
 
-        # Check if already reviewed
+        # Include head_sha in signature so new commits trigger re-reviews
+        # This mirrors the pattern used for processed_failures
+        review_signature = f"{repo}-{pr_num}-{head_sha}:review"
+
+        # Check if this specific commit has already been reviewed
         if review_signature in state.get("processed_reviews", {}):
+            processed_at = state["processed_reviews"].get(review_signature, "unknown")
+            logger.debug(
+                "PR commit already reviewed",
+                pr_number=pr_num,
+                commit=head_sha[:8] if head_sha else "unknown",
+                processed_at=processed_at,
+            )
             continue
 
-        logger.info(
-            "New PR needs review",
-            pr_number=pr_num,
-            pr_title=pr.get("title", "")[:80],
-            author=pr.get("author", {}).get("login", "unknown"),
-            pr_branch=pr.get("headRefName", ""),
-            base_branch=pr.get("baseRefName", ""),
-            additions=pr.get("additions", 0),
-            deletions=pr.get("deletions", 0),
-            files_changed=len(pr.get("files", [])),
+        # Determine if this is a re-review (different commit was previously reviewed)
+        # Check if any previous review exists for this PR (regardless of commit)
+        pr_review_prefix = f"{repo}-{pr_num}-"
+        is_rereview = any(
+            sig.startswith(pr_review_prefix) and sig.endswith(":review")
+            for sig in state.get("processed_reviews", {})
         )
+
+        if is_rereview:
+            logger.info(
+                "PR has new commits since last review - triggering re-review",
+                pr_number=pr_num,
+                pr_title=pr.get("title", "")[:80],
+                author=pr.get("author", {}).get("login", "unknown"),
+                new_commit=head_sha[:8] if head_sha else "unknown",
+            )
+        else:
+            logger.info(
+                "New PR needs review",
+                pr_number=pr_num,
+                pr_title=pr.get("title", "")[:80],
+                author=pr.get("author", {}).get("login", "unknown"),
+                pr_branch=pr.get("headRefName", ""),
+                base_branch=pr.get("baseRefName", ""),
+                additions=pr.get("additions", 0),
+                deletions=pr.get("deletions", 0),
+                files_changed=len(pr.get("files", [])),
+            )
 
         # Get PR diff
         diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
@@ -1495,6 +1541,7 @@ def check_prs_for_review(
                 "files": [f.get("path", "") for f in pr.get("files", [])],
                 "diff": diff[:50000] if diff else "",  # Limit diff size
                 "review_signature": review_signature,
+                "is_rereview": is_rereview,
             }
         )
 

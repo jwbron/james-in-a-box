@@ -45,6 +45,14 @@ from typing import Literal
 import yaml
 
 
+# Add host-services shared modules to path for jib_exec
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from jib_exec import jib_exec
+
+
+# Processor path for GitHub operations via jib
+ANALYSIS_PROCESSOR = "jib-container/jib-tasks/analysis/analysis-processor.py"
+
 # Rate limiting configuration
 RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
 
@@ -173,6 +181,55 @@ def gh_json(args: list[str]) -> dict | list | None:
 def utc_now_iso() -> str:
     """Get current UTC time in ISO format."""
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def jib_github_pr_comment(repo: str, pr_number: int, body: str) -> bool:
+    """Post a comment to a PR via jib container (jib identity).
+
+    Uses the container's GITHUB_TOKEN so comments appear as jib, not the host user.
+
+    Args:
+        repo: Full repo name (e.g., "jwbron/james-in-a-box")
+        pr_number: PR number to comment on
+        body: Comment body text
+
+    Returns:
+        True if comment was posted successfully
+    """
+    result = jib_exec(
+        ANALYSIS_PROCESSOR,
+        "github_pr_comment",
+        {"repo": repo, "pr_number": pr_number, "body": body},
+    )
+    if result.success and result.json_output:
+        return result.json_output.get("commented", False)
+    if result.error:
+        print(f"  jib github_pr_comment failed: {result.error}")
+    return False
+
+
+def jib_github_pr_close(repo: str, pr_number: int) -> bool:
+    """Close a PR via jib container (jib identity).
+
+    Uses the container's GITHUB_TOKEN so the close action appears as jib.
+
+    Args:
+        repo: Full repo name (e.g., "jwbron/james-in-a-box")
+        pr_number: PR number to close
+
+    Returns:
+        True if PR was closed successfully
+    """
+    result = jib_exec(
+        ANALYSIS_PROCESSOR,
+        "github_pr_close",
+        {"repo": repo, "pr_number": pr_number},
+    )
+    if result.success and result.json_output:
+        return result.json_output.get("closed", False)
+    if result.error:
+        print(f"  jib github_pr_close failed: {result.error}")
+    return False
 
 
 @dataclass
@@ -1127,60 +1184,39 @@ The new PR incorporates findings from this PR where still relevant, along with u
 *Automatically closed by adr-researcher*
 """
 
-            # Post comment
+            # Post comment and close PR via jib container (uses jib identity)
+            # Try each writable repo until one succeeds
+            commented = False
+            closed = False
+
             for repo in self.config.get("writable_repos", []):
-                comment_result = subprocess.run(
-                    [
-                        "gh",
-                        "pr",
-                        "comment",
-                        str(pr.pr_number),
-                        "--repo",
-                        repo,
-                        "--body",
-                        comment_body,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    check=False,
-                )
-                if comment_result.returncode == 0:
+                # Post comment
+                if not commented:
+                    commented = jib_github_pr_comment(repo, pr.pr_number, comment_body)
+
+                # Close the PR
+                if not closed:
+                    closed = jib_github_pr_close(repo, pr.pr_number)
+
+                if commented and closed:
                     break
 
-            # Close the PR (comment already posted above)
-            for repo in self.config.get("writable_repos", []):
-                close_result = subprocess.run(
-                    [
-                        "gh",
-                        "pr",
-                        "close",
-                        str(pr.pr_number),
-                        "--repo",
-                        repo,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    check=False,
+            if closed:
+                print(f"    Closed PR #{pr.pr_number}")
+                results.append(
+                    {
+                        "pr_number": pr.pr_number,
+                        "success": True,
+                        "superseded_by": new_pr_url,
+                    }
                 )
-                if close_result.returncode == 0:
-                    print(f"    Closed PR #{pr.pr_number}")
-                    results.append(
-                        {
-                            "pr_number": pr.pr_number,
-                            "success": True,
-                            "superseded_by": new_pr_url,
-                        }
-                    )
-                    break
             else:
                 print(f"    Failed to close PR #{pr.pr_number}")
                 results.append(
                     {
                         "pr_number": pr.pr_number,
                         "success": False,
-                        "error": close_result.stderr if close_result else "Unknown error",
+                        "error": "jib_github_pr_close failed",
                     }
                 )
 
