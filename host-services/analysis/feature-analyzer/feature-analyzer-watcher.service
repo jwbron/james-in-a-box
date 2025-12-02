@@ -3,6 +3,7 @@ Description=JIB Feature Analyzer ADR Watcher - Detect newly implemented ADRs
 Documentation=file://%h/khan/james-in-a-box/host-services/analysis/feature-analyzer/README.md
 After=network-online.target
 Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot

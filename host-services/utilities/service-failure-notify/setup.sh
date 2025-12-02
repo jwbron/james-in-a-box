@@ -1,6 +1,6 @@
 #!/bin/bash
 # Setup script for Service Failure Notify template
-set -e
+set -eu
 
 COMPONENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="service-failure-notify@.service"
@@ -11,9 +11,13 @@ echo "Setting up Service Failure Notify..."
 # Create systemd user directory
 mkdir -p "$SYSTEMD_DIR"
 
-# Symlink template service file
-ln -sf "$COMPONENT_DIR/$SERVICE_NAME" "$SYSTEMD_DIR/"
-echo "✓ Template service symlinked"
+# Symlink template service file and verify
+if ln -sf "$COMPONENT_DIR/$SERVICE_NAME" "$SYSTEMD_DIR/"; then
+    echo "✓ Template service symlinked"
+else
+    echo "✗ Failed to create symlink"
+    exit 1
+fi
 
 # Reload systemd
 systemctl --user daemon-reload
