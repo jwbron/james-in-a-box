@@ -666,9 +666,7 @@ Timers:
         self.notify(message, title="🔗 Spec Enricher")
         return CommandResult(success=code == 0, message=message)
 
-    def _validate_parameters(
-        self, function_name: str, parameters: dict
-    ) -> tuple[bool, str, dict]:
+    def _validate_parameters(self, function_name: str, parameters: dict) -> tuple[bool, str, dict]:
         """Validate and sanitize parameters for a function.
 
         Args:
@@ -784,9 +782,7 @@ Timers:
         self.log(f"Executing function: {function_name} with params: {parameters}")
 
         # Validate and sanitize parameters
-        is_valid, error_msg, sanitized_params = self._validate_parameters(
-            function_name, parameters
-        )
+        is_valid, error_msg, sanitized_params = self._validate_parameters(function_name, parameters)
         if not is_valid:
             message = f"❌ Parameter validation failed: {error_msg}"
             self.notify(message)
