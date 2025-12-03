@@ -33,8 +33,25 @@ import sys
 from pathlib import Path
 
 
-# Import shared modules - navigate from jib-tasks/analysis up to repo root, then shared
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+# Import shared modules - find shared directory dynamically
+# This works both in development (symlinked from jib-tasks/analysis) and in container
+# (baked into /opt/jib-runtime/jib-container/bin/)
+def _find_shared_path() -> Path:
+    """Find the shared directory by walking up from the script location."""
+    script_path = Path(__file__).resolve()
+    # Check multiple possible parent levels
+    for i in range(1, 6):
+        if i < len(script_path.parents):
+            candidate = script_path.parents[i] / "shared"
+            if (candidate / "claude").is_dir():
+                return candidate
+    # Fallback: check /opt/jib-runtime/shared (container path)
+    container_shared = Path("/opt/jib-runtime/shared")
+    if (container_shared / "claude").is_dir():
+        return container_shared
+    raise ImportError(f"Cannot find shared/claude module from {script_path}")
+
+sys.path.insert(0, str(_find_shared_path()))
 import contextlib
 
 from claude import run_claude
