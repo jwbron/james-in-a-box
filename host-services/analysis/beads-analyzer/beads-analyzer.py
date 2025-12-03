@@ -34,7 +34,6 @@ Example:
 
 import argparse
 import sys
-from pathlib import Path
 
 
 # Add host-services/shared to path for jib_exec
