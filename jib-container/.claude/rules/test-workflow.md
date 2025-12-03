@@ -19,7 +19,7 @@ discover-tests ~/khan/<repo>
 discover-tests --json
 ```
 
-**Note**: The `discover-tests` command is available in your PATH via `/opt/jib-runtime/bin/`.
+**Note**: The `discover-tests` command is available in your PATH via `/opt/jib-runtime/jib-container/bin/`.
 
 The tool scans for:
 - **Python**: pytest.ini, pyproject.toml, setup.cfg, conftest.py, unittest patterns

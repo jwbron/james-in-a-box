@@ -112,9 +112,10 @@ The container includes `/opt/jib-runtime/` with all jib executables baked into t
 
 | Path | Purpose |
 |------|---------|
-| `/opt/jib-runtime/bin/` | Executables (in your PATH) |
+| `/opt/jib-runtime/jib-container/bin/` | Executables (in your PATH) |
 | `/opt/jib-runtime/claude-commands/` | Slash command definitions |
 | `/opt/jib-runtime/claude-rules/` | Claude rules/instructions |
+| `/opt/jib-runtime/shared/` | Shared Python modules |
 
 **Available executables** (run directly by name, no path needed):
 - `discover-tests` - Discover test frameworks in a codebase
