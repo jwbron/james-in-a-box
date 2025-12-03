@@ -25,6 +25,10 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 from jib_logging import get_logger
 
+# Import message categorizer and host command handler
+from message_categorizer import MessageCategorizer, MessageCategory
+from host_command_handler import HostCommandHandler
+
 
 # Check for required dependencies
 try:
@@ -97,6 +101,13 @@ class SlackReceiver:
         # Set up signal handlers
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
+
+        # Initialize message categorizer for LLM-based message routing
+        # Uses ANTHROPIC_API_KEY from environment if available
+        self.categorizer = MessageCategorizer()
+
+        # Initialize host command handler for executing host functions
+        self.command_handler = HostCommandHandler()
 
     def _load_config(self) -> dict:
         """Load configuration from ~/.config/jib/.
@@ -943,47 +954,108 @@ class SlackReceiver:
                         "Extracted notification timestamp", referenced_notif=referenced_notif
                     )
 
-        # Parse message
-        parsed = self._parse_message(text, thread_ts=thread_ts, channel=channel)
-        msg_type = parsed["type"]
+        # Use LLM-based categorization to determine message type and routing
+        # This enables natural language commands like "run beads analyzer" or "check container status"
+        is_thread_reply = thread_ts is not None
+        categorization = self.categorizer.categorize(text, is_thread_reply=is_thread_reply)
 
-        # Handle remote control commands
-        if msg_type == "command":
-            self.logger.info("Processing remote control command", command=parsed["content"])
+        self.logger.info(
+            "Message categorized",
+            category=categorization.category.value,
+            function=categorization.function_name,
+            confidence=categorization.confidence,
+            reasoning=categorization.reasoning[:100] if categorization.reasoning else None,
+        )
 
-            if self._execute_command(parsed["content"]):
+        # Handle based on category
+        if categorization.category == MessageCategory.COMMAND:
+            # Explicit slash commands (e.g., /jib, /service, help)
+            self.logger.info("Processing explicit command", command=text)
+
+            if self._execute_command(text):
                 ack_msg = "🎮 Command dispatched. Check notifications for result."
                 self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
             else:
                 ack_msg = "❌ Failed to execute command. Check logs."
                 self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
 
-            return  # Don't write commands to disk
+            return  # Commands are executed immediately, not written to disk
 
-        # Override referenced_notification if we extracted it from parent
-        if referenced_notif:
-            parsed["referenced_notification"] = referenced_notif
+        elif categorization.category == MessageCategory.HOST_FUNCTION:
+            # Natural language request for a host function (e.g., "run beads analyzer")
+            # Execute immediately on the host without spinning up a container
+            self.logger.info(
+                "Executing host function",
+                function=categorization.function_name,
+                parameters=categorization.parameters,
+            )
 
-        # Write to shared directory
-        # IMPORTANT: Use reply_thread_ts (which is thread_ts OR message_ts)
-        # This ensures new tasks get the message_ts saved for future thread replies
+            # Send acknowledgment that we're processing
+            self._send_ack(
+                channel,
+                f"🔧 Executing `{categorization.function_name}`...\n"
+                f"_Confidence: {categorization.confidence:.0%}_",
+                thread_ts=reply_thread_ts,
+            )
+
+            # Execute the function
+            try:
+                result = self.command_handler.execute_function(
+                    categorization.function_name,
+                    categorization.parameters,
+                )
+                if result.success:
+                    self.logger.info(
+                        "Host function completed successfully",
+                        function=categorization.function_name,
+                    )
+                else:
+                    self.logger.warning(
+                        "Host function failed",
+                        function=categorization.function_name,
+                        message=result.message[:200] if result.message else None,
+                    )
+            except Exception as e:
+                self.logger.error(
+                    "Host function execution error",
+                    function=categorization.function_name,
+                    error=str(e),
+                )
+                self._send_ack(
+                    channel,
+                    f"❌ Error executing `{categorization.function_name}`: {e}",
+                    thread_ts=reply_thread_ts,
+                )
+
+            return  # Host functions don't need container processing
+
+        elif categorization.category == MessageCategory.RESPONSE:
+            # Response to a previous notification thread
+            msg_type = "response"
+            parsed_content = text
+        else:
+            # Container task or unknown - send to Claude in container
+            msg_type = "task"
+            parsed_content = text
+
+        # Build metadata for the message file
         metadata = {
             "user_id": user_id,
             "user_name": user_name,
             "channel": channel,
-            "referenced_notification": parsed.get("referenced_notification"),
-            "thread_ts": reply_thread_ts,  # Use reply_thread_ts, not thread_ts
+            "referenced_notification": referenced_notif,
+            "thread_ts": reply_thread_ts,
             "thread_context": thread_context,
+            "categorization": categorization.to_dict(),  # Include categorization info
         }
 
-        filepath = self._write_message(msg_type, parsed["content"], metadata)
+        # Write to shared directory for container processing
+        filepath = self._write_message(msg_type, parsed_content, metadata)
 
         if filepath:
-            # Extract task_id from filename (e.g., "task-20251124-112705.md" -> "task-20251124-112705")
             task_id = filepath.stem
-
-            # Send acknowledgment with log file path for real-time monitoring
             log_file_path = f"~/.jib-sharing/logs/{task_id}.log"
+
             if msg_type == "response":
                 ack_msg = (
                     f"✅ Response received and forwarded to Claude\n"
@@ -1000,7 +1072,6 @@ class SlackReceiver:
             self._send_ack(channel, ack_msg, thread_ts=reply_thread_ts)
 
             # Trigger processing in jib container
-            # Pass task_id and thread_ts for failure notification purposes
             self._trigger_processing(filepath, task_id=task_id, thread_ts=reply_thread_ts)
         else:
             self._send_ack(
