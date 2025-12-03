@@ -80,7 +80,7 @@ bd --allow-stale create "Task description" --labels feature,jira-1234  # New tas
 ### 2. Gather Context
 ```bash
 @load-context <project-name>                    # Load accumulated knowledge
-discover-tests.py ~/khan/<repo>                 # Find test framework
+discover-tests ~/khan/<repo>                    # Find test framework
 ```
 
 ### 3. Git Worktrees (IMPORTANT)
