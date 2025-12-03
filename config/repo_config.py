@@ -254,10 +254,16 @@ def get_github_token_for_repo(repo: str) -> str | None:
 
     if access_level == "readable":
         # Use readonly token for readable repos
-        return config.github_readonly_token or None
+        token = config.github_readonly_token or None
+        token_type = "GITHUB_READONLY_TOKEN"
     else:
         # Use main token for writable repos (or unknown repos)
-        return config.github_token or None
+        token = config.github_token or None
+        token_type = "GITHUB_TOKEN"
+
+    # Return both token and metadata for debugging
+    # The calling code can log the token_type and access_level
+    return token, token_type, access_level
 
 
 # Convenience function for shell scripts

@@ -313,8 +313,19 @@ def gh_json(
         log_ctx["repo"] = repo
 
     # Auto-select token based on repo if not explicitly provided
+    token_type = None
+    access_level = None
     if token is None and repo:
-        token = get_github_token_for_repo(repo)
+        token, token_type, access_level = get_github_token_for_repo(repo)
+        # Log token selection for debugging
+        token_preview = f"{token[:4]}...{token[-4:]}" if token and len(token) > 8 else "(none)"
+        logger.debug(
+            "Token selected for gh command",
+            repo=repo,
+            token_type=token_type,
+            access_level=access_level,
+            token_preview=token_preview,
+        )
 
     # Prepare environment with token if available
     env = None
@@ -400,7 +411,16 @@ def gh_text(args: list[str], repo: str | None = None, token: str | None = None) 
 
     # Auto-select token based on repo if not explicitly provided
     if token is None and repo:
-        token = get_github_token_for_repo(repo)
+        token, token_type, access_level = get_github_token_for_repo(repo)
+        # Log token selection for debugging
+        token_preview = f"{token[:4]}...{token[-4:]}" if token and len(token) > 8 else "(none)"
+        logger.debug(
+            "Token selected for gh text command",
+            repo=repo,
+            token_type=token_type,
+            access_level=access_level,
+            token_preview=token_preview,
+        )
 
     # Prepare environment with token if available
     env = None
@@ -1729,6 +1749,17 @@ def process_repo_prs(
         List of JibTask objects for this repo
     """
     tasks: list[JibTask] = []
+
+    # Log which token will be used for this repo (at INFO level for easier debugging)
+    token, token_type, access_level = get_github_token_for_repo(repo)
+    token_preview = f"{token[:4]}...{token[-4:]}" if token and len(token) > 8 else "(none)"
+    logger.info(
+        "Processing repo with token",
+        repo=repo,
+        token_type=token_type,
+        access_level=access_level,
+        token_preview=token_preview,
+    )
 
     # Fetch ALL open PRs in a single API call
     # Include reviewRequests to filter for direct user review requests (not team-based)
