@@ -47,7 +47,6 @@ SKIP_CONFLUENCE=false
 SKIP_FEATURES=false
 PUBLIC_REPO=false
 DRY_RUN=false
-INTELLIGENT_CONFLUENCE=false
 CONFLUENCE_DIR="${HOME}/context-sync/confluence"
 MAX_WORKERS=5
 
@@ -64,8 +63,6 @@ as a PR for review.
 OPTIONS:
     --repo PATH           Path to repository to onboard (required)
     --skip-confluence     Skip Confluence documentation discovery
-    --intelligent         Use Claude for intelligent Confluence analysis
-                          (semantic relevance scoring instead of keyword matching)
     --skip-features       Skip feature analysis phase
     --public-repo         Mark as public repo (filters sensitive docs)
     --confluence-dir DIR  Path to Confluence sync directory
@@ -77,9 +74,6 @@ OPTIONS:
 EXAMPLES:
     # Full onboarding for internal repo
     $(basename "$0") --repo ~/khan/webapp
-
-    # Use intelligent (Claude-powered) Confluence analysis
-    $(basename "$0") --repo ~/khan/webapp --intelligent
 
     # Onboard public repo (skip Confluence, filter output)
     $(basename "$0") --repo ~/khan/public-lib --public-repo --skip-confluence
@@ -138,10 +132,6 @@ while [[ $# -gt 0 ]]; do
             PUBLIC_REPO=true
             shift
             ;;
-        --intelligent)
-            INTELLIGENT_CONFLUENCE=true
-            shift
-            ;;
         --confluence-dir)
             CONFLUENCE_DIR="$2"
             shift 2
@@ -194,7 +184,6 @@ echo ""
 echo "Repository:      $REPO_PATH"
 echo "Repo Name:       $REPO_NAME"
 echo "Skip Confluence: $SKIP_CONFLUENCE"
-echo "Intelligent:     $INTELLIGENT_CONFLUENCE"
 echo "Skip Features:   $SKIP_FEATURES"
 echo "Public Repo:     $PUBLIC_REPO"
 echo "Dry Run:         $DRY_RUN"
@@ -213,7 +202,6 @@ CONTEXT_JSON=$(cat <<EOF
 {
     "repo_name": "$REPO_NAME",
     "skip_confluence": $SKIP_CONFLUENCE,
-    "intelligent_confluence": $INTELLIGENT_CONFLUENCE,
     "skip_features": $SKIP_FEATURES,
     "public_repo": $PUBLIC_REPO,
     "confluence_dir": "$CONFLUENCE_DIR",

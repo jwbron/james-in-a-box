@@ -1516,7 +1516,6 @@ def handle_repo_onboarding(context: dict) -> int:
     Context expected:
         - repo_name: str (e.g., "james-in-a-box")
         - skip_confluence: bool (default False)
-        - intelligent_confluence: bool (default False) - use Claude for semantic analysis
         - skip_features: bool (default False)
         - public_repo: bool (default False)
         - confluence_dir: str (default ~/context-sync/confluence)
@@ -1535,7 +1534,6 @@ def handle_repo_onboarding(context: dict) -> int:
 
     repo_name = context.get("repo_name", "james-in-a-box")
     skip_confluence = context.get("skip_confluence", False)
-    intelligent_confluence = context.get("intelligent_confluence", False)
     skip_features = context.get("skip_features", False)
     public_repo = context.get("public_repo", False)
     confluence_dir = context.get("confluence_dir", str(Path.home() / "context-sync" / "confluence"))
@@ -1617,59 +1615,34 @@ def handle_repo_onboarding(context: dict) -> int:
                 # Import dynamically to avoid issues if module not found
                 from importlib.util import module_from_spec, spec_from_file_location
 
-                if intelligent_confluence:
-                    # Use Claude-powered intelligent discovery
-                    print("  Using intelligent (Claude-powered) Confluence analysis...")
-                    intelligent_module_path = jib_path / "jib-container" / "jib-tasks" / "analysis" / "confluence-intelligent-discoverer.py"
-                    if intelligent_module_path.exists():
-                        spec = spec_from_file_location("confluence_intelligent_discoverer", intelligent_module_path)
-                        if spec and spec.loader:
-                            intelligent_module = module_from_spec(spec)
-                            spec.loader.exec_module(intelligent_module)
+                # Use Claude-powered intelligent discovery (default)
+                print("  Using intelligent (Claude-powered) Confluence analysis...")
+                intelligent_module_path = jib_path / "jib-container" / "jib-tasks" / "analysis" / "confluence-intelligent-discoverer.py"
+                if intelligent_module_path.exists():
+                    spec = spec_from_file_location("confluence_intelligent_discoverer", intelligent_module_path)
+                    if spec and spec.loader:
+                        intelligent_module = module_from_spec(spec)
+                        spec.loader.exec_module(intelligent_module)
 
-                            result = intelligent_module.intelligent_discover(
-                                confluence_dir=confluence_path,
-                                repo_name=repo_name,
-                                output_path=output_dir / "external-docs.json",
-                                max_docs=50,
-                                min_relevance=0.3,
-                            )
+                        result = intelligent_module.intelligent_discover(
+                            confluence_dir=confluence_path,
+                            repo_name=repo_name,
+                            output_path=output_dir / "external-docs.json",
+                            max_docs=50,
+                            min_relevance=0.3,
+                        )
 
-                            # Write the result to output file
-                            output_file = output_dir / "external-docs.json"
-                            output_file.parent.mkdir(parents=True, exist_ok=True)
-                            with open(output_file, "w") as f:
-                                json.dump(result, f, indent=2)
+                        # Write the result to output file
+                        output_file = output_dir / "external-docs.json"
+                        output_file.parent.mkdir(parents=True, exist_ok=True)
+                        with open(output_file, "w") as f:
+                            json.dump(result, f, indent=2)
 
-                            docs_found = result.get("summary", {}).get("total_found", 0)
-                            print(f"  ✓ Intelligent discovery found {docs_found} relevant docs")
-                            result_data["phases_completed"].append("confluence_discovery_intelligent")
-                    else:
-                        print(f"  Intelligent discoverer not found at {intelligent_module_path}")
-                        print("  Falling back to heuristic discovery...")
-                        intelligent_confluence = False  # Fall through to heuristic
-
-                if not intelligent_confluence:
-                    # Use heuristic-based discovery (original)
-                    conf_module_path = jib_path / "host-services" / "analysis" / "confluence-doc-discoverer" / "confluence-doc-discoverer.py"
-                    if conf_module_path.exists():
-                        spec = spec_from_file_location("confluence_discoverer", conf_module_path)
-                        if spec and spec.loader:
-                            conf_module = module_from_spec(spec)
-                            spec.loader.exec_module(conf_module)
-
-                            discoverer = conf_module.ConfluenceDocDiscoverer(
-                                confluence_dir=confluence_path,
-                                repo_name=repo_name,
-                                output_path=output_dir / "external-docs.json",
-                                public_repo=public_repo,
-                            )
-                            discoverer.discover()
-                            discoverer.save_results()
-                            print(f"  ✓ Found {len(discoverer.discovered_docs)} relevant docs")
-                            result_data["phases_completed"].append("confluence_discovery")
-                    else:
-                        print(f"  Confluence discoverer not found at {conf_module_path}")
+                        docs_found = result.get("summary", {}).get("total_found", 0)
+                        print(f"  ✓ Intelligent discovery found {docs_found} relevant docs")
+                        result_data["phases_completed"].append("confluence_discovery_intelligent")
+                else:
+                    print(f"  Intelligent discoverer not found at {intelligent_module_path}")
             except Exception as e:
                 print(f"  ⚠ Confluence discovery failed: {e}")
 
