@@ -1815,9 +1815,9 @@ The "analyze" array must be ordered by priority. Include ALL feature directories
         if not file_info:
             return files[:max_files]
 
-        file_listing = "\n".join(file_info[:50])  # Limit listing to 50 files
-        if len(files) > 50:
-            file_listing += f"\n  ... and {len(files) - 50} more files"
+        # Let Scout see ALL files - no artificial limits
+        # Scout agent will determine what's important to analyze
+        file_listing = "\n".join(file_info)
 
         # Check for README content (small preview, no full read)
         readme_hint = ""
