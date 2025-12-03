@@ -69,6 +69,61 @@ def output_result(success: bool, result: dict | str | None = None, error: str | 
     return 0 if success else 1
 
 
+def get_default_branch(repo_path: Path) -> str:
+    """Detect the default branch for a repository.
+
+    Tries to determine the default branch by:
+    1. Checking git remote show origin (most reliable)
+    2. Falling back to checking for common branch names (main, master)
+    3. Defaulting to "main" if nothing else works
+
+    Args:
+        repo_path: Path to the repository
+
+    Returns:
+        The default branch name (e.g., "main" or "master")
+    """
+    import subprocess
+
+    # Try to get the default branch from the remote
+    try:
+        result = subprocess.run(
+            ["git", "remote", "show", "origin"],
+            check=False,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if "HEAD branch:" in line:
+                    return line.split(":")[-1].strip()
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+        pass
+
+    # Fallback: check which common branches exist
+    try:
+        result = subprocess.run(
+            ["git", "branch", "-r"],
+            check=False,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            branches = result.stdout
+            if "origin/master" in branches:
+                return "master"
+            if "origin/main" in branches:
+                return "main"
+    except subprocess.SubprocessError:
+        pass
+
+    # Ultimate fallback
+    return "main"
+
+
 def handle_llm_prompt(context: dict) -> int:
     """Handle a generic LLM prompt request.
 
@@ -353,9 +408,12 @@ def handle_create_pr(context: dict) -> int:
         return output_result(False, error=f"Repository not found: {repo_path}")
 
     try:
-        # Create branch from origin/main
+        # Detect the default branch for this repo (main or master)
+        default_branch = get_default_branch(repo_path)
+
+        # Create branch from origin/<default>
         subprocess.run(
-            ["git", "fetch", "origin", "main"],
+            ["git", "fetch", "origin", default_branch],
             check=True,
             cwd=repo_path,
             capture_output=True,
@@ -363,7 +421,7 @@ def handle_create_pr(context: dict) -> int:
         )
 
         subprocess.run(
-            ["git", "checkout", "-b", branch_name, "origin/main"],
+            ["git", "checkout", "-b", branch_name, f"origin/{default_branch}"],
             check=True,
             cwd=repo_path,
             capture_output=True,
@@ -449,7 +507,7 @@ def handle_create_pr(context: dict) -> int:
                 "--body",
                 pr_body,
                 "--base",
-                "main",
+                default_branch,
                 "--head",
                 branch_name,
             ],
@@ -629,11 +687,14 @@ def handle_weekly_feature_analysis(context: dict) -> int:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
     try:
-        # Create a fresh branch from origin/main
+        # Detect the default branch for this repo (main or master)
+        default_branch = get_default_branch(repo_path)
+
+        # Create a fresh branch from origin/<default>
         branch_name = f"docs/sync-weekly-analysis-{datetime.now(UTC).strftime('%Y%m%d')}"
 
         subprocess.run(
-            ["git", "fetch", "origin", "main"],
+            ["git", "fetch", "origin", default_branch],
             check=True,
             cwd=repo_path,
             capture_output=True,
@@ -652,7 +713,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
             branch_name = f"{branch_name}-{datetime.now(UTC).strftime('%H%M%S')}"
 
         subprocess.run(
-            ["git", "checkout", "-b", branch_name, "origin/main"],
+            ["git", "checkout", "-b", branch_name, f"origin/{default_branch}"],
             check=True,
             cwd=repo_path,
             capture_output=True,
@@ -962,7 +1023,7 @@ This analysis uses the same high-quality pipeline as `feature-analyzer full-repo
                 "--body",
                 pr_body,
                 "--base",
-                "main",
+                default_branch,
                 "--head",
                 branch_name,
             ],
@@ -1040,11 +1101,14 @@ def handle_full_repo_analysis(context: dict) -> int:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
     try:
-        # Create a fresh branch from origin/main
+        # Detect the default branch for this repo (main or master)
+        default_branch = get_default_branch(repo_path)
+
+        # Create a fresh branch from origin/<default>
         branch_name = f"docs/full-repo-analysis-{datetime.now(UTC).strftime('%Y%m%d')}"
 
         subprocess.run(
-            ["git", "fetch", "origin", "main"],
+            ["git", "fetch", "origin", default_branch],
             check=True,
             cwd=repo_path,
             capture_output=True,
@@ -1063,7 +1127,7 @@ def handle_full_repo_analysis(context: dict) -> int:
             branch_name = f"{branch_name}-{datetime.now(UTC).strftime('%H%M%S')}"
 
         subprocess.run(
-            ["git", "checkout", "-b", branch_name, "origin/main"],
+            ["git", "checkout", "-b", branch_name, f"origin/{default_branch}"],
             check=True,
             cwd=repo_path,
             capture_output=True,
@@ -1206,7 +1270,7 @@ This analysis uses the high-quality multi-agent pipeline:
                 "--body",
                 pr_body,
                 "--base",
-                "main",
+                default_branch,
                 "--head",
                 branch_name,
             ],
