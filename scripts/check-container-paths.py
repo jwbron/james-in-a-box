@@ -93,21 +93,18 @@ class PathPatternVisitor(ast.NodeVisitor):
 
     def _is_path_home_call(self, node: ast.expr) -> bool:
         """Check if node is Path.home() call."""
-        if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Attribute):
-                if node.func.attr == "home":
-                    if isinstance(node.func.value, ast.Name):
-                        return node.func.value.id == "Path"
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "home" and isinstance(node.func.value, ast.Name):
+                return node.func.value.id == "Path"
         return False
 
     def _is_sys_path_call(self, node: ast.Call) -> bool:
         """Check if this is a sys.path.insert() or sys.path.append() call."""
-        if isinstance(node.func, ast.Attribute):
-            if node.func.attr in ("insert", "append"):
-                if isinstance(node.func.value, ast.Attribute):
-                    if node.func.value.attr == "path":
-                        if isinstance(node.func.value.value, ast.Name):
-                            return node.func.value.value.id == "sys"
+        if isinstance(node.func, ast.Attribute) and node.func.attr in ("insert", "append"):
+            if isinstance(node.func.value, ast.Attribute):
+                if node.func.value.attr == "path":
+                    if isinstance(node.func.value.value, ast.Name):
+                        return node.func.value.value.id == "sys"
         return False
 
     def _check_for_dynamic_khan_path(self, node: ast.expr) -> tuple[bool, str | None]:
@@ -118,9 +115,8 @@ class PathPatternVisitor(ast.NodeVisitor):
         """
         # Handle str() wrapper
         if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id == "str":
-                if node.args:
-                    return self._check_for_dynamic_khan_path(node.args[0])
+            if isinstance(node.func, ast.Name) and node.func.id == "str" and node.args:
+                return self._check_for_dynamic_khan_path(node.args[0])
 
         # Check for / chain
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
@@ -153,13 +149,15 @@ class PathPatternVisitor(ast.NodeVisitor):
                 is_problematic, var_name = self._check_for_dynamic_khan_path(path_arg)
                 if is_problematic and not self._has_noqa(node.lineno):
                     line_text = self._get_line_text(node.lineno)
-                    self.violations.append((
-                        node.lineno,
-                        line_text,
-                        f"sys.path modification with dynamic repo path (variable: {var_name})\n"
-                        f"         This can cause 'ModuleNotFoundError' when repo_name != 'james-in-a-box'\n"
-                        f"         Fix: Use explicit path: Path.home() / 'khan' / 'james-in-a-box' / ..."
-                    ))
+                    self.violations.append(
+                        (
+                            node.lineno,
+                            line_text,
+                            f"sys.path modification with dynamic repo path (variable: {var_name})\n"
+                            f"         This can cause 'ModuleNotFoundError' when repo_name != 'james-in-a-box'\n"
+                            f"         Fix: Use explicit path: Path.home() / 'khan' / 'james-in-a-box' / ...",
+                        )
+                    )
 
         self.generic_visit(node)
 
