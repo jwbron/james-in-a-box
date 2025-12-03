@@ -9,7 +9,7 @@
         lint-shell lint-shell-fix \
         lint-yaml lint-yaml-fix \
         lint-docker lint-workflows \
-        lint-host-services lint-bin-symlinks \
+        lint-host-services lint-container-paths lint-bin-symlinks \
         install-linters check-linters
 
 # Default target
@@ -36,6 +36,7 @@ help:
 	@echo "  make lint-docker       - Lint Dockerfiles with hadolint"
 	@echo "  make lint-workflows    - Lint GitHub Actions with actionlint"
 	@echo "  make lint-host-services - Check host-services for forbidden patterns"
+	@echo "  make lint-container-paths - Check for problematic sys.path patterns (JIB001)"
 	@echo "  make lint-bin-symlinks  - Check container bin symlinks are valid"
 	@echo ""
 	@echo "Setup:"
@@ -67,7 +68,7 @@ test-bash:
 # ============================================================================
 
 # Run all linters
-lint: lint-python lint-shell lint-yaml lint-docker lint-host-services lint-bin-symlinks
+lint: lint-python lint-shell lint-yaml lint-docker lint-host-services lint-container-paths lint-bin-symlinks
 	@echo ""
 	@echo "All linters completed!"
 
@@ -205,6 +206,13 @@ lint-host-services:
 	@echo "  Checking for gh CLI write operations..."
 	@python3 scripts/check-gh-cli-usage.py
 	@echo "Host services checks passed!"
+
+# ----------------------------------------------------------------------------
+# Container Path Checks (JIB001)
+# ----------------------------------------------------------------------------
+lint-container-paths:
+	@echo "==> Checking for problematic sys.path patterns..."
+	@python3 scripts/check-container-paths.py
 
 # ----------------------------------------------------------------------------
 # Container Bin Symlinks Check

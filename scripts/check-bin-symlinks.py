@@ -182,7 +182,7 @@ def check_symlinks(repo_root: Path) -> tuple[list[str], list[str], list[str]]:
 
         # Check if any symlink points to this file
         has_symlink = False
-        for symlink_name, target in expected_symlinks.items():
+        for _symlink_name, target in expected_symlinks.items():
             # Normalize paths for comparison
             if target == rel_path_from_bin or target.lstrip("./") == rel_path_from_bin.lstrip("./"):
                 has_symlink = True
