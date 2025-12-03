@@ -27,10 +27,42 @@ from datetime import datetime
 from pathlib import Path
 
 
-# Add shared directory to path for enrichment, Claude runner, and jib_logging modules
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
+# Find module paths dynamically - works both in development and container
+# Dev: ~/khan/james-in-a-box/{jib-container,shared}/
+# Container: /opt/jib-runtime/{jib-container,shared}/
+def _find_jib_paths() -> tuple[Path, Path]:
+    """Find jib-container and shared directories.
 
-from claude.runner import run_claude
+    Returns:
+        Tuple of (jib_container_path, shared_path)
+    """
+    script_path = Path(__file__).resolve()
+
+    # Walk up looking for jib-container parent
+    for i in range(1, 6):
+        if i < len(script_path.parents):
+            candidate = script_path.parents[i]
+            if candidate.name == "jib-container" and (candidate / "claude").is_dir():
+                # Found jib-container, shared is a sibling
+                jib_container = candidate
+                shared = candidate.parent / "shared"
+                if shared.is_dir():
+                    return jib_container, shared
+
+    # Fallback: container paths at /opt/jib-runtime/
+    container_jib = Path("/opt/jib-runtime/jib-container")
+    container_shared = Path("/opt/jib-runtime/shared")
+    if (container_jib / "claude").is_dir() and container_shared.is_dir():
+        return container_jib, container_shared
+
+    raise ImportError(f"Cannot find jib-container/claude or shared from {script_path}")
+
+
+_jib_container_path, _shared_path = _find_jib_paths()
+sys.path.insert(0, str(_shared_path))
+sys.path.insert(0, str(_jib_container_path))
+
+from claude import run_claude
 from enrichment import enrich_task
 from jib_logging import get_logger
 
