@@ -135,11 +135,14 @@ def jib_exec(
     The processor receives the task type and context as command-line arguments.
 
     Args:
-        processor: Path to the processor script relative to ~/khan/james-in-a-box/
-                  or an absolute path inside the container.
+        processor: Name of the processor executable (must be in container PATH via
+                  /opt/jib-runtime/bin), or a relative path like
+                  "jib-container/jib-tasks/github/github-processor.py" for backwards
+                  compatibility.
                   Examples:
-                    - "jib-container/jib-tasks/github/github-processor.py"
-                    - "jib-container/jib-tasks/analysis/analysis-processor.py"
+                    - "github-processor" (preferred - uses PATH)
+                    - "analysis-processor" (preferred - uses PATH)
+                    - "jib-container/jib-tasks/github/github-processor.py" (legacy)
         task_type: Type of task for the processor (e.g., "check_failure", "doc_generation")
         context: Dictionary of context data for the processor
         timeout: Optional timeout in seconds. If None, waits indefinitely.
@@ -149,35 +152,62 @@ def jib_exec(
         JibResult with success status, output, and any errors.
 
     Example:
+        # Preferred - processor is in PATH inside container
+        result = jib_exec(
+            processor="analysis-processor",
+            task_type="doc_generation",
+            context={"prompt": "Generate documentation for this ADR", "adr_path": "/..."},
+        )
+
+        # Legacy - still works for backwards compatibility
         result = jib_exec(
             processor="jib-container/jib-tasks/analysis/analysis-processor.py",
             task_type="doc_generation",
-            context={"prompt": "Generate documentation for this ADR", "adr_path": "/..."},
+            context={"prompt": "...", "adr_path": "/..."},
         )
     """
     jib_path = get_jib_path()
     username = get_container_username()
 
-    # Build container-side processor path
-    if processor.startswith("/"):
+    # Determine if processor is a simple name (in PATH) or a path
+    # Simple names don't contain "/" or end with ".py"
+    is_simple_name = "/" not in processor and not processor.endswith(".py")
+
+    if is_simple_name:
+        # Processor is in PATH inside container via /opt/jib-runtime/bin
+        container_processor = processor
+    elif processor.startswith("/"):
+        # Absolute path inside container
         container_processor = processor
     else:
+        # Legacy: relative path from ~/khan/james-in-a-box/
         container_processor = f"/home/{username}/khan/james-in-a-box/{processor}"
 
     # Serialize context to JSON
     context_json = json.dumps(context)
 
-    # Build command
-    cmd = [
-        str(jib_path),
-        "--exec",
-        "python3",
-        container_processor,
-        "--task",
-        task_type,
-        "--context",
-        context_json,
-    ]
+    # Build command - only include "python3" for legacy full paths
+    if is_simple_name:
+        cmd = [
+            str(jib_path),
+            "--exec",
+            container_processor,
+            "--task",
+            task_type,
+            "--context",
+            context_json,
+        ]
+    else:
+        cmd = [
+            str(jib_path),
+            "--exec",
+            "python3",
+            container_processor,
+            "--task",
+            task_type,
+            "--context",
+            context_json,
+        ]
 
     try:
         if stream_to_log:

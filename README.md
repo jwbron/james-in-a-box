@@ -10,11 +10,12 @@ jib is your **autonomous codebase maintainer** that:
 
 - **Develops features**: Implements features end-to-end with tests and documentation
 - **Reviews PRs**: Automatically reviews team PRs, suggests improvements, analyzes check failures
-- **Maintains documentation**: Auto-generates docs, keeps ADRs current, updates runbooks
+- **Maintains documentation**: Auto-generates docs, keeps ADRs current, syncs FEATURES.md with code
 - **Analyzes codebases**: Weekly deep analysis for quality, security, and structural issues
 - **Refactors autonomously**: Identifies and executes automated refactoring opportunities
 - **Researches externally**: Fetches latest docs, best practices, framework updates from the web
-- **Tracks work persistently**: Remembers context across sessions via git-backed task memory
+- **Tracks work persistently**: Remembers context across sessions via git-backed task memory (Beads)
+- **Self-improves**: Detects processing inefficiencies, proposes prompt refinements, tracks impact
 - **Works asynchronously**: Fully productive workflow via Slack (notifications, reviews, approvals)
 
 Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handles the routine maintenance work, and lets human engineers focus on strategic, creative problems.
@@ -120,11 +121,11 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 - **Migration guides**: Fetches official migration documentation for upgrades
 
 **Context sources integrated:**
-| Source | Sync Frequency | Purpose |
-|--------|----------------|---------|
-| **Confluence** | Hourly | ADRs, runbooks, engineering docs |
-| **JIRA** | Hourly | Open tickets, epics, sprint data |
-| **GitHub** | Every 15 min | PRs, checks, comments |
+| Source | Sync Method | Purpose |
+|--------|-------------|---------|
+| **Confluence** | Hourly file sync | ADRs, runbooks, engineering docs |
+| **JIRA** | Hourly file sync | Open tickets, epics, sprint data |
+| **GitHub** | MCP (on-demand) | PRs, issues, commits, file contents |
 | **Web (on-demand)** | As needed | Latest docs, research, advisories |
 
 **Post-Sync Intelligence:**
@@ -153,6 +154,52 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 - Generates actionable improvements to agent behavior
 
 **Cultural Alignment**: Agent behavior continuously refined to match Khan Academy engineering values (clear communication, systematic problem-solving, thorough testing, user-focused decisions)
+
+### 9. Structured Logging & Observability
+
+**Standardized logging across all jib components:**
+- **jib_logging library**: Python library providing structured JSON logging with consistent formatting
+- **Tool wrappers**: Logged wrappers for bd, git, gh, and claude commands that capture all interactions
+- **Model output capture**: Records LLM inputs/outputs following OpenTelemetry GenAI semantic conventions
+- **GCP Cloud Logging ready**: Structured output compatible with Google Cloud Logging ingestion
+- **Operation tracking**: Hierarchical operation context with correlation IDs for tracing workflows
+
+**Benefits**: Enables debugging, performance analysis, and cost tracking across all agent operations
+
+### 10. LLM Inefficiency Detection & Self-Improvement
+
+**Automated detection and reporting of agent processing inefficiencies:**
+- **Trace collection**: Captures all LLM tool calls via Claude Code hooks for analysis
+- **Pattern detection**: Identifies tool discovery failures, retry storms, redundant file reads
+- **Weekly reports**: Generates health scores (0-100) with actionable improvement recommendations
+- **Self-improvement loop**: Proposes prompt refinements and tracks improvement impact over time
+
+**Implemented detection categories:**
+- Tool Discovery (documentation misses, search failures, API confusion)
+- Tool Execution (retry storms, parameter errors)
+- Resource Efficiency (redundant reads, excessive context loading)
+
+**Benefits**: Data-driven improvements reduce token waste and task completion time
+
+### 11. ADR Research & Documentation Automation
+
+**Research-driven ADR workflow and automated documentation maintenance:**
+- **ADR Researcher**: Weekly service that researches open ADR PRs, posts findings as PR comments
+- **Feature Analyzer**: Detects ADR status changes and triggers documentation updates
+- **Weekly code analysis**: Scans merged code to discover new features for FEATURES.md
+- **PR-based updates**: All documentation changes submitted as PRs for human review
+
+**Documentation pipeline**: Context analysis → LLM draft → Review → Validation → PR creation
+
+### 12. Beads Health Monitoring
+
+**Weekly analysis of Beads task tracking effectiveness:**
+- **Health scoring**: 0-100 score measuring task lifecycle, notes coverage, label usage
+- **Issue detection**: Identifies abandoned tasks, missing context, poor discoverability
+- **Slack notifications**: Alerts for high-severity issues requiring attention
+- **Trend tracking**: Compares metrics week-over-week for continuous improvement
+
+**Metrics tracked**: Task volume, closure time, notes coverage, label usage, source tracking (Slack/GitHub/JIRA)
 
 ## How It Works
 
@@ -328,14 +375,20 @@ jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly docum
 
 **[Documentation Index](docs/index.md)** - Central hub linking all documentation
 
+**[Features Overview](docs/FEATURES.md)** - Complete list of capabilities and feature status
+
 ### Architecture Decision Records (ADRs)
 
-| ADR | Description |
-|-----|-------------|
-| [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, self-improvement |
-| [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | How documentation is structured for efficient LLM navigation |
-| [Context Sync Strategy](docs/adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Current connectors and MCP migration plan |
-| [ADR Index](docs/adr/README.md) | Full list of all ADRs by status |
+| ADR | Status | Description |
+|-----|--------|-------------|
+| [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | In Progress | Core system architecture, security model, self-improvement |
+| [Standardized Logging Interface](docs/adr/in-progress/ADR-Standardized-Logging-Interface.md) | Implemented | Structured JSON logging with tool wrappers and OpenTelemetry alignment |
+| [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | Implemented | How documentation is structured for efficient LLM navigation |
+| [Context Sync Strategy](docs/adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Partially Implemented | GitHub MCP active, JIRA MCP pending, Confluence custom sync retained |
+| [Feature Analyzer Documentation Sync](docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Implemented | Automated sync between ADRs and FEATURES.md |
+| [LLM Inefficiency Reporting](docs/adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Implemented | Detecting and reporting inefficient LLM operations |
+| [Multi-Agent Pipeline Architecture](docs/adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Proposed | Multi-agent orchestration with sequential, parallel, and conditional patterns |
+| [ADR Index](docs/adr/README.md) | — | Full list of all ADRs by status |
 
 ### Quick References
 
@@ -349,8 +402,9 @@ jib separates concerns between the host machine and the sandboxed container:
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Host Machine (Your Laptop)                                         │
 │  ├── Slack services (bidirectional messaging)                       │
-│  ├── Context sync (Confluence, JIRA, GitHub → markdown)             │
-│  ├── Analyzers (codebase, conversations)                            │
+│  ├── Context sync (Confluence, JIRA → markdown)                     │
+│  ├── Analyzers (codebase, conversations, inefficiency detection)    │
+│  ├── GitHub token refresher (45-min token renewal)                  │
 │  └── Worktree management (isolation, cleanup)                       │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Docker Container (Sandbox)                                         │
@@ -358,7 +412,7 @@ jib separates concerns between the host machine and the sandboxed container:
 │  ├── Access to synced context (read-only)                           │
 │  ├── Code workspace (read-write, isolated worktree)                 │
 │  ├── Beads task memory (persistent, git-backed, shared across runs) │
-│  └── GitHub MCP server (PR operations)                              │
+│  └── GitHub MCP server (PR/issue operations)                        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -403,32 +457,42 @@ For detailed component documentation, see:
 **Target Risk**: LOW (full DLP + monitoring operational)
 
 **Sandbox Isolation:**
-- No SSH keys (can't push to GitHub directly)
+- No SSH keys (git push via GitHub App token credential helper)
 - No cloud credentials (can't deploy)
-- Network: Outbound HTTP only (Claude API, packages)
+- Network: Outbound HTTP only (Claude API, packages, GitHub MCP)
 - Container: No inbound ports, bridge networking
 
 ## Roadmap
 
 **Phase 1** (Complete):
 - ✅ Secure Docker sandbox with Slack bidirectional messaging
-- ✅ Context connectors (Confluence, JIRA, GitHub)
+- ✅ Context connectors (Confluence, JIRA, GitHub sync)
 - ✅ Self-improvement system (conversation and codebase analyzers)
-- ✅ LLM-optimized documentation structure
+- ✅ LLM-optimized documentation structure (llms.txt standard)
 - ✅ GitHub PR automation (create, review, comment response, check failure analysis)
 - ✅ Persistent task memory (Beads)
 - ✅ Async Slack-based workflow
+- ✅ Structured logging with OpenTelemetry GenAI alignment (jib_logging)
+- ✅ LLM inefficiency detection and self-improvement loop
+- ✅ Feature Analyzer for automated FEATURES.md maintenance
+- ✅ ADR Researcher for research-driven ADR workflow
+- ✅ Beads health monitoring and task tracking analysis
 
 **Phase 2** (In Progress):
-- Real-time context via MCP servers (Atlassian, GitHub)
-- Bi-directional operations (update JIRA tickets, comment on PRs)
-- Enhanced security filtering (content classification, allowlists)
-- Documentation drift detection and auto-update
+- ✅ GitHub MCP server integration (real-time PR/issue access)
+- 🔄 JIRA MCP server integration (pending)
+- 🔄 Bi-directional operations (update JIRA tickets via MCP)
+- 🔄 Enhanced security filtering (content classification, allowlists)
+- 🔄 Documentation drift detection and auto-update
+
+**Proposed**:
+- **Multi-Agent Pipeline Architecture**: Orchestrated multi-agent workflows with sequential, parallel, and conditional execution patterns. Enables complex tasks to be broken down and executed by specialized agents coordinated through Beads state management. See [ADR: Multi-Agent Pipeline Architecture](docs/adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md).
 
 **Phase 3** (Planned):
 - Cloud Run deployment for multi-engineer support
 - Advanced security (DLP scanning, output monitoring)
 - Expanded self-improvement (automated prompt refinement)
+- Webhook-based real-time GitHub events (replace polling)
 
 See [ADR: Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) for detailed roadmap.
 
