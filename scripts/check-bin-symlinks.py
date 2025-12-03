@@ -170,12 +170,10 @@ def check_symlinks(repo_root: Path) -> tuple[list[str], list[str], list[str]]:
     # Find all executables
     executables = find_container_executables(jib_container_dir)
 
-    # Build a map of executable names to their paths
-    {name: path for path, name in executables}
-
     missing_symlinks = []  # Executables without symlinks
     broken_symlinks = []  # Symlinks pointing to non-existent files
     unlisted_symlinks = []  # Symlinks in bin/ but not in maintain-bin-symlinks
+    reported_unlisted = set()  # Track symlinks already reported as unlisted
 
     # Check that all executables have symlinks
     for exec_path, exec_name in executables:
@@ -198,6 +196,7 @@ def check_symlinks(repo_root: Path) -> tuple[list[str], list[str], list[str]]:
                 unlisted_symlinks.append(
                     f"{exec_name} (symlink exists but not in maintain-bin-symlinks)"
                 )
+                reported_unlisted.add(exec_name)
             else:
                 # Truly missing
                 missing_symlinks.append(f"{exec_name} ({exec_path.relative_to(repo_root)})")
@@ -216,10 +215,11 @@ def check_symlinks(repo_root: Path) -> tuple[list[str], list[str], list[str]]:
             broken_symlinks.append(f"{symlink_name} -> {target} (target does not exist)")
 
     # Check for symlinks in bin/ that aren't listed in maintain-bin-symlinks
+    # Skip symlinks already reported in the executables loop above
     for item in bin_dir.iterdir():
         if item.is_symlink():
             name = item.name
-            if name not in expected_symlinks and name != "maintain-bin-symlinks":
+            if name not in expected_symlinks and name != "maintain-bin-symlinks" and name not in reported_unlisted:
                 target = os.readlink(item)
                 unlisted_symlinks.append(f"{name} -> {target} (not in maintain-bin-symlinks)")
 
