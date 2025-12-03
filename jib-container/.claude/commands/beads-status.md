@@ -5,8 +5,6 @@ Show current Beads task status and what's ready to work on.
 Run these commands and provide a summary:
 
 ```bash
-cd ~/beads
-
 echo "=== Tasks Ready to Work On (No Blockers) ==="
 bd ready 2>/dev/null || echo "No ready tasks found"
 
