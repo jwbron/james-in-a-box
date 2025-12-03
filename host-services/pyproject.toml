@@ -26,6 +26,9 @@ dependencies = [
 
     # GitHub App JWT signing (github-app-token.py)
     "cryptography>=41.0.0",
+
+    # Claude API for message categorization (slack-receiver)
+    "anthropic>=0.39.0",
 ]
 
 [project.optional-dependencies]
