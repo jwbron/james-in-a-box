@@ -21,8 +21,12 @@ from pathlib import Path
 from typing import Any
 
 
-# Add shared directory to path for jib_logging module
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+# Add shared directories to path:
+# - host-services/shared for jib_exec (used by message_categorizer)
+# - repo root shared for jib_logging (common utilities)
+_host_services = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(_host_services / "shared"))
+sys.path.insert(0, str(_host_services.parent / "shared"))
 from host_command_handler import HostCommandHandler
 from jib_logging import get_logger
 
