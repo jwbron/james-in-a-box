@@ -234,18 +234,13 @@ class SlackReceiver:
         Returns True if command was executed, False otherwise.
         """
         try:
-            # Import the handler (lazy import to avoid circular dependencies)
-            from host_command_handler import HostCommandHandler
-
             self.logger.info("Executing remote command", command=command_text)
 
             # Execute in a separate thread to avoid blocking
-            import threading
-
+            # Use self.command_handler which is initialized in __init__
             def run_command():
                 try:
-                    handler = HostCommandHandler()
-                    handler.execute_from_text(command_text)
+                    self.command_handler.execute_from_text(command_text)
                 except Exception as e:
                     self.logger.error("Command execution failed", error=str(e))
 
@@ -255,10 +250,6 @@ class SlackReceiver:
             self.logger.info("Command dispatched successfully")
             return True
 
-        except ImportError:
-            # Fallback to shell script if Python module not available
-            self.logger.warning("HostCommandHandler not found, falling back to shell script")
-            return self._execute_command_shell(command_text)
         except Exception as e:
             self.logger.error("Failed to execute command", error=str(e), command=command_text)
             return False

@@ -178,6 +178,18 @@ def _build_function_descriptions() -> str:
     return "\n".join(lines)
 
 
+# Cache the function descriptions since HOST_FUNCTIONS is static
+_CACHED_FUNCTION_DESCRIPTIONS: str | None = None
+
+
+def _get_function_descriptions() -> str:
+    """Get cached function descriptions for the categorization prompt."""
+    global _CACHED_FUNCTION_DESCRIPTIONS
+    if _CACHED_FUNCTION_DESCRIPTIONS is None:
+        _CACHED_FUNCTION_DESCRIPTIONS = _build_function_descriptions()
+    return _CACHED_FUNCTION_DESCRIPTIONS
+
+
 CATEGORIZATION_PROMPT = """You are a message categorizer for a developer assistant system. Your job is to analyze incoming Slack messages and determine the best way to handle them.
 
 ## Available Host Functions
@@ -230,15 +242,24 @@ Analyze the following message and return a JSON response:
 class MessageCategorizer:
     """Categorizes incoming Slack messages using Claude API."""
 
-    def __init__(self, api_key: str | None = None):
+    # Default model for categorization (fast and capable for this task)
+    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+
+    def __init__(self, api_key: str | None = None, model: str | None = None):
         """Initialize the categorizer.
 
         Args:
             api_key: Anthropic API key. If not provided, reads from ANTHROPIC_API_KEY env var.
+            model: Claude model to use. If not provided, reads from CATEGORIZER_MODEL env var
+                   or uses DEFAULT_MODEL.
         """
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not self.api_key:
             logger.warning("No ANTHROPIC_API_KEY found - categorization will use heuristics only")
+
+        # Model can be configured via parameter, env var, or default
+        self.model = model or os.environ.get("CATEGORIZER_MODEL", self.DEFAULT_MODEL)
+        logger.info("Categorizer initialized", model=self.model)
 
         # Import anthropic lazily to avoid import errors if not installed
         self._client = None
@@ -344,7 +365,7 @@ class MessageCategorizer:
         try:
             # Build the prompt
             prompt = CATEGORIZATION_PROMPT.format(
-                functions=_build_function_descriptions(),
+                functions=_get_function_descriptions(),
                 message=text,
             )
 
@@ -352,7 +373,7 @@ class MessageCategorizer:
             logger.info("Calling Claude API for categorization", text_preview=text[:50])
 
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",  # Fast model for categorization
+                model=self.model,
                 max_tokens=500,
                 messages=[{"role": "user", "content": prompt}],
             )

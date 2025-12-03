@@ -666,6 +666,107 @@ Timers:
         self.notify(message, title="🔗 Spec Enricher")
         return CommandResult(success=code == 0, message=message)
 
+    def _validate_parameters(
+        self, function_name: str, parameters: dict
+    ) -> tuple[bool, str, dict]:
+        """Validate and sanitize parameters for a function.
+
+        Args:
+            function_name: Name of the function being called
+            parameters: Raw parameters from the LLM
+
+        Returns:
+            Tuple of (is_valid, error_message, sanitized_params)
+        """
+        sanitized = {}
+
+        # Parameter validation rules for each function
+        validation_rules = {
+            "jib_logs": {
+                "lines": {"type": int, "min": 1, "max": 1000, "default": 50},
+            },
+            "service_status": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+            },
+            "service_restart": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+            },
+            "service_start": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+            },
+            "service_stop": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+            },
+            "service_logs": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+                "lines": {"type": int, "min": 1, "max": 1000, "default": 50},
+            },
+            "run_beads_analyzer": {
+                "days": {"type": int, "min": 1, "max": 365, "default": 7},
+                "force": {"type": bool, "default": False},
+                "skip_claude": {"type": bool, "default": False},
+            },
+            "run_feature_analyzer": {
+                "adr_path": {"type": str, "pattern": r"^[\w\-\./]+$", "default": None},
+                "dry_run": {"type": bool, "default": False},
+            },
+            "run_spec_enricher": {
+                "spec_path": {"type": str, "required": True, "pattern": r"^[\w\-\./]+$"},
+            },
+        }
+
+        rules = validation_rules.get(function_name, {})
+
+        import re
+
+        for param_name, rule in rules.items():
+            value = parameters.get(param_name, rule.get("default"))
+
+            # Check required parameters
+            if rule.get("required") and value in (None, ""):
+                return False, f"Missing required parameter: {param_name}", {}
+
+            # Skip validation if no value and not required
+            if value is None:
+                sanitized[param_name] = None
+                continue
+
+            # Type coercion and validation
+            expected_type = rule.get("type")
+            try:
+                if expected_type == int:
+                    value = int(value)
+                    if "min" in rule and value < rule["min"]:
+                        value = rule["min"]
+                    if "max" in rule and value > rule["max"]:
+                        value = rule["max"]
+                elif expected_type == bool:
+                    if isinstance(value, str):
+                        value = value.lower() in ("true", "yes", "1")
+                    else:
+                        value = bool(value)
+                elif expected_type == str:
+                    value = str(value)
+                    # Validate against pattern if specified
+                    if "pattern" in rule and value:
+                        if not re.match(rule["pattern"], value):
+                            return (
+                                False,
+                                f"Invalid format for {param_name}: {value}",
+                                {},
+                            )
+            except (ValueError, TypeError) as e:
+                return False, f"Invalid value for {param_name}: {e}", {}
+
+            sanitized[param_name] = value
+
+        # Copy through any parameters without validation rules (use defaults)
+        for param_name, value in parameters.items():
+            if param_name not in sanitized:
+                sanitized[param_name] = value
+
+        return True, "", sanitized
+
     def execute_function(self, function_name: str, parameters: dict | None = None) -> CommandResult:
         """Execute a host function by name with parameters.
 
@@ -681,6 +782,17 @@ Timers:
         """
         parameters = parameters or {}
         self.log(f"Executing function: {function_name} with params: {parameters}")
+
+        # Validate and sanitize parameters
+        is_valid, error_msg, sanitized_params = self._validate_parameters(
+            function_name, parameters
+        )
+        if not is_valid:
+            message = f"❌ Parameter validation failed: {error_msg}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        parameters = sanitized_params
 
         # Map function names to methods
         function_map = {
