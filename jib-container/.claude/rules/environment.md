@@ -106,6 +106,31 @@ Do NOT assume owner from context (e.g., don't assume `Khan/` just because you're
 | `~/sharing/context/` | RW | @save-context / @load-context data |
 | `~/beads/` | RW | Persistent task memory |
 
+## Jib Runtime Directory
+
+The container includes `/opt/jib-runtime/` with all jib executables baked into the Docker image:
+
+| Path | Purpose |
+|------|---------|
+| `/opt/jib-runtime/bin/` | Executables (in your PATH) |
+| `/opt/jib-runtime/claude-commands/` | Slash command definitions |
+| `/opt/jib-runtime/claude-rules/` | Claude rules/instructions |
+
+**Available executables** (run directly by name, no path needed):
+- `discover-tests` - Discover test frameworks in a codebase
+- `github-app-token` - Generate GitHub App tokens
+- `confluence-processor` - Process Confluence sync tasks
+- `github-processor` - Process GitHub tasks
+- `incoming-processor` - Process incoming Slack messages
+- `maintain-bin-symlinks` - Manage bin directory symlinks
+
+**Example usage:**
+```bash
+# These commands are in your PATH
+discover-tests ~/khan/webapp
+github-app-token
+```
+
 ## Custom Commands
 
 | Command | Purpose |
