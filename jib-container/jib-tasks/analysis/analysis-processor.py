@@ -1540,12 +1540,14 @@ def handle_repo_onboarding(context: dict) -> int:
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
 
-    # Import the analysis tools from james-in-a-box's host-services directory
+    # Import the analysis tools
+    # - Feature analyzer is in jib-container/jib-tasks/analysis/ (uses run_claude directly)
+    # - Other tools are still in host-services/ (they don't need jib_exec)
     jib_path = Path.home() / "khan" / "james-in-a-box"
+    sys.path.insert(0, str(jib_path / "jib-container" / "jib-tasks" / "analysis"))  # feature_analyzer
     sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "confluence-doc-discoverer"))
     sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "index-generator"))
     sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "repo-onboarding"))
-    sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "feature-analyzer"))
 
     result_data = {
         "phases_completed": [],
@@ -1648,7 +1650,7 @@ def handle_repo_onboarding(context: dict) -> int:
             print("  Skipping feature analysis (--skip-features)")
         else:
             try:
-                from weekly_analyzer import RepoAnalyzer
+                from feature_analyzer import RepoAnalyzer
 
                 print(f"  Running feature analysis with {max_workers} workers...")
                 analyzer = RepoAnalyzer(repo_path, use_llm=True)
