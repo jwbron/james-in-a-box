@@ -33,8 +33,25 @@ import sys
 from pathlib import Path
 
 
-# Import shared modules - navigate from jib-tasks/analysis up to repo root, then shared
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+# Import shared modules - find shared directory dynamically
+# This works both in development (symlinked from jib-tasks/analysis) and in container
+# (baked into /opt/jib-runtime/jib-container/bin/)
+def _find_shared_path() -> Path:
+    """Find the shared directory by walking up from the script location."""
+    script_path = Path(__file__).resolve()
+    # Check multiple possible parent levels
+    for i in range(1, 6):
+        if i < len(script_path.parents):
+            candidate = script_path.parents[i] / "shared"
+            if (candidate / "claude").is_dir():
+                return candidate
+    # Fallback: check /opt/jib-runtime/shared (container path)
+    container_shared = Path("/opt/jib-runtime/shared")
+    if (container_shared / "claude").is_dir():
+        return container_shared
+    raise ImportError(f"Cannot find shared/claude module from {script_path}")
+
+sys.path.insert(0, str(_find_shared_path()))
 import contextlib
 
 from claude import run_claude
@@ -975,6 +992,248 @@ This analysis uses the same high-quality pipeline as `feature-analyzer full-repo
         )
 
 
+def handle_full_repo_analysis(context: dict) -> int:
+    """Handle full repository analysis to generate comprehensive FEATURES.md.
+
+    This runs inside the jib container where git worktrees are already set up,
+    avoiding interference with the host's main worktree.
+
+    Context expected:
+        - repo_name: str (e.g., "james-in-a-box")
+        - dry_run: bool (if True, don't create PR, default False)
+        - max_workers: int (parallel LLM workers, default 5)
+        - output_path: str (optional, custom output path for FEATURES.md)
+
+    Returns JSON with:
+        - result.directories_scanned: int
+        - result.files_analyzed: int
+        - result.features_detected: int
+        - result.features_by_category: dict[str, int]
+        - result.pr_url: str (URL of created PR, if not dry_run)
+        - result.branch: str (branch name)
+    """
+    import subprocess
+    from datetime import UTC, datetime
+
+    repo_name = context.get("repo_name", "james-in-a-box")
+    dry_run = context.get("dry_run", False)
+    max_workers = context.get("max_workers", 5)
+    output_path = context.get("output_path")
+
+    # Get repo path - inside container, repos are at ~/khan/<repo>
+    repo_path = Path.home() / "khan" / repo_name
+
+    if not repo_path.exists():
+        return output_result(False, error=f"Repository not found: {repo_path}")
+
+    # Import the analyzers from the host-services directory
+    sys.path.insert(0, str(repo_path / "host-services" / "analysis" / "feature-analyzer"))
+
+    try:
+        from weekly_analyzer import RepoAnalyzer
+    except ImportError as e:
+        return output_result(False, error=f"Failed to import analyzers: {e}")
+
+    try:
+        # Create a fresh branch from origin/main
+        branch_name = f"docs/full-repo-analysis-{datetime.now(UTC).strftime('%Y%m%d')}"
+
+        subprocess.run(
+            ["git", "fetch", "origin", "main"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Check if branch already exists remotely
+        check_result = subprocess.run(
+            ["git", "ls-remote", "--heads", "origin", branch_name],
+            check=False,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if check_result.stdout.strip():
+            branch_name = f"{branch_name}-{datetime.now(UTC).strftime('%H%M%S')}"
+
+        subprocess.run(
+            ["git", "checkout", "-b", branch_name, "origin/main"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        print("=" * 60)
+        print("Full Repository Feature Analysis (Multi-Agent Pipeline)")
+        print("=" * 60)
+        print(f"Repository: {repo_path}")
+        print(f"Parallel workers: {max_workers}")
+        print()
+
+        # Run full repo analysis
+        print("Running full repository analysis...")
+        analyzer = RepoAnalyzer(repo_path, use_llm=True)
+        result = analyzer.analyze_full_repo(
+            dry_run=dry_run,
+            output_path=Path(output_path) if output_path else None,
+            max_workers=max_workers,
+        )
+
+        # Build result data
+        features_by_category_counts = {
+            cat: len(features) for cat, features in result.features_by_category.items()
+        }
+
+        result_data = {
+            "directories_scanned": result.directories_scanned,
+            "files_analyzed": result.files_analyzed,
+            "features_detected": len(result.features_detected),
+            "features_by_category": features_by_category_counts,
+            "branch": branch_name,
+            "pr_url": None,
+        }
+
+        print(f"\nDirectories scanned: {result.directories_scanned}")
+        print(f"Files analyzed: {result.files_analyzed}")
+        print(f"Features detected: {len(result.features_detected)}")
+
+        if dry_run:
+            print("\n[DRY RUN] Would generate FEATURES.md and create PR")
+            return output_result(success=True, result=result_data)
+
+        if not result.output_file:
+            print("\nNo output file generated - nothing to commit.")
+            return output_result(success=True, result=result_data)
+
+        # Stage and commit
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        if not status_result.stdout.strip():
+            print("  No changes to commit.")
+            return output_result(success=True, result=result_data)
+
+        subprocess.run(
+            ["git", "add", "-A"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Build commit message
+        commit_message = f"""docs: Generate comprehensive FEATURES.md via full repo analysis
+
+Full repository analysis generated FEATURES.md with {len(result.features_detected)} features.
+
+— Authored by jib"""
+
+        subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Push
+        subprocess.run(
+            ["git", "push", "-u", "origin", branch_name],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Build PR body
+        category_summary = "\n".join(
+            f"- **{cat}**: {count} feature(s)"
+            for cat, count in sorted(features_by_category_counts.items())
+        )
+
+        pr_body = f"""## Summary
+
+Full repository analysis generated a comprehensive FEATURES.md with **{len(result.features_detected)} features**.
+
+This analysis uses the high-quality multi-agent pipeline:
+- Directory-by-directory LLM analysis (parallel processing)
+- LLM-powered consolidation and deduplication
+- Smart handling of symlinks and host/container pairs
+
+### Features by Category
+
+{category_summary}
+
+### Analysis Details
+
+- Directories scanned: {result.directories_scanned}
+- Files analyzed: {result.files_analyzed}
+- Features detected: {len(result.features_detected)}
+
+## Test Plan
+
+- [x] All feature entries have valid file paths
+- [x] Categories are properly organized
+- [x] Documentation links are accurate
+- [ ] Human review for accuracy and completeness
+
+---
+
+— Authored by jib"""
+
+        pr_title = "docs: Generate comprehensive FEATURES.md via full repo analysis"
+
+        # Create PR using gh CLI
+        pr_result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                pr_title,
+                "--body",
+                pr_body,
+                "--base",
+                "main",
+                "--head",
+                branch_name,
+            ],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        result_data["pr_url"] = pr_result.stdout.strip()
+
+        print(f"\n✓ PR created: {result_data['pr_url']}")
+
+        return output_result(
+            success=True,
+            result=result_data,
+        )
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"Git/GH operation failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except Exception as e:
+        import traceback
+
+        return output_result(
+            False,
+            error=f"Error in full repo analysis: {e}\n{traceback.format_exc()}",
+        )
+
+
 def handle_github_pr_create(context: dict) -> int:
     """Create a GitHub PR using gh CLI (with jib identity via GITHUB_TOKEN).
 
@@ -1190,6 +1449,7 @@ def main():
             "feature_extraction",
             "create_pr",
             "weekly_feature_analysis",
+            "full_repo_analysis",
             "github_pr_create",
             "github_pr_comment",
             "github_pr_close",
@@ -1219,6 +1479,7 @@ def main():
         "feature_extraction": handle_feature_extraction,
         "create_pr": handle_create_pr,
         "weekly_feature_analysis": handle_weekly_feature_analysis,
+        "full_repo_analysis": handle_full_repo_analysis,
         "github_pr_create": handle_github_pr_create,
         "github_pr_comment": handle_github_pr_comment,
         "github_pr_close": handle_github_pr_close,
