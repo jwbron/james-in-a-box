@@ -97,18 +97,9 @@ RUN chmod +x /opt/jib-runtime/jib-container/bin/* 2>/dev/null || true && \
     chmod +x /opt/jib-runtime/jib-container/jib-tools/* 2>/dev/null || true && \
     find /opt/jib-runtime/jib-container/jib-tasks -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
 
-# Debug: Show what's in the build context
-RUN echo "=== .toml files ===" && \
-    find /opt/jib-runtime -name "*.toml" 2>/dev/null || echo "none" && \
-    echo "=== jib-container contents ===" && \
-    ls /opt/jib-runtime/jib-container/ 2>/dev/null || echo "missing" && \
-    echo "=== shared contents ===" && \
-    ls /opt/jib-runtime/shared/ 2>/dev/null || echo "missing"
-
-# Install jib-container and shared as pip packages
-# These provide importable modules: claude (from jib-container) and beads, enrichment,
-# jib_logging, notifications, text_utils (from shared)
-RUN pip3 install --no-cache-dir /opt/jib-runtime/jib-container/ /opt/jib-runtime/shared/
+# Make jib-container and shared modules importable via PYTHONPATH
+# This is simpler than pip install and doesn't require pyproject.toml
+ENV PYTHONPATH="/opt/jib-runtime/jib-container:/opt/jib-runtime/shared:${PYTHONPATH}"
 
 # Create tmp directory in image (not mounted - container-only scratch space)
 RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
