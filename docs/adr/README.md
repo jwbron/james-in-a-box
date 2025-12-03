@@ -35,10 +35,16 @@ ADRs are organized by implementation status:
 
 | ADR | Summary |
 |-----|---------|
+| [Continuous System Reinforcement](not-implemented/ADR-Continuous-System-Reinforcement.md) | Systematic learning from breakages to strengthen the system |
+| [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
+| [Internet Tool Access Lockdown](not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
+| [Jib Repository Onboarding](not-implemented/ADR-Jib-Repo-Onboarding.md) | How jib onboards to and documents external repos |
+| [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
 | [Model-Agnostic Architecture](not-implemented/ADR-Model-Agnostic-Architecture.md) | Support multiple LLM providers with task-based routing |
 | [Multi-Agent Pipeline Architecture](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Coordinated multi-agent pipelines for complex task execution |
-
-> **Note**: Additional ADRs may be pending in open PRs.
+| [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
+| [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
+| [Standardized Logging Interface](in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 
 ## ADR Template
 
