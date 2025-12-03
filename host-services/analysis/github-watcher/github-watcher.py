@@ -83,6 +83,7 @@ sys.path.insert(0, str(_project_root / "shared"))
 sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
+
 from config.repo_config import get_github_token_for_repo
 
 
@@ -375,9 +376,7 @@ def gh_json(
     return None
 
 
-def gh_text(
-    args: list[str], repo: str | None = None, token: str | None = None
-) -> str | None:
+def gh_text(args: list[str], repo: str | None = None, token: str | None = None) -> str | None:
     """Run gh CLI command and return text output with rate limit handling.
 
     Implements exponential backoff on rate limit errors and basic throttling
