@@ -228,6 +228,38 @@ def get_repos_for_sync() -> list[str]:
     return all_repos
 
 
+def get_github_token_for_repo(repo: str) -> str | None:
+    """
+    Get the appropriate GitHub token for accessing a repository.
+
+    Uses:
+    - GITHUB_TOKEN for writable repos (or repos not in any list)
+    - GITHUB_READONLY_TOKEN for readable repos (falls back to GITHUB_TOKEN)
+
+    This enables separate tokens with different permission levels:
+    - Writable repos: Full access via GitHub App or PAT with write permissions
+    - Readable repos: Read-only PAT for external repos (e.g., khan/webapp)
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        GitHub token string, or None if no token is configured
+    """
+    # Import here to avoid circular imports
+    from config.host_config import HostConfig
+
+    config = HostConfig()
+    access_level = get_repo_access_level(repo)
+
+    if access_level == "readable":
+        # Use readonly token for readable repos
+        return config.github_readonly_token or None
+    else:
+        # Use main token for writable repos (or unknown repos)
+        return config.github_token or None
+
+
 # Convenience function for shell scripts
 def main():
     """CLI interface for shell scripts to query config."""
