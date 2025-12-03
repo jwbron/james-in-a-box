@@ -252,7 +252,7 @@ Print a clear summary to stdout with:
 Process this task now."""
 
     # Run Claude Code via shared runner module
-    # This delegates timeout handling to the shared module (default: 30 minutes)
+    # This delegates timeout handling to the shared module (default: 2 hours)
     # and provides consistent behavior across all Claude invocations
     logger.info("Starting Claude Code", task_id=original_task_id)
 
@@ -642,7 +642,7 @@ Print a clear summary to stdout.
 Process this response now."""
 
     # Run Claude Code via shared runner module
-    # This delegates timeout handling to the shared module (default: 30 minutes)
+    # This delegates timeout handling to the shared module (default: 2 hours)
     # and provides consistent behavior across all Claude invocations
     logger.info("Starting Claude Code for response", task_id=task_id_for_search)
 

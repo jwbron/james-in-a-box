@@ -651,7 +651,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
         - repo_name: str (e.g., "james-in-a-box")
         - days: int (number of days to analyze, default 7)
         - dry_run: bool (if True, don't create PR, default False)
-        - max_workers: int (parallel LLM workers, default 5)
+        - max_workers: int (parallel LLM workers, default 20)
 
     Returns JSON with:
         - result.directories_analyzed: int
@@ -667,7 +667,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
     repo_name = context.get("repo_name", "james-in-a-box")
     days = context.get("days", 7)
     dry_run = context.get("dry_run", False)
-    max_workers = context.get("max_workers", 5)
+    max_workers = context.get("max_workers", 20)
 
     # Get repo path - inside container, repos are at ~/khan/<repo>
     repo_path = Path.home() / "khan" / repo_name
