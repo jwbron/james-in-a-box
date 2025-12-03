@@ -44,24 +44,24 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
-# Add shared modules to path for run_claude
-def _find_shared_path() -> Path:
-    """Find the shared directory by walking up from the script location."""
+# Add jib-container to path for claude module
+def _find_claude_module_path() -> Path:
+    """Find the jib-container directory containing the claude module."""
     script_path = Path(__file__).resolve()
-    # Check multiple possible parent levels
+    # Check multiple possible parent levels for jib-container/claude
     for i in range(1, 6):
         if i < len(script_path.parents):
-            candidate = script_path.parents[i] / "shared"
+            candidate = script_path.parents[i] / "jib-container"
             if (candidate / "claude").is_dir():
                 return candidate
-    # Fallback: check /opt/jib-runtime/shared (container path)
-    container_shared = Path("/opt/jib-runtime/shared")
-    if (container_shared / "claude").is_dir():
-        return container_shared
-    raise ImportError(f"Cannot find shared/claude module from {script_path}")
+    # Fallback: check /opt/jib-runtime/jib-container (container path)
+    container_path = Path("/opt/jib-runtime/jib-container")
+    if (container_path / "claude").is_dir():
+        return container_path
+    raise ImportError(f"Cannot find jib-container/claude module from {script_path}")
 
 
-sys.path.insert(0, str(_find_shared_path()))
+sys.path.insert(0, str(_find_claude_module_path()))
 
 # Import run_claude directly - this module runs only inside the container
 from claude import run_claude
