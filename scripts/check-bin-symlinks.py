@@ -171,7 +171,7 @@ def check_symlinks(repo_root: Path) -> tuple[list[str], list[str], list[str]]:
     executables = find_container_executables(jib_container_dir)
 
     # Build a map of executable names to their paths
-    exec_map = {name: path for path, name in executables}
+    {name: path for path, name in executables}
 
     missing_symlinks = []  # Executables without symlinks
     broken_symlinks = []  # Symlinks pointing to non-existent files
@@ -195,7 +195,9 @@ def check_symlinks(repo_root: Path) -> tuple[list[str], list[str], list[str]]:
             actual_symlink = bin_dir / exec_name
             if actual_symlink.is_symlink():
                 # Symlink exists but not listed in maintain-bin-symlinks
-                unlisted_symlinks.append(f"{exec_name} (symlink exists but not in maintain-bin-symlinks)")
+                unlisted_symlinks.append(
+                    f"{exec_name} (symlink exists but not in maintain-bin-symlinks)"
+                )
             else:
                 # Truly missing
                 missing_symlinks.append(f"{exec_name} ({exec_path.relative_to(repo_root)})")
@@ -249,7 +251,7 @@ def main():
 
         print("How to fix:")
         print("  1. Edit jib-container/bin/maintain-bin-symlinks")
-        print("  2. Add entry to SYMLINKS array: \"name:../relative/path\"")
+        print('  2. Add entry to SYMLINKS array: "name:../relative/path"')
         print("  3. Run: ./jib-container/bin/maintain-bin-symlinks")
         print()
 
