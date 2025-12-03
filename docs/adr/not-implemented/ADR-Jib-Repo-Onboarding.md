@@ -562,7 +562,7 @@ feature-analyzer full-repo \
 **Components:**
 - **Notifier** (`slack-notifier.py`)
 - **Receiver** (`slack-receiver.py`)
-**Documentation:** [Communication Features](docs/features/communication.md)
+**Documentation:** [Communication Features](../../features/communication.md)
 ```
 
 **2. Feature Documentation Generation (`feature-analyzer generate-feature-docs`)**
