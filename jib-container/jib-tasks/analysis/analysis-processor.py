@@ -1061,7 +1061,8 @@ def handle_full_repo_analysis(context: dict) -> int:
     Context expected:
         - repo_name: str (e.g., "james-in-a-box")
         - dry_run: bool (if True, don't create PR, default False)
-        - max_workers: int (parallel LLM workers, default 5)
+        - max_workers: int (parallel LLM workers, default 20)
+        - use_root_level_scout: bool (if True, use faster root-level Scout, default True)
         - output_path: str (optional, custom output path for FEATURES.md)
 
     Returns JSON with:
@@ -1077,7 +1078,8 @@ def handle_full_repo_analysis(context: dict) -> int:
 
     repo_name = context.get("repo_name", "james-in-a-box")
     dry_run = context.get("dry_run", False)
-    max_workers = context.get("max_workers", 5)
+    max_workers = context.get("max_workers", 20)
+    use_root_level_scout = context.get("use_root_level_scout", True)
     output_path = context.get("output_path")
 
     # Get repo path - inside container, repos are at ~/khan/<repo>
@@ -1127,20 +1129,23 @@ def handle_full_repo_analysis(context: dict) -> int:
             text=True,
         )
 
+        mode_name = "Root-Level" if use_root_level_scout else "Per-Directory"
         print("=" * 60)
-        print("Full Repository Feature Analysis (Multi-Agent Pipeline)")
+        print(f"Full Repository Feature Analysis ({mode_name} Mode)")
         print("=" * 60)
         print(f"Repository: {repo_path}")
         print(f"Parallel workers: {max_workers}")
+        print(f"Scout mode: {mode_name}")
         print()
 
         # Run full repo analysis with multi-agent pipeline
-        print("Running full repository analysis (multi-agent pipeline)...")
+        print(f"Running full repository analysis ({mode_name.lower()} scout)...")
         analyzer = RepoAnalyzer(repo_path, use_llm=True)
         result = analyzer.analyze_full_repo(
             dry_run=dry_run,
             output_path=Path(output_path) if output_path else None,
             max_workers=max_workers,
+            use_root_level_scout=use_root_level_scout,
         )
 
         # Build result data
@@ -1513,7 +1518,8 @@ def handle_repo_onboarding(context: dict) -> int:
         - public_repo: bool (default False)
         - confluence_dir: str (default ~/context-sync/confluence)
         - dry_run: bool (default False)
-        - max_workers: int (parallel LLM workers for feature analysis, default 5)
+        - max_workers: int (parallel LLM workers for feature analysis, default 20)
+        - use_root_level_scout: bool (if True, use faster root-level Scout, default True)
 
     Returns JSON with:
         - result.phases_completed: list[str]
@@ -1531,7 +1537,8 @@ def handle_repo_onboarding(context: dict) -> int:
     public_repo = context.get("public_repo", False)
     confluence_dir = context.get("confluence_dir", str(Path.home() / "context-sync" / "confluence"))
     dry_run = context.get("dry_run", False)
-    max_workers = context.get("max_workers", 5)
+    max_workers = context.get("max_workers", 20)
+    use_root_level_scout = context.get("use_root_level_scout", True)
 
     # Get repo path - inside container, repos are at ~/khan/<repo>
     repo_path = Path.home() / "khan" / repo_name
@@ -1633,12 +1640,14 @@ def handle_repo_onboarding(context: dict) -> int:
             try:
                 from feature_analyzer import RepoAnalyzer
 
-                print(f"  Running feature analysis with {max_workers} workers...")
+                mode_name = "root-level" if use_root_level_scout else "per-directory"
+                print(f"  Running feature analysis with {max_workers} workers ({mode_name} scout)...")
                 analyzer = RepoAnalyzer(repo_path, use_llm=True)
                 analysis_result = analyzer.analyze_full_repo(
                     dry_run=False,
                     output_path=repo_path / "docs" / "FEATURES.md",
                     max_workers=max_workers,
+                    use_root_level_scout=use_root_level_scout,
                 )
                 result_data["features_detected"] = len(analysis_result.features_detected)
                 print(f"  ✓ Detected {len(analysis_result.features_detected)} features")

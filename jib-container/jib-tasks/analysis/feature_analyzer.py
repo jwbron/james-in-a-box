@@ -1947,6 +1947,290 @@ The "read" array must have at most {max_files} file paths from the listing above
         result = priority_files + other_files
         return result[:max_files]
 
+    def _scout_root_level(
+        self, root_dir: str, all_files: list[Path], max_files: int = 20
+    ) -> list[Path]:
+        """
+        Root-Level Scout Agent: Analyze an entire root directory tree and recommend key files.
+
+        This is a more efficient alternative to per-subdirectory Scout calls.
+        Instead of running Scout on each of 929 feature directories, we run
+        Scout once per root directory (60 total) to select the most important
+        files across the entire subtree.
+
+        Args:
+            root_dir: Root directory path (e.g., "services/ai-guide")
+            all_files: ALL files from the root directory and its subdirectories
+            max_files: Maximum number of files to recommend (default 20)
+
+        Returns:
+            List of recommended file paths (subset of input files)
+        """
+        if not all_files:
+            return []
+
+        # Build file listing with metadata, grouped by subdirectory
+        file_info_by_subdir: dict[str, list[str]] = {}
+
+        for f in all_files:
+            try:
+                size = f.stat().st_size
+                size_str = f"{size // 1024}KB" if size >= 1024 else f"{size}B"
+                rel_path = str(f.relative_to(self.repo_root))
+
+                # Group by subdirectory
+                parts = rel_path.split("/")
+                if len(parts) > 1:
+                    # Get the subdirectory relative to root_dir
+                    subdir = "/".join(parts[:-1])
+                else:
+                    subdir = root_dir
+
+                if subdir not in file_info_by_subdir:
+                    file_info_by_subdir[subdir] = []
+                file_info_by_subdir[subdir].append(f"  - {rel_path} ({size_str})")
+
+            except OSError:
+                continue
+
+        if not file_info_by_subdir:
+            return all_files[:max_files]
+
+        # Build structured file listing
+        file_listing_parts = []
+        for subdir in sorted(file_info_by_subdir.keys()):
+            files_in_subdir = file_info_by_subdir[subdir]
+            # Limit files shown per subdir to avoid token explosion
+            if len(files_in_subdir) > 15:
+                files_in_subdir = files_in_subdir[:12] + [f"  ... and {len(files_in_subdir) - 12} more files"]
+            file_listing_parts.append(f"\n### {subdir}/\n" + "\n".join(files_in_subdir))
+
+        file_listing = "\n".join(file_listing_parts)
+
+        # Check for root README
+        readme_hint = ""
+        readme_path = self.repo_root / root_dir / "README.md"
+        if readme_path.exists():
+            try:
+                readme_preview = readme_path.read_text()[:800]
+                readme_hint = f"\n## README.md preview:\n{readme_preview}\n"
+            except (OSError, UnicodeDecodeError):
+                pass
+
+        prompt = f"""You are the ROOT-LEVEL SCOUT agent. Analyze this entire service/package directory tree and recommend the {max_files} BEST files to read for understanding ALL features it contains.
+
+# Root Directory: {root_dir}
+{readme_hint}
+# Files in directory tree:
+{file_listing}
+
+# Your Mission
+
+Select the {max_files} MOST IMPORTANT files across ALL subdirectories. Your goal is to help the Analyzer understand EVERY distinct feature in this root directory.
+
+## Selection Strategy
+
+1. **Coverage over depth**: Pick files from DIFFERENT subdirectories to cover more features
+2. **README.md files**: Include from each significant subdirectory (they explain features)
+3. **Main entry points**: main.py, main.go, index.ts, app.py, server.go, handler.go
+4. **Core implementations**: Files with names suggesting core functionality
+5. **Skip redundancy**: Don't pick 5 files from the same subdirectory
+
+## Files to AVOID
+
+- Test files (*_test.py, *_test.go, *.test.ts)
+- Generated files (*.pb.go, *_generated.*)
+- Pure type definitions (types.py, models.py without logic)
+- Utility helpers (utils.py, helpers.go)
+- Very large files (>50KB) unless they're main implementations
+
+## Output Format
+
+Return ONLY a JSON object:
+
+```json
+{{
+  "read": ["path/to/file1.py", "path/to/file2.go", ...],
+  "coverage": "Brief explanation of which subdirectories/features are covered"
+}}
+```
+
+The "read" array must have at most {max_files} file paths from the listing above.
+Ensure you cover as many distinct subdirectories as possible.
+"""
+
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, f"scout-root:{root_dir}")
+
+        if success and json_content and isinstance(json_content, dict):
+            recommended = json_content.get("read", [])
+            coverage = json_content.get("coverage", "")
+            if coverage:
+                print(f"      Scout: {coverage[:100]}...")
+
+            # Map recommended paths back to Path objects
+            result = []
+            for rec_path in recommended:
+                if isinstance(rec_path, str):
+                    for f in all_files:
+                        try:
+                            if str(f.relative_to(self.repo_root)) == rec_path:
+                                result.append(f)
+                                break
+                            elif f.name == rec_path or str(f).endswith(rec_path):
+                                result.append(f)
+                                break
+                        except ValueError:
+                            continue
+
+            if result:
+                return result[:max_files]
+
+        # Log Scout failure
+        if error:
+            print(f"      Root Scout failed for {root_dir}: {error}")
+        elif not success:
+            print(f"      Root Scout failed for {root_dir}: LLM call unsuccessful")
+
+        # Fallback: use heuristic selection across all files
+        return self._scout_recommend_files_heuristically(all_files, max_files)
+
+    def _analyze_root_directory(
+        self, root_dir: str, recommended_files: list[Path]
+    ) -> list[DetectedFeature]:
+        """
+        Analyze recommended files from a root directory to extract features.
+
+        This is called after root-level Scout to analyze the selected files
+        and identify all features within the root directory.
+
+        Args:
+            root_dir: Root directory path (e.g., "services/ai-guide")
+            recommended_files: Files recommended by root-level Scout
+
+        Returns:
+            List of detected features
+        """
+        if not recommended_files:
+            return []
+
+        # Read file contents
+        file_contents = {}
+        for f in recommended_files:
+            content = self._read_file_safe(f)
+            if content:
+                rel_path = str(f.relative_to(self.repo_root))
+                file_contents[rel_path] = content
+
+        if not file_contents:
+            return []
+
+        # Build code sections
+        code_sections = []
+        for file_path, content in file_contents.items():
+            ext = Path(file_path).suffix
+            lang = {".py": "python", ".go": "go", ".ts": "typescript",
+                    ".js": "javascript", ".sh": "bash", ".md": "markdown"}.get(ext, "")
+            code_sections.append(f"## File: {file_path}\n\n```{lang}\n{content}\n```")
+
+        code_text = "\n---\n".join(code_sections)
+
+        # Check for root README
+        readme_section = ""
+        readme_path = self.repo_root / root_dir / "README.md"
+        if readme_path.exists():
+            readme_content = self._read_file_safe(readme_path, max_lines=200)
+            if readme_content:
+                readme_section = f"## README.md\n\n```markdown\n{readme_content}\n```\n"
+
+        # Get subdirectory list for context
+        subdirs = set()
+        for f in recommended_files:
+            rel = str(f.relative_to(self.repo_root))
+            parts = rel.split("/")
+            if len(parts) > 1:
+                # Get path up to second-to-last component
+                subdir = "/".join(parts[:-1])
+                subdirs.add(subdir)
+
+        subdir_list = "\n".join(f"- {s}" for s in sorted(subdirs))
+
+        prompt = f"""Analyze this root directory to identify ALL user-facing FEATURES.
+
+# Root Directory: {root_dir}
+
+## Subdirectories covered:
+{subdir_list}
+
+{readme_section}
+
+# Source Files (selected by Scout across subdirectories)
+
+{code_text}
+
+# Task
+
+Be THOROUGH - identify ALL distinct features in this directory tree.
+Each subdirectory often represents a distinct feature or capability.
+
+For each feature provide:
+
+1. **name**: Clear, descriptive name
+2. **description**: 2-3 sentence description
+3. **category**: One of: Core Services, APIs, Data Processing, Integration, Configuration, Utilities, Infrastructure, Documentation
+4. **files**: Main implementation files (include ALL relevant files you saw)
+5. **confidence**: 0.0-1.0 (use 0.8+ for clear features)
+6. **subdirectory**: Which subdirectory this feature is primarily in (for organization)
+
+# What IS a Feature?
+
+- Services/daemons that run continuously
+- CLI tools users invoke
+- APIs and endpoints
+- Data processors and handlers
+- Integration points (external systems)
+- Configuration systems
+- Distinct capabilities in separate subdirectories
+
+# What is NOT a Feature?
+
+- Pure test files
+- Empty __init__.py files
+- Generic base classes
+
+# Output
+
+Return a JSON array:
+
+[
+  {{
+    "name": "Feature Name",
+    "description": "Description",
+    "category": "Category",
+    "files": ["path/to/file.py"],
+    "confidence": 0.85,
+    "subdirectory": "root_dir/subdir"
+  }}
+]
+
+If truly no features, return: `[]`
+"""
+
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, f"analyze-root:{root_dir}")
+
+        if success and json_content and isinstance(json_content, list):
+            return self._json_to_features(json_content)
+
+        if not success:
+            # Fallback: try stdout parsing
+            success_fb, stdout, _ = self._run_llm_prompt(prompt, f"analyze-root:{root_dir}-fallback")
+            if success_fb and stdout.strip():
+                return self._parse_llm_output(stdout, context=f"root:{root_dir}")
+
+            if error:
+                print(f"    Warning: Root Analyzer failed for {root_dir}: {error}")
+
+        return []
+
     def scan_directory_structure(self) -> dict[str, list[Path]]:
         """
         Scan the repository to find prioritized feature directories.
@@ -2088,6 +2372,78 @@ The "read" array must have at most {max_files} file paths from the listing above
                         feature_dirs[key] = [script]
 
         return feature_dirs
+
+    def _get_root_directories_with_all_files(self) -> dict[str, list[Path]]:
+        """
+        Get root directories with ALL their files for root-level analysis.
+
+        Unlike scan_directory_structure (which returns granular feature directories),
+        this method returns the Cartographer's root directories with ALL files
+        in their subtrees. This enables root-level Scout to see the full picture.
+
+        Example:
+            - scan_directory_structure returns:
+              {"services/ai-guide/admin_tools": [files], "services/ai-guide/ai_interface": [files]}
+              (929 directories, leads to 929 Scout calls)
+
+            - This method returns:
+              {"services/ai-guide": [all files from entire subtree]}
+              (60 directories, leads to 60 Scout calls)
+
+        Returns:
+            Dict mapping root directory paths to lists of ALL files in subtree
+        """
+        root_dirs: dict[str, list[Path]] = {}
+
+        def collect_all_files(base_path: Path) -> list[Path]:
+            """Collect ALL relevant source files from a directory tree."""
+            files = []
+            for pattern in ["*.py", "*.go", "*.js", "*.ts", "*.sh", "*.md"]:
+                for f in base_path.rglob(pattern):
+                    if self._should_skip(str(f)):
+                        continue
+                    try:
+                        rel_path = str(f.relative_to(self.repo_root))
+                        if self._is_git_ignored(rel_path):
+                            continue
+                    except ValueError:
+                        pass
+                    files.append(f)
+            return files
+
+        # Step 1: Get root directories from Cartographer
+        print("  Cartographer analyzing repository structure...")
+        if self.use_llm:
+            discovered_dirs = self._discover_feature_directories_with_llm()
+            if not discovered_dirs:
+                print("    Cartographer returned empty, falling back to heuristics...")
+                discovered_dirs = self._discover_feature_directories_heuristically()
+        else:
+            discovered_dirs = self._discover_feature_directories_heuristically()
+
+        print(f"    Discovered {len(discovered_dirs)} root directories to analyze")
+        for d in discovered_dirs[:20]:
+            print(f"      - {d}")
+        if len(discovered_dirs) > 20:
+            print(f"      ... and {len(discovered_dirs) - 20} more")
+
+        # Step 2: Collect ALL files from each root directory
+        for dir_path in discovered_dirs:
+            base_path = self.repo_root / dir_path
+            if base_path.exists() and base_path.is_dir():
+                files = collect_all_files(base_path)
+                if files:
+                    root_dirs[dir_path] = files
+
+        # Step 3: Check for standalone scripts at repo root
+        for pattern in ["*.py", "*.go", "*.sh"]:
+            for script in self.repo_root.glob(pattern):
+                if not self._should_skip(str(script)):
+                    if not self._is_git_ignored(script.name):
+                        key = str(script.relative_to(self.repo_root))
+                        root_dirs[key] = [script]
+
+        return root_dirs
 
     def _read_file_safe(self, path: Path, max_lines: int = 1000) -> str:
         """
@@ -2754,38 +3110,86 @@ Notes:
 
         return (dir_path, file_count, features)
 
+    def _analyze_root_with_pipeline(
+        self, root_dir: str, all_files: list[Path]
+    ) -> tuple[str, int, list[DetectedFeature]]:
+        """
+        Analyze a root directory using the root-level Scout → Analyzer pipeline.
+
+        This method runs ONE Scout call for the entire root directory (instead of
+        one per subdirectory), then ONE Analyzer call on the recommended files.
+
+        This is ~15x more efficient than the per-subdirectory approach:
+        - Old: 929 Scout calls + 929 Analyzer calls = 1858 LLM calls
+        - New: 60 Scout calls + 60 Analyzer calls = 120 LLM calls
+
+        Args:
+            root_dir: Root directory path (e.g., "services/ai-guide")
+            all_files: ALL files from the root directory and subdirectories
+
+        Returns:
+            Tuple of (root_dir, file_count, list of detected features)
+        """
+        if not all_files:
+            return (root_dir, 0, [])
+
+        file_count = len(all_files)
+
+        if self.use_llm:
+            # Phase 1: Root-level Scout recommends key files across entire tree
+            recommended_files = self._scout_root_level(root_dir, all_files, max_files=20)
+
+            # Phase 2: Analyzer processes the recommended files
+            features = self._analyze_root_directory(root_dir, recommended_files)
+
+            if not features:
+                # Fallback: try heuristic analysis on a subset of files
+                heuristic_files = self._scout_recommend_files_heuristically(all_files, max_files=15)
+                features = self._analyze_directory_with_llm(root_dir, heuristic_files)
+        else:
+            # No LLM: use heuristics
+            heuristic_files = self._scout_recommend_files_heuristically(all_files, max_files=15)
+            features = self._analyze_directory_heuristically(root_dir, heuristic_files)
+
+        # Find existing docs for each feature
+        for feature in features:
+            doc_path = self._find_existing_docs(feature)
+            if doc_path:
+                feature.doc_path = doc_path
+
+        return (root_dir, file_count, features)
+
     def analyze_full_repo(
         self,
         dry_run: bool = False,
         output_path: Path | None = None,
-        max_workers: int = 5,
+        max_workers: int = 20,
+        use_root_level_scout: bool = True,
     ) -> FullRepoAnalysisResult:
         """
         Analyze entire repository and generate comprehensive FEATURES.md.
 
-        Uses a multi-agent pipeline for efficient analysis:
+        Uses a multi-agent pipeline for efficient analysis. Two modes available:
 
-        Phase 0 - CARTOGRAPHER: Single LLM call analyzes repo structure,
-                  identifies ALL feature directories, prioritized by importance
+        **ROOT-LEVEL MODE (use_root_level_scout=True, DEFAULT - ~15x faster)**:
+        - Phase 0: Cartographer identifies ~60 root directories
+        - Phase 1: ONE Scout + Analyzer call per root directory (in parallel)
+        - Total: ~120 LLM calls instead of ~1858
 
-        Phase 1 - SCOUT + ANALYZER (parallel):
-                  For each directory:
-                    - Scout: Recommends 3-5 key files to read (lightweight LLM)
-                    - Analyzer: Deep analysis of recommended files only
+        **PER-DIRECTORY MODE (use_root_level_scout=False, legacy)**:
+        - Phase 0: Cartographer + recursive scan finds ~929 feature directories
+        - Phase 1: ONE Scout + Analyzer call per feature directory (in parallel)
+        - Total: ~1858 LLM calls
 
-        Phase 2 - CONSOLIDATOR: Single LLM call deduplicates and organizes features
-
-        Phase 3 - GENERATOR: Produces final FEATURES.md
-
-        This pipeline is faster than brute-force analysis by:
-        - Reading only relevant files per directory (Scout selects 3-5 vs 15)
-        - Parallel execution where possible
-        - Skipping non-feature directories (testdata, vendor, generated)
+        Both modes then:
+        - Phase 2: Consolidator deduplicates and organizes
+        - Phase 3: Generator produces FEATURES.md
 
         Args:
             dry_run: If True, don't write output file
             output_path: Custom output path (defaults to docs/FEATURES.md)
-            max_workers: Maximum number of parallel LLM calls (default 5)
+            max_workers: Maximum number of parallel LLM calls (default 20)
+            use_root_level_scout: If True, use faster root-level Scout (default True)
         """
         result = FullRepoAnalysisResult(
             analysis_date=datetime.now(UTC).isoformat(),
@@ -2793,54 +3197,91 @@ Notes:
 
         output = output_path or self.features_md
 
-        print("Full Repository Feature Analysis (Multi-Agent Pipeline)")
+        mode_name = "Root-Level" if use_root_level_scout else "Per-Directory"
+        print(f"Full Repository Feature Analysis ({mode_name} Mode)")
         print("=" * 55)
         print(f"Repository: {self.repo_root}")
         print(f"Output: {output}")
         print(f"Parallel workers: {max_workers}")
+        print(f"Pipeline mode: {mode_name} Scout")
         print()
 
-        # Phase 0: Cartographer discovers and prioritizes directories
-        print("Phase 0: Cartographer discovering feature directories...")
-        feature_dirs = self.scan_directory_structure()
-        result.directories_scanned = len(feature_dirs)
-        print(f"  Cartographer found {len(feature_dirs)} feature directories")
+        # Phase 0: Cartographer discovers directories
+        if use_root_level_scout:
+            # ROOT-LEVEL MODE: Get root directories with all their files
+            print("Phase 0: Cartographer discovering root directories...")
+            root_dirs = self._get_root_directories_with_all_files()
+            result.directories_scanned = len(root_dirs)
+            total_files = sum(len(files) for files in root_dirs.values())
+            print(f"  Cartographer found {len(root_dirs)} root directories ({total_files} total files)")
 
-        # Phase 1: Scout + Analyzer (parallel)
-        print(f"\nPhase 1: Scout → Analyzer pipeline ({max_workers} workers)...")
-        all_features: list[DetectedFeature] = []
+            # Phase 1: Root-level Scout + Analyzer (parallel)
+            print(f"\nPhase 1: Root-Level Scout → Analyzer ({max_workers} workers)...")
+            all_features: list[DetectedFeature] = []
+            print_lock = threading.Lock()
 
-        # Use thread-safe lock for printing
-        print_lock = threading.Lock()
+            dirs_to_analyze = [(dp, files) for dp, files in root_dirs.items() if files]
 
-        # Filter out empty directories first
-        dirs_to_analyze = [(dp, files) for dp, files in feature_dirs.items() if files]
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_dir = {
+                    executor.submit(self._analyze_root_with_pipeline, root_dir, files): root_dir
+                    for root_dir, files in dirs_to_analyze
+                }
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all directory analysis tasks
-            future_to_dir = {
-                executor.submit(self._analyze_single_directory, dir_path, files): dir_path
-                for dir_path, files in dirs_to_analyze
-            }
+                for future in as_completed(future_to_dir):
+                    root_dir = future_to_dir[future]
+                    try:
+                        analyzed_dir, file_count, features = future.result()
+                        result.files_analyzed += file_count
 
-            # Process results as they complete
-            for future in as_completed(future_to_dir):
-                dir_path = future_to_dir[future]
-                try:
-                    analyzed_dir, file_count, features = future.result()
-                    result.files_analyzed += file_count
+                        with print_lock:
+                            print(f"  ✓ {analyzed_dir} ({file_count} files)")
+                            for feature in features:
+                                all_features.append(feature)
+                                print(
+                                    f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)"
+                                )
 
-                    with print_lock:
-                        print(f"  ✓ {analyzed_dir} ({file_count} files)")
-                        for feature in features:
-                            all_features.append(feature)
-                            print(
-                                f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)"
-                            )
+                    except Exception as e:
+                        with print_lock:
+                            print(f"  ✗ {root_dir}: Error - {e}")
+        else:
+            # PER-DIRECTORY MODE (legacy): Scan for feature directories
+            print("Phase 0: Cartographer discovering feature directories...")
+            feature_dirs = self.scan_directory_structure()
+            result.directories_scanned = len(feature_dirs)
+            print(f"  Cartographer found {len(feature_dirs)} feature directories")
 
-                except Exception as e:
-                    with print_lock:
-                        print(f"  ✗ {dir_path}: Error - {e}")
+            # Phase 1: Per-directory Scout + Analyzer (parallel)
+            print(f"\nPhase 1: Scout → Analyzer pipeline ({max_workers} workers)...")
+            all_features: list[DetectedFeature] = []
+            print_lock = threading.Lock()
+
+            dirs_to_analyze = [(dp, files) for dp, files in feature_dirs.items() if files]
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_dir = {
+                    executor.submit(self._analyze_single_directory, dir_path, files): dir_path
+                    for dir_path, files in dirs_to_analyze
+                }
+
+                for future in as_completed(future_to_dir):
+                    dir_path = future_to_dir[future]
+                    try:
+                        analyzed_dir, file_count, features = future.result()
+                        result.files_analyzed += file_count
+
+                        with print_lock:
+                            print(f"  ✓ {analyzed_dir} ({file_count} files)")
+                            for feature in features:
+                                all_features.append(feature)
+                                print(
+                                    f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)"
+                                )
+
+                    except Exception as e:
+                        with print_lock:
+                            print(f"  ✗ {dir_path}: Error - {e}")
 
         result.features_detected = all_features
         print(f"\n  Total features detected: {len(all_features)}")
