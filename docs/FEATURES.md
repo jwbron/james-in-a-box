@@ -579,3 +579,156 @@ feature-analyzer weekly-analyze --days 7
 ```
 
 **Last Updated:** 2025-12-02
+
+### Communication (Auto-detected)
+
+#### Slack Notification Library **[implemented]**
+- **Description**: A unified notification library for sending messages to Slack via file-based communication with the host-side notifier. Supports threading, multiple notification types, and GitHub-specific helpers for PR notifications.
+- **Implementation**:
+  - `shared/notifications/__init__.py`
+  - `shared/notifications/base.py`
+  - `shared/notifications/types.py`
+  - `shared/notifications/slack.py`
+
+
+### Configuration (Auto-detected)
+
+#### Host Configuration Management **[implemented]**
+- **Description**: Unified configuration system for jib host services that consolidates all host-side settings under ~/.config/jib/. Provides loading of non-secret config from YAML, secrets from .env files, and GitHub tokens from dedicated files. Includes migration utilities for legacy config locations and CLI for inspection/management.
+- **Implementation**:
+  - `config/host_config.py`
+  - `config/README.md`
+
+#### Repository Access Configuration **[implemented]**
+- **Description**: Single source of truth for GitHub repository access permissions. Controls which repos jib can write to (push changes, create PRs) vs read-only repos (monitoring only). Provides programmatic API and CLI for querying repo access levels and selecting appropriate GitHub tokens.
+- **Implementation**:
+  - `config/repo_config.py`
+  - `config/README.md`
+
+#### Model Pricing Configuration **[implemented]**
+- **Description**: Provides current pricing information for LLM models used by jib, including Claude Opus, Sonnet, and Haiku variants. Used by inefficiency detector for cost estimates and usage analytics.
+- **Implementation**:
+  - `config/model_pricing.py`
+
+
+### Container Infrastructure (Auto-detected)
+
+#### Service Failure Notification System **[implemented]**
+- **Description**: A systemd template service that provides automatic failure notifications when other systemd services fail. Integrates with systemd's OnFailure directive for proactive alerting.
+- **Implementation**:
+  - `host-services/utilities/service-failure-notify/setup.sh`
+  - `host-services/utilities/service-failure-notify/service-failure-notify@.service`
+
+#### Bin Symlink Validator **[implemented]**
+- **Description**: Lint check that ensures all container executables have corresponding symlinks in jib-container/bin/ to prevent 'executable not found in $PATH' errors.
+- **Implementation**:
+  - `scripts/check-bin-symlinks.py`
+
+
+### Context Management (Auto-detected)
+
+#### PR Context Manager **[implemented]**
+- **Description**: A library for managing persistent GitHub PR context in the Beads task tracking system. Enables tracking PR work across container sessions including comments, CI check failures, review feedback, and merge conflicts.
+- **Implementation**:
+  - `shared/beads/__init__.py`
+  - `shared/beads/pr_context.py`
+
+
+### Core Architecture (Auto-detected)
+
+#### Claude Agent Rules System **[implemented]**
+- **Description**: A comprehensive instruction system for Claude Code agents operating in sandboxed Docker environments. Provides mission definition, operating model, workflow guidance, decision frameworks, and quality standards for autonomous software engineering tasks.
+- **Implementation**:
+  - `.claude/rules/README.md`
+  - `.claude/rules/mission.md`
+  - `.claude/rules/beads-usage.md`
+  - `.claude/rules/context-tracking.md`
+  - `.claude/rules/environment.md`
+
+#### Claude CLI Runner **[implemented]**
+- **Description**: A Python library providing a unified interface for running Claude CLI in non-interactive mode with streaming output support. Enables programmatic invocation with full tool and filesystem access, real-time streaming, and comprehensive error handling.
+- **Implementation**:
+  - `shared/claude/__init__.py`
+  - `shared/claude/runner.py`
+
+#### JibLogger Structured Logging System **[implemented]**
+- **Description**: Unified structured logging interface for jib components with JSON output, context propagation, and GCP Cloud Logging compatibility. Provides environment-aware formatting and file rotation support.
+- **Implementation**:
+  - `shared/jib_logging/__init__.py`
+  - `shared/jib_logging/logger.py`
+  - `shared/jib_logging/formatters.py`
+  - `shared/jib_logging/context.py`
+  - `shared/jib_logging/cli.py`
+
+
+### Custom Commands (Auto-detected)
+
+#### Claude Custom Commands **[implemented]**
+- **Description**: A comprehensive set of slash commands available in the sandboxed environment for context management, PR creation, task tracking, and documentation updates.
+- **Implementation**:
+  - `.claude/commands/README.md`
+
+
+### Documentation System (Auto-detected)
+
+#### Confluence Documentation Discoverer **[implemented]**
+- **Description**: CLI tool that scans pre-synced Confluence documentation to find organization-specific documents relevant to a target repository. Analyzes document content, detects categories, calculates relevance confidence scores, and outputs JSON for integration into repository documentation indexes.
+- **Implementation**:
+  - `host-services/analysis/confluence-doc-discoverer/confluence-doc-discoverer.py`
+  - `host-services/analysis/confluence-doc-discoverer/setup.sh`
+
+#### Repository Onboarding Orchestrator **[implemented]**
+- **Description**: Full repository onboarding orchestration that runs all phases of preparing a repository for Jib: Confluence discovery, feature analysis, index generation, and documentation index updates. Supports dry-run mode and public repo handling.
+- **Implementation**:
+  - `host-services/analysis/repo-onboarding/jib-internal-devtools-setup`
+  - `host-services/analysis/repo-onboarding/README.md`
+  - `host-services/analysis/repo-onboarding/jib-regenerate-indexes`
+  - `host-services/analysis/repo-onboarding/docs-index-updater.py`
+  - `host-services/analysis/repo-onboarding/setup.sh`
+
+
+### Security Features (Auto-detected)
+
+#### Claude/Anthropic Import Linter **[implemented]**
+- **Description**: Security lint check that ensures host-services code never imports Claude or Anthropic modules directly, enforcing the security boundary where LLM calls must go through the container.
+- **Implementation**:
+  - `scripts/check-claude-imports.py`
+
+#### Container Path Pattern Linter **[implemented]**
+- **Description**: Detects problematic sys.path patterns that use dynamic repository names instead of explicit paths, preventing ModuleNotFoundError in container environments.
+- **Implementation**:
+  - `scripts/check-container-paths.py`
+
+#### GitHub CLI Write Operation Linter **[implemented]**
+- **Description**: Security lint check that prevents gh CLI write operations from running directly in host-services, ensuring GitHub write operations go through the jib container.
+- **Implementation**:
+  - `scripts/check-gh-cli-usage.py`
+
+
+### Utilities (Auto-detected)
+
+#### Git Repository Utilities **[implemented]**
+- **Description**: Provides utility functions for working with git repositories from host-side services, including extracting owner/repo strings from git remote URLs (both HTTPS and SSH formats).
+- **Implementation**:
+  - `host-services/shared/git_utils.py`
+
+#### Tool Wrapper Framework **[implemented]**
+- **Description**: A comprehensive library providing wrapped versions of critical command-line tools (bd, git, gh, claude) that automatically log invocations, capture output, and record timing information with structured logging integration.
+- **Implementation**:
+  - `shared/jib_logging/wrappers/__init__.py`
+  - `shared/jib_logging/wrappers/base.py`
+  - `shared/jib_logging/bin/README.md`
+  - `shared/jib_logging/bin/setup-aliases.sh`
+
+#### Text Utilities **[implemented]**
+- **Description**: Shared text processing utilities for message chunking and YAML frontmatter parsing used across jib components.
+- **Implementation**:
+  - `shared/text_utils/__init__.py`
+  - `shared/text_utils/chunking.py`
+  - `shared/text_utils/frontmatter.py`
+
+#### Bin Symlink Management **[implemented]**
+- **Description**: Maintains convenient symlinks to commonly used commands across the jib ecosystem. The maintain-bin-symlinks tool automatically creates and updates symlinks to executables in host-services/ and jib-container/ directories.
+- **Implementation**:
+  - `bin/README.md`
+
