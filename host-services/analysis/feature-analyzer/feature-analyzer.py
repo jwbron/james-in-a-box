@@ -42,6 +42,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+# Add host-services shared modules to path for jib_exec
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from jib_exec import jib_exec
+
+
 @dataclass
 class ADRMetadata:
     """Metadata extracted from an ADR file."""
@@ -707,128 +712,67 @@ def main():
 
     elif args.command == "weekly-analyze":
         # Phase 5: Weekly code analysis for FEATURES.md
-        from pr_creator import PRCreator
-        from weekly_analyzer import WeeklyAnalyzer
+        # IMPORTANT: All file writes and git operations must happen INSIDE the container
+        # to avoid modifying files in the host's main worktree.
+        # We delegate everything to analysis-processor's weekly_feature_analysis task.
 
         print("Feature Analyzer - Weekly Code Analysis (Phase 5)")
-        print(f"Repository: {args.repo_root}")
+        print(f"Repository: {args.repo_root.name}")
         print(f"Analyzing past {args.days} days")
         print()
 
         try:
-            # Run analysis
-            analyzer = WeeklyAnalyzer(args.repo_root, use_llm=not args.no_llm)
-            result = analyzer.analyze_and_update(days=args.days, dry_run=args.dry_run)
+            # Delegate to container via jib_exec
+            # The container's analysis-processor has handle_weekly_feature_analysis which:
+            # 1. Creates a fresh branch from origin/main
+            # 2. Runs the full multi-agent analysis pipeline
+            # 3. Updates FEATURES.md
+            # 4. Commits, pushes, and creates PR
+            print("Delegating to jib container for analysis and PR creation...")
+            print("(All file modifications happen inside the container)")
+            print()
 
-            # Report results
-            print("\n" + "=" * 50)
-            print("Analysis Results:")
-            print(f"  Commits analyzed: {result.commits_analyzed}")
-            print(f"  Features detected: {len(result.features_detected)}")
-            print(f"  Features added: {len(result.features_added)}")
-            print(f"  Features skipped: {len(result.features_skipped)}")
+            result = jib_exec(
+                processor="analysis-processor",
+                task_type="weekly_feature_analysis",
+                context={
+                    "repo_name": args.repo_root.name,
+                    "days": args.days,
+                    "dry_run": args.dry_run or args.no_pr,
+                    "max_workers": 5,
+                },
+                timeout=600,  # 10 minute timeout for comprehensive analysis
+            )
 
-            if result.features_added:
-                print("\nNew features added:")
-                for feature in result.features_added:
-                    review = " ⚠️ Needs Review" if feature.needs_review else ""
-                    print(f"  - {feature.name} ({feature.confidence:.0%} confidence){review}")
-                    print(f"    {feature.description}")
+            if result.success and result.json_output:
+                data = result.json_output.get("result", {})
 
-            if result.features_skipped:
-                print("\nSkipped features:")
-                for name, reason in result.features_skipped:
-                    print(f"  - {name}: {reason}")
+                print("=" * 50)
+                print("Analysis Results:")
+                print(f"  Directories analyzed: {data.get('directories_analyzed', 0)}")
+                print(f"  Features detected: {data.get('features_detected', 0)}")
+                print(f"  Features added: {data.get('features_added', 0)}")
+                print(f"  Features skipped: {data.get('features_skipped', 0)}")
 
-            if result.errors:
-                print("\nErrors:")
-                for error in result.errors:
-                    print(f"  - {error}")
-
-            # Create PR if we added features
-            if result.features_added and not args.no_pr and not args.dry_run:
-                print("\n" + "=" * 50)
-                print("Creating Pull Request...")
-
-                pr_creator = PRCreator(args.repo_root)
-
-                # Build PR body
-                feature_list = "\n".join(
-                    f"- **{f.name}** ({f.category}): {f.description}" for f in result.features_added
-                )
-                needs_review = [f for f in result.features_added if f.needs_review]
-                review_note = ""
-                if needs_review:
-                    review_note = f"\n\n**⚠️ {len(needs_review)} feature(s) need human review** (low confidence detection)"
-
-                pr_body = f"""## Summary
-
-Weekly code analysis identified {len(result.features_added)} new features from the past {args.days} days.
-{review_note}
-
-### New Features Detected
-
-{feature_list}
-
-### Analysis Details
-
-- Commits analyzed: {result.commits_analyzed}
-- Features detected: {len(result.features_detected)}
-- Features added: {len(result.features_added)}
-- Features skipped: {len(result.features_skipped)}
-
-## Test Plan
-
-- [x] All entries include correct file paths
-- [x] Status flags are accurate (all "implemented")
-- [x] No duplicate entries in FEATURES.md
-- [ ] Human review for accuracy and completeness
-
----
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-— Authored by jib"""
-
-                # Create update object for PR creator
-                from doc_generator import GeneratedUpdate
-
-                features_md_path = args.repo_root / "docs" / "FEATURES.md"
-                update = GeneratedUpdate(
-                    doc_path=features_md_path,
-                    original_content="",  # Not used for this flow
-                    updated_content=features_md_path.read_text(),
-                    changes_summary=f"Added {len(result.features_added)} new features from weekly analysis",
-                    confidence=0.85,
-                    validation_passed=True,
-                )
-
-                pr_result = pr_creator.create_doc_sync_pr(
-                    adr_title="Weekly Feature Analysis",
-                    adr_path=Path("weekly-analysis"),
-                    updates=[update],
-                    dry_run=False,
-                    create_tag=True,
-                    custom_pr_body=pr_body,
-                )
-
-                if pr_result.success:
+                if data.get("pr_url"):
                     print("\n✓ PR created successfully!")
-                    print(f"  Branch: {pr_result.branch_name}")
-                    if pr_result.tag_name:
-                        print(f"  Tag: {pr_result.tag_name}")
-                    if pr_result.pr_url:
-                        print(f"  PR URL: {pr_result.pr_url}")
-                else:
-                    print(f"\n✗ PR creation failed: {pr_result.error}")
-                    sys.exit(1)
+                    print(f"  Branch: {data.get('branch', 'unknown')}")
+                    print(f"  PR URL: {data.get('pr_url')}")
+                elif args.dry_run:
+                    print("\n[DRY RUN] No files were modified.")
+                elif args.no_pr:
+                    print("\n[--no-pr] Analysis complete, PR not created.")
+                elif data.get("features_added", 0) == 0:
+                    print("\nNo new features to add - FEATURES.md is up to date.")
 
-            elif args.no_pr:
-                print("\n[--no-pr] Skipping PR creation.")
-            elif args.dry_run:
-                print("\n[DRY RUN] No files were modified.")
-            elif not result.features_added:
-                print("\nNo new features to add - FEATURES.md is up to date.")
+            else:
+                error_msg = result.error or "Unknown error"
+                if result.json_output:
+                    error_msg = result.json_output.get("error", error_msg)
+                print(f"\n✗ Analysis failed: {error_msg}")
+                if result.stderr:
+                    print(f"\nStderr:\n{result.stderr[:500]}")
+                sys.exit(1)
 
         except Exception as e:
             print(f"Unexpected error: {e}", file=sys.stderr)
@@ -839,123 +783,72 @@ Weekly code analysis identified {len(result.features_added)} new features from t
 
     elif args.command == "full-repo":
         # Phase 6: Full repository analysis for comprehensive FEATURES.md
-        from weekly_analyzer import RepoAnalyzer
+        # IMPORTANT: All file writes and git operations must happen INSIDE the container
+        # to avoid modifying files in the host's main worktree.
+        # We delegate everything to analysis-processor's full_repo_analysis task.
 
         print("Feature Analyzer - Full Repository Analysis (Phase 6)")
-        print(f"Repository: {args.repo_root}")
+        print(f"Repository: {args.repo_root.name}")
         print()
 
         try:
-            # Run analysis
-            analyzer = RepoAnalyzer(args.repo_root, use_llm=not args.no_llm)
-            result = analyzer.analyze_full_repo(
-                dry_run=args.dry_run,
-                output_path=args.output,
-                max_workers=args.workers,
+            # Delegate to container via jib_exec
+            # The container's analysis-processor has handle_full_repo_analysis which:
+            # 1. Creates a fresh branch from origin/main
+            # 2. Runs the full multi-agent analysis pipeline on the entire repo
+            # 3. Generates comprehensive FEATURES.md
+            # 4. Commits, pushes, and creates PR
+            print("Delegating to jib container for analysis and PR creation...")
+            print("(All file modifications happen inside the container)")
+            print()
+
+            context = {
+                "repo_name": args.repo_root.name,
+                "dry_run": args.dry_run or args.no_pr,
+                "max_workers": args.workers,
+            }
+            if args.output:
+                context["output_path"] = str(args.output)
+
+            result = jib_exec(
+                processor="analysis-processor",
+                task_type="full_repo_analysis",
+                context=context,
+                timeout=900,  # 15 minute timeout for full repo analysis
             )
 
-            # Report results
-            print("\n" + "=" * 50)
-            print("Analysis Results:")
-            print(f"  Directories scanned: {result.directories_scanned}")
-            print(f"  Files analyzed: {result.files_analyzed}")
-            print(f"  Features detected: {len(result.features_detected)}")
+            if result.success and result.json_output:
+                data = result.json_output.get("result", {})
 
-            if result.features_by_category:
-                print("\nFeatures by category:")
-                for cat, features in sorted(result.features_by_category.items()):
-                    print(f"  {cat}: {len(features)}")
-                    for f in features:
-                        review = " ⚠️" if f.needs_review else ""
-                        print(f"    - {f.name}{review}")
+                print("=" * 50)
+                print("Analysis Results:")
+                print(f"  Directories scanned: {data.get('directories_scanned', 0)}")
+                print(f"  Files analyzed: {data.get('files_analyzed', 0)}")
+                print(f"  Features detected: {data.get('features_detected', 0)}")
 
-            if result.errors:
-                print("\nErrors:")
-                for error in result.errors:
-                    print(f"  - {error}")
+                features_by_category = data.get("features_by_category", {})
+                if features_by_category:
+                    print("\nFeatures by category:")
+                    for cat, count in sorted(features_by_category.items()):
+                        print(f"  {cat}: {count}")
 
-            # Create PR if requested and not dry run
-            if not args.no_pr and not args.dry_run and result.output_file:
-                print("\n" + "=" * 50)
-                print("Creating Pull Request...")
-
-                from doc_generator import GeneratedUpdate
-                from pr_creator import PRCreator
-
-                pr_creator = PRCreator(args.repo_root)
-
-                # Build PR body
-                feature_count = len(result.features_detected)
-                category_summary = "\n".join(
-                    f"- **{cat}**: {len(features)} feature(s)"
-                    for cat, features in sorted(result.features_by_category.items())
-                )
-
-                pr_body = f"""## Summary
-
-Full repository analysis generated a comprehensive FEATURES.md with {feature_count} features.
-
-### Features by Category
-
-{category_summary}
-
-### Analysis Details
-
-- Directories scanned: {result.directories_scanned}
-- Files analyzed: {result.files_analyzed}
-- Features detected: {feature_count}
-
-## Test Plan
-
-- [x] All feature entries have valid file paths
-- [x] Categories are properly organized
-- [x] Documentation links are accurate
-- [ ] Human review for accuracy and completeness
-
----
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-— Authored by jib"""
-
-                # Create update object for PR creator
-                features_md_path = args.repo_root / "docs" / "FEATURES.md"
-                # Preserve original content for accurate PR diff generation
-                original_content = features_md_path.read_text() if features_md_path.exists() else ""
-                updated_content = features_md_path.read_text() if features_md_path.exists() else ""
-                update = GeneratedUpdate(
-                    doc_path=features_md_path,
-                    original_content=original_content,
-                    updated_content=updated_content,
-                    changes_summary=f"Generated comprehensive FEATURES.md with {feature_count} features",
-                    confidence=0.9,
-                    validation_passed=True,
-                )
-
-                pr_result = pr_creator.create_doc_sync_pr(
-                    adr_title="Full Repository Feature Analysis",
-                    adr_path=Path("full-repo-analysis"),
-                    updates=[update],
-                    dry_run=False,
-                    create_tag=True,
-                    custom_pr_body=pr_body,
-                )
-
-                if pr_result.success:
+                if data.get("pr_url"):
                     print("\n✓ PR created successfully!")
-                    print(f"  Branch: {pr_result.branch_name}")
-                    if pr_result.tag_name:
-                        print(f"  Tag: {pr_result.tag_name}")
-                    if pr_result.pr_url:
-                        print(f"  PR URL: {pr_result.pr_url}")
-                else:
-                    print(f"\n✗ PR creation failed: {pr_result.error}")
-                    sys.exit(1)
+                    print(f"  Branch: {data.get('branch', 'unknown')}")
+                    print(f"  PR URL: {data.get('pr_url')}")
+                elif args.dry_run:
+                    print("\n[DRY RUN] No files were modified.")
+                elif args.no_pr:
+                    print("\n[--no-pr] Analysis complete, PR not created.")
 
-            elif args.no_pr:
-                print("\n[--no-pr] Skipping PR creation.")
-            elif args.dry_run:
-                print("\n[DRY RUN] No files were modified.")
+            else:
+                error_msg = result.error or "Unknown error"
+                if result.json_output:
+                    error_msg = result.json_output.get("error", error_msg)
+                print(f"\n✗ Analysis failed: {error_msg}")
+                if result.stderr:
+                    print(f"\nStderr:\n{result.stderr[:500]}")
+                sys.exit(1)
 
         except Exception as e:
             print(f"Unexpected error: {e}", file=sys.stderr)
