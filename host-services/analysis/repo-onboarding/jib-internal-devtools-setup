@@ -41,6 +41,7 @@ REPO_PATH=""
 SKIP_CONFLUENCE=false
 PUBLIC_REPO=false
 DRY_RUN=false
+INTELLIGENT_CONFLUENCE=false
 CONFLUENCE_DIR="${HOME}/context-sync/confluence"
 
 usage() {
@@ -52,6 +53,8 @@ Onboard a repository to Jib by generating documentation indexes.
 OPTIONS:
     --repo PATH           Path to repository to onboard (required)
     --skip-confluence     Skip Confluence documentation discovery
+    --intelligent         Use Claude for intelligent Confluence analysis
+                          (requires running inside jib container or via jib --exec)
     --public-repo         Mark as public repo (filters sensitive docs)
     --confluence-dir DIR  Path to Confluence sync directory
                           (default: ~/context-sync/confluence)
@@ -61,6 +64,9 @@ OPTIONS:
 EXAMPLES:
     # Full onboarding for internal repo
     $(basename "$0") --repo ~/khan/webapp
+
+    # Use intelligent (Claude-powered) Confluence analysis
+    $(basename "$0") --repo ~/khan/webapp --intelligent
 
     # Onboard public repo (skip Confluence, filter output)
     $(basename "$0") --repo ~/khan/public-lib --public-repo --skip-confluence
@@ -114,6 +120,10 @@ while [[ $# -gt 0 ]]; do
             PUBLIC_REPO=true
             shift
             ;;
+        --intelligent)
+            INTELLIGENT_CONFLUENCE=true
+            shift
+            ;;
         --confluence-dir)
             CONFLUENCE_DIR="$2"
             shift 2
@@ -151,6 +161,7 @@ REPO_NAME="$(basename "$REPO_PATH")"
 
 # Find tool locations
 CONFLUENCE_DISCOVERER="$ANALYSIS_DIR/confluence-doc-discoverer/confluence-doc-discoverer.py"
+CONFLUENCE_INTELLIGENT_DISCOVERER="$JIB_ROOT/jib-container/jib-tasks/analysis/confluence-intelligent-discoverer.py"
 FEATURE_ANALYZER="$ANALYSIS_DIR/feature-analyzer/feature-analyzer.py"
 INDEX_GENERATOR="$ANALYSIS_DIR/index-generator/index-generator.py"
 DOCS_INDEX_UPDATER="$ANALYSIS_DIR/repo-onboarding/docs-index-updater.py"
@@ -173,6 +184,7 @@ echo "Repository: $REPO_PATH"
 echo "Repo Name:  $REPO_NAME"
 echo "Dry Run:    $DRY_RUN"
 echo "Public:     $PUBLIC_REPO"
+echo "Intelligent: $INTELLIGENT_CONFLUENCE"
 
 # Check required tools
 TOOLS_OK=true
@@ -180,7 +192,11 @@ check_tool "$INDEX_GENERATOR" "index-generator" || TOOLS_OK=false
 check_tool "$DOCS_INDEX_UPDATER" "docs-index-updater" || TOOLS_OK=false
 
 if [[ "$SKIP_CONFLUENCE" != "true" ]]; then
-    check_tool "$CONFLUENCE_DISCOVERER" "confluence-doc-discoverer" || TOOLS_OK=false
+    if [[ "$INTELLIGENT_CONFLUENCE" == "true" ]]; then
+        check_tool "$CONFLUENCE_INTELLIGENT_DISCOVERER" "confluence-intelligent-discoverer" || TOOLS_OK=false
+    else
+        check_tool "$CONFLUENCE_DISCOVERER" "confluence-doc-discoverer" || TOOLS_OK=false
+    fi
 fi
 
 # Feature analyzer is optional (may use generate-feature-docs command)
@@ -219,24 +235,45 @@ else
         log_warning "Confluence directory not found: $CONFLUENCE_DIR"
         log_step "Skipping Confluence discovery"
     else
-        log_step "Scanning Confluence for docs related to '$REPO_NAME'..."
+        if [[ "$INTELLIGENT_CONFLUENCE" == "true" ]]; then
+            # Use Claude-powered intelligent discovery
+            log_step "Running intelligent (Claude-powered) Confluence analysis for '$REPO_NAME'..."
 
-        CONFLUENCE_ARGS=(
-            --repo-name "$REPO_NAME"
-            --confluence-dir "$CONFLUENCE_DIR"
-            --output "$OUTPUT_DIR/external-docs.json"
-        )
+            CONFLUENCE_ARGS=(
+                --repo-name "$REPO_NAME"
+                --confluence-dir "$CONFLUENCE_DIR"
+                --output "$OUTPUT_DIR/external-docs.json"
+                --max-docs 50
+                --min-relevance 0.3
+            )
 
-        if [[ "$PUBLIC_REPO" == "true" ]]; then
-            CONFLUENCE_ARGS+=(--public-repo)
+            if [[ "$DRY_RUN" == "true" ]]; then
+                CONFLUENCE_ARGS+=(--dry-run)
+            fi
+
+            python3 "$CONFLUENCE_INTELLIGENT_DISCOVERER" "${CONFLUENCE_ARGS[@]}"
+            log_success "Intelligent Confluence discovery complete"
+        else
+            # Use heuristic-based discovery (original)
+            log_step "Scanning Confluence for docs related to '$REPO_NAME'..."
+
+            CONFLUENCE_ARGS=(
+                --repo-name "$REPO_NAME"
+                --confluence-dir "$CONFLUENCE_DIR"
+                --output "$OUTPUT_DIR/external-docs.json"
+            )
+
+            if [[ "$PUBLIC_REPO" == "true" ]]; then
+                CONFLUENCE_ARGS+=(--public-repo)
+            fi
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+                CONFLUENCE_ARGS+=(--dry-run)
+            fi
+
+            python3 "$CONFLUENCE_DISCOVERER" "${CONFLUENCE_ARGS[@]}"
+            log_success "Confluence discovery complete"
         fi
-
-        if [[ "$DRY_RUN" == "true" ]]; then
-            CONFLUENCE_ARGS+=(--dry-run)
-        fi
-
-        python3 "$CONFLUENCE_DISCOVERER" "${CONFLUENCE_ARGS[@]}"
-        log_success "Confluence discovery complete"
     fi
 fi
 
