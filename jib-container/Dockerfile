@@ -214,6 +214,15 @@ if [ -d "${USER_HOME}/.git-main" ]; then
                 git config -f "$repo_config" remote.origin.url "$clean_url"
                 log_info "  Cleaned: $remote_url -> $clean_url"
             fi
+
+            # Convert SSH URLs to HTTPS (container has no SSH keys, only GITHUB_TOKEN)
+            # SSH format: git@github.com:owner/repo.git
+            # HTTPS format: https://github.com/owner/repo.git
+            if [[ "$remote_url" =~ ^git@github\.com: ]]; then
+                https_url=$(echo "$remote_url" | sed -E 's|^git@github\.com:|https://github.com/|')
+                git config -f "$repo_config" remote.origin.url "$https_url"
+                log_info "  Converted SSH to HTTPS: $https_url"
+            fi
         fi
     done
 fi
