@@ -48,7 +48,7 @@ SKIP_FEATURES=false
 PUBLIC_REPO=false
 DRY_RUN=false
 CONFLUENCE_DIR="${HOME}/context-sync/confluence"
-MAX_WORKERS=5
+MAX_WORKERS=20
 
 usage() {
     cat << EOF
@@ -67,7 +67,7 @@ OPTIONS:
     --public-repo         Mark as public repo (filters sensitive docs)
     --confluence-dir DIR  Path to Confluence sync directory
                           (default: ~/context-sync/confluence)
-    --max-workers N       Parallel workers for feature analysis (default: 5)
+    --max-workers N       Parallel workers for feature analysis (default: 20)
     --dry-run             Show what would be done without making changes
     -h, --help            Show this help message
 

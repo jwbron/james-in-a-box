@@ -450,8 +450,8 @@ def main():
     full_repo_parser.add_argument(
         "--workers",
         type=int,
-        default=5,
-        help="Number of parallel workers for directory analysis (default: 5)",
+        default=20,
+        help="Number of parallel workers for directory analysis (default: 20)",
     )
 
     # generate-feature-docs command (Phase 7 - Feature Sub-Documentation)
