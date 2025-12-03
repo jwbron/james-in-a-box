@@ -73,6 +73,8 @@ def _is_running_in_container() -> bool:
     if Path("/opt/jib-runtime").exists():
         return True
     # Secondary: Check environment variable
+    # NOTE: Import inside function to avoid issues when running on host where
+    # this module may be imported but os might not be needed at module load time
     import os
 
     return os.environ.get("JIB_CONTAINER") == "1"
@@ -124,7 +126,11 @@ def _run_llm_prompt_shared(
 def _run_llm_prompt_direct(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, str, str | None]:
-    """Run LLM prompt directly via run_claude (container-side execution)."""
+    """Run LLM prompt directly via run_claude (container-side execution).
+
+    Note: context_name is accepted for API compatibility but not currently used
+    in direct execution (could be added for logging in the future).
+    """
     try:
         run_claude = _get_run_claude()
         result = run_claude(prompt=prompt, cwd=repo_root, stream=False)
@@ -234,7 +240,13 @@ def _run_llm_prompt_to_file_shared(
 def _run_llm_prompt_to_file_direct(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, list | dict | None, str | None]:
-    """Run LLM prompt with file output directly via run_claude (container-side execution)."""
+    """Run LLM prompt with file output directly via run_claude (container-side execution).
+
+    Note: context_name is accepted for API compatibility but not currently used
+    in direct execution (could be added for logging in the future).
+    """
+    # NOTE: Imports inside function because this code only runs inside the container,
+    # and we want to avoid unnecessary imports when the module is loaded on the host.
     import tempfile
 
     # Generate a temporary file path
