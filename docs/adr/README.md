@@ -42,7 +42,7 @@ ADRs are organized by implementation status:
 | [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
 | [Multi-Agent Pipeline](not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Multi-agent pipeline design for complex tasks |
 | [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
-| [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
+| [Slack Integration Strategy](in-progress/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
 | [Standardized Logging Interface](in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 
 ## ADR Template
