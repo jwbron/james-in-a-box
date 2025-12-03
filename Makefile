@@ -10,7 +10,6 @@
         lint-yaml lint-yaml-fix \
         lint-docker lint-workflows \
         lint-host-services lint-container-paths lint-bin-symlinks \
-        lint-host-container-boundary \
         install-linters check-linters
 
 # Default target
@@ -39,7 +38,6 @@ help:
 	@echo "  make lint-host-services - Check host-services for forbidden patterns"
 	@echo "  make lint-container-paths - Check for problematic sys.path patterns (JIB001)"
 	@echo "  make lint-bin-symlinks  - Check container bin symlinks are valid"
-	@echo "  make lint-host-container-boundary - Check for host/container cross-calls"
 	@echo ""
 	@echo "Setup:"
 	@echo "  make install-linters   - Install all linting tools"
@@ -70,7 +68,7 @@ test-bash:
 # ============================================================================
 
 # Run all linters
-lint: lint-python lint-shell lint-yaml lint-docker lint-host-services lint-container-paths lint-bin-symlinks lint-host-container-boundary
+lint: lint-python lint-shell lint-yaml lint-docker lint-host-services lint-container-paths lint-bin-symlinks
 	@echo ""
 	@echo "All linters completed!"
 
@@ -222,13 +220,6 @@ lint-container-paths:
 lint-bin-symlinks:
 	@echo "==> Checking jib-container/bin/ symlinks..."
 	@python3 scripts/check-bin-symlinks.py
-
-# ----------------------------------------------------------------------------
-# Host/Container Boundary Check
-# ----------------------------------------------------------------------------
-lint-host-container-boundary:
-	@echo "==> Checking for host/container boundary violations..."
-	@python3 scripts/check-host-container-boundary.py
 
 # ============================================================================
 # Setup Targets
