@@ -1602,7 +1602,9 @@ class RepoAnalyzer:
                                 subdir_names.append(subitem.name)
                     if subdir_names:
                         preview = subdir_names[:10]
-                        more = f" ...+{len(subdir_names) - 10} more" if len(subdir_names) > 10 else ""
+                        more = (
+                            f" ...+{len(subdir_names) - 10} more" if len(subdir_names) > 10 else ""
+                        )
                         top_level_items.append(f"    subdirs: {', '.join(preview)}{more}")
 
                 except PermissionError:
@@ -1745,9 +1747,21 @@ If truly no feature directories found, return: `[]`
 
         # Common parent directory patterns
         common_parents = [
-            "services", "pkg", "cmd", "tools", "scripts", "bin",
-            "host-services", "jib-container", "dev", "internal",
-            "src", "lib", "apps", "packages", "modules",
+            "services",
+            "pkg",
+            "cmd",
+            "tools",
+            "scripts",
+            "bin",
+            "host-services",
+            "jib-container",
+            "dev",
+            "internal",
+            "src",
+            "lib",
+            "apps",
+            "packages",
+            "modules",
         ]
 
         # Check for common parent directories
@@ -1769,7 +1783,11 @@ If truly no feature directories found, return: `[]`
                     if not self._is_git_ignored(item.name):
                         # Check if it looks like a feature (has README or source files)
                         has_readme = (item / "README.md").exists()
-                        has_source = any(item.glob("*.py")) or any(item.glob("*.go")) or any(item.glob("*.js"))
+                        has_source = (
+                            any(item.glob("*.py"))
+                            or any(item.glob("*.go"))
+                            or any(item.glob("*.js"))
+                        )
                         if has_readme or has_source:
                             feature_dirs.append(item.name)
 
