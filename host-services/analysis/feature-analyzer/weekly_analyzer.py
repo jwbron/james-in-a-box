@@ -1971,9 +1971,10 @@ The "analyze" array must be ordered by priority. Include ALL feature directories
         if not files:
             return []
 
-        # If we have few files, no need for Scout - just return all
-        if len(files) <= max_files:
-            return files
+        # Always let Scout analyze and recommend files - even for small directories,
+        # Scout may have valuable insights about which files are most important.
+        # Previously we skipped Scout for <= max_files directories, but this
+        # optimization was removed to let agents determine what's worth processing.
 
         # Build file listing with metadata (no content!)
         file_info = []
@@ -2077,6 +2078,14 @@ The "read" array must have at most {max_files} file paths from the listing above
 
             if result:
                 return result[:max_files]
+
+        # Log Scout failure for troubleshooting
+        if error:
+            print(f"      Scout failed for {dir_path}: {error}")
+        elif not success:
+            print(f"      Scout failed for {dir_path}: LLM call unsuccessful")
+        elif not json_content or not isinstance(json_content, dict):
+            print(f"      Scout failed for {dir_path}: Invalid response format")
 
         # Fallback: use heuristic selection
         return self._scout_recommend_files_heuristically(files, max_files)
@@ -2906,10 +2915,11 @@ Notes:
 
         if self.use_llm:
             # Phase 1: Scout recommends which files to read
-            if use_scout and len(files) > 5:
+            # Always let Scout make the decision on which files to analyze,
+            # regardless of directory size. Scout may have valuable insights.
+            if use_scout:
                 recommended_files = self._scout_recommend_files(dir_path, files, max_files=5)
             else:
-                # For small directories, use heuristic selection (no LLM call needed)
                 recommended_files = self._scout_recommend_files_heuristically(files, max_files=5)
 
             # Phase 2: Analyze only the recommended files
