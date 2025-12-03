@@ -2,17 +2,20 @@
 """
 Message Categorizer for Slack Integration
 
-Uses Claude API to categorize incoming Slack messages and determine:
+Uses Claude (via jib_exec) to categorize incoming Slack messages and determine:
 1. If it's a request for a specific host function/script (run immediately)
 2. If it's a general task for Claude to work on (send to container)
 3. If it's a response to a previous notification (send to container)
 
 This enables all host functions and jib scripts to be callable via natural language
 through the Slack integration.
+
+IMPORTANT: This module runs on the HOST side and delegates LLM calls to the container
+via jib_exec. It does NOT import anthropic or call Claude directly - that would
+violate the host-container security boundary.
 """
 
 import json
-import os
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
@@ -20,8 +23,9 @@ from pathlib import Path
 from typing import Any
 
 
-# Add shared directory to path for jib_logging
+# Add shared directory to path for jib_logging and jib_exec
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from jib_exec import is_jib_available, jib_exec
 from jib_logging import get_logger
 
 
@@ -240,46 +244,34 @@ Analyze the following message and return a JSON response:
 
 
 class MessageCategorizer:
-    """Categorizes incoming Slack messages using Claude API."""
+    """Categorizes incoming Slack messages using Claude via jib_exec.
 
-    # Default model for categorization (fast and capable for this task)
-    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+    This class delegates LLM calls to the container via jib_exec, maintaining
+    the host-container security boundary. It does NOT import anthropic or
+    call Claude directly from the host.
+    """
 
-    def __init__(self, api_key: str | None = None, model: str | None = None):
+    def __init__(self):
         """Initialize the categorizer.
 
-        Args:
-            api_key: Anthropic API key. If not provided, reads from ANTHROPIC_API_KEY env var.
-            model: Claude model to use. If not provided, reads from CATEGORIZER_MODEL env var
-                   or uses DEFAULT_MODEL.
+        Unlike the previous implementation, this does not require an API key
+        since LLM calls are delegated to the container via jib_exec.
         """
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            logger.warning("No ANTHROPIC_API_KEY found - categorization will use heuristics only")
+        self._jib_available = None
+        logger.info("Categorizer initialized (using jib_exec for LLM)")
 
-        # Model can be configured via parameter, env var, or default
-        self.model = model or os.environ.get("CATEGORIZER_MODEL", self.DEFAULT_MODEL)
-        logger.info("Categorizer initialized", model=self.model)
-
-        # Import anthropic lazily to avoid import errors if not installed
-        self._client = None
-
-    def _get_client(self):
-        """Get or create Anthropic client."""
-        if self._client is None and self.api_key:
-            try:
-                import anthropic
-
-                self._client = anthropic.Anthropic(api_key=self.api_key)
-            except ImportError:
-                logger.error("anthropic package not installed - run: pip install anthropic")
-                return None
-        return self._client
+    def _check_jib_available(self) -> bool:
+        """Check if jib is available for LLM categorization."""
+        if self._jib_available is None:
+            self._jib_available = is_jib_available()
+            if not self._jib_available:
+                logger.warning("jib not available - categorization will use heuristics only")
+        return self._jib_available
 
     def _categorize_with_heuristics(
         self, text: str, is_thread_reply: bool = False
     ) -> CategorizationResult:
-        """Fallback categorization using simple heuristics when API is unavailable.
+        """Fallback categorization using simple heuristics when jib is unavailable.
 
         Args:
             text: Message text to categorize
@@ -325,6 +317,83 @@ class MessageCategorizer:
             original_text=text,
         )
 
+    def _categorize_with_llm(self, text: str) -> CategorizationResult | None:
+        """Use LLM via jib_exec to categorize the message.
+
+        Args:
+            text: Message text to categorize
+
+        Returns:
+            CategorizationResult if successful, None if failed
+        """
+        # Build the prompt
+        prompt = CATEGORIZATION_PROMPT.format(
+            functions=_get_function_descriptions(),
+            message=text,
+        )
+
+        logger.info("Calling jib_exec for categorization", text_preview=text[:50])
+
+        # Call Claude via jib_exec using the analysis-processor's llm_prompt task
+        result = jib_exec(
+            processor="analysis-processor",
+            task_type="llm_prompt",
+            context={
+                "prompt": prompt,
+                "timeout": 30,  # Short timeout for categorization
+            },
+            timeout=60,  # Overall timeout including container startup
+        )
+
+        if not result.success:
+            logger.error("jib_exec failed for categorization", error=result.error)
+            return None
+
+        # Extract the response from the result
+        if not result.json_output:
+            logger.error("No JSON output from jib_exec")
+            return None
+
+        # The analysis-processor returns {"success": true, "result": {"stdout": "...", ...}}
+        inner_result = result.json_output.get("result", {})
+        response_text = inner_result.get("stdout", "").strip()
+
+        if not response_text:
+            logger.error("Empty stdout from analysis-processor")
+            return None
+
+        try:
+            # Extract JSON from response (handle markdown code blocks)
+            if "```json" in response_text:
+                json_start = response_text.find("```json") + 7
+                json_end = response_text.find("```", json_start)
+                response_text = response_text[json_start:json_end].strip()
+            elif "```" in response_text:
+                json_start = response_text.find("```") + 3
+                json_end = response_text.find("```", json_start)
+                response_text = response_text[json_start:json_end].strip()
+
+            parsed = json.loads(response_text)
+
+            # Convert to CategorizationResult
+            category = MessageCategory(parsed.get("category", "unknown"))
+
+            return CategorizationResult(
+                category=category,
+                function_name=parsed.get("function_name"),
+                parameters=parsed.get("parameters", {}),
+                confidence=parsed.get("confidence", 0.5),
+                reasoning=parsed.get("reasoning", ""),
+                original_text=text,
+            )
+
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse categorization response", error=str(e))
+            return None
+        except ValueError as e:
+            logger.error("Invalid category in response", error=str(e))
+            return None
+
     def categorize(self, text: str, is_thread_reply: bool = False) -> CategorizationResult:
         """Categorize an incoming message.
 
@@ -335,7 +404,7 @@ class MessageCategorizer:
         Returns:
             CategorizationResult with category, function, parameters, etc.
         """
-        # Quick checks that don't need API
+        # Quick checks that don't need LLM
         text_stripped = text.strip()
 
         # Explicit commands bypass categorization
@@ -356,61 +425,15 @@ class MessageCategorizer:
                 original_text=text,
             )
 
-        # Try API-based categorization
-        client = self._get_client()
-        if not client:
-            logger.info("Using heuristic categorization (no API client)")
-            return self._categorize_with_heuristics(text, is_thread_reply)
+        # Try LLM-based categorization via jib_exec
+        if self._check_jib_available():
+            llm_result = self._categorize_with_llm(text)
+            if llm_result is not None:
+                return llm_result
+            # Fall through to heuristics if LLM failed
 
-        try:
-            # Build the prompt
-            prompt = CATEGORIZATION_PROMPT.format(
-                functions=_get_function_descriptions(),
-                message=text,
-            )
-
-            # Call Claude API
-            logger.info("Calling Claude API for categorization", text_preview=text[:50])
-
-            response = client.messages.create(
-                model=self.model,
-                max_tokens=500,
-                messages=[{"role": "user", "content": prompt}],
-            )
-
-            # Parse response
-            response_text = response.content[0].text.strip()
-
-            # Extract JSON from response (handle markdown code blocks)
-            if "```json" in response_text:
-                json_start = response_text.find("```json") + 7
-                json_end = response_text.find("```", json_start)
-                response_text = response_text[json_start:json_end].strip()
-            elif "```" in response_text:
-                json_start = response_text.find("```") + 3
-                json_end = response_text.find("```", json_start)
-                response_text = response_text[json_start:json_end].strip()
-
-            result = json.loads(response_text)
-
-            # Convert to CategorizationResult
-            category = MessageCategory(result.get("category", "unknown"))
-
-            return CategorizationResult(
-                category=category,
-                function_name=result.get("function_name"),
-                parameters=result.get("parameters", {}),
-                confidence=result.get("confidence", 0.5),
-                reasoning=result.get("reasoning", ""),
-                original_text=text,
-            )
-
-        except json.JSONDecodeError as e:
-            logger.error("Failed to parse categorization response", error=str(e))
-            return self._categorize_with_heuristics(text, is_thread_reply)
-        except Exception as e:
-            logger.error("Categorization API call failed", error=str(e))
-            return self._categorize_with_heuristics(text, is_thread_reply)
+        logger.info("Using heuristic categorization")
+        return self._categorize_with_heuristics(text, is_thread_reply)
 
     def get_available_functions(self) -> dict[str, dict]:
         """Get the registry of available host functions.
