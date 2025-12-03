@@ -90,18 +90,25 @@ class PathPatternVisitor(ast.NodeVisitor):
 
     def _is_path_home_call(self, node: ast.expr) -> bool:
         """Check if node is Path.home() call."""
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            if node.func.attr == "home" and isinstance(node.func.value, ast.Name):
-                return node.func.value.id == "Path"
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "home"
+            and isinstance(node.func.value, ast.Name)
+        ):
+            return node.func.value.id == "Path"
         return False
 
     def _is_sys_path_call(self, node: ast.Call) -> bool:
         """Check if this is a sys.path.insert() or sys.path.append() call."""
-        if isinstance(node.func, ast.Attribute) and node.func.attr in ("insert", "append"):
-            if isinstance(node.func.value, ast.Attribute):
-                if node.func.value.attr == "path":
-                    if isinstance(node.func.value.value, ast.Name):
-                        return node.func.value.value.id == "sys"
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("insert", "append")
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "path"
+            and isinstance(node.func.value.value, ast.Name)
+        ):
+            return node.func.value.value.id == "sys"
         return False
 
     def _check_for_dynamic_khan_path(self, node: ast.expr) -> tuple[bool, str | None]:
@@ -111,9 +118,13 @@ class PathPatternVisitor(ast.NodeVisitor):
             Tuple of (is_problematic, variable_name)
         """
         # Handle str() wrapper
-        if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Name) and node.func.id == "str" and node.args:
-                return self._check_for_dynamic_khan_path(node.args[0])
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "str"
+            and node.args
+        ):
+            return self._check_for_dynamic_khan_path(node.args[0])
 
         # Check for / chain
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
