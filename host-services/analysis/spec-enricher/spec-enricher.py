@@ -27,7 +27,7 @@ from pathlib import Path
 
 
 # Add shared directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 
 from enrichment import (
     CodeExample,

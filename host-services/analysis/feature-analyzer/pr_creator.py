@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING
 
 
 # Add host-services shared modules to path for jib_exec
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 from git_utils import get_repo_name_from_remote
 from jib_exec import jib_exec
 

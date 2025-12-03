@@ -46,7 +46,7 @@ import yaml
 
 
 # Add host-services shared modules to path for jib_exec
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 from jib_exec import jib_exec
 
 

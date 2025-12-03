@@ -24,7 +24,7 @@ from typing import Any
 
 
 # Add shared directory to path for jib_logging and jib_exec
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 from jib_exec import is_jib_available, jib_exec
 from jib_logging import get_logger
 

@@ -50,7 +50,7 @@ from pathlib import Path
 
 
 # Add host-services/shared to path for jib_exec
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 from jib_exec import is_jib_available, jib_exec
 
 

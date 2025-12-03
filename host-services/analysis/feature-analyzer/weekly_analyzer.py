@@ -49,7 +49,7 @@ from pathlib import Path
 
 
 # Add shared modules to path for jib_exec
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 
 # Import shared utilities
 # NOTE: Host-services code must ALWAYS use jib_exec, never direct Claude calls.

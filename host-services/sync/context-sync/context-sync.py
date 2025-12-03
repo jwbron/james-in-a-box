@@ -17,7 +17,7 @@ from utils.config_loader import load_env_file
 load_env_file()
 
 # Add shared directory to path for jib_logging
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 
 # Import connectors
 from connectors.confluence.connector import ConfluenceConnector

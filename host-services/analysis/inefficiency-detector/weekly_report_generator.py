@@ -43,7 +43,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 # Add host-services shared modules to path for jib_exec
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 import contextlib
 
 from git_utils import get_repo_name_from_remote
@@ -733,10 +733,7 @@ See the full report for detailed analysis and actionable recommendations.
         try:
             # Try to import notifications library
             try:
-                # Add shared lib to path
-                shared_path = REPO_ROOT / "shared"
-                if str(shared_path) not in sys.path:
-                    sys.path.insert(0, str(shared_path))
+                # Shared modules are in /opt/jib-runtime/shared
                 from notifications import NotificationContext, NotificationType, slack_notify
             except ImportError:
                 print("  WARNING: notifications library not available, using file-based fallback")

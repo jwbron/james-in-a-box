@@ -22,7 +22,7 @@ from typing import Any
 
 
 # Add shared directory to path for jib_logging module
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 from host_command_handler import HostCommandHandler
 from jib_logging import get_logger
 

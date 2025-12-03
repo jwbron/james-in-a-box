@@ -16,7 +16,7 @@ import requests
 
 
 # Add shared directory to path for jib_logging
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent.parent / "shared"))
+sys.path.insert(0, "/opt/jib-runtime/shared")
 from jib_logging import get_logger
 
 from connectors.confluence.config import ConfluenceConfig

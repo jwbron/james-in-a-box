@@ -77,9 +77,10 @@ from pathlib import Path
 import yaml
 
 
-# Add project root to path for shared modules and config
+# Add shared modules to path - jib_logging is in /opt/jib-runtime/shared
+# Config is loaded from the repo path
+sys.path.insert(0, "/opt/jib-runtime/shared")
 _project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(_project_root / "shared"))
 sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
