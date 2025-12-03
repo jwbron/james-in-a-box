@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Weekly Code Analyzer - FEATURES.md Auto-Discovery (Host-Side Module)
+Feature Analyzer - FEATURES.md Auto-Discovery (Container-Side Module)
 
-This module is the HOST-SIDE version of the feature analyzer. It runs on the
-host machine and uses jib_exec to invoke analysis in the container.
+This module provides feature analysis capabilities for use INSIDE the jib container.
+It scans repositories and identifies features using LLM-powered analysis.
 
-IMPORTANT: This module should NOT be imported from inside the container.
-Container-side code should use jib-container/jib-tasks/analysis/feature_analyzer.py
-which calls run_claude directly.
+IMPORTANT: This module runs ONLY inside the container and uses run_claude directly.
+Host-side code should use jib_exec to invoke analysis-processor.py, which then
+imports this module.
 
 The analyzer performs thorough analysis including:
 1. Collects commits from the past N days
@@ -26,18 +26,11 @@ Key Features:
 - Auto-generates README.md for undocumented features
 - FEATURES.md is hooked into docs/index.md for LLM navigation
 
-Usage (host-side only):
-    analyzer = WeeklyAnalyzer(repo_root)
-    result = analyzer.analyze_and_update(
-        days=7,
-        generate_docs=True,
-        deep_analysis=True
-    )
+Usage (container-side only):
+    from feature_analyzer import WeeklyAnalyzer, RepoAnalyzer
 
-CLI:
-    python weekly_analyzer.py --days 7 --repo-root /path/to/repo
-    python weekly_analyzer.py --no-deep-analysis  # Skip code-level analysis
-    python weekly_analyzer.py --no-docs           # Skip doc generation
+    analyzer = WeeklyAnalyzer(repo_root)
+    result = analyzer.analyze_and_update(days=7, generate_docs=True)
 """
 
 import json
@@ -51,149 +44,123 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
-# Add shared modules to path for jib_exec
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+# Add shared modules to path for run_claude
+def _find_shared_path() -> Path:
+    """Find the shared directory by walking up from the script location."""
+    script_path = Path(__file__).resolve()
+    # Check multiple possible parent levels
+    for i in range(1, 6):
+        if i < len(script_path.parents):
+            candidate = script_path.parents[i] / "shared"
+            if (candidate / "claude").is_dir():
+                return candidate
+    # Fallback: check /opt/jib-runtime/shared (container path)
+    container_shared = Path("/opt/jib-runtime/shared")
+    if (container_shared / "claude").is_dir():
+        return container_shared
+    raise ImportError(f"Cannot find shared/claude module from {script_path}")
 
-# Import jib_exec for host-to-container LLM calls
-# NOTE: Host-services code must ALWAYS use jib_exec, never direct Claude calls.
-from jib_exec import jib_exec
+
+sys.path.insert(0, str(_find_shared_path()))
+
+# Import run_claude directly - this module runs only inside the container
+from claude import run_claude
 
 
 def _run_llm_prompt(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, str, str | None]:
     """
-    Run an LLM prompt via jib_exec (host-side execution).
+    Run an LLM prompt via run_claude.
 
-    This function uses jib_exec to invoke analysis-processor in the container,
-    which then calls run_claude. This is the only way host-side code should
-    invoke Claude.
+    This function is used by both WeeklyAnalyzer and RepoAnalyzer for LLM calls.
+    It runs inside the container and calls run_claude directly.
 
     Args:
         repo_root: Path to the repository root
         prompt: The prompt to send to the LLM
-        context_name: Optional name for logging/debugging
+        context_name: Optional name for logging/debugging (not currently used)
 
     Returns:
         Tuple of (success, stdout, error_message)
     """
     try:
-        # analysis-processor is in PATH via /opt/jib-runtime/bin
-        result = jib_exec(
-            processor="analysis-processor",
-            task_type="llm_prompt",
-            context={
-                "prompt": prompt,
-                "cwd": str(repo_root),
-                "stream": False,
-            },
-            # No timeout specified - let the shared claude module determine the default
-        )
+        result = run_claude(prompt=prompt, cwd=repo_root, stream=False)
 
-        if result.success and result.json_output:
-            output = result.json_output.get("result", {})
-            stdout = output.get("stdout", "")
-            return (True, stdout, None)
-
-        # Handle failure - build detailed error message
-        error_parts = []
-
-        # Check for jib-level error
-        if result.error:
-            error_parts.append(result.error)
-
-        # Check for processor-level error in JSON response
-        if result.json_output:
-            processor_error = result.json_output.get("error")
-            if processor_error:
-                error_parts.append(f"Processor: {processor_error}")
-            # Also check if there's a result with stderr
-            processor_result = result.json_output.get("result", {})
-            if isinstance(processor_result, dict) and processor_result.get("stderr"):
-                error_parts.append(f"stderr: {processor_result['stderr'][:200]}")
-
-        # If success=True but json_output is None, the jib command ran but
-        # we couldn't parse the output - include raw stdout for debugging
-        if result.success and not result.json_output:
-            if result.stdout:
-                stdout_preview = result.stdout[:300].replace("\n", "\\n")
-                error_parts.append(f"jib succeeded but no JSON parsed. stdout: {stdout_preview}")
-            else:
-                error_parts.append("jib succeeded but returned empty stdout")
-
-        # If nothing specific, check stderr
-        if not error_parts and result.stderr:
-            error_parts.append(f"stderr: {result.stderr[:200]}")
-
-        # Build final error message
-        error_msg = (
-            "; ".join(error_parts) if error_parts else "Unknown error (no details available)"
-        )
-        return (False, "", error_msg)
+        if result.success:
+            return (True, result.stdout, None)
+        else:
+            error = result.error or result.stderr or "Unknown error"
+            return (False, "", error)
 
     except Exception as e:
-        return (False, "", str(e))
+        return (False, "", f"run_claude error: {e}")
 
 
 def _run_llm_prompt_to_file(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, list | dict | None, str | None]:
     """
-    Run an LLM prompt that writes JSON output to a file via jib_exec.
+    Run an LLM prompt that writes JSON output to a file.
 
     This avoids JSON parsing issues when the LLM includes explanatory text
     before/after the JSON in its stdout. The LLM writes JSON to a temp file,
     which is then read and parsed.
 
-    This function uses jib_exec to invoke the container-side code, which
-    then calls run_claude. Host-side code must never call run_claude directly.
-
     Args:
         repo_root: Path to the repository root
         prompt: The prompt to send to the LLM (should request JSON output)
-        context_name: Optional name for logging/debugging
+        context_name: Optional name for logging/debugging (not currently used)
 
     Returns:
         Tuple of (success, parsed_json_content, error_message)
     """
-    try:
-        # analysis-processor is in PATH via /opt/jib-runtime/bin
-        result = jib_exec(
-            processor="analysis-processor",
-            task_type="llm_prompt_to_file",
-            context={
-                "prompt": prompt,
-                "cwd": str(repo_root),
-            },
-            # No timeout specified - let the shared claude module determine the default
-        )
+    import contextlib
+    import os
+    import tempfile
 
-        if result.success and result.json_output:
-            output = result.json_output.get("result", {})
-            json_content = output.get("json_content")
+    # Generate a temporary file path
+    fd, output_file = tempfile.mkstemp(suffix=".json", prefix="llm_output_")
+    os.close(fd)
+    output_path = Path(output_file)
+
+    # Enhance the prompt to explicitly instruct writing to the file
+    enhanced_prompt = f"""{prompt}
+
+CRITICAL INSTRUCTION: You MUST write your JSON output to this file: {output_file}
+
+Use the Write tool to write the JSON array to {output_file}. Do NOT just print the JSON to stdout - write it to the file.
+
+After writing the file, confirm by saying "JSON written to {output_file}" but do NOT include the JSON content in your response."""
+
+    try:
+        run_claude(prompt=enhanced_prompt, cwd=repo_root, stream=False)
+
+        # Read the JSON from the output file
+        json_content = None
+        if output_path.exists():
+            try:
+                file_content = output_path.read_text().strip()
+                if file_content:
+                    json_content = json.loads(file_content)
+            except json.JSONDecodeError as e:
+                return (False, None, f"Failed to parse JSON from output file: {e}")
+            finally:
+                # Clean up the temp file
+                with contextlib.suppress(OSError):
+                    output_path.unlink()
+
             if json_content is not None:
                 return (True, json_content, None)
-            # If json_content is None but success=True, there was an issue
+            return (False, None, "LLM wrote empty file")
+        else:
             return (False, None, "LLM did not write JSON to file")
 
-        # Handle failure
-        error_parts = []
-
-        if result.error:
-            error_parts.append(result.error)
-
-        if result.json_output:
-            processor_error = result.json_output.get("error")
-            if processor_error:
-                error_parts.append(f"Processor: {processor_error}")
-
-        error_msg = (
-            "; ".join(error_parts) if error_parts else "Unknown error (no details available)"
-        )
-        return (False, None, error_msg)
-
     except Exception as e:
-        return (False, None, str(e))
+        # Clean up temp file on error
+        with contextlib.suppress(OSError):
+            output_path.unlink()
+        return (False, None, f"run_claude error: {e}")
 
 
 @dataclass
@@ -303,10 +270,9 @@ class WeeklyAnalyzer:
 
     def _run_llm_prompt(self, prompt: str, context_name: str = "") -> tuple[bool, str, str | None]:
         """
-        Run an LLM prompt via jib container.
+        Run an LLM prompt via run_claude.
 
-        Host-side code cannot directly call Claude - it's only available inside
-        the container. This method uses jib_exec to invoke the analysis processor.
+        This module runs inside the container and calls run_claude directly.
 
         Args:
             prompt: The prompt to send to the LLM
@@ -1467,10 +1433,9 @@ class RepoAnalyzer:
 
     def _run_llm_prompt(self, prompt: str, context_name: str = "") -> tuple[bool, str, str | None]:
         """
-        Run an LLM prompt via jib container.
+        Run an LLM prompt via run_claude.
 
-        Host-side code cannot directly call Claude - it's only available inside
-        the container. This method uses jib_exec to invoke the analysis processor.
+        This module runs inside the container and calls run_claude directly.
 
         Args:
             prompt: The prompt to send to the LLM
