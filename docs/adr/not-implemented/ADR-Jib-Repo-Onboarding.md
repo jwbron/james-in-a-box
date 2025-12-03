@@ -13,6 +13,7 @@
 - [Decision](#decision)
 - [Implementation Details](#implementation-details)
 - [Onboarding Workflow](#onboarding-workflow)
+- [Feature Analysis & Documentation](#feature-analysis--documentation)
 - [Index Generation](#index-generation)
 - [Auto-Regeneration](#auto-regeneration)
 - [PR Workflow](#pr-workflow)
@@ -78,9 +79,13 @@ This ADR establishes:
 | Aspect | Approach |
 |--------|----------|
 | **Index Location** | `<target-repo>/docs/generated/` |
+| **Feature Docs Location** | `<target-repo>/docs/features/` |
 | **Trigger** | Explicit onboarding task or command |
-| **Output** | `codebase.json`, `patterns.json`, `dependencies.json`, `external-docs.json` |
+| **Phase 1 Output** | `external-docs.json` (Confluence discovery) |
+| **Phase 2 Output** | `FEATURES.md`, `docs/features/*.md` (feature analysis) |
+| **Phase 3 Output** | `codebase.json`, `patterns.json`, `dependencies.json` (indexes) |
 | **Confluence Discovery** | Auto-scan `~/context-sync/confluence/` for org-specific docs |
+| **Feature Discovery** | Auto-analyze codebase for feature-to-source mapping |
 | **Delivery** | PR to target repo |
 | **Maintenance** | GitHub Actions workflow for auto-regeneration |
 
@@ -197,18 +202,102 @@ Jib onboarding can be triggered by:
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Jib Onboarding Process                       │
 │                                                                  │
+│  Phase 1: Context Gathering                                      │
 │  1. Clone/access target repository                               │
 │  2. Discover org-specific docs from Confluence sync (Step 0)     │
-│  3. Analyze codebase structure                                   │
-│  4. Detect existing documentation                                │
-│  5. Generate indexes (codebase.json, patterns.json, deps.json)   │
-│  6. Generate external-docs.json (from Confluence discovery)      │
-│  7. Generate navigation index (docs/index.md, llms.txt)          │
-│  8. Generate GitHub Actions workflow for auto-regen              │
-│  9. Create PR with all artifacts                                 │
-│  10. Notify human for review                                     │
+│                                                                  │
+│  Phase 2: Feature Discovery & Documentation Generation           │
+│  3. Run feature-analyzer full-repo to discover all features      │
+│     → Generates docs/FEATURES.md with comprehensive feature list │
+│  4. Run feature-analyzer generate-feature-docs                   │
+│     → Generates docs/features/*.md category documentation        │
+│                                                                  │
+│  Phase 3: Index Generation                                       │
+│  5. Generate codebase indexes (codebase.json, patterns.json)     │
+│  6. Generate dependency graph (dependencies.json)                │
+│  7. Generate external-docs.json (from Confluence discovery)      │
+│  8. Generate/update navigation index (docs/index.md)             │
+│                                                                  │
+│  Phase 4: Delivery                                               │
+│  9. Generate GitHub Actions workflow for auto-regen              │
+│  10. Create PR with all artifacts                                │
+│  11. Notify human for review                                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**Orchestration Script:**
+
+The `jib-internal-devtools-setup` script orchestrates the complete workflow:
+
+```bash
+#!/bin/bash
+# jib-internal-devtools-setup - Full repository onboarding
+#
+# Usage:
+#   jib-internal-devtools-setup --repo ~/khan/webapp
+#   jib-internal-devtools-setup --repo ~/khan/public-repo --skip-confluence
+
+REPO_PATH="$1"
+SKIP_CONFLUENCE="${2:-false}"
+
+echo "=== JIB Repository Onboarding ==="
+echo "Repository: $REPO_PATH"
+
+# Phase 1: Context Gathering
+echo ""
+echo "Phase 1: Gathering Confluence context..."
+if [ "$SKIP_CONFLUENCE" != "--skip-confluence" ]; then
+    python3 ~/tools/confluence-doc-discoverer.py \
+        --confluence-dir ~/context-sync/confluence \
+        --repo-name "$(basename $REPO_PATH)" \
+        --output "$REPO_PATH/docs/generated/external-docs.json"
+fi
+
+# Phase 2: Feature Discovery & Documentation
+echo ""
+echo "Phase 2: Running feature analyzer..."
+cd "$REPO_PATH"
+
+# Full repository feature analysis
+feature-analyzer full-repo \
+    --repo-root "$REPO_PATH" \
+    --no-pr
+
+# Generate feature category documentation
+feature-analyzer generate-feature-docs \
+    --repo-root "$REPO_PATH"
+
+# Phase 3: Index Generation
+echo ""
+echo "Phase 3: Generating codebase indexes..."
+python3 ~/tools/index-generator/index-generator.py \
+    --project "$REPO_PATH" \
+    --output "$REPO_PATH/docs/generated"
+
+# Update docs/index.md with generated content references
+python3 ~/tools/docs-index-updater.py \
+    --repo-root "$REPO_PATH" \
+    --features-md "$REPO_PATH/docs/FEATURES.md" \
+    --generated-dir "$REPO_PATH/docs/generated"
+
+# Phase 4: Delivery
+echo ""
+echo "Phase 4: Creating PR..."
+# (PR creation handled by calling script or jib)
+
+echo ""
+echo "=== Onboarding Complete ==="
+```
+
+**Generated Artifacts Summary:**
+
+| Phase | Tool | Output |
+|-------|------|--------|
+| Context | confluence-doc-discoverer | `docs/generated/external-docs.json` |
+| Features | feature-analyzer full-repo | `docs/FEATURES.md` |
+| Features | feature-analyzer generate-feature-docs | `docs/features/*.md` |
+| Indexes | index-generator | `docs/generated/codebase.json`, `patterns.json`, `dependencies.json` |
+| Navigation | docs-index-updater | Updated `docs/index.md` |
 
 ### 2. Index Generator Deployment
 
@@ -234,8 +323,14 @@ python3 ~/tools/index-generator/index-generator.py \
 ```
 <target-repo>/
 ├── docs/
-│   ├── index.md                    # Navigation index (if not exists)
-│   ├── llms.txt                    # LLM-friendly index (if not exists)
+│   ├── index.md                    # Navigation index (updated with generated content refs)
+│   ├── FEATURES.md                 # Comprehensive feature-to-source mapping
+│   ├── features/                   # Feature category documentation
+│   │   ├── README.md               # Feature docs navigation
+│   │   ├── communication.md        # Communication features
+│   │   ├── github-integration.md   # GitHub integration features
+│   │   ├── context-management.md   # Context management features
+│   │   └── ...                     # Other category docs
 │   └── generated/
 │       ├── README.md               # Explains generated files
 │       ├── codebase.json           # Structured codebase analysis
@@ -247,6 +342,17 @@ python3 ~/tools/index-generator/index-generator.py \
 │       └── check-generated-indexes.yml  # Auto-regeneration CI
 └── ... (existing repo files)
 ```
+
+**File Descriptions:**
+
+| File | Purpose | Generator |
+|------|---------|-----------|
+| `docs/FEATURES.md` | Maps every feature to source code locations | feature-analyzer full-repo |
+| `docs/features/*.md` | Detailed docs per feature category | feature-analyzer generate-feature-docs |
+| `docs/generated/codebase.json` | AST-parsed structure for LLM queries | index-generator |
+| `docs/generated/patterns.json` | Detected architectural patterns | index-generator |
+| `docs/generated/dependencies.json` | Import/dependency graph | index-generator |
+| `docs/generated/external-docs.json` | Org-specific Confluence docs | confluence-doc-discoverer |
 
 **codebase.json Schema:**
 
@@ -426,6 +532,77 @@ After PR creation, jib sends a Slack notification:
 
 Questions? Reply in this thread.
 ```
+
+## Feature Analysis & Documentation
+
+### Feature Analyzer Integration
+
+The feature-analyzer is a core component of the onboarding workflow. It provides:
+
+**1. Full Repository Analysis (`feature-analyzer full-repo`)**
+
+Scans the entire codebase to discover and catalog features:
+
+```bash
+# Analyze repository and generate FEATURES.md
+feature-analyzer full-repo \
+    --repo-root ~/khan/target-repo \
+    --workers 5 \
+    --no-pr
+```
+
+**Output:** `docs/FEATURES.md` - A comprehensive mapping of features to source locations:
+
+```markdown
+# Features
+
+## Communication
+### 1. Slack Integration
+**Location:** `host-services/slack/`
+**Components:**
+- **Notifier** (`slack-notifier.py`)
+- **Receiver** (`slack-receiver.py`)
+**Documentation:** [Communication Features](docs/features/communication.md)
+```
+
+**2. Feature Documentation Generation (`feature-analyzer generate-feature-docs`)**
+
+Generates detailed documentation for each feature category:
+
+```bash
+# Generate docs/features/*.md from FEATURES.md
+feature-analyzer generate-feature-docs \
+    --repo-root ~/khan/target-repo
+```
+
+**Output:** `docs/features/` directory with:
+- `README.md` - Navigation index
+- `communication.md` - Communication feature details
+- `github-integration.md` - GitHub integration details
+- Category docs for each feature group
+
+**3. Weekly Analysis (`feature-analyzer weekly-analyze`)**
+
+For ongoing maintenance, analyzes recent commits to detect new features:
+
+```bash
+# Detect new features from past 7 days
+feature-analyzer weekly-analyze \
+    --days 7 \
+    --repo-root ~/khan/target-repo
+```
+
+### Why Feature Discovery Matters for LLM Onboarding
+
+Traditional codebase indexes (like `codebase.json`) provide structural information, but they lack semantic understanding. The feature-analyzer fills this gap:
+
+| Index Type | What It Captures | Use Case |
+|------------|------------------|----------|
+| `codebase.json` | Files, classes, functions | "Where is class X defined?" |
+| `FEATURES.md` | Feature-to-code mapping | "What code implements Slack integration?" |
+| `docs/features/*.md` | Feature purpose & usage | "How do I use the notification system?" |
+
+This multi-layered approach gives LLM agents comprehensive understanding of both **what** exists and **why** it exists.
 
 ## Index Generation
 
