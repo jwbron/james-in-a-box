@@ -627,6 +627,38 @@ def create_dockerfile() -> None:
     else:
         warn(".claude/hooks directory not found, skipping hooks")
 
+    # Copy jib-runtime directories to build context
+    # These provide container-resident executables and processors
+    # The bin/ directory contains symlinks to executables (added to PATH in container)
+    #
+    # Directory structure must match the host layout so path calculations work:
+    # Host:      james-in-a-box/jib-container/jib-tasks/... + james-in-a-box/shared/
+    # Container: /opt/jib-runtime/jib-container/jib-tasks/... + /opt/jib-runtime/shared/
+    #
+    # The processors use: Path(__file__).parents[3] / "shared"
+    # From jib-container/jib-tasks/analysis/*.py, this goes up 3 levels to repo root
+    jib_container_dest = Config.CONFIG_DIR / "jib-container"
+    jib_container_dest.mkdir(parents=True, exist_ok=True)
+
+    runtime_dirs = ["bin", "jib-tasks", "jib-tools", "scripts"]
+    for dir_name in runtime_dirs:
+        src = script_dir / dir_name
+        dest = jib_container_dest / dir_name
+        if src.exists():
+            _copy_directory_atomic(src, dest, f"Runtime {dir_name}", _quiet_mode)
+        else:
+            warn(f"{dir_name} directory not found, skipping")
+
+    # Copy shared directory from repo root to build context (sibling of jib-container)
+    # The jib-tasks processors import from shared/ (e.g., from claude import run_claude)
+    repo_root = script_dir.parent  # jib-container's parent is james-in-a-box
+    shared_src = repo_root / "shared"
+    shared_dest = Config.CONFIG_DIR / "shared"
+    if shared_src.exists():
+        _copy_directory_atomic(shared_src, shared_dest, "Shared modules", _quiet_mode)
+    else:
+        warn("shared directory not found, container processors may fail imports")
+
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
     # Avoids issues with stale/revoked OAuth tokens from previous builds
