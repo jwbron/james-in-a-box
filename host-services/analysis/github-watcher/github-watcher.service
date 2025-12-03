@@ -3,6 +3,7 @@ Description=GitHub Watcher - Monitor GitHub and trigger jib analysis
 Documentation=file://%h/khan/james-in-a-box/host-services/analysis/github-watcher/README.md
 After=network-online.target
 Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot

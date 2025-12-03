@@ -123,6 +123,11 @@ git commit -m "Brief description
 git push origin <branch>
 ```
 
+**IMPORTANT - Commit Attribution**:
+- Git author is already configured as `jib <jib@khan.org>` - no need to add author info
+- **NEVER** include "Generated with Claude Code" or "Co-Authored-By: Claude" in commits
+- See `jib-branding.md` for full attribution guidelines
+
 Then use GitHub MCP to create the PR:
 ```python
 # Use MCP: create_pull_request(owner, repo, title, head, base, body)
@@ -201,7 +206,55 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 2. Check out that PR's branch locally: `git checkout <branch> && git pull origin <branch>`
 3. Make changes and commit to that branch
 4. Push via `git push origin <branch>`
-5. Do NOT create a new PR for the same work
+5. **Update PR description if needed** (see below)
+6. Do NOT create a new PR for the same work
+
+### 6.6. Updating PR Descriptions (IMPORTANT)
+
+**After pushing changes to an existing PR**, evaluate whether the PR description needs updating:
+
+**Update the description when:**
+- You fixed CI failures (add what was fixed and how)
+- You addressed review feedback (summarize changes made)
+- You resolved merge conflicts (describe the resolution)
+- The scope of changes has grown significantly
+- The original description no longer accurately reflects the PR
+
+**How to update:**
+```python
+# Use MCP: mcp__github__update_pull_request(
+#     owner="<owner>",
+#     repo="<repo>",
+#     pullNumber=<pr_number>,
+#     body="Updated description here"
+# )
+```
+
+**What to include in updated descriptions:**
+- Keep the original context/summary
+- Add a "## Updates" or "## Changes Since Initial Review" section
+- Document what was changed and why
+- Preserve the test plan (update if needed)
+- Keep the description under 500 words total
+
+**Example update:**
+```markdown
+## Summary
+[Original summary remains]
+
+## Updates (2025-01-15)
+- Fixed lint errors by running `make fix`
+- Addressed review feedback: renamed `getData` to `fetchUserData` for clarity
+- Resolved merge conflict in config.py by keeping both feature flags
+
+## Test plan
+[Updated test plan if needed]
+```
+
+**When NOT to update:**
+- Minor commits that don't change the PR's purpose
+- Rebases or merge-from-main operations
+- Typo fixes or formatting changes
 
 **PR approval vs feedback - know the difference:**
 - **Approved**: GitHub review status, OR "LGTM" comment (case-insensitive)

@@ -65,6 +65,7 @@ class TestStateManagement:
                 "processed_comments": {},
                 "processed_reviews": {},
                 "processed_conflicts": {},
+                "processed_review_responses": {},
                 "failed_tasks": {},
                 "last_run_start": None,
             }
@@ -428,12 +429,14 @@ class TestCheckPrsForReview:
 
     def test_already_reviewed_skipped(self):
         """Test already reviewed PRs are skipped."""
-        state = {"processed_reviews": {"owner/repo-456:review": "2025-01-01"}}
+        # Signature now includes head SHA to support re-reviews on new commits
+        state = {"processed_reviews": {"owner/repo-456-abc123def:review": "2025-01-01"}}
         all_prs = [
             {
                 "number": 456,
                 "title": "New feature",
                 "author": {"login": "other-dev"},
+                "headRefOid": "abc123def",
             }
         ]
 

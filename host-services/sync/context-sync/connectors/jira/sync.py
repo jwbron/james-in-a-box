@@ -29,7 +29,7 @@ class JIRASync:
     """Sync JIRA tickets to local files."""
 
     def __init__(self):
-        self.config = JIRAConfig
+        self.config = JIRAConfig()
         self.session = requests.Session()
         self._setup_auth()
         self.sync_state_file = Path(self.config.OUTPUT_DIR) / ".sync_state"
