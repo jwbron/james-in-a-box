@@ -1413,12 +1413,14 @@ class RepoAnalyzer:
     Analyzes an entire repository from scratch to generate a comprehensive feature list.
 
     Uses a multi-agent approach:
-    - Pass 1: Preprocessing agent scans directories and builds a structured inventory
+    - Pass 0: LLM-based directory discovery - Claude analyzes the repo structure to identify
+              feature-containing directories (no more hardcoded paths!)
+    - Pass 1: Preprocessing agent scans discovered directories and builds a structured inventory
     - Pass 2: Feature extraction agent analyzes each directory for user-facing features
     - Pass 3: Consolidation agent deduplicates, categorizes, and organizes final output
 
-    This approach lets the LLM handle complex decisions (deduplication, classification,
-    edge cases) rather than trying to encode all possible heuristics in code.
+    This approach lets the LLM handle complex decisions (directory discovery, deduplication,
+    classification, edge cases) rather than trying to encode all possible heuristics in code.
     """
 
     # Standard categories for feature organization (used as guidance for LLM)
@@ -1434,24 +1436,6 @@ class RepoAnalyzer:
         "Utilities",
         "Security Features",
         "Configuration",
-    ]
-
-    # Directories that contain features - scan recursively for actual feature directories
-    # These are root directories that MAY contain nested feature directories
-    FEATURE_ROOT_DIRECTORIES = [
-        "host-services/",
-        "jib-container/",
-        "scripts/",
-        "bin/",
-    ]
-
-    # Additional specific feature directories to scan (these contain features directly)
-    SPECIFIC_FEATURE_DIRECTORIES = [
-        "jib-container/.claude/commands/",
-        "jib-container/.claude/hooks/",
-        "jib-container/jib-tasks/",
-        "jib-container/jib-tools/",
-        "jib-container/scripts/",
     ]
 
     # Basic patterns to skip (obvious non-features)
@@ -1562,17 +1546,265 @@ class RepoAnalyzer:
         """Check if a path should be skipped (obvious non-features only)."""
         return any(re.search(pattern, path) for pattern in self.SKIP_PATTERNS)
 
+    def _get_top_level_structure(self) -> str:
+        """
+        Get a summary of the repository's top-level directory structure for LLM analysis.
+
+        Returns a formatted string showing top-level directories with basic info
+        about their contents (file counts, subdirectory counts, etc.).
+        """
+        lines = []
+        lines.append(f"Repository: {self.repo_root.name}")
+        lines.append("")
+
+        # List top-level items
+        top_level_items = []
+        for item in sorted(self.repo_root.iterdir()):
+            if item.name.startswith(".") and item.name not in [".claude", ".github"]:
+                continue  # Skip hidden files except .claude and .github
+            if self._should_skip(str(item)):
+                continue
+            if self._is_git_ignored(item.name):
+                continue
+
+            if item.is_dir():
+                # Count files and subdirectories
+                try:
+                    py_files = len(list(item.glob("*.py")))
+                    go_files = len(list(item.glob("*.go")))
+                    js_files = len(list(item.glob("*.js")) + list(item.glob("*.ts")))
+                    sh_files = len(list(item.glob("*.sh")))
+                    subdirs = len([d for d in item.iterdir() if d.is_dir()])
+                    has_readme = (item / "README.md").exists()
+
+                    info_parts = []
+                    if py_files > 0:
+                        info_parts.append(f"{py_files} .py")
+                    if go_files > 0:
+                        info_parts.append(f"{go_files} .go")
+                    if js_files > 0:
+                        info_parts.append(f"{js_files} .js/.ts")
+                    if sh_files > 0:
+                        info_parts.append(f"{sh_files} .sh")
+                    if subdirs > 0:
+                        info_parts.append(f"{subdirs} subdirs")
+                    if has_readme:
+                        info_parts.append("has README")
+
+                    info = ", ".join(info_parts) if info_parts else "empty or other"
+                    top_level_items.append(f"  {item.name}/ ({info})")
+
+                    # Show first-level subdirectories
+                    subdir_names = []
+                    for subitem in sorted(item.iterdir()):
+                        if subitem.is_dir() and not subitem.name.startswith("."):
+                            if not self._should_skip(str(subitem)):
+                                subdir_names.append(subitem.name)
+                    if subdir_names:
+                        preview = subdir_names[:10]
+                        more = (
+                            f" ...+{len(subdir_names) - 10} more" if len(subdir_names) > 10 else ""
+                        )
+                        top_level_items.append(f"    subdirs: {', '.join(preview)}{more}")
+
+                except PermissionError:
+                    top_level_items.append(f"  {item.name}/ (permission denied)")
+            else:
+                # It's a file
+                top_level_items.append(f"  {item.name}")
+
+        lines.extend(top_level_items)
+        return "\n".join(lines)
+
+    def _discover_feature_directories_with_llm(self) -> list[str]:
+        """
+        Use LLM to analyze repository structure and identify feature-containing directories.
+
+        This replaces hardcoded directory lists with intelligent discovery. The LLM
+        analyzes the repo structure and returns a list of directories that likely
+        contain features/services/tools.
+
+        Returns:
+            List of directory paths (relative to repo root) to scan for features
+        """
+        repo_structure = self._get_top_level_structure()
+
+        prompt = f"""Analyze this repository structure and identify directories that contain features.
+
+# Repository Structure
+
+{repo_structure}
+
+# Task
+
+Identify ALL directories that likely contain user-facing features, services, tools, or libraries.
+
+## What ARE Feature Directories?
+
+Feature directories contain one or more of:
+- Backend services (API endpoints, microservices)
+- CLI tools or scripts users can run
+- Libraries/packages with public APIs
+- Configuration systems
+- Deployment tools
+- Development utilities
+- Build systems
+- Testing frameworks/utilities (not individual test files)
+
+## What are NOT Feature Directories?
+
+- Generated code directories (genfiles/, genproto/, gengraphql/)
+- Third-party/vendor code (third_party/, vendor/, node_modules/)
+- Build output directories
+- Documentation-only directories (docs/ with only .md files and no code)
+- Pure test directories that only contain tests (tests/, test/)
+
+## Repository Patterns to Recognize
+
+Different repos organize features differently:
+- **Monorepo with services**: `services/<service-name>/` each is a feature
+- **Go monorepo**: `pkg/<package>/` and `cmd/<command>/` are features
+- **Python project**: Top-level modules or `src/<module>/` are features
+- **Dev tools repo**: `tools/`, `scripts/`, `bin/` contain tools/features
+- **Container project**: Directories with Dockerfiles or systemd units
+
+## Output Format
+
+Return ONLY a JSON array of directory paths (relative to repo root).
+Include directories at the RIGHT level - the feature unit level, not too coarse (entire repo)
+and not too fine (every subdirectory).
+
+For a monorepo with services like `services/foo/`, `services/bar/`, return:
+["services/foo", "services/bar"]
+NOT just ["services"] (too coarse) or ["services/foo/handlers", "services/foo/models"] (too fine)
+
+For shared libraries in `pkg/`, return each package:
+["pkg/auth", "pkg/database", "pkg/utils"]
+
+For development tools, include them:
+["dev/linters", "dev/tools", "scripts"]
+
+```json
+["path/to/feature1", "path/to/feature2", ...]
+```
+
+If truly no feature directories found, return: `[]`
+"""
+
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, "discover-directories")
+
+        if success and json_content and isinstance(json_content, list):
+            # Validate that returned paths are strings and directories exist
+            valid_dirs = []
+            for item in json_content:
+                if isinstance(item, str):
+                    dir_path = self.repo_root / item
+                    if dir_path.exists() and dir_path.is_dir():
+                        valid_dirs.append(item)
+                    else:
+                        # Try without trailing slash
+                        clean_path = item.rstrip("/")
+                        dir_path = self.repo_root / clean_path
+                        if dir_path.exists() and dir_path.is_dir():
+                            valid_dirs.append(clean_path)
+            return valid_dirs
+
+        if error:
+            print(f"    Warning: LLM directory discovery failed: {error}")
+
+        # Fallback: try stdout parsing
+        success_fb, stdout, _ = self._run_llm_prompt(prompt, "discover-directories-fallback")
+        if success_fb and stdout.strip():
+            # Parse JSON from stdout
+            json_match = re.search(r"\[[\s\S]*\]", stdout)
+            if json_match:
+                try:
+                    dirs = json.loads(json_match.group())
+                    if isinstance(dirs, list):
+                        valid_dirs = []
+                        for item in dirs:
+                            if isinstance(item, str):
+                                clean_path = item.rstrip("/")
+                                dir_path = self.repo_root / clean_path
+                                if dir_path.exists() and dir_path.is_dir():
+                                    valid_dirs.append(clean_path)
+                        return valid_dirs
+                except json.JSONDecodeError:
+                    pass
+
+        return []
+
+    def _discover_feature_directories_heuristically(self) -> list[str]:
+        """
+        Discover feature directories using heuristics (fallback when LLM unavailable).
+
+        Looks for common patterns in repository structure:
+        - Directories with README.md
+        - Directories with main.py, main.go, or index.js
+        - Directories under common parent names (services/, pkg/, cmd/, tools/, etc.)
+        """
+        feature_dirs = []
+
+        # Common parent directory patterns
+        common_parents = [
+            "services",
+            "pkg",
+            "cmd",
+            "tools",
+            "scripts",
+            "bin",
+            "host-services",
+            "jib-container",
+            "dev",
+            "internal",
+            "src",
+            "lib",
+            "apps",
+            "packages",
+            "modules",
+        ]
+
+        # Check for common parent directories
+        for parent_name in common_parents:
+            parent_path = self.repo_root / parent_name
+            if parent_path.exists() and parent_path.is_dir():
+                if not self._is_git_ignored(parent_name):
+                    # Add each subdirectory as a potential feature
+                    for subdir in parent_path.iterdir():
+                        if subdir.is_dir() and not subdir.name.startswith("."):
+                            rel_path = f"{parent_name}/{subdir.name}"
+                            if not self._is_git_ignored(rel_path):
+                                feature_dirs.append(rel_path)
+
+        # Also check for standalone feature directories at root
+        for item in self.repo_root.iterdir():
+            if item.is_dir() and not item.name.startswith("."):
+                if item.name not in common_parents:
+                    if not self._is_git_ignored(item.name):
+                        # Check if it looks like a feature (has README or source files)
+                        has_readme = (item / "README.md").exists()
+                        has_source = (
+                            any(item.glob("*.py"))
+                            or any(item.glob("*.go"))
+                            or any(item.glob("*.js"))
+                        )
+                        if has_readme or has_source:
+                            feature_dirs.append(item.name)
+
+        return feature_dirs
+
     def scan_directory_structure(self) -> dict[str, list[Path]]:
         """
-        Scan the repository DEEPLY to find ALL potential feature directories.
+        Scan the repository to find ALL potential feature directories.
 
-        This method is now UNBOUNDED - it recursively discovers all directories
-        that look like they contain features. A directory is considered a
-        "feature directory" if it:
-        1. Contains Python files (.py) with main() or __main__
-        2. Contains shell scripts (.sh)
-        3. Contains a README.md (indicates standalone component)
-        4. Is a leaf directory with source files (no further subdirectories with source)
+        This method now uses LLM-based discovery to intelligently identify
+        feature-containing directories in any repository structure. No more
+        hardcoded directory lists!
+
+        The process:
+        1. Ask LLM to analyze repo structure and identify feature directories
+        2. Fall back to heuristics if LLM unavailable
+        3. Recursively scan each identified directory for source files
 
         Returns:
             Dict mapping directory paths to lists of relevant files
@@ -1593,6 +1825,8 @@ class RepoAnalyzer:
 
             # Check for source files at THIS level (not recursively)
             has_py = any(dir_path.glob("*.py"))
+            has_go = any(dir_path.glob("*.go"))
+            has_js = any(dir_path.glob("*.js")) or any(dir_path.glob("*.ts"))
             has_sh = any(dir_path.glob("*.sh"))
             has_readme = (dir_path / "README.md").exists()
             has_md_files = any(dir_path.glob("*.md"))
@@ -1606,6 +1840,8 @@ class RepoAnalyzer:
                 "node_modules",
                 "tests",
                 "test",
+                "testdata",
+                "vendor",
             ]
 
             # It's a feature directory if:
@@ -1614,14 +1850,15 @@ class RepoAnalyzer:
             # 3. Has markdown files in .claude directories (commands, hooks, rules)
             if has_readme:
                 return True
-            if (has_py or has_sh) and not is_internal and is_likely_feature_dir:
+            if (has_py or has_go or has_js or has_sh) and not is_internal and is_likely_feature_dir:
                 return True
             return bool(has_md_files and ".claude" in str(dir_path))
 
         def collect_files(dir_path: Path) -> list[Path]:
             """Collect all relevant source files from a directory."""
             files = []
-            for pattern in ["*.py", "*.sh", "*.md"]:
+            # Support more file types for different codebases
+            for pattern in ["*.py", "*.go", "*.js", "*.ts", "*.sh", "*.md"]:
                 for f in dir_path.rglob(pattern):
                     # Skip files that match hardcoded patterns or are git-ignored
                     if self._should_skip(str(f)):
@@ -1667,22 +1904,34 @@ class RepoAnalyzer:
                 if item.is_dir() and not self._should_skip(str(item)):
                     scan_recursively(item, depth + 1, max_depth)
 
-        # Scan root directories recursively
-        for root_dir in self.FEATURE_ROOT_DIRECTORIES:
-            base_path = self.repo_root / root_dir
+        # Step 1: Discover feature directories using LLM or heuristics
+        print("  Discovering feature directories...")
+        if self.use_llm:
+            discovered_dirs = self._discover_feature_directories_with_llm()
+            if not discovered_dirs:
+                print("    LLM discovery returned empty, falling back to heuristics...")
+                discovered_dirs = self._discover_feature_directories_heuristically()
+        else:
+            discovered_dirs = self._discover_feature_directories_heuristically()
+
+        print(f"    Discovered {len(discovered_dirs)} root directories to scan")
+        for d in discovered_dirs[:20]:  # Show first 20
+            print(f"      - {d}")
+        if len(discovered_dirs) > 20:
+            print(f"      ... and {len(discovered_dirs) - 20} more")
+
+        # Step 2: Scan each discovered directory recursively
+        for dir_path in discovered_dirs:
+            base_path = self.repo_root / dir_path
             scan_recursively(base_path)
 
-        # Also scan specific directories that might be missed
-        for specific_dir in self.SPECIFIC_FEATURE_DIRECTORIES:
-            base_path = self.repo_root / specific_dir
-            scan_recursively(base_path)
-
-        # Check for standalone scripts at repo root
-        for pattern in ["*.py", "*.sh"]:
+        # Step 3: Check for standalone scripts at repo root
+        for pattern in ["*.py", "*.go", "*.sh"]:
             for script in self.repo_root.glob(pattern):
                 if not self._should_skip(str(script)):
-                    key = str(script.relative_to(self.repo_root))
-                    feature_dirs[key] = [script]
+                    if not self._is_git_ignored(script.name):
+                        key = str(script.relative_to(self.repo_root))
+                        feature_dirs[key] = [script]
 
         return feature_dirs
 
