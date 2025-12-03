@@ -579,3 +579,34 @@ feature-analyzer weekly-analyze --days 7
 ```
 
 **Last Updated:** 2025-12-02
+
+### Utilities (Auto-detected)
+
+#### Confluence Doc Discoverer **[implemented]** **[needs review]**
+- **Description**: Tool providing confluence doc discoverer functionality
+- **Implementation**:
+  - `host-services/analysis/confluence-doc-discoverer/confluence-doc-discoverer.py`
+
+#### Repo Onboarding **[implemented]** **[needs review]**
+- **Description**: Tool providing repo onboarding functionality
+- **Documentation**: [host-services/analysis/repo-onboarding/README.md](host-services/analysis/repo-onboarding/README.md) 
+- **Implementation**:
+  - `host-services/analysis/repo-onboarding/docs-index-updater.py`
+
+#### Context Sync **[implemented]** **[needs review]**
+- **Description**: Tool providing context sync functionality
+- **Documentation**: [host-services/sync/context-sync/README.md](host-services/sync/context-sync/README.md) 
+- **Implementation**:
+  - `host-services/sync/context-sync/context-sync.py`
+
+#### Config **[implemented]** **[needs review]**
+- **Description**: Tool providing config functionality
+- **Documentation**: [config/README.md](config/README.md) 
+- **Implementation**:
+  - `config/host_config.py`
+
+#### Host Services **[implemented]** **[needs review]**
+- **Description**: Unit tests for LLM Inefficiency Detector (Phase 2)
+- **Implementation**:
+  - `tests/host_services/test_inefficiency_detector.py`
+
