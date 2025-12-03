@@ -100,7 +100,11 @@ RUN chmod +x /opt/jib-runtime/jib-container/bin/* 2>/dev/null || true && \
 # Install jib-container and shared as pip packages
 # These provide importable modules: claude (from jib-container) and beads, enrichment,
 # jib_logging, notifications, text_utils (from shared)
-RUN pip3 install --no-cache-dir -e /opt/jib-runtime/jib-container/ -e /opt/jib-runtime/shared/
+# Debug: Show what files exist before pip install
+RUN ls -la /opt/jib-runtime/ && \
+    ls -la /opt/jib-runtime/jib-container/ && \
+    ls -la /opt/jib-runtime/shared/ && \
+    pip3 install --no-cache-dir /opt/jib-runtime/jib-container/ /opt/jib-runtime/shared/
 
 # Create tmp directory in image (not mounted - container-only scratch space)
 RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
