@@ -483,19 +483,373 @@ Timers:
         self.notify(message)
         return CommandResult(success=True, message=message)
 
+    # ========== ANALYSIS TOOLS ==========
+
+    def _get_bin_dir(self) -> Path:
+        """Get the bin directory with executable scripts."""
+        return self.script_dir / "bin"
+
+    def run_beads_analyzer(
+        self, days: int = 7, force: bool = False, skip_claude: bool = False
+    ) -> CommandResult:
+        """Run the Beads integration analyzer.
+
+        Args:
+            days: Number of days to analyze (default: 7)
+            force: Force run even if recently run
+            skip_claude: Skip Claude-powered AI analysis for faster results
+        """
+        self.log(f"Running Beads analyzer (days={days}, force={force})")
+
+        script = self._get_bin_dir() / "beads-analyzer"
+        if not script.exists():
+            message = f"❌ Beads analyzer not found: {script}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        cmd = [str(script), "--days", str(days)]
+        if force:
+            cmd.append("--force")
+        if skip_claude:
+            cmd.append("--skip-claude")
+
+        code, stdout, stderr = self._run_command(cmd, timeout=600)
+
+        if code == 0:
+            message = f"✅ Beads analyzer completed\n\n{stdout}"
+        else:
+            message = f"❌ Beads analyzer failed\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+
+        self.notify(message, title="📊 Beads Analyzer")
+        return CommandResult(success=code == 0, message=message)
+
+    def run_github_watcher(self) -> CommandResult:
+        """Run the GitHub watcher to check for PR activity."""
+        self.log("Running GitHub watcher")
+
+        script = self._get_bin_dir() / "github-watcher"
+        if not script.exists():
+            message = f"❌ GitHub watcher not found: {script}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        # Run with --once flag to do a single check
+        code, stdout, stderr = self._run_command([str(script), "--once"], timeout=300)
+
+        if code == 0:
+            message = f"✅ GitHub watcher completed\n\n{stdout}"
+        else:
+            message = f"❌ GitHub watcher failed\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+
+        self.notify(message, title="👀 GitHub Watcher")
+        return CommandResult(success=code == 0, message=message)
+
+    def run_feature_analyzer(
+        self, adr_path: str | None = None, dry_run: bool = False
+    ) -> CommandResult:
+        """Run the feature analyzer to sync documentation with ADRs.
+
+        Args:
+            adr_path: Path to specific ADR file (optional)
+            dry_run: Show what would be updated without making changes
+        """
+        self.log(f"Running feature analyzer (adr={adr_path}, dry_run={dry_run})")
+
+        script = self._get_bin_dir() / "feature-analyzer"
+        if not script.exists():
+            message = f"❌ Feature analyzer not found: {script}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        cmd = [str(script)]
+        if adr_path:
+            cmd.extend(["sync-docs", "--adr", adr_path])
+        if dry_run:
+            cmd.append("--dry-run")
+
+        code, stdout, stderr = self._run_command(cmd, timeout=300)
+
+        if code == 0:
+            message = f"✅ Feature analyzer completed\n\n{stdout}"
+        else:
+            message = f"❌ Feature analyzer failed\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+
+        self.notify(message, title="📝 Feature Analyzer")
+        return CommandResult(success=code == 0, message=message)
+
+    def run_index_generator(self) -> CommandResult:
+        """Run the index generator to create codebase indexes."""
+        self.log("Running index generator")
+
+        script = self._get_bin_dir() / "index-generator"
+        if not script.exists():
+            message = f"❌ Index generator not found: {script}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        code, stdout, stderr = self._run_command([str(script)], timeout=600)
+
+        if code == 0:
+            message = f"✅ Index generator completed\n\n{stdout}"
+        else:
+            message = f"❌ Index generator failed\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+
+        self.notify(message, title="🔍 Index Generator")
+        return CommandResult(success=code == 0, message=message)
+
+    def run_doc_generator(self) -> CommandResult:
+        """Run the documentation generator."""
+        self.log("Running doc generator")
+
+        script = self._get_bin_dir() / "generate-docs"
+        if not script.exists():
+            message = f"❌ Doc generator not found: {script}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        code, stdout, stderr = self._run_command([str(script)], timeout=600)
+
+        if code == 0:
+            message = f"✅ Doc generator completed\n\n{stdout}"
+        else:
+            message = f"❌ Doc generator failed\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+
+        self.notify(message, title="📚 Doc Generator")
+        return CommandResult(success=code == 0, message=message)
+
+    def run_inefficiency_report(self) -> CommandResult:
+        """Run the weekly inefficiency report generator."""
+        self.log("Running inefficiency report")
+
+        script = self._get_bin_dir() / "inefficiency-report"
+        if not script.exists():
+            message = f"❌ Inefficiency report not found: {script}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        code, stdout, stderr = self._run_command([str(script)], timeout=600)
+
+        if code == 0:
+            message = f"✅ Inefficiency report completed\n\n{stdout}"
+        else:
+            message = f"❌ Inefficiency report failed\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+
+        self.notify(message, title="📈 Inefficiency Report")
+        return CommandResult(success=code == 0, message=message)
+
+    def run_spec_enricher(self, spec_path: str) -> CommandResult:
+        """Run the spec enricher to add documentation links.
+
+        Args:
+            spec_path: Path to the spec file to enrich
+        """
+        self.log(f"Running spec enricher (spec={spec_path})")
+
+        script = self._get_bin_dir() / "spec-enricher"
+        if not script.exists():
+            message = f"❌ Spec enricher not found: {script}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        if not spec_path:
+            message = "❌ spec_path is required for spec enricher"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        code, stdout, stderr = self._run_command([str(script), spec_path], timeout=300)
+
+        if code == 0:
+            message = f"✅ Spec enricher completed\n\n{stdout}"
+        else:
+            message = f"❌ Spec enricher failed\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+
+        self.notify(message, title="🔗 Spec Enricher")
+        return CommandResult(success=code == 0, message=message)
+
+    def _validate_parameters(self, function_name: str, parameters: dict) -> tuple[bool, str, dict]:
+        """Validate and sanitize parameters for a function.
+
+        Args:
+            function_name: Name of the function being called
+            parameters: Raw parameters from the LLM
+
+        Returns:
+            Tuple of (is_valid, error_message, sanitized_params)
+        """
+        sanitized = {}
+
+        # Parameter validation rules for each function
+        validation_rules = {
+            "jib_logs": {
+                "lines": {"type": int, "min": 1, "max": 1000, "default": 50},
+            },
+            "service_status": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+            },
+            "service_restart": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+            },
+            "service_start": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+            },
+            "service_stop": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+            },
+            "service_logs": {
+                "service_name": {"type": str, "required": True, "pattern": r"^[\w\-\.]+$"},
+                "lines": {"type": int, "min": 1, "max": 1000, "default": 50},
+            },
+            "run_beads_analyzer": {
+                "days": {"type": int, "min": 1, "max": 365, "default": 7},
+                "force": {"type": bool, "default": False},
+                "skip_claude": {"type": bool, "default": False},
+            },
+            "run_feature_analyzer": {
+                "adr_path": {"type": str, "pattern": r"^[\w\-\./]+$", "default": None},
+                "dry_run": {"type": bool, "default": False},
+            },
+            "run_spec_enricher": {
+                "spec_path": {"type": str, "required": True, "pattern": r"^[\w\-\./]+$"},
+            },
+        }
+
+        rules = validation_rules.get(function_name, {})
+
+        import re
+
+        for param_name, rule in rules.items():
+            value = parameters.get(param_name, rule.get("default"))
+
+            # Check required parameters
+            if rule.get("required") and value in (None, ""):
+                return False, f"Missing required parameter: {param_name}", {}
+
+            # Skip validation if no value and not required
+            if value is None:
+                sanitized[param_name] = None
+                continue
+
+            # Type coercion and validation
+            expected_type = rule.get("type")
+            try:
+                if expected_type == int:
+                    value = int(value)
+                    if "min" in rule and value < rule["min"]:
+                        value = rule["min"]
+                    if "max" in rule and value > rule["max"]:
+                        value = rule["max"]
+                elif expected_type == bool:
+                    if isinstance(value, str):
+                        value = value.lower() in ("true", "yes", "1")
+                    else:
+                        value = bool(value)
+                elif expected_type == str:
+                    value = str(value)
+                    # Validate against pattern if specified
+                    if "pattern" in rule and value:
+                        if not re.match(rule["pattern"], value):
+                            return (
+                                False,
+                                f"Invalid format for {param_name}: {value}",
+                                {},
+                            )
+            except (ValueError, TypeError) as e:
+                return False, f"Invalid value for {param_name}: {e}", {}
+
+            sanitized[param_name] = value
+
+        # Copy through any parameters without validation rules (use defaults)
+        for param_name, value in parameters.items():
+            if param_name not in sanitized:
+                sanitized[param_name] = value
+
+        return True, "", sanitized
+
+    def execute_function(self, function_name: str, parameters: dict | None = None) -> CommandResult:
+        """Execute a host function by name with parameters.
+
+        This method is called by the message categorizer when it determines
+        that a message is requesting a specific host function.
+
+        Args:
+            function_name: Name of the function to execute
+            parameters: Dictionary of parameters for the function
+
+        Returns:
+            CommandResult with success status and message
+        """
+        parameters = parameters or {}
+        self.log(f"Executing function: {function_name} with params: {parameters}")
+
+        # Validate and sanitize parameters
+        is_valid, error_msg, sanitized_params = self._validate_parameters(function_name, parameters)
+        if not is_valid:
+            message = f"❌ Parameter validation failed: {error_msg}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        parameters = sanitized_params
+
+        # Map function names to methods
+        function_map = {
+            # Container management
+            "jib_status": lambda: self.jib_status(),
+            "jib_restart": lambda: self.jib_restart(),
+            "jib_rebuild": lambda: self.jib_rebuild(),
+            "jib_logs": lambda: self.jib_logs(int(parameters.get("lines", 50))),
+            # Service management
+            "service_list": lambda: self.list_services(),
+            "service_status": lambda: self.service_status(parameters.get("service_name", "")),
+            "service_restart": lambda: self.service_restart(parameters.get("service_name", "")),
+            "service_start": lambda: self.service_start(parameters.get("service_name", "")),
+            "service_stop": lambda: self.service_stop(parameters.get("service_name", "")),
+            "service_logs": lambda: self.service_logs(
+                parameters.get("service_name", ""), int(parameters.get("lines", 50))
+            ),
+            # Analysis tools
+            "run_beads_analyzer": lambda: self.run_beads_analyzer(
+                days=int(parameters.get("days", 7)),
+                force=parameters.get("force", False),
+                skip_claude=parameters.get("skip_claude", False),
+            ),
+            "run_github_watcher": lambda: self.run_github_watcher(),
+            "run_feature_analyzer": lambda: self.run_feature_analyzer(
+                adr_path=parameters.get("adr_path"),
+                dry_run=parameters.get("dry_run", False),
+            ),
+            "run_index_generator": lambda: self.run_index_generator(),
+            "run_doc_generator": lambda: self.run_doc_generator(),
+            "run_inefficiency_report": lambda: self.run_inefficiency_report(),
+            "run_spec_enricher": lambda: self.run_spec_enricher(parameters.get("spec_path", "")),
+            # Help
+            "show_help": lambda: self.show_help(),
+        }
+
+        if function_name not in function_map:
+            message = f"❌ Unknown function: {function_name}\n\nSend 'help' for available commands"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
+        try:
+            return function_map[function_name]()
+        except Exception as e:
+            message = f"❌ Error executing {function_name}: {e}"
+            self.notify(message)
+            return CommandResult(success=False, message=message)
+
     # ========== HELP ==========
 
     def show_help(self) -> CommandResult:
         """Show available commands."""
         help_text = """jib Remote Control Commands
 
-Container:
+**Container Management:**
   /jib status          - Check container status
   /jib restart         - Restart container
   /jib rebuild         - Rebuild and restart container
-  /jib logs            - Show recent container logs
+  /jib logs [lines]    - Show recent container logs
 
-Services:
+**Service Management:**
   /service list                    - List all jib services
   /service status <name>           - Check service status
   /service restart <name>          - Restart a service
@@ -503,10 +857,23 @@ Services:
   /service stop <name>             - Stop a service
   /service logs <name> [lines]     - Show service logs
 
-Examples:
+**Analysis Tools (can use natural language):**
+  - "analyze beads" / "beads health" - Run Beads task analyzer
+  - "check github" / "check PRs" - Run GitHub watcher
+  - "sync docs" / "feature analyzer" - Sync docs with ADRs
+  - "generate index" - Generate codebase indexes
+  - "generate docs" - Generate documentation
+  - "inefficiency report" - Run weekly inefficiency report
+
+**Examples:**
   /jib restart
   /service restart slack-notifier.service
-  /service logs slack-receiver.service 100"""
+  "Run the beads analyzer for the last 30 days"
+  "Check if there are any GitHub PR comments to respond to"
+  "What's the status of the jib container?"
+
+**Note:** You can also just describe what you want in natural language,
+and Claude will categorize your request and execute the appropriate function."""
 
         self.notify(help_text, title="📖 Help")
         return CommandResult(success=True, message=help_text, title="Help")

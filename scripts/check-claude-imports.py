@@ -84,11 +84,14 @@ def check_pyproject_for_anthropic(pyproject_path: Path) -> list[tuple[int, str]]
         content = pyproject_path.read_text()
         lines = content.split("\n")
 
-        # Look for anthropic in dependencies
-        anthropic_pattern = r'^\s*"anthropic'  # "anthropic>=..." or similar
+        # Look for anthropic in dependencies - handles various TOML formats:
+        # - "anthropic>=0.39.0"  (double quotes)
+        # - 'anthropic>=0.39.0'  (single quotes)
+        # - anthropic>=0.39.0   (no quotes, array syntax)
+        anthropic_pattern = r'^\s*["\']?anthropic\b'
 
         for i, line in enumerate(lines, start=1):
-            if re.match(anthropic_pattern, line):
+            if re.search(anthropic_pattern, line):
                 violations.append((i, line.strip()))
 
     except Exception as e:
