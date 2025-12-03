@@ -544,7 +544,9 @@ Timers:
         self.notify(message, title="👀 GitHub Watcher")
         return CommandResult(success=code == 0, message=message)
 
-    def run_feature_analyzer(self, adr_path: str | None = None, dry_run: bool = False) -> CommandResult:
+    def run_feature_analyzer(
+        self, adr_path: str | None = None, dry_run: bool = False
+    ) -> CommandResult:
         """Run the feature analyzer to sync documentation with ADRs.
 
         Args:
@@ -687,7 +689,6 @@ Timers:
             "jib_restart": lambda: self.jib_restart(),
             "jib_rebuild": lambda: self.jib_rebuild(),
             "jib_logs": lambda: self.jib_logs(int(parameters.get("lines", 50))),
-
             # Service management
             "service_list": lambda: self.list_services(),
             "service_status": lambda: self.service_status(parameters.get("service_name", "")),
@@ -695,10 +696,8 @@ Timers:
             "service_start": lambda: self.service_start(parameters.get("service_name", "")),
             "service_stop": lambda: self.service_stop(parameters.get("service_name", "")),
             "service_logs": lambda: self.service_logs(
-                parameters.get("service_name", ""),
-                int(parameters.get("lines", 50))
+                parameters.get("service_name", ""), int(parameters.get("lines", 50))
             ),
-
             # Analysis tools
             "run_beads_analyzer": lambda: self.run_beads_analyzer(
                 days=int(parameters.get("days", 7)),
@@ -714,7 +713,6 @@ Timers:
             "run_doc_generator": lambda: self.run_doc_generator(),
             "run_inefficiency_report": lambda: self.run_inefficiency_report(),
             "run_spec_enricher": lambda: self.run_spec_enricher(parameters.get("spec_path", "")),
-
             # Help
             "show_help": lambda: self.show_help(),
         }

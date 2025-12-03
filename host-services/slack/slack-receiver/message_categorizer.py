@@ -24,6 +24,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
 from jib_logging import get_logger
 
+
 logger = get_logger("message-categorizer")
 
 
@@ -83,7 +84,6 @@ HOST_FUNCTIONS = {
         "triggers": ["container logs", "jib logs", "show logs"],
         "parameters": {"lines": "Number of log lines to fetch (default: 50)"},
     },
-
     # Service management
     "service_list": {
         "description": "List all jib-related systemd services and timers",
@@ -118,7 +118,6 @@ HOST_FUNCTIONS = {
             "lines": "Number of log lines (default: 50)",
         },
     },
-
     # Analysis tools (host-side scripts)
     "run_beads_analyzer": {
         "description": "Run the Beads task tracking analyzer to check task health metrics",
@@ -158,7 +157,6 @@ HOST_FUNCTIONS = {
         "triggers": ["enrich spec", "add doc links"],
         "parameters": {"spec_path": "Path to spec file"},
     },
-
     # Help
     "show_help": {
         "description": "Show available commands and functions",
@@ -250,13 +248,16 @@ class MessageCategorizer:
         if self._client is None and self.api_key:
             try:
                 import anthropic
+
                 self._client = anthropic.Anthropic(api_key=self.api_key)
             except ImportError:
                 logger.error("anthropic package not installed - run: pip install anthropic")
                 return None
         return self._client
 
-    def _categorize_with_heuristics(self, text: str, is_thread_reply: bool = False) -> CategorizationResult:
+    def _categorize_with_heuristics(
+        self, text: str, is_thread_reply: bool = False
+    ) -> CategorizationResult:
         """Fallback categorization using simple heuristics when API is unavailable.
 
         Args:

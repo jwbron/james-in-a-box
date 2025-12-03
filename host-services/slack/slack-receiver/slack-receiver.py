@@ -23,11 +23,11 @@ from typing import Any
 
 # Add shared directory to path for jib_logging module
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from host_command_handler import HostCommandHandler
 from jib_logging import get_logger
 
 # Import message categorizer and host command handler
 from message_categorizer import MessageCategorizer, MessageCategory
-from host_command_handler import HostCommandHandler
 
 
 # Check for required dependencies
