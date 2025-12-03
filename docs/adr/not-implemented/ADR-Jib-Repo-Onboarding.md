@@ -40,6 +40,10 @@ When jib (the LLM agent running in jib-container) works on a repository, it need
 
 The [LLM Documentation Index Strategy ADR](../implemented/ADR-LLM-Documentation-Index-Strategy.md) established patterns for documentation indexes within the james-in-a-box repository. This ADR extends those patterns to **any repository** jib works on.
 
+**Relationship to Feature Analyzer Documentation Sync ADR:**
+
+The [Feature Analyzer Documentation Sync ADR](../implemented/ADR-Feature-Analyzer-Documentation-Sync.md) establishes the feature-analyzer component and its documentation sync workflows. This ADR leverages those capabilities for onboarding external repositories.
+
 **Relationship to Context Sync Strategy:**
 
 The Confluence Documentation Discovery feature (Section 0 below) relies on pre-synced Confluence data at `~/context-sync/confluence/`. This aligns with the organization's context sync strategy where Confluence is bulk-synced (custom sync) while GitHub and JIRA use MCP for on-demand access. Understanding this context helps explain why Confluence docs are pre-synced rather than fetched on-demand.
@@ -50,8 +54,21 @@ Index generation could leverage different LLM providers for different tasks - fo
 
 | ADR | Scope | Focus |
 |-----|-------|-------|
-| LLM Documentation Index Strategy | james-in-a-box | Self-documentation of jib infrastructure |
+| [LLM Documentation Index Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | james-in-a-box | Self-documentation of jib infrastructure |
+| [Feature Analyzer Documentation Sync](../implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | james-in-a-box | Feature detection and documentation sync workflows |
 | **This ADR** | Any target repo | Onboarding jib to external repositories |
+
+### Core Tooling
+
+This ADR leverages three key tools from the `host-services/analysis/` directory:
+
+| Tool | Location | Purpose |
+|------|----------|---------|
+| **[feature-analyzer](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/feature-analyzer)** | `host-services/analysis/feature-analyzer/` | Discovers features, generates `FEATURES.md`, creates feature documentation |
+| **[doc-generator](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/doc-generator)** | `host-services/analysis/doc-generator/` | Generates documentation from code analysis, detects documentation drift |
+| **[index-generator](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/index-generator)** | `host-services/analysis/index-generator/` | Creates `codebase.json`, `patterns.json`, `dependencies.json` indexes |
+
+These tools work together in the onboarding workflow to create comprehensive LLM-friendly documentation.
 
 ### What We're Deciding
 
@@ -78,16 +95,16 @@ This ADR establishes:
 
 | Aspect | Approach |
 |--------|----------|
-| **Index Location** | `<target-repo>/docs/generated/` |
-| **Feature Docs Location** | `<target-repo>/docs/features/` |
+| **Index Location** | `<target-repo>/docs/generated/` (local-only, gitignored) |
+| **Feature Docs Location** | `<target-repo>/docs/features/` (checked into git) |
 | **Trigger** | Explicit onboarding task or command |
-| **Phase 1 Output** | `external-docs.json` (Confluence discovery) |
-| **Phase 2 Output** | `FEATURES.md`, `docs/features/*.md` (feature analysis) |
-| **Phase 3 Output** | `codebase.json`, `patterns.json`, `dependencies.json` (indexes) |
+| **Phase 1 Output** | `external-docs.json` (Confluence discovery, local-only) |
+| **Phase 2 Output** | `FEATURES.md`, `docs/features/*.md` (feature analysis, checked in) |
+| **Phase 3 Output** | `codebase.json`, `patterns.json`, `dependencies.json` (indexes, local-only) |
 | **Confluence Discovery** | Auto-scan `~/context-sync/confluence/` for org-specific docs |
 | **Feature Discovery** | Auto-analyze codebase for feature-to-source mapping |
-| **Delivery** | PR to target repo |
-| **Maintenance** | GitHub Actions workflow for auto-regeneration |
+| **Delivery** | PR to target repo (for checked-in files only) |
+| **Maintenance** | Local regeneration (indexes), GitHub Actions (feature docs drift detection) |
 
 ## Implementation Details
 
@@ -387,28 +404,30 @@ python3 ~/tools/index-generator/index-generator.py \
 
 ### 4. GitHub Actions Workflow
 
-**Generated `.github/workflows/check-generated-indexes.yml`:**
+Since JSON index files are generated locally and not checked into git (see [Local-Only Generation Pattern](#local-only-generation-pattern-important)), the GitHub Actions workflow focuses on **documentation drift detection** rather than index regeneration.
+
+**Generated `.github/workflows/check-feature-docs.yml`:**
 
 ```yaml
-name: Check Generated Indexes
+name: Check Feature Documentation
 
 on:
   push:
     branches: [main, master]
     paths:
       - '**/*.py'
-      - '**/requirements*.txt'
-      - '**/pyproject.toml'
+      - 'docs/FEATURES.md'
+      - 'docs/features/**'
   pull_request:
     branches: [main, master]
     paths:
       - '**/*.py'
-      - '**/requirements*.txt'
-      - '**/pyproject.toml'
+      - 'docs/FEATURES.md'
+      - 'docs/features/**'
 
 jobs:
-  check-indexes:
-    name: Verify Generated Indexes
+  check-feature-docs:
+    name: Verify Feature Documentation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -418,32 +437,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install index generator
+      - name: Check for documentation drift
         run: |
-          # Download index generator from james-in-a-box (pinned to release tag)
-          # SECURITY: Pin to specific version and verify checksum
-          GENERATOR_VERSION="v1.0.0"  # Update when new versions are released
-          EXPECTED_SHA256="<checksum-to-be-determined>"  # Update with actual checksum
+          # Use doc-generator's drift detection
+          # This checks that FEATURES.md references valid file paths
+          echo "Checking that documented features reference existing code..."
 
-          curl -sL "https://raw.githubusercontent.com/jwbron/james-in-a-box/${GENERATOR_VERSION}/host-services/analysis/index-generator/index-generator.py" \
-            -o /tmp/index-generator.py
+          # Extract file paths from FEATURES.md and verify they exist
+          grep -oP '`[^`]+\.(py|ts|js|go)`' docs/FEATURES.md | tr -d '`' | while read path; do
+            if [ ! -f "$path" ]; then
+              echo "❌ Documentation drift: $path referenced in FEATURES.md but doesn't exist"
+              exit 1
+            fi
+          done
 
-          # Verify integrity (uncomment when checksum is available)
-          # echo "${EXPECTED_SHA256}  /tmp/index-generator.py" | sha256sum -c -
-
-      - name: Regenerate indexes
-        run: python3 /tmp/index-generator.py --project . --output docs/generated
-
-      - name: Check for differences
-        run: |
-          if git diff --exit-code docs/generated/; then
-            echo "✅ Generated indexes are up to date"
-          else
-            echo "❌ Generated indexes are out of date!"
-            echo "Run: python3 index-generator.py --project . --output docs/generated"
-            exit 1
-          fi
+          echo "✅ Feature documentation paths are valid"
 ```
+
+**Note:** For full drift detection capabilities, use the [doc-generator](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/doc-generator) tool's `drift-detector.py` which provides comprehensive analysis of documentation-to-code synchronization.
 
 ## Onboarding Workflow
 
@@ -606,6 +617,41 @@ This multi-layered approach gives LLM agents comprehensive understanding of both
 
 ## Index Generation
 
+### Local-Only Generation Pattern (IMPORTANT)
+
+**Index files should NOT be checked into git** for external repositories due to high merge conflict rates. Instead, they are generated locally on each developer's machine.
+
+This pattern follows the same approach used for jib's own indexes:
+
+**Why local-only?**
+1. **Merge conflict avoidance:** JSON index files change frequently and create painful merge conflicts
+2. **Freshness guarantee:** Locally-generated indexes always reflect the current codebase state
+3. **Reduced noise:** No automated commits cluttering git history
+
+**How it works:**
+
+```bash
+# Developer runs this locally (or via pre-commit hook / IDE task):
+python3 ~/tools/index-generator/index-generator.py \
+    --project . \
+    --output docs/generated
+
+# The docs/generated/ directory is gitignored
+# Each developer's local copy is always fresh
+```
+
+**Gitignore entry:**
+```gitignore
+# LLM indexes - generated locally, not tracked
+docs/generated/codebase.json
+docs/generated/patterns.json
+docs/generated/dependencies.json
+```
+
+**Note:** `FEATURES.md` and `docs/features/*.md` documentation files ARE checked into git, as they contain human-readable narrative documentation that benefits from version control and review. Only the machine-readable JSON indexes are generated locally.
+
+This approach aligns with the [index-generator](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/index-generator) tool design and mirrors how jib handles its own documentation indexes.
+
 ### Supported Languages
 
 **Phase 1 (Initial):**
@@ -642,37 +688,52 @@ The generator detects common patterns based on naming conventions:
 
 ## Auto-Regeneration
 
-### Trigger Conditions
+### Local Index Regeneration
 
-The CI workflow triggers when:
+Since index files are **not checked into git** (see [Local-Only Generation Pattern](#local-only-generation-pattern-important)), regeneration happens locally:
 
-1. **Python files change** (`**/*.py`)
-2. **Dependency files change** (`requirements*.txt`, `pyproject.toml`)
-3. **Generator script changes** (if bundled in repo)
+**When to regenerate indexes:**
+1. **After pulling changes:** Run regeneration to get fresh indexes
+2. **Before starting work:** Ensure indexes reflect current state
+3. **Optionally via pre-commit hook:** Automatic refresh on each commit
 
-### Failure Handling
-
-When indexes are out of date:
-
-1. **CI fails** with clear message
-2. **Instructions provided** on how to regenerate
-3. **PR author** responsible for regenerating before merge
-
-### Manual Regeneration
+**Local regeneration command:**
 
 ```bash
-# From repo root
-# SECURITY: Pin to specific release version (not 'main')
-GENERATOR_VERSION="v1.0.0"
+# From repo root - using index-generator directly
+python3 ~/tools/index-generator/index-generator.py \
+    --project . \
+    --output docs/generated
 
-curl -sL "https://raw.githubusercontent.com/jwbron/james-in-a-box/${GENERATOR_VERSION}/host-services/analysis/index-generator/index-generator.py" \
-  -o /tmp/index-generator.py
-python3 /tmp/index-generator.py --project . --output docs/generated
-git add docs/generated/
-git commit -m "Regenerate codebase indexes"
+# Or using the bundled script (if installed):
+jib-regenerate-indexes
 ```
 
-**Future Enhancement:** Consider publishing index-generator as a pip package or reusable GitHub Action to improve security and versioning.
+### Feature Documentation Maintenance
+
+Feature documentation (`FEATURES.md`, `docs/features/*.md`) IS checked into git and benefits from CI:
+
+**Trigger conditions for drift detection:**
+1. **Python files change** (`**/*.py`)
+2. **Feature docs change** (`docs/FEATURES.md`, `docs/features/**`)
+
+**When drift is detected:**
+1. CI warns about stale documentation
+2. Use [feature-analyzer](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/feature-analyzer) to update: `feature-analyzer full-repo --repo-root .`
+3. Commit updated feature documentation
+
+### Integration with jib Workflow
+
+For jib containers, index regeneration is integrated into the startup flow:
+
+```bash
+# On container start, jib auto-regenerates indexes for the target repo
+python3 ~/tools/index-generator/index-generator.py \
+    --project ~/khan/target-repo \
+    --output ~/khan/target-repo/docs/generated
+```
+
+This ensures jib always has fresh indexes without relying on git-tracked files.
 
 ## PR Workflow
 
@@ -942,7 +1003,23 @@ This separation of concerns enables future optimization where different model ca
 
 ## References
 
-- [LLM Documentation Index Strategy ADR](../implemented/ADR-LLM-Documentation-Index-Strategy.md) - Foundation patterns
+### Related ADRs
+
+| ADR | Relationship |
+|-----|--------------|
+| [LLM Documentation Index Strategy](../implemented/ADR-LLM-Documentation-Index-Strategy.md) | Foundation patterns for documentation indexes, multi-agent workflows |
+| [Feature Analyzer Documentation Sync](../implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Feature detection, FEATURES.md generation, documentation sync workflows |
+
+### Core Tooling
+
+| Tool | Purpose | Documentation |
+|------|---------|---------------|
+| [feature-analyzer](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/feature-analyzer) | Feature discovery and `FEATURES.md` generation | See README in tool directory |
+| [doc-generator](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/doc-generator) | Documentation generation and drift detection | See README in tool directory |
+| [index-generator](https://github.com/jwbron/james-in-a-box/tree/main/host-services/analysis/index-generator) | Codebase index generation (local-only) | See README in tool directory |
+
+### External References
+
 - [llms.txt Standard](https://llmstxt.org/) - LLM-friendly content standard
 - [GitHub Actions Documentation](https://docs.github.com/en/actions) - CI workflow reference
 - [RepoAgent Paper (arXiv:2402.16667)](https://arxiv.org/abs/2402.16667) - LLM-powered repository documentation
@@ -950,6 +1027,6 @@ This separation of concerns enables future optimization where different model ca
 
 ---
 
-**Last Updated:** 2025-12-02
-**Next Review:** 2026-01-02 (Monthly)
+**Last Updated:** 2025-12-03
+**Next Review:** 2026-01-03 (Monthly)
 **Status:** Proposed - Awaiting Review
