@@ -56,7 +56,6 @@ github_sync:
 # - Comments and suggestions (sent to user, not posted to GitHub)
 #
 # Authentication: Uses GITHUB_TOKEN (PAT) - no GitHub App needed for read-only
-readable_repos: []
-# Example:
-#   - khan/webapp
-#   - khan/mobile
+readable_repos:
+  - khan/webapp
+
