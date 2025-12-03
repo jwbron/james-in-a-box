@@ -75,9 +75,7 @@ def _is_running_in_container() -> bool:
     # Secondary: Check environment variable
     import os
 
-    if os.environ.get("JIB_CONTAINER") == "1":
-        return True
-    return False
+    return os.environ.get("JIB_CONTAINER") == "1"
 
 
 # Lazy-loaded run_claude for container-side use
@@ -257,7 +255,7 @@ After writing the file, confirm by saying "JSON written to {output_file}" but do
 
     try:
         run_claude = _get_run_claude()
-        result = run_claude(prompt=enhanced_prompt, cwd=repo_root, stream=False)
+        run_claude(prompt=enhanced_prompt, cwd=repo_root, stream=False)
 
         # Read the JSON from the output file
         json_content = None
