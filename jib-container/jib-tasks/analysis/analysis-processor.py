@@ -1540,14 +1540,12 @@ def handle_repo_onboarding(context: dict) -> int:
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
 
-    # Import the analysis tools
-    # - Feature analyzer is in jib-container/jib-tasks/analysis/ (uses run_claude directly)
-    # - Other tools are still in host-services/ (they don't need jib_exec)
+    # Import the analysis tools from jib-container/jib-tasks/analysis/
+    # All utilities are now in the utilities/ subdirectory (moved from host-services/)
     jib_path = Path.home() / "khan" / "james-in-a-box"
-    sys.path.insert(0, str(jib_path / "jib-container" / "jib-tasks" / "analysis"))  # feature_analyzer
-    sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "confluence-doc-discoverer"))
-    sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "index-generator"))
-    sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "repo-onboarding"))
+    analysis_path = jib_path / "jib-container" / "jib-tasks" / "analysis"
+    sys.path.insert(0, str(analysis_path))  # feature_analyzer
+    sys.path.insert(0, str(analysis_path / "utilities"))  # confluence_doc_discoverer, index_generator, etc.
 
     result_data = {
         "phases_completed": [],
@@ -1607,28 +1605,20 @@ def handle_repo_onboarding(context: dict) -> int:
             print("  Skipping Confluence discovery")
         else:
             try:
-                # Import dynamically to avoid issues if module not found
-                from importlib.util import module_from_spec, spec_from_file_location
+                from confluence_doc_discoverer import ConfluenceDocDiscoverer
 
-                conf_module_path = jib_path / "host-services" / "analysis" / "confluence-doc-discoverer" / "confluence-doc-discoverer.py"
-                if conf_module_path.exists():
-                    spec = spec_from_file_location("confluence_discoverer", conf_module_path)
-                    if spec and spec.loader:
-                        conf_module = module_from_spec(spec)
-                        spec.loader.exec_module(conf_module)
-
-                        discoverer = conf_module.ConfluenceDocDiscoverer(
-                            confluence_dir=confluence_path,
-                            repo_name=repo_name,
-                            output_path=output_dir / "external-docs.json",
-                            public_repo=public_repo,
-                        )
-                        discoverer.discover()
-                        discoverer.save_results()
-                        print(f"  ✓ Found {len(discoverer.discovered_docs)} relevant docs")
-                        result_data["phases_completed"].append("confluence_discovery")
-                else:
-                    print(f"  Confluence discoverer not found at {conf_module_path}")
+                discoverer = ConfluenceDocDiscoverer(
+                    confluence_dir=confluence_path,
+                    repo_name=repo_name,
+                    output_path=output_dir / "external-docs.json",
+                    public_repo=public_repo,
+                )
+                discoverer.discover()
+                discoverer.save_results()
+                print(f"  ✓ Found {len(discoverer.discovered_docs)} relevant docs")
+                result_data["phases_completed"].append("confluence_discovery")
+            except ImportError as e:
+                print(f"  ⚠ Confluence discoverer not available: {e}")
             except Exception as e:
                 print(f"  ⚠ Confluence discovery failed: {e}")
 
@@ -1664,36 +1654,29 @@ def handle_repo_onboarding(context: dict) -> int:
         print("\n=== Phase 3: Index Generation ===")
 
         try:
-            from importlib.util import module_from_spec, spec_from_file_location
+            from index_generator import CodebaseIndexer
 
-            idx_module_path = jib_path / "host-services" / "analysis" / "index-generator" / "index-generator.py"
-            if idx_module_path.exists():
-                spec = spec_from_file_location("index_generator", idx_module_path)
-                if spec and spec.loader:
-                    idx_module = module_from_spec(spec)
-                    spec.loader.exec_module(idx_module)
+            indexer = CodebaseIndexer(repo_path)
+            indexer.analyze()
 
-                    indexer = idx_module.CodebaseIndexer(repo_path)
-                    indexer.analyze()
+            # Save indexes
+            indexes_generated = []
+            for name, data in [
+                ("codebase.json", indexer.codebase_index),
+                ("patterns.json", indexer.patterns_index),
+                ("dependencies.json", indexer.dependencies_index),
+            ]:
+                if data:
+                    idx_path = output_dir / name
+                    with open(idx_path, "w") as f:
+                        json.dump(data, f, indent=2, default=str)
+                    indexes_generated.append(name)
 
-                    # Save indexes
-                    indexes_generated = []
-                    for name, data in [
-                        ("codebase.json", indexer.codebase_index),
-                        ("patterns.json", indexer.patterns_index),
-                        ("dependencies.json", indexer.dependencies_index),
-                    ]:
-                        if data:
-                            idx_path = output_dir / name
-                            with open(idx_path, "w") as f:
-                                json.dump(data, f, indent=2, default=str)
-                            indexes_generated.append(name)
-
-                    result_data["indexes_generated"] = indexes_generated
-                    print(f"  ✓ Generated {len(indexes_generated)} indexes: {', '.join(indexes_generated)}")
-                    result_data["phases_completed"].append("index_generation")
-            else:
-                print(f"  Index generator not found at {idx_module_path}")
+            result_data["indexes_generated"] = indexes_generated
+            print(f"  ✓ Generated {len(indexes_generated)} indexes: {', '.join(indexes_generated)}")
+            result_data["phases_completed"].append("index_generation")
+        except ImportError as e:
+            print(f"  ⚠ Index generator not available: {e}")
         except Exception as e:
             print(f"  ⚠ Index generation failed: {e}")
 
@@ -1703,28 +1686,21 @@ def handle_repo_onboarding(context: dict) -> int:
         print("\n=== Phase 4: Documentation Index Updates ===")
 
         try:
-            from importlib.util import module_from_spec, spec_from_file_location
+            from docs_index_updater import DocsIndexUpdater, IndexConfig
 
-            updater_module_path = jib_path / "host-services" / "analysis" / "repo-onboarding" / "docs-index-updater.py"
-            if updater_module_path.exists():
-                spec = spec_from_file_location("docs_index_updater", updater_module_path)
-                if spec and spec.loader:
-                    updater_module = module_from_spec(spec)
-                    spec.loader.exec_module(updater_module)
-
-                    features_md = repo_path / "docs" / "FEATURES.md"
-                    config = updater_module.IndexConfig(
-                        repo_root=repo_path,
-                        generated_dir=output_dir,
-                        features_md=features_md if features_md.exists() else None,
-                        dry_run=False,
-                    )
-                    updater = updater_module.DocsIndexUpdater(config)
-                    updater.run()
-                    print("  ✓ Updated docs/index.md")
-                    result_data["phases_completed"].append("docs_index_update")
-            else:
-                print(f"  Docs index updater not found at {updater_module_path}")
+            features_md = repo_path / "docs" / "FEATURES.md"
+            config = IndexConfig(
+                repo_root=repo_path,
+                generated_dir=output_dir,
+                features_md=features_md if features_md.exists() else None,
+                dry_run=False,
+            )
+            updater = DocsIndexUpdater(config)
+            updater.run()
+            print("  ✓ Updated docs/index.md")
+            result_data["phases_completed"].append("docs_index_update")
+        except ImportError as e:
+            print(f"  ⚠ Docs index updater not available: {e}")
         except Exception as e:
             print(f"  ⚠ Docs index update failed: {e}")
 
