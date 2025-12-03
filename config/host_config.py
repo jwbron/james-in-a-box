@@ -147,7 +147,7 @@ class HostConfig:
         # Group secrets by service
         groups = {
             "Slack": ["SLACK_TOKEN", "SLACK_APP_TOKEN"],
-            "GitHub": ["GITHUB_TOKEN"],
+            "GitHub": ["GITHUB_TOKEN", "GITHUB_READONLY_TOKEN"],
             "Confluence": [
                 "CONFLUENCE_BASE_URL",
                 "CONFLUENCE_USERNAME",
@@ -270,6 +270,19 @@ class HostConfig:
     @property
     def github_token(self) -> str:
         return self.get_secret("GITHUB_TOKEN")
+
+    @property
+    def github_readonly_token(self) -> str:
+        """Get the read-only GitHub token for monitoring external repos.
+
+        This token is used for repos in `readable_repos` where jib doesn't
+        have write access. Falls back to github_token if not set.
+        """
+        token = self.get_secret("GITHUB_READONLY_TOKEN")
+        if token:
+            return token
+        # Fall back to main token if readonly not configured
+        return self.github_token
 
     @property
     def confluence_token(self) -> str:

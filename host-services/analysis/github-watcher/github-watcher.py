@@ -63,6 +63,7 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 """
 
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -76,10 +77,14 @@ from pathlib import Path
 import yaml
 
 
-# Add shared directory to path for jib_logging
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+# Add project root to path for shared modules and config
+_project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(_project_root / "shared"))
+sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
+
+from config.repo_config import get_github_token_for_repo
 
 
 # Initialize logger
@@ -278,7 +283,9 @@ def save_state(state: dict, update_last_run: bool = False):
         json.dump(state, f, indent=2)
 
 
-def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
+def gh_json(
+    args: list[str], repo: str | None = None, token: str | None = None
+) -> dict | list | None:
     """Run gh CLI command and return JSON output with rate limit handling.
 
     Implements exponential backoff on rate limit errors and basic throttling
@@ -286,7 +293,11 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
 
     Args:
         args: Arguments to pass to gh CLI
-        repo: Optional repository context for logging
+        repo: Optional repository context for logging and token selection
+        token: Optional explicit GitHub token (overrides auto-selection)
+
+    If repo is provided and token is not, automatically selects the appropriate
+    token based on repo access level (writable vs readable).
     """
     # Basic throttling between calls
     time.sleep(RATE_LIMIT_DELAY)
@@ -296,6 +307,16 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
     if repo:
         log_ctx["repo"] = repo
 
+    # Auto-select token based on repo if not explicitly provided
+    if token is None and repo:
+        token = get_github_token_for_repo(repo)
+
+    # Prepare environment with token if available
+    env = None
+    if token:
+        env = os.environ.copy()
+        env["GH_TOKEN"] = token
+
     for attempt in range(RATE_LIMIT_MAX_RETRIES):
         try:
             result = subprocess.run(
@@ -304,6 +325,7 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
                 text=True,
                 check=True,
                 timeout=60,
+                env=env,
             )
             return json.loads(result.stdout)
         except subprocess.CalledProcessError as e:
@@ -354,14 +376,32 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
     return None
 
 
-def gh_text(args: list[str]) -> str | None:
+def gh_text(args: list[str], repo: str | None = None, token: str | None = None) -> str | None:
     """Run gh CLI command and return text output with rate limit handling.
 
     Implements exponential backoff on rate limit errors and basic throttling
     between calls to prevent hitting rate limits.
+
+    Args:
+        args: Arguments to pass to gh CLI
+        repo: Optional repository context for token selection
+        token: Optional explicit GitHub token (overrides auto-selection)
+
+    If repo is provided and token is not, automatically selects the appropriate
+    token based on repo access level (writable vs readable).
     """
     # Basic throttling between calls
     time.sleep(RATE_LIMIT_DELAY)
+
+    # Auto-select token based on repo if not explicitly provided
+    if token is None and repo:
+        token = get_github_token_for_repo(repo)
+
+    # Prepare environment with token if available
+    env = None
+    if token:
+        env = os.environ.copy()
+        env["GH_TOKEN"] = token
 
     for attempt in range(RATE_LIMIT_MAX_RETRIES):
         try:
@@ -371,6 +411,7 @@ def gh_text(args: list[str]) -> str | None:
                 text=True,
                 check=True,
                 timeout=120,
+                env=env,
             )
             return result.stdout
         except subprocess.CalledProcessError as e:
@@ -1417,7 +1458,7 @@ def check_pr_for_review_response(
     )
 
     # Get PR diff for context
-    diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
+    diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo], repo=repo)
 
     return {
         "type": "pr_review_response",
@@ -1544,7 +1585,7 @@ def check_prs_for_review(
             )
 
         # Get PR diff
-        diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
+        diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo], repo=repo)
 
         results.append(
             {
