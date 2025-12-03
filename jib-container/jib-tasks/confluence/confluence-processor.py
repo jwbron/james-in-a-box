@@ -17,7 +17,13 @@ from pathlib import Path
 
 
 # Import shared Claude runner
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
+# Works for both development (symlink resolves to jib-tasks/confluence/) and
+# runtime (/opt/jib-runtime/jib-container/bin/) by searching upward
+_script = Path(__file__).resolve()
+for _i in range(len(_script.parents)):
+    if (_script.parents[_i] / "shared").is_dir():
+        sys.path.insert(0, str(_script.parents[_i] / "shared"))
+        break
 from claude import run_claude
 
 
