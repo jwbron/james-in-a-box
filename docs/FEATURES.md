@@ -579,3 +579,152 @@ feature-analyzer weekly-analyze --days 7
 ```
 
 **Last Updated:** 2025-12-02
+
+### Communication (Auto-detected)
+
+#### Slack Notification Library **[implemented]**
+- **Description**: File-based Slack notification system enabling notifications from containerized environments to Slack. Writes markdown files to a shared directory with support for threading, multiple notification types, and GitHub-specific convenience methods.
+- **Implementation**:
+  - `shared/notifications/__init__.py`
+  - `shared/notifications/base.py`
+  - `shared/notifications/types.py`
+  - `shared/notifications/slack.py`
+
+
+### Configuration (Auto-detected)
+
+#### Claude Agent Rules System **[implemented]**
+- **Description**: Comprehensive rule system configuring Claude Code's behavior within the jib container. Rules are combined into CLAUDE.md at container startup, following Anthropic's official format for providing context and instructions.
+- **Implementation**:
+  - `jib-container/claude-rules/README.md`
+
+#### Host Configuration System **[implemented]**
+- **Description**: Unified configuration loader consolidating all host-side settings under ~/.config/jib/. Provides secure handling of secrets separate from non-secret settings with migration support from legacy locations.
+- **Implementation**:
+  - `config/host_config.py`
+  - `config/README.md`
+
+#### Repository Access Configuration **[implemented]**
+- **Description**: Single source of truth for GitHub repository access control, defining which repos jib can read from or write to. Provides API and CLI for querying permissions and determining appropriate GitHub tokens.
+- **Implementation**:
+  - `config/repo_config.py`
+  - `config/README.md`
+
+#### Model Pricing Configuration **[implemented]**
+- **Description**: Provides current pricing information for LLM models (Claude Opus, Sonnet, Haiku). Includes cost calculation utilities and CLI tools for querying pricing, used by the inefficiency detector and usage analytics.
+- **Implementation**:
+  - `config/model_pricing.py`
+
+
+### Container Infrastructure (Auto-detected)
+
+#### Bin Symlinks Checker **[implemented]**
+- **Description**: Lint check ensuring all container executables in jib-tasks/ and jib-tools/ have corresponding symlinks in jib-container/bin/. Prevents 'executable not found' errors.
+- **Implementation**:
+  - `scripts/check-bin-symlinks.py`
+
+
+### Context Management (Auto-detected)
+
+#### Beads Task Tracking System **[implemented]**
+- **Description**: Persistent task tracking system that enables memory across container restarts. Provides CLI commands for creating, updating, searching, and completing tasks with proper labeling conventions, essential for maintaining context in ephemeral container environments.
+- **Implementation**:
+  - `shared/beads/__init__.py`
+  - `shared/beads/pr_context.py`
+
+
+### Core Architecture (Auto-detected)
+
+#### Structured Logging Library **[implemented]**
+- **Description**: Core structured logging library providing JSON output compatible with GCP Cloud Logging, OpenTelemetry trace context, and human-readable console output. Supports automatic environment detection and file rotation.
+- **Implementation**:
+  - `shared/jib_logging/__init__.py`
+  - `shared/jib_logging/logger.py`
+  - `shared/jib_logging/formatters.py`
+
+#### Tool Wrappers Framework **[implemented]**
+- **Description**: Framework for wrapping CLI tools with automatic logging, timing capture, and context propagation. Provides base class and data structures for consistent tool invocation tracking.
+- **Implementation**:
+  - `shared/jib_logging/wrappers/__init__.py`
+  - `shared/jib_logging/wrappers/base.py`
+
+
+### Custom Commands (Auto-detected)
+
+#### Claude Custom Commands **[implemented]**
+- **Description**: Slash commands for Claude Code providing quick access to common operations within the jib container environment.
+- **Implementation**:
+  - `jib-container/claude-commands/README.md`
+
+
+### Documentation System (Auto-detected)
+
+#### Confluence Documentation Discoverer **[implemented]**
+- **Description**: CLI tool that scans pre-synced Confluence documentation to find organization-specific documents relevant to a target repository. Categorizes documents, calculates relevance confidence scores, and outputs discovered docs for docs/index.md integration.
+- **Implementation**:
+  - `host-services/analysis/confluence-doc-discoverer/confluence-doc-discoverer.py`
+  - `host-services/analysis/confluence-doc-discoverer/setup.sh`
+
+#### Repository Onboarding System **[implemented]**
+- **Description**: Full repository onboarding orchestration for adding any repository to Jib's autonomous workflow. Runs all onboarding phases: Confluence discovery, feature analysis, index generation, and documentation index updates.
+- **Implementation**:
+  - `host-services/analysis/repo-onboarding/jib-internal-devtools-setup`
+  - `host-services/analysis/repo-onboarding/README.md`
+  - `host-services/analysis/repo-onboarding/setup.sh`
+
+#### Task/Spec Documentation Enricher Library **[implemented]**
+- **Description**: Library that automatically enriches task descriptions with relevant documentation context. Parses docs/index.md to discover documentation, extracts keywords from task text, and returns relevant doc references, code examples, and patterns.
+- **Implementation**:
+  - `shared/enrichment/__init__.py`
+  - `shared/enrichment/enricher.py`
+
+
+### Security Features (Auto-detected)
+
+#### Claude/Anthropic Import Checker **[implemented]**
+- **Description**: Lint check ensuring Claude/Anthropic modules are never imported in host-services code. Enforces security boundary between host services and container processes to prevent prompt injection escalation.
+- **Implementation**:
+  - `scripts/check-claude-imports.py`
+
+#### Container Path Pattern Linter **[implemented]**
+- **Description**: Detects problematic sys.path patterns that fail in container environments (JIB001). Catches bugs where scripts incorrectly construct sys.path using dynamic repo names.
+- **Implementation**:
+  - `scripts/check-container-paths.py`
+
+#### GitHub CLI Write Operation Checker **[implemented]**
+- **Description**: Lint check ensuring gh CLI write operations are not used directly in host-services. Write operations must go through jib container to use the correct GitHub App identity.
+- **Implementation**:
+  - `scripts/check-gh-cli-usage.py`
+
+
+### Utilities (Auto-detected)
+
+#### Service Failure Notification System **[implemented]**
+- **Description**: Systemd service template that automatically sends Slack notifications when other services fail. Integrates with systemd's OnFailure= directive to provide real-time failure alerts.
+- **Implementation**:
+  - `host-services/utilities/service-failure-notify/setup.sh`
+  - `host-services/utilities/service-failure-notify/service-failure-notify@.service`
+
+#### Bin Symlink Management **[implemented]**
+- **Description**: Centralized directory of convenient symlinks to commonly used commands. The maintain-bin-symlinks tool automatically creates and updates these symlinks for container management and analysis tools.
+- **Implementation**:
+  - `bin/README.md`
+
+#### Git Repository Utilities **[implemented]**
+- **Description**: Shared functions for working with git repositories from host-side services, including parsing git remote URLs to extract owner/repo information for both HTTPS and SSH formats.
+- **Implementation**:
+  - `host-services/shared/git_utils.py`
+
+#### Claude CLI Runner Library **[implemented]**
+- **Description**: Python library providing unified interface for running Claude CLI in non-interactive mode with streaming output support. Allows programmatic invocation with full tool and filesystem access.
+- **Implementation**:
+  - `shared/claude/__init__.py`
+  - `shared/claude/runner.py`
+
+#### Text Utilities Library **[implemented]**
+- **Description**: Shared library providing common text processing functions including message chunking for API-friendly splits and YAML frontmatter parsing for extracting metadata from markdown files.
+- **Implementation**:
+  - `shared/text_utils/__init__.py`
+  - `shared/text_utils/chunking.py`
+  - `shared/text_utils/frontmatter.py`
+
