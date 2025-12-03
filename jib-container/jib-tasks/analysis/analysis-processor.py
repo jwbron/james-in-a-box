@@ -89,6 +89,7 @@ def get_default_branch(repo_path: Path) -> str:
     try:
         result = subprocess.run(
             ["git", "remote", "show", "origin"],
+            check=False,
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -105,6 +106,7 @@ def get_default_branch(repo_path: Path) -> str:
     try:
         result = subprocess.run(
             ["git", "branch", "-r"],
+            check=False,
             cwd=repo_path,
             capture_output=True,
             text=True,
