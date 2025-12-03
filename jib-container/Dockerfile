@@ -175,6 +175,8 @@ export PYTHONDONTWRITEBYTECODE=1
 export PYTHONUNBUFFERED=1
 # Disable Claude Code auto-update prompts (prevents interrupts in automation)
 export DISABLE_AUTOUPDATER=1
+# Set BEADS_DIR so bd can be run from any directory (no need to cd ~/beads first)
+export BEADS_DIR="${USER_HOME}/beads/.beads"
 
 # Configure git to commit as "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.name "jib"
