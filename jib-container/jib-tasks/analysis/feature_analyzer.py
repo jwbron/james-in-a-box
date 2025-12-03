@@ -3064,6 +3064,80 @@ If truly no features (empty directory, only tests), return: `[]`
             features.append(feature)
         return features
 
+    def _prefilter_duplicates(
+        self, features: list[DetectedFeature]
+    ) -> list[DetectedFeature]:
+        """
+        Remove obvious duplicates before LLM consolidation.
+
+        This speeds up consolidation by reducing the feature count locally
+        before sending to the LLM. Handles:
+        - Symlink duplicates (.claude/commands/* vs claude-commands/*)
+        - Exact name duplicates (keeps higher confidence version)
+        - Identical file path duplicates
+        """
+        if not features:
+            return []
+
+        # Track seen features by normalized name
+        seen_names: dict[str, DetectedFeature] = {}
+        # Track seen primary file paths
+        seen_files: set[str] = set()
+        filtered: list[DetectedFeature] = []
+
+        # Symlink path mappings (canonical -> symlink locations)
+        symlink_prefixes = {
+            ".claude/commands/": "claude-commands/",
+            ".claude/rules/": "claude-rules/",
+        }
+
+        for f in features:
+            # Normalize name for comparison
+            name_key = f.name.lower().strip()
+
+            # Check if this is a symlink duplicate
+            is_symlink_dup = False
+            if f.files:
+                for file_path in f.files:
+                    # Check if this file is in a symlink source directory
+                    for canonical, symlink in symlink_prefixes.items():
+                        if file_path.startswith(symlink):
+                            # This is from the symlink location - check if we have canonical
+                            canonical_path = file_path.replace(symlink, canonical, 1)
+                            if canonical_path in seen_files:
+                                is_symlink_dup = True
+                                break
+                        elif file_path.startswith(canonical):
+                            # This is canonical - mark it
+                            seen_files.add(file_path)
+                    if is_symlink_dup:
+                        break
+
+            if is_symlink_dup:
+                continue
+
+            # Check for exact name duplicates
+            if name_key in seen_names:
+                existing = seen_names[name_key]
+                if f.confidence <= existing.confidence:
+                    # Skip lower confidence duplicate
+                    continue
+                # Replace with higher confidence version
+                filtered = [x for x in filtered if x.name.lower().strip() != name_key]
+
+            # Check for identical primary file duplicates
+            if f.files:
+                primary_file = f.files[0]
+                if primary_file in seen_files and name_key not in seen_names:
+                    # Same file, different name - skip if we already have it
+                    continue
+                seen_files.add(primary_file)
+
+            seen_names[name_key] = f
+            filtered.append(f)
+
+        return filtered
+
     def _consolidate_features_with_llm(
         self, all_features: list[DetectedFeature]
     ) -> list[DetectedFeature]:
@@ -3073,6 +3147,16 @@ If truly no features (empty directory, only tests), return: `[]`
         This is the consolidation pass - given all raw features from individual
         directory analysis, produce a clean, deduplicated, well-organized list.
         """
+        if not all_features:
+            return []
+
+        # Pre-filter obvious duplicates locally before LLM call
+        original_count = len(all_features)
+        all_features = self._prefilter_duplicates(all_features)
+        filtered_count = len(all_features)
+        if original_count != filtered_count:
+            print(f"  Pre-filtered {original_count} → {filtered_count} features (removed {original_count - filtered_count} duplicates)")
+
         if not all_features:
             return []
 
