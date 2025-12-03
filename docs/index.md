@@ -70,6 +70,14 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 
 | Document | Description |
 |----------|-------------|
+| [Features Index](features/README.md) | Overview of all feature categories |
+| [Communication](features/communication.md) | Slack integration - notifier, receiver, notifications |
+| [Context Management](features/context-management.md) | Confluence, JIRA sync, Beads task tracking |
+| [GitHub Integration](features/github-integration.md) | PR monitoring, reviews, CI/CD automation |
+| [Self-Improvement](features/self-improvement.md) | Trace collection, inefficiency detection |
+| [Documentation System](features/documentation-system.md) | Feature analyzer, doc generator, drift detection |
+| [Container Infrastructure](features/container-infrastructure.md) | jib container, custom commands, rules |
+| [Utilities](features/utilities.md) | Helper tools, maintenance scripts, tokens |
 | [Workflow Context](features/workflow-context.md) | Workflow traceability - tracking which job generated each output |
 
 ### Analysis Reports
@@ -99,8 +107,9 @@ When working on specific tasks, consult these documents first:
 | **PR review automation** | [ADR: PR Review Agent](adr/not-implemented/ADR-Automated-PR-Review-Agent.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
 | **ADR research/generation** | [ADR Researcher](../host-services/analysis/adr-researcher/README.md) | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) |
-| **Feature discovery** | [Features - Source Mapping](FEATURES.md) | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) |
+| **Feature discovery** | [Features Index](features/README.md) | [FEATURES.md](FEATURES.md), [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) |
 | **Documentation sync** | [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) | [ADR: Feature Analyzer](adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md) |
+| **Finding helper scripts** | [Features Index](features/README.md) | Category-specific docs in `docs/features/` |
 | **Logging changes** | [ADR: Standardized Logging](adr/in-progress/ADR-Standardized-Logging-Interface.md) | [Log Persistence](reference/log-persistence.md) |
 | **LLM efficiency analysis** | [ADR: Inefficiency Reporting](adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | [Prompt Caching](reference/prompt-caching.md) |
 | **Beads integration** | [Beads Integration](development/beads-integration.md) | [Beads Task Tracking](reference/beads.md) |
@@ -139,4 +148,4 @@ See [Generated Indexes README](generated/README.md) for details on structure and
 ---
 
 *This index follows the [llms.txt](https://llmstxt.org/) convention for LLM-friendly documentation.*
-*Last updated: 2025-12-01*
+*Last updated: 2025-12-02*

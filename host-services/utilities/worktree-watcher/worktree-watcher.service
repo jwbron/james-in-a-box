@@ -2,6 +2,7 @@
 Description=JIB Worktree Watcher - Clean up orphaned git worktrees
 Documentation=file://%h/khan/james-in-a-box/host-services/utilities/worktree-watcher/README.md
 # No network needed - local git worktree operations only
+OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot

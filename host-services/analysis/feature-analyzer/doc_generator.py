@@ -27,10 +27,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 
-# Add host-services shared modules to path (for jib_exec)
-# NOTE: Host-side code must use jib_exec which invokes processors via jib --exec
-# because Claude CLI is only available inside the container.
+# Add shared modules to path for jib_exec
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+
+# Import shared utilities
+# NOTE: Host-services code must ALWAYS use jib_exec, never direct Claude calls.
+# The container_utils import is kept for backward compatibility but this code
+# should always route through jib_exec.
 from jib_exec import jib_exec
 
 
@@ -221,9 +224,8 @@ class DocGenerator:
                 mentions_adr = adr_slug in content
                 mentions_concepts = any(c.lower() in content for c in concepts[:5])
 
-                if mentions_adr or mentions_concepts:
-                    if doc_path not in affected_docs:
-                        affected_docs.append(doc_path)
+                if (mentions_adr or mentions_concepts) and doc_path not in affected_docs:
+                    affected_docs.append(doc_path)
 
         return affected_docs
 
@@ -260,19 +262,19 @@ Output ONLY the updated documentation content. Do not include any explanation or
 
     def _call_jib_for_generation(self, prompt: str, doc_path: Path) -> tuple[str, float]:
         """
-        Use jib container to generate documentation update via LLM.
+        Generate documentation update via LLM using jib_exec.
+
+        Uses jib_exec to call Claude via the container. Host-services code
+        must always route through jib_exec, never calling Claude directly.
 
         Returns (updated_content, confidence_score).
-
-        Uses jib_exec to invoke the container-side analysis processor,
-        which has access to Claude CLI. Host-side code cannot directly
-        call Claude (it's only available inside the container).
         """
         try:
             # Use jib_exec to run the analysis processor in the container
             # The processor handles the LLM call and returns JSON
+            # analysis-processor is in PATH via /opt/jib-runtime/bin
             result = jib_exec(
-                processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+                processor="analysis-processor",
                 task_type="llm_prompt",
                 context={
                     "prompt": prompt,

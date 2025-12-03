@@ -249,11 +249,8 @@ def launch_jib_analyzer(context_file: Path, interactive: bool = False, fix: bool
         f"/home/{os.environ['USER']}/sharing"
     )
 
-    # Container path for the analyzer script
-    container_analyzer = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/jib-tasks/github/pr-analyzer.py"
-
-    # Build command
-    cmd = [str(jib_script), "--exec", "python3", container_analyzer, container_context_path]
+    # Build command - pr-analyzer is in PATH inside the container via /opt/jib-runtime/bin
+    cmd = [str(jib_script), "--exec", "pr-analyzer", container_context_path]
 
     if fix:
         cmd.append("--fix")

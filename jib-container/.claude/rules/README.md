@@ -39,6 +39,11 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
   - GitHub PR context tracking
   - Integration with Beads
 
+- **jib-branding.md** - Attribution and identity (IMPORTANT)
+  - Commits/PRs must be attributed to "jib", not "Claude"
+  - NEVER include "Generated with Claude Code" branding
+  - GitHub comment sign-off format
+
 ### Khan Academy Standards
 
 - **khan-academy.md** - Tech stack and code standards

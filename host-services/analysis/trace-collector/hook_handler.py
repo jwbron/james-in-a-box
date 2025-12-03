@@ -10,14 +10,23 @@ Usage in ~/.claude/settings.json:
   "hooks": {
     "PostToolUse": [
       {
-        "type": "command",
-        "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
+          }
+        ]
       }
     ],
     "SessionEnd": [
       {
-        "type": "command",
-        "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
+          }
+        ]
       }
     ]
   }
@@ -27,11 +36,14 @@ Hook Input Format (JSON via stdin):
 
 PostToolUse:
 {
-    "session_id": "...",
+    "session_id": "abc123",
     "tool_name": "Grep",
     "tool_input": {"pattern": "...", "path": "..."},
-    "tool_result": {...},
-    "tool_use_id": "..."
+    "tool_response": {...},
+    "tool_use_id": "toolu_01ABC123...",
+    "hook_event_name": "PostToolUse",
+    "cwd": "/path/to/cwd",
+    "permission_mode": "default"
 }
 
 SessionEnd:
@@ -91,7 +103,8 @@ def handle_post_tool_use(hook_input: dict) -> dict:
     )
     tool_name = hook_input.get("tool_name", "unknown")
     tool_input = hook_input.get("tool_input", {})
-    tool_result = hook_input.get("tool_result")
+    # Claude Code uses "tool_response" not "tool_result"
+    tool_result = hook_input.get("tool_response") or hook_input.get("tool_result")
 
     # Get or create collector
     collector = get_or_create_collector(session_id)

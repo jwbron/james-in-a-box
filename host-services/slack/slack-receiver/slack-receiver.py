@@ -759,9 +759,6 @@ class SlackReceiver:
                 str(Path.home() / ".jib-sharing"), f"/home/{os.environ['USER']}/sharing"
             )
 
-            # Container path to processor script (james-in-a-box mounted at ~/khan/james-in-a-box/)
-            container_processor = f"/home/{os.environ['USER']}/khan/james-in-a-box/jib-container/jib-tasks/slack/incoming-processor.py"
-
             # Create log file for streaming Claude output
             logs_dir = Path.home() / ".jib-sharing" / "logs"
             logs_dir.mkdir(parents=True, exist_ok=True)
@@ -776,8 +773,9 @@ class SlackReceiver:
 
             # Execute in background but stream output to log file
             # Use text=True for string output instead of bytes
+            # incoming-processor is in PATH inside the container via /opt/jib-runtime/bin
             process = subprocess.Popen(
-                [str(jib_script), "--exec", "python3", container_processor, container_message_path],
+                [str(jib_script), "--exec", "incoming-processor", container_message_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,  # Text mode for string output

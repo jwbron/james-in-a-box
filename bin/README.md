@@ -2,23 +2,57 @@
 
 Convenient symlinks to commonly used commands.
 
+## Maintaining Symlinks
+
+Run `maintain-bin-symlinks` to automatically create/update all symlinks:
+
+```bash
+./maintain-bin-symlinks           # Apply changes
+./maintain-bin-symlinks --dry-run # Preview changes
+./maintain-bin-symlinks --verbose # Show all symlinks
+```
+
+Add new commands by editing the `SYMLINKS` array in `maintain-bin-symlinks`.
+
 ## Commands
 
-**Container:**
+### Container
+
 - `jib` - Start/manage jib container
 - `docker-setup.py` - Container setup (runs automatically)
-- `view-logs` - View container logs
+- `jib-logs` - View container logs
 
-**Documentation:**
-- `generate-docs` - Generate documentation from code patterns
+### Analysis Tools
+
+- `adr-researcher` - Research-based ADR workflow tool
+- `analyze-pr` - Analyze pull requests
+- `beads-analyzer` - Analyze beads task tracking metrics
 - `check-doc-drift` - Detect documentation drift from code
-- `adr-researcher` - Research-based ADR workflow tool (Phase 6)
-- `setup-doc-generator` - Install weekly doc generation timer
+- `feature-analyzer` - Sync documentation with implemented ADRs
+- `fix-doc-links` - Fix broken documentation links
+- `generate-docs` - Generate documentation from code patterns
+- `github-watcher` - Monitor GitHub for PR/issue activity
+- `index-generator` - Generate machine-readable codebase indexes
+- `inefficiency-report` - Generate weekly inefficiency reports
+- `query-index` - Query codebase indexes
+- `spec-enricher` - Enrich task specs with documentation links
 
-**Setup Scripts:**
+### Setup Scripts
+
+Install services/timers with these scripts:
+
+- `setup-beads-analyzer` - Install beads analyzer timer
+- `setup-doc-generator` - Install weekly doc generation timer
+- `setup-feature-analyzer` - Install feature analyzer watcher/timer
+- `setup-github-token-refresher` - Install GitHub token refresh service
+- `setup-github-watcher` - Install GitHub watcher timer
+- `setup-index-generator` - Install index generator timer
+- `setup-inefficiency-detector` - Install inefficiency reporter timer
 - `setup-slack-notifier` - Install Slack notifier service
 - `setup-slack-receiver` - Install Slack receiver service
-- `setup-conversation-analyzer` - Install conversation analyzer timer
+- `setup-spec-enricher` - Install spec enricher
+- `setup-trace-collector` - Install trace collector hooks
+- `setup-worktree-watcher` - Install worktree cleanup timer
 
 ## Note
 

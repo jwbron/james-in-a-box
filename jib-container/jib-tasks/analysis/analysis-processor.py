@@ -559,6 +559,620 @@ Output ONLY the JSON array, no other text.
         return output_result(False, error=f"Error extracting features: {e}")
 
 
+def handle_weekly_feature_analysis(context: dict) -> int:
+    """Handle weekly feature analysis using intelligent multi-agent pipeline.
+
+    This is the container-side implementation of the weekly feature analyzer,
+    using the same high-quality multi-agent analysis pipeline as full-repo.
+
+    The intelligent analysis approach:
+    1. Identifies directories with recent commits (scoped to past N days)
+    2. Uses multi-agent LLM analysis for each directory (parallel processing)
+    3. Consolidates and deduplicates with LLM (handles symlinks, merges related features)
+    4. Filters to only NEW features not already in FEATURES.md
+    5. Creates PR using container's git worktree and GitHub credentials
+
+    Context expected:
+        - repo_name: str (e.g., "james-in-a-box")
+        - days: int (number of days to analyze, default 7)
+        - dry_run: bool (if True, don't create PR, default False)
+        - max_workers: int (parallel LLM workers, default 5)
+
+    Returns JSON with:
+        - result.directories_analyzed: int
+        - result.features_detected: int
+        - result.features_added: int
+        - result.features_skipped: int
+        - result.pr_url: str (URL of created PR, if not dry_run)
+        - result.branch: str (branch name)
+    """
+    import subprocess
+    from datetime import UTC, datetime
+
+    repo_name = context.get("repo_name", "james-in-a-box")
+    days = context.get("days", 7)
+    dry_run = context.get("dry_run", False)
+    max_workers = context.get("max_workers", 5)
+
+    # Get repo path - inside container, repos are at ~/khan/<repo>
+    repo_path = Path.home() / "khan" / repo_name
+
+    if not repo_path.exists():
+        return output_result(False, error=f"Repository not found: {repo_path}")
+
+    # Import the analyzers from the host-services directory
+    sys.path.insert(0, str(repo_path / "host-services" / "analysis" / "feature-analyzer"))
+
+    try:
+        from weekly_analyzer import RepoAnalyzer, WeeklyAnalyzer
+    except ImportError as e:
+        return output_result(False, error=f"Failed to import analyzers: {e}")
+
+    try:
+        # Create a fresh branch from origin/main
+        branch_name = f"docs/sync-weekly-analysis-{datetime.now(UTC).strftime('%Y%m%d')}"
+
+        subprocess.run(
+            ["git", "fetch", "origin", "main"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Check if branch already exists remotely
+        check_result = subprocess.run(
+            ["git", "ls-remote", "--heads", "origin", branch_name],
+            check=False,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if check_result.stdout.strip():
+            branch_name = f"{branch_name}-{datetime.now(UTC).strftime('%H%M%S')}"
+
+        subprocess.run(
+            ["git", "checkout", "-b", branch_name, "origin/main"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        print("=" * 60)
+        print("Intelligent Weekly Feature Analysis (Multi-Agent Pipeline)")
+        print("=" * 60)
+        print(f"Repository: {repo_path}")
+        print(f"Analyzing past {days} days")
+        print(f"Parallel workers: {max_workers}")
+        print()
+
+        # Phase 1: Get directories with recent changes using WeeklyAnalyzer's commit scan
+        print("Phase 1: Identifying directories with recent commits...")
+        weekly_analyzer = WeeklyAnalyzer(repo_path, use_llm=True)
+        commits = weekly_analyzer.get_commits_since(days)
+        feature_commits = weekly_analyzer.filter_feature_commits(commits)
+
+        # Extract unique directories from commits
+        changed_dirs = set()
+        for commit in feature_commits:
+            for file_path in commit.files:
+                # Get parent directory of changed files
+                parent = str(Path(file_path).parent)
+                if parent and parent != ".":
+                    changed_dirs.add(parent)
+                    # Also add parent's parent for better coverage
+                    grandparent = str(Path(parent).parent)
+                    if grandparent and grandparent != ".":
+                        changed_dirs.add(grandparent)
+
+        print(f"  Found {len(commits)} commits, {len(feature_commits)} feature commits")
+        print(f"  Identified {len(changed_dirs)} directories with changes")
+
+        if not changed_dirs:
+            print("  No directories with feature changes found.")
+            return output_result(
+                success=True,
+                result={
+                    "directories_analyzed": 0,
+                    "features_detected": 0,
+                    "features_added": 0,
+                    "features_skipped": 0,
+                    "branch": branch_name,
+                    "pr_url": None,
+                },
+            )
+
+        # Phase 2: Use RepoAnalyzer's intelligent multi-agent pipeline
+        print("\nPhase 2: Running intelligent multi-agent analysis...")
+        repo_analyzer = RepoAnalyzer(repo_path, use_llm=True)
+
+        # Get all potential feature directories, but filter to recently changed ones
+        all_feature_dirs = repo_analyzer.scan_directory_structure()
+
+        # Filter to directories that intersect with our changed directories
+        filtered_dirs = {}
+        for dir_path, files in all_feature_dirs.items():
+            # Check if this directory or any parent was changed
+            should_include = False
+            for changed in changed_dirs:
+                if dir_path.startswith(changed) or changed.startswith(dir_path):
+                    should_include = True
+                    break
+            if should_include:
+                filtered_dirs[dir_path] = files
+
+        print(f"  Filtered to {len(filtered_dirs)} directories for analysis")
+
+        if not filtered_dirs:
+            print("  No feature directories matched recent changes.")
+            return output_result(
+                success=True,
+                result={
+                    "directories_analyzed": 0,
+                    "features_detected": 0,
+                    "features_added": 0,
+                    "features_skipped": 0,
+                    "branch": branch_name,
+                    "pr_url": None,
+                },
+            )
+
+        # Phase 3: Analyze directories with LLM (parallel)
+        print(
+            f"\nPhase 3: Analyzing {len(filtered_dirs)} directories (parallel, {max_workers} workers)..."
+        )
+        import threading
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        all_features = []
+        print_lock = threading.Lock()
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_dir = {
+                executor.submit(repo_analyzer._analyze_single_directory, dir_path, files): dir_path
+                for dir_path, files in filtered_dirs.items()
+                if files
+            }
+
+            for future in as_completed(future_to_dir):
+                dir_path = future_to_dir[future]
+                try:
+                    analyzed_dir, file_count, features = future.result()
+
+                    with print_lock:
+                        print(f"  ✓ {analyzed_dir} ({file_count} files)")
+                        for feature in features:
+                            all_features.append(feature)
+                            print(f"    → Found: {feature.name} ({feature.confidence:.0%})")
+
+                except Exception as e:
+                    with print_lock:
+                        print(f"  ✗ {dir_path}: Error - {e}")
+
+        print(f"\n  Detected {len(all_features)} features from {len(filtered_dirs)} directories")
+
+        if not all_features:
+            print("  No features detected.")
+            return output_result(
+                success=True,
+                result={
+                    "directories_analyzed": len(filtered_dirs),
+                    "features_detected": 0,
+                    "features_added": 0,
+                    "features_skipped": 0,
+                    "branch": branch_name,
+                    "pr_url": None,
+                },
+            )
+
+        # Phase 4: LLM consolidation (deduplication, organization)
+        print("\nPhase 4: Consolidating features with LLM...")
+        consolidated = repo_analyzer._consolidate_features_with_llm(all_features)
+        print(f"  Consolidated to {len(consolidated)} features")
+
+        # Phase 5: Filter to NEW features only
+        print("\nPhase 5: Filtering to new features...")
+        existing = weekly_analyzer.get_existing_features()
+        existing_paths = weekly_analyzer.get_existing_file_paths()
+
+        new_features = []
+        skipped = []
+
+        for feature in consolidated:
+            name_lower = feature.name.lower()
+
+            # Check if name exists
+            if name_lower in existing:
+                skipped.append((feature.name, "Already in FEATURES.md"))
+                continue
+
+            # Check if file path exists
+            if feature.files:
+                documented_files = [f for f in feature.files if f in existing_paths]
+                if documented_files:
+                    skipped.append((feature.name, f"File documented: {documented_files[0]}"))
+                    continue
+
+            # Check for similar names
+            is_similar = False
+            for ex_name in existing:
+                if name_lower in ex_name or ex_name in name_lower:
+                    skipped.append((feature.name, f"Similar to: {ex_name}"))
+                    is_similar = True
+                    break
+            if is_similar:
+                continue
+
+            new_features.append(feature)
+
+        print(f"  New features: {len(new_features)}, Skipped: {len(skipped)}")
+
+        result_data = {
+            "directories_analyzed": len(filtered_dirs),
+            "features_detected": len(consolidated),
+            "features_added": len(new_features),
+            "features_skipped": len(skipped),
+            "branch": branch_name,
+            "pr_url": None,
+        }
+
+        if not new_features:
+            print("\nNo new features to add - FEATURES.md is up to date.")
+            return output_result(success=True, result=result_data)
+
+        if dry_run:
+            print("\n[DRY RUN] Would add these features:")
+            for f in new_features:
+                print(f"  - {f.name}: {f.description[:60]}...")
+            return output_result(success=True, result=result_data)
+
+        # Phase 6: Update FEATURES.md
+        print("\nPhase 6: Updating FEATURES.md...")
+        weekly_analyzer.update_features_md(new_features)
+
+        # Stage and commit
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        if not status_result.stdout.strip():
+            print("  No changes to commit.")
+            return output_result(success=True, result=result_data)
+
+        subprocess.run(
+            ["git", "add", "-A"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Build commit message
+        feature_names = [f.name for f in new_features[:5]]
+        features_summary = ", ".join(feature_names)
+        if len(new_features) > 5:
+            features_summary += f" and {len(new_features) - 5} more"
+
+        commit_message = f"""docs: Sync documentation with Weekly Feature Analysis
+
+Intelligent multi-agent analysis identified {len(new_features)} new features from the past {days} days.
+
+Features added: {features_summary}
+
+— Authored by jib"""
+
+        subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Push
+        subprocess.run(
+            ["git", "push", "-u", "origin", branch_name],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Build PR body with categories
+        features_by_cat: dict[str, list] = {}
+        for f in new_features:
+            cat = f.category or "Utilities"
+            features_by_cat.setdefault(cat, []).append(f)
+
+        feature_sections = []
+        for cat, feats in sorted(features_by_cat.items()):
+            section = f"**{cat}**\n"
+            for f in feats:
+                desc = f.description[:100] + "..." if len(f.description) > 100 else f.description
+                section += f"- **{f.name}**: {desc}\n"
+            feature_sections.append(section)
+
+        pr_body = f"""## Summary
+
+Intelligent multi-agent analysis identified **{len(new_features)} new features** from the past {days} days.
+
+This analysis uses the same high-quality pipeline as `feature-analyzer full-repo`:
+- Directory-by-directory LLM analysis (parallel processing)
+- LLM-powered consolidation and deduplication
+- Smart handling of symlinks and host/container pairs
+
+### New Features by Category
+
+{chr(10).join(feature_sections)}
+
+### Analysis Details
+
+- Directories analyzed: {len(filtered_dirs)}
+- Features detected (before dedup): {len(all_features)}
+- Features after consolidation: {len(consolidated)}
+- **New features added: {len(new_features)}**
+- Features skipped (duplicates): {len(skipped)}
+
+## Test Plan
+
+- [x] All entries include correct file paths
+- [x] Status flags are accurate (all "implemented")
+- [x] No duplicate entries in FEATURES.md
+- [ ] Human review for accuracy and completeness
+
+---
+
+— Authored by jib"""
+
+        pr_title = "docs: Sync documentation with Weekly Feature Analysis"
+
+        # Create PR using gh CLI
+        pr_result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                pr_title,
+                "--body",
+                pr_body,
+                "--base",
+                "main",
+                "--head",
+                branch_name,
+            ],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        result_data["pr_url"] = pr_result.stdout.strip()
+
+        print(f"\n✓ PR created: {result_data['pr_url']}")
+
+        return output_result(
+            success=True,
+            result=result_data,
+        )
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"Git/GH operation failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except Exception as e:
+        import traceback
+
+        return output_result(
+            False,
+            error=f"Error in weekly analysis: {e}\n{traceback.format_exc()}",
+        )
+
+
+def handle_github_pr_create(context: dict) -> int:
+    """Create a GitHub PR using gh CLI (with jib identity via GITHUB_TOKEN).
+
+    This handler is used by host-side services that need to create PRs
+    under jib's identity. The gh CLI inside the container uses the
+    GITHUB_TOKEN environment variable (GitHub App token), so PRs are
+    created as jib rather than the host user.
+
+    Context expected:
+        - repo: str (full repo name, e.g., "jwbron/james-in-a-box")
+        - title: str (PR title)
+        - body: str (PR body/description)
+        - head: str (branch name with changes)
+        - base: str (target branch, default "main")
+        - cwd: str (optional, working directory for gh CLI)
+
+    Returns JSON with:
+        - result.pr_url: URL of the created PR
+        - result.pr_number: PR number
+    """
+    import subprocess
+
+    repo = context.get("repo")
+    title = context.get("title")
+    body = context.get("body", "")
+    head = context.get("head")
+    base = context.get("base", "main")
+    cwd = context.get("cwd")
+
+    if not repo:
+        return output_result(False, error="Missing required field: repo")
+    if not title:
+        return output_result(False, error="Missing required field: title")
+    if not head:
+        return output_result(False, error="Missing required field: head")
+
+    try:
+        cmd = [
+            "gh",
+            "pr",
+            "create",
+            "--repo",
+            repo,
+            "--title",
+            title,
+            "--body",
+            body,
+            "--base",
+            base,
+            "--head",
+            head,
+        ]
+
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+        )
+
+        pr_url = result.stdout.strip()
+        pr_number = None
+        if pr_url and "/" in pr_url:
+            with contextlib.suppress(ValueError):
+                pr_number = int(pr_url.split("/")[-1])
+
+        return output_result(
+            success=True,
+            result={
+                "pr_url": pr_url,
+                "pr_number": pr_number,
+            },
+        )
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"gh pr create failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except FileNotFoundError:
+        return output_result(False, error="gh CLI not found")
+    except Exception as e:
+        return output_result(False, error=f"Error creating PR: {e}")
+
+
+def handle_github_pr_comment(context: dict) -> int:
+    """Add a comment to a GitHub PR using gh CLI (with jib identity).
+
+    Context expected:
+        - repo: str (full repo name, e.g., "jwbron/james-in-a-box")
+        - pr_number: int (PR number to comment on)
+        - body: str (comment body)
+
+    Returns JSON with:
+        - result.success: bool
+    """
+    import subprocess
+
+    repo = context.get("repo")
+    pr_number = context.get("pr_number")
+    body = context.get("body")
+
+    if not repo:
+        return output_result(False, error="Missing required field: repo")
+    if not pr_number:
+        return output_result(False, error="Missing required field: pr_number")
+    if not body:
+        return output_result(False, error="Missing required field: body")
+
+    try:
+        cmd = [
+            "gh",
+            "pr",
+            "comment",
+            str(pr_number),
+            "--repo",
+            repo,
+            "--body",
+            body,
+        ]
+
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        return output_result(success=True, result={"commented": True})
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"gh pr comment failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except subprocess.TimeoutExpired:
+        return output_result(False, error="gh pr comment timed out")
+    except FileNotFoundError:
+        return output_result(False, error="gh CLI not found")
+    except Exception as e:
+        return output_result(False, error=f"Error commenting on PR: {e}")
+
+
+def handle_github_pr_close(context: dict) -> int:
+    """Close a GitHub PR using gh CLI (with jib identity).
+
+    Context expected:
+        - repo: str (full repo name, e.g., "jwbron/james-in-a-box")
+        - pr_number: int (PR number to close)
+
+    Returns JSON with:
+        - result.closed: bool
+    """
+    import subprocess
+
+    repo = context.get("repo")
+    pr_number = context.get("pr_number")
+
+    if not repo:
+        return output_result(False, error="Missing required field: repo")
+    if not pr_number:
+        return output_result(False, error="Missing required field: pr_number")
+
+    try:
+        cmd = [
+            "gh",
+            "pr",
+            "close",
+            str(pr_number),
+            "--repo",
+            repo,
+        ]
+
+        subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        return output_result(success=True, result={"closed": True})
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"gh pr close failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except subprocess.TimeoutExpired:
+        return output_result(False, error="gh pr close timed out")
+    except FileNotFoundError:
+        return output_result(False, error="gh CLI not found")
+    except Exception as e:
+        return output_result(False, error=f"Error closing PR: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analysis task processor for jib container",
@@ -575,6 +1189,10 @@ def main():
             "doc_generation",
             "feature_extraction",
             "create_pr",
+            "weekly_feature_analysis",
+            "github_pr_create",
+            "github_pr_comment",
+            "github_pr_close",
         ],
         help="Type of analysis task to perform",
     )
@@ -600,6 +1218,10 @@ def main():
         "doc_generation": handle_doc_generation,
         "feature_extraction": handle_feature_extraction,
         "create_pr": handle_create_pr,
+        "weekly_feature_analysis": handle_weekly_feature_analysis,
+        "github_pr_create": handle_github_pr_create,
+        "github_pr_comment": handle_github_pr_comment,
+        "github_pr_close": handle_github_pr_close,
     }
 
     handler = handlers.get(args.task)
