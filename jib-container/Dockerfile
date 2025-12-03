@@ -185,6 +185,9 @@ gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.or
 # This allows git push over HTTPS without embedding tokens in remote URLs
 if [ -n "${GITHUB_TOKEN:-}" ]; then
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper "/opt/jib-runtime/jib-container/bin/git-credential-github-token"
+    # Enable path-based credentials so the helper can distinguish between repo owners
+    # (e.g., Khan/webapp vs jwbron/james-in-a-box for token selection)
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.useHttpPath true
     log_success "Git credential helper configured for GitHub push"
 else
     # No token - disable credential helper (will fail on push attempts)
@@ -594,6 +597,26 @@ if [ -n "$CURRENT_TOKEN" ]; then
 else
     log_info "GitHub token not provided - GitHub MCP server not configured"
     log_info "  Add GITHUB_TOKEN to enable GitHub MCP server"
+fi
+
+# Add secondary GitHub MCP server for repos outside the primary App's scope
+# This uses GITHUB_READONLY_TOKEN (e.g., a PAT with access to Khan/webapp)
+# Tools will be prefixed with mcp__github_readonly__ (e.g., mcp__github_readonly__get_file_contents)
+if [ -n "${GITHUB_READONLY_TOKEN:-}" ]; then
+    # Remove any existing github-readonly MCP config
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github-readonly -s local >/dev/null 2>&1 || true
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github-readonly -s user >/dev/null 2>&1 || true
+
+    # Add readonly MCP server for external repos (e.g., Khan/*)
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
+        --transport http \
+        --scope user \
+        github-readonly \
+        "https://api.githubcopilot.com/mcp/" \
+        --header "Authorization: Bearer ${GITHUB_READONLY_TOKEN}" > /dev/null 2>&1
+
+    log_success "GitHub readonly MCP server configured for external repos"
+    log_info "  Use mcp__github_readonly__* tools for repos like Khan/webapp"
 fi
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
