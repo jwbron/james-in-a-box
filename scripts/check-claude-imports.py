@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
 """
-Lint check: Ensure Claude is not imported in host-services.
+Lint check: Ensure Claude/Anthropic is not used in host-services.
 
-The Claude module can ONLY be used inside the jib container because:
-1. Claude CLI requires the container environment to run
-2. Host services run on the host machine without container tools
-3. Importing claude directly in host-services causes ModuleNotFoundError at runtime
+Host services MUST NOT call Claude or the Anthropic API directly because:
+1. Security: Host services have access to credentials that should not be exposed to LLMs
+2. Architecture: The container boundary provides security isolation
+3. Prompt injection: Direct API calls from host could allow prompt injection to escalate to host access
 
 CORRECT pattern for host-services:
     - Use jib_exec to delegate to a container-side processor
-    - The processor (in jib-container/jib-tasks/) can import and use claude
+    - The processor (in jib-container/jib-tasks/) can import and use claude/anthropic
 
-INCORRECT pattern:
-    - Directly importing 'from claude import ...' in host-services files
+INCORRECT patterns:
+    - Importing 'from claude import ...' in host-services files
+    - Importing 'import anthropic' or 'from anthropic import ...'
+    - Adding 'anthropic' as a dependency in host-services/pyproject.toml
 
 This script is intended to be run as a CI check or pre-commit hook.
+
+See: jib-container/.claude/rules/host-container-boundary.md
 
 Usage:
     python3 scripts/check-claude-imports.py
 
 Exit codes:
     0 - No forbidden imports found
-    1 - Found forbidden Claude imports in host-services
+    1 - Found forbidden Claude/Anthropic imports or dependencies in host-services
 """
 
 import re
@@ -37,11 +41,16 @@ def check_file_for_claude_import(file_path: Path) -> list[tuple[int, str]]:
     """
     violations = []
 
-    # Patterns that indicate direct Claude usage
+    # Patterns that indicate direct Claude/Anthropic usage
     forbidden_patterns = [
+        # Claude module (container-only)
         r"^\s*from\s+claude\s+import",  # from claude import ...
         r"^\s*import\s+claude\b",  # import claude
         r"^\s*from\s+claude\.",  # from claude.module import ...
+        # Anthropic SDK (SECURITY VIOLATION - see host-container-boundary.md)
+        r"^\s*import\s+anthropic\b",  # import anthropic
+        r"^\s*from\s+anthropic\s+import",  # from anthropic import ...
+        r"^\s*from\s+anthropic\.",  # from anthropic.module import ...
     ]
 
     try:
@@ -56,6 +65,34 @@ def check_file_for_claude_import(file_path: Path) -> list[tuple[int, str]]:
 
     except Exception as e:
         print(f"Warning: Could not read {file_path}: {e}", file=sys.stderr)
+
+    return violations
+
+
+def check_pyproject_for_anthropic(pyproject_path: Path) -> list[tuple[int, str]]:
+    """Check pyproject.toml for forbidden anthropic dependency.
+
+    Returns:
+        List of (line_number, line_content) tuples for each violation.
+    """
+    violations = []
+
+    if not pyproject_path.exists():
+        return violations
+
+    try:
+        content = pyproject_path.read_text()
+        lines = content.split("\n")
+
+        # Look for anthropic in dependencies
+        anthropic_pattern = r'^\s*"anthropic'  # "anthropic>=..." or similar
+
+        for i, line in enumerate(lines, start=1):
+            if re.match(anthropic_pattern, line):
+                violations.append((i, line.strip()))
+
+    except Exception as e:
+        print(f"Warning: Could not read {pyproject_path}: {e}", file=sys.stderr)
 
     return violations
 
@@ -82,12 +119,23 @@ def main():
             rel_path = file_path.relative_to(repo_root)
             all_violations.append((rel_path, violations))
 
+    # Also check pyproject.toml for anthropic dependency
+    pyproject_path = host_services_dir / "pyproject.toml"
+    pyproject_violations = check_pyproject_for_anthropic(pyproject_path)
+    if pyproject_violations:
+        rel_path = pyproject_path.relative_to(repo_root)
+        all_violations.append((rel_path, pyproject_violations))
+
     # Report results
     if all_violations:
-        print("ERROR: Found forbidden Claude imports in host-services!\n")
+        print("ERROR: Found forbidden Claude/Anthropic usage in host-services!\n")
         print("=" * 70)
-        print("Claude can ONLY be used inside the jib container.")
-        print("Host services must use jib_exec to delegate to container-side processors.")
+        print("SECURITY VIOLATION: Host services MUST NOT call Claude or Anthropic directly.")
+        print()
+        print("Why this matters:")
+        print("  - Host services have access to credentials that should not be exposed to LLMs")
+        print("  - The container boundary provides security isolation")
+        print("  - Direct API calls from host could allow prompt injection to escalate")
         print("=" * 70)
         print()
 
@@ -98,14 +146,17 @@ def main():
             print()
 
         print("How to fix:")
-        print("  1. Create a processor in jib-container/jib-tasks/ that imports Claude")
-        print("  2. Update the host-services script to use jib_exec to call the processor")
-        print("  3. See host-services/analysis/beads-analyzer/ for an example")
+        print("  1. Remove anthropic from host-services dependencies")
+        print("  2. Create a processor in jib-container/jib-tasks/ for LLM work")
+        print("  3. Use jib_exec to delegate to the container-side processor")
+        print("  4. See host-services/shared/jib_exec.py for the delegation pattern")
+        print()
+        print("Documentation: jib-container/.claude/rules/host-container-boundary.md")
         print()
 
         return 1
     else:
-        print("OK: No forbidden Claude imports found in host-services")
+        print("OK: No forbidden Claude/Anthropic usage found in host-services")
         return 0
 
 
