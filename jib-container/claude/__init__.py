@@ -1,11 +1,14 @@
 """
-Shared Claude CLI utilities for jib.
+Claude CLI utilities for jib container.
 
 Provides a unified interface for running Claude in non-interactive mode,
 with streaming output by default for visibility into long-running tasks.
 
+Note: This module is only available inside the jib container, since Claude
+CLI is only installed there. Do not import this from shared/ or host code.
+
 Usage:
-    from shared.claude import run_claude, is_claude_available, ClaudeResult
+    from claude import run_claude, is_claude_available, ClaudeResult
 
     # Check if Claude is available
     if not is_claude_available():
