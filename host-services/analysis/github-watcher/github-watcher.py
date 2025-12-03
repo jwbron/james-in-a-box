@@ -22,6 +22,11 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
    - Check failures: Detects and triggers fixes for failing CI checks
    - Comments: Responds to comments from the user and others (not from bot itself)
 
+3. **Review requests** (PRs where user is directly tagged):
+   - ONLY PRs where the user is directly requested as a reviewer are processed
+   - Team-based review requests (e.g., @org/infra-platform) are IGNORED
+   - This ensures the bot only acts on PRs the user is personally responsible for
+
 ### Which comments are handled:
 - Comments from the configured `github_username` (e.g., jwbron) ARE processed
 - Comments from the `bot_username` and common bots (github-actions, dependabot) are IGNORED
@@ -1475,6 +1480,39 @@ def check_pr_for_review_response(
     }
 
 
+def is_user_directly_requested(pr_data: dict, github_username: str) -> bool:
+    """Check if a user is directly requested as a reviewer (not via team membership).
+
+    Args:
+        pr_data: PR data dict containing reviewRequests field
+        github_username: The user's GitHub username to check for
+
+    Returns:
+        True if the user is directly requested as an individual reviewer,
+        False if not requested or only requested via team membership.
+
+    The reviewRequests field contains objects with:
+    - __typename: "User" or "Team"
+    - login: username (for User type)
+    - name/slug: team name (for Team type)
+
+    We only consider direct User requests, NOT team-based requests.
+    """
+    review_requests = pr_data.get("reviewRequests", [])
+    if not review_requests:
+        return False
+
+    # Check if the user is directly requested (as a User, not a Team)
+    for request in review_requests:
+        if (
+            request.get("__typename") == "User"
+            and request.get("login", "").lower() == github_username.lower()
+        ):
+            return True
+
+    return False
+
+
 def check_prs_for_review(
     repo: str,
     all_prs: list[dict],
@@ -1483,13 +1521,20 @@ def check_prs_for_review(
     bot_username: str,
     since_timestamp: str | None = None,
 ) -> list[dict]:
-    """Check for PRs from others that need review.
+    """Check for PRs where the user is directly requested as a reviewer.
+
+    This function ONLY processes PRs where:
+    1. The user is directly tagged as a reviewer (individual @username mention)
+    2. NOT: PRs where the user is part of a team that's requested
+
+    This ensures the bot only acts on PRs the user is personally responsible for,
+    not ones assigned to their team (like infra-platform).
 
     Args:
         repo: Repository in owner/repo format
-        all_prs: Pre-fetched list of all open PRs (to avoid redundant API calls)
+        all_prs: Pre-fetched list of all open PRs (must include reviewRequests field)
         state: State dict with processed_reviews
-        github_username: The user's GitHub username (to exclude their PRs)
+        github_username: The user's GitHub username (to check for direct review requests)
         bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
@@ -1501,19 +1546,47 @@ def check_prs_for_review(
     if not all_prs:
         return []
 
-    # Filter to PRs from others (not from the user or bot)
+    # Filter to PRs from others where the user is DIRECTLY requested as a reviewer
+    # Exclude: user's own PRs, bot's PRs, and PRs where user is only on a team
     excluded_authors = {
         github_username.lower(),
         bot_username.lower(),
         f"{bot_username.lower()}[bot]",
     }
 
-    other_prs = [
-        p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
+    # Only include PRs where:
+    # 1. Author is not the user or bot
+    # 2. User is DIRECTLY requested as a reviewer (not via team)
+    directly_requested_prs = [
+        p
+        for p in all_prs
+        if p.get("author", {}).get("login", "").lower() not in excluded_authors
+        and is_user_directly_requested(p, github_username)
     ]
 
-    if not other_prs:
+    if not directly_requested_prs:
+        logger.debug(
+            "No PRs with direct review requests for user",
+            username=github_username,
+            total_prs=len(all_prs),
+        )
         return []
+
+    logger.info(
+        "Found PRs with direct review requests",
+        username=github_username,
+        directly_requested_count=len(directly_requested_prs),
+        total_other_prs=len(
+            [
+                p
+                for p in all_prs
+                if p.get("author", {}).get("login", "").lower() not in excluded_authors
+            ]
+        ),
+    )
+
+    # Use the filtered list for the rest of the function
+    other_prs = directly_requested_prs
 
     # Check for failed review tasks that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -1658,6 +1731,7 @@ def process_repo_prs(
     tasks: list[JibTask] = []
 
     # Fetch ALL open PRs in a single API call
+    # Include reviewRequests to filter for direct user review requests (not team-based)
     all_prs = gh_json(
         [
             "pr",
@@ -1667,7 +1741,7 @@ def process_repo_prs(
             "--state",
             "open",
             "--json",
-            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
+            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files,reviewRequests",
         ],
         repo=repo,
     )
