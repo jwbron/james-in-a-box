@@ -167,6 +167,34 @@ def get_github_token() -> Optional[str]:
     return None
 
 
+def get_github_readonly_token() -> Optional[str]:
+    """Get read-only GitHub token for external repositories.
+
+    This token is used for repos outside the primary GitHub App's scope,
+    such as Khan/webapp when the App is only installed on jwbron/james-in-a-box.
+
+    Returns:
+        Token string if found, None otherwise
+    """
+    try:
+        script_dir = Path(__file__).resolve().parent
+        project_root = script_dir.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
+        from config.host_config import HostConfig
+        config = HostConfig()
+        # Note: github_readonly_token falls back to github_token if not set
+        token = config.get_secret("GITHUB_READONLY_TOKEN")
+        if token:
+            return token
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return None
+
+
 def get_github_app_token() -> Optional[str]:
     """Generate GitHub App installation token for container use.
 
@@ -1762,6 +1790,13 @@ def run_claude() -> bool:
                 warn("GitHub auth: Not configured (GitHub operations disabled)")
                 print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
 
+    # Add GITHUB_READONLY_TOKEN for repos outside the App's scope (e.g., Khan/webapp)
+    github_readonly_token = get_github_readonly_token()
+    if github_readonly_token:
+        cmd.extend(["-e", f"GITHUB_READONLY_TOKEN={github_readonly_token}"])
+        if not _quiet_mode:
+            info("GitHub readonly: Token configured for external repos")
+
     if not _quiet_mode:
         info("Network mode: Bridge (isolated from host, outbound HTTP only)")
         print("  Container can: Access Claude API, download packages")
@@ -1974,6 +2009,11 @@ def exec_in_new_container(
         if github_token:
             cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
             write_github_token_file(github_token)
+
+    # Add GITHUB_READONLY_TOKEN for repos outside the App's scope (e.g., Khan/webapp)
+    github_readonly_token = get_github_readonly_token()
+    if github_readonly_token:
+        cmd.extend(["-e", f"GITHUB_READONLY_TOKEN={github_readonly_token}"])
 
     # Add mount arguments
     cmd.extend(mount_args)
