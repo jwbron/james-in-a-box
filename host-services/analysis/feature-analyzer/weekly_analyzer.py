@@ -53,18 +53,59 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 
 # Import shared utilities
 # NOTE: Host-services code must ALWAYS use jib_exec, never direct Claude calls.
+# EXCEPTION: When this module is imported from inside the container (via analysis-processor),
+# we detect this and call run_claude directly instead of jib_exec (which would fail).
 from jib_exec import jib_exec
+
+
+def _is_running_in_container() -> bool:
+    """Detect if we're running inside the jib container.
+
+    When analysis-processor.py imports this module from inside the container,
+    we need to use run_claude directly instead of jib_exec (which is designed
+    for host-to-container calls and would fail or spawn nested containers).
+
+    Detection methods:
+    1. Check for /opt/jib-runtime (container-specific path)
+    2. Check for JIB_CONTAINER environment variable
+    """
+    # Primary: Check for container-specific path
+    if Path("/opt/jib-runtime").exists():
+        return True
+    # Secondary: Check environment variable
+    import os
+
+    if os.environ.get("JIB_CONTAINER") == "1":
+        return True
+    return False
+
+
+# Lazy-loaded run_claude for container-side use
+_run_claude_func = None
+
+
+def _get_run_claude():
+    """Get the run_claude function, importing it only when needed (inside container)."""
+    global _run_claude_func
+    if _run_claude_func is None:
+        # Import from the shared claude module (available inside container)
+        from claude import run_claude
+
+        _run_claude_func = run_claude
+    return _run_claude_func
 
 
 def _run_llm_prompt_shared(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, str, str | None]:
     """
-    Run an LLM prompt via jib_exec.
+    Run an LLM prompt, adapting to execution context.
 
     This shared function is used by both WeeklyAnalyzer and RepoAnalyzer.
-    Host-services code must always route through jib_exec to invoke
-    the analysis processor in the container.
+
+    Execution context detection:
+    - On host: Uses jib_exec to invoke analysis-processor in the container
+    - In container: Calls run_claude directly (jib_exec would fail from inside)
 
     Args:
         repo_root: Path to the repository root
@@ -74,6 +115,36 @@ def _run_llm_prompt_shared(
     Returns:
         Tuple of (success, stdout, error_message)
     """
+    # When running inside the container, call run_claude directly
+    if _is_running_in_container():
+        return _run_llm_prompt_direct(repo_root, prompt, context_name)
+
+    # On host, use jib_exec to invoke container
+    return _run_llm_prompt_via_jib(repo_root, prompt, context_name)
+
+
+def _run_llm_prompt_direct(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, str, str | None]:
+    """Run LLM prompt directly via run_claude (container-side execution)."""
+    try:
+        run_claude = _get_run_claude()
+        result = run_claude(prompt=prompt, cwd=repo_root, stream=False)
+
+        if result.success:
+            return (True, result.stdout, None)
+        else:
+            error = result.error or result.stderr or "Unknown error"
+            return (False, "", error)
+
+    except Exception as e:
+        return (False, "", f"run_claude error: {e}")
+
+
+def _run_llm_prompt_via_jib(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, str, str | None]:
+    """Run LLM prompt via jib_exec (host-side execution)."""
     try:
         # analysis-processor is in PATH via /opt/jib-runtime/bin
         result = jib_exec(
@@ -136,14 +207,15 @@ def _run_llm_prompt_to_file_shared(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, list | dict | None, str | None]:
     """
-    Run an LLM prompt that writes JSON output to a file via jib_exec.
+    Run an LLM prompt that writes JSON output to a file, adapting to execution context.
 
     This avoids JSON parsing issues when the LLM includes explanatory text
     before/after the JSON in its stdout. The LLM writes JSON to a temp file,
     which is then read and parsed.
 
-    Host-services code must always route through jib_exec to invoke
-    the analysis processor in the container.
+    Execution context detection:
+    - On host: Uses jib_exec to invoke analysis-processor in the container
+    - In container: Calls run_claude directly with file-writing prompt enhancement
 
     Args:
         repo_root: Path to the repository root
@@ -153,6 +225,75 @@ def _run_llm_prompt_to_file_shared(
     Returns:
         Tuple of (success, parsed_json_content, error_message)
     """
+    # When running inside the container, call run_claude directly
+    if _is_running_in_container():
+        return _run_llm_prompt_to_file_direct(repo_root, prompt, context_name)
+
+    # On host, use jib_exec to invoke container
+    return _run_llm_prompt_to_file_via_jib(repo_root, prompt, context_name)
+
+
+def _run_llm_prompt_to_file_direct(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, list | dict | None, str | None]:
+    """Run LLM prompt with file output directly via run_claude (container-side execution)."""
+    import tempfile
+
+    # Generate a temporary file path
+    fd, output_file = tempfile.mkstemp(suffix=".json", prefix="llm_output_")
+    import os
+
+    os.close(fd)
+    output_path = Path(output_file)
+
+    # Enhance the prompt to explicitly instruct writing to the file
+    enhanced_prompt = f"""{prompt}
+
+CRITICAL INSTRUCTION: You MUST write your JSON output to this file: {output_file}
+
+Use the Write tool to write the JSON array to {output_file}. Do NOT just print the JSON to stdout - write it to the file.
+
+After writing the file, confirm by saying "JSON written to {output_file}" but do NOT include the JSON content in your response."""
+
+    try:
+        run_claude = _get_run_claude()
+        result = run_claude(prompt=enhanced_prompt, cwd=repo_root, stream=False)
+
+        # Read the JSON from the output file
+        json_content = None
+        if output_path.exists():
+            try:
+                file_content = output_path.read_text().strip()
+                if file_content:
+                    json_content = json.loads(file_content)
+            except json.JSONDecodeError as e:
+                return (False, None, f"Failed to parse JSON from output file: {e}")
+            finally:
+                # Clean up the temp file
+                import contextlib
+
+                with contextlib.suppress(OSError):
+                    output_path.unlink()
+
+            if json_content is not None:
+                return (True, json_content, None)
+            return (False, None, "LLM wrote empty file")
+        else:
+            return (False, None, "LLM did not write JSON to file")
+
+    except Exception as e:
+        # Clean up temp file on error
+        import contextlib
+
+        with contextlib.suppress(OSError):
+            output_path.unlink()
+        return (False, None, f"run_claude error: {e}")
+
+
+def _run_llm_prompt_to_file_via_jib(
+    repo_root: Path, prompt: str, context_name: str = ""
+) -> tuple[bool, list | dict | None, str | None]:
+    """Run LLM prompt with file output via jib_exec (host-side execution)."""
     try:
         # analysis-processor is in PATH via /opt/jib-runtime/bin
         result = jib_exec(
