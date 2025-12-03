@@ -33,8 +33,9 @@ git push origin <branch>
 - `GITHUB_TOKEN` environment variable must be set (handled by jib launcher)
 
 **If push fails:**
-- Check the remote URL: `git remote -v` (must be `https://github.com/...`)
-- If it's SSH (`git@github.com:...`), ask the user to change it on the HOST
+- Check the remote URL: `git remote -v` (should be `https://github.com/...`)
+- SSH remotes (`git@github.com:...`) are automatically converted to HTTPS at container startup
+- If still failing, check that `GITHUB_TOKEN` is set
 
 **CRITICAL - Git Remote URLs:**
 - **NEVER** modify git remote URLs using `git remote set-url` or similar commands

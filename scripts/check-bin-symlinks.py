@@ -219,7 +219,11 @@ def check_symlinks(repo_root: Path) -> tuple[list[str], list[str], list[str]]:
     for item in bin_dir.iterdir():
         if item.is_symlink():
             name = item.name
-            if name not in expected_symlinks and name != "maintain-bin-symlinks" and name not in reported_unlisted:
+            if (
+                name not in expected_symlinks
+                and name != "maintain-bin-symlinks"
+                and name not in reported_unlisted
+            ):
                 target = os.readlink(item)
                 unlisted_symlinks.append(f"{name} -> {target} (not in maintain-bin-symlinks)")
 
