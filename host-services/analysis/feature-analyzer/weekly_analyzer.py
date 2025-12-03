@@ -75,8 +75,9 @@ def _run_llm_prompt_shared(
         Tuple of (success, stdout, error_message)
     """
     try:
+        # analysis-processor is in PATH via /opt/jib-runtime/bin
         result = jib_exec(
-            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            processor="analysis-processor",
             task_type="llm_prompt",
             context={
                 "prompt": prompt,
@@ -153,8 +154,9 @@ def _run_llm_prompt_to_file_shared(
         Tuple of (success, parsed_json_content, error_message)
     """
     try:
+        # analysis-processor is in PATH via /opt/jib-runtime/bin
         result = jib_exec(
-            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            processor="analysis-processor",
             task_type="llm_prompt_to_file",
             context={
                 "prompt": prompt,

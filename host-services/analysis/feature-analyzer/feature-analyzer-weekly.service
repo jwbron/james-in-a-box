@@ -19,8 +19,8 @@ Type=oneshot
 # - Uses multi-agent LLM analysis for each directory (parallel processing)
 # - Consolidates and deduplicates with LLM (handles symlinks, merges related)
 # - Only adds NEW features not already in FEATURES.md
-ExecStart=%h/khan/james-in-a-box/bin/jib --exec python3 \
-    /home/%u/khan/james-in-a-box/jib-container/jib-tasks/analysis/analysis-processor.py \
+# Executables are in PATH inside the container via /opt/jib-runtime/bin
+ExecStart=%h/khan/james-in-a-box/bin/jib --exec analysis-processor \
     --task weekly_feature_analysis \
     --context '{"repo_name": "james-in-a-box", "days": 7, "max_workers": 5}'
 WorkingDirectory=%h/khan/james-in-a-box

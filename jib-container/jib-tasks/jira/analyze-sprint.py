@@ -13,15 +13,15 @@ Uses Claude for intelligent analysis of:
 - Context-aware prioritization
 
 Usage:
-  # From host
-  bin/jib --exec /home/jwies/khan/james-in-a-box/jib-container/jib-tasks/jira/analyze-sprint.py
+  # From host (analyze-sprint is in PATH inside the container)
+  bin/jib --exec analyze-sprint
 
   # From inside container
-  ~/khan/james-in-a-box/jib-container/jib-tasks/jira/analyze-sprint.py
+  analyze-sprint
 
   # With options
-  ~/khan/james-in-a-box/jib-container/jib-tasks/jira/analyze-sprint.py --no-claude  # Fallback mode
-  ~/khan/james-in-a-box/jib-container/jib-tasks/jira/analyze-sprint.py --verbose     # Show Claude output
+  analyze-sprint --no-claude  # Fallback mode
+  analyze-sprint --verbose     # Show Claude output
 """
 
 import argparse
@@ -899,7 +899,7 @@ Full analysis in thread below
 ---
 
 {date}
-Run again with: `bin/jib --exec ~/khan/james-in-a-box/jib-container/jib-tasks/jira/analyze-sprint.py`
+Run again with: `bin/jib --exec analyze-sprint`
 """.format(date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         detail_file.write_text(detail_content)

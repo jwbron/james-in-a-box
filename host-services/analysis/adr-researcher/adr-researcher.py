@@ -50,8 +50,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
 from jib_exec import jib_exec
 
 
-# Processor path for GitHub operations via jib
-ANALYSIS_PROCESSOR = "jib-container/jib-tasks/analysis/analysis-processor.py"
+# Processor for GitHub operations via jib (in PATH via /opt/jib-runtime/bin)
+ANALYSIS_PROCESSOR = "analysis-processor"
 
 # Rate limiting configuration
 RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
@@ -772,16 +772,11 @@ class ADRResearcher:
         """
         context_json = json.dumps(context)
 
-        # Container path is fixed - jib always mounts to /home/jwies/khan/
-        processor_path = (
-            "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/adr/adr-processor.py"
-        )
-
+        # adr-processor is in PATH inside the container via /opt/jib-runtime/bin
         cmd = [
             "jib",
             "--exec",
-            "python3",
-            processor_path,
+            "adr-processor",
             "--task",
             task_type,
             "--context",
