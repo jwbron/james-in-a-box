@@ -15,11 +15,9 @@ Per ADR: Jib Repository Onboarding Strategy (Phase 0: Context Gathering)
 
 import argparse
 import json
-import os
 import re
-import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -88,7 +86,7 @@ class ConfluenceDocDiscoverer:
             terms.extend(repo_name.split("_"))
 
         # Add known aliases if available
-        for alias_key, aliases in self.REPO_ALIASES.items():
+        for _alias_key, aliases in self.REPO_ALIASES.items():
             if repo_name.lower() in [a.lower() for a in aliases]:
                 terms.extend(aliases)
 
@@ -150,9 +148,7 @@ class ConfluenceDocDiscoverer:
 
         return min(1.0, score)  # Cap at 1.0
 
-    def _generate_relevance_description(
-        self, category: str, keywords_matched: list[str]
-    ) -> str:
+    def _generate_relevance_description(self, category: str, keywords_matched: list[str]) -> str:
         """Generate human-readable relevance description."""
         if not keywords_matched:
             return f"Potentially relevant {category}"
@@ -284,7 +280,7 @@ class ConfluenceDocDiscoverer:
 
     def _generate_output(self) -> dict:
         """Generate the external-docs.json output structure."""
-        generated_at = datetime.now(timezone.utc).isoformat()
+        generated_at = datetime.now(UTC).isoformat()
 
         # Build discovered_docs list
         discovered_docs_list = []
@@ -304,9 +300,7 @@ class ConfluenceDocDiscoverer:
         for doc in self.discovered_docs[:10]:  # Top 10 for index
             # Create relative link from target repo docs to confluence
             confluence_link = f"../../../context-sync/confluence/{doc.path}"
-            index_additions.append(
-                f"| [{doc.title}]({confluence_link}) | {doc.relevance} |"
-            )
+            index_additions.append(f"| [{doc.title}]({confluence_link}) | {doc.relevance} |")
 
         result = {
             "generated": generated_at,
@@ -333,7 +327,7 @@ class ConfluenceDocDiscoverer:
     def _empty_result(self) -> dict:
         """Return empty result structure when no docs found."""
         return {
-            "generated": datetime.now(timezone.utc).isoformat(),
+            "generated": datetime.now(UTC).isoformat(),
             "repo": self.repo_name,
             "search_terms": self.search_terms,
             "public_repo": self.public_repo,
@@ -421,7 +415,7 @@ Examples:
 
     # Print summary
     summary = result.get("summary", {})
-    print(f"\nSummary:")
+    print("\nSummary:")
     print(f"  Total documents found: {summary.get('total_found', 0)}")
     if summary.get("by_category"):
         print(f"  By category: {summary['by_category']}")

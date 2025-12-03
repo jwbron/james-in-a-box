@@ -17,7 +17,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -92,9 +92,7 @@ class DocsIndexUpdater:
 
         # Check for FEATURES.md
         if self.config.features_md and self.config.features_md.exists():
-            content["features"] = str(
-                self.config.features_md.relative_to(self.config.repo_root)
-            )
+            content["features"] = str(self.config.features_md.relative_to(self.config.repo_root))
 
         # Check for feature docs directory
         features_dir = self.config.repo_root / "docs" / "features"
@@ -113,7 +111,7 @@ class DocsIndexUpdater:
             "## Generated Documentation",
             "",
             "*This section is automatically managed by jib onboarding.*",
-            f"*Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}*",
+            f"*Last updated: {datetime.now(UTC).strftime('%Y-%m-%d')}*",
             "",
         ]
 
