@@ -2,7 +2,7 @@
 
 Tools for onboarding repositories to Jib, the autonomous software engineering agent.
 
-Per ADR: [Jib Repository Onboarding Strategy](../../../docs/adr/not-implemented/ADR-Jib-Repo-Onboarding.md)
+Per ADR: [Jib Repository Onboarding Strategy](../../../docs/adr/in-progress/ADR-Jib-Repo-Onboarding.md)
 
 ## Overview
 
@@ -108,6 +108,6 @@ These tools integrate with existing analysis tools:
 
 ## See Also
 
-- [ADR: Jib Repository Onboarding Strategy](../../../docs/adr/not-implemented/ADR-Jib-Repo-Onboarding.md)
+- [ADR: Jib Repository Onboarding Strategy](../../../docs/adr/in-progress/ADR-Jib-Repo-Onboarding.md)
 - [ADR: Feature Analyzer Documentation Sync](../../../docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md)
 - [ADR: LLM Documentation Index Strategy](../../../docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md)
