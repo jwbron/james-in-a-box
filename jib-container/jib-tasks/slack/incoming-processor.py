@@ -27,12 +27,8 @@ from datetime import datetime
 from pathlib import Path
 
 
-# Add shared directory to path for enrichment and jib_logging modules
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
-# Add jib-container to path for claude.runner module
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "jib-container"))
-
-from claude.runner import run_claude
+# Import modules (installed as packages via pip)
+from claude import run_claude
 from enrichment import enrich_task
 from jib_logging import get_logger
 
