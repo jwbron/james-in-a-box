@@ -62,8 +62,8 @@ ANALYSIS_DIR = REPO_ROOT / "docs" / "analysis" / "inefficiency"
 PROPOSALS_DIR = REPO_ROOT / "docs" / "analysis" / "proposals"
 IMPACT_DIR = REPO_ROOT / "docs" / "analysis" / "impact"
 
-# Processor path for GitHub operations via jib
-ANALYSIS_PROCESSOR = "jib-container/jib-tasks/analysis/analysis-processor.py"
+# Processor for GitHub operations via jib (in PATH via /opt/jib-runtime/bin)
+ANALYSIS_PROCESSOR = "analysis-processor"
 
 
 class WeeklyReportGenerator:

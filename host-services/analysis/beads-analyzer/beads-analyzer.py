@@ -78,9 +78,9 @@ Examples:
     print(f"Starting Beads integration analysis (days={args.days}, force={args.force})...")
     print("Delegating to jib container for isolated worktree operations...")
 
-    # Invoke the container-side processor
+    # Invoke the container-side processor (in PATH via /opt/jib-runtime/bin)
     result = jib_exec(
-        processor="jib-container/jib-tasks/analysis/beads-analyzer-processor.py",
+        processor="beads-analyzer-processor",
         task_type="run_analysis",
         context={
             "days": args.days,

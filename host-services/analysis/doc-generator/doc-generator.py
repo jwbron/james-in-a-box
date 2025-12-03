@@ -186,9 +186,9 @@ Note: For best practice research, use the adr-researcher tool instead.
     print(f"Starting documentation generation (task={task_type})...")
     print("Delegating to jib container for Claude-enabled processing...")
 
-    # Invoke the container-side processor
+    # Invoke the container-side processor (in PATH via /opt/jib-runtime/bin)
     result = jib_exec(
-        processor="jib-container/jib-tasks/analysis/doc-generator-processor.py",
+        processor="doc-generator-processor",
         task_type=task_type,
         context=context,
         timeout=600,  # 10 minutes for full generation with Claude

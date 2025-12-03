@@ -272,8 +272,9 @@ Output ONLY the updated documentation content. Do not include any explanation or
         try:
             # Use jib_exec to run the analysis processor in the container
             # The processor handles the LLM call and returns JSON
+            # analysis-processor is in PATH via /opt/jib-runtime/bin
             result = jib_exec(
-                processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+                processor="analysis-processor",
                 task_type="llm_prompt",
                 context={
                     "prompt": prompt,

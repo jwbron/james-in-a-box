@@ -41,8 +41,8 @@ from git_utils import get_repo_name_from_remote
 from jib_exec import jib_exec
 
 
-# Processor path for GitHub operations via jib
-ANALYSIS_PROCESSOR = "jib-container/jib-tasks/analysis/analysis-processor.py"
+# Processor for GitHub operations via jib (in PATH via /opt/jib-runtime/bin)
+ANALYSIS_PROCESSOR = "analysis-processor"
 
 
 if TYPE_CHECKING:
