@@ -2113,10 +2113,11 @@ Ensure you cover as many distinct subdirectories as possible.
         if not recommended_files:
             return []
 
-        # Read file contents
+        # Extract file summaries (signatures + docstrings, not full content)
+        # This reduces token usage by ~90% compared to reading full files
         file_contents = {}
         for f in recommended_files:
-            content = self._read_file_safe(f)
+            content = self._extract_file_summary(f)
             if content:
                 rel_path = str(f.relative_to(self.repo_root))
                 file_contents[rel_path] = content
@@ -2130,7 +2131,7 @@ Ensure you cover as many distinct subdirectories as possible.
             ext = Path(file_path).suffix
             lang = {".py": "python", ".go": "go", ".ts": "typescript",
                     ".js": "javascript", ".sh": "bash", ".md": "markdown"}.get(ext, "")
-            code_sections.append(f"## File: {file_path}\n\n```{lang}\n{content}\n```")
+            code_sections.append(f"## File: {file_path} (signatures + docstrings)\n\n```{lang}\n{content}\n```")
 
         code_text = "\n---\n".join(code_sections)
 
@@ -2163,39 +2164,38 @@ Ensure you cover as many distinct subdirectories as possible.
 
 {readme_section}
 
-# Source Files (selected by Scout across subdirectories)
+# File Summaries (signatures + docstrings only, not full implementations)
 
 {code_text}
 
 # Task
 
-Be THOROUGH - identify ALL distinct features in this directory tree.
+Based on the function/class signatures and docstrings above, identify ALL distinct features.
 Each subdirectory often represents a distinct feature or capability.
 
 For each feature provide:
 
 1. **name**: Clear, descriptive name
-2. **description**: 2-3 sentence description
+2. **description**: 2-3 sentence description (infer from signatures and docstrings)
 3. **category**: One of: Core Services, APIs, Data Processing, Integration, Configuration, Utilities, Infrastructure, Documentation
 4. **files**: Main implementation files (include ALL relevant files you saw)
 5. **confidence**: 0.0-1.0 (use 0.8+ for clear features)
-6. **subdirectory**: Which subdirectory this feature is primarily in (for organization)
+6. **subdirectory**: Which subdirectory this feature is primarily in
 
 # What IS a Feature?
 
-- Services/daemons that run continuously
-- CLI tools users invoke
-- APIs and endpoints
-- Data processors and handlers
-- Integration points (external systems)
-- Configuration systems
-- Distinct capabilities in separate subdirectories
+- Services/daemons (look for main(), serve(), run())
+- CLI tools (look for argparse, click, cobra)
+- APIs and endpoints (look for handlers, routes)
+- Data processors (look for process(), handle(), transform())
+- Integration points (look for client classes, API calls)
+- Configuration systems (look for config structs, settings)
 
 # What is NOT a Feature?
 
 - Pure test files
 - Empty __init__.py files
-- Generic base classes
+- Generic base classes without specific functionality
 
 # Output
 
@@ -2444,6 +2444,308 @@ If truly no features, return: `[]`
                         root_dirs[key] = [script]
 
         return root_dirs
+
+    def _extract_file_summary(self, path: Path) -> str:
+        """
+        Extract a lightweight summary of a file for feature detection.
+
+        Instead of reading entire files (1000+ lines), this extracts only:
+        - Module/package docstrings
+        - Class and function signatures (not bodies)
+        - Exports and public API
+
+        This reduces token usage by ~90% while preserving feature-relevant info.
+
+        Args:
+            path: Path to the file
+
+        Returns:
+            Extracted summary string
+        """
+        try:
+            suffix = path.suffix.lower()
+
+            # Markdown files: read full content (usually small and descriptive)
+            if suffix == ".md":
+                return self._read_file_safe(path, max_lines=100)
+
+            # Read the file
+            with path.open(encoding="utf-8") as f:
+                content = f.read(50_000)  # Cap at 50KB for safety
+
+            lines = content.split("\n")
+
+            if suffix == ".py":
+                return self._extract_python_summary(lines)
+            elif suffix == ".go":
+                return self._extract_go_summary(lines)
+            elif suffix in (".js", ".ts", ".tsx", ".jsx"):
+                return self._extract_js_summary(lines)
+            elif suffix == ".sh":
+                return self._extract_shell_summary(lines)
+            else:
+                # Unknown type: return first 50 lines as header
+                return "\n".join(lines[:50])
+
+        except (UnicodeDecodeError, OSError):
+            return ""
+
+    def _extract_python_summary(self, lines: list[str]) -> str:
+        """Extract Python module docstring + class/function signatures."""
+        result = []
+        in_docstring = False
+        docstring_char = None
+        brace_depth = 0
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Capture module-level docstring (first string literal)
+            if i < 10 and not result and (stripped.startswith('"""') or stripped.startswith("'''")):
+                docstring_char = stripped[:3]
+                result.append(line)
+                if stripped.count(docstring_char) >= 2 and len(stripped) > 6:
+                    # Single-line docstring
+                    i += 1
+                    continue
+                in_docstring = True
+                i += 1
+                while i < len(lines) and in_docstring:
+                    result.append(lines[i])
+                    if docstring_char in lines[i]:
+                        in_docstring = False
+                    i += 1
+                continue
+
+            # Capture imports (useful for understanding dependencies)
+            if stripped.startswith(("import ", "from ")):
+                result.append(line)
+                i += 1
+                continue
+
+            # Capture class definitions with their docstrings
+            if stripped.startswith("class "):
+                result.append(line)
+                # Look for class docstring
+                if i + 1 < len(lines):
+                    next_stripped = lines[i + 1].strip()
+                    if next_stripped.startswith('"""') or next_stripped.startswith("'''"):
+                        i += 1
+                        docstring_char = next_stripped[:3]
+                        result.append(lines[i])
+                        if next_stripped.count(docstring_char) >= 2:
+                            i += 1
+                            continue
+                        i += 1
+                        while i < len(lines):
+                            result.append(lines[i])
+                            if docstring_char in lines[i]:
+                                break
+                            i += 1
+                i += 1
+                continue
+
+            # Capture function/method definitions with docstrings
+            if stripped.startswith("def ") or stripped.startswith("async def "):
+                result.append(line)
+                # Look for function docstring
+                if i + 1 < len(lines):
+                    next_stripped = lines[i + 1].strip()
+                    if next_stripped.startswith('"""') or next_stripped.startswith("'''"):
+                        i += 1
+                        docstring_char = next_stripped[:3]
+                        result.append(lines[i])
+                        if next_stripped.count(docstring_char) >= 2:
+                            i += 1
+                            continue
+                        i += 1
+                        # Read until closing docstring (max 10 lines)
+                        docstring_lines = 0
+                        while i < len(lines) and docstring_lines < 10:
+                            result.append(lines[i])
+                            if docstring_char in lines[i]:
+                                break
+                            i += 1
+                            docstring_lines += 1
+                i += 1
+                continue
+
+            # Capture decorated functions/classes
+            if stripped.startswith("@"):
+                result.append(line)
+                i += 1
+                continue
+
+            # Capture module-level constants and assignments (first 30 lines only)
+            if i < 30 and "=" in stripped and not stripped.startswith("#"):
+                # Simple assignment at module level
+                if not stripped.startswith((" ", "\t")):
+                    result.append(line)
+
+            i += 1
+
+        return "\n".join(result) if result else "\n".join(lines[:50])
+
+    def _extract_go_summary(self, lines: list[str]) -> str:
+        """Extract Go package doc + func/type signatures."""
+        result = []
+        in_block_comment = False
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Package comment (before package declaration)
+            if stripped.startswith("//") and i < 20:
+                result.append(line)
+                continue
+
+            # Block comments
+            if "/*" in stripped:
+                in_block_comment = True
+                result.append(line)
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+            if in_block_comment:
+                result.append(line)
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+
+            # Package declaration
+            if stripped.startswith("package "):
+                result.append(line)
+                continue
+
+            # Import statements
+            if stripped.startswith("import "):
+                result.append(line)
+                if "(" in stripped and ")" not in stripped:
+                    # Multi-line import
+                    i += 1
+                    while i < len(lines) and ")" not in lines[i]:
+                        result.append(lines[i])
+                        i += 1
+                    if i < len(lines):
+                        result.append(lines[i])
+                continue
+
+            # Type definitions
+            if stripped.startswith("type "):
+                result.append(line)
+                # Include struct/interface body summary
+                if "struct {" in stripped or "interface {" in stripped:
+                    if "}" not in stripped:
+                        # Multi-line: read up to 20 lines
+                        depth = 1
+                        j = i + 1
+                        while j < len(lines) and depth > 0 and (j - i) < 20:
+                            result.append(lines[j])
+                            if "{" in lines[j]:
+                                depth += 1
+                            if "}" in lines[j]:
+                                depth -= 1
+                            j += 1
+                continue
+
+            # Function declarations
+            if stripped.startswith("func "):
+                result.append(line)
+                # Look for doc comment above (scan back)
+                for back in range(max(0, i - 5), i):
+                    if lines[back].strip().startswith("//"):
+                        if lines[back] not in result:
+                            result.insert(-1, lines[back])
+                continue
+
+            # Const and var blocks
+            if stripped.startswith(("const ", "var ", "const(", "var(")):
+                result.append(line)
+                if "(" in stripped and ")" not in stripped:
+                    j = i + 1
+                    while j < len(lines) and ")" not in lines[j] and (j - i) < 30:
+                        result.append(lines[j])
+                        j += 1
+                    if j < len(lines):
+                        result.append(lines[j])
+                continue
+
+        return "\n".join(result) if result else "\n".join(lines[:50])
+
+    def _extract_js_summary(self, lines: list[str]) -> str:
+        """Extract JavaScript/TypeScript exports and function signatures."""
+        result = []
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # JSDoc comments
+            if stripped.startswith("/**") or stripped.startswith("/*"):
+                result.append(line)
+                if "*/" not in stripped:
+                    j = i + 1
+                    while j < len(lines) and "*/" not in lines[j] and (j - i) < 20:
+                        result.append(lines[j])
+                        j += 1
+                    if j < len(lines):
+                        result.append(lines[j])
+                continue
+
+            # Import statements
+            if stripped.startswith("import "):
+                result.append(line)
+                continue
+
+            # Export statements
+            if stripped.startswith("export "):
+                result.append(line)
+                continue
+
+            # Function declarations
+            if any(stripped.startswith(p) for p in [
+                "function ", "async function ", "const ", "let ", "var ",
+                "class ", "interface ", "type ", "enum "
+            ]):
+                result.append(line)
+                continue
+
+            # Arrow functions and object methods (capture signature line)
+            if "=>" in stripped or stripped.endswith("{"):
+                if any(kw in stripped for kw in ["const ", "let ", "function", "export"]):
+                    result.append(line)
+                continue
+
+        return "\n".join(result) if result else "\n".join(lines[:50])
+
+    def _extract_shell_summary(self, lines: list[str]) -> str:
+        """Extract shell script header and function definitions."""
+        result = []
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Shebang and header comments (first 30 lines)
+            if i < 30 and (stripped.startswith("#") or not stripped):
+                result.append(line)
+                continue
+
+            # Function definitions
+            if stripped.startswith("function ") or (
+                "() {" in stripped or "(){" in stripped
+            ):
+                result.append(line)
+                continue
+
+            # Variable exports and key assignments
+            if stripped.startswith("export ") or (
+                i < 50 and "=" in stripped and not stripped.startswith("#")
+            ):
+                result.append(line)
+                continue
+
+        return "\n".join(result) if result else "\n".join(lines[:50])
 
     def _read_file_safe(self, path: Path, max_lines: int = 1000) -> str:
         """
