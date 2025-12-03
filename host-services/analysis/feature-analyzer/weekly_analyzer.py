@@ -1769,85 +1769,90 @@ class RepoAnalyzer:
 
     def _discover_feature_directories_with_llm(self) -> list[str]:
         """
-        Use LLM to analyze repository structure and identify feature-containing directories.
+        Use LLM (Cartographer Agent) to analyze repository structure and identify feature directories.
 
-        This replaces hardcoded directory lists with intelligent discovery. The LLM
-        analyzes the repo structure and returns a list of directories that likely
-        contain features/services/tools.
+        This is the Cartographer phase of multi-agent analysis. The LLM analyzes the repo
+        structure and returns a PRIORITIZED list of directories that likely contain features.
+
+        The Cartographer is smart about:
+        - Prioritizing directories (most important first for faster feedback)
+        - Skipping obvious non-feature directories (tests, vendor, generated code)
 
         Returns:
-            List of directory paths (relative to repo root) to scan for features
+            List of directory paths (relative to repo root) to scan for features,
+            ordered by priority (most important first)
         """
         repo_structure = self._get_top_level_structure()
 
-        prompt = f"""Analyze this repository structure and identify directories that contain features.
+        prompt = f"""You are the CARTOGRAPHER agent. Analyze this repository and identify ALL directories containing features, PRIORITIZED by importance.
 
 # Repository Structure
 
 {repo_structure}
 
-# Task
+# Your Mission
 
-Identify ALL directories that likely contain user-facing features, services, tools, or libraries.
+Return ALL directories that contain user-facing features, PRIORITIZED by importance (most important first).
 
-## What ARE Feature Directories?
+## Priority Order (highest to lowest)
 
-Feature directories contain one or more of:
-- Backend services (API endpoints, microservices)
-- CLI tools or scripts users can run
-- Libraries/packages with public APIs
-- Configuration systems
-- Deployment tools
-- Development utilities
-- Build systems
-- Testing frameworks/utilities (not individual test files)
+1. **Core services/APIs** - Main backend services users interact with
+2. **Key packages/libraries** - Shared code used across the codebase
+3. **Important tools** - Developer tools, scripts, utilities
+4. **Configuration** - Significant config systems
+5. **Secondary services** - Less critical services
 
-## What are NOT Feature Directories?
+## What to SKIP (do NOT include)
 
-- Generated code directories (genfiles/, genproto/, gengraphql/)
-- Third-party/vendor code (third_party/, vendor/, node_modules/)
+- `testdata/`, `fixtures/`, `mocks/` - Test data only
+- `vendor/`, `third_party/`, `node_modules/` - Third-party code
+- `genfiles/`, `genproto/`, `generated/` - Generated code
+- Individual test directories (`tests/`, `__tests__/`)
 - Build output directories
-- Documentation-only directories (docs/ with only .md files and no code)
-- Pure test directories that only contain tests (tests/, test/)
 
-## Repository Patterns to Recognize
+## Directory Granularity
 
-Different repos organize features differently:
-- **Monorepo with services**: `services/<service-name>/` each is a feature
-- **Go monorepo**: `pkg/<package>/` and `cmd/<command>/` are features
-- **Python project**: Top-level modules or `src/<module>/` are features
-- **Dev tools repo**: `tools/`, `scripts/`, `bin/` contain tools/features
-- **Container project**: Directories with Dockerfiles or systemd units
+Return the RIGHT level - the feature unit level:
+- For `services/foo/`, `services/bar/` → return ["services/foo", "services/bar"]
+- For `pkg/auth/`, `pkg/db/` → return ["pkg/auth", "pkg/db"]
+- NOT too coarse: ["services"] (missing individual services)
+- NOT too fine: ["services/foo/handlers"] (too granular)
 
 ## Output Format
 
-Return ONLY a JSON array of directory paths (relative to repo root).
-Include directories at the RIGHT level - the feature unit level, not too coarse (entire repo)
-and not too fine (every subdirectory).
-
-For a monorepo with services like `services/foo/`, `services/bar/`, return:
-["services/foo", "services/bar"]
-NOT just ["services"] (too coarse) or ["services/foo/handlers", "services/foo/models"] (too fine)
-
-For shared libraries in `pkg/`, return each package:
-["pkg/auth", "pkg/database", "pkg/utils"]
-
-For development tools, include them:
-["dev/linters", "dev/tools", "scripts"]
+Return ONLY a JSON object with prioritized directories and skipped categories:
 
 ```json
-["path/to/feature1", "path/to/feature2", ...]
+{{
+  "analyze": ["most/important/dir", "second/important", ...],
+  "skip_reasons": {{
+    "testdata": "Test fixtures only",
+    "vendor": "Third-party code"
+  }}
+}}
 ```
 
-If truly no feature directories found, return: `[]`
+The "analyze" array must be ordered by priority. Include ALL feature directories.
 """
 
-        success, json_content, error = self._run_llm_prompt_to_file(prompt, "discover-directories")
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, "cartographer")
 
-        if success and json_content and isinstance(json_content, list):
+        if success and json_content:
+            # Handle new format with analyze/skip_reasons
+            if isinstance(json_content, dict) and "analyze" in json_content:
+                dirs_list = json_content.get("analyze", [])
+                skip_reasons = json_content.get("skip_reasons", {})
+                if skip_reasons:
+                    print(f"    Cartographer skipping: {', '.join(skip_reasons.keys())}")
+            elif isinstance(json_content, list):
+                # Handle legacy format (just a list)
+                dirs_list = json_content
+            else:
+                dirs_list = []
+
             # Validate that returned paths are strings and directories exist
             valid_dirs = []
-            for item in json_content:
+            for item in dirs_list:
                 if isinstance(item, str):
                     dir_path = self.repo_root / item
                     if dir_path.exists() and dir_path.is_dir():
@@ -1858,10 +1863,11 @@ If truly no feature directories found, return: `[]`
                         dir_path = self.repo_root / clean_path
                         if dir_path.exists() and dir_path.is_dir():
                             valid_dirs.append(clean_path)
+
             return valid_dirs
 
         if error:
-            print(f"    Warning: LLM directory discovery failed: {error}")
+            print(f"    Warning: Cartographer failed: {error}")
 
         # Fallback: try stdout parsing
         success_fb, stdout, _ = self._run_llm_prompt(prompt, "discover-directories-fallback")
@@ -1944,16 +1950,187 @@ If truly no feature directories found, return: `[]`
 
         return feature_dirs
 
+    def _scout_recommend_files(
+        self, dir_path: str, files: list[Path], max_files: int = 5
+    ) -> list[Path]:
+        """
+        Scout Agent: Analyze file listing and recommend which files to read for feature detection.
+
+        The Scout is a lightweight LLM pass that looks at file names, sizes, and structure
+        to intelligently select which files should be read for the deeper analysis phase.
+        This avoids reading all files blindly.
+
+        Args:
+            dir_path: Directory path relative to repo root
+            files: List of file paths in the directory
+            max_files: Maximum number of files to recommend (default 5)
+
+        Returns:
+            List of recommended file paths to read (subset of input files)
+        """
+        if not files:
+            return []
+
+        # If we have few files, no need for Scout - just return all
+        if len(files) <= max_files:
+            return files
+
+        # Build file listing with metadata (no content!)
+        file_info = []
+        readme_path = None
+
+        for f in files:
+            try:
+                size = f.stat().st_size
+                size_str = (
+                    f"{size // 1024}KB" if size >= 1024 else f"{size}B"
+                )
+                rel_path = str(f.relative_to(self.repo_root))
+                file_info.append(f"  - {rel_path} ({size_str})")
+
+                # Track README for priority
+                if f.name.lower() == "readme.md":
+                    readme_path = f
+            except OSError:
+                continue
+
+        if not file_info:
+            return files[:max_files]
+
+        file_listing = "\n".join(file_info[:50])  # Limit listing to 50 files
+        if len(files) > 50:
+            file_listing += f"\n  ... and {len(files) - 50} more files"
+
+        # Check for README content (small preview, no full read)
+        readme_hint = ""
+        if readme_path and readme_path.exists():
+            try:
+                readme_preview = readme_path.read_text()[:500]
+                readme_hint = f"\nREADME.md preview:\n{readme_preview}\n"
+            except (OSError, UnicodeDecodeError):
+                pass
+
+        prompt = f"""You are the SCOUT agent. Analyze this file listing and recommend which {max_files} files to read for feature detection.
+
+# Directory: {dir_path}
+{readme_hint}
+# Files in directory:
+{file_listing}
+
+# Your Mission
+
+Select the {max_files} BEST files to read for understanding what features this directory contains.
+
+## File Selection Priority
+
+1. **README.md** - Always include if present (describes the feature)
+2. **Main entry points** - main.py, main.go, index.ts, app.py, server.go
+3. **Core implementation** - Files with names suggesting core functionality
+4. **Configuration** - config files that reveal feature purpose
+5. **Public API** - Files defining public interfaces
+
+## Files to AVOID
+
+- Test files (*_test.py, *_test.go, *.test.ts)
+- Generated files (*.pb.go, *_generated.*)
+- Type definitions only (types.py, models.py without logic)
+- Utility helpers (utils.py, helpers.go)
+- Very large files (>50KB) unless they're the main implementation
+
+## Output Format
+
+Return ONLY a JSON object:
+
+```json
+{{
+  "read": ["path/to/file1.py", "path/to/file2.go"],
+  "reason": "Brief explanation of why these files"
+}}
+```
+
+The "read" array must have at most {max_files} file paths from the listing above.
+"""
+
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, f"scout:{dir_path}")
+
+        if success and json_content and isinstance(json_content, dict):
+            recommended = json_content.get("read", [])
+            reason = json_content.get("reason", "")
+            if reason:
+                print(f"      Scout: {reason[:80]}...")
+
+            # Map recommended paths back to Path objects
+            result = []
+            for rec_path in recommended:
+                if isinstance(rec_path, str):
+                    # Try to find matching file
+                    for f in files:
+                        try:
+                            if str(f.relative_to(self.repo_root)) == rec_path:
+                                result.append(f)
+                                break
+                            elif f.name == rec_path or str(f).endswith(rec_path):
+                                result.append(f)
+                                break
+                        except ValueError:
+                            continue
+
+            if result:
+                return result[:max_files]
+
+        # Fallback: use heuristic selection
+        return self._scout_recommend_files_heuristically(files, max_files)
+
+    def _scout_recommend_files_heuristically(
+        self, files: list[Path], max_files: int = 5
+    ) -> list[Path]:
+        """
+        Heuristic file selection when Scout LLM is unavailable.
+
+        Uses simple rules to prioritize files:
+        1. README.md first
+        2. Main entry points (main.*, index.*, app.*, server.*)
+        3. Smaller files (often more focused)
+        4. Skip test files
+        """
+        priority_files = []
+        other_files = []
+
+        for f in files:
+            name = f.name.lower()
+
+            # Skip test files
+            if "_test." in name or ".test." in name or name.startswith("test_"):
+                continue
+
+            # Priority 1: README
+            if name == "readme.md":
+                priority_files.insert(0, f)
+            # Priority 2: Main entry points
+            elif name.startswith(("main.", "index.", "app.", "server.", "cli.")):
+                priority_files.append(f)
+            # Priority 3: __init__.py (package entry)
+            elif name == "__init__.py":
+                priority_files.append(f)
+            else:
+                other_files.append(f)
+
+        # Sort other files by size (smaller first - often more focused)
+        other_files.sort(key=lambda f: f.stat().st_size if f.exists() else 0)
+
+        result = priority_files + other_files
+        return result[:max_files]
+
     def scan_directory_structure(self) -> dict[str, list[Path]]:
         """
-        Scan the repository to find ALL potential feature directories.
+        Scan the repository to find prioritized feature directories.
 
-        This method now uses LLM-based discovery to intelligently identify
-        feature-containing directories in any repository structure. No more
-        hardcoded directory lists!
+        This method uses the Cartographer agent (LLM) to intelligently identify
+        and PRIORITIZE feature-containing directories. Directories are returned
+        in priority order (most important first) for better user feedback.
 
         The process:
-        1. Ask LLM to analyze repo structure and identify feature directories
+        1. Cartographer analyzes repo structure and returns prioritized directories
         2. Fall back to heuristics if LLM unavailable
         3. Recursively scan each identified directory for source files
 
@@ -2055,12 +2232,12 @@ If truly no feature directories found, return: `[]`
                 if item.is_dir() and not self._should_skip(str(item)):
                     scan_recursively(item, depth + 1, max_depth)
 
-        # Step 1: Discover feature directories using LLM or heuristics
-        print("  Discovering feature directories...")
+        # Step 1: Cartographer discovers and prioritizes feature directories
+        print("  Cartographer analyzing repository structure...")
         if self.use_llm:
             discovered_dirs = self._discover_feature_directories_with_llm()
             if not discovered_dirs:
-                print("    LLM discovery returned empty, falling back to heuristics...")
+                print("    Cartographer returned empty, falling back to heuristics...")
                 discovered_dirs = self._discover_feature_directories_heuristically()
         else:
             discovered_dirs = self._discover_feature_directories_heuristically()
@@ -2704,16 +2881,20 @@ Notes:
         return "\n".join(lines)
 
     def _analyze_single_directory(
-        self, dir_path: str, files: list[Path]
+        self, dir_path: str, files: list[Path], use_scout: bool = True
     ) -> tuple[str, int, list[DetectedFeature]]:
         """
-        Analyze a single directory for features.
+        Analyze a single directory for features using Scout → Analyzer pipeline.
 
         This method is designed to be called in parallel via ThreadPoolExecutor.
+        It now uses a two-phase approach:
+        1. Scout phase: Determine which files are worth reading
+        2. Analyzer phase: Deep analysis of selected files only
 
         Args:
             dir_path: Path to the directory relative to repo root
             files: List of files in the directory
+            use_scout: If True, use Scout agent to select files first (default True)
 
         Returns:
             Tuple of (dir_path, file_count, list of detected features)
@@ -2724,7 +2905,15 @@ Notes:
         file_count = len(files)
 
         if self.use_llm:
-            features = self._analyze_directory_with_llm(dir_path, files)
+            # Phase 1: Scout recommends which files to read
+            if use_scout and len(files) > 5:
+                recommended_files = self._scout_recommend_files(dir_path, files, max_files=5)
+            else:
+                # For small directories, use heuristic selection (no LLM call needed)
+                recommended_files = self._scout_recommend_files_heuristically(files, max_files=5)
+
+            # Phase 2: Analyze only the recommended files
+            features = self._analyze_directory_with_llm(dir_path, recommended_files)
             if not features:
                 features = self._analyze_directory_heuristically(dir_path, files)
         else:
@@ -2747,11 +2936,24 @@ Notes:
         """
         Analyze entire repository and generate comprehensive FEATURES.md.
 
-        Uses a multi-agent approach with parallel directory analysis:
-        1. Scan directories to build inventory
-        2. Analyze directories for features IN PARALLEL (LLM pass 1)
-        3. Consolidate and deduplicate all features (LLM pass 2)
-        4. Generate final FEATURES.md
+        Uses a multi-agent pipeline for efficient analysis:
+
+        Phase 0 - CARTOGRAPHER: Single LLM call analyzes repo structure,
+                  identifies ALL feature directories, prioritized by importance
+
+        Phase 1 - SCOUT + ANALYZER (parallel):
+                  For each directory:
+                    - Scout: Recommends 3-5 key files to read (lightweight LLM)
+                    - Analyzer: Deep analysis of recommended files only
+
+        Phase 2 - CONSOLIDATOR: Single LLM call deduplicates and organizes features
+
+        Phase 3 - GENERATOR: Produces final FEATURES.md
+
+        This pipeline is faster than brute-force analysis by:
+        - Reading only relevant files per directory (Scout selects 3-5 vs 15)
+        - Parallel execution where possible
+        - Skipping non-feature directories (testdata, vendor, generated)
 
         Args:
             dry_run: If True, don't write output file
@@ -2764,21 +2966,21 @@ Notes:
 
         output = output_path or self.features_md
 
-        print("Full Repository Feature Analysis (Multi-Agent)")
-        print("=" * 50)
+        print("Full Repository Feature Analysis (Multi-Agent Pipeline)")
+        print("=" * 55)
         print(f"Repository: {self.repo_root}")
         print(f"Output: {output}")
         print(f"Parallel workers: {max_workers}")
         print()
 
-        # Phase 1: Scan directory structure
-        print("Phase 1: Scanning directory structure...")
+        # Phase 0: Cartographer discovers and prioritizes directories
+        print("Phase 0: Cartographer discovering feature directories...")
         feature_dirs = self.scan_directory_structure()
         result.directories_scanned = len(feature_dirs)
-        print(f"  Found {len(feature_dirs)} potential feature directories")
+        print(f"  Cartographer found {len(feature_dirs)} feature directories")
 
-        # Phase 2: Analyze directories IN PARALLEL (LLM pass 1 - extraction)
-        print(f"\nPhase 2: Analyzing directories for features (parallel, {max_workers} workers)...")
+        # Phase 1: Scout + Analyzer (parallel)
+        print(f"\nPhase 1: Scout → Analyzer pipeline ({max_workers} workers)...")
         all_features: list[DetectedFeature] = []
 
         # Use thread-safe lock for printing
@@ -2820,8 +3022,8 @@ Notes:
             print("\n  No features detected. Skipping consolidation and generation.")
             return result
 
-        # Phase 3: Consolidate features (LLM pass 2 - deduplication/organization)
-        print("\nPhase 3: Consolidating and organizing (LLM)...")
+        # Phase 2: Consolidator deduplicates and organizes features
+        print("\nPhase 2: Consolidator organizing features...")
         if self.use_llm and len(all_features) > 1:
             consolidated_features = self._consolidate_features_with_llm(all_features)
             print(f"  Consolidated to {len(consolidated_features)} features")
@@ -2843,8 +3045,8 @@ Notes:
                 result.features_by_category[cat] = []
             result.features_by_category[cat].append(feature)
 
-        # Phase 4: Generate FEATURES.md
-        print("\nPhase 4: Generating FEATURES.md...")
+        # Phase 3: Generate FEATURES.md
+        print("\nPhase 3: Generating FEATURES.md...")
         repo_name = self.repo_root.name
         content = self.generate_features_md(consolidated_features, repo_name=repo_name)
 

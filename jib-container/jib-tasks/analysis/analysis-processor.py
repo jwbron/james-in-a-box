@@ -1141,8 +1141,8 @@ def handle_full_repo_analysis(context: dict) -> int:
         print(f"Parallel workers: {max_workers}")
         print()
 
-        # Run full repo analysis
-        print("Running full repository analysis...")
+        # Run full repo analysis with multi-agent pipeline
+        print("Running full repository analysis (multi-agent pipeline)...")
         analyzer = RepoAnalyzer(repo_path, use_llm=True)
         result = analyzer.analyze_full_repo(
             dry_run=dry_run,
