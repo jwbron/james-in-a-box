@@ -10,9 +10,6 @@ Type=oneshot
 ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/github-watcher/github-watcher.py
 Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/khan/james-in-a-box/bin
 
-# Load secrets (includes GITHUB_TOKEN)
-EnvironmentFile=%h/.config/jib/secrets.env
-
 # Logging
 StandardOutput=journal
 StandardError=journal
