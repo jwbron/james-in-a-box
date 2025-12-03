@@ -676,13 +676,10 @@ def handle_weekly_feature_analysis(context: dict) -> int:
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
 
-    # Import the analyzers from james-in-a-box's host-services directory
-    # These modules live in james-in-a-box, not in the target repository being analyzed
-    jib_path = Path.home() / "khan" / "james-in-a-box"
-    sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "feature-analyzer"))
-
+    # Import the analyzers from the container-local feature_analyzer module
+    # This module is in the same directory as this file
     try:
-        from weekly_analyzer import RepoAnalyzer, WeeklyAnalyzer
+        from feature_analyzer import RepoAnalyzer, WeeklyAnalyzer
     except ImportError as e:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
@@ -1090,13 +1087,10 @@ def handle_full_repo_analysis(context: dict) -> int:
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
 
-    # Import the analyzers from james-in-a-box's host-services directory
-    # These modules live in james-in-a-box, not in the target repository being analyzed
-    jib_path = Path.home() / "khan" / "james-in-a-box"
-    sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "feature-analyzer"))
-
+    # Import the analyzers from the container-local feature_analyzer module
+    # This module is in the same directory as this file
     try:
-        from weekly_analyzer import RepoAnalyzer
+        from feature_analyzer import RepoAnalyzer
     except ImportError as e:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
