@@ -54,9 +54,6 @@ class PathPatternVisitor(ast.NodeVisitor):
         self.file_path = file_path
         self.source_lines = source_lines
         self.violations: list[tuple[int, str, str]] = []  # (line, code, explanation)
-        # Track if we're inside a sys.path.insert/append call
-        self._in_sys_path_call = False
-        self._sys_path_call_lineno = 0
 
     def _get_line_text(self, lineno: int) -> str:
         """Get the source line text."""
