@@ -51,6 +51,7 @@ def _find_shared_path() -> Path:
         return container_shared
     raise ImportError(f"Cannot find shared/claude module from {script_path}")
 
+
 sys.path.insert(0, str(_find_shared_path()))
 import contextlib
 
