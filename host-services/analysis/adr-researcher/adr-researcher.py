@@ -33,6 +33,7 @@ Usage:
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -43,6 +44,14 @@ from typing import Literal
 
 import yaml
 
+
+# Add host-services shared modules to path for jib_exec
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+from jib_exec import jib_exec
+
+
+# Processor for GitHub operations via jib (in PATH via /opt/jib-runtime/bin)
+ANALYSIS_PROCESSOR = "analysis-processor"
 
 # Rate limiting configuration
 RATE_LIMIT_DELAY = 0.5  # 500ms between API calls
@@ -172,6 +181,69 @@ def gh_json(args: list[str]) -> dict | list | None:
 def utc_now_iso() -> str:
     """Get current UTC time in ISO format."""
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def jib_github_pr_comment(repo: str, pr_number: int, body: str) -> bool:
+    """Post a comment to a PR via jib container (jib identity).
+
+    Uses the container's GITHUB_TOKEN so comments appear as jib, not the host user.
+
+    Args:
+        repo: Full repo name (e.g., "jwbron/james-in-a-box")
+        pr_number: PR number to comment on
+        body: Comment body text
+
+    Returns:
+        True if comment was posted successfully
+    """
+    result = jib_exec(
+        ANALYSIS_PROCESSOR,
+        "github_pr_comment",
+        {"repo": repo, "pr_number": pr_number, "body": body},
+    )
+    if result.success and result.json_output:
+        return result.json_output.get("commented", False)
+    if result.error:
+        print(f"  jib github_pr_comment failed: {result.error}")
+    return False
+
+
+def jib_github_pr_close(repo: str, pr_number: int) -> bool:
+    """Close a PR via jib container (jib identity).
+
+    Uses the container's GITHUB_TOKEN so the close action appears as jib.
+
+    Args:
+        repo: Full repo name (e.g., "jwbron/james-in-a-box")
+        pr_number: PR number to close
+
+    Returns:
+        True if PR was closed successfully
+    """
+    result = jib_exec(
+        ANALYSIS_PROCESSOR,
+        "github_pr_close",
+        {"repo": repo, "pr_number": pr_number},
+    )
+    if result.success and result.json_output:
+        return result.json_output.get("closed", False)
+    if result.error:
+        print(f"  jib github_pr_close failed: {result.error}")
+    return False
+
+
+@dataclass
+class PriorResearchPR:
+    """Information about a prior research PR for the same ADR."""
+
+    pr_number: int
+    pr_url: str
+    title: str
+    body: str
+    created_at: str
+    branch: str
+    key_findings: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
 
 
 class ADRResearcher:
@@ -419,8 +491,6 @@ class ADRResearcher:
         - [Title](URL) - Description
         - **Source:** [URL]
         """
-        import re
-
         sources = []
         # Match markdown links: [Title](URL)
         # Optional: followed by " - description" (handles hyphen, en dash, em dash)
@@ -461,8 +531,6 @@ class ADRResearcher:
 
         Looks for patterns in "Key Findings" or similar sections.
         """
-        import re
-
         findings = []
 
         # Find the Key Findings section
@@ -508,8 +576,6 @@ class ADRResearcher:
 
         Looks for tables with Organization/Project, Approach, Notes columns.
         """
-        import re
-
         adoptions = []
 
         # Find the Industry Adoption section
@@ -554,8 +620,6 @@ class ADRResearcher:
 
     def _parse_recommendations(self, content: str) -> list[Recommendation]:
         """Parse recommendations from markdown content."""
-        import re
-
         recommendations = []
 
         # Find the Recommendations section
@@ -598,8 +662,6 @@ class ADRResearcher:
 
     def _parse_anti_patterns(self, content: str) -> list[str]:
         """Parse anti-patterns from markdown content."""
-        import re
-
         anti_patterns = []
 
         # Find the Anti-Patterns section
@@ -671,8 +733,6 @@ class ADRResearcher:
         Returns:
             Section content (between this header and next header), or None
         """
-        import re
-
         for section_name in section_names:
             # Match headers like ## Section Name or ### Section Name
             # Note: {{1,4}} doubles the braces to escape them in f-string (produces literal {1,4})
@@ -712,16 +772,11 @@ class ADRResearcher:
         """
         context_json = json.dumps(context)
 
-        # Container path is fixed - jib always mounts to /home/jwies/khan/
-        processor_path = (
-            "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/adr/adr-processor.py"
-        )
-
+        # adr-processor is in PATH inside the container via /opt/jib-runtime/bin
         cmd = [
             "jib",
             "--exec",
-            "python3",
-            processor_path,
+            "adr-processor",
             "--task",
             task_type,
             "--context",
@@ -805,13 +860,18 @@ class ADRResearcher:
 
         return results
 
-    def research_merged_adrs(self) -> list[ResearchResult]:
+    def research_merged_adrs(self, dry_run: bool = False) -> list[ResearchResult]:
         """Research all merged/implemented ADRs and create update PRs.
 
-        Workflow:
+        Enhanced workflow:
         1. Find ADRs in implemented/ directory
-        2. For each ADR, invoke jib to research for updates
-        3. If updates found, create PR with Research Updates section
+        2. For each ADR, find and collect prior research PRs
+        3. Invoke jib to research with prior findings as context
+        4. If updates found, create PR with Research Updates section
+        5. Close prior research PRs with references to the new PR
+
+        Args:
+            dry_run: If True, only report what would be done without making changes
 
         Returns:
             List of ResearchResult objects with typed, structured research findings.
@@ -825,17 +885,45 @@ class ADRResearcher:
             print(f"\nResearching: {adr.title}")
             print(f"  Path: {adr.path}")
 
+            adr_rel_path = str(adr.path.relative_to(self.project_root))
+
+            # Find prior research PRs for this ADR
+            prior_prs = self.find_prior_research_prs(adr_rel_path, adr.title)
+            if prior_prs:
+                print(f"  Found {len(prior_prs)} prior research PR(s) to integrate:")
+                for pr in prior_prs:
+                    print(f"    - PR #{pr.pr_number}: {pr.title}")
+
+            # Format prior findings for context
+            prior_findings_context = self.format_prior_findings_for_context(prior_prs)
+
             context = {
                 "task_type": "research_adr",
                 "adr_title": adr.title,
-                "adr_path": str(adr.path.relative_to(self.project_root)),
+                "adr_path": adr_rel_path,
                 "adr_content": adr.content[:20000],
                 "topics": adr.topics,
                 "output_mode": "update_pr",
+                "prior_research": prior_findings_context,
+                "prior_pr_numbers": [pr.pr_number for pr in prior_prs],
             }
 
             raw_result = self.invoke_jib_research("research_adr", context)
             research_result = self._parse_research_result(raw_result, adr.title)
+
+            # If a new PR was created, close the prior PRs
+            if research_result.success and research_result.pr_url and prior_prs:
+                print(f"  New PR created: {research_result.pr_url}")
+                print(f"  Closing {len(prior_prs)} prior research PR(s)...")
+                closure_results = self.close_prior_research_prs(
+                    prior_prs, research_result.pr_url, adr.title, dry_run=dry_run
+                )
+                closed_count = sum(1 for r in closure_results if r.get("success"))
+                if dry_run:
+                    print(f"  [DRY RUN] Would close {closed_count}/{len(prior_prs)} prior PR(s)")
+                else:
+                    print(f"  Closed {closed_count}/{len(prior_prs)} prior PR(s)")
+
             results.append(research_result)
 
         return results
@@ -932,6 +1020,245 @@ class ADRResearcher:
                     return {"number": pr["number"], "url": pr["url"]}
 
         return None
+
+    def find_prior_research_prs(self, adr_path: str, adr_title: str) -> list[PriorResearchPR]:
+        """Find existing open research PRs for the same ADR.
+
+        Searches for PRs that:
+        1. Modify the same ADR file, OR
+        2. Have "research" in the title and reference the same ADR title
+
+        Args:
+            adr_path: Relative path to the ADR file (e.g., docs/adr/implemented/ADR-Foo.md)
+            adr_title: Title of the ADR for matching PR titles
+
+        Returns:
+            List of PriorResearchPR objects with PR info and extracted findings
+        """
+        prior_prs = []
+
+        for repo in self.config.get("writable_repos", []):
+            # Search for PRs with "research" in title
+            prs = gh_json(
+                [
+                    "pr",
+                    "list",
+                    "--repo",
+                    repo,
+                    "--state",
+                    "open",
+                    "--search",
+                    "research in:title",
+                    "--json",
+                    "number,title,url,body,createdAt,headRefName,files",
+                ]
+            )
+            if not prs:
+                continue
+
+            for pr in prs:
+                # Check if PR modifies the same ADR file
+                files = pr.get("files", [])
+                modifies_same_file = any(f.get("path") == adr_path for f in files)
+
+                # Or check if title references the same ADR
+                pr_title = pr.get("title", "")
+                # Extract ADR name from path (e.g., ADR-Foo from docs/adr/.../ADR-Foo.md)
+                adr_name = Path(adr_path).stem if adr_path else ""
+                title_matches = (
+                    adr_name
+                    and (
+                        adr_name.lower() in pr_title.lower()
+                        or adr_title.lower() in pr_title.lower()
+                    )
+                    and "research" in pr_title.lower()
+                )
+
+                if modifies_same_file or title_matches:
+                    # Extract findings and sources from PR body
+                    body = pr.get("body", "")
+                    key_findings = self._extract_findings_from_body(body)
+                    sources = self._extract_sources_from_body(body)
+
+                    prior_prs.append(
+                        PriorResearchPR(
+                            pr_number=pr["number"],
+                            pr_url=pr["url"],
+                            title=pr_title,
+                            body=body,
+                            created_at=pr.get("createdAt", ""),
+                            branch=pr.get("headRefName", ""),
+                            key_findings=key_findings,
+                            sources=sources,
+                        )
+                    )
+
+        return prior_prs
+
+    def _extract_findings_from_body(self, body: str) -> list[str]:
+        """Extract key findings from a PR body.
+
+        Looks for bullet points under "Key" or "Findings" sections.
+        """
+        findings = []
+
+        # Look for key findings sections
+        sections = ["Key Research Areas", "Key Findings", "Main Findings", "Research Findings"]
+        for section in sections:
+            pattern = rf"#+\s*{re.escape(section)}\s*\n([\s\S]*?)(?=\n#+|\Z)"
+            match = re.search(pattern, body, re.IGNORECASE)
+            if match:
+                section_content = match.group(1)
+                # Extract numbered items or bullet points
+                items = re.findall(
+                    r"(?:^|\n)\s*(?:\d+\.\s+|\*\s+|-\s+)\**([^*\n]+)\**", section_content
+                )
+                findings.extend([f.strip() for f in items if f.strip()][:10])
+
+        return findings
+
+    def _extract_sources_from_body(self, body: str) -> list[str]:
+        """Extract source URLs from a PR body."""
+        # Match markdown links
+        urls = re.findall(r"\[([^\]]+)\]\((https?://[^\)]+)\)", body)
+        # Return unique URLs with their titles
+        seen = set()
+        sources = []
+        for title, url in urls:
+            if url not in seen:
+                seen.add(url)
+                sources.append(f"[{title}]({url})")
+        return sources[:20]
+
+    def close_prior_research_prs(
+        self,
+        prior_prs: list[PriorResearchPR],
+        new_pr_url: str,
+        adr_title: str,
+        dry_run: bool = False,
+    ) -> list[dict]:
+        """Close prior research PRs with a comment explaining they're superseded.
+
+        Args:
+            prior_prs: List of PriorResearchPR objects to close
+            new_pr_url: URL of the new PR that supersedes these
+            adr_title: Title of the ADR for the comment
+            dry_run: If True, only report what would be done without making changes
+
+        Returns:
+            List of dicts with results for each PR closure attempt
+        """
+        results = []
+
+        if dry_run:
+            for pr in prior_prs:
+                print(f"  [DRY RUN] Would close PR #{pr.pr_number}: {pr.title}")
+                results.append(
+                    {
+                        "pr_number": pr.pr_number,
+                        "success": True,
+                        "dry_run": True,
+                        "superseded_by": new_pr_url,
+                    }
+                )
+            return results
+
+        for pr in prior_prs:
+            print(f"  Closing prior research PR #{pr.pr_number}: {pr.title}")
+
+            # Post a comment explaining the closure
+            comment_body = f"""## Superseded by New Research
+
+This PR has been superseded by a newer research update: {new_pr_url}
+
+The new PR incorporates findings from this PR where still relevant, along with updated research from {datetime.now(UTC).strftime("%B %Y")}.
+
+**Original PR findings integrated:** {"Yes - key findings preserved" if pr.key_findings else "No significant findings to integrate"}
+
+---
+*Automatically closed by adr-researcher*
+"""
+
+            # Post comment and close PR via jib container (uses jib identity)
+            # Try each writable repo until one succeeds
+            commented = False
+            closed = False
+
+            for repo in self.config.get("writable_repos", []):
+                # Post comment
+                if not commented:
+                    commented = jib_github_pr_comment(repo, pr.pr_number, comment_body)
+
+                # Close the PR
+                if not closed:
+                    closed = jib_github_pr_close(repo, pr.pr_number)
+
+                if commented and closed:
+                    break
+
+            if closed:
+                print(f"    Closed PR #{pr.pr_number}")
+                results.append(
+                    {
+                        "pr_number": pr.pr_number,
+                        "success": True,
+                        "superseded_by": new_pr_url,
+                    }
+                )
+            else:
+                print(f"    Failed to close PR #{pr.pr_number}")
+                results.append(
+                    {
+                        "pr_number": pr.pr_number,
+                        "success": False,
+                        "error": "jib_github_pr_close failed",
+                    }
+                )
+
+            time.sleep(RATE_LIMIT_DELAY)
+
+        return results
+
+    def format_prior_findings_for_context(self, prior_prs: list[PriorResearchPR]) -> str:
+        """Format findings from prior PRs for inclusion in research context.
+
+        Args:
+            prior_prs: List of prior research PRs
+
+        Returns:
+            Markdown-formatted summary of prior findings
+        """
+        if not prior_prs:
+            return ""
+
+        lines = [
+            "## Prior Research (to be integrated or updated)",
+            "",
+            "The following findings from prior research PRs should be integrated or updated:",
+            "",
+        ]
+
+        for pr in prior_prs:
+            lines.append(f"### From PR #{pr.pr_number}: {pr.title}")
+            lines.append(f"*Created: {pr.created_at[:10] if pr.created_at else 'Unknown'}*")
+            lines.append("")
+
+            if pr.key_findings:
+                lines.append("**Key Findings:**")
+                for finding in pr.key_findings[:5]:
+                    lines.append(f"- {finding}")
+                lines.append("")
+
+            if pr.sources:
+                lines.append("**Sources:**")
+                for source in pr.sources[:5]:
+                    lines.append(f"- {source}")
+                lines.append("")
+
+        lines.append("---")
+        lines.append("")
+
+        return "\n".join(lines)
 
     def research_topic(self, query: str, report_only: bool = False) -> ResearchResult:
         """Research a specific topic and output findings.

@@ -48,10 +48,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
-# Add host-services shared modules to path (for jib_exec)
-# NOTE: Host-side code must use jib_exec which invokes processors via jib --exec
-# because Claude CLI is only available inside the container.
+# Add shared modules to path for jib_exec
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
+
+# Import shared utilities
+# NOTE: Host-services code must ALWAYS use jib_exec, never direct Claude calls.
 from jib_exec import jib_exec
 
 
@@ -59,11 +60,11 @@ def _run_llm_prompt_shared(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, str, str | None]:
     """
-    Run an LLM prompt via jib container.
+    Run an LLM prompt via jib_exec.
 
     This shared function is used by both WeeklyAnalyzer and RepoAnalyzer.
-    Host-side code cannot directly call Claude - it's only available inside
-    the container. This method uses jib_exec to invoke the analysis processor.
+    Host-services code must always route through jib_exec to invoke
+    the analysis processor in the container.
 
     Args:
         repo_root: Path to the repository root
@@ -74,8 +75,9 @@ def _run_llm_prompt_shared(
         Tuple of (success, stdout, error_message)
     """
     try:
+        # analysis-processor is in PATH via /opt/jib-runtime/bin
         result = jib_exec(
-            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            processor="analysis-processor",
             task_type="llm_prompt",
             context={
                 "prompt": prompt,
@@ -134,11 +136,14 @@ def _run_llm_prompt_to_file_shared(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, list | dict | None, str | None]:
     """
-    Run an LLM prompt that writes JSON output to a file.
+    Run an LLM prompt that writes JSON output to a file via jib_exec.
 
     This avoids JSON parsing issues when the LLM includes explanatory text
     before/after the JSON in its stdout. The LLM writes JSON to a temp file,
     which is then read and parsed.
+
+    Host-services code must always route through jib_exec to invoke
+    the analysis processor in the container.
 
     Args:
         repo_root: Path to the repository root
@@ -149,8 +154,9 @@ def _run_llm_prompt_to_file_shared(
         Tuple of (success, parsed_json_content, error_message)
     """
     try:
+        # analysis-processor is in PATH via /opt/jib-runtime/bin
         result = jib_exec(
-            processor="jib-container/jib-tasks/analysis/analysis-processor.py",
+            processor="analysis-processor",
             task_type="llm_prompt_to_file",
             context={
                 "prompt": prompt,

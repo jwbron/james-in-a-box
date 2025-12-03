@@ -1,0 +1,55 @@
+{
+  "timestamp": "20251202-064756",
+  "days_analyzed": 7,
+  "total_tasks": 602,
+  "tasks_created": 602,
+  "tasks_closed": 527,
+  "tasks_abandoned": 31,
+  "tasks_in_progress": 58,
+  "tasks_blocked": 5,
+  "tasks_with_notes": 567,
+  "tasks_with_labels": 601,
+  "tasks_with_searchable_title": 602,
+  "avg_time_to_close_hours": 9.333821641159604,
+  "proper_lifecycle_rate": 95.82542694497154,
+  "slack_linked_tasks": 201,
+  "pr_linked_tasks": 348,
+  "jira_linked_tasks": 2,
+  "tasks_by_status": {
+    "closed": 527,
+    "in_progress": 58,
+    "open": 12,
+    "blocked": 5
+  },
+  "tasks_by_source": {
+    "github": 348,
+    "slack": 201,
+    "unknown": 51,
+    "jira": 2
+  },
+  "issues_count": {
+    "high": 1,
+    "medium": 0,
+    "low": 1
+  },
+  "health_score": 97,
+  "task_quality": {
+    "avg_task_quality_score": 92.01993355481727,
+    "grade_distribution": {
+      "A": 492,
+      "B": 85,
+      "C": 9,
+      "D": 14,
+      "F": 2
+    },
+    "flag_counts": {
+      "no_context": 15,
+      "no_closure_context": 22,
+      "unlabeled": 1,
+      "stale_in_progress": 2,
+      "abandoned": 31
+    },
+    "tasks_grade_f": 2,
+    "tasks_grade_a": 492
+  }
+}

@@ -3,6 +3,7 @@ Description=ADR Researcher - Research and update ADRs with industry findings
 Documentation=file://%h/khan/james-in-a-box/host-services/analysis/adr-researcher/README.md
 After=network-online.target
 Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot

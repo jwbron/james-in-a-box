@@ -55,7 +55,7 @@ RUN chmod +x /tmp/docker-setup.py && \
     rm /tmp/docker-setup.py
 
 # Install Python dependencies for jib components
-# These are required by scripts in jib-container/components/ and jib-container/scripts/
+# These are required by scripts in /opt/jib-runtime/ (copied from jib-container/)
 RUN pip3 install --no-cache-dir \
     pyyaml \
     requests
@@ -86,6 +86,15 @@ RUN chmod 644 /opt/claude-rules/*.md
 RUN mkdir -p /opt/claude-hooks
 COPY .claude/hooks/ /opt/claude-hooks/
 RUN chmod 755 /opt/claude-hooks/*.sh 2>/dev/null || true
+
+# Copy jib-container runtime scripts and tools to /opt/jib-runtime
+# This provides container-resident executables available in PATH
+# The bin/ directory contains symlinks to all executables (maintained by bin/maintain-bin-symlinks)
+COPY . /opt/jib-runtime/
+RUN chmod +x /opt/jib-runtime/bin/* 2>/dev/null || true && \
+    chmod +x /opt/jib-runtime/scripts/* 2>/dev/null || true && \
+    chmod +x /opt/jib-runtime/jib-tools/* 2>/dev/null || true && \
+    find /opt/jib-runtime/jib-tasks -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
 
 # Create tmp directory in image (not mounted - container-only scratch space)
 RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
@@ -156,8 +165,9 @@ fi
 # Set up environment
 export HOME="${USER_HOME}"
 export USER="${RUNTIME_USER}"
-# Add jib scripts to PATH for comment-pr-helper.py and other tools
-export PATH="${USER_HOME}/khan/james-in-a-box/jib-container/scripts:/usr/local/bin:${PATH}"
+# Add jib runtime scripts to PATH (copied to /opt/jib-runtime during build)
+# bin/ contains symlinks to all executables for easy access
+export PATH="/opt/jib-runtime/bin:/usr/local/bin:${PATH}"
 # Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
 export PYTHONDONTWRITEBYTECODE=1
 # Ensure Python output is unbuffered for real-time streaming to log files
@@ -173,7 +183,7 @@ gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.or
 # Uses GITHUB_TOKEN environment variable (set by jib launcher from GitHub App)
 # This allows git push over HTTPS without embedding tokens in remote URLs
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper "${USER_HOME}/khan/james-in-a-box/jib-container/scripts/git-credential-github-token"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper "/opt/jib-runtime/bin/git-credential-github-token"
     log_success "Git credential helper configured for GitHub push"
 else
     # No token - disable credential helper (will fail on push attempts)
@@ -460,18 +470,27 @@ cat > "${USER_HOME}/.claude/settings.json" << SETTINGS
   "hooks": {
     "PostToolUse": [
       {
-        "type": "command",
-        "command": "python3 ${TRACE_COLLECTOR} post-tool-use"
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${TRACE_COLLECTOR} post-tool-use"
+          }
+        ]
       }
     ],
     "SessionEnd": [
       {
-        "type": "command",
-        "command": "python3 ${TRACE_COLLECTOR} session-end"
-      },
-      {
-        "type": "command",
-        "command": "bash ${BEADS_HOOK}"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${TRACE_COLLECTOR} session-end"
+          },
+          {
+            "type": "command",
+            "command": "bash ${BEADS_HOOK}"
+          }
+        ]
       }
     ]
   }
@@ -568,11 +587,10 @@ else
 fi
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
-# Also add jib-container/scripts to PATH
+# Note: PATH is already set in entrypoint to include /opt/jib-runtime/bin
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
 alias claude='claude --dangerously-skip-permissions'
 export PS1='\[\033[01;32m\]\u@sandboxed\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-export PATH="${HOME}/khan/james-in-a-box/jib-container/scripts:${PATH}"
 BASHRC
 chown "${RUNTIME_UID}:${RUNTIME_GID}" "${USER_HOME}/.bashrc"
 log_success "Claude alias created (bypasses permissions in sandbox)"
@@ -651,7 +669,7 @@ fi
 #   - Simpler architecture, easier to debug
 #   - Lower resource usage
 #
-# Analysis scripts location: ~/khan/james-in-a-box/jib-container/jib-tasks/
+# Analysis scripts location: /opt/jib-runtime/jib-tasks/ (copied during build)
 #   - jira/jira-processor.py (triggered by context-sync)
 #   - confluence/confluence-processor.py (triggered by context-sync)
 #   - github/github-processor.py (triggered by github-sync)
@@ -710,7 +728,7 @@ trap cleanup_on_exit EXIT SIGTERM SIGINT
 if [ $# -eq 0 ]; then
     # Start MCP token watcher in background for auto-refresh support
     # This watches ~/sharing/.github-token and reconfigures MCP when token changes
-    MCP_WATCHER="${USER_HOME}/khan/james-in-a-box/jib-container/scripts/mcp-token-watcher.py"
+    MCP_WATCHER="/opt/jib-runtime/bin/mcp-token-watcher"
     if [ -f "$MCP_WATCHER" ] && [ -f "${USER_HOME}/sharing/.github-token" ]; then
         log_info "Starting MCP token watcher in background..."
         nohup gosu "${RUNTIME_UID}:${RUNTIME_GID}" python3 "$MCP_WATCHER" \
