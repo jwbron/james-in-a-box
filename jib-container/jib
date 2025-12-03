@@ -688,6 +688,18 @@ def create_dockerfile() -> None:
     else:
         warn("shared directory not found, container processors may fail imports")
 
+    # Copy pyproject.toml files for pip-installable packages
+    # These make claude (from jib-container) and shared modules pip-installable
+    pyproject_files = [
+        (script_dir / "pyproject.toml", jib_container_dest / "pyproject.toml"),
+        (shared_src / "pyproject.toml", shared_dest / "pyproject.toml"),
+    ]
+    for src, dest in pyproject_files:
+        if src.exists():
+            shutil.copy(src, dest)
+        else:
+            warn(f"pyproject.toml not found at {src}")
+
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
     # Avoids issues with stale/revoked OAuth tokens from previous builds
