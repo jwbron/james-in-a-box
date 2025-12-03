@@ -1541,20 +1541,21 @@ def check_prs_for_review(
     bot_username: str,
     since_timestamp: str | None = None,
 ) -> list[dict]:
-    """Check for PRs where the user is directly requested as a reviewer.
+    """Check for PRs from other authors that may need review.
 
-    This function ONLY processes PRs where:
-    1. The user is directly tagged as a reviewer (individual @username mention)
-    2. NOT: PRs where the user is part of a team that's requested
+    NOTE: Direct review request filtering (is_user_directly_requested) is temporarily
+    disabled because the reviewRequests field requires requestedReviewer GraphQL
+    permission that personal access tokens don't have. This caused:
+    "GraphQL: Resource not accessible by personal access token"
 
-    This ensures the bot only acts on PRs the user is personally responsible for,
-    not ones assigned to their team (like infra-platform).
+    Current behavior: Processes ALL PRs from other authors (not user's or bot's PRs).
+    TODO: Re-enable direct review request filtering using per-PR API calls.
 
     Args:
         repo: Repository in owner/repo format
-        all_prs: Pre-fetched list of all open PRs (must include reviewRequests field)
+        all_prs: Pre-fetched list of all open PRs
         state: State dict with processed_reviews
-        github_username: The user's GitHub username (to check for direct review requests)
+        github_username: The user's GitHub username
         bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
@@ -1566,47 +1567,36 @@ def check_prs_for_review(
     if not all_prs:
         return []
 
-    # Filter to PRs from others where the user is DIRECTLY requested as a reviewer
-    # Exclude: user's own PRs, bot's PRs, and PRs where user is only on a team
+    # Filter to PRs from others (exclude user's own PRs and bot's PRs)
     excluded_authors = {
         github_username.lower(),
         bot_username.lower(),
         f"{bot_username.lower()}[bot]",
     }
 
-    # Only include PRs where:
-    # 1. Author is not the user or bot
-    # 2. User is DIRECTLY requested as a reviewer (not via team)
-    directly_requested_prs = [
+    # NOTE: Direct review request filtering disabled due to PAT permission issues
+    # Previously used is_user_directly_requested() but reviewRequests field
+    # cannot be fetched with PATs. Now processing all PRs from other authors.
+    other_prs = [
         p
         for p in all_prs
         if p.get("author", {}).get("login", "").lower() not in excluded_authors
-        and is_user_directly_requested(p, github_username)
     ]
 
-    if not directly_requested_prs:
+    if not other_prs:
         logger.debug(
-            "No PRs with direct review requests for user",
+            "No PRs from other authors",
             username=github_username,
             total_prs=len(all_prs),
         )
         return []
 
     logger.info(
-        "Found PRs with direct review requests",
+        "Found PRs from other authors for review",
         username=github_username,
-        directly_requested_count=len(directly_requested_prs),
-        total_other_prs=len(
-            [
-                p
-                for p in all_prs
-                if p.get("author", {}).get("login", "").lower() not in excluded_authors
-            ]
-        ),
+        other_author_count=len(other_prs),
+        total_prs=len(all_prs),
     )
-
-    # Use the filtered list for the rest of the function
-    other_prs = directly_requested_prs
 
     # Check for failed review tasks that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -1762,7 +1752,10 @@ def process_repo_prs(
     )
 
     # Fetch ALL open PRs in a single API call
-    # Include reviewRequests to filter for direct user review requests (not team-based)
+    # NOTE: reviewRequests field was removed because it requires requestedReviewer
+    # GraphQL permission that personal access tokens don't have. This causes:
+    # "GraphQL: Resource not accessible by personal access token"
+    # TODO: Re-enable review request filtering using per-PR API calls or alternative approach
     all_prs = gh_json(
         [
             "pr",
@@ -1772,7 +1765,7 @@ def process_repo_prs(
             "--state",
             "open",
             "--json",
-            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files,reviewRequests",
+            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
         ],
         repo=repo,
     )
