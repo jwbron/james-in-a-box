@@ -26,3 +26,6 @@ jobs:
 
       - name: Check bin/ symlinks are up to date
         run: ./bin/maintain-bin-symlinks --check
+
+      - name: Check jib-container/bin/ symlinks are up to date
+        run: ./jib-container/bin/maintain-bin-symlinks --check
