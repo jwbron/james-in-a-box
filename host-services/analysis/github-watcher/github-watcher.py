@@ -22,10 +22,11 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
    - Check failures: Detects and triggers fixes for failing CI checks
    - Comments: Responds to comments from the user and others (not from bot itself)
 
-3. **Review requests** (PRs where user is directly tagged):
-   - ONLY PRs where the user is directly requested as a reviewer are processed
-   - Team-based review requests (e.g., @org/infra-platform) are IGNORED
-   - This ensures the bot only acts on PRs the user is personally responsible for
+3. **Review requests** (PRs from other authors):
+   - PRs from other authors (not user or bot) are monitored
+   - NOTE: Direct review request filtering is temporarily disabled due to GitHub API
+     permission requirements. The reviewRequests field requires requestedReviewer access
+     that PATs may not have.
 
 ### Which comments are handled:
 - Comments from the configured `github_username` (e.g., jwbron) ARE processed
@@ -1521,20 +1522,19 @@ def check_prs_for_review(
     bot_username: str,
     since_timestamp: str | None = None,
 ) -> list[dict]:
-    """Check for PRs where the user is directly requested as a reviewer.
+    """Check for PRs from other authors that may need review.
 
-    This function ONLY processes PRs where:
-    1. The user is directly tagged as a reviewer (individual @username mention)
-    2. NOT: PRs where the user is part of a team that's requested
+    Currently processes all PRs from other authors (excluding user's own and bot's PRs).
 
-    This ensures the bot only acts on PRs the user is personally responsible for,
-    not ones assigned to their team (like infra-platform).
+    TODO: Re-enable direct review request filtering when we have a token-friendly
+    approach. The reviewRequests field requires special permissions (requestedReviewer
+    access) that PATs may not have, causing the entire PR list to fail.
 
     Args:
         repo: Repository in owner/repo format
-        all_prs: Pre-fetched list of all open PRs (must include reviewRequests field)
+        all_prs: Pre-fetched list of all open PRs
         state: State dict with processed_reviews
-        github_username: The user's GitHub username (to check for direct review requests)
+        github_username: The user's GitHub username
         bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
@@ -1546,47 +1546,33 @@ def check_prs_for_review(
     if not all_prs:
         return []
 
-    # Filter to PRs from others where the user is DIRECTLY requested as a reviewer
-    # Exclude: user's own PRs, bot's PRs, and PRs where user is only on a team
+    # Filter to PRs from others (exclude user's own and bot's PRs)
     excluded_authors = {
         github_username.lower(),
         bot_username.lower(),
         f"{bot_username.lower()}[bot]",
     }
 
-    # Only include PRs where:
-    # 1. Author is not the user or bot
-    # 2. User is DIRECTLY requested as a reviewer (not via team)
-    directly_requested_prs = [
+    # Get PRs from other authors
+    other_prs = [
         p
         for p in all_prs
         if p.get("author", {}).get("login", "").lower() not in excluded_authors
-        and is_user_directly_requested(p, github_username)
     ]
 
-    if not directly_requested_prs:
+    if not other_prs:
         logger.debug(
-            "No PRs with direct review requests for user",
+            "No PRs from other authors",
             username=github_username,
             total_prs=len(all_prs),
         )
         return []
 
     logger.info(
-        "Found PRs with direct review requests",
+        "Found PRs from other authors",
         username=github_username,
-        directly_requested_count=len(directly_requested_prs),
-        total_other_prs=len(
-            [
-                p
-                for p in all_prs
-                if p.get("author", {}).get("login", "").lower() not in excluded_authors
-            ]
-        ),
+        other_prs_count=len(other_prs),
     )
-
-    # Use the filtered list for the rest of the function
-    other_prs = directly_requested_prs
 
     # Check for failed review tasks that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -1731,7 +1717,9 @@ def process_repo_prs(
     tasks: list[JibTask] = []
 
     # Fetch ALL open PRs in a single API call
-    # Include reviewRequests to filter for direct user review requests (not team-based)
+    # Note: reviewRequests field removed as it requires special token permissions
+    # that PATs may not have (requestedReviewer access). Review requests are fetched
+    # per-PR when needed instead.
     all_prs = gh_json(
         [
             "pr",
@@ -1741,7 +1729,7 @@ def process_repo_prs(
             "--state",
             "open",
             "--json",
-            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files,reviewRequests",
+            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
         ],
         repo=repo,
     )
