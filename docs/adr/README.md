@@ -12,7 +12,6 @@ ADRs are organized by implementation status:
 
 - **`in-progress/`** - ADRs actively being implemented
 - **`implemented/`** - ADRs fully implemented and in production
-- **`not-implemented/`** - ADRs proposed but not yet started
 
 ## ADR Index
 
@@ -63,7 +62,7 @@ When creating a new ADR, include:
 - List **dependencies** between phases
 - Focus on **what** needs to be done, not **when**
 
-Place new ADRs in `not-implemented/` until work begins.
+Place new ADRs in `in-progress/` when work begins.
 
 ## See Also
 
