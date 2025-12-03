@@ -1665,20 +1665,13 @@ def handle_repo_onboarding(context: dict) -> int:
         try:
             from index_generator import CodebaseIndexer
 
-            indexer = CodebaseIndexer(repo_path)
-            indexer.analyze()
+            indexer = CodebaseIndexer(repo_path, output_dir)
+            indexer.generate_indexes()
 
-            # Save indexes
+            # Check which indexes were generated
             indexes_generated = []
-            for name, data in [
-                ("codebase.json", indexer.codebase_index),
-                ("patterns.json", indexer.patterns_index),
-                ("dependencies.json", indexer.dependencies_index),
-            ]:
-                if data:
-                    idx_path = output_dir / name
-                    with open(idx_path, "w") as f:
-                        json.dump(data, f, indent=2, default=str)
+            for name in ["codebase.json", "patterns.json", "dependencies.json"]:
+                if (output_dir / name).exists():
                     indexes_generated.append(name)
 
             result_data["indexes_generated"] = indexes_generated
@@ -1762,17 +1755,33 @@ Indexes generated: {', '.join(result_data['indexes_generated'])}
             text=True,
         )
 
-        # Push
-        subprocess.run(
-            ["git", "push", "-u", "origin", branch_name],
-            check=True,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-        )
+        print(f"  ✓ Committed changes to branch: {branch_name}")
 
-        # Build PR body
-        pr_body = f"""## Summary
+        # Try to push - may fail for read-only repos
+        push_succeeded = False
+        push_error = None
+        try:
+            subprocess.run(
+                ["git", "push", "-u", "origin", branch_name],
+                check=True,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+            push_succeeded = True
+        except subprocess.CalledProcessError as e:
+            push_error = e.stderr or e.stdout or str(e)
+            # Check if this is a write access denied error
+            if "403" in push_error or "Write access" in push_error or "Permission" in push_error:
+                print(f"  ⚠ Cannot push to {repo_name} (read-only access)")
+                result_data["read_only"] = True
+            else:
+                # Re-raise for other git errors
+                raise
+
+        if push_succeeded:
+            # Build PR body
+            pr_body = f"""## Summary
 
 Repository onboarding generated documentation indexes for **{repo_name}**.
 
@@ -1807,31 +1816,81 @@ Repository onboarding generated documentation indexes for **{repo_name}**.
 
 — Authored by jib"""
 
-        pr_title = f"docs: Repository onboarding for {repo_name}"
+            pr_title = f"docs: Repository onboarding for {repo_name}"
 
-        # Create PR using gh CLI
-        pr_result = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--title",
-                pr_title,
-                "--body",
-                pr_body,
-                "--base",
-                default_branch,
-                "--head",
-                branch_name,
-            ],
-            check=True,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-        )
+            # Create PR using gh CLI
+            pr_result = subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--title",
+                    pr_title,
+                    "--body",
+                    pr_body,
+                    "--base",
+                    default_branch,
+                    "--head",
+                    branch_name,
+                ],
+                check=True,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
 
-        result_data["pr_url"] = pr_result.stdout.strip()
-        print(f"\n✓ PR created: {result_data['pr_url']}")
+            result_data["pr_url"] = pr_result.stdout.strip()
+            print(f"\n✓ PR created: {result_data['pr_url']}")
+        else:
+            # Read-only repo - send Slack notification instead
+            print(f"\n  Changes committed locally on branch: {branch_name}")
+            print("  Sending Slack notification...")
+
+            # Import and use the notifications library
+            try:
+                shared_path = Path.home() / "khan" / "james-in-a-box" / "shared"
+                if str(shared_path) not in sys.path:
+                    sys.path.insert(0, str(shared_path))
+                from notifications import slack_notify, NotificationContext
+
+                # Build summary of what was generated
+                phases_list = "\n".join(
+                    f"  • {phase.replace('_', ' ').title()}"
+                    for phase in result_data["phases_completed"]
+                )
+                indexes_list = ", ".join(result_data["indexes_generated"]) or "none"
+
+                notification_body = f"""Repository onboarding completed for **{repo_name}** but could not push (read-only access).
+
+**Branch:** `{branch_name}`
+**Repository path:** `{repo_path}`
+
+**Phases Completed:**
+{phases_list}
+
+**Generated Content:**
+  • Features detected: {result_data['features_detected']}
+  • Indexes: {indexes_list}
+
+**Next Steps:**
+To apply these changes, you'll need to:
+1. Navigate to the repo: `cd {repo_path}`
+2. Review changes: `git diff HEAD~1`
+3. Push manually or create a PR from a fork
+
+The changes are committed locally and ready for review."""
+
+                ctx = NotificationContext(task_id=f"onboarding-{repo_name}", repository=repo_name)
+                slack_notify(
+                    f"📋 Onboarding Complete: {repo_name} (Read-Only)",
+                    notification_body,
+                    context=ctx,
+                )
+                print("  ✓ Slack notification sent")
+                result_data["slack_notified"] = True
+            except Exception as slack_err:
+                print(f"  ⚠ Failed to send Slack notification: {slack_err}")
+                result_data["slack_error"] = str(slack_err)
 
         return output_result(success=True, result=result_data)
 
