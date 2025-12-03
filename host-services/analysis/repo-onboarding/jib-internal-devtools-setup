@@ -1,0 +1,345 @@
+#!/bin/bash
+# jib-internal-devtools-setup - Full repository onboarding for Jib
+#
+# Orchestrates the complete onboarding workflow:
+#   Phase 1: Confluence Documentation Discovery
+#   Phase 2: Feature Analysis & Documentation
+#   Phase 3: Index Generation
+#   Phase 4: Documentation Index Updates
+#
+# Per ADR: Jib Repository Onboarding Strategy
+#
+# Usage:
+#   jib-internal-devtools-setup --repo ~/khan/webapp
+#   jib-internal-devtools-setup --repo ~/khan/public-repo --skip-confluence
+#   jib-internal-devtools-setup --repo ~/khan/webapp --dry-run
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Script location - used to find sibling tools
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ANALYSIS_DIR="$(dirname "$SCRIPT_DIR")"
+JIB_ROOT="$(dirname "$(dirname "$ANALYSIS_DIR")")"
+
+# Default values
+REPO_PATH=""
+SKIP_CONFLUENCE=false
+PUBLIC_REPO=false
+DRY_RUN=false
+CONFLUENCE_DIR="${HOME}/context-sync/confluence"
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Onboard a repository to Jib by generating documentation indexes.
+
+OPTIONS:
+    --repo PATH           Path to repository to onboard (required)
+    --skip-confluence     Skip Confluence documentation discovery
+    --public-repo         Mark as public repo (filters sensitive docs)
+    --confluence-dir DIR  Path to Confluence sync directory
+                          (default: ~/context-sync/confluence)
+    --dry-run             Show what would be done without making changes
+    -h, --help            Show this help message
+
+EXAMPLES:
+    # Full onboarding for internal repo
+    $(basename "$0") --repo ~/khan/webapp
+
+    # Onboard public repo (skip Confluence, filter output)
+    $(basename "$0") --repo ~/khan/public-lib --public-repo --skip-confluence
+
+    # Preview what would happen
+    $(basename "$0") --repo ~/khan/webapp --dry-run
+
+OUTPUT:
+    Creates/updates the following in the target repo:
+    - docs/FEATURES.md              Feature-to-source mapping
+    - docs/features/*.md            Feature category documentation
+    - docs/generated/codebase.json  Codebase structure index (local-only)
+    - docs/generated/patterns.json  Code patterns index (local-only)
+    - docs/generated/dependencies.json  Dependency graph (local-only)
+    - docs/generated/external-docs.json  Confluence docs (local-only)
+EOF
+}
+
+log_phase() {
+    echo -e "\n${BLUE}=== $1 ===${NC}"
+}
+
+log_step() {
+    echo -e "${GREEN}→${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}✗${NC} $1" >&2
+}
+
+log_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --repo)
+            REPO_PATH="$2"
+            shift 2
+            ;;
+        --skip-confluence)
+            SKIP_CONFLUENCE=true
+            shift
+            ;;
+        --public-repo)
+            PUBLIC_REPO=true
+            shift
+            ;;
+        --confluence-dir)
+            CONFLUENCE_DIR="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [[ -z "$REPO_PATH" ]]; then
+    log_error "Repository path is required"
+    usage
+    exit 1
+fi
+
+# Resolve and validate repo path
+REPO_PATH="$(cd "$REPO_PATH" 2>/dev/null && pwd)" || {
+    log_error "Repository path does not exist: $REPO_PATH"
+    exit 1
+}
+
+REPO_NAME="$(basename "$REPO_PATH")"
+
+# Find tool locations
+CONFLUENCE_DISCOVERER="$ANALYSIS_DIR/confluence-doc-discoverer/confluence-doc-discoverer.py"
+FEATURE_ANALYZER="$ANALYSIS_DIR/feature-analyzer/feature-analyzer.py"
+INDEX_GENERATOR="$ANALYSIS_DIR/index-generator/index-generator.py"
+DOCS_INDEX_UPDATER="$ANALYSIS_DIR/repo-onboarding/docs-index-updater.py"
+
+# Validate tools exist
+check_tool() {
+    local tool_path="$1"
+    local tool_name="$2"
+    if [[ ! -f "$tool_path" ]]; then
+        log_error "$tool_name not found at: $tool_path"
+        return 1
+    fi
+}
+
+echo -e "${BLUE}╔════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║     JIB Repository Onboarding              ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
+echo ""
+echo "Repository: $REPO_PATH"
+echo "Repo Name:  $REPO_NAME"
+echo "Dry Run:    $DRY_RUN"
+echo "Public:     $PUBLIC_REPO"
+
+# Check required tools
+TOOLS_OK=true
+check_tool "$INDEX_GENERATOR" "index-generator" || TOOLS_OK=false
+check_tool "$DOCS_INDEX_UPDATER" "docs-index-updater" || TOOLS_OK=false
+
+if [[ "$SKIP_CONFLUENCE" != "true" ]]; then
+    check_tool "$CONFLUENCE_DISCOVERER" "confluence-doc-discoverer" || TOOLS_OK=false
+fi
+
+# Feature analyzer is optional (may use generate-feature-docs command)
+if [[ ! -f "$FEATURE_ANALYZER" ]]; then
+    log_warning "feature-analyzer not found, skipping feature analysis phase"
+    SKIP_FEATURES=true
+else
+    SKIP_FEATURES=false
+fi
+
+if [[ "$TOOLS_OK" != "true" ]]; then
+    log_error "Missing required tools. Ensure all analysis tools are installed."
+    exit 1
+fi
+
+# Create output directories
+OUTPUT_DIR="$REPO_PATH/docs/generated"
+FEATURES_DIR="$REPO_PATH/docs/features"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    log_warning "DRY RUN MODE - No files will be written"
+else
+    mkdir -p "$OUTPUT_DIR"
+    mkdir -p "$FEATURES_DIR"
+fi
+
+# ============================================================================
+# Phase 1: Confluence Documentation Discovery
+# ============================================================================
+log_phase "Phase 1: Confluence Documentation Discovery"
+
+if [[ "$SKIP_CONFLUENCE" == "true" ]]; then
+    log_step "Skipping Confluence discovery (--skip-confluence)"
+else
+    if [[ ! -d "$CONFLUENCE_DIR" ]]; then
+        log_warning "Confluence directory not found: $CONFLUENCE_DIR"
+        log_step "Skipping Confluence discovery"
+    else
+        log_step "Scanning Confluence for docs related to '$REPO_NAME'..."
+
+        CONFLUENCE_ARGS=(
+            --repo-name "$REPO_NAME"
+            --confluence-dir "$CONFLUENCE_DIR"
+            --output "$OUTPUT_DIR/external-docs.json"
+        )
+
+        if [[ "$PUBLIC_REPO" == "true" ]]; then
+            CONFLUENCE_ARGS+=(--public-repo)
+        fi
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            CONFLUENCE_ARGS+=(--dry-run)
+        fi
+
+        python3 "$CONFLUENCE_DISCOVERER" "${CONFLUENCE_ARGS[@]}"
+        log_success "Confluence discovery complete"
+    fi
+fi
+
+# ============================================================================
+# Phase 2: Feature Analysis & Documentation
+# ============================================================================
+log_phase "Phase 2: Feature Analysis & Documentation"
+
+if [[ "$SKIP_FEATURES" == "true" ]]; then
+    log_step "Skipping feature analysis (feature-analyzer not found)"
+else
+    log_step "Running feature analyzer on repository..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_step "[DRY RUN] Would run: python3 $FEATURE_ANALYZER full-repo --repo-root $REPO_PATH --no-pr"
+    else
+        # Run feature analyzer full-repo
+        if python3 "$FEATURE_ANALYZER" full-repo \
+            --repo-root "$REPO_PATH" \
+            --no-pr 2>/dev/null; then
+            log_success "Feature analysis complete"
+        else
+            log_warning "Feature analyzer returned non-zero, check output"
+        fi
+
+        # Generate feature docs if the command exists
+        log_step "Generating feature documentation..."
+        if python3 "$FEATURE_ANALYZER" generate-feature-docs \
+            --repo-root "$REPO_PATH" 2>/dev/null; then
+            log_success "Feature documentation generated"
+        else
+            log_warning "Feature doc generation skipped or failed"
+        fi
+    fi
+fi
+
+# ============================================================================
+# Phase 3: Index Generation
+# ============================================================================
+log_phase "Phase 3: Index Generation"
+
+log_step "Generating codebase indexes..."
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    log_step "[DRY RUN] Would run: python3 $INDEX_GENERATOR --project $REPO_PATH --output $OUTPUT_DIR"
+else
+    python3 "$INDEX_GENERATOR" \
+        --project "$REPO_PATH" \
+        --output "$OUTPUT_DIR"
+    log_success "Index generation complete"
+fi
+
+# ============================================================================
+# Phase 4: Documentation Index Updates
+# ============================================================================
+log_phase "Phase 4: Documentation Index Updates"
+
+log_step "Updating docs/index.md with generated content references..."
+
+UPDATER_ARGS=(
+    --repo-root "$REPO_PATH"
+    --generated-dir "$OUTPUT_DIR"
+)
+
+if [[ -f "$REPO_PATH/docs/FEATURES.md" ]]; then
+    UPDATER_ARGS+=(--features-md "$REPO_PATH/docs/FEATURES.md")
+fi
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    UPDATER_ARGS+=(--dry-run)
+fi
+
+python3 "$DOCS_INDEX_UPDATER" "${UPDATER_ARGS[@]}"
+log_success "Documentation index updated"
+
+# ============================================================================
+# Summary
+# ============================================================================
+echo ""
+log_phase "Onboarding Complete"
+
+echo ""
+echo "Generated artifacts:"
+
+if [[ "$DRY_RUN" != "true" ]]; then
+    # List generated files
+    if [[ -d "$OUTPUT_DIR" ]]; then
+        for f in "$OUTPUT_DIR"/*.json; do
+            if [[ -f "$f" ]]; then
+                echo "  - docs/generated/$(basename "$f")"
+            fi
+        done
+    fi
+
+    if [[ -f "$REPO_PATH/docs/FEATURES.md" ]]; then
+        echo "  - docs/FEATURES.md"
+    fi
+
+    if [[ -d "$FEATURES_DIR" ]] && [[ "$(ls -A "$FEATURES_DIR" 2>/dev/null)" ]]; then
+        echo "  - docs/features/*.md"
+    fi
+
+    if [[ -f "$REPO_PATH/docs/index.md" ]]; then
+        echo "  - docs/index.md (updated)"
+    fi
+fi
+
+echo ""
+echo "Next steps:"
+echo "  1. Review generated files"
+echo "  2. Add docs/generated/*.json to .gitignore (they're for local use)"
+echo "  3. Commit docs/FEATURES.md and docs/features/*.md if desired"
+echo "  4. Consider adding GitHub Actions workflow for feature doc drift detection"
+echo ""
