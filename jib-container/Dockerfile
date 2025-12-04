@@ -117,6 +117,9 @@ RUNTIME_UID="${RUNTIME_UID:-1000}"
 RUNTIME_GID="${RUNTIME_GID:-1000}"
 JIB_QUIET="${JIB_QUIET:-0}"
 
+# Backup file for original worktree paths (restored on exit)
+WORKTREE_BACKUP="/tmp/worktree-original-paths.txt"
+
 # Helper functions for quiet mode
 # Note: Must use if/fi pattern (not && shorthand) to ensure return code 0
 # The && pattern returns 1 when the test fails, which breaks chains like:
@@ -244,9 +247,15 @@ log_success "Git configured to commit as jib <jib@khan.org>"
 # Worktrees have .git files that reference the main repo's .git directory
 # We mount the main .git at ~/.git-main/{repo}/ so we need to rewrite these references
 #
+# IMPORTANT: We save the original paths and restore them on exit so git works on the host
+# after the container exits. The container paths (.git-main) don't exist on the host.
+#
 # FAIL FAST: If worktree setup is broken, exit immediately.
 # A container with broken git is worse than no container at all.
 worktree_setup_failed=false
+
+# Initialize backup file for original worktree paths
+: > "$WORKTREE_BACKUP"
 
 if [ -d "${USER_HOME}/khan" ]; then
     # Check if there are any worktrees to configure
@@ -288,6 +297,10 @@ if [ -d "${USER_HOME}/khan" ]; then
 
                     # Verify target path exists before rewriting
                     if [ -d "$target_path" ]; then
+                        # CRITICAL: Save original path for restoration on exit
+                        # This ensures git works on the host after container exits
+                        echo "${repo_dir}|${original_gitdir}" >> "$WORKTREE_BACKUP"
+                        
                         echo "gitdir: ${target_path}" > "${repo_dir}/.git"
                         chown "${RUNTIME_UID}:${RUNTIME_GID}" "${repo_dir}/.git"
                         worktrees_configured=$((worktrees_configured + 1))
@@ -314,6 +327,7 @@ if [ -d "${USER_HOME}/khan" ]; then
             elif [ $worktrees_configured -gt 0 ]; then
                 log_success "Khan worktrees configured: ${worktrees_configured} repo(s)"
                 log_info "  Git metadata mounted read-write from ~/.git-main/"
+                log_info "  Original paths saved for restoration on exit"
             fi
         fi
     fi
@@ -729,6 +743,22 @@ cleanup_on_exit() {
     # Cleanup happens silently in quiet mode
     [ "$JIB_QUIET" = "0" ] && echo ""
     [ "$JIB_QUIET" = "0" ] && echo "🧹 Cleaning up on container exit..."
+
+    # CRITICAL: Restore worktree .git files to original host paths
+    # This ensures git works on the host after container exits
+    # The container paths (.git-main) don't exist on the host
+    if [ -f "$WORKTREE_BACKUP" ] && [ -s "$WORKTREE_BACKUP" ]; then
+        worktrees_restored=0
+        while IFS='|' read -r repo_dir original_gitdir; do
+            if [ -n "$repo_dir" ] && [ -n "$original_gitdir" ] && [ -f "${repo_dir}/.git" ]; then
+                echo "gitdir: ${original_gitdir}" > "${repo_dir}/.git"
+                worktrees_restored=$((worktrees_restored + 1))
+            fi
+        done < "$WORKTREE_BACKUP"
+        if [ $worktrees_restored -gt 0 ]; then
+            [ "$JIB_QUIET" = "0" ] && echo "✓ Restored ${worktrees_restored} worktree path(s) for host access"
+        fi
+    fi
 
     # Sync credentials back to shared auth directory if they were created/updated
     AUTH_DIR="${USER_HOME}/.claude-auth"
