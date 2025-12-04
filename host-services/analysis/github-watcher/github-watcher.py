@@ -77,7 +77,6 @@ to run `gh auth login`.
 """
 
 import json
-import os
 import secrets
 import subprocess
 import sys
@@ -1584,9 +1583,7 @@ def check_prs_for_review(
     # Previously used is_user_directly_requested() but reviewRequests field
     # cannot be fetched reliably. Now processing all PRs from other authors.
     other_prs = [
-        p
-        for p in all_prs
-        if p.get("author", {}).get("login", "").lower() not in excluded_authors
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
     ]
 
     if not other_prs:

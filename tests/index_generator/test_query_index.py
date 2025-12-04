@@ -3,13 +3,20 @@ Tests for the codebase index query tool.
 """
 
 import json
+import sys
 from argparse import Namespace
-from importlib import import_module
+from pathlib import Path
 
 import pytest
 
 
-# Import the module
+# Add the module path for import
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis" / "index-generator"))
+
+# Import the module using its new Python-safe name
+from importlib import import_module
+
 query_index = import_module("query-index")
 
 
