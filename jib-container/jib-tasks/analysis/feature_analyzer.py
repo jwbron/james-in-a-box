@@ -1565,7 +1565,11 @@ class RepoAnalyzer:
                     # Show first-level subdirectories
                     subdir_names = []
                     for subitem in sorted(item.iterdir()):
-                        if subitem.is_dir() and not subitem.name.startswith(".") and not self._should_skip(str(subitem)):
+                        if (
+                            subitem.is_dir()
+                            and not subitem.name.startswith(".")
+                            and not self._should_skip(str(subitem))
+                        ):
                             subdir_names.append(subitem.name)
                     if subdir_names:
                         preview = subdir_names[:10]
@@ -1740,7 +1744,11 @@ The "analyze" array must be ordered by priority. Include ALL feature directories
         # Check for common parent directories
         for parent_name in common_parents:
             parent_path = self.repo_root / parent_name
-            if parent_path.exists() and parent_path.is_dir() and not self._is_git_ignored(parent_name):
+            if (
+                parent_path.exists()
+                and parent_path.is_dir()
+                and not self._is_git_ignored(parent_name)
+            ):
                 # Add each subdirectory as a potential feature
                 for subdir in parent_path.iterdir():
                     if subdir.is_dir() and not subdir.name.startswith("."):
@@ -1759,9 +1767,7 @@ The "analyze" array must be ordered by priority. Include ALL feature directories
                 # Check if it looks like a feature (has README or source files)
                 has_readme = (item / "README.md").exists()
                 has_source = (
-                    any(item.glob("*.py"))
-                    or any(item.glob("*.go"))
-                    or any(item.glob("*.js"))
+                    any(item.glob("*.py")) or any(item.glob("*.go")) or any(item.glob("*.js"))
                 )
                 if has_readme or has_source:
                     feature_dirs.append(item.name)
@@ -1801,9 +1807,7 @@ The "analyze" array must be ordered by priority. Include ALL feature directories
         for f in files:
             try:
                 size = f.stat().st_size
-                size_str = (
-                    f"{size // 1024}KB" if size >= 1024 else f"{size}B"
-                )
+                size_str = f"{size // 1024}KB" if size >= 1024 else f"{size}B"
                 rel_path = str(f.relative_to(self.repo_root))
                 file_info.append(f"  - {rel_path} ({size_str})")
 
@@ -1885,7 +1889,11 @@ The "read" array must have at most {max_files} file paths from the listing above
                     # Try to find matching file
                     for f in files:
                         try:
-                            if str(f.relative_to(self.repo_root)) == rec_path or f.name == rec_path or str(f).endswith(rec_path):
+                            if (
+                                str(f.relative_to(self.repo_root)) == rec_path
+                                or f.name == rec_path
+                                or str(f).endswith(rec_path)
+                            ):
                                 result.append(f)
                                 break
                         except ValueError:
@@ -1931,7 +1939,10 @@ The "read" array must have at most {max_files} file paths from the listing above
             if name == "readme.md":
                 priority_files.insert(0, f)
             # Priority 2: Main entry points
-            elif name.startswith(("main.", "index.", "app.", "server.", "cli.")) or name == "__init__.py":
+            elif (
+                name.startswith(("main.", "index.", "app.", "server.", "cli."))
+                or name == "__init__.py"
+            ):
                 priority_files.append(f)
             else:
                 other_files.append(f)
@@ -1997,7 +2008,9 @@ The "read" array must have at most {max_files} file paths from the listing above
             files_in_subdir = file_info_by_subdir[subdir]
             # Limit files shown per subdir to avoid token explosion
             if len(files_in_subdir) > 15:
-                files_in_subdir = files_in_subdir[:12] + [f"  ... and {len(files_in_subdir) - 12} more files"]
+                files_in_subdir = files_in_subdir[:12] + [
+                    f"  ... and {len(files_in_subdir) - 12} more files"
+                ]
             file_listing_parts.append(f"\n### {subdir}/\n" + "\n".join(files_in_subdir))
 
         file_listing = "\n".join(file_listing_parts)
@@ -2054,7 +2067,9 @@ The "read" array must have at most {max_files} file paths from the listing above
 Ensure you cover as many distinct subdirectories as possible.
 """
 
-        success, json_content, error = self._run_llm_prompt_to_file(prompt, f"scout-root:{root_dir}")
+        success, json_content, error = self._run_llm_prompt_to_file(
+            prompt, f"scout-root:{root_dir}"
+        )
 
         if success and json_content and isinstance(json_content, dict):
             recommended = json_content.get("read", [])
@@ -2068,7 +2083,11 @@ Ensure you cover as many distinct subdirectories as possible.
                 if isinstance(rec_path, str):
                     for f in all_files:
                         try:
-                            if str(f.relative_to(self.repo_root)) == rec_path or f.name == rec_path or str(f).endswith(rec_path):
+                            if (
+                                str(f.relative_to(self.repo_root)) == rec_path
+                                or f.name == rec_path
+                                or str(f).endswith(rec_path)
+                            ):
                                 result.append(f)
                                 break
                         except ValueError:
@@ -2121,9 +2140,17 @@ Ensure you cover as many distinct subdirectories as possible.
         code_sections = []
         for file_path, content in file_contents.items():
             ext = Path(file_path).suffix
-            lang = {".py": "python", ".go": "go", ".ts": "typescript",
-                    ".js": "javascript", ".sh": "bash", ".md": "markdown"}.get(ext, "")
-            code_sections.append(f"## File: {file_path} (signatures + docstrings)\n\n```{lang}\n{content}\n```")
+            lang = {
+                ".py": "python",
+                ".go": "go",
+                ".ts": "typescript",
+                ".js": "javascript",
+                ".sh": "bash",
+                ".md": "markdown",
+            }.get(ext, "")
+            code_sections.append(
+                f"## File: {file_path} (signatures + docstrings)\n\n```{lang}\n{content}\n```"
+            )
 
         code_text = "\n---\n".join(code_sections)
 
@@ -2207,14 +2234,18 @@ Return a JSON array:
 If truly no features, return: `[]`
 """
 
-        success, json_content, error = self._run_llm_prompt_to_file(prompt, f"analyze-root:{root_dir}")
+        success, json_content, error = self._run_llm_prompt_to_file(
+            prompt, f"analyze-root:{root_dir}"
+        )
 
         if success and json_content and isinstance(json_content, list):
             return self._json_to_features(json_content)
 
         if not success:
             # Fallback: try stdout parsing
-            success_fb, stdout, _ = self._run_llm_prompt(prompt, f"analyze-root:{root_dir}-fallback")
+            success_fb, stdout, _ = self._run_llm_prompt(
+                prompt, f"analyze-root:{root_dir}-fallback"
+            )
             if success_fb and stdout.strip():
                 return self._parse_llm_output(stdout, context=f"root:{root_dir}")
 
@@ -2629,10 +2660,7 @@ If truly no features, return: `[]`
             if stripped.startswith("type "):
                 result.append(line)
                 # Include struct/interface body summary
-                if (
-                    ("struct {" in stripped or "interface {" in stripped)
-                    and "}" not in stripped
-                ):
+                if ("struct {" in stripped or "interface {" in stripped) and "}" not in stripped:
                     # Multi-line: read up to 20 lines
                     depth = 1
                     j = i + 1
@@ -2698,10 +2726,20 @@ If truly no features, return: `[]`
                 continue
 
             # Function declarations
-            if any(stripped.startswith(p) for p in [
-                "function ", "async function ", "const ", "let ", "var ",
-                "class ", "interface ", "type ", "enum "
-            ]):
+            if any(
+                stripped.startswith(p)
+                for p in [
+                    "function ",
+                    "async function ",
+                    "const ",
+                    "let ",
+                    "var ",
+                    "class ",
+                    "interface ",
+                    "type ",
+                    "enum ",
+                ]
+            ):
                 result.append(line)
                 continue
 
@@ -2726,9 +2764,7 @@ If truly no features, return: `[]`
                 continue
 
             # Function definitions
-            if stripped.startswith("function ") or (
-                "() {" in stripped or "(){" in stripped
-            ):
+            if stripped.startswith("function ") or ("() {" in stripped or "(){" in stripped):
                 result.append(line)
                 continue
 
@@ -3509,7 +3545,9 @@ Notes:
             root_dirs = self._get_root_directories_with_all_files()
             result.directories_scanned = len(root_dirs)
             total_files = sum(len(files) for files in root_dirs.values())
-            print(f"  Cartographer found {len(root_dirs)} root directories ({total_files} total files)")
+            print(
+                f"  Cartographer found {len(root_dirs)} root directories ({total_files} total files)"
+            )
 
             # Phase 1: Root-level Scout + Analyzer (parallel)
             print(f"\nPhase 1: Root-Level Scout → Analyzer ({max_workers} workers)...")

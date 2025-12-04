@@ -57,9 +57,9 @@ def check_file_for_host_imports(file_path: Path) -> list[tuple[int, str]]:
 
     import_patterns = [
         # sys.path.insert/append that adds host-services paths
-        r'sys\.path\.(insert|append)\([^)]*host-services',
+        r"sys\.path\.(insert|append)\([^)]*host-services",
         # spec_from_file_location with host-services path
-        r'spec_from_file_location\([^)]*host-services',
+        r"spec_from_file_location\([^)]*host-services",
         # Path construction for module loading: Path(...) / "host-services" / ... / ".py"
         # This catches patterns like: jib_path / "host-services" / "analysis" / "index-generator.py"
         r'Path[^=]*[/\\]\s*["\']host-services["\'].*\.py',

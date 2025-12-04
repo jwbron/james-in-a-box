@@ -1613,9 +1613,7 @@ def check_prs_for_review(
     }
 
     other_prs = [
-        p
-        for p in all_prs
-        if p.get("author", {}).get("login", "").lower() not in excluded_authors
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
     ]
 
     if not other_prs:

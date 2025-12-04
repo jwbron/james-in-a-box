@@ -315,7 +315,9 @@ class TestCheckPrForComments:
                 [],  # Line-level review comments (empty)
             ]
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser", "testuser")
+            result = github_watcher.check_pr_for_comments(
+                "owner/repo", pr_data, state, "testuser", "testuser"
+            )
 
             assert result is None
 
@@ -346,7 +348,9 @@ class TestCheckPrForComments:
                 [],  # Line-level review comments (empty)
             ]
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser", "testuser")
+            result = github_watcher.check_pr_for_comments(
+                "owner/repo", pr_data, state, "testuser", "testuser"
+            )
 
             assert result is not None
             assert result["type"] == "comment"
@@ -380,7 +384,9 @@ class TestCheckPrForComments:
                 [],  # Line-level review comments (empty)
             ]
 
-            result = github_watcher.check_pr_for_comments("owner/repo", pr_data, state, "testuser", "testuser")
+            result = github_watcher.check_pr_for_comments(
+                "owner/repo", pr_data, state, "testuser", "testuser"
+            )
 
             assert result is None
 
