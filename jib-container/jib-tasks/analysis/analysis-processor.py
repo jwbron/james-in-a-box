@@ -1552,7 +1552,9 @@ def handle_repo_onboarding(context: dict) -> int:
     jib_path = Path.home() / "khan" / "james-in-a-box"
     analysis_path = jib_path / "jib-container" / "jib-tasks" / "analysis"
     sys.path.insert(0, str(analysis_path))  # feature_analyzer
-    sys.path.insert(0, str(analysis_path / "utilities"))  # confluence_doc_discoverer, index_generator, etc.
+    sys.path.insert(
+        0, str(analysis_path / "utilities")
+    )  # confluence_doc_discoverer, index_generator, etc.
 
     result_data = {
         "phases_completed": [],
@@ -1641,7 +1643,9 @@ def handle_repo_onboarding(context: dict) -> int:
                 from feature_analyzer import RepoAnalyzer
 
                 mode_name = "root-level" if use_root_level_scout else "per-directory"
-                print(f"  Running feature analysis with {max_workers} workers ({mode_name} scout)...")
+                print(
+                    f"  Running feature analysis with {max_workers} workers ({mode_name} scout)..."
+                )
                 analyzer = RepoAnalyzer(repo_path, use_llm=True)
                 analysis_result = analyzer.analyze_full_repo(
                     dry_run=False,
@@ -1742,8 +1746,8 @@ def handle_repo_onboarding(context: dict) -> int:
         commit_message = f"""docs: Repository onboarding via jib
 
 Completed phases: {phases_summary}
-Features detected: {result_data['features_detected']}
-Indexes generated: {', '.join(result_data['indexes_generated'])}
+Features detected: {result_data["features_detected"]}
+Indexes generated: {", ".join(result_data["indexes_generated"])}
 
 — Authored by jib"""
 
@@ -1787,12 +1791,12 @@ Repository onboarding generated documentation indexes for **{repo_name}**.
 
 ### Phases Completed
 
-{chr(10).join(f"- ✓ {phase.replace('_', ' ').title()}" for phase in result_data['phases_completed'])}
+{chr(10).join(f"- ✓ {phase.replace('_', ' ').title()}" for phase in result_data["phases_completed"])}
 
 ### Generated Content
 
-- Features detected: {result_data['features_detected']}
-- Indexes generated: {', '.join(result_data['indexes_generated']) or 'none'}
+- Features detected: {result_data["features_detected"]}
+- Indexes generated: {", ".join(result_data["indexes_generated"]) or "none"}
 
 ### Files Added
 
@@ -1851,7 +1855,7 @@ Repository onboarding generated documentation indexes for **{repo_name}**.
                 shared_path = Path.home() / "khan" / "james-in-a-box" / "shared"
                 if str(shared_path) not in sys.path:
                     sys.path.insert(0, str(shared_path))
-                from notifications import slack_notify, NotificationContext
+                from notifications import NotificationContext, slack_notify
 
                 # Build summary of what was generated
                 phases_list = "\n".join(
@@ -1869,7 +1873,7 @@ Repository onboarding generated documentation indexes for **{repo_name}**.
 {phases_list}
 
 **Generated Content:**
-  • Features detected: {result_data['features_detected']}
+  • Features detected: {result_data["features_detected"]}
   • Indexes: {indexes_list}
 
 **Next Steps:**

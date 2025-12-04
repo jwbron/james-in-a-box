@@ -13,11 +13,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-
 # Import shared modules (installed as packages via pip)
 from beads import PRContextManager
 from jib_logging import get_logger
+
 from notifications import NotificationContext, get_slack_service
+
 
 logger = get_logger("pr-reviewer")
 

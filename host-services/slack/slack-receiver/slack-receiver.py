@@ -568,9 +568,7 @@ class SlackReceiver:
             MessageCategory.UNKNOWN: "❓ *Workflow:* Unknown (defaulting to task)",
         }
 
-        workflow_desc = category_descriptions.get(
-            category, f"📋 *Workflow:* {category.value}"
-        )
+        workflow_desc = category_descriptions.get(category, f"📋 *Workflow:* {category.value}")
 
         # Add reasoning if available and confidence is less than 100%
         if reasoning and categorization.confidence < 1.0:
