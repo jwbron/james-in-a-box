@@ -205,22 +205,25 @@ gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global advice.pushUpdateReject
 
 # Also fix local repo configs in case they were corrupted with Claude's authorship
 # Local configs override global, so we need to ensure they use jib too
+# CRITICAL: Use gosu to run as the runtime user to avoid root ownership of config files
+# Running as root causes "could not lock config file" errors when other processes try to lock
 if [ -d "${USER_HOME}/.git-main" ]; then
     for repo_config in "${USER_HOME}/.git-main"/*/config; do
         if [ -f "$repo_config" ]; then
             repo_dir=$(dirname "$repo_config")
             # Use git config to set local repo identity (will update the config file)
-            git config -f "$repo_config" user.name "jib"
-            git config -f "$repo_config" user.email "jib@khan.org"
+            # Must run as runtime user to maintain correct file ownership
+            gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config -f "$repo_config" user.name "jib"
+            gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config -f "$repo_config" user.email "jib@khan.org"
 
             # CRITICAL: Verify remote URLs don't have embedded tokens
             # If they do, strip them out (tokens belong in env vars, not URLs)
-            remote_url=$(git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
+            remote_url=$(gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config -f "$repo_config" remote.origin.url 2>/dev/null || echo "")
             if [[ "$remote_url" =~ x-access-token:|ghs_|ghp_|github_pat_ ]]; then
                 log_warn "Found token in git remote URL, cleaning it up..."
                 # Extract the GitHub repo path (owner/repo.git)
                 clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
-                git config -f "$repo_config" remote.origin.url "$clean_url"
+                gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config -f "$repo_config" remote.origin.url "$clean_url"
                 log_info "  Cleaned: $remote_url -> $clean_url"
             fi
 
@@ -229,7 +232,7 @@ if [ -d "${USER_HOME}/.git-main" ]; then
             # HTTPS format: https://github.com/owner/repo.git
             if [[ "$remote_url" =~ ^git@github\.com: ]]; then
                 https_url=$(echo "$remote_url" | sed -E 's|^git@github\.com:|https://github.com/|')
-                git config -f "$repo_config" remote.origin.url "$https_url"
+                gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config -f "$repo_config" remote.origin.url "$https_url"
                 log_info "  Converted SSH to HTTPS: $https_url"
             fi
         fi
