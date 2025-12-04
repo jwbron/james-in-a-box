@@ -34,7 +34,6 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 
 **NEVER skip beads.** Before ANY work, you MUST:
 ```bash
-cd ~/beads
 bd --allow-stale list --status in_progress   # Check for work to resume
 bd --allow-stale search "keywords"           # Check for related tasks
 ```
@@ -71,7 +70,6 @@ See `environment.md` for details on git push and MCP tools.
 
 ### 1. Check Beads Task (ALWAYS FIRST)
 ```bash
-cd ~/beads
 bd --allow-stale list --status in_progress   # Resume work?
 bd --allow-stale search "keywords"           # Related task?
 bd --allow-stale create "Task description" --labels feature,jira-1234  # New task
@@ -80,7 +78,7 @@ bd --allow-stale create "Task description" --labels feature,jira-1234  # New tas
 ### 2. Gather Context
 ```bash
 @load-context <project-name>                    # Load accumulated knowledge
-discover-tests.py ~/khan/<repo>                 # Find test framework
+discover-tests ~/khan/<repo>                    # Find test framework
 ```
 
 ### 3. Git Worktrees (IMPORTANT)
@@ -122,6 +120,11 @@ git commit -m "Brief description
 # 2. Push to GitHub (uses GitHub App token automatically)
 git push origin <branch>
 ```
+
+**IMPORTANT - Commit Attribution**:
+- Git author is already configured as `jib <jib@khan.org>` - no need to add author info
+- **NEVER** include "Generated with Claude Code" or "Co-Authored-By: Claude" in commits
+- See `jib-branding.md` for full attribution guidelines
 
 Then use GitHub MCP to create the PR:
 ```python
@@ -201,7 +204,55 @@ Use MCP: get_pull_request(owner, repo, pull_number)
 2. Check out that PR's branch locally: `git checkout <branch> && git pull origin <branch>`
 3. Make changes and commit to that branch
 4. Push via `git push origin <branch>`
-5. Do NOT create a new PR for the same work
+5. **Update PR description if needed** (see below)
+6. Do NOT create a new PR for the same work
+
+### 6.6. Updating PR Descriptions (IMPORTANT)
+
+**After pushing changes to an existing PR**, evaluate whether the PR description needs updating:
+
+**Update the description when:**
+- You fixed CI failures (add what was fixed and how)
+- You addressed review feedback (summarize changes made)
+- You resolved merge conflicts (describe the resolution)
+- The scope of changes has grown significantly
+- The original description no longer accurately reflects the PR
+
+**How to update:**
+```python
+# Use MCP: mcp__github__update_pull_request(
+#     owner="<owner>",
+#     repo="<repo>",
+#     pullNumber=<pr_number>,
+#     body="Updated description here"
+# )
+```
+
+**What to include in updated descriptions:**
+- Keep the original context/summary
+- Add a "## Updates" or "## Changes Since Initial Review" section
+- Document what was changed and why
+- Preserve the test plan (update if needed)
+- Keep the description under 500 words total
+
+**Example update:**
+```markdown
+## Summary
+[Original summary remains]
+
+## Updates (2025-01-15)
+- Fixed lint errors by running `make fix`
+- Addressed review feedback: renamed `getData` to `fetchUserData` for clarity
+- Resolved merge conflict in config.py by keeping both feature flags
+
+## Test plan
+[Updated test plan if needed]
+```
+
+**When NOT to update:**
+- Minor commits that don't change the PR's purpose
+- Rebases or merge-from-main operations
+- Typo fixes or formatting changes
 
 **PR approval vs feedback - know the difference:**
 - **Approved**: GitHub review status, OR "LGTM" comment (case-insensitive)
@@ -285,7 +336,7 @@ When human isn't available, use the **notifications library** (preferred):
 # Python - use the notifications library
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "jib-container" / "shared"))
+sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 from notifications import slack_notify, NotificationContext
 
 # Simple notification
@@ -298,8 +349,8 @@ slack_notify("Title", "Body", context=ctx)
 # Get full service for specialized notifications
 from notifications import get_slack_service
 slack = get_slack_service()
-slack.notify_warning("Security Issue", "Details here")
-slack.notify_action_required("Review Needed", "Please review...")
+slack.notify_pr_created(url, title, branch, base, repo)
+slack.notify_code_pushed(branch, repo, commit_message)
 ```
 
 Or for quick shell notifications (legacy, still works):

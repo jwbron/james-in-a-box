@@ -9,8 +9,6 @@
 ## Quick Reference
 
 ```bash
-cd ~/beads
-
 # ALWAYS START HERE - check for existing work
 bd --allow-stale list --status in_progress
 bd --allow-stale search "keywords"
@@ -25,6 +23,8 @@ bd --allow-stale update <id> --status closed --notes "Summary"
 # Find ready work
 bd --allow-stale ready
 ```
+
+> **Note:** The `BEADS_DIR` environment variable is set automatically, so `bd` can be run from any directory.
 
 ## Why `--allow-stale` is Required
 
@@ -192,8 +192,6 @@ bd sync
 **ALWAYS do this first when starting any session:**
 
 ```bash
-cd ~/beads
-
 # 1. Check for in-progress work to resume
 bd --allow-stale list --status in_progress
 
@@ -301,8 +299,6 @@ bd --allow-stale update <id> --title "Feature Name (PR #141) - repo-name"
 **Search strategies for discovering related work:**
 
 ```bash
-cd ~/beads
-
 # Search by PR number (most reliable for PR-related work)
 bd --allow-stale search "PR-141"
 bd --allow-stale search "pr-141"
@@ -380,7 +376,7 @@ bd --allow-stale list --label james-in-a-box
 | Issue | Solution |
 |-------|----------|
 | "Database out of sync" error | Use `--allow-stale` flag |
-| Changes not persisting | Verify you're in `~/beads/`, run `git status` |
+| "No beads database found" | Verify `BEADS_DIR` env var is set |
 | Can't find task | Try `bd --allow-stale search "partial text"` |
 | Duplicate tasks created | Search before creating: `bd --allow-stale search "keywords"` |
 | Task shows blocked incorrectly | Check `bd --allow-stale dep tree <id>` for hidden blockers |

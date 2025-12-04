@@ -33,8 +33,9 @@ git push origin <branch>
 - `GITHUB_TOKEN` environment variable must be set (handled by jib launcher)
 
 **If push fails:**
-- Check the remote URL: `git remote -v` (must be `https://github.com/...`)
-- If it's SSH (`git@github.com:...`), ask the user to change it on the HOST
+- Check the remote URL: `git remote -v` (should be `https://github.com/...`)
+- SSH remotes (`git@github.com:...`) are automatically converted to HTTPS at container startup
+- If still failing, check that `GITHUB_TOKEN` is set
 
 **CRITICAL - Git Remote URLs:**
 - **NEVER** modify git remote URLs using `git remote set-url` or similar commands
@@ -105,6 +106,32 @@ Do NOT assume owner from context (e.g., don't assume `Khan/` just because you're
 | `~/sharing/notifications/` | RW | Async messages → Slack DM (use notifications lib) |
 | `~/sharing/context/` | RW | @save-context / @load-context data |
 | `~/beads/` | RW | Persistent task memory |
+
+## Jib Runtime Directory
+
+The container includes `/opt/jib-runtime/` with all jib executables baked into the Docker image:
+
+| Path | Purpose |
+|------|---------|
+| `/opt/jib-runtime/jib-container/bin/` | Executables (in your PATH) |
+| `/opt/jib-runtime/claude-commands/` | Slash command definitions |
+| `/opt/jib-runtime/claude-rules/` | Claude rules/instructions |
+| `/opt/jib-runtime/shared/` | Shared Python modules |
+
+**Available executables** (run directly by name, no path needed):
+- `discover-tests` - Discover test frameworks in a codebase
+- `github-app-token` - Generate GitHub App tokens
+- `confluence-processor` - Process Confluence sync tasks
+- `github-processor` - Process GitHub tasks
+- `incoming-processor` - Process incoming Slack messages
+- `maintain-bin-symlinks` - Manage bin directory symlinks
+
+**Example usage:**
+```bash
+# These commands are in your PATH
+discover-tests ~/khan/webapp
+github-app-token
+```
 
 ## Custom Commands
 

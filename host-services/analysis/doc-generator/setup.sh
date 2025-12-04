@@ -113,18 +113,82 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
     # Create the PR
     log_info "Creating pull request..."
 
-    local pr_body="## Summary
-- Auto-generated documentation updates from the 4-agent doc-generator pipeline
-- Generated from codebase indexes (patterns.json, codebase.json)
-- Includes drift detection for stale references
+    # Count patterns from generated docs
+    local pattern_count=$(find docs/generated/authored -name "*-pattern.md" 2>/dev/null | wc -l)
+
+    local pr_body="## What is This?
+
+This PR contains **auto-generated pattern documentation** created by the 4-agent doc-generator pipeline. The pipeline analyzes the codebase to extract and document architectural patterns.
+
+## What Generated It?
+
+**Generator:** \`host-services/analysis/doc-generator/doc-generator.py\`
+
+**4-Agent Pipeline:**
+1. **Context Agent** - Analyzes codebase indexes (patterns.json, codebase.json) to gather pattern information
+2. **Draft Agent** - Generates initial documentation from extracted patterns
+3. **Review Agent** - Validates accuracy, checks for empty sections and broken references
+4. **Output Agent** - Formats and saves the final documentation
+
+**Trigger:** Scheduled systemd timer (weekly) or manual execution via \`bin/generate-docs --all\`
+
+## Why Does This Exist?
+
+**Problem:** LLM agents (like jib) need to understand project-specific patterns to work effectively, but:
+- Dumping all documentation into context is inefficient
+- Manually maintaining pattern docs is burdensome
+- Pattern documentation drifts as code evolves
+
+**Solution:** Auto-generated pattern documentation that:
+- Extracts patterns directly from code analysis (via codebase analyzer)
+- Provides concise, navigable references for LLMs
+- Stays current through automated regeneration
+- Supports drift detection to catch stale references
+
+**Architecture Decision:** See [ADR: LLM Documentation Index Strategy](../docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md)
+
+## What Are These Docs Used For?
+
+These generated docs serve as **reference material for LLM agents** (including jib itself):
+
+1. **Pattern Reference**: Quick lookup of how specific patterns (config, connector, sync, etc.) are implemented
+2. **Status Quo Documentation**: Describes \"how we currently do things\" with code examples and conventions
+3. **Navigation Aid**: Links to existing related documentation
+4. **Drift Detection Input**: Checked by \`bin/check-doc-drift\` to find stale references
+
+**Target Audience:** LLM agents (primary), human developers (secondary for pattern discovery)
 
 ## What Changed
+
+Generated documentation for ${pattern_count} detected patterns.
+
+Each pattern has 2 doc types:
+- \`{pattern}-pattern.md\`: Concise pattern overview
+- \`{pattern}-patterns-status-quo.md\`: Detailed current implementation with components table
+
+**File changes:**
+\`\`\`
 $(git diff --stat "origin/$default_branch"...HEAD -- docs/generated/ | head -20)
+\`\`\`
+
+**Also includes:** Minor code formatting fixes from ruff/black auto-formatting (if any)
+
+## How to Review
+
+1. **Accuracy**: Do the extracted patterns accurately reflect the codebase?
+2. **Usefulness**: Are the code examples and conventions helpful?
+3. **Completeness**: Are any major patterns missing?
+4. **Drift**: Run \`bin/check-doc-drift\` to verify all file references are valid
 
 ## Test Plan
-- [ ] Review generated documentation for accuracy
-- [ ] Verify no sensitive information exposed
-- [ ] Check that file references are valid
+
+- [x] Generated docs are syntactically valid markdown
+- [x] File references point to existing files (checked by review agent)
+- [ ] **Human review**: Pattern descriptions accurately reflect codebase
+- [ ] **Human review**: Conventions match actual development practices
+- [ ] Run drift detector: \`bin/check-doc-drift\`
+
+---
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
@@ -132,7 +196,7 @@ $(git diff --stat "origin/$default_branch"...HEAD -- docs/generated/ | head -20)
 
     local pr_url
     pr_url=$(gh pr create \
-        --title "docs: Auto-generated documentation update $(date +%Y-%m-%d)" \
+        --title "docs: Auto-generated documentation from 4-agent pipeline" \
         --body "$pr_body" \
         --base "$default_branch" \
         --head "$branch_name" 2>&1)
@@ -193,7 +257,9 @@ Description=Weekly JIB Documentation Generation
 [Timer]
 # Run weekly on Monday at 11am
 OnCalendar=Mon *-*-* 11:00:00
+# If system was off when timer should have run, run it on next boot
 Persistent=true
+# Randomize start time to avoid resource spikes
 RandomizedDelaySec=300
 
 [Install]

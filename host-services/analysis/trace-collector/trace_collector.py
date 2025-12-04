@@ -183,8 +183,12 @@ class TraceCollector:
             # Fail silently - don't let write failures break the hook
             pass
 
-    def _extract_params(self, tool_name: str, tool_input: dict[str, Any]) -> ToolCallParams:
+    def _extract_params(self, tool_name: str, tool_input: dict[str, Any] | list) -> ToolCallParams:
         """Extract normalized parameters from tool input."""
+        # Handle list inputs (rare, but possible)
+        if isinstance(tool_input, list):
+            return ToolCallParams(raw={"_list": tool_input})
+
         params = ToolCallParams(raw=tool_input.copy())
 
         # Extract path-like parameters
@@ -205,7 +209,7 @@ class TraceCollector:
 
         return params
 
-    def _parse_result(self, tool_name: str, tool_result: dict[str, Any] | str) -> ToolResult:
+    def _parse_result(self, tool_name: str, tool_result: dict[str, Any] | str | list) -> ToolResult:
         """Parse tool result into normalized structure."""
         # Handle string results (success messages)
         if isinstance(tool_result, str):
@@ -216,6 +220,13 @@ class TraceCollector:
                     error_message=tool_result[:500],  # Truncate long errors
                 )
             return ToolResult(status="success")
+
+        # Handle list results (some tools return arrays)
+        if isinstance(tool_result, list):
+            return ToolResult(
+                status="success",
+                file_count=len(tool_result) if tool_result else 0,
+            )
 
         # Handle dict results
         status = "success"
@@ -263,11 +274,14 @@ class TraceCollector:
     def record_tool_call(
         self,
         tool_name: str,
-        tool_input: dict[str, Any],
-        tool_result: dict[str, Any] | str | None = None,
+        tool_input: dict[str, Any] | list,
+        tool_result: dict[str, Any] | str | list | None = None,
         duration_ms: int = 0,
         tokens_in_context: int = 0,
         tokens_generated: int = 0,
+        cache_creation_input_tokens: int = 0,
+        cache_read_input_tokens: int = 0,
+        input_tokens: int = 0,
         reasoning_snippet: str | None = None,
     ) -> TraceEvent:
         """
@@ -282,6 +296,9 @@ class TraceCollector:
             duration_ms: Execution time in milliseconds
             tokens_in_context: Current context window size
             tokens_generated: Tokens generated in this turn
+            cache_creation_input_tokens: Tokens written to cache this turn
+            cache_read_input_tokens: Tokens read from cache this turn
+            input_tokens: Regular (non-cached) input tokens this turn
             reasoning_snippet: Brief excerpt of LLM reasoning
 
         Returns:
@@ -315,6 +332,9 @@ class TraceCollector:
             tool_result=result,
             tokens_in_context=tokens_in_context,
             tokens_generated=tokens_generated,
+            cache_creation_input_tokens=cache_creation_input_tokens,
+            cache_read_input_tokens=cache_read_input_tokens,
+            input_tokens=input_tokens,
             reasoning_snippet=reasoning_snippet,
         )
 
@@ -333,6 +353,23 @@ class TraceCollector:
             self.metadata.peak_context_size = max(
                 self.metadata.peak_context_size, tokens_in_context
             )
+            # Update cache metrics
+            self.metadata.total_cache_creation_tokens += cache_creation_input_tokens
+            self.metadata.total_cache_read_tokens += cache_read_input_tokens
+            self.metadata.total_input_tokens += input_tokens
+            # Calculate cache hit rate
+            total_input = (
+                self.metadata.total_cache_creation_tokens
+                + self.metadata.total_cache_read_tokens
+                + self.metadata.total_input_tokens
+            )
+            if total_input > 0:
+                self.metadata.cache_hit_rate = (
+                    self.metadata.total_cache_read_tokens / total_input * 100
+                )
+            # Write metadata to disk after each tool call to ensure it's persisted
+            # even if the session ends unexpectedly
+            self._write_metadata()
 
         return event
 
@@ -367,6 +404,9 @@ class TraceCollector:
 
         if self.metadata:
             self.metadata.total_events += 1
+            # Write metadata to disk after each session event to ensure it's persisted
+            # even if the session ends unexpectedly
+            self._write_metadata()
 
         return event
 
@@ -437,8 +477,8 @@ def get_collector() -> TraceCollector:
 
 def record_tool_call(
     tool_name: str,
-    tool_input: dict[str, Any],
-    tool_result: dict[str, Any] | str | None = None,
+    tool_input: dict[str, Any] | list,
+    tool_result: dict[str, Any] | str | list | None = None,
     duration_ms: int = 0,
 ) -> TraceEvent:
     """

@@ -1,0 +1,24 @@
+[Unit]
+Description=JIB Feature Analyzer ADR Watcher - Detect newly implemented ADRs
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/feature-analyzer/README.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/khan/james-in-a-box
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/feature-analyzer/adr_watcher.py watch
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/khan/james-in-a-box/bin
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=feature-analyzer-watcher
+
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

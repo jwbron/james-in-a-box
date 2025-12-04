@@ -1,0 +1,228 @@
+#!/bin/bash
+# jib-internal-devtools-setup - Full repository onboarding for Jib
+#
+# Orchestrates the complete onboarding workflow via jib --exec to ensure
+# all file modifications happen inside the container (not on host).
+#
+# The actual work is done by the container-side analysis-processor with
+# the repo_onboarding task. Changes are committed to a branch and a PR
+# is created for review.
+#
+# Per ADR: Jib Repository Onboarding Strategy
+#
+# Usage:
+#   jib-internal-devtools-setup --repo ~/khan/webapp
+#   jib-internal-devtools-setup --repo ~/khan/public-repo --skip-confluence
+#   jib-internal-devtools-setup --repo ~/khan/webapp --dry-run
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Script location - used to find jib binary
+# Resolve symlinks to get the actual script location
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_SOURCE" ]]; do
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+    # If relative symlink, resolve relative to symlink directory
+    [[ "$SCRIPT_SOURCE" != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+
+# Find jib binary
+JIB_BIN="${SCRIPT_DIR}/jib"
+if [[ ! -x "$JIB_BIN" ]]; then
+    JIB_BIN="$(command -v jib 2>/dev/null || true)"
+fi
+
+# Default values
+REPO_PATH=""
+SKIP_CONFLUENCE=false
+SKIP_FEATURES=false
+PUBLIC_REPO=false
+DRY_RUN=false
+CONFLUENCE_DIR="${HOME}/context-sync/confluence"
+MAX_WORKERS=20
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Onboard a repository to Jib by generating documentation indexes.
+
+This script runs inside the jib container to ensure all file modifications
+are isolated in a worktree. Changes are committed to a branch and submitted
+as a PR for review.
+
+OPTIONS:
+    --repo PATH           Path to repository to onboard (required)
+    --skip-confluence     Skip Confluence documentation discovery
+    --skip-features       Skip feature analysis phase
+    --public-repo         Mark as public repo (filters sensitive docs)
+    --confluence-dir DIR  Path to Confluence sync directory
+                          (default: ~/context-sync/confluence)
+    --max-workers N       Parallel workers for feature analysis (default: 20)
+    --dry-run             Show what would be done without making changes
+    -h, --help            Show this help message
+
+EXAMPLES:
+    # Full onboarding for internal repo
+    $(basename "$0") --repo ~/khan/webapp
+
+    # Onboard public repo (skip Confluence, filter output)
+    $(basename "$0") --repo ~/khan/public-lib --public-repo --skip-confluence
+
+    # Preview what would happen
+    $(basename "$0") --repo ~/khan/webapp --dry-run
+
+OUTPUT:
+    Creates a PR with the following changes:
+    - docs/FEATURES.md              Feature-to-source mapping
+    - docs/features/*.md            Feature category documentation
+    - docs/generated/codebase.json  Codebase structure index (local-only)
+    - docs/generated/patterns.json  Code patterns index (local-only)
+    - docs/generated/dependencies.json  Dependency graph (local-only)
+    - docs/generated/external-docs.json  Confluence docs (local-only)
+    - docs/index.md                 Updated navigation index
+EOF
+}
+
+log_phase() {
+    echo -e "\n${BLUE}=== $1 ===${NC}"
+}
+
+log_step() {
+    echo -e "${GREEN}→${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}✗${NC} $1" >&2
+}
+
+log_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --repo)
+            REPO_PATH="$2"
+            shift 2
+            ;;
+        --skip-confluence)
+            SKIP_CONFLUENCE=true
+            shift
+            ;;
+        --skip-features)
+            SKIP_FEATURES=true
+            shift
+            ;;
+        --public-repo)
+            PUBLIC_REPO=true
+            shift
+            ;;
+        --confluence-dir)
+            CONFLUENCE_DIR="$2"
+            shift 2
+            ;;
+        --max-workers)
+            MAX_WORKERS="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [[ -z "$REPO_PATH" ]]; then
+    log_error "Repository path is required"
+    usage
+    exit 1
+fi
+
+# Resolve and validate repo path
+REPO_PATH="$(cd "$REPO_PATH" 2>/dev/null && pwd)" || {
+    log_error "Repository path does not exist: $REPO_PATH"
+    exit 1
+}
+
+REPO_NAME="$(basename "$REPO_PATH")"
+
+# Validate jib is available
+if [[ ! -x "$JIB_BIN" ]]; then
+    log_error "jib command not found. Please ensure jib is installed and in PATH."
+    exit 1
+fi
+
+echo -e "${BLUE}╔════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║     JIB Repository Onboarding              ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
+echo ""
+echo "Repository:      $REPO_PATH"
+echo "Repo Name:       $REPO_NAME"
+echo "Skip Confluence: $SKIP_CONFLUENCE"
+echo "Skip Features:   $SKIP_FEATURES"
+echo "Public Repo:     $PUBLIC_REPO"
+echo "Dry Run:         $DRY_RUN"
+echo "Max Workers:     $MAX_WORKERS"
+echo ""
+
+log_step "Running onboarding via jib container..."
+echo ""
+echo "Note: All file modifications happen inside the container's worktree."
+echo "Changes will be committed to a branch and submitted as a PR."
+echo ""
+
+# Build JSON context for the container-side processor
+# We need to escape the repo_name properly for JSON
+CONTEXT_JSON=$(cat <<EOF
+{
+    "repo_name": "$REPO_NAME",
+    "skip_confluence": $SKIP_CONFLUENCE,
+    "skip_features": $SKIP_FEATURES,
+    "public_repo": $PUBLIC_REPO,
+    "confluence_dir": "$CONFLUENCE_DIR",
+    "dry_run": $DRY_RUN,
+    "max_workers": $MAX_WORKERS
+}
+EOF
+)
+
+# Run the onboarding inside the container
+# The container's worktree isolation ensures host's main branch is not modified
+if "$JIB_BIN" --exec analysis-processor --task repo_onboarding --context "$CONTEXT_JSON"; then
+    echo ""
+    log_success "Repository onboarding complete!"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Review the PR that was created"
+    echo "  2. Merge the PR to update the repository documentation"
+    echo "  3. Consider adding docs/generated/*.json to .gitignore"
+    echo ""
+else
+    log_error "Onboarding failed. Check the output above for details."
+    exit 1
+fi

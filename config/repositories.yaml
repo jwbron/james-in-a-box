@@ -43,7 +43,29 @@ github_sync:
   # Sync interval in minutes (used by systemd timer)
   sync_interval_minutes: 5
 
-# Future: Repositories with read-only access
-# readable_repos:
-#   - khan/webapp
-#   - khan/mobile
+# Repositories with read-only access
+# These are repos where jib can:
+# - Sync and analyze PRs, comments, and check failures
+# - Send Slack notifications with feedback/analysis
+# - NOT: Push code, create PRs, post comments, or make any modifications
+#
+# Read-only repos only require a GitHub PAT with read access.
+# jib will monitor these repos and send Slack messages with:
+# - Branch names with proposed changes
+# - Analysis and feedback on code
+# - Comments and suggestions (sent to user, not posted to GitHub)
+#
+# Authentication: Uses GITHUB_TOKEN (PAT) - no GitHub App needed for read-only
+readable_repos:
+  - khan/webapp
+
+# Per-repository configuration overrides
+# Each key is a repository name in "owner/repo" format
+# Available options per repo:
+#   - restrict_to_configured_users: Only auto-respond to comments/PRs from
+#     bot_username or github_username (ignores external contributors)
+#     Default: false (respond to all users)
+repo_settings:
+  jwbron/james-in-a-box:
+    restrict_to_configured_users: true
+

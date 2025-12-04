@@ -11,6 +11,15 @@ The container should ONLY be called via `jib --exec`. No watching/polling logic 
 
 Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analysis with MCP"
 
+## Authentication
+
+This service uses the host's gh CLI authentication (via `gh auth login`).
+No environment variables (GITHUB_TOKEN, etc.) are required - the service relies on
+the native gh auth mechanism.
+
+If gh is not authenticated, the service will log an error and exit with instructions
+to run `gh auth login`.
+
 ## PR and Comment Handling Behavior
 
 ### Which PRs are monitored:
@@ -21,6 +30,11 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 2. **Bot's PRs** (authored by `bot_username[bot]`):
    - Check failures: Detects and triggers fixes for failing CI checks
    - Comments: Responds to comments from the user and others (not from bot itself)
+
+3. **Review requests** (PRs from other authors):
+   - Currently processes ALL PRs from other authors (not user's or bot's)
+   - NOTE: Direct review request filtering was disabled due to GraphQL permission issues
+   - TODO: Re-enable filtering when using per-PR API calls
 
 ### Which comments are handled:
 - Comments from the configured `github_username` (e.g., jwbron) ARE processed
@@ -44,6 +58,12 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 - Each unique (repo, PR, commit SHA) conflict combination is tracked
 - Pushing a new commit resets the processed state, allowing fresh retry
 
+### Re-review on new commits:
+- Review signatures include the head commit SHA
+- When new commits are pushed to a PR branch, the signature changes
+- This triggers a re-review so reviewers always see the latest code
+- The `is_rereview` flag is set in the context to distinguish re-reviews from initial reviews
+
 ### What happens when jib is invoked:
 - jib runs Claude with the task context (check failures, comments, or review request)
 - Claude analyzes the issue and takes action (fix code, respond to comments, etc.)
@@ -57,22 +77,28 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 """
 
 import json
+import os
+import secrets
 import subprocess
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 import yaml
 
 
-# Add shared directory to path for jib_logging
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+# Add project root to path for shared modules and config
+_project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(_project_root / "shared"))
+sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
+
+from config.repo_config import should_restrict_to_configured_users
 
 
 # Initialize logger
@@ -85,17 +111,50 @@ RATE_LIMIT_MAX_RETRIES = 3  # Max retries on rate limit errors
 RATE_LIMIT_BASE_WAIT = 60  # Base wait time in seconds for exponential backoff
 
 # Parallel execution configuration
-MAX_PARALLEL_JIB = 10  # Max concurrent jib containers
+MAX_PARALLEL_JIB = 20  # Max concurrent jib containers
+
+# Host-side notification directory (different from container's ~/sharing/notifications)
+# The slack-notifier service monitors this directory for notification files
+HOST_NOTIFICATIONS_DIR = Path.home() / ".jib-sharing" / "notifications"
+
+# Maximum diff size to include in context
+MAX_DIFF_SIZE = 50000
+
+
+def truncate_diff(diff: str, max_size: int = MAX_DIFF_SIZE) -> str:
+    """Truncate diff at a line boundary to avoid cutting mid-line.
+
+    Args:
+        diff: The diff content to truncate
+        max_size: Maximum size in characters
+
+    Returns:
+        Truncated diff ending at a line boundary
+    """
+    if not diff or len(diff) <= max_size:
+        return diff or ""
+    # Find last newline before limit to avoid cutting mid-line
+    truncated = diff[:max_size].rsplit("\n", 1)[0]
+    return truncated
 
 
 @dataclass
 class JibTask:
-    """A task to be executed by jib."""
+    """A task to be executed by jib.
 
-    task_type: str  # 'check_failure', 'comment', 'merge_conflict', 'review_request'
+    Attributes:
+        task_type: One of 'check_failure', 'comment', 'merge_conflict', 'review_request'
+        context: Task-specific context dict
+        signature_key: Key for processed_* dict (e.g., 'processed_failures')
+        signature_value: The signature to mark as processed
+        is_readonly: If True, send notification instead of invoking jib (for read-only repos)
+    """
+
+    task_type: str
     context: dict
-    signature_key: str  # Key for processed_* dict (e.g., 'processed_failures')
-    signature_value: str  # The signature to mark as processed
+    signature_key: str
+    signature_value: str
+    is_readonly: bool = False
 
 
 class ThreadSafeState:
@@ -150,6 +209,7 @@ def load_config() -> dict:
 
     Returns dict with:
         - writable_repos: List of repos jib can modify
+        - readable_repos: List of repos jib can only read (notify via Slack)
         - github_username: Configured GitHub username (for filtering)
     """
     config_paths = [
@@ -160,9 +220,12 @@ def load_config() -> dict:
     for config_path in config_paths:
         if config_path.exists():
             with open(config_path) as f:
-                return yaml.safe_load(f)
+                config = yaml.safe_load(f)
+                # Ensure readable_repos exists
+                config.setdefault("readable_repos", [])
+                return config
 
-    return {"writable_repos": [], "github_username": "jib"}
+    return {"writable_repos": [], "readable_repos": [], "github_username": "jib"}
 
 
 def load_state() -> dict:
@@ -177,6 +240,7 @@ def load_state() -> dict:
                 state.setdefault("processed_comments", {})
                 state.setdefault("processed_reviews", {})
                 state.setdefault("processed_conflicts", {})
+                state.setdefault("processed_review_responses", {})
                 state.setdefault("failed_tasks", {})
                 state.setdefault("last_run_start", None)
                 logger.debug(
@@ -209,6 +273,7 @@ def load_state() -> dict:
         "processed_comments": {},
         "processed_reviews": {},
         "processed_conflicts": {},
+        "processed_review_responses": {},
         "failed_tasks": {},
         "last_run_start": None,
     }
@@ -234,6 +299,9 @@ def save_state(state: dict, update_last_run: bool = False):
 
 def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
     """Run gh CLI command and return JSON output with rate limit handling.
+
+    Uses the host's gh CLI authentication (from `gh auth login`).
+    No token environment variables are used - relies on native gh auth.
 
     Implements exponential backoff on rate limit errors and basic throttling
     between calls to prevent hitting rate limits.
@@ -283,7 +351,7 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
             else:
                 # Include full stderr for debugging - common issues:
                 # - "gh: command not found" - gh CLI not installed
-                # - "authentication required" - not logged in
+                # - "authentication required" - not logged in (run `gh auth login`)
                 # - "HTTP 404" - repo doesn't exist or no access
                 # - "HTTP 403" - rate limit or permission denied
                 stderr_msg = e.stderr.strip() if e.stderr else "(no stderr)"
@@ -308,11 +376,18 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
     return None
 
 
-def gh_text(args: list[str]) -> str | None:
+def gh_text(args: list[str], repo: str | None = None) -> str | None:
     """Run gh CLI command and return text output with rate limit handling.
+
+    Uses the host's gh CLI authentication (from `gh auth login`).
+    No token environment variables are used - relies on native gh auth.
 
     Implements exponential backoff on rate limit errors and basic throttling
     between calls to prevent hitting rate limits.
+
+    Args:
+        args: Arguments to pass to gh CLI
+        repo: Optional repository context for logging
     """
     # Basic throttling between calls
     time.sleep(RATE_LIMIT_DELAY)
@@ -371,6 +446,19 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     Returns:
         True if invocation succeeded
     """
+    # Generate unique workflow ID for this invocation
+    # Format: gw-{task_type}-{timestamp}-{random_hex}
+    # - timestamp provides second-level uniqueness (YYYYMMDD-HHMMSS)
+    # - secrets.token_hex(4) generates 8 hex chars (4 bytes = 32 bits of randomness)
+    # - Collision probability: ~1 in 4 billion for same-second invocations
+    # - Given timestamp prefix, practical collision risk is negligible
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    workflow_id = f"gw-{task_type}-{timestamp}-{secrets.token_hex(4)}"
+
+    # Add workflow context to the task context
+    context["workflow_id"] = workflow_id
+    context["workflow_type"] = task_type
+
     context_json = json.dumps(context)
 
     # Container path is fixed - jib always mounts to /home/jwies/khan/
@@ -415,6 +503,12 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         log_extra["pr_number"] = context.get("pr_number")
         log_extra["pr_title"] = context.get("pr_title", "")[:60]
         log_extra["author"] = context.get("author")
+        log_extra["is_rereview"] = context.get("is_rereview", False)
+    elif task_type == "pr_review_response":
+        log_extra["pr_number"] = context.get("pr_number")
+        log_extra["pr_title"] = context.get("pr_title", "")[:60]
+        log_extra["review_count"] = len(context.get("reviews", []))
+        log_extra["line_comment_count"] = len(context.get("line_comments", []))
 
     logger.info("Invoking jib", **log_extra)
 
@@ -483,8 +577,234 @@ def invoke_jib(task_type: str, context: dict) -> bool:
         return False
 
 
+VALID_READONLY_TASK_TYPES = [
+    "check_failure",
+    "comment",
+    "review_request",
+    "merge_conflict",
+    "pr_review_response",
+]
+
+
+def send_readonly_notification(task_type: str, context: dict) -> bool:
+    """Send a Slack notification for a read-only repo event.
+
+    For read-only repos, we don't invoke jib to make changes.
+    Instead, we send a Slack notification with the event details.
+
+    Args:
+        task_type: One of 'check_failure', 'comment', 'review_request', 'merge_conflict'
+        context: Dict containing task-specific context
+
+    Returns:
+        True if notification was sent successfully
+    """
+    HOST_NOTIFICATIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    repo = context.get("repository", "unknown")
+    pr_number = context.get("pr_number", 0)
+    pr_title = context.get("pr_title", "")
+    pr_url = context.get("pr_url", "")
+    pr_branch = context.get("pr_branch", "")
+    base_branch = context.get("base_branch", "main")
+
+    # Generate task ID for threading
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    task_id = f"readonly-{task_type}-{repo.replace('/', '-')}-{pr_number}-{timestamp}"
+
+    # Build notification content based on task type
+    if task_type == "check_failure":
+        failed_checks = context.get("failed_checks", [])
+        check_list = "\n".join(f"- {c.get('name', 'Unknown')}" for c in failed_checks)
+
+        title = f"Check Failures in {repo} PR #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Branch**: `{pr_branch}` -> `{base_branch}`
+
+## Failed Checks
+
+{check_list}
+
+## Note
+
+This is a **read-only repository**. jib cannot push fixes directly.
+Please review the failures and make changes manually."""
+
+    elif task_type == "comment":
+        comments = context.get("comments", [])
+        # Format comments (limit to 5)
+        comment_sections = []
+        for c in comments[:5]:
+            author = c.get("author", "Unknown")
+            body_preview = c.get("body", "")[:300]
+            if len(c.get("body", "")) > 300:
+                body_preview += "..."
+            comment_type = c.get("type", "comment")
+            comment_sections.append(f"**{author}** ({comment_type}):\n> {body_preview}")
+        comments_text = "\n\n".join(comment_sections)
+
+        title = f"New Comments in {repo} PR #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+
+## New Comments ({len(comments)} total)
+
+{comments_text}
+
+## Note
+
+This is a **read-only repository**. jib cannot respond on GitHub.
+If you'd like jib to respond, please paste your response in this thread."""
+
+    elif task_type == "review_request":
+        author = context.get("author", "unknown")
+        additions = context.get("additions", 0)
+        deletions = context.get("deletions", 0)
+        files = context.get("files", [])
+        is_rereview = context.get("is_rereview", False)
+
+        # Format files list (limit to 10)
+        files_preview = files[:10]
+        files_text = "\n".join(f"- `{f}`" for f in files_preview)
+        if len(files) > 10:
+            files_text += f"\n- ... and {len(files) - 10} more files"
+
+        if is_rereview:
+            title = f"PR Re-Review Request: {repo} #{pr_number}"
+            review_type_note = "**Type**: Re-review (new commits since last review)"
+        else:
+            title = f"PR Review Request: {repo} #{pr_number}"
+            review_type_note = ""
+
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Author**: @{author}
+**Branch**: `{pr_branch}` -> `{base_branch}`
+**Changes**: +{additions} / -{deletions}
+{review_type_note}
+
+## Files Changed
+
+{files_text}
+
+## Note
+
+This is a **read-only repository**. jib cannot post review comments on GitHub.
+Feedback is provided in this Slack thread instead."""
+
+    elif task_type == "merge_conflict":
+        title = f"Merge Conflict in {repo} PR #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Branch**: `{pr_branch}` -> `{base_branch}`
+
+## Merge Conflict Detected
+
+This PR has merge conflicts that need to be resolved.
+
+## Note
+
+This is a **read-only repository**. jib cannot resolve conflicts automatically.
+Please resolve the conflicts manually by merging `{base_branch}` into `{pr_branch}`."""
+
+    elif task_type == "pr_review_response":
+        reviews = context.get("reviews", [])
+        line_comments = context.get("line_comments", [])
+
+        # Format reviews
+        reviews_text = ""
+        for r in reviews[:5]:
+            reviewer = r.get("author", "Unknown")
+            state = r.get("state", "COMMENTED")
+            review_body = r.get("body", "")[:300]
+            if len(r.get("body", "")) > 300:
+                review_body += "..."
+            reviews_text += f"\n**{reviewer}** ({state}):\n> {review_body}\n"
+
+        # Format line comments
+        comments_text = ""
+        for c in line_comments[:5]:
+            author = c.get("author", "Unknown")
+            path = c.get("path", "unknown")
+            line = c.get("line", "?")
+            comment_body = c.get("body", "")[:200]
+            if len(c.get("body", "")) > 200:
+                comment_body += "..."
+            comments_text += f"\n**{author}** on `{path}:{line}`:\n> {comment_body}\n"
+
+        if len(line_comments) > 5:
+            comments_text += f"\n- ... and {len(line_comments) - 5} more comments"
+
+        title = f"PR Review Feedback: {repo} #{pr_number}"
+        body = f"""**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_number})
+**Branch**: `{pr_branch}` -> `{base_branch}`
+
+## Reviews ({len(reviews)} total)
+
+{reviews_text if reviews_text else "No review body comments."}
+
+## Line Comments ({len(line_comments)} total)
+
+{comments_text if comments_text else "No inline comments."}
+
+## Note
+
+This is a **read-only repository**. jib cannot respond to reviews or push changes.
+Please address the feedback manually."""
+
+    else:
+        logger.error(
+            "Unknown task type for readonly notification",
+            task_type=task_type,
+            valid_types=VALID_READONLY_TASK_TYPES,
+        )
+        return False
+
+    # Build notification file content with YAML frontmatter
+    file_content = f"""---
+task_id: "{task_id}"
+---
+
+# {title}
+
+{body}
+
+---
+Repo: {repo} | PR: #{pr_number} | Branch: `{pr_branch}` | Source: readonly-watcher
+"""
+
+    # Write notification file
+    filename = f"{timestamp}-{task_id}.md"
+    filepath = HOST_NOTIFICATIONS_DIR / filename
+
+    try:
+        filepath.write_text(file_content)
+        logger.info(
+            "Read-only notification sent",
+            task_type=task_type,
+            repository=repo,
+            pr_number=pr_number,
+            notification_file=str(filepath),
+        )
+        return True
+    except Exception as e:
+        logger.error(
+            "Failed to write readonly notification",
+            task_type=task_type,
+            repository=repo,
+            pr_number=pr_number,
+            error=str(e),
+        )
+        return False
+
+
 def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
     """Execute a single jib task and update state (thread-safe).
+
+    For writable repos, invokes jib to handle the task (push fixes, post comments).
+    For read-only repos, sends a Slack notification instead.
 
     Args:
         task: The JibTask to execute
@@ -493,7 +813,13 @@ def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
     Returns:
         True if task completed successfully
     """
-    success = invoke_jib(task.task_type, task.context)
+    if task.is_readonly:
+        # Read-only repo: send notification instead of invoking jib
+        success = send_readonly_notification(task.task_type, task.context)
+    else:
+        # Writable repo: invoke jib to handle the task
+        success = invoke_jib(task.task_type, task.context)
+
     if success:
         safe_state.mark_processed(task.signature_key, task.signature_value)
     else:
@@ -705,7 +1031,12 @@ def fetch_check_logs(repo: str, check: dict) -> str | None:
 
 
 def check_pr_for_comments(
-    repo: str, pr_data: dict, state: dict, bot_username: str, since_timestamp: str | None = None
+    repo: str,
+    pr_data: dict,
+    state: dict,
+    bot_username: str,
+    github_username: str,
+    since_timestamp: str | None = None,
 ) -> dict | None:
     """Check a PR for new comments from others that need response.
 
@@ -714,6 +1045,7 @@ def check_pr_for_comments(
         pr_data: PR data dict with number, title, url, etc.
         state: State dict with processed_comments
         bot_username: Bot's username (to filter out bot's own comments)
+        github_username: Configured GitHub username (for restrict_to_configured_users)
         since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
@@ -830,6 +1162,22 @@ def check_pr_for_comments(
             pr_number=pr_num,
         )
         return None
+
+    # If restrict_to_configured_users is enabled, only respond to comments from
+    # the configured github_username (bot comments are already excluded above)
+    if should_restrict_to_configured_users(repo):
+        allowed_users = {github_username.lower()}
+        filtered_comments = [c for c in other_comments if c["author"].lower() in allowed_users]
+        if not filtered_comments:
+            logger.debug(
+                "No comments from configured users (restrict_to_configured_users enabled)",
+                pr_number=pr_num,
+                original_count=len(other_comments),
+                authors=[c["author"] for c in other_comments],
+                allowed_users=list(allowed_users),
+            )
+            return None
+        other_comments = filtered_comments
 
     # Check if there are failed tasks for this PR that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -978,6 +1326,220 @@ def check_pr_for_merge_conflict(repo: str, pr_data: dict, state: dict) -> dict |
     }
 
 
+def check_pr_for_review_response(
+    repo: str,
+    pr_data: dict,
+    state: dict,
+    bot_username: str,
+    github_username: str,
+    since_timestamp: str | None = None,
+) -> dict | None:
+    """Check a bot's PR for reviews that need response.
+
+    This function detects when someone reviews a PR created by the bot,
+    and creates a task for the bot to respond to the review feedback.
+
+    Args:
+        repo: Repository in owner/repo format
+        pr_data: PR data dict with number, title, url, etc.
+        state: State dict with processed_review_responses
+        bot_username: Bot's username (to identify bot's own PRs)
+        github_username: Configured GitHub username (for restrict_to_configured_users)
+        since_timestamp: ISO timestamp to filter reviews (only show newer)
+
+    Returns context dict if new reviews found that need response.
+    """
+    pr_num = pr_data["number"]
+
+    # Get reviews on this PR
+    reviews_data = gh_json(
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "reviews,reviewRequests",
+        ],
+        repo=repo,
+    )
+
+    if reviews_data is None:
+        return None
+
+    reviews = reviews_data.get("reviews", [])
+    if not reviews:
+        return None
+
+    # Filter to reviews NOT from the bot
+    bot_variants = {
+        bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
+        f"app/{bot_username.lower()}",
+    }
+
+    # Find reviews that aren't from the bot
+    other_reviews = [
+        r for r in reviews if r.get("author", {}).get("login", "").lower() not in bot_variants
+    ]
+
+    if not other_reviews:
+        logger.debug(
+            "No reviews from others on bot PR",
+            pr_number=pr_num,
+        )
+        return None
+
+    # If restrict_to_configured_users is enabled, only respond to reviews from
+    # the configured github_username
+    if should_restrict_to_configured_users(repo):
+        allowed_users = {github_username.lower()}
+        filtered_reviews = [
+            r
+            for r in other_reviews
+            if r.get("author", {}).get("login", "").lower() in allowed_users
+        ]
+        if not filtered_reviews:
+            logger.debug(
+                "No reviews from configured users (restrict_to_configured_users enabled)",
+                pr_number=pr_num,
+                original_count=len(other_reviews),
+                reviewers=[r.get("author", {}).get("login", "") for r in other_reviews],
+                allowed_users=list(allowed_users),
+            )
+            return None
+        other_reviews = filtered_reviews
+
+    # Filter by since_timestamp if provided
+    if since_timestamp:
+        other_reviews = [r for r in other_reviews if r.get("submittedAt", "") >= since_timestamp]
+        if not other_reviews:
+            return None  # No new reviews since last run
+
+    # Get the most recent review
+    # Sort by submittedAt descending
+    other_reviews.sort(key=lambda r: r.get("submittedAt", ""), reverse=True)
+    latest_review = other_reviews[0]
+
+    # Create signature based on latest review
+    review_id = latest_review.get("id", "")
+    review_response_signature = f"{repo}-{pr_num}:review_response:{review_id}"
+
+    if review_response_signature in state.get("processed_review_responses", {}):
+        processed_at = state["processed_review_responses"].get(review_response_signature, "unknown")
+        logger.debug(
+            "Review already processed for response",
+            pr_number=pr_num,
+            processed_at=processed_at,
+            reviewer=latest_review.get("author", {}).get("login", "unknown"),
+        )
+        return None  # Already processed
+
+    # Get line-level review comments for this PR
+    review_comments = gh_json(
+        [
+            "api",
+            f"repos/{repo}/pulls/{pr_num}/comments",
+        ],
+        repo=repo,
+    )
+
+    # Compile review information
+    review_info = []
+    for r in other_reviews:
+        review_entry = {
+            "id": r.get("id", ""),
+            "author": r.get("author", {}).get("login", "unknown"),
+            "state": r.get(
+                "state", "COMMENTED"
+            ),  # APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED
+            "body": r.get("body", ""),
+            "submitted_at": r.get("submittedAt", ""),
+        }
+        review_info.append(review_entry)
+
+    # Parse line-level comments
+    line_comments = []
+    if review_comments:
+        for rc in review_comments:
+            # Only include comments from non-bot users
+            rc_author = rc.get("user", {}).get("login", "").lower()
+            if rc_author not in bot_variants:
+                line_comments.append(
+                    {
+                        "id": str(rc.get("id", "")),
+                        "author": rc.get("user", {}).get("login", "unknown"),
+                        "body": rc.get("body", ""),
+                        "path": rc.get("path", ""),
+                        "line": rc.get("line"),
+                        "original_line": rc.get("original_line"),
+                        "diff_hunk": rc.get("diff_hunk", ""),
+                        "created_at": rc.get("created_at", ""),
+                    }
+                )
+
+    logger.info(
+        "Bot PR has reviews needing response",
+        pr_number=pr_num,
+        pr_title=pr_data.get("title", "")[:80],
+        review_count=len(review_info),
+        line_comment_count=len(line_comments),
+        latest_reviewer=latest_review.get("author", {}).get("login", "unknown"),
+        latest_state=latest_review.get("state", "COMMENTED"),
+    )
+
+    # Get PR diff for context
+    diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo], repo=repo)
+
+    return {
+        "type": "pr_review_response",
+        "repository": repo,
+        "pr_number": pr_num,
+        "pr_title": pr_data.get("title", ""),
+        "pr_url": pr_data.get("url", ""),
+        "pr_branch": pr_data.get("headRefName", ""),
+        "base_branch": pr_data.get("baseRefName", "main"),
+        "reviews": review_info,
+        "line_comments": line_comments,
+        "diff": truncate_diff(diff),
+        "review_response_signature": review_response_signature,
+    }
+
+
+def is_user_directly_requested(pr_data: dict, github_username: str) -> bool:
+    """Check if a user is directly requested as a reviewer (not via team membership).
+
+    Args:
+        pr_data: PR data dict containing reviewRequests field
+        github_username: The user's GitHub username to check for
+
+    Returns:
+        True if the user is directly requested as an individual reviewer,
+        False if not requested or only requested via team membership.
+
+    The reviewRequests field contains objects with:
+    - __typename: "User" or "Team"
+    - login: username (for User type)
+    - name/slug: team name (for Team type)
+
+    We only consider direct User requests, NOT team-based requests.
+    """
+    review_requests = pr_data.get("reviewRequests", [])
+    if not review_requests:
+        return False
+
+    # Check if the user is directly requested (as a User, not a Team)
+    for request in review_requests:
+        if (
+            request.get("__typename") == "User"
+            and request.get("login", "").lower() == github_username.lower()
+        ):
+            return True
+
+    return False
+
+
 def check_prs_for_review(
     repo: str,
     all_prs: list[dict],
@@ -986,34 +1548,81 @@ def check_prs_for_review(
     bot_username: str,
     since_timestamp: str | None = None,
 ) -> list[dict]:
-    """Check for PRs from others that need review.
+    """Check for PRs from other authors that may need review.
+
+    NOTE: Direct review request filtering (is_user_directly_requested) is temporarily
+    disabled because the reviewRequests field requires special GraphQL permissions
+    that can cause authentication issues. This function now processes ALL PRs from
+    other authors (not the user's or bot's PRs).
+
+    TODO: Re-enable direct review request filtering using per-PR API calls.
 
     Args:
         repo: Repository in owner/repo format
-        all_prs: Pre-fetched list of all open PRs (to avoid redundant API calls)
+        all_prs: Pre-fetched list of all open PRs
         state: State dict with processed_reviews
-        github_username: The user's GitHub username (to exclude their PRs)
+        github_username: The user's GitHub username
         bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
     Returns list of context dicts for PRs needing review.
+
+    Note: Review signatures include head_sha to trigger re-reviews when new commits
+    are pushed to a PR branch. This ensures the reviewer sees the latest code.
     """
     if not all_prs:
         return []
 
-    # Filter to PRs from others (not from the user or bot)
+    # Filter to PRs from others (exclude user's own PRs and bot's PRs)
     excluded_authors = {
         github_username.lower(),
         bot_username.lower(),
         f"{bot_username.lower()}[bot]",
     }
 
+    # NOTE: Direct review request filtering disabled due to permission issues
+    # Previously used is_user_directly_requested() but reviewRequests field
+    # cannot be fetched reliably. Now processing all PRs from other authors.
     other_prs = [
-        p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
+        p
+        for p in all_prs
+        if p.get("author", {}).get("login", "").lower() not in excluded_authors
     ]
 
     if not other_prs:
+        logger.debug(
+            "No PRs from other authors",
+            username=github_username,
+            total_prs=len(all_prs),
+        )
         return []
+
+    logger.info(
+        "Found PRs from other authors for review",
+        username=github_username,
+        other_author_count=len(other_prs),
+        total_prs=len(all_prs),
+    )
+
+    # Use the filtered list for the rest of the function
+    other_prs = directly_requested_prs
+
+    # If restrict_to_configured_users is enabled, only review PRs from
+    # the configured github_username (but this is for PRs where user is reviewer,
+    # so we filter by PR author being in allowed list)
+    if should_restrict_to_configured_users(repo):
+        allowed_authors = {github_username.lower()}
+        pre_filter_count = len(other_prs)
+        other_prs = [
+            p for p in other_prs if p.get("author", {}).get("login", "").lower() in allowed_authors
+        ]
+        if not other_prs:
+            logger.debug(
+                "No PRs from configured users for review (restrict_to_configured_users enabled)",
+                original_count=pre_filter_count,
+                allowed_authors=list(allowed_authors),
+            )
+            return []
 
     # Check for failed review tasks that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -1038,26 +1647,54 @@ def check_prs_for_review(
     results = []
     for pr in other_prs:
         pr_num = pr["number"]
-        review_signature = f"{repo}-{pr_num}:review"
+        head_sha = pr.get("headRefOid", "")
 
-        # Check if already reviewed
+        # Include head_sha in signature so new commits trigger re-reviews
+        # This mirrors the pattern used for processed_failures
+        review_signature = f"{repo}-{pr_num}-{head_sha}:review"
+
+        # Check if this specific commit has already been reviewed
         if review_signature in state.get("processed_reviews", {}):
+            processed_at = state["processed_reviews"].get(review_signature, "unknown")
+            logger.debug(
+                "PR commit already reviewed",
+                pr_number=pr_num,
+                commit=head_sha[:8] if head_sha else "unknown",
+                processed_at=processed_at,
+            )
             continue
 
-        logger.info(
-            "New PR needs review",
-            pr_number=pr_num,
-            pr_title=pr.get("title", "")[:80],
-            author=pr.get("author", {}).get("login", "unknown"),
-            pr_branch=pr.get("headRefName", ""),
-            base_branch=pr.get("baseRefName", ""),
-            additions=pr.get("additions", 0),
-            deletions=pr.get("deletions", 0),
-            files_changed=len(pr.get("files", [])),
+        # Determine if this is a re-review (different commit was previously reviewed)
+        # Check if any previous review exists for this PR (regardless of commit)
+        pr_review_prefix = f"{repo}-{pr_num}-"
+        is_rereview = any(
+            sig.startswith(pr_review_prefix) and sig.endswith(":review")
+            for sig in state.get("processed_reviews", {})
         )
 
+        if is_rereview:
+            logger.info(
+                "PR has new commits since last review - triggering re-review",
+                pr_number=pr_num,
+                pr_title=pr.get("title", "")[:80],
+                author=pr.get("author", {}).get("login", "unknown"),
+                new_commit=head_sha[:8] if head_sha else "unknown",
+            )
+        else:
+            logger.info(
+                "New PR needs review",
+                pr_number=pr_num,
+                pr_title=pr.get("title", "")[:80],
+                author=pr.get("author", {}).get("login", "unknown"),
+                pr_branch=pr.get("headRefName", ""),
+                base_branch=pr.get("baseRefName", ""),
+                additions=pr.get("additions", 0),
+                deletions=pr.get("deletions", 0),
+                files_changed=len(pr.get("files", [])),
+            )
+
         # Get PR diff
-        diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
+        diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo], repo=repo)
 
         results.append(
             {
@@ -1072,8 +1709,9 @@ def check_prs_for_review(
                 "additions": pr.get("additions", 0),
                 "deletions": pr.get("deletions", 0),
                 "files": [f.get("path", "") for f in pr.get("files", [])],
-                "diff": diff[:50000] if diff else "",  # Limit diff size
+                "diff": truncate_diff(diff),
                 "review_signature": review_signature,
+                "is_rereview": is_rereview,
             }
         )
 
@@ -1103,10 +1741,257 @@ def get_since_timestamp(state: dict) -> str | None:
     return state.get("last_run_start")
 
 
+def process_repo_prs(
+    repo: str,
+    state: dict,
+    github_username: str,
+    bot_username: str,
+    since_timestamp: str | None,
+    is_readonly: bool = False,
+) -> list[JibTask]:
+    """Process a single repository's PRs and collect tasks.
+
+    This is shared logic for both writable and readable repos.
+
+    Args:
+        repo: Repository in owner/repo format
+        state: State dict for deduplication
+        github_username: User's GitHub username
+        bot_username: Bot's GitHub username
+        since_timestamp: Filter for comments since this timestamp
+        is_readonly: If True, tasks will be marked for notification instead of jib invocation
+
+    Returns:
+        List of JibTask objects for this repo
+    """
+    tasks: list[JibTask] = []
+
+    logger.info("Processing repository", repo=repo, is_readonly=is_readonly)
+
+    # Fetch ALL open PRs in a single API call
+    # Note: reviewRequests field removed - causes PAT permission errors
+    # Using host's gh auth instead of token-based authentication
+    all_prs = gh_json(
+        [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
+        ],
+        repo=repo,
+    )
+
+    if all_prs is None:
+        logger.warning("Failed to fetch PRs, skipping repository")
+        return tasks
+
+    logger.info("Fetched open PRs", count=len(all_prs))
+
+    # Filter PRs locally by author
+    my_prs = [
+        p
+        for p in all_prs
+        if p.get("author", {}).get("login", "").lower() == github_username.lower()
+    ]
+
+    # Bot PRs can have author login in different formats
+    bot_author_variants = {
+        bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
+        f"app/{bot_username.lower()}",
+    }
+    bot_prs = [
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() in bot_author_variants
+    ]
+
+    # Collect tasks from user's PRs
+    if my_prs:
+        logger.info(
+            "Found user's open PRs",
+            count=len(my_prs),
+            username=github_username,
+        )
+
+        for pr in my_prs:
+            # Check for failures
+            failure_ctx = check_pr_for_failures(repo, pr, state)
+            if failure_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="check_failure",
+                        context=failure_ctx,
+                        signature_key="processed_failures",
+                        signature_value=failure_ctx["failure_signature"],
+                        is_readonly=is_readonly,
+                    )
+                )
+
+            # Check for comments
+            comment_ctx = check_pr_for_comments(
+                repo, pr, state, bot_username, github_username, since_timestamp
+            )
+            if comment_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="comment",
+                        context=comment_ctx,
+                        signature_key="processed_comments",
+                        signature_value=comment_ctx["comment_signature"],
+                        is_readonly=is_readonly,
+                    )
+                )
+
+            # Check for merge conflicts
+            conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
+            if conflict_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="merge_conflict",
+                        context=conflict_ctx,
+                        signature_key="processed_conflicts",
+                        signature_value=conflict_ctx["conflict_signature"],
+                        is_readonly=is_readonly,
+                    )
+                )
+    else:
+        logger.debug("No open PRs authored by user", username=github_username)
+
+    # Collect tasks from bot's PRs (only for writable repos - bot doesn't create PRs in readonly)
+    if bot_prs and not is_readonly:
+        logger.info(
+            "Found bot's open PRs",
+            count=len(bot_prs),
+            bot_username=bot_username,
+        )
+
+        for pr in bot_prs:
+            # Check for failures on bot's PRs
+            failure_ctx = check_pr_for_failures(repo, pr, state)
+            if failure_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="check_failure",
+                        context=failure_ctx,
+                        signature_key="processed_failures",
+                        signature_value=failure_ctx["failure_signature"],
+                        is_readonly=False,
+                    )
+                )
+
+            # Check for comments on bot's PRs
+            comment_ctx = check_pr_for_comments(
+                repo, pr, state, bot_username, github_username, since_timestamp
+            )
+            if comment_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="comment",
+                        context=comment_ctx,
+                        signature_key="processed_comments",
+                        signature_value=comment_ctx["comment_signature"],
+                        is_readonly=False,
+                    )
+                )
+
+            # Check for merge conflicts on bot's PRs
+            conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
+            if conflict_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="merge_conflict",
+                        context=conflict_ctx,
+                        signature_key="processed_conflicts",
+                        signature_value=conflict_ctx["conflict_signature"],
+                        is_readonly=False,
+                    )
+                )
+
+            # Check for reviews on bot's PRs that need response
+            review_response_ctx = check_pr_for_review_response(
+                repo, pr, state, bot_username, github_username, since_timestamp
+            )
+            if review_response_ctx:
+                tasks.append(
+                    JibTask(
+                        task_type="pr_review_response",
+                        context=review_response_ctx,
+                        signature_key="processed_review_responses",
+                        signature_value=review_response_ctx["review_response_signature"],
+                        is_readonly=False,
+                    )
+                )
+
+    # Collect review tasks for PRs from others
+    review_contexts = check_prs_for_review(
+        repo, all_prs, state, github_username, bot_username, since_timestamp
+    )
+    for review_ctx in review_contexts:
+        tasks.append(
+            JibTask(
+                task_type="review_request",
+                context=review_ctx,
+                signature_key="processed_reviews",
+                signature_value=review_ctx["review_signature"],
+                is_readonly=is_readonly,
+            )
+        )
+
+    return tasks
+
+
+def check_gh_auth() -> bool:
+    """Check if gh CLI is authenticated.
+
+    Returns True if authenticated, False otherwise.
+    Logs an error with instructions if not authenticated.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+        if result.returncode == 0:
+            # Parse the output to get the authenticated user
+            # Output format: "Logged in to github.com account USERNAME (keyring)"
+            for line in result.stdout.split("\n") + result.stderr.split("\n"):
+                if "Logged in to" in line:
+                    logger.info("gh CLI authenticated", auth_info=line.strip())
+                    return True
+            # If we got returncode 0 but couldn't parse, still consider it authenticated
+            logger.info("gh CLI authenticated")
+            return True
+        else:
+            logger.error(
+                "gh CLI is not authenticated. Please run: gh auth login",
+                hint="The github-watcher service requires gh CLI to be authenticated.",
+                stderr=result.stderr.strip() if result.stderr else None,
+            )
+            return False
+    except FileNotFoundError:
+        logger.error(
+            "gh CLI not found. Please install GitHub CLI: https://cli.github.com/",
+            hint="On Fedora: sudo dnf install gh",
+        )
+        return False
+    except subprocess.TimeoutExpired:
+        logger.error("gh auth status timed out")
+        return False
+
+
 def main():
     """Main entry point - scan configured repos and trigger jib as needed.
 
     Tasks are collected first, then executed in parallel for faster processing.
+    Writable repos get full jib handling (push, comment, PR creation).
+    Readable repos get Slack notifications only.
     """
     # Record when this run STARTS - this is what we'll use for next run's "since"
     current_run_start = utc_now_iso()
@@ -1118,13 +2003,20 @@ def main():
         max_parallel=MAX_PARALLEL_JIB,
     )
 
+    # Check gh CLI authentication before proceeding
+    if not check_gh_auth():
+        logger.error("Exiting due to missing gh authentication")
+        return 1
+
     # Load config
     config = load_config()
-    repos = config.get("writable_repos", [])
+    writable_repos = config.get("writable_repos", [])
+    readable_repos = config.get("readable_repos", [])
     github_username = config.get("github_username", "jib")
     bot_username = config.get("bot_username", "jib")
 
-    if not repos:
+    all_repos = writable_repos + readable_repos
+    if not all_repos:
         logger.warning("No repositories configured - check config/repositories.yaml")
         return 0
 
@@ -1132,8 +2024,10 @@ def main():
         "Configuration loaded",
         github_username=github_username,
         bot_username=bot_username,
-        repo_count=len(repos),
-        repositories=repos,
+        writable_repo_count=len(writable_repos),
+        readable_repo_count=len(readable_repos),
+        writable_repos=writable_repos,
+        readable_repos=readable_repos,
     )
 
     # Load state
@@ -1159,179 +2053,48 @@ def main():
         logger.info("First run - checking all open items")
     logger.debug("PR check failures: checking ALL open PRs unconditionally")
 
-    logger.info("Scanning repositories", count=len(repos))
+    logger.info(
+        "Scanning repositories",
+        total=len(all_repos),
+        writable=len(writable_repos),
+        readable=len(readable_repos),
+    )
 
     # Collect all tasks first, then execute in parallel
     all_tasks: list[JibTask] = []
 
-    for repo in repos:
-        # Use ContextScope to automatically include repository in all logs within this block
-        with ContextScope(repository=repo):
-            logger.info("Processing repository")
-
-            # OPTIMIZATION: Fetch ALL open PRs in a single API call, then filter locally
-            # This reduces 3 API calls to 1 per repository
-            all_prs = gh_json(
-                [
-                    "pr",
-                    "list",
-                    "--repo",
-                    repo,
-                    "--state",
-                    "open",
-                    "--json",
-                    "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
-                ],
-                repo=repo,
+    # Process writable repos (full jib handling)
+    for repo in writable_repos:
+        with ContextScope(repository=repo, access_level="writable"):
+            logger.info("Processing writable repository")
+            tasks = process_repo_prs(
+                repo, state, github_username, bot_username, since_timestamp, is_readonly=False
             )
+            all_tasks.extend(tasks)
 
-            if all_prs is None:
-                logger.warning("Failed to fetch PRs, skipping repository")
-                continue
-
-            logger.info("Fetched open PRs", count=len(all_prs))
-
-            # Filter PRs locally by author
-            my_prs = [
-                p
-                for p in all_prs
-                if p.get("author", {}).get("login", "").lower() == github_username.lower()
-            ]
-
-            # Bot PRs can have author login in different formats depending on the API:
-            # - "bot_username" - base name
-            # - "bot_username[bot]" - GitHub web UI format
-            # - "app/bot_username" - gh CLI format (gh pr list --json author returns this)
-            bot_author_variants = {
-                bot_username.lower(),
-                f"{bot_username.lower()}[bot]",
-                f"app/{bot_username.lower()}",
-            }
-            bot_prs = [
-                p
-                for p in all_prs
-                if p.get("author", {}).get("login", "").lower() in bot_author_variants
-            ]
-
-            # Collect tasks from user's PRs
-            if my_prs:
-                logger.info(
-                    "Found user's open PRs",
-                    count=len(my_prs),
-                    username=github_username,
-                )
-
-                for pr in my_prs:
-                    # Check for failures
-                    failure_ctx = check_pr_for_failures(repo, pr, state)
-                    if failure_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="check_failure",
-                                context=failure_ctx,
-                                signature_key="processed_failures",
-                                signature_value=failure_ctx["failure_signature"],
-                            )
-                        )
-
-                    # Check for comments (filter out bot's own comments, not human's)
-                    comment_ctx = check_pr_for_comments(
-                        repo, pr, state, bot_username, since_timestamp
-                    )
-                    if comment_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="comment",
-                                context=comment_ctx,
-                                signature_key="processed_comments",
-                                signature_value=comment_ctx["comment_signature"],
-                            )
-                        )
-
-                    # Check for merge conflicts
-                    conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-                    if conflict_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="merge_conflict",
-                                context=conflict_ctx,
-                                signature_key="processed_conflicts",
-                                signature_value=conflict_ctx["conflict_signature"],
-                            )
-                        )
-            else:
-                logger.debug("No open PRs authored by user", username=github_username)
-
-            # Collect tasks from bot's PRs
-            if bot_prs:
-                logger.info(
-                    "Found bot's open PRs",
-                    count=len(bot_prs),
-                    bot_username=bot_username,
-                )
-
-                for pr in bot_prs:
-                    # Check for failures on bot's PRs
-                    failure_ctx = check_pr_for_failures(repo, pr, state)
-                    if failure_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="check_failure",
-                                context=failure_ctx,
-                                signature_key="processed_failures",
-                                signature_value=failure_ctx["failure_signature"],
-                            )
-                        )
-
-                    # Check for comments on bot's PRs (filter out bot's own comments)
-                    comment_ctx = check_pr_for_comments(
-                        repo, pr, state, bot_username, since_timestamp
-                    )
-                    if comment_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="comment",
-                                context=comment_ctx,
-                                signature_key="processed_comments",
-                                signature_value=comment_ctx["comment_signature"],
-                            )
-                        )
-
-                    # Check for merge conflicts on bot's PRs
-                    conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-                    if conflict_ctx:
-                        all_tasks.append(
-                            JibTask(
-                                task_type="merge_conflict",
-                                context=conflict_ctx,
-                                signature_key="processed_conflicts",
-                                signature_value=conflict_ctx["conflict_signature"],
-                            )
-                        )
-
-            # Collect review tasks for PRs from others
-            review_contexts = check_prs_for_review(
-                repo, all_prs, state, github_username, bot_username, since_timestamp
+    # Process readable repos (notification only)
+    for repo in readable_repos:
+        with ContextScope(repository=repo, access_level="readable"):
+            logger.info("Processing read-only repository")
+            tasks = process_repo_prs(
+                repo, state, github_username, bot_username, since_timestamp, is_readonly=True
             )
-            for review_ctx in review_contexts:
-                all_tasks.append(
-                    JibTask(
-                        task_type="review_request",
-                        context=review_ctx,
-                        signature_key="processed_reviews",
-                        signature_value=review_ctx["review_signature"],
-                    )
-                )
+            all_tasks.extend(tasks)
 
     # Log task summary
     if all_tasks:
         task_types = {}
+        readonly_count = 0
         for task in all_tasks:
             task_types[task.task_type] = task_types.get(task.task_type, 0) + 1
+            if task.is_readonly:
+                readonly_count += 1
         logger.info(
             "Tasks collected",
             total=len(all_tasks),
             by_type=task_types,
+            readonly_tasks=readonly_count,
+            writable_tasks=len(all_tasks) - readonly_count,
         )
 
         # Execute all tasks in parallel
@@ -1352,7 +2115,9 @@ def main():
         "GitHub Watcher completed",
         tasks_completed=tasks_completed,
         tasks_collected=len(all_tasks),
-        repositories_scanned=len(repos),
+        repositories_scanned=len(all_repos),
+        writable_repos_scanned=len(writable_repos),
+        readable_repos_scanned=len(readable_repos),
         next_check_since=current_run_start,
         processed_failures_count=len(state.get("processed_failures", {})),
         processed_comments_count=len(state.get("processed_comments", {})),
