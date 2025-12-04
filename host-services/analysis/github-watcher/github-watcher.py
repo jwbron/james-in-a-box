@@ -804,7 +804,9 @@ def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
     """Execute a single jib task and update state (thread-safe).
 
     For writable repos, invokes jib to handle the task (push fixes, post comments).
-    For read-only repos, sends a Slack notification instead.
+    For read-only repos:
+      - review_request: invokes jib to perform the review and output to Slack
+      - other tasks: sends a Slack notification instead
 
     Args:
         task: The JibTask to execute
@@ -814,8 +816,15 @@ def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
         True if task completed successfully
     """
     if task.is_readonly:
-        # Read-only repo: send notification instead of invoking jib
-        success = send_readonly_notification(task.task_type, task.context)
+        # Read-only repo behavior
+        if task.task_type == "review_request":
+            # For review requests, still invoke jib to perform the actual review
+            # but mark it as readonly so the review is output to Slack instead of GitHub
+            task.context["is_readonly"] = True
+            success = invoke_jib(task.task_type, task.context)
+        else:
+            # For other task types, send notification instead of invoking jib
+            success = send_readonly_notification(task.task_type, task.context)
     else:
         # Writable repo: invoke jib to handle the task
         success = invoke_jib(task.task_type, task.context)
