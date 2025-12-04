@@ -1604,9 +1604,6 @@ def check_prs_for_review(
         total_prs=len(all_prs),
     )
 
-    # Use the filtered list for the rest of the function
-    other_prs = directly_requested_prs
-
     # If restrict_to_configured_users is enabled, only review PRs from
     # the configured github_username (but this is for PRs where user is reviewer,
     # so we filter by PR author being in allowed list)
