@@ -98,7 +98,7 @@ sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
 
-from config.repo_config should_restrict_to_configured_users
+from config.repo_config import should_restrict_to_configured_users
 
 
 # Initialize logger
