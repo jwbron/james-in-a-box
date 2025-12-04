@@ -288,6 +288,59 @@ git push origin <pr-branch-name>
 # (PRs are closed via GitHub UI by human)
 ```
 
+### 6.7. Responding to PR Review Comments (IMPORTANT)
+
+**When addressing feedback on PRs, you MUST respond to review comments directly** - don't just implement fixes silently.
+
+**For each review comment:**
+1. **Read the comment carefully** - understand what's being asked
+2. **Decide your response** - agree, partially agree, or disagree
+3. **Reply to the comment** via GitHub MCP or PR comment
+4. **Implement changes** if you agree (or explain why you don't)
+
+**How to respond:**
+```python
+# Option 1: Reply to a specific review comment thread
+# Use MCP: add_issue_comment (for PR-level comments)
+
+# Option 2: Post a comprehensive response as a PR comment
+# Summarize your response to all review points
+```
+
+**Response format:**
+- **If you agree**: Explain what you changed and why
+- **If you partially agree**: Explain what you changed and what you didn't (with rationale)
+- **If you disagree**: Explain your reasoning clearly - you are empowered to push back
+
+**You are empowered to disagree.** Not every review suggestion should be blindly implemented:
+- If a suggestion would introduce complexity without clear benefit, say so
+- If something is "implementation detail" not "architecture decision", note that
+- If you have a better approach, propose it
+- Be respectful but firm when you have good reasons
+
+**Example response comment:**
+```markdown
+## Responses to Review Comments
+
+### Comment 1: "Add more error handling"
+**Agreed.** Added try/catch around the API call with specific error types.
+
+### Comment 2: "This should use a factory pattern"
+**Disagree.** The current approach is simpler and we only have one implementation.
+A factory pattern would add indirection without benefit here. Happy to discuss if
+there's a specific extensibility concern I'm missing.
+
+### Comment 3: "Add unit tests"
+**Agreed.** Added tests in `test_feature.py` covering the main paths.
+
+— Authored by jib
+```
+
+**NEVER do this:**
+- Implement all suggestions without comment (reviewer can't tell what changed)
+- Stay silent when you disagree (leads to suboptimal code)
+- Make changes without explaining the rationale
+
 ### 7. Complete Task
 
 **MANDATORY**: Update beads when task is complete:
