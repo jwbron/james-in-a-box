@@ -295,22 +295,39 @@ git push origin <pr-branch-name>
 **For each review comment:**
 1. **Read the comment carefully** - understand what's being asked
 2. **Decide your response** - agree, partially agree, or disagree
-3. **Reply to the comment** via GitHub MCP or PR comment
+3. **Reply INLINE to the comment** (not as a general PR comment)
 4. **Implement changes** if you agree (or explain why you don't)
 
-**How to respond:**
-```python
-# Option 1: Reply to a specific review comment thread
-# Use MCP: add_issue_comment (for PR-level comments)
+**CRITICAL: Reply inline, not as a general comment.**
+Inline replies appear directly under each review comment, making it easy for reviewers to see your response in context. A single general comment forces reviewers to match up responses manually.
 
-# Option 2: Post a comprehensive response as a PR comment
-# Summarize your response to all review points
+**How to respond inline:**
+```python
+# Step 1: Create a pending review
+# Use MCP: pull_request_review_write(method="create", owner, repo, pullNumber)
+
+# Step 2: Add inline replies to each comment
+# Use MCP: add_comment_to_pending_review(
+#     owner, repo, pullNumber,
+#     path="path/to/file.py",  # Same file as the original comment
+#     line=42,                  # Same line as the original comment
+#     side="RIGHT",
+#     body="**Agreed.** Added error handling...",
+#     subjectType="LINE"
+# )
+
+# Step 3: Submit the review
+# Use MCP: pull_request_review_write(
+#     method="submit_pending", owner, repo, pullNumber,
+#     event="COMMENT",
+#     body="Inline responses added to each review comment."
+# )
 ```
 
 **Response format:**
-- **If you agree**: Explain what you changed and why
-- **If you partially agree**: Explain what you changed and what you didn't (with rationale)
-- **If you disagree**: Explain your reasoning clearly - you are empowered to push back
+- **If you agree**: `**Agreed.** [What you changed and why]`
+- **If you partially agree**: `**Partially agree.** [What you changed and what you didn't, with rationale]`
+- **If you disagree**: `**Disagree.** [Your reasoning - be specific]`
 
 **You are empowered to disagree.** Not every review suggestion should be blindly implemented:
 - If a suggestion would introduce complexity without clear benefit, say so
@@ -318,25 +335,22 @@ git push origin <pr-branch-name>
 - If you have a better approach, propose it
 - Be respectful but firm when you have good reasons
 
-**Example response comment:**
+**Example inline response:**
 ```markdown
-## Responses to Review Comments
-
-### Comment 1: "Add more error handling"
-**Agreed.** Added try/catch around the API call with specific error types.
-
-### Comment 2: "This should use a factory pattern"
 **Disagree.** The current approach is simpler and we only have one implementation.
 A factory pattern would add indirection without benefit here. Happy to discuss if
 there's a specific extensibility concern I'm missing.
 
-### Comment 3: "Add unit tests"
-**Agreed.** Added tests in `test_feature.py` covering the main paths.
-
 — Authored by jib
 ```
 
+**When to use a general PR comment instead:**
+- Summarizing all changes after submitting inline responses
+- Responding to comments on the PR description (not on code)
+- Providing additional context that spans multiple comments
+
 **NEVER do this:**
+- Post all responses in a single general comment (hard to track)
 - Implement all suggestions without comment (reviewer can't tell what changed)
 - Stay silent when you disagree (leads to suboptimal code)
 - Make changes without explaining the rationale
