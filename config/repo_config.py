@@ -30,6 +30,7 @@ Usage:
 
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -228,7 +229,7 @@ def get_repos_for_sync() -> list[str]:
     return all_repos
 
 
-def get_repo_setting(repo: str, setting: str, default: any | None = None) -> any:
+def get_repo_setting(repo: str, setting: str, default: Any | None = None) -> Any:
     """
     Get a specific setting for a repository.
 
