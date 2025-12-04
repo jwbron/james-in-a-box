@@ -167,6 +167,34 @@ def get_github_token() -> Optional[str]:
     return None
 
 
+def get_github_readonly_token() -> Optional[str]:
+    """Get read-only GitHub token for external repositories.
+
+    This token is used for repos outside the primary GitHub App's scope,
+    such as Khan/webapp when the App is only installed on jwbron/james-in-a-box.
+
+    Returns:
+        Token string if found, None otherwise
+    """
+    try:
+        script_dir = Path(__file__).resolve().parent
+        project_root = script_dir.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
+        from config.host_config import HostConfig
+        config = HostConfig()
+        # Note: github_readonly_token falls back to github_token if not set
+        token = config.get_secret("GITHUB_READONLY_TOKEN")
+        if token:
+            return token
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return None
+
+
 def get_github_app_token() -> Optional[str]:
     """Generate GitHub App installation token for container use.
 
@@ -626,6 +654,51 @@ def create_dockerfile() -> None:
         _copy_directory_atomic(hooks_src, hooks_dest, "Claude hooks", _quiet_mode)
     else:
         warn(".claude/hooks directory not found, skipping hooks")
+
+    # Copy jib-runtime directories to build context
+    # These provide container-resident executables and processors
+    # The bin/ directory contains symlinks to executables (added to PATH in container)
+    #
+    # Directory structure must match the host layout so path calculations work:
+    # Host:      james-in-a-box/jib-container/jib-tasks/... + james-in-a-box/shared/
+    # Container: /opt/jib-runtime/jib-container/jib-tasks/... + /opt/jib-runtime/shared/
+    #
+    # The processors use: Path(__file__).parents[3] / "shared"
+    # From jib-container/jib-tasks/analysis/*.py, this goes up 3 levels to repo root
+    jib_container_dest = Config.CONFIG_DIR / "jib-container"
+    jib_container_dest.mkdir(parents=True, exist_ok=True)
+
+    runtime_dirs = ["bin", "claude", "jib-tasks", "jib-tools", "scripts"]
+    for dir_name in runtime_dirs:
+        src = script_dir / dir_name
+        dest = jib_container_dest / dir_name
+        if src.exists():
+            _copy_directory_atomic(src, dest, f"Runtime {dir_name}", _quiet_mode)
+        else:
+            warn(f"{dir_name} directory not found, skipping")
+
+    # Copy shared directory from repo root to build context (sibling of jib-container)
+    # The jib-tasks processors import shared modules (e.g., jib_logging, notifications)
+    # Note: claude module is in jib-container/claude/ (copied via runtime_dirs above)
+    repo_root = script_dir.parent  # jib-container's parent is james-in-a-box
+    shared_src = repo_root / "shared"
+    shared_dest = Config.CONFIG_DIR / "shared"
+    if shared_src.exists():
+        _copy_directory_atomic(shared_src, shared_dest, "Shared modules", _quiet_mode)
+    else:
+        warn("shared directory not found, container processors may fail imports")
+
+    # Copy pyproject.toml files for pip-installable packages
+    # These make claude (from jib-container) and shared modules pip-installable
+    pyproject_files = [
+        (script_dir / "pyproject.toml", jib_container_dest / "pyproject.toml"),
+        (shared_src / "pyproject.toml", shared_dest / "pyproject.toml"),
+    ]
+    for src, dest in pyproject_files:
+        if src.exists():
+            shutil.copy(src, dest)
+        else:
+            warn(f"pyproject.toml not found at {src}")
 
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
@@ -1730,6 +1803,13 @@ def run_claude() -> bool:
                 warn("GitHub auth: Not configured (GitHub operations disabled)")
                 print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
 
+    # Add GITHUB_READONLY_TOKEN for repos outside the App's scope (e.g., Khan/webapp)
+    github_readonly_token = get_github_readonly_token()
+    if github_readonly_token:
+        cmd.extend(["-e", f"GITHUB_READONLY_TOKEN={github_readonly_token}"])
+        if not _quiet_mode:
+            info("GitHub readonly: Token configured for external repos")
+
     if not _quiet_mode:
         info("Network mode: Bridge (isolated from host, outbound HTTP only)")
         print("  Container can: Access Claude API, download packages")
@@ -1942,6 +2022,11 @@ def exec_in_new_container(
         if github_token:
             cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
             write_github_token_file(github_token)
+
+    # Add GITHUB_READONLY_TOKEN for repos outside the App's scope (e.g., Khan/webapp)
+    github_readonly_token = get_github_readonly_token()
+    if github_readonly_token:
+        cmd.extend(["-e", f"GITHUB_READONLY_TOKEN={github_readonly_token}"])
 
     # Add mount arguments
     cmd.extend(mount_args)

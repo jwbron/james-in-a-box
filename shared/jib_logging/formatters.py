@@ -181,12 +181,48 @@ class ConsoleFormatter(logging.Formatter):
     }
     RESET = "\033[0m"
 
+    # Standard LogRecord attributes to exclude from extra fields display
+    STANDARD_ATTRS = {
+        "name",
+        "msg",
+        "args",
+        "created",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "module",
+        "msecs",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "exc_info",
+        "exc_text",
+        "thread",
+        "threadName",
+        "message",
+        "taskName",
+        # Our custom context fields (shown separately)
+        "trace_id",
+        "span_id",
+        "trace_flags",
+        "task_id",
+        "repository",
+        "pr_number",
+        # Internal attrs
+        "access_level",
+    }
+
     def __init__(
         self,
         service: str = "jib",
         use_colors: bool | None = None,
         show_context: bool = True,
         show_source_location: bool = True,
+        show_extra: bool = True,
     ):
         """Initialize the console formatter.
 
@@ -195,12 +231,14 @@ class ConsoleFormatter(logging.Formatter):
             use_colors: Whether to use ANSI colors (auto-detected if None)
             show_context: Whether to show context fields
             show_source_location: Whether to show source file and line number
+            show_extra: Whether to show extra fields passed to log calls
         """
         super().__init__()
         self.service = service
         self.use_colors = use_colors if use_colors is not None else self._detect_color_support()
         self.show_context = show_context
         self.show_source_location = show_source_location
+        self.show_extra = show_extra
 
     def _detect_color_support(self) -> bool:
         """Detect if the terminal supports colors."""
@@ -265,8 +303,33 @@ class ConsoleFormatter(logging.Formatter):
 
         message = "".join(parts)
 
+        # Add extra fields if present and enabled
+        if self.show_extra:
+            extra = self._extract_extra(record)
+            if extra:
+                extra_lines = []
+                for key, value in extra.items():
+                    # Format the value, handling multi-line strings
+                    value_str = str(value) if value is not None else ""
+                    if "\n" in value_str or len(value_str) > 100:
+                        # Multi-line or long values get their own indented block
+                        indented = "\n    ".join(value_str.split("\n"))
+                        extra_lines.append(f"  {key}:\n    {indented}")
+                    else:
+                        extra_lines.append(f"  {key}={value_str}")
+                if extra_lines:
+                    message += "\n" + "\n".join(extra_lines)
+
         # Add exception info if present
         if record.exc_info:
             message += "\n" + self.formatException(record.exc_info)
 
         return message
+
+    def _extract_extra(self, record: logging.LogRecord) -> dict:
+        """Extract extra fields that were passed to the log call."""
+        extra = {}
+        for key, value in record.__dict__.items():
+            if key not in self.STANDARD_ATTRS and not key.startswith("_"):
+                extra[key] = value
+        return extra

@@ -30,6 +30,7 @@ Usage:
 
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -226,6 +227,100 @@ def get_repos_for_sync() -> list[str]:
     # Note: If a repo appears in both lists, it's treated as writable
     all_repos = list(dict.fromkeys(writable + readable))
     return all_repos
+
+
+def get_repo_setting(repo: str, setting: str, default: Any | None = None) -> Any:
+    """
+    Get a specific setting for a repository.
+
+    Args:
+        repo: Repository in "owner/repo" format
+        setting: Setting name to retrieve
+        default: Default value if setting not found
+
+    Returns:
+        Setting value, or default if not found
+    """
+    config = _load_config()
+    repo_settings = config.get("repo_settings", {})
+    # Normalize repo name for case-insensitive lookup
+    repo_lower = repo.lower()
+    for configured_repo, settings in repo_settings.items():
+        if configured_repo.lower() == repo_lower:
+            return settings.get(setting, default)
+    return default
+
+
+def should_restrict_to_configured_users(repo: str) -> bool:
+    """
+    Check if a repository is configured to only auto-respond to configured users.
+
+    When enabled, jib will only respond to comments/PRs from:
+    - bot_username (the bot's own identity)
+    - github_username (the configured owner/user)
+
+    Comments and PRs from other users will be ignored.
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        True if auto-responses should be restricted to configured users only
+    """
+    return get_repo_setting(repo, "restrict_to_configured_users", False)
+
+
+def get_bot_username() -> str:
+    """
+    Get the configured bot username.
+
+    This is the bot's GitHub identity, used for:
+    - Filtering out bot's own comments (to avoid self-response loops)
+    - Identifying bot's own PRs for review response handling
+
+    Returns:
+        Bot username string (e.g., "james-in-a-box")
+    """
+    config = _load_config()
+    return config.get("bot_username", "jib")
+
+
+def get_github_token_for_repo(repo: str) -> str | None:
+    """
+    Get the appropriate GitHub token for accessing a repository.
+
+    Uses:
+    - GITHUB_TOKEN for writable repos (or repos not in any list)
+    - GITHUB_READONLY_TOKEN for readable repos (falls back to GITHUB_TOKEN)
+
+    This enables separate tokens with different permission levels:
+    - Writable repos: Full access via GitHub App or PAT with write permissions
+    - Readable repos: Read-only PAT for external repos (e.g., khan/webapp)
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        GitHub token string, or None if no token is configured
+    """
+    # Import here to avoid circular imports
+    from config.host_config import HostConfig
+
+    config = HostConfig()
+    access_level = get_repo_access_level(repo)
+
+    if access_level == "readable":
+        # Use readonly token for readable repos
+        token = config.github_readonly_token or None
+        token_type = "GITHUB_READONLY_TOKEN"
+    else:
+        # Use main token for writable repos (or unknown repos)
+        token = config.github_token or None
+        token_type = "GITHUB_TOKEN"
+
+    # Return both token and metadata for debugging
+    # The calling code can log the token_type and access_level
+    return token, token_type, access_level
 
 
 # Convenience function for shell scripts

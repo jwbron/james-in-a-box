@@ -57,9 +57,13 @@ _check_dependencies()
 import yaml
 
 
-# Add shared directory to path for notifications, claude, and jib_logging imports
-# Path: jib-container/jib-tasks/github/comment-responder.py -> repo-root/shared
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+# Add paths for imports:
+# - jib-container/ for claude module
+# - shared/ for jib_logging, notifications
+# Path: jib-container/jib-tasks/github/comment-responder.py
+_repo_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(_repo_root / "jib-container"))  # for claude
+sys.path.insert(0, str(_repo_root / "shared"))  # for jib_logging, notifications
 try:
     from claude import is_claude_available, run_claude
     from jib_logging import get_logger
@@ -67,15 +71,13 @@ try:
     from notifications import NotificationContext, get_slack_service
 except ImportError as e:
     print("=" * 60, file=sys.stderr)
-    print("ERROR: Cannot import shared libraries", file=sys.stderr)
+    print("ERROR: Cannot import libraries", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
     print(f"  Import error: {e}", file=sys.stderr)
-    print(
-        f"  Expected path: {Path(__file__).parent.parent.parent.parent / 'shared'}", file=sys.stderr
-    )
+    print(f"  Checked paths: {_repo_root / 'jib-container'}, {_repo_root / 'shared'}", file=sys.stderr)
     print("", file=sys.stderr)
-    print("This usually means a shared module is missing.", file=sys.stderr)
-    print("Check that shared/ directory exists in the repo root.", file=sys.stderr)
+    print("This usually means a module is missing.", file=sys.stderr)
+    print("Check that jib-container/claude/ and shared/ directories exist.", file=sys.stderr)
     sys.exit(1)
 
 logger = get_logger("comment-responder")

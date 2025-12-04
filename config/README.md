@@ -48,6 +48,17 @@ python config/host_config.py --migrate         # Migrate from legacy locations
 - `config/host-config.template.yaml` - Non-secret settings template
 - `config/secrets.template.env` - Secrets template
 
+### GitHub Tokens
+
+JIB supports separate tokens for writable and readable repositories:
+
+| Variable | Purpose |
+|----------|---------|
+| `GITHUB_TOKEN` | Token for writable repos (or use GitHub App for auto-refresh) |
+| `GITHUB_READONLY_TOKEN` | Separate PAT for read-only repos (optional, falls back to `GITHUB_TOKEN`) |
+
+Using a separate read-only token provides security benefits. See [GitHub Integration](../docs/features/github-integration.md) for details.
+
 ## repositories.yaml (Source of Truth for Repo Access)
 
 **Single source of truth** for which GitHub repositories jib has read/write access to.

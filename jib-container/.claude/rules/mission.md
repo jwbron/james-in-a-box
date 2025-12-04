@@ -34,7 +34,6 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 
 **NEVER skip beads.** Before ANY work, you MUST:
 ```bash
-cd ~/beads
 bd --allow-stale list --status in_progress   # Check for work to resume
 bd --allow-stale search "keywords"           # Check for related tasks
 ```
@@ -71,7 +70,6 @@ See `environment.md` for details on git push and MCP tools.
 
 ### 1. Check Beads Task (ALWAYS FIRST)
 ```bash
-cd ~/beads
 bd --allow-stale list --status in_progress   # Resume work?
 bd --allow-stale search "keywords"           # Related task?
 bd --allow-stale create "Task description" --labels feature,jira-1234  # New task
@@ -80,7 +78,7 @@ bd --allow-stale create "Task description" --labels feature,jira-1234  # New tas
 ### 2. Gather Context
 ```bash
 @load-context <project-name>                    # Load accumulated knowledge
-discover-tests.py ~/khan/<repo>                 # Find test framework
+discover-tests ~/khan/<repo>                    # Find test framework
 ```
 
 ### 3. Git Worktrees (IMPORTANT)

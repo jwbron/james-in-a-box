@@ -11,6 +11,15 @@ The container should ONLY be called via `jib --exec`. No watching/polling logic 
 
 Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analysis with MCP"
 
+## Authentication
+
+This service uses the host's gh CLI authentication (via `gh auth login`).
+No environment variables (GITHUB_TOKEN, etc.) are required - the service relies on
+the native gh auth mechanism.
+
+If gh is not authenticated, the service will log an error and exit with instructions
+to run `gh auth login`.
+
 ## PR and Comment Handling Behavior
 
 ### Which PRs are monitored:
@@ -21,6 +30,11 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 2. **Bot's PRs** (authored by `bot_username[bot]`):
    - Check failures: Detects and triggers fixes for failing CI checks
    - Comments: Responds to comments from the user and others (not from bot itself)
+
+3. **Review requests** (PRs from other authors):
+   - Currently processes ALL PRs from other authors (not user's or bot's)
+   - NOTE: Direct review request filtering was disabled due to GraphQL permission issues
+   - TODO: Re-enable filtering when using per-PR API calls
 
 ### Which comments are handled:
 - Comments from the configured `github_username` (e.g., jwbron) ARE processed
@@ -63,6 +77,7 @@ Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B: Scheduled Analy
 """
 
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -76,10 +91,14 @@ from pathlib import Path
 import yaml
 
 
-# Add shared directory to path for jib_logging
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+# Add project root to path for shared modules and config
+_project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(_project_root / "shared"))
+sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
+
+from config.repo_config import should_restrict_to_configured_users
 
 
 # Initialize logger
@@ -281,6 +300,9 @@ def save_state(state: dict, update_last_run: bool = False):
 def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
     """Run gh CLI command and return JSON output with rate limit handling.
 
+    Uses the host's gh CLI authentication (from `gh auth login`).
+    No token environment variables are used - relies on native gh auth.
+
     Implements exponential backoff on rate limit errors and basic throttling
     between calls to prevent hitting rate limits.
 
@@ -329,7 +351,7 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
             else:
                 # Include full stderr for debugging - common issues:
                 # - "gh: command not found" - gh CLI not installed
-                # - "authentication required" - not logged in
+                # - "authentication required" - not logged in (run `gh auth login`)
                 # - "HTTP 404" - repo doesn't exist or no access
                 # - "HTTP 403" - rate limit or permission denied
                 stderr_msg = e.stderr.strip() if e.stderr else "(no stderr)"
@@ -354,11 +376,18 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
     return None
 
 
-def gh_text(args: list[str]) -> str | None:
+def gh_text(args: list[str], repo: str | None = None) -> str | None:
     """Run gh CLI command and return text output with rate limit handling.
+
+    Uses the host's gh CLI authentication (from `gh auth login`).
+    No token environment variables are used - relies on native gh auth.
 
     Implements exponential backoff on rate limit errors and basic throttling
     between calls to prevent hitting rate limits.
+
+    Args:
+        args: Arguments to pass to gh CLI
+        repo: Optional repository context for logging
     """
     # Basic throttling between calls
     time.sleep(RATE_LIMIT_DELAY)
@@ -1002,7 +1031,12 @@ def fetch_check_logs(repo: str, check: dict) -> str | None:
 
 
 def check_pr_for_comments(
-    repo: str, pr_data: dict, state: dict, bot_username: str, since_timestamp: str | None = None
+    repo: str,
+    pr_data: dict,
+    state: dict,
+    bot_username: str,
+    github_username: str,
+    since_timestamp: str | None = None,
 ) -> dict | None:
     """Check a PR for new comments from others that need response.
 
@@ -1011,6 +1045,7 @@ def check_pr_for_comments(
         pr_data: PR data dict with number, title, url, etc.
         state: State dict with processed_comments
         bot_username: Bot's username (to filter out bot's own comments)
+        github_username: Configured GitHub username (for restrict_to_configured_users)
         since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
@@ -1127,6 +1162,22 @@ def check_pr_for_comments(
             pr_number=pr_num,
         )
         return None
+
+    # If restrict_to_configured_users is enabled, only respond to comments from
+    # the configured github_username (bot comments are already excluded above)
+    if should_restrict_to_configured_users(repo):
+        allowed_users = {github_username.lower()}
+        filtered_comments = [c for c in other_comments if c["author"].lower() in allowed_users]
+        if not filtered_comments:
+            logger.debug(
+                "No comments from configured users (restrict_to_configured_users enabled)",
+                pr_number=pr_num,
+                original_count=len(other_comments),
+                authors=[c["author"] for c in other_comments],
+                allowed_users=list(allowed_users),
+            )
+            return None
+        other_comments = filtered_comments
 
     # Check if there are failed tasks for this PR that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -1280,6 +1331,7 @@ def check_pr_for_review_response(
     pr_data: dict,
     state: dict,
     bot_username: str,
+    github_username: str,
     since_timestamp: str | None = None,
 ) -> dict | None:
     """Check a bot's PR for reviews that need response.
@@ -1292,6 +1344,7 @@ def check_pr_for_review_response(
         pr_data: PR data dict with number, title, url, etc.
         state: State dict with processed_review_responses
         bot_username: Bot's username (to identify bot's own PRs)
+        github_username: Configured GitHub username (for restrict_to_configured_users)
         since_timestamp: ISO timestamp to filter reviews (only show newer)
 
     Returns context dict if new reviews found that need response.
@@ -1337,6 +1390,26 @@ def check_pr_for_review_response(
             pr_number=pr_num,
         )
         return None
+
+    # If restrict_to_configured_users is enabled, only respond to reviews from
+    # the configured github_username
+    if should_restrict_to_configured_users(repo):
+        allowed_users = {github_username.lower()}
+        filtered_reviews = [
+            r
+            for r in other_reviews
+            if r.get("author", {}).get("login", "").lower() in allowed_users
+        ]
+        if not filtered_reviews:
+            logger.debug(
+                "No reviews from configured users (restrict_to_configured_users enabled)",
+                pr_number=pr_num,
+                original_count=len(other_reviews),
+                reviewers=[r.get("author", {}).get("login", "") for r in other_reviews],
+                allowed_users=list(allowed_users),
+            )
+            return None
+        other_reviews = filtered_reviews
 
     # Filter by since_timestamp if provided
     if since_timestamp:
@@ -1417,7 +1490,7 @@ def check_pr_for_review_response(
     )
 
     # Get PR diff for context
-    diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
+    diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo], repo=repo)
 
     return {
         "type": "pr_review_response",
@@ -1434,6 +1507,39 @@ def check_pr_for_review_response(
     }
 
 
+def is_user_directly_requested(pr_data: dict, github_username: str) -> bool:
+    """Check if a user is directly requested as a reviewer (not via team membership).
+
+    Args:
+        pr_data: PR data dict containing reviewRequests field
+        github_username: The user's GitHub username to check for
+
+    Returns:
+        True if the user is directly requested as an individual reviewer,
+        False if not requested or only requested via team membership.
+
+    The reviewRequests field contains objects with:
+    - __typename: "User" or "Team"
+    - login: username (for User type)
+    - name/slug: team name (for Team type)
+
+    We only consider direct User requests, NOT team-based requests.
+    """
+    review_requests = pr_data.get("reviewRequests", [])
+    if not review_requests:
+        return False
+
+    # Check if the user is directly requested (as a User, not a Team)
+    for request in review_requests:
+        if (
+            request.get("__typename") == "User"
+            and request.get("login", "").lower() == github_username.lower()
+        ):
+            return True
+
+    return False
+
+
 def check_prs_for_review(
     repo: str,
     all_prs: list[dict],
@@ -1442,13 +1548,20 @@ def check_prs_for_review(
     bot_username: str,
     since_timestamp: str | None = None,
 ) -> list[dict]:
-    """Check for PRs from others that need review.
+    """Check for PRs from other authors that may need review.
+
+    NOTE: Direct review request filtering (is_user_directly_requested) is temporarily
+    disabled because the reviewRequests field requires special GraphQL permissions
+    that can cause authentication issues. This function now processes ALL PRs from
+    other authors (not the user's or bot's PRs).
+
+    TODO: Re-enable direct review request filtering using per-PR API calls.
 
     Args:
         repo: Repository in owner/repo format
-        all_prs: Pre-fetched list of all open PRs (to avoid redundant API calls)
+        all_prs: Pre-fetched list of all open PRs
         state: State dict with processed_reviews
-        github_username: The user's GitHub username (to exclude their PRs)
+        github_username: The user's GitHub username
         bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
 
@@ -1460,19 +1573,53 @@ def check_prs_for_review(
     if not all_prs:
         return []
 
-    # Filter to PRs from others (not from the user or bot)
+    # Filter to PRs from others (exclude user's own PRs and bot's PRs)
     excluded_authors = {
         github_username.lower(),
         bot_username.lower(),
         f"{bot_username.lower()}[bot]",
     }
 
+    # NOTE: Direct review request filtering disabled due to permission issues
+    # Previously used is_user_directly_requested() but reviewRequests field
+    # cannot be fetched reliably. Now processing all PRs from other authors.
     other_prs = [
-        p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
+        p
+        for p in all_prs
+        if p.get("author", {}).get("login", "").lower() not in excluded_authors
     ]
 
     if not other_prs:
+        logger.debug(
+            "No PRs from other authors",
+            username=github_username,
+            total_prs=len(all_prs),
+        )
         return []
+
+    logger.info(
+        "Found PRs from other authors for review",
+        username=github_username,
+        other_author_count=len(other_prs),
+        total_prs=len(all_prs),
+    )
+
+    # If restrict_to_configured_users is enabled, only review PRs from
+    # the configured github_username (but this is for PRs where user is reviewer,
+    # so we filter by PR author being in allowed list)
+    if should_restrict_to_configured_users(repo):
+        allowed_authors = {github_username.lower()}
+        pre_filter_count = len(other_prs)
+        other_prs = [
+            p for p in other_prs if p.get("author", {}).get("login", "").lower() in allowed_authors
+        ]
+        if not other_prs:
+            logger.debug(
+                "No PRs from configured users for review (restrict_to_configured_users enabled)",
+                original_count=pre_filter_count,
+                allowed_authors=list(allowed_authors),
+            )
+            return []
 
     # Check for failed review tasks that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -1544,7 +1691,7 @@ def check_prs_for_review(
             )
 
         # Get PR diff
-        diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo])
+        diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo], repo=repo)
 
         results.append(
             {
@@ -1616,7 +1763,11 @@ def process_repo_prs(
     """
     tasks: list[JibTask] = []
 
+    logger.info("Processing repository", repo=repo, is_readonly=is_readonly)
+
     # Fetch ALL open PRs in a single API call
+    # Note: reviewRequests field removed - causes PAT permission errors
+    # Using host's gh auth instead of token-based authentication
     all_prs = gh_json(
         [
             "pr",
@@ -1677,7 +1828,9 @@ def process_repo_prs(
                 )
 
             # Check for comments
-            comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
+            comment_ctx = check_pr_for_comments(
+                repo, pr, state, bot_username, github_username, since_timestamp
+            )
             if comment_ctx:
                 tasks.append(
                     JibTask(
@@ -1727,7 +1880,9 @@ def process_repo_prs(
                 )
 
             # Check for comments on bot's PRs
-            comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
+            comment_ctx = check_pr_for_comments(
+                repo, pr, state, bot_username, github_username, since_timestamp
+            )
             if comment_ctx:
                 tasks.append(
                     JibTask(
@@ -1754,7 +1909,7 @@ def process_repo_prs(
 
             # Check for reviews on bot's PRs that need response
             review_response_ctx = check_pr_for_review_response(
-                repo, pr, state, bot_username, since_timestamp
+                repo, pr, state, bot_username, github_username, since_timestamp
             )
             if review_response_ctx:
                 tasks.append(
@@ -1785,6 +1940,49 @@ def process_repo_prs(
     return tasks
 
 
+def check_gh_auth() -> bool:
+    """Check if gh CLI is authenticated.
+
+    Returns True if authenticated, False otherwise.
+    Logs an error with instructions if not authenticated.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+
+        if result.returncode == 0:
+            # Parse the output to get the authenticated user
+            # Output format: "Logged in to github.com account USERNAME (keyring)"
+            for line in result.stdout.split("\n") + result.stderr.split("\n"):
+                if "Logged in to" in line:
+                    logger.info("gh CLI authenticated", auth_info=line.strip())
+                    return True
+            # If we got returncode 0 but couldn't parse, still consider it authenticated
+            logger.info("gh CLI authenticated")
+            return True
+        else:
+            logger.error(
+                "gh CLI is not authenticated. Please run: gh auth login",
+                hint="The github-watcher service requires gh CLI to be authenticated.",
+                stderr=result.stderr.strip() if result.stderr else None,
+            )
+            return False
+    except FileNotFoundError:
+        logger.error(
+            "gh CLI not found. Please install GitHub CLI: https://cli.github.com/",
+            hint="On Fedora: sudo dnf install gh",
+        )
+        return False
+    except subprocess.TimeoutExpired:
+        logger.error("gh auth status timed out")
+        return False
+
+
 def main():
     """Main entry point - scan configured repos and trigger jib as needed.
 
@@ -1801,6 +1999,11 @@ def main():
         utc_time=current_run_start,
         max_parallel=MAX_PARALLEL_JIB,
     )
+
+    # Check gh CLI authentication before proceeding
+    if not check_gh_auth():
+        logger.error("Exiting due to missing gh authentication")
+        return 1
 
     # Load config
     config = load_config()

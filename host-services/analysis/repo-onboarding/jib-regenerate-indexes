@@ -1,0 +1,102 @@
+#!/bin/bash
+# jib-regenerate-indexes - Quick local regeneration of codebase indexes
+#
+# Regenerates the local-only JSON indexes for LLM navigation.
+# Run this after pulling changes to ensure indexes are fresh.
+#
+# Per ADR: Jib Repository Onboarding Strategy
+#
+# Usage:
+#   jib-regenerate-indexes                    # Regenerate in current directory
+#   jib-regenerate-indexes ~/khan/webapp      # Regenerate for specific repo
+#   jib-regenerate-indexes --help
+
+set -e
+
+# Script location - used to find sibling tools
+# Resolve symlinks to get the actual script location (critical when invoked via bin/ symlinks)
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_SOURCE" ]]; do
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+    # If relative symlink, resolve relative to symlink directory
+    [[ "$SCRIPT_SOURCE" != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+ANALYSIS_DIR="$(dirname "$SCRIPT_DIR")"
+INDEX_GENERATOR="$ANALYSIS_DIR/index-generator/index-generator.py"
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") [REPO_PATH]
+
+Regenerate local codebase indexes for LLM navigation.
+
+Run this after pulling changes to ensure indexes are fresh.
+Indexes are local-only (gitignored) and not tracked in version control.
+
+ARGUMENTS:
+    REPO_PATH    Path to repository (default: current directory)
+
+OPTIONS:
+    -h, --help   Show this help message
+
+EXAMPLES:
+    $(basename "$0")                    # Current directory
+    $(basename "$0") ~/khan/webapp      # Specific repo
+
+OUTPUT:
+    Generates in <repo>/docs/generated/:
+    - codebase.json      Project structure and components
+    - patterns.json      Detected code patterns
+    - dependencies.json  Internal and external dependencies
+EOF
+}
+
+# Parse arguments
+REPO_PATH="."
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            usage
+            exit 1
+            ;;
+        *)
+            REPO_PATH="$1"
+            shift
+            ;;
+    esac
+done
+
+# Resolve repo path
+REPO_PATH="$(cd "$REPO_PATH" 2>/dev/null && pwd)" || {
+    echo "Error: Path does not exist: $REPO_PATH" >&2
+    exit 1
+}
+
+# Check for index generator
+if [[ ! -f "$INDEX_GENERATOR" ]]; then
+    echo "Error: index-generator not found at: $INDEX_GENERATOR" >&2
+    echo "Ensure james-in-a-box is properly installed." >&2
+    exit 1
+fi
+
+OUTPUT_DIR="$REPO_PATH/docs/generated"
+
+echo "Regenerating indexes for: $REPO_PATH"
+echo "Output directory: $OUTPUT_DIR"
+echo ""
+
+# Run the index generator
+python3 "$INDEX_GENERATOR" \
+    --project "$REPO_PATH" \
+    --output "$OUTPUT_DIR"
+
+echo ""
+echo "Done! Indexes regenerated successfully."

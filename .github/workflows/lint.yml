@@ -84,8 +84,8 @@ jobs:
           find . -name "*.sh" -type f ! -path "./.git/*" -print0 | \
             xargs -0 -r bashate -i E003,E006,E042
 
-  host-services-checks:
-    name: Host Services Checks
+  boundary-checks:
+    name: Host/Container Boundary Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,7 +95,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run host-services checks
-        run: |
-          python3 scripts/check-claude-imports.py && \
-          python3 scripts/check-gh-cli-usage.py
+      - name: Check host-services doesn't use Claude/Anthropic
+        run: python3 scripts/check-claude-imports.py
+
+      - name: Check host-services doesn't use gh CLI
+        run: python3 scripts/check-gh-cli-usage.py
+
+      - name: Check jib-container doesn't import from host-services
+        run: python3 scripts/check-container-host-boundary.py

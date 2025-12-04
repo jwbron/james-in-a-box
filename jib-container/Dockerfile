@@ -90,11 +90,16 @@ RUN chmod 755 /opt/claude-hooks/*.sh 2>/dev/null || true
 # Copy jib-container runtime scripts and tools to /opt/jib-runtime
 # This provides container-resident executables available in PATH
 # The bin/ directory contains symlinks to all executables (maintained by bin/maintain-bin-symlinks)
+# Structure: /opt/jib-runtime/jib-container/{bin,jib-tasks,scripts} + /opt/jib-runtime/shared/
 COPY . /opt/jib-runtime/
-RUN chmod +x /opt/jib-runtime/bin/* 2>/dev/null || true && \
-    chmod +x /opt/jib-runtime/scripts/* 2>/dev/null || true && \
-    chmod +x /opt/jib-runtime/jib-tools/* 2>/dev/null || true && \
-    find /opt/jib-runtime/jib-tasks -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
+RUN chmod +x /opt/jib-runtime/jib-container/bin/* 2>/dev/null || true && \
+    chmod +x /opt/jib-runtime/jib-container/scripts/* 2>/dev/null || true && \
+    chmod +x /opt/jib-runtime/jib-container/jib-tools/* 2>/dev/null || true && \
+    find /opt/jib-runtime/jib-container/jib-tasks -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
+
+# Make jib-container and shared modules importable via PYTHONPATH
+# This is simpler than pip install and doesn't require pyproject.toml
+ENV PYTHONPATH="/opt/jib-runtime/jib-container:/opt/jib-runtime/shared:${PYTHONPATH}"
 
 # Create tmp directory in image (not mounted - container-only scratch space)
 RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
@@ -167,13 +172,15 @@ export HOME="${USER_HOME}"
 export USER="${RUNTIME_USER}"
 # Add jib runtime scripts to PATH (copied to /opt/jib-runtime during build)
 # bin/ contains symlinks to all executables for easy access
-export PATH="/opt/jib-runtime/bin:/usr/local/bin:${PATH}"
+export PATH="/opt/jib-runtime/jib-container/bin:/usr/local/bin:${PATH}"
 # Prevent Python from creating __pycache__ directories (cleaner worktree cleanup)
 export PYTHONDONTWRITEBYTECODE=1
 # Ensure Python output is unbuffered for real-time streaming to log files
 export PYTHONUNBUFFERED=1
 # Disable Claude Code auto-update prompts (prevents interrupts in automation)
 export DISABLE_AUTOUPDATER=1
+# Set BEADS_DIR so bd can be run from any directory (no need to cd ~/beads first)
+export BEADS_DIR="${USER_HOME}/beads/.beads"
 
 # Configure git to commit as "jib"
 gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.name "jib"
@@ -183,7 +190,10 @@ gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global user.email "jib@khan.or
 # Uses GITHUB_TOKEN environment variable (set by jib launcher from GitHub App)
 # This allows git push over HTTPS without embedding tokens in remote URLs
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper "/opt/jib-runtime/bin/git-credential-github-token"
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.helper "/opt/jib-runtime/jib-container/bin/git-credential-github-token"
+    # Enable path-based credentials so the helper can distinguish between repo owners
+    # (e.g., Khan/webapp vs jwbron/james-in-a-box for token selection)
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global credential.useHttpPath true
     log_success "Git credential helper configured for GitHub push"
 else
     # No token - disable credential helper (will fail on push attempts)
@@ -212,6 +222,15 @@ if [ -d "${USER_HOME}/.git-main" ]; then
                 clean_url=$(echo "$remote_url" | sed -E 's|https://[^@]*@github\.com/|https://github.com/|')
                 git config -f "$repo_config" remote.origin.url "$clean_url"
                 log_info "  Cleaned: $remote_url -> $clean_url"
+            fi
+
+            # Convert SSH URLs to HTTPS (container has no SSH keys, only GITHUB_TOKEN)
+            # SSH format: git@github.com:owner/repo.git
+            # HTTPS format: https://github.com/owner/repo.git
+            if [[ "$remote_url" =~ ^git@github\.com: ]]; then
+                https_url=$(echo "$remote_url" | sed -E 's|^git@github\.com:|https://github.com/|')
+                git config -f "$repo_config" remote.origin.url "$https_url"
+                log_info "  Converted SSH to HTTPS: $https_url"
             fi
         fi
     done
@@ -586,8 +605,28 @@ else
     log_info "  Add GITHUB_TOKEN to enable GitHub MCP server"
 fi
 
+# Add secondary GitHub MCP server for repos outside the primary App's scope
+# This uses GITHUB_READONLY_TOKEN (e.g., a PAT with access to Khan/webapp)
+# Tools will be prefixed with mcp__github_readonly__ (e.g., mcp__github_readonly__get_file_contents)
+if [ -n "${GITHUB_READONLY_TOKEN:-}" ]; then
+    # Remove any existing github-readonly MCP config
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github-readonly -s local >/dev/null 2>&1 || true
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github-readonly -s user >/dev/null 2>&1 || true
+
+    # Add readonly MCP server for external repos (e.g., Khan/*)
+    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
+        --transport http \
+        --scope user \
+        github-readonly \
+        "https://api.githubcopilot.com/mcp/" \
+        --header "Authorization: Bearer ${GITHUB_READONLY_TOKEN}" > /dev/null 2>&1
+
+    log_success "GitHub readonly MCP server configured for external repos"
+    log_info "  Use mcp__github_readonly__* tools for repos like Khan/webapp"
+fi
+
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
-# Note: PATH is already set in entrypoint to include /opt/jib-runtime/bin
+# Note: PATH is already set in entrypoint to include /opt/jib-runtime/jib-container/bin
 cat >> "${USER_HOME}/.bashrc" << 'BASHRC'
 alias claude='claude --dangerously-skip-permissions'
 export PS1='\[\033[01;32m\]\u@sandboxed\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
@@ -669,7 +708,7 @@ fi
 #   - Simpler architecture, easier to debug
 #   - Lower resource usage
 #
-# Analysis scripts location: /opt/jib-runtime/jib-tasks/ (copied during build)
+# Analysis scripts location: /opt/jib-runtime/jib-container/jib-tasks/ (copied during build)
 #   - jira/jira-processor.py (triggered by context-sync)
 #   - confluence/confluence-processor.py (triggered by context-sync)
 #   - github/github-processor.py (triggered by github-sync)
@@ -728,7 +767,7 @@ trap cleanup_on_exit EXIT SIGTERM SIGINT
 if [ $# -eq 0 ]; then
     # Start MCP token watcher in background for auto-refresh support
     # This watches ~/sharing/.github-token and reconfigures MCP when token changes
-    MCP_WATCHER="/opt/jib-runtime/bin/mcp-token-watcher"
+    MCP_WATCHER="/opt/jib-runtime/jib-container/bin/mcp-token-watcher"
     if [ -f "$MCP_WATCHER" ] && [ -f "${USER_HOME}/sharing/.github-token" ]; then
         log_info "Starting MCP token watcher in background..."
         nohup gosu "${RUNTIME_UID}:${RUNTIME_GID}" python3 "$MCP_WATCHER" \

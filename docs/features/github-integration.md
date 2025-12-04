@@ -28,6 +28,53 @@ Repositories where jib only has read access via Personal Access Token (PAT):
 - Cannot push code, create PRs, or post comments
 - Useful for external repos or repos without GitHub App integration
 
+## Authentication
+
+JIB supports **separate tokens** for writable and readable repositories, providing
+security through the principle of least privilege.
+
+### Token Configuration
+
+Configure tokens in `~/.config/jib/secrets.env`:
+
+```bash
+# For writable repos: Use GitHub App (recommended) or PAT with write access
+# GitHub App is auto-configured via setup - see docs/setup/github-app-setup.md
+GITHUB_TOKEN="ghp_your_write_token_here"
+
+# For read-only repos: Separate PAT with only read permissions (optional)
+# Falls back to GITHUB_TOKEN if not set
+GITHUB_READONLY_TOKEN="ghp_your_readonly_token_here"
+```
+
+### Why Separate Tokens?
+
+1. **Principle of Least Privilege**: Read-only repos don't need write-capable tokens
+2. **Different Organizations**: Your GitHub App may only be installed on your personal
+   repos, while you want to monitor repos from other orgs (e.g., `khan/webapp`)
+3. **Security Isolation**: If the read-only token is compromised, it can't modify repos
+
+### Creating a Read-Only Token
+
+1. Go to https://github.com/settings/tokens?type=beta
+2. Click "Generate new token"
+3. Set **Repository access** to "Only select repositories"
+4. Select the repos you want to monitor
+5. Grant these permissions (all read-only):
+   - **Contents**: Read-only
+   - **Pull requests**: Read-only
+   - **Commit statuses**: Read-only
+
+### Token Selection Logic
+
+When accessing a repository, JIB automatically selects the appropriate token:
+
+| Repo Type | Token Used |
+|-----------|------------|
+| Writable repo | `GITHUB_TOKEN` (or GitHub App token) |
+| Readable repo | `GITHUB_READONLY_TOKEN` (falls back to `GITHUB_TOKEN`) |
+| Unknown repo | `GITHUB_TOKEN` |
+
 Configure access levels in `config/repositories.yaml`:
 ```yaml
 # Full access repos (GitHub App)
