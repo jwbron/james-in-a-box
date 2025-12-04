@@ -59,3 +59,13 @@ github_sync:
 readable_repos:
   - khan/webapp
 
+# Per-repository configuration overrides
+# Each key is a repository name in "owner/repo" format
+# Available options per repo:
+#   - restrict_to_configured_users: Only auto-respond to comments/PRs from
+#     bot_username or github_username (ignores external contributors)
+#     Default: false (respond to all users)
+repo_settings:
+  jwbron/james-in-a-box:
+    restrict_to_configured_users: true
+

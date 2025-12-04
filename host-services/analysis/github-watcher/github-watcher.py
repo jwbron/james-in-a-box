@@ -98,6 +98,8 @@ sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
 
+from config.repo_config should_restrict_to_configured_users
+
 
 # Initialize logger
 logger = get_logger("github-watcher")
@@ -1029,7 +1031,12 @@ def fetch_check_logs(repo: str, check: dict) -> str | None:
 
 
 def check_pr_for_comments(
-    repo: str, pr_data: dict, state: dict, bot_username: str, since_timestamp: str | None = None
+    repo: str,
+    pr_data: dict,
+    state: dict,
+    bot_username: str,
+    github_username: str,
+    since_timestamp: str | None = None,
 ) -> dict | None:
     """Check a PR for new comments from others that need response.
 
@@ -1038,6 +1045,7 @@ def check_pr_for_comments(
         pr_data: PR data dict with number, title, url, etc.
         state: State dict with processed_comments
         bot_username: Bot's username (to filter out bot's own comments)
+        github_username: Configured GitHub username (for restrict_to_configured_users)
         since_timestamp: ISO timestamp to filter comments (only show newer)
 
     Returns context dict if new comments found and not already processed.
@@ -1154,6 +1162,22 @@ def check_pr_for_comments(
             pr_number=pr_num,
         )
         return None
+
+    # If restrict_to_configured_users is enabled, only respond to comments from
+    # the configured github_username (bot comments are already excluded above)
+    if should_restrict_to_configured_users(repo):
+        allowed_users = {github_username.lower()}
+        filtered_comments = [c for c in other_comments if c["author"].lower() in allowed_users]
+        if not filtered_comments:
+            logger.debug(
+                "No comments from configured users (restrict_to_configured_users enabled)",
+                pr_number=pr_num,
+                original_count=len(other_comments),
+                authors=[c["author"] for c in other_comments],
+                allowed_users=list(allowed_users),
+            )
+            return None
+        other_comments = filtered_comments
 
     # Check if there are failed tasks for this PR that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -1307,6 +1331,7 @@ def check_pr_for_review_response(
     pr_data: dict,
     state: dict,
     bot_username: str,
+    github_username: str,
     since_timestamp: str | None = None,
 ) -> dict | None:
     """Check a bot's PR for reviews that need response.
@@ -1319,6 +1344,7 @@ def check_pr_for_review_response(
         pr_data: PR data dict with number, title, url, etc.
         state: State dict with processed_review_responses
         bot_username: Bot's username (to identify bot's own PRs)
+        github_username: Configured GitHub username (for restrict_to_configured_users)
         since_timestamp: ISO timestamp to filter reviews (only show newer)
 
     Returns context dict if new reviews found that need response.
@@ -1364,6 +1390,26 @@ def check_pr_for_review_response(
             pr_number=pr_num,
         )
         return None
+
+    # If restrict_to_configured_users is enabled, only respond to reviews from
+    # the configured github_username
+    if should_restrict_to_configured_users(repo):
+        allowed_users = {github_username.lower()}
+        filtered_reviews = [
+            r
+            for r in other_reviews
+            if r.get("author", {}).get("login", "").lower() in allowed_users
+        ]
+        if not filtered_reviews:
+            logger.debug(
+                "No reviews from configured users (restrict_to_configured_users enabled)",
+                pr_number=pr_num,
+                original_count=len(other_reviews),
+                reviewers=[r.get("author", {}).get("login", "") for r in other_reviews],
+                allowed_users=list(allowed_users),
+            )
+            return None
+        other_reviews = filtered_reviews
 
     # Filter by since_timestamp if provided
     if since_timestamp:
@@ -1557,6 +1603,26 @@ def check_prs_for_review(
         other_author_count=len(other_prs),
         total_prs=len(all_prs),
     )
+
+    # Use the filtered list for the rest of the function
+    other_prs = directly_requested_prs
+
+    # If restrict_to_configured_users is enabled, only review PRs from
+    # the configured github_username (but this is for PRs where user is reviewer,
+    # so we filter by PR author being in allowed list)
+    if should_restrict_to_configured_users(repo):
+        allowed_authors = {github_username.lower()}
+        pre_filter_count = len(other_prs)
+        other_prs = [
+            p for p in other_prs if p.get("author", {}).get("login", "").lower() in allowed_authors
+        ]
+        if not other_prs:
+            logger.debug(
+                "No PRs from configured users for review (restrict_to_configured_users enabled)",
+                original_count=pre_filter_count,
+                allowed_authors=list(allowed_authors),
+            )
+            return []
 
     # Check for failed review tasks that need retry
     failed_tasks = state.get("failed_tasks", {})
@@ -1765,7 +1831,9 @@ def process_repo_prs(
                 )
 
             # Check for comments
-            comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
+            comment_ctx = check_pr_for_comments(
+                repo, pr, state, bot_username, github_username, since_timestamp
+            )
             if comment_ctx:
                 tasks.append(
                     JibTask(
@@ -1815,7 +1883,9 @@ def process_repo_prs(
                 )
 
             # Check for comments on bot's PRs
-            comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, since_timestamp)
+            comment_ctx = check_pr_for_comments(
+                repo, pr, state, bot_username, github_username, since_timestamp
+            )
             if comment_ctx:
                 tasks.append(
                     JibTask(
@@ -1842,7 +1912,7 @@ def process_repo_prs(
 
             # Check for reviews on bot's PRs that need response
             review_response_ctx = check_pr_for_review_response(
-                repo, pr, state, bot_username, since_timestamp
+                repo, pr, state, bot_username, github_username, since_timestamp
             )
             if review_response_ctx:
                 tasks.append(

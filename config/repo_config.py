@@ -228,6 +228,62 @@ def get_repos_for_sync() -> list[str]:
     return all_repos
 
 
+def get_repo_setting(repo: str, setting: str, default: any | None = None) -> any:
+    """
+    Get a specific setting for a repository.
+
+    Args:
+        repo: Repository in "owner/repo" format
+        setting: Setting name to retrieve
+        default: Default value if setting not found
+
+    Returns:
+        Setting value, or default if not found
+    """
+    config = _load_config()
+    repo_settings = config.get("repo_settings", {})
+    # Normalize repo name for case-insensitive lookup
+    repo_lower = repo.lower()
+    for configured_repo, settings in repo_settings.items():
+        if configured_repo.lower() == repo_lower:
+            return settings.get(setting, default)
+    return default
+
+
+def should_restrict_to_configured_users(repo: str) -> bool:
+    """
+    Check if a repository is configured to only auto-respond to configured users.
+
+    When enabled, jib will only respond to comments/PRs from:
+    - bot_username (the bot's own identity)
+    - github_username (the configured owner/user)
+
+    Comments and PRs from other users will be ignored.
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        True if auto-responses should be restricted to configured users only
+    """
+    return get_repo_setting(repo, "restrict_to_configured_users", False)
+
+
+def get_bot_username() -> str:
+    """
+    Get the configured bot username.
+
+    This is the bot's GitHub identity, used for:
+    - Filtering out bot's own comments (to avoid self-response loops)
+    - Identifying bot's own PRs for review response handling
+
+    Returns:
+        Bot username string (e.g., "james-in-a-box")
+    """
+    config = _load_config()
+    return config.get("bot_username", "jib")
+
+
 def get_github_token_for_repo(repo: str) -> str | None:
     """
     Get the appropriate GitHub token for accessing a repository.
