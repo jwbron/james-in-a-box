@@ -20,21 +20,37 @@ the native gh auth mechanism.
 If gh is not authenticated, the service will log an error and exit with instructions
 to run `gh auth login`.
 
-## PR and Comment Handling Behavior
+## Repository Access Levels
 
-### Which PRs are monitored:
-1. **User's PRs** (authored by `github_username` from config):
-   - Check failures: Detects and triggers fixes for failing CI checks
-   - Comments: Responds to comments from others (not from bot)
+There are two types of repos:
+- **writable_repos**: jib has push access, can post comments, fix issues directly
+- **readable_repos**: jib has read-only access, sends notifications to Slack instead
 
-2. **Bot's PRs** (authored by `bot_username[bot]`):
-   - Check failures: Detects and triggers fixes for failing CI checks
-   - Comments: Responds to comments from the user and others (not from bot itself)
+### Writable Repos - Full Functionality:
+1. **User's PRs**:
+   - Check failures: Detects and fixes failing CI checks
+   - Merge conflicts: Detects and resolves conflicts
+   - Comments: Responds to comments directly on GitHub
 
-3. **Review requests** (PRs from other authors):
-   - Currently processes ALL PRs from other authors (not user's or bot's)
-   - NOTE: Direct review request filtering was disabled due to GraphQL permission issues
-   - TODO: Re-enable filtering when using per-PR API calls
+2. **Bot's PRs**:
+   - Check failures: Detects and fixes failing CI checks
+   - Merge conflicts: Detects and resolves conflicts
+   - Comments: Responds to comments from users
+   - Reviews: Responds to review feedback
+
+3. **Other authors' PRs**:
+   - Review requests: Reviews ALL PRs from other authors (proactive review)
+
+### Read-Only Repos - Notification Only:
+1. **User's PRs**:
+   - Comments: Detects new comments, sends to Slack for review/response formulation
+   - (Check failures and merge conflicts are NOT monitored - can't fix without write access)
+
+2. **Review requests**:
+   - Only PRs where user is DIRECTLY requested as a reviewer
+   - Sends review request to Slack for response formulation
+
+## PR and Comment Handling Details
 
 ### Which comments are handled:
 - Comments from the configured `github_username` (e.g., jwbron) ARE processed
@@ -53,7 +69,7 @@ to run `gh auth login`.
 - Once successfully processed, failed tasks are automatically removed from retry queue
 - State is stored in `~/.local/share/github-watcher/state.json`
 
-### Merge conflict detection:
+### Merge conflict detection (writable repos only):
 - PRs with mergeable=CONFLICTING or mergeStateStatus=DIRTY are detected
 - Each unique (repo, PR, commit SHA) conflict combination is tracked
 - Pushing a new commit resets the processed state, allowing fresh retry
@@ -64,16 +80,21 @@ to run `gh auth login`.
 - This triggers a re-review so reviewers always see the latest code
 - The `is_rereview` flag is set in the context to distinguish re-reviews from initial reviews
 
-### What happens when jib is invoked:
+### What happens when jib is invoked (writable repos):
 - jib runs Claude with the task context (check failures, comments, or review request)
 - Claude analyzes the issue and takes action (fix code, respond to comments, etc.)
 - Claude uses `gh pr comment` to post responses
 - Claude commits and pushes fixes for check failures
 
+### What happens for read-only repos:
+- Slack notification is sent with details of the comment/review request
+- User can respond in Slack thread, or manually take action on GitHub
+
 ### Configuration (config/repositories.yaml):
 - `github_username`: Your GitHub username (for identifying your PRs)
 - `bot_username`: The bot's GitHub identity (for filtering out its own comments)
-- `writable_repos`: List of repos where jib has write access
+- `writable_repos`: List of repos where jib has write access (full functionality)
+- `readable_repos`: List of repos where jib has read-only access (notification only)
 """
 
 import json
@@ -804,7 +825,9 @@ def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
     """Execute a single jib task and update state (thread-safe).
 
     For writable repos, invokes jib to handle the task (push fixes, post comments).
-    For read-only repos, sends a Slack notification instead.
+    For read-only repos:
+      - review_request: invokes jib to perform the review and output to Slack
+      - other tasks: sends a Slack notification instead
 
     Args:
         task: The JibTask to execute
@@ -814,8 +837,15 @@ def execute_task(task: JibTask, safe_state: ThreadSafeState) -> bool:
         True if task completed successfully
     """
     if task.is_readonly:
-        # Read-only repo: send notification instead of invoking jib
-        success = send_readonly_notification(task.task_type, task.context)
+        # Read-only repo behavior
+        if task.task_type == "review_request":
+            # For review requests, still invoke jib to perform the actual review
+            # but mark it as readonly so the review is output to Slack instead of GitHub
+            task.context["is_readonly"] = True
+            success = invoke_jib(task.task_type, task.context)
+        else:
+            # For other task types, send notification instead of invoking jib
+            success = send_readonly_notification(task.task_type, task.context)
     else:
         # Writable repo: invoke jib to handle the task
         success = invoke_jib(task.task_type, task.context)
@@ -1547,15 +1577,17 @@ def check_prs_for_review(
     github_username: str,
     bot_username: str,
     since_timestamp: str | None = None,
+    is_readonly: bool = False,
 ) -> list[dict]:
     """Check for PRs from other authors that may need review.
 
-    NOTE: Direct review request filtering (is_user_directly_requested) is temporarily
-    disabled because the reviewRequests field requires special GraphQL permissions
-    that can cause authentication issues. This function now processes ALL PRs from
-    other authors (not the user's or bot's PRs).
+    For READ-ONLY repos:
+    - Only review PRs where the user is DIRECTLY requested as a reviewer
+    - Uses per-PR API call to check reviewRequests (avoids bulk GraphQL permission issues)
 
-    TODO: Re-enable direct review request filtering using per-PR API calls.
+    For WRITABLE repos:
+    - Reviews ALL PRs from other authors (proactive review)
+    - Direct review request filtering is disabled to avoid permission issues
 
     Args:
         repo: Repository in owner/repo format
@@ -1564,6 +1596,7 @@ def check_prs_for_review(
         github_username: The user's GitHub username
         bot_username: Bot's username (to filter out bot's own PRs)
         since_timestamp: ISO timestamp to filter PRs (only show newer)
+        is_readonly: If True, only review PRs where user is directly requested
 
     Returns list of context dicts for PRs needing review.
 
@@ -1580,9 +1613,6 @@ def check_prs_for_review(
         f"{bot_username.lower()}[bot]",
     }
 
-    # NOTE: Direct review request filtering disabled due to permission issues
-    # Previously used is_user_directly_requested() but reviewRequests field
-    # cannot be fetched reliably. Now processing all PRs from other authors.
     other_prs = [
         p
         for p in all_prs
@@ -1597,12 +1627,54 @@ def check_prs_for_review(
         )
         return []
 
-    logger.info(
-        "Found PRs from other authors for review",
-        username=github_username,
-        other_author_count=len(other_prs),
-        total_prs=len(all_prs),
-    )
+    # For read-only repos, only review PRs where user is directly requested
+    # Fetch reviewRequests per-PR to avoid bulk GraphQL permission issues
+    if is_readonly:
+        directly_requested_prs = []
+        for pr in other_prs:
+            pr_num = pr["number"]
+            # Fetch review requests for this specific PR
+            pr_details = gh_json(
+                [
+                    "pr",
+                    "view",
+                    str(pr_num),
+                    "--repo",
+                    repo,
+                    "--json",
+                    "reviewRequests",
+                ],
+                repo=repo,
+            )
+            if pr_details and is_user_directly_requested(pr_details, github_username):
+                directly_requested_prs.append(pr)
+                logger.debug(
+                    "User directly requested as reviewer",
+                    pr_number=pr_num,
+                    username=github_username,
+                )
+
+        if not directly_requested_prs:
+            logger.debug(
+                "No PRs where user is directly requested as reviewer (read-only mode)",
+                username=github_username,
+                total_other_prs=len(other_prs),
+            )
+            return []
+
+        other_prs = directly_requested_prs
+        logger.info(
+            "Found PRs where user is directly requested for review (read-only mode)",
+            username=github_username,
+            directly_requested_count=len(other_prs),
+        )
+    else:
+        logger.info(
+            "Found PRs from other authors for review",
+            username=github_username,
+            other_author_count=len(other_prs),
+            total_prs=len(all_prs),
+        )
 
     # If restrict_to_configured_users is enabled, only review PRs from
     # the configured github_username (but this is for PRs where user is reviewer,
@@ -1750,6 +1822,15 @@ def process_repo_prs(
 
     This is shared logic for both writable and readable repos.
 
+    For READ-ONLY repos:
+    - Only monitor user's PRs for comments (to formulate responses via Slack)
+    - Only review PRs user authored or is directly tagged on
+    - Do NOT try to fix check failures or merge conflicts (meaningless without write access)
+
+    For WRITABLE repos:
+    - Full functionality: fix check failures, merge conflicts, respond to comments,
+      review PRs, and post directly to GitHub
+
     Args:
         repo: Repository in owner/repo format
         state: State dict for deduplication
@@ -1814,20 +1895,38 @@ def process_repo_prs(
         )
 
         for pr in my_prs:
-            # Check for failures
-            failure_ctx = check_pr_for_failures(repo, pr, state)
-            if failure_ctx:
-                tasks.append(
-                    JibTask(
-                        task_type="check_failure",
-                        context=failure_ctx,
-                        signature_key="processed_failures",
-                        signature_value=failure_ctx["failure_signature"],
-                        is_readonly=is_readonly,
+            # For writable repos only: check for failures and merge conflicts
+            # (For read-only repos, we can't fix these, so don't bother detecting them)
+            if not is_readonly:
+                # Check for failures
+                failure_ctx = check_pr_for_failures(repo, pr, state)
+                if failure_ctx:
+                    tasks.append(
+                        JibTask(
+                            task_type="check_failure",
+                            context=failure_ctx,
+                            signature_key="processed_failures",
+                            signature_value=failure_ctx["failure_signature"],
+                            is_readonly=False,
+                        )
                     )
-                )
 
-            # Check for comments
+                # Check for merge conflicts
+                conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
+                if conflict_ctx:
+                    tasks.append(
+                        JibTask(
+                            task_type="merge_conflict",
+                            context=conflict_ctx,
+                            signature_key="processed_conflicts",
+                            signature_value=conflict_ctx["conflict_signature"],
+                            is_readonly=False,
+                        )
+                    )
+
+            # Check for comments (both read-only and writable repos)
+            # For read-only: notify via Slack so user can see feedback
+            # For writable: jib responds directly on GitHub
             comment_ctx = check_pr_for_comments(
                 repo, pr, state, bot_username, github_username, since_timestamp
             )
@@ -1838,19 +1937,6 @@ def process_repo_prs(
                         context=comment_ctx,
                         signature_key="processed_comments",
                         signature_value=comment_ctx["comment_signature"],
-                        is_readonly=is_readonly,
-                    )
-                )
-
-            # Check for merge conflicts
-            conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
-            if conflict_ctx:
-                tasks.append(
-                    JibTask(
-                        task_type="merge_conflict",
-                        context=conflict_ctx,
-                        signature_key="processed_conflicts",
-                        signature_value=conflict_ctx["conflict_signature"],
                         is_readonly=is_readonly,
                     )
                 )
@@ -1923,8 +2009,10 @@ def process_repo_prs(
                 )
 
     # Collect review tasks for PRs from others
+    # For read-only repos: only review PRs where user is directly requested
+    # For writable repos: review all PRs from other authors
     review_contexts = check_prs_for_review(
-        repo, all_prs, state, github_username, bot_username, since_timestamp
+        repo, all_prs, state, github_username, bot_username, since_timestamp, is_readonly
     )
     for review_ctx in review_contexts:
         tasks.append(

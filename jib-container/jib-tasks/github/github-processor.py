@@ -619,16 +619,21 @@ def handle_review_request(context: dict):
         - deletions: int
         - files: list[str]
         - diff: str
+        - is_readonly: bool (optional, if True output review to Slack instead of GitHub)
     """
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
     pr_title = context.get("pr_title", f"PR #{pr_num}")
     author = context.get("author", "unknown")
+    is_readonly = context.get("is_readonly", False)
 
     print(f"Handling review request for PR #{pr_num} by @{author} in {repo}")
+    if is_readonly:
+        print("  Mode: read-only (review will be output to Slack)")
 
-    # Idempotency check: skip if we've already reviewed this PR
-    if check_existing_review(repo, pr_num):
+    # Idempotency check: skip if we've already reviewed this PR (only for writable repos)
+    # For read-only repos, we always generate a new review to Slack
+    if not is_readonly and check_existing_review(repo, pr_num):
         print(f"  PR #{pr_num} already has a review from jib, skipping duplicate review")
         return
 
@@ -640,12 +645,12 @@ def handle_review_request(context: dict):
         print(f"  Beads task: {beads_id}")
         pr_context_manager.update_context(
             beads_id,
-            f"Performing code review for PR by @{author}",
+            f"Performing code review for PR by @{author}" + (" (readonly)" if is_readonly else ""),
             status="in_progress",
         )
 
     # Build prompt for Claude (includes beads context if available)
-    prompt = build_review_prompt(context, beads_id)
+    prompt = build_review_prompt(context, beads_id, is_readonly=is_readonly)
 
     # Get repo path for working directory
     repo_name = repo.split("/")[-1]
@@ -667,8 +672,14 @@ def handle_review_request(context: dict):
             print(f"Error: {result.stderr[:500]}")
 
 
-def build_review_prompt(context: dict, beads_id: str | None = None) -> str:
-    """Build the prompt for Claude to review a PR."""
+def build_review_prompt(context: dict, beads_id: str | None = None, is_readonly: bool = False) -> str:
+    """Build the prompt for Claude to review a PR.
+
+    Args:
+        context: PR context dict
+        beads_id: Optional beads task ID for tracking
+        is_readonly: If True, output review to Slack instead of posting to GitHub
+    """
     repo = context.get("repository", "unknown")
     pr_num = context.get("pr_number", 0)
     pr_title = context.get("pr_title", "")
@@ -691,30 +702,107 @@ def build_review_prompt(context: dict, beads_id: str | None = None) -> str:
     owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
     repo_name = repo_parts[-1]
 
-    prompt = rf"""# PR Code Review
+    # Build different instructions based on readonly mode
+    if is_readonly:
+        # For read-only repos, output review to Slack notification file
+        review_instructions = rf"""## Your Task
 
-## PR Information
-- **Repository**: {repo}
-- **PR Number**: #{pr_num}
-- **Title**: {pr_title}
-- **URL**: {pr_url}
-- **Author**: @{author}
-- **Branch**: {pr_branch} -> {base_branch}
-- **Changes**: +{additions} / -{deletions}
+Review this PR and provide **thorough, constructive feedback**. Since this is a **read-only repository**,
+you cannot post comments directly to GitHub. Instead, write your review to a Slack notification file.
 
-## Files Changed ({len(files)})
-{chr(10).join("- " + f for f in files[:20])}
-{"..." if len(files) > 20 else ""}
+### Step 1: Analyze the Code
 
-## Diff
-```diff
-{diff[:30000] if diff else "Diff not available"}
-{"...(truncated)" if diff and len(diff) > 30000 else ""}
+Review the diff and understand what the PR is trying to accomplish. Look for:
+
+1. **Code quality and style** - Does it follow project conventions?
+2. **Potential bugs or edge cases** - Are there scenarios not handled?
+3. **Security concerns** - Any vulnerabilities (XSS, SQL injection, etc.)?
+4. **Test coverage** - Are changes adequately tested?
+5. **Documentation** - Are comments and docs updated?
+
+### Step 2: Write Your Review
+
+Create a comprehensive review with:
+- **Overall assessment**: Quick summary (looks good, needs changes, etc.)
+- **Specific feedback by file**: For each file with issues, note the line numbers and suggestions
+- **Suggested fixes**: Use code blocks to show how to fix issues
+
+**Use this format for inline feedback:**
+```
+### `path/to/file.py`
+- **Line 42**: Consider using a list comprehension here for clarity
+  ```python
+  # Instead of:
+  result = []
+  for item in items:
+      result.append(item.value)
+
+  # Consider:
+  result = [item.value for item in items]
+  ```
+- **Line 78**: Missing null check before accessing `.data`
 ```
 
-{beads_context}
+### Step 3: Create Slack Notification
 
-## Your Task
+Write your review to a notification file that will be sent via Slack:
+
+```python
+from pathlib import Path
+from datetime import datetime
+
+# Create notification file
+notifications_dir = Path.home() / "sharing" / "notifications"
+notifications_dir.mkdir(parents=True, exist_ok=True)
+
+timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+notif_file = notifications_dir / f"{{timestamp}}-pr-review-{repo_name}-{pr_num}.md"
+
+review_content = '''# PR Review: {repo} #{pr_num}
+
+**Repository**: {repo} _(read-only)_
+**PR**: [{pr_title}]({pr_url}) (#{pr_num})
+**Author**: @{author}
+**Branch**: `{pr_branch}` -> `{base_branch}`
+**Changes**: +{additions} / -{deletions}
+
+## Overall Assessment
+
+[Your overall verdict: LGTM / Needs Changes / Has Concerns]
+
+[1-2 sentence summary of the PR quality]
+
+## Detailed Review
+
+[Your detailed feedback organized by file, with line numbers and suggested fixes]
+
+## Summary
+
+[List key items that should be addressed]
+
+---
+— Reviewed by jib
+'''
+
+notif_file.write_text(review_content)
+print(f"Review saved to: {{notif_file}}")
+```
+
+### Step 4: Update Beads
+
+Update the beads task with your review summary{f" (task: {beads_id})" if beads_id else ""}
+
+**Important Notes for Read-Only Review:**
+- Be thorough - the author can't easily ask follow-up questions
+- Include specific line numbers for all feedback
+- Provide complete suggested fixes, not just hints
+- The review will appear in Slack, so format it well with markdown
+
+Begin review now.
+"""
+    else:
+        # For writable repos, post review directly to GitHub via MCP
+        review_instructions = rf"""## Your Task
 
 Review this PR and provide constructive feedback using **inline comments with suggested fixes**:
 
@@ -802,6 +890,33 @@ After adding all inline comments, submit the review:
 Update the beads task with your review summary{f" (task: {beads_id})" if beads_id else ""}
 
 Begin review now.
+"""
+
+    prompt = rf"""# PR Code Review
+
+## PR Information
+- **Repository**: {repo}
+- **PR Number**: #{pr_num}
+- **Title**: {pr_title}
+- **URL**: {pr_url}
+- **Author**: @{author}
+- **Branch**: {pr_branch} -> {base_branch}
+- **Changes**: +{additions} / -{deletions}
+{"- **Mode**: Read-only (review will be output to Slack)" if is_readonly else ""}
+
+## Files Changed ({len(files)})
+{chr(10).join("- " + f for f in files[:20])}
+{"..." if len(files) > 20 else ""}
+
+## Diff
+```diff
+{diff[:30000] if diff else "Diff not available"}
+{"...(truncated)" if diff and len(diff) > 30000 else ""}
+```
+
+{beads_context}
+
+{review_instructions}
 """
 
     return prompt

@@ -255,6 +255,38 @@ class TestBuildReviewPrompt:
         assert "-50" in prompt
         assert "src/app.py" in prompt
         assert "new code" in prompt
+        # Should contain GitHub MCP instructions for writable repos
+        assert "mcp__github__pull_request_review_write" in prompt
+
+    def test_build_review_prompt_readonly(self):
+        """Test building review prompt for read-only repos outputs to Slack."""
+        context = {
+            "repository": "owner/repo",
+            "pr_number": 123,
+            "pr_title": "Add feature",
+            "pr_url": "https://github.com/owner/repo/pull/123",
+            "pr_branch": "feature-branch",
+            "base_branch": "main",
+            "author": "developer",
+            "additions": 100,
+            "deletions": 50,
+            "files": ["src/app.py"],
+            "diff": "diff content",
+        }
+
+        prompt = github_processor.build_review_prompt(context, is_readonly=True)
+
+        # Should indicate read-only mode
+        assert "read-only" in prompt.lower()
+        # Should contain Slack notification instructions instead of GitHub MCP
+        assert "notifications" in prompt
+        assert "notif_file" in prompt
+        # Should NOT contain GitHub MCP instructions
+        assert "mcp__github__pull_request_review_write" not in prompt
+        # Should still contain basic PR info
+        assert "owner/repo" in prompt
+        assert "#123" in prompt
+        assert "@developer" in prompt
 
     def test_build_review_prompt_large_diff(self):
         """Test prompt truncates large diffs."""
