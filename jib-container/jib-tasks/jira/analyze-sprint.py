@@ -33,7 +33,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-
 # Import Claude module (installed as package via pip)
 from claude import is_claude_available, run_claude
 

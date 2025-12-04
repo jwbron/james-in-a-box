@@ -732,27 +732,26 @@ Timers:
             # Type coercion and validation
             expected_type = rule.get("type")
             try:
-                if expected_type == int:
+                if expected_type is int:
                     value = int(value)
                     if "min" in rule and value < rule["min"]:
                         value = rule["min"]
                     if "max" in rule and value > rule["max"]:
                         value = rule["max"]
-                elif expected_type == bool:
+                elif expected_type is bool:
                     if isinstance(value, str):
                         value = value.lower() in ("true", "yes", "1")
                     else:
                         value = bool(value)
-                elif expected_type == str:
+                elif expected_type is str:
                     value = str(value)
                     # Validate against pattern if specified
-                    if "pattern" in rule and value:
-                        if not re.match(rule["pattern"], value):
-                            return (
-                                False,
-                                f"Invalid format for {param_name}: {value}",
-                                {},
-                            )
+                    if "pattern" in rule and value and not re.match(rule["pattern"], value):
+                        return (
+                            False,
+                            f"Invalid format for {param_name}: {value}",
+                            {},
+                        )
             except (ValueError, TypeError) as e:
                 return False, f"Invalid value for {param_name}: {e}", {}
 
