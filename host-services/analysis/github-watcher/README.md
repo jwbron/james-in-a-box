@@ -15,15 +15,18 @@ Scheduled job (every 5 min) - HOST SIDE
     |
     v
 Query GitHub via CLI for events since last run:
-- Open PRs with check failures
+- Open PRs with check failures (writable repos only)
 - PRs with new comments (since last check)
-- New PRs from others for review (created since last check)
+- PRs with merge conflicts (writable repos only)
+- PRs where user is requested as reviewer
     |
     v
-Trigger jib container via `jib --exec` for analysis
+For writable repos: Trigger jib container via `jib --exec` for analysis
+For read-only repos: Send Slack notification for user review
     |
     v
-Container analyzes and takes action via GitHub CLI/MCP
+Writable: Container analyzes and takes action via GitHub CLI/MCP
+Read-only: User reviews notification and responds manually
 ```
 
 **Note:** The watcher tracks when it last ran. If your machine is off for a period,
@@ -76,30 +79,62 @@ systemctl --user status github-watcher.timer
 
 ## What It Does
 
-For each configured repository, the watcher:
+The watcher handles writable and read-only repos differently:
 
-1. **Detects Check Failures**
-   - Queries `gh pr checks` for each open PR authored by @me
-   - If failures found, invokes `jib --exec github-processor.py --task check_failure`
-   - Container dispatches to issue-fixer for analysis and fixes
+### Writable Repos (Full Functionality)
 
-2. **Monitors PR Comments** (your PRs only)
-   - Queries `gh pr view --json comments` for your PRs
-   - If new comments from others, invokes `jib --exec github-processor.py --task comment`
-   - Container dispatches to comment-responder for response
+For repositories in `writable_repos`, jib has full access and can:
 
-3. **Reviews New PRs** (others' PRs)
-   - Identifies new PRs from other authors
+1. **Fix Check Failures**
+   - Detects failing CI checks on your PRs and bot's PRs
+   - Invokes `jib --exec github-processor.py --task check_failure`
+   - Container analyzes logs, fixes code, pushes commits
+
+2. **Resolve Merge Conflicts**
+   - Detects PRs with merge conflicts
+   - Invokes `jib --exec github-processor.py --task merge_conflict`
+   - Container resolves conflicts and pushes
+
+3. **Respond to PR Comments**
+   - Monitors comments on your PRs and bot's PRs
+   - Invokes `jib --exec github-processor.py --task comment`
+   - Container posts responses directly to GitHub
+
+4. **Review Other Authors' PRs**
+   - Proactively reviews ALL PRs from other authors
    - Invokes `jib --exec github-processor.py --task review_request`
-   - Container dispatches to pr-reviewer for code review
+   - Container posts review comments to GitHub
+
+### Read-Only Repos (Notification Only)
+
+For repositories in `readable_repos`, jib cannot push/comment directly:
+
+1. **Monitor PR Comments** (your PRs only)
+   - Detects new comments on PRs you authored
+   - Sends Slack notification with comment details
+   - You formulate response and post manually
+
+2. **Review Requested PRs** (directly tagged only)
+   - Only PRs where you are DIRECTLY requested as reviewer (not via team)
+   - Sends Slack notification with PR details for review
+   - You review and respond manually on GitHub
+
+**NOT monitored for read-only repos:**
+- Check failures (can't fix without write access)
+- Merge conflicts (can't resolve without write access)
 
 ## Configuration
 
 Repositories are configured in `config/repositories.yaml`:
 
 ```yaml
+# Full access - jib can push, comment, fix issues
 writable_repos:
   - jwbron/james-in-a-box
+
+# Read-only - jib sends Slack notifications only
+readable_repos:
+  - Khan/webapp
 ```
 
 ## State Tracking
