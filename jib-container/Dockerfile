@@ -206,6 +206,15 @@ gosu "${RUNTIME_UID}:${RUNTIME_GID}" git config --global advice.pushUpdateReject
 # Also fix local repo configs in case they were corrupted with Claude's authorship
 # Local configs override global, so we need to ensure they use jib too
 if [ -d "${USER_HOME}/.git-main" ]; then
+    # Clean up stale git lock files from previous container runs
+    # These can accumulate if containers are killed unexpectedly (SIGKILL, crash, etc.)
+    # and cause "could not lock config file" errors on subsequent runs
+    stale_locks=$(find "${USER_HOME}/.git-main" -name "*.lock" -type f 2>/dev/null | wc -l)
+    if [ "$stale_locks" -gt 0 ]; then
+        find "${USER_HOME}/.git-main" -name "*.lock" -type f -delete 2>/dev/null || true
+        log_warn "Cleaned up ${stale_locks} stale git lock file(s)"
+    fi
+
     for repo_config in "${USER_HOME}/.git-main"/*/config; do
         if [ -f "$repo_config" ]; then
             repo_dir=$(dirname "$repo_config")
