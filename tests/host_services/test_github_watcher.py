@@ -731,7 +731,7 @@ class TestFailedTaskRetry:
                 pr_data,
                 state,
                 "testbot",
-                "testuser",  # github_username
+                "testuser",
                 since_timestamp="2025-01-02T00:00:00Z",  # After the comment
             )
 
@@ -775,7 +775,7 @@ class TestFailedTaskRetry:
                 pr_data,
                 state,
                 "testbot",
-                "testuser",  # github_username
+                "testuser",
                 since_timestamp="2025-01-02T00:00:00Z",  # After the comment
             )
 
