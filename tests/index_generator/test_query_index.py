@@ -17,6 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis" / "index-gene
 # Import the module using its new Python-safe name
 from importlib import import_module
 
+
 query_index = import_module("query-index")
 
 
