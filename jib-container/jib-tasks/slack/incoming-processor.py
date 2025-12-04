@@ -26,7 +26,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-
 # Import modules (installed as packages via pip)
 from claude import run_claude
 from enrichment import enrich_task

@@ -1565,9 +1565,8 @@ class RepoAnalyzer:
                     # Show first-level subdirectories
                     subdir_names = []
                     for subitem in sorted(item.iterdir()):
-                        if subitem.is_dir() and not subitem.name.startswith("."):
-                            if not self._should_skip(str(subitem)):
-                                subdir_names.append(subitem.name)
+                        if subitem.is_dir() and not subitem.name.startswith(".") and not self._should_skip(str(subitem)):
+                            subdir_names.append(subitem.name)
                     if subdir_names:
                         preview = subdir_names[:10]
                         more = (
@@ -1741,29 +1740,31 @@ The "analyze" array must be ordered by priority. Include ALL feature directories
         # Check for common parent directories
         for parent_name in common_parents:
             parent_path = self.repo_root / parent_name
-            if parent_path.exists() and parent_path.is_dir():
-                if not self._is_git_ignored(parent_name):
-                    # Add each subdirectory as a potential feature
-                    for subdir in parent_path.iterdir():
-                        if subdir.is_dir() and not subdir.name.startswith("."):
-                            rel_path = f"{parent_name}/{subdir.name}"
-                            if not self._is_git_ignored(rel_path):
-                                feature_dirs.append(rel_path)
+            if parent_path.exists() and parent_path.is_dir() and not self._is_git_ignored(parent_name):
+                # Add each subdirectory as a potential feature
+                for subdir in parent_path.iterdir():
+                    if subdir.is_dir() and not subdir.name.startswith("."):
+                        rel_path = f"{parent_name}/{subdir.name}"
+                        if not self._is_git_ignored(rel_path):
+                            feature_dirs.append(rel_path)
 
         # Also check for standalone feature directories at root
         for item in self.repo_root.iterdir():
-            if item.is_dir() and not item.name.startswith("."):
-                if item.name not in common_parents:
-                    if not self._is_git_ignored(item.name):
-                        # Check if it looks like a feature (has README or source files)
-                        has_readme = (item / "README.md").exists()
-                        has_source = (
-                            any(item.glob("*.py"))
-                            or any(item.glob("*.go"))
-                            or any(item.glob("*.js"))
-                        )
-                        if has_readme or has_source:
-                            feature_dirs.append(item.name)
+            if (
+                item.is_dir()
+                and not item.name.startswith(".")
+                and item.name not in common_parents
+                and not self._is_git_ignored(item.name)
+            ):
+                # Check if it looks like a feature (has README or source files)
+                has_readme = (item / "README.md").exists()
+                has_source = (
+                    any(item.glob("*.py"))
+                    or any(item.glob("*.go"))
+                    or any(item.glob("*.js"))
+                )
+                if has_readme or has_source:
+                    feature_dirs.append(item.name)
 
         return feature_dirs
 
@@ -1884,10 +1885,7 @@ The "read" array must have at most {max_files} file paths from the listing above
                     # Try to find matching file
                     for f in files:
                         try:
-                            if str(f.relative_to(self.repo_root)) == rec_path:
-                                result.append(f)
-                                break
-                            elif f.name == rec_path or str(f).endswith(rec_path):
+                            if str(f.relative_to(self.repo_root)) == rec_path or f.name == rec_path or str(f).endswith(rec_path):
                                 result.append(f)
                                 break
                         except ValueError:
@@ -1933,10 +1931,7 @@ The "read" array must have at most {max_files} file paths from the listing above
             if name == "readme.md":
                 priority_files.insert(0, f)
             # Priority 2: Main entry points
-            elif name.startswith(("main.", "index.", "app.", "server.", "cli.")):
-                priority_files.append(f)
-            # Priority 3: __init__.py (package entry)
-            elif name == "__init__.py":
+            elif name.startswith(("main.", "index.", "app.", "server.", "cli.")) or name == "__init__.py":
                 priority_files.append(f)
             else:
                 other_files.append(f)
@@ -2073,10 +2068,7 @@ Ensure you cover as many distinct subdirectories as possible.
                 if isinstance(rec_path, str):
                     for f in all_files:
                         try:
-                            if str(f.relative_to(self.repo_root)) == rec_path:
-                                result.append(f)
-                                break
-                            elif f.name == rec_path or str(f).endswith(rec_path):
+                            if str(f.relative_to(self.repo_root)) == rec_path or f.name == rec_path or str(f).endswith(rec_path):
                                 result.append(f)
                                 break
                         except ValueError:
@@ -2366,10 +2358,9 @@ If truly no features, return: `[]`
         # Step 3: Check for standalone scripts at repo root
         for pattern in ["*.py", "*.go", "*.sh"]:
             for script in self.repo_root.glob(pattern):
-                if not self._should_skip(str(script)):
-                    if not self._is_git_ignored(script.name):
-                        key = str(script.relative_to(self.repo_root))
-                        feature_dirs[key] = [script]
+                if not self._should_skip(str(script)) and not self._is_git_ignored(script.name):
+                    key = str(script.relative_to(self.repo_root))
+                    feature_dirs[key] = [script]
 
         return feature_dirs
 
@@ -2438,10 +2429,9 @@ If truly no features, return: `[]`
         # Step 3: Check for standalone scripts at repo root
         for pattern in ["*.py", "*.go", "*.sh"]:
             for script in self.repo_root.glob(pattern):
-                if not self._should_skip(str(script)):
-                    if not self._is_git_ignored(script.name):
-                        key = str(script.relative_to(self.repo_root))
-                        root_dirs[key] = [script]
+                if not self._should_skip(str(script)) and not self._is_git_ignored(script.name):
+                    key = str(script.relative_to(self.repo_root))
+                    root_dirs[key] = [script]
 
         return root_dirs
 
@@ -2495,7 +2485,6 @@ If truly no features, return: `[]`
         result = []
         in_docstring = False
         docstring_char = None
-        brace_depth = 0
         i = 0
 
         while i < len(lines):
@@ -2503,7 +2492,7 @@ If truly no features, return: `[]`
             stripped = line.strip()
 
             # Capture module-level docstring (first string literal)
-            if i < 10 and not result and (stripped.startswith('"""') or stripped.startswith("'''")):
+            if i < 10 and not result and (stripped.startswith(('"""', "'''"))):
                 docstring_char = stripped[:3]
                 result.append(line)
                 if stripped.count(docstring_char) >= 2 and len(stripped) > 6:
@@ -2531,7 +2520,7 @@ If truly no features, return: `[]`
                 # Look for class docstring
                 if i + 1 < len(lines):
                     next_stripped = lines[i + 1].strip()
-                    if next_stripped.startswith('"""') or next_stripped.startswith("'''"):
+                    if next_stripped.startswith(('"""', "'''")):
                         i += 1
                         docstring_char = next_stripped[:3]
                         result.append(lines[i])
@@ -2548,12 +2537,12 @@ If truly no features, return: `[]`
                 continue
 
             # Capture function/method definitions with docstrings
-            if stripped.startswith("def ") or stripped.startswith("async def "):
+            if stripped.startswith(("def ", "async def ")):
                 result.append(line)
                 # Look for function docstring
                 if i + 1 < len(lines):
                     next_stripped = lines[i + 1].strip()
-                    if next_stripped.startswith('"""') or next_stripped.startswith("'''"):
+                    if next_stripped.startswith(('"""', "'''")):
                         i += 1
                         docstring_char = next_stripped[:3]
                         result.append(lines[i])
@@ -2579,10 +2568,14 @@ If truly no features, return: `[]`
                 continue
 
             # Capture module-level constants and assignments (first 30 lines only)
-            if i < 30 and "=" in stripped and not stripped.startswith("#"):
-                # Simple assignment at module level
-                if not stripped.startswith((" ", "\t")):
-                    result.append(line)
+            # Simple assignment at module level (not indented)
+            if (
+                i < 30
+                and "=" in stripped
+                and not stripped.startswith("#")
+                and not stripped.startswith((" ", "\t"))
+            ):
+                result.append(line)
 
             i += 1
 
@@ -2636,18 +2629,20 @@ If truly no features, return: `[]`
             if stripped.startswith("type "):
                 result.append(line)
                 # Include struct/interface body summary
-                if "struct {" in stripped or "interface {" in stripped:
-                    if "}" not in stripped:
-                        # Multi-line: read up to 20 lines
-                        depth = 1
-                        j = i + 1
-                        while j < len(lines) and depth > 0 and (j - i) < 20:
-                            result.append(lines[j])
-                            if "{" in lines[j]:
-                                depth += 1
-                            if "}" in lines[j]:
-                                depth -= 1
-                            j += 1
+                if (
+                    ("struct {" in stripped or "interface {" in stripped)
+                    and "}" not in stripped
+                ):
+                    # Multi-line: read up to 20 lines
+                    depth = 1
+                    j = i + 1
+                    while j < len(lines) and depth > 0 and (j - i) < 20:
+                        result.append(lines[j])
+                        if "{" in lines[j]:
+                            depth += 1
+                        if "}" in lines[j]:
+                            depth -= 1
+                        j += 1
                 continue
 
             # Function declarations
@@ -2655,9 +2650,8 @@ If truly no features, return: `[]`
                 result.append(line)
                 # Look for doc comment above (scan back)
                 for back in range(max(0, i - 5), i):
-                    if lines[back].strip().startswith("//"):
-                        if lines[back] not in result:
-                            result.insert(-1, lines[back])
+                    if lines[back].strip().startswith("//") and lines[back] not in result:
+                        result.insert(-1, lines[back])
                 continue
 
             # Const and var blocks
@@ -2682,7 +2676,7 @@ If truly no features, return: `[]`
             stripped = line.strip()
 
             # JSDoc comments
-            if stripped.startswith("/**") or stripped.startswith("/*"):
+            if stripped.startswith(("/**", "/*")):
                 result.append(line)
                 if "*/" not in stripped:
                     j = i + 1

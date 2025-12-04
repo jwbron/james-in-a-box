@@ -1851,7 +1851,7 @@ Repository onboarding generated documentation indexes for **{repo_name}**.
                 shared_path = Path.home() / "khan" / "james-in-a-box" / "shared"
                 if str(shared_path) not in sys.path:
                     sys.path.insert(0, str(shared_path))
-                from notifications import slack_notify, NotificationContext
+                from notifications import NotificationContext, slack_notify
 
                 # Build summary of what was generated
                 phases_list = "\n".join(

@@ -98,7 +98,6 @@ There are two types of repos:
 """
 
 import json
-import os
 import secrets
 import subprocess
 import sys
