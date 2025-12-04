@@ -579,12 +579,16 @@ if [ -n "$CURRENT_TOKEN" ]; then
 
         # Add fresh config with user scope
         # Suppress output to avoid logging the Authorization header/token
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
+        # Use timeout to prevent hanging (MCP server validation can be slow)
+        if ! timeout 10 gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
             --transport http \
             --scope user \
             github \
             "https://api.githubcopilot.com/mcp/" \
-            --header "Authorization: Bearer ${CURRENT_TOKEN}" > /dev/null 2>&1
+            --header "Authorization: Bearer ${CURRENT_TOKEN}" > /dev/null 2>&1; then
+            log_warn "GitHub MCP server configuration timed out or failed"
+            log_info "  Container will work but without GitHub MCP integration"
+        fi
 
         # Cache token hash for next startup
         echo "$TOKEN_HASH" > "$CACHE_FILE"
@@ -614,15 +618,18 @@ if [ -n "${GITHUB_READONLY_TOKEN:-}" ]; then
     gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github-readonly -s user >/dev/null 2>&1 || true
 
     # Add readonly MCP server for external repos (e.g., Khan/*)
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
+    # Use timeout to prevent hanging
+    if timeout 10 gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
         --transport http \
         --scope user \
         github-readonly \
         "https://api.githubcopilot.com/mcp/" \
-        --header "Authorization: Bearer ${GITHUB_READONLY_TOKEN}" > /dev/null 2>&1
-
-    log_success "GitHub readonly MCP server configured for external repos"
-    log_info "  Use mcp__github_readonly__* tools for repos like Khan/webapp"
+        --header "Authorization: Bearer ${GITHUB_READONLY_TOKEN}" > /dev/null 2>&1; then
+        log_success "GitHub readonly MCP server configured for external repos"
+        log_info "  Use mcp__github_readonly__* tools for repos like Khan/webapp"
+    else
+        log_warn "GitHub readonly MCP server configuration timed out or failed"
+    fi
 fi
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
