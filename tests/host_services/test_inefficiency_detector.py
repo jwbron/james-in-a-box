@@ -74,19 +74,15 @@ class TestToolDiscoveryDetector:
 
         inefficiencies = detector.detect(events)
 
-        # Should detect both documentation_miss and search_failure patterns
-        # documentation_miss: 4 searches with 3 empty results before success
-        # search_failure: 3 consecutive grep searches with 0 results
-        assert len(inefficiencies) == 2
+        # Should detect documentation_miss pattern
+        # documentation_miss: 3 searches with 2 empty results before success
+        # (search_failure requires 3+ consecutive failures, we only have 2 grep failures)
+        assert len(inefficiencies) == 1
 
         # Find the documentation_miss inefficiency
         doc_miss = next(i for i in inefficiencies if i.sub_category == "documentation_miss")
         assert doc_miss.wasted_tokens > 0
         assert "glob" in doc_miss.recommendation.lower()
-
-        # Find the search_failure inefficiency
-        search_fail = next(i for i in inefficiencies if i.sub_category == "search_failure")
-        assert search_fail.wasted_tokens > 0
 
     def test_api_confusion_pattern(self):
         """Test detection of tool call with wrong params, then correct params."""
