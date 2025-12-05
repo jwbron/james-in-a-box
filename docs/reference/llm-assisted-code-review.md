@@ -118,7 +118,7 @@ Reviewer re-reviews
         ↓
 Repeat until approved
         ↓
-Eventually merges (days later)
+Eventually merges
 ```
 
 ### The New Way
@@ -140,7 +140,9 @@ Human reviewer focuses on:
   • Security implications
   • Strategic direction
         ↓
-Approval (same day)
+Approval
+        ↓
+Merge
 ```
 
 ### Why This Matters Now
