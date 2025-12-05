@@ -672,7 +672,9 @@ def handle_review_request(context: dict):
             print(f"Error: {result.stderr[:500]}")
 
 
-def build_review_prompt(context: dict, beads_id: str | None = None, is_readonly: bool = False) -> str:
+def build_review_prompt(
+    context: dict, beads_id: str | None = None, is_readonly: bool = False
+) -> str:
     """Build the prompt for Claude to review a PR.
 
     Args:

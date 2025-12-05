@@ -55,6 +55,7 @@ sys.path.insert(0, str(_find_claude_module_path()))
 import contextlib
 
 from claude import run_claude
+from git_utils import get_default_branch
 
 
 def output_result(success: bool, result: dict | str | None = None, error: str | None = None):
@@ -66,61 +67,6 @@ def output_result(success: bool, result: dict | str | None = None, error: str | 
     }
     print(json.dumps(output))
     return 0 if success else 1
-
-
-def get_default_branch(repo_path: Path) -> str:
-    """Detect the default branch for a repository.
-
-    Tries to determine the default branch by:
-    1. Checking git remote show origin (most reliable)
-    2. Falling back to checking for common branch names (main, master)
-    3. Defaulting to "main" if nothing else works
-
-    Args:
-        repo_path: Path to the repository
-
-    Returns:
-        The default branch name (e.g., "main" or "master")
-    """
-    import subprocess
-
-    # Try to get the default branch from the remote
-    try:
-        result = subprocess.run(
-            ["git", "remote", "show", "origin"],
-            check=False,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            for line in result.stdout.splitlines():
-                if "HEAD branch:" in line:
-                    return line.split(":")[-1].strip()
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-        pass
-
-    # Fallback: check which common branches exist
-    try:
-        result = subprocess.run(
-            ["git", "branch", "-r"],
-            check=False,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            branches = result.stdout
-            if "origin/master" in branches:
-                return "master"
-            if "origin/main" in branches:
-                return "main"
-    except subprocess.SubprocessError:
-        pass
-
-    # Ultimate fallback
-    return "main"
 
 
 def handle_llm_prompt(context: dict) -> int:
@@ -1552,7 +1498,9 @@ def handle_repo_onboarding(context: dict) -> int:
     jib_path = Path.home() / "khan" / "james-in-a-box"
     analysis_path = jib_path / "jib-container" / "jib-tasks" / "analysis"
     sys.path.insert(0, str(analysis_path))  # feature_analyzer
-    sys.path.insert(0, str(analysis_path / "utilities"))  # confluence_doc_discoverer, index_generator, etc.
+    sys.path.insert(
+        0, str(analysis_path / "utilities")
+    )  # confluence_doc_discoverer, index_generator, etc.
 
     result_data = {
         "phases_completed": [],
@@ -1641,7 +1589,9 @@ def handle_repo_onboarding(context: dict) -> int:
                 from feature_analyzer import RepoAnalyzer
 
                 mode_name = "root-level" if use_root_level_scout else "per-directory"
-                print(f"  Running feature analysis with {max_workers} workers ({mode_name} scout)...")
+                print(
+                    f"  Running feature analysis with {max_workers} workers ({mode_name} scout)..."
+                )
                 analyzer = RepoAnalyzer(repo_path, use_llm=True)
                 analysis_result = analyzer.analyze_full_repo(
                     dry_run=False,
@@ -1742,8 +1692,8 @@ def handle_repo_onboarding(context: dict) -> int:
         commit_message = f"""docs: Repository onboarding via jib
 
 Completed phases: {phases_summary}
-Features detected: {result_data['features_detected']}
-Indexes generated: {', '.join(result_data['indexes_generated'])}
+Features detected: {result_data["features_detected"]}
+Indexes generated: {", ".join(result_data["indexes_generated"])}
 
 — Authored by jib"""
 
@@ -1787,12 +1737,12 @@ Repository onboarding generated documentation indexes for **{repo_name}**.
 
 ### Phases Completed
 
-{chr(10).join(f"- ✓ {phase.replace('_', ' ').title()}" for phase in result_data['phases_completed'])}
+{chr(10).join(f"- ✓ {phase.replace('_', ' ').title()}" for phase in result_data["phases_completed"])}
 
 ### Generated Content
 
-- Features detected: {result_data['features_detected']}
-- Indexes generated: {', '.join(result_data['indexes_generated']) or 'none'}
+- Features detected: {result_data["features_detected"]}
+- Indexes generated: {", ".join(result_data["indexes_generated"]) or "none"}
 
 ### Files Added
 
@@ -1851,7 +1801,7 @@ Repository onboarding generated documentation indexes for **{repo_name}**.
                 shared_path = Path.home() / "khan" / "james-in-a-box" / "shared"
                 if str(shared_path) not in sys.path:
                     sys.path.insert(0, str(shared_path))
-                from notifications import slack_notify, NotificationContext
+                from notifications import NotificationContext, slack_notify
 
                 # Build summary of what was generated
                 phases_list = "\n".join(
@@ -1869,7 +1819,7 @@ Repository onboarding generated documentation indexes for **{repo_name}**.
 {phases_list}
 
 **Generated Content:**
-  • Features detected: {result_data['features_detected']}
+  • Features detected: {result_data["features_detected"]}
   • Indexes: {indexes_list}
 
 **Next Steps:**

@@ -74,7 +74,9 @@ except ImportError as e:
     print("ERROR: Cannot import libraries", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
     print(f"  Import error: {e}", file=sys.stderr)
-    print(f"  Checked paths: {_repo_root / 'jib-container'}, {_repo_root / 'shared'}", file=sys.stderr)
+    print(
+        f"  Checked paths: {_repo_root / 'jib-container'}, {_repo_root / 'shared'}", file=sys.stderr
+    )
     print("", file=sys.stderr)
     print("This usually means a module is missing.", file=sys.stderr)
     print("Check that jib-container/claude/ and shared/ directories exist.", file=sys.stderr)

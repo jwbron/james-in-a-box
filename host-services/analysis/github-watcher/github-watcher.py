@@ -98,7 +98,6 @@ There are two types of repos:
 """
 
 import json
-import os
 import secrets
 import subprocess
 import sys
@@ -119,7 +118,7 @@ sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
 
-from config.repo_config import should_restrict_to_configured_users
+from config.repo_config import should_disable_auto_fix, should_restrict_to_configured_users
 
 
 # Initialize logger
@@ -140,6 +139,102 @@ HOST_NOTIFICATIONS_DIR = Path.home() / ".jib-sharing" / "notifications"
 
 # Maximum diff size to include in context
 MAX_DIFF_SIZE = 50000
+
+# Patterns that indicate GitHub Actions minutes/billing exhaustion
+# These patterns appear in check run annotations, summaries, or logs when billing limits are hit
+BILLING_EXHAUSTION_PATTERNS = [
+    "spending limit needs to be increased",
+    "recent account payments have failed",
+    "the job was not started because",
+    "actions usage limit",
+    "minutes quota",
+]
+
+
+def is_billing_exhaustion(failed_checks: list[dict], check_runs: list[dict]) -> bool:
+    """Detect if check failures are due to GitHub Actions billing/minutes exhaustion.
+
+    When GitHub Actions minutes are exhausted or billing limits are hit, jobs fail with
+    specific error messages like "The job was not started because recent account payments
+    have failed or your spending limit needs to be increased."
+
+    This function checks:
+    1. Check run output annotations and summaries for billing-related messages
+    2. Fetched logs for billing-related patterns
+    3. Pattern of all checks cancelled without logs (common when billing is exhausted)
+
+    Args:
+        failed_checks: List of failed check dicts with name, state, description, full_log
+        check_runs: Full list of check run objects from GitHub API
+
+    Returns:
+        True if the failures appear to be due to billing/minutes exhaustion
+    """
+    # Check 1: Look for billing patterns in check descriptions/summaries
+    for check in failed_checks:
+        description = (check.get("description") or "").lower()
+        for pattern in BILLING_EXHAUSTION_PATTERNS:
+            if pattern in description:
+                logger.info(
+                    "Detected billing exhaustion in check description",
+                    check_name=check.get("name"),
+                    pattern_matched=pattern,
+                )
+                return True
+
+    # Check 2: Look for billing patterns in fetched logs
+    for check in failed_checks:
+        full_log = (check.get("full_log") or "").lower()
+        for pattern in BILLING_EXHAUSTION_PATTERNS:
+            if pattern in full_log:
+                logger.info(
+                    "Detected billing exhaustion in check logs",
+                    check_name=check.get("name"),
+                    pattern_matched=pattern,
+                )
+                return True
+
+    # Check 3: Look in check run annotations from the API
+    for run in check_runs:
+        output = run.get("output", {})
+        # Check summary
+        summary = (output.get("summary") or "").lower()
+        for pattern in BILLING_EXHAUSTION_PATTERNS:
+            if pattern in summary:
+                logger.info(
+                    "Detected billing exhaustion in check run summary",
+                    check_name=run.get("name"),
+                    pattern_matched=pattern,
+                )
+                return True
+
+        # Check annotations if present
+        annotations = output.get("annotations", [])
+        for annotation in annotations:
+            message = (annotation.get("message") or "").lower()
+            for pattern in BILLING_EXHAUSTION_PATTERNS:
+                if pattern in message:
+                    logger.info(
+                        "Detected billing exhaustion in check annotation",
+                        check_name=run.get("name"),
+                        pattern_matched=pattern,
+                    )
+                    return True
+
+    # Check 4: Heuristic - all checks cancelled and no logs available
+    # This is common when billing is exhausted: all jobs are cancelled before they start
+    if failed_checks:
+        all_cancelled = all(c.get("state", "").upper() == "CANCELLED" for c in failed_checks)
+        no_logs = all(not c.get("full_log") for c in failed_checks)
+        if all_cancelled and no_logs and len(failed_checks) >= 2:
+            logger.info(
+                "Detected possible billing exhaustion: all checks cancelled with no logs",
+                check_count=len(failed_checks),
+                check_names=[c.get("name") for c in failed_checks],
+            )
+            return True
+
+    return False
 
 
 def truncate_diff(diff: str, max_size: int = MAX_DIFF_SIZE) -> str:
@@ -1005,6 +1100,18 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
         if log:
             check["full_log"] = log
 
+    # Check if failures are due to billing/minutes exhaustion
+    # If so, skip this failure - there's nothing jib can fix
+    if is_billing_exhaustion(failed_checks, check_runs):
+        logger.warning(
+            "Skipping check failures due to billing/minutes exhaustion",
+            pr_number=pr_num,
+            failed_count=len(failed_checks),
+            failed_checks=failed_names,
+            hint="Check GitHub billing settings or wait for minutes to reset",
+        )
+        return None
+
     # Get PR details
     pr_details = gh_json(
         [
@@ -1614,9 +1721,7 @@ def check_prs_for_review(
     }
 
     other_prs = [
-        p
-        for p in all_prs
-        if p.get("author", {}).get("login", "").lower() not in excluded_authors
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
     ]
 
     if not other_prs:
@@ -1898,18 +2003,19 @@ def process_repo_prs(
             # For writable repos only: check for failures and merge conflicts
             # (For read-only repos, we can't fix these, so don't bother detecting them)
             if not is_readonly:
-                # Check for failures
-                failure_ctx = check_pr_for_failures(repo, pr, state)
-                if failure_ctx:
-                    tasks.append(
-                        JibTask(
-                            task_type="check_failure",
-                            context=failure_ctx,
-                            signature_key="processed_failures",
-                            signature_value=failure_ctx["failure_signature"],
-                            is_readonly=False,
+                # Check for failures (unless auto-fix is disabled for this repo)
+                if not should_disable_auto_fix(repo):
+                    failure_ctx = check_pr_for_failures(repo, pr, state)
+                    if failure_ctx:
+                        tasks.append(
+                            JibTask(
+                                task_type="check_failure",
+                                context=failure_ctx,
+                                signature_key="processed_failures",
+                                signature_value=failure_ctx["failure_signature"],
+                                is_readonly=False,
+                            )
                         )
-                    )
 
                 # Check for merge conflicts
                 conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
@@ -1952,18 +2058,19 @@ def process_repo_prs(
         )
 
         for pr in bot_prs:
-            # Check for failures on bot's PRs
-            failure_ctx = check_pr_for_failures(repo, pr, state)
-            if failure_ctx:
-                tasks.append(
-                    JibTask(
-                        task_type="check_failure",
-                        context=failure_ctx,
-                        signature_key="processed_failures",
-                        signature_value=failure_ctx["failure_signature"],
-                        is_readonly=False,
+            # Check for failures on bot's PRs (unless auto-fix is disabled for this repo)
+            if not should_disable_auto_fix(repo):
+                failure_ctx = check_pr_for_failures(repo, pr, state)
+                if failure_ctx:
+                    tasks.append(
+                        JibTask(
+                            task_type="check_failure",
+                            context=failure_ctx,
+                            signature_key="processed_failures",
+                            signature_value=failure_ctx["failure_signature"],
+                            is_readonly=False,
+                        )
                     )
-                )
 
             # Check for comments on bot's PRs
             comment_ctx = check_pr_for_comments(

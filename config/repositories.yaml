@@ -17,7 +17,7 @@
 # The github_username is used to construct repo names and set the default reviewer.
 
 # Your GitHub username (set by setup.sh)
-github_username: jwbron
+github_username: s
 
 # Bot username - the bot's GitHub identity for filtering out its own comments
 # Comments from this user are ignored (so the bot doesn't respond to itself)
@@ -30,10 +30,10 @@ bot_username: james-in-a-box
 # - Create PRs via GitHub MCP
 # - Implement fixes for failed CI checks
 writable_repos:
-  - jwbron/james-in-a-box
+  - s/james-in-a-box
 
 # Default reviewer for PRs created by jib (defaults to github_username)
-default_reviewer: jwbron
+default_reviewer: s
 
 # GitHub sync configuration
 github_sync:
@@ -68,4 +68,5 @@ readable_repos:
 repo_settings:
   jwbron/james-in-a-box:
     restrict_to_configured_users: true
+    disable_auto_fix: true
 
