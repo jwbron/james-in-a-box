@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y \
     # Development
     strace ltrace gdb \
     # Other useful tools
-    jq tree watch tmux screen inotify-tools \
+    jq tree watch tmux screen inotify-tools ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI (gh)
