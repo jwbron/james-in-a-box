@@ -1,366 +1,449 @@
-# LLM-First Software Development Lifecycle
+# Human-Directed, LLM-Navigated Software Development
 
 **Status:** Draft
-**Author:** Tyler Burleigh, James Wiesebron
+**Author:** James Wiesebron, Tyler Burleigh
 **Created:** December 2025
-**Purpose:** Strategic framework for evaluating and improving LLM-assisted development systems
+**Purpose:** A philosophy and framework for software development where humans drive strategy while LLMs handle structural rigor and implementation
 
 ---
 
 ## Executive Summary
 
-This document captures the strategic concerns and evaluation frameworks for building LLM-assisted software development systems. It provides guidance on:
+This document articulates a new paradigm for software development: **human-directed, LLM-navigated**. The core insight is that humans and LLMs have complementary cognitive strengths, and optimal software development emerges when each focuses on what they do best.
 
-- **Quality metrics** for measuring LLM-generated artifacts
-- **Evaluation methodologies** including LLM-as-Judge panels
-- **A/B testing infrastructure** for iterative improvement
-- **Success metrics** for stakeholder communication
-- **Organizational considerations** for security and model strategy
+**Humans excel at:**
+- Creative problem-solving and innovation
+- Strategic decision-making under uncertainty
+- Interpersonal collaboration and team dynamics
+- Intuitive judgment about what matters
+- Adapting to novel, ambiguous situations
 
-This is a companion document to implementation-focused ADRs (e.g., Codebase Analyzer Strategy, Interactive Planning Framework) and should evolve as we learn from production use.
+**LLMs excel at:**
+- Maintaining structural consistency across large codebases
+- Exhaustive enumeration of edge cases and considerations
+- Applying established patterns with unwavering precision
+- Processing and synthesizing large amounts of context
+- Tireless execution of well-defined implementation tasks
+
+**The goal:** Free human cognitive capacity for creativity, strategic thinking, and healthy collaboration by offloading structural rigor and implementation details to LLMs. This isn't about replacing humans—it's about *amplifying* what makes humans uniquely valuable.
 
 ---
 
 ## Table of Contents
 
-- [Quality Metrics Framework](#quality-metrics-framework)
-- [LLM-as-a-Judge Evaluation](#llm-as-a-judge-evaluation)
-- [Success Metrics](#success-metrics)
-- [A/B Testing Infrastructure](#ab-testing-infrastructure)
-- [Human Feedback Collection](#human-feedback-collection)
-- [Intermediate Artifact Caching](#intermediate-artifact-caching)
-- [Model and Provider Strategy](#model-and-provider-strategy)
-- [Security Considerations](#security-considerations)
-- [References](#references)
+- [The Core Philosophy](#the-core-philosophy)
+- [Division of Cognitive Labor](#division-of-cognitive-labor)
+- [The Workflow in Practice](#the-workflow-in-practice)
+- [Benefits for Humans](#benefits-for-humans)
+- [Benefits for Teams](#benefits-for-teams)
+- [Implementation Patterns](#implementation-patterns)
+- [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
+- [Success Criteria](#success-criteria)
+- [Related Documents](#related-documents)
 
 ---
 
-## Quality Metrics Framework
+## The Core Philosophy
 
-### The Challenge
+### Driving vs. Navigating
 
-How do we measure "quality" for LLM-generated outputs like documentation, code recommendations, or analysis reports? This is critical for:
+Consider the analogy of a road trip:
 
-1. **A/B testing** - Deciding which developments are worth keeping
-2. **Evidence-based decisions** - Demonstrating value of iterations
-3. **Continuous improvement** - Identifying areas for refinement
+| Role | Responsibility | Cognitive Load |
+|------|----------------|----------------|
+| **Driver (Human)** | Decides where to go, when to stop, what route to take | Creative, strategic, social |
+| **Navigator (LLM)** | Tracks current position, calculates optimal paths, monitors for hazards | Systematic, exhaustive, precise |
 
-### Quality Dimensions
+The driver makes the decisions that matter—the destination, the purpose of the journey, whether to take the scenic route. The navigator handles the cognitive burden of tracking every detail, ensuring nothing is missed, and providing accurate information for decision-making.
 
-| Dimension | Definition | Evaluation Criteria |
-|-----------|------------|---------------------|
-| **Accuracy** | Did the analysis correctly identify the issue? | No hallucinated issues; findings match actual code state |
-| **Comprehensiveness** | Did it miss anything critical? | Coverage of security, performance, maintainability concerns |
-| **Parsimony** | Did it avoid extraneous or unnecessary detail? | Concise recommendations; no redundant findings |
-| **Actionability** | Are recommendations specific enough to implement? | Clear steps; specific file/line references |
-| **Prioritization** | Are severity levels appropriate? | Critical items are truly critical; noise is filtered |
-| **Organization** | Is it properly organized and cross-referenced? | Logical structure; easy navigation; proper linking |
-| **Efficiency** | What resources were consumed? | Time, token consumption, cost |
+Neither role is subordinate to the other. Both are essential. But they require fundamentally different cognitive capabilities.
 
-### Measuring Impact on Agent Effectiveness
+### The Problem with Traditional Development
 
-To measure whether codebase documentation improves agent task completion:
-
-**Experimental Design:**
+Traditional software development places an enormous cognitive burden on humans:
 
 ```
-Task Suite: Collection of 20 realistic tasks requiring codebase understanding
-  - "Add rate limiting to the API"
-  - "Fix the authentication bypass in /admin"
-  - "Refactor duplicate code in utils/"
+┌────────────────────────────────────────────────────────────────┐
+│                    HUMAN COGNITIVE LOAD                         │
+│                                                                 │
+│  Strategic Thinking        │  Implementation Details            │
+│  ─────────────────         │  ──────────────────────            │
+│  • What should we build?   │  • Did I handle null?              │
+│  • Why does this matter?   │  • Is this pattern consistent?     │
+│  • How does this fit?      │  • Did I update all call sites?    │
+│                            │  • Are the tests comprehensive?    │
+│                            │  • Is the documentation current?   │
+│                            │  • Did I miss any edge cases?      │
+│                            │                                     │
+│        (~30%)              │          (~70%)                     │
+└────────────────────────────────────────────────────────────────┘
+```
 
-For each task:
-  - Branch A: Agent with Documentation Version A
-  - Branch B: Agent with Documentation Version B
+The majority of cognitive effort goes toward ensuring correctness, consistency, and completeness—tasks that require exhaustive attention to detail rather than creative insight.
 
-Measures:
-  - Time to completion (wall clock)
-  - Tokens consumed
-  - Solution quality (LLM judge panel)
-  - Test pass rate
-  - Human review verdict (approve/reject)
+### The Human-Directed, LLM-Navigated Model
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                    COGNITIVE LOAD REDISTRIBUTION                │
+│                                                                 │
+│     HUMAN (Driver)         │      LLM (Navigator)              │
+│     ──────────────         │      ─────────────────            │
+│  • What should we build?   │  • Enumerate all edge cases       │
+│  • Why does this matter?   │  • Ensure pattern consistency     │
+│  • How does this fit?      │  • Update all call sites          │
+│  • Is this the right       │  • Generate comprehensive tests   │
+│    approach?               │  • Keep documentation current     │
+│  • Should we proceed?      │  • Validate against standards     │
+│  • What trade-offs are     │  • Track dependencies and         │
+│    acceptable?             │    implications                   │
+│                            │                                    │
+│  Creative, Strategic       │  Systematic, Exhaustive            │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## LLM-as-a-Judge Evaluation
+## Division of Cognitive Labor
 
-For subjective quality dimensions (documentation quality, code recommendation quality), we employ an LLM judge panel approach based on [recent research](https://arxiv.org/abs/2411.15594) showing LLM judges can achieve 85% alignment with human judgment.
+### Human Responsibilities
 
-### Multi-Model Judge Panel
+| Domain | What Humans Do | Why Humans |
+|--------|----------------|------------|
+| **Vision** | Define what success looks like | Requires understanding of user needs, business context, organizational goals |
+| **Strategy** | Choose between competing approaches | Requires judgment under uncertainty, risk tolerance, stakeholder management |
+| **Review** | Approve or reject proposed changes | Requires accountability, institutional knowledge, taste |
+| **Collaboration** | Coordinate with other humans | Requires empathy, persuasion, relationship-building |
+| **Novelty** | Handle unprecedented situations | Requires creative problem-solving, analogical reasoning |
 
-To mitigate individual model bias, use a panel of 3 LLM judges with diverse perspectives:
+### LLM Responsibilities
+
+| Domain | What LLMs Do | Why LLMs |
+|--------|--------------|----------|
+| **Completeness** | Enumerate every consideration | Tireless attention, no cognitive fatigue |
+| **Consistency** | Apply patterns uniformly | Perfect recall of established patterns |
+| **Precision** | Get details exactly right | No typos, no oversights, no "I'll fix it later" |
+| **Documentation** | Keep everything current | No resistance to "boring" work |
+| **Validation** | Verify against standards | Instant access to reference materials |
+| **Implementation** | Execute well-defined tasks | Efficient translation of spec to code |
+
+### The Handoff Points
+
+```
+        Human                              LLM
+          │                                  │
+          │  "I want to add OAuth2 to       │
+          │   the API for third-party       │
+          │   integrations"                  │
+          │─────────────────────────────────▶│
+          │                                  │
+          │                                  │ • Research OAuth2 best practices
+          │                                  │ • Enumerate security considerations
+          │                                  │ • Identify affected components
+          │                                  │ • Draft implementation plan
+          │                                  │
+          │◀─────────────────────────────────│
+          │  "Here are 3 approaches with    │
+          │   trade-offs. Approach A is     │
+          │   simplest but limits future    │
+          │   flexibility..."               │
+          │                                  │
+          │  [Human reviews, asks           │
+          │   clarifying questions,         │
+          │   makes strategic decision]     │
+          │                                  │
+          │  "Let's go with Approach B,     │
+          │   but use PKCE instead of       │
+          │   client secrets"               │
+          │─────────────────────────────────▶│
+          │                                  │
+          │                                  │ • Implement Approach B with PKCE
+          │                                  │ • Write comprehensive tests
+          │                                  │ • Update documentation
+          │                                  │ • Ensure consistency with codebase
+          │                                  │
+          │◀─────────────────────────────────│
+          │  [PR ready for human review]    │
+          │                                  │
+          ▼                                  ▼
+```
+
+---
+
+## The Workflow in Practice
+
+### Phase 1: Human Initiates with Intent
+
+The human expresses what they want to accomplish, not necessarily how:
+
+```
+"I want to be able to revoke API access for users who leave the company"
+```
+
+This is *driving*: the human decides the destination based on business needs.
+
+### Phase 2: LLM Navigates the Solution Space
+
+The LLM exhaustively explores the solution space:
+
+- What existing patterns does the codebase use for access control?
+- What are the security implications of different revocation strategies?
+- Which components need to be modified?
+- What edge cases must be handled (partial revocation, active sessions, etc.)?
+- What do industry best practices recommend?
+
+This is *navigating*: systematic, thorough exploration of all paths.
+
+### Phase 3: Human Makes Strategic Decisions
+
+The LLM presents options with trade-offs. The human decides:
+
+- "Immediate revocation is more important than graceful session handling"
+- "We'll accept some increased complexity to support partial revocation"
+- "Let's prioritize security over backward compatibility"
+
+This is *driving*: the human makes the judgment calls.
+
+### Phase 4: LLM Executes with Precision
+
+Given the strategic decisions, the LLM implements with unwavering consistency:
+
+- Applies the chosen pattern across all relevant components
+- Generates tests covering the specified edge cases
+- Updates documentation to reflect the new behavior
+- Ensures the implementation matches the codebase's conventions
+
+This is *navigating*: precise execution of the charted course.
+
+### Phase 5: Human Reviews and Approves
+
+The human reviews the implementation with fresh eyes:
+
+- Does this match my intent?
+- Are there any concerns I didn't anticipate?
+- Is this something I'm comfortable deploying?
+
+This is *driving*: the human has final authority.
+
+---
+
+## Benefits for Humans
+
+### Cognitive Relief
+
+When LLMs handle the exhaustive details, humans experience:
+
+- **Reduced mental fatigue** - No more tracking every edge case
+- **Fewer context switches** - Stay in strategic thinking mode
+- **Less anxiety about oversights** - Trust that the navigator is watching
+- **More sustainable work patterns** - Creative energy isn't depleted by routine tasks
+
+### Focus on High-Value Work
+
+With cognitive load reduced, humans can focus on:
+
+- **Innovation** - Exploring new approaches and capabilities
+- **Mentorship** - Developing other team members
+- **Architecture** - Shaping the long-term direction
+- **Stakeholder relationships** - Understanding and serving user needs
+
+### Better Decision Quality
+
+When humans aren't mentally exhausted by implementation details:
+
+- **Clearer strategic thinking** - Full cognitive capacity for important decisions
+- **Better judgment** - Not rushing to "just get it done"
+- **More thoughtful review** - Actually reviewing, not rubber-stamping
+- **Healthier skepticism** - Questioning assumptions and approaches
+
+---
+
+## Benefits for Teams
+
+### Healthier Collaboration
+
+When humans aren't cognitively overloaded:
+
+- **More patience** - Bandwidth for thoughtful discussion
+- **Better communication** - Energy for explaining and listening
+- **Reduced conflict** - Less stress-driven friction
+- **Stronger relationships** - Time for the human side of teamwork
+
+### Knowledge Democratization
+
+When structural rigor is automated:
+
+- **Lower barrier to contribution** - Focus on ideas, not implementation details
+- **Faster onboarding** - New team members can contribute strategically sooner
+- **Reduced bus factor** - Knowledge is captured in systems, not just heads
+- **More inclusive participation** - Different cognitive styles can contribute
+
+### Sustainable Pace
+
+When the cognitive burden is shared with LLMs:
+
+- **Consistent velocity** - Not dependent on heroic effort
+- **Reduced burnout** - Sustainable work patterns
+- **Better work-life balance** - Mental energy left at end of day
+- **Long-term team health** - Sustainable for years, not just sprints
+
+---
+
+## Implementation Patterns
+
+### Pattern 1: Interactive Planning
+
+For complex changes, use structured dialogue:
+
+1. **Human states intent** - What outcome is desired?
+2. **LLM explores comprehensively** - What are all the considerations?
+3. **Human makes decisions** - Which path forward?
+4. **LLM implements precisely** - Execute the chosen path
+5. **Human reviews and approves** - Final authority
+
+See: [ADR: Interactive Planning Framework](../adr/in-progress/ADR-Codebase-Analyzer-Strategy.md)
+
+### Pattern 2: Structured Handoffs
+
+For routine changes, use well-defined interfaces:
 
 ```yaml
-# judge-panel-config.yaml
-judges:
-  - model: "claude-3-5-sonnet"
-    role: "technical_accuracy"
-    focus: "Correctness of findings, false positive detection"
-
-  - model: "gpt-4o"
-    role: "completeness_check"
-    focus: "Missed issues, coverage gaps"
-
-  - model: "claude-3-5-haiku"
-    role: "actionability"
-    focus: "Clarity and implementability of recommendations"
-
-consensus_threshold: 2  # 2 of 3 judges must agree
+# Task handoff from human to LLM
+intent: "Add rate limiting to the API"
+constraints:
+  - "Must not break existing clients"
+  - "Prefer Redis for distributed rate limiting"
+  - "Start with 100 requests/minute default"
+success_criteria:
+  - "Tests pass"
+  - "Documentation updated"
+  - "No performance regression"
 ```
 
-### Evaluation Output Format
+### Pattern 3: Review Checkpoints
 
-```json
-{
-  "evaluation_id": "eval-2025-12-01-001",
-  "analysis_run_id": "run-abc123",
-  "judge_results": [
-    {
-      "judge": "claude-3-5-sonnet",
-      "scores": {
-        "accuracy": 4.2,
-        "comprehensiveness": 3.8,
-        "parsimony": 4.5,
-        "actionability": 4.0,
-        "prioritization": 3.9
-      },
-      "consensus_findings": ["finding-001", "finding-003"],
-      "disputed_findings": ["finding-002"],
-      "reasoning": "Finding-002 flagged as medium but is low severity..."
-    }
-  ],
-  "consensus_score": 4.1,
-  "improvement_recommendations": [
-    "Reduce false positives in unused import detection",
-    "Improve specificity of refactoring suggestions"
-  ]
-}
-```
+For autonomous work, define where human judgment is required:
 
-### Validating LLM Judges Against Human Judgment
-
-If documentation is meant for human consumers, we need to validate that LLM judges faithfully represent human judgment:
-
-1. **Collect human evaluations** on a sample of outputs
-2. **Compare LLM judge scores** to human scores
-3. **Measure alignment** (target: 85%+ agreement)
-4. **Calibrate judges** based on disagreements
+| Checkpoint | Trigger | Human Decision |
+|------------|---------|----------------|
+| **Architecture** | New component needed | Approve design |
+| **Security** | Auth/authz changes | Verify approach |
+| **API** | Breaking changes | Approve migration |
+| **Scope** | Task growing | Continue or split |
 
 ---
 
-## Success Metrics
+## Anti-Patterns to Avoid
 
-### Top-Line Metrics (1-3 for Stakeholder Communication)
+### Anti-Pattern 1: Abdication
 
-These metrics should be:
-- Easy for stakeholders to interpret
-- Sensitive to improvements over time
-- Representative of actual success
+**Problem:** Human fully delegates without reviewing
 
-| Metric | Definition | Target | Measurement Method |
-|--------|------------|--------|-------------------|
-| **PR Acceptance Rate** | Percentage of generated PRs merged (with or without modifications) | ≥75% | Track merged/closed status |
-| **Time to Remediation** | Average time from issue detection to merged fix | <48h critical, <7d high | Timestamp analysis |
-| **False Positive Rate** | Percentage of findings marked as "not an issue" | <15% | Track rejection reasons |
+```
+Human: "Just fix whatever you think needs fixing"
+       [Never reviews the result]
+```
 
-### Why PR Acceptance Rate?
+**Why it fails:** LLMs can be confidently wrong. Human judgment is essential.
 
-If the "deliverable" is a PR, then PR acceptance rate is the ultimate metric:
-- Emphasizes quality over quantity
-- Provides a clear signal of value
-- Enables comparison over time
+**Solution:** Humans review all changes, even if briefly.
 
-For rejected PRs, require structured feedback to understand *why* and feed back into system improvement.
+### Anti-Pattern 2: Micromanagement
+
+**Problem:** Human dictates every implementation detail
+
+```
+Human: "Use a for loop, not map. Name the variable 'items', not 'data'.
+        Put the function on line 42..."
+```
+
+**Why it fails:** Wastes human cognitive capacity on low-value decisions.
+
+**Solution:** Specify intent and constraints; let LLM choose implementation details.
+
+### Anti-Pattern 3: Rubber Stamping
+
+**Problem:** Human approves without genuine review
+
+```
+Human: "LGTM" [after 30 seconds on a 500-line change]
+```
+
+**Why it fails:** Defeats the purpose of human oversight.
+
+**Solution:** Reviews should be substantive; if too rushed, the workflow needs adjustment.
+
+### Anti-Pattern 4: LLM as Oracle
+
+**Problem:** Treating LLM output as authoritative truth
+
+```
+Human: "The LLM said this is the best approach, so it must be"
+```
+
+**Why it fails:** LLMs can hallucinate, be outdated, or miss context.
+
+**Solution:** LLM provides options and information; human makes decisions.
 
 ---
 
-## A/B Testing Infrastructure
+## Success Criteria
 
-### Test Codebase Collection
+### For Individuals
 
-Maintain a collection of "toy" codebases as standardized test cases. This avoids:
-- Running against only `webapp` (large, homogeneous)
-- "Overfitting" to a particular codebase
+- Humans report feeling less cognitively fatigued
+- More time spent on creative and strategic work
+- Fewer mistakes due to oversight or rushing
+- Better work-life balance
 
-| Codebase | Purpose | Characteristics |
-|----------|---------|-----------------|
-| **toy-webapp-python** | Python web app patterns | Flask/FastAPI, ~5K LoC, known issues injected |
-| **toy-cli-python** | CLI tool patterns | Click/Typer, ~2K LoC, good coverage |
-| **toy-legacy-python** | Legacy code patterns | Mixed styles, low coverage, tech debt |
-| **toy-microservices** | Multi-service patterns | Docker, 3 services, integration complexity |
+### For Teams
 
-Test codebases include:
-- **Known issues** (injected bugs, security vulnerabilities, coverage gaps)
-- **Ground truth labels** (what the analyzer should find)
-- **Diverse patterns** (to prevent overfitting)
+- Sustainable velocity without heroic effort
+- Improved collaboration and communication
+- Faster onboarding for new team members
+- Reduced knowledge silos
 
-### A/B Comparison Protocol
+### For Codebases
 
-```
-For each test codebase:
-1. Run Version A → Collect findings A
-2. Run Version B → Collect findings B
-3. LLM Judge Panel evaluates both against ground truth
-4. Calculate:
-   - Precision: % of findings that are correct
-   - Recall: % of known issues detected
-   - F1 score: Harmonic mean of precision/recall
-   - Time: Analysis duration
-   - Cost: Token consumption
-5. Human tiebreaker for disputed cases
-```
+- Higher consistency across components
+- More comprehensive test coverage
+- Current documentation
+- Fewer regressions from incomplete changes
+
+### For Organizations
+
+- Faster delivery of business value
+- Reduced burnout and turnover
+- More innovation and experimentation
+- Better developer experience
 
 ---
 
-## Human Feedback Collection
+## Related Documents
 
-### PR Review Feedback Template
+### Implementation ADRs
 
-For every rejected or heavily-modified generated PR:
+- [ADR: Interactive Planning Framework](../adr/in-progress/ADR-Codebase-Analyzer-Strategy.md) - Structured human-LLM planning workflow
+- [ADR: Multi-Agent Pipeline Architecture](../adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) - Agent orchestration patterns
+- [ADR: Continuous System Reinforcement](../adr/not-implemented/ADR-Continuous-System-Reinforcement.md) - Feedback and improvement loops
 
-```markdown
-## Rejection/Modification Feedback
+### Supporting Documents
 
-**PR:** #XXX
-**Reason:** [ ] False positive [ ] Low priority [ ] Incorrect fix [ ] Style preference [ ] Other
-
-**Feedback Category:**
-- [ ] Analysis was wrong (false positive)
-- [ ] Analysis was right, but fix was wrong
-- [ ] Analysis was right, fix was right, but priority was wrong
-- [ ] Analysis was right, but not worth the churn
-
-**Detailed Feedback:**
-[Free-form explanation]
-
-**Would this feedback apply to similar findings?** [ ] Yes [ ] No
-```
-
-This feedback:
-- Serves analytic purposes
-- Enables A/B decision-making
-- Feeds into the system's ability to self-improve
-- Allows comparison across reviewers and over time
-
-### Continuous Improvement Loop
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              Continuous Improvement Loop                         │
-│                                                                  │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │   Analysis   │───▶│  PR Output   │───▶│ Human Review │      │
-│  │    Run       │    │              │    │  + Feedback  │      │
-│  └──────────────┘    └──────────────┘    └──────┬───────┘      │
-│                                                  │               │
-│                                                  ▼               │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │   Calibrate  │◀───│  LLM Judge   │◀───│   Collect    │      │
-│  │   System     │    │  Evaluation  │    │  Feedback    │      │
-│  └──────────────┘    └──────────────┘    └──────────────┘      │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
+- [LLM-Assisted Code Review Guide](../guides/llm-assisted-code-review.md) - Human-LLM review patterns
+- [Coding Standards in the Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM.md) - Updated standards for LLM collaboration
 
 ---
 
-## Intermediate Artifact Caching
+## A Note on Naming
 
-### The Problem
+This philosophy could be called several things:
 
-As codebases evolve, how do we efficiently update documentation without re-analyzing unchanged code? Intermediate artifacts can:
-- Speed up incremental updates
-- Support failure/retry/resume scenarios
-- Reduce costs
+- **Human-Directed, LLM-Navigated Development** - Emphasizes the driver/navigator metaphor
+- **Cognitive Partnership Development** - Emphasizes the complementary strengths
+- **Amplified Development** - Emphasizes human capabilities being enhanced
+- **Sustainable AI-Augmented Development** - Emphasizes the long-term human benefits
 
-### Cache Architecture
-
-```
-cache/
-├── structural/
-│   ├── {file_hash}.ast.json     # AST for unchanged files
-│   └── dependency_graph.json    # Updated incrementally
-├── semantic/
-│   └── {file_hash}.analysis.json # LLM analysis cache
-├── coverage/
-│   └── {test_hash}.coverage.json # Coverage for test runs
-└── manifest.json                 # Cache validity tracking
-
-Invalidation: File hash change → Invalidate file + dependents
-Retention: 7 days for semantic, 30 days for structural
-```
-
-### Expected Benefits
-
-| Scenario | Without Cache | With Cache | Improvement |
-|----------|---------------|------------|-------------|
-| Full repo analysis (no changes) | ~30 min | ~2 min | 15x faster |
-| Single file change | ~30 min | ~5 min | 6x faster |
-| Failure at Phase 4 | Restart from Phase 1 | Resume from Phase 4 | Significant savings |
-
-### Update Strategy Options
-
-1. **Weekly full analysis** - Check diff for last week, update docs based on changes
-2. **Pre/post-merge hooks** - Run same analysis on smaller diff as part of CI
-3. **Hybrid** - Full analysis weekly, incremental on each merge
-
----
-
-## Model and Provider Strategy
-
-### MVP Approach (v0)
-
-- Target Claude (Sonnet) as primary model since it's currently SOTA for code understanding
-- Single-provider implementation to minimize complexity
-
-### Future Evolution
-
-- Design abstractions that allow model swapping without architectural changes
-- Consider multi-model pipelines (cheaper models for structural analysis, frontier for semantic)
-- Enable provider redundancy for reliability
-
-**Decision:** Build v0 on Claude, but structure code with provider abstraction layer for future flexibility. Model/provider agnosticism is a Phase 6+ concern, not a v0 requirement.
-
----
-
-## Security Considerations
-
-### Dependencies and Blockers
-
-This work depends on the security team's ongoing review of model sandboxing and autonomous edit modes. Specifically:
-
-- **Model autonomy requirements:** Running code analysis tools may trigger security concerns
-- **Sandboxing assurances:** Clarity on what isolation guarantees are required
-- **Container isolation:** Current Docker containers may or may not meet requirements
-
-**Recommendation:** Before implementing semantic analysis with LLM, confirm security team approval. Consider:
-- WebAssembly sandboxing ([NVIDIA's approach](https://developer.nvidia.com/blog/sandboxing-agentic-ai-workflows-with-webassembly/))
-- gVisor for stronger container isolation
-- Restricted tool access patterns
-
-### Sidecar Architecture for Secret Isolation
-
-Consider an architecture that entirely isolates the LLM agent from secrets using a "sidecar" that also filters network traffic to avoid data exfiltration. The filtering will be challenging but valuable.
-
----
-
-## References
-
-### LLM-as-a-Judge Evaluation
-- [A Survey on LLM-as-a-Judge](https://arxiv.org/abs/2411.15594) - arXiv comprehensive survey
-- [LLM-as-a-judge: A Complete Guide](https://www.evidentlyai.com/llm-guide/llm-as-a-judge) - Evidently AI
-- [LLMs-as-Judges: Comprehensive Survey on LLM-based Evaluation](https://arxiv.org/html/2412.05579v2) - arXiv
-
-### Security and Sandboxing
-- [Sandboxing Agentic AI Workflows with WebAssembly](https://developer.nvidia.com/blog/sandboxing-agentic-ai-workflows-with-webassembly/) - NVIDIA
-- [Agentic AI and Security](https://martinfowler.com/articles/agentic-ai-security.html) - Martin Fowler
-- [LLM Security in 2025: Risks and Best Practices](https://www.oligo.security/academy/llm-security-in-2025-risks-examples-and-best-practices) - Oligo Security
-
-### Related Documents
-- [ADR: Codebase Analyzer Strategy](../adr/not-implemented/ADR-Codebase-Analyzer-Strategy.md) - POC implementation
-- [ADR: Interactive Planning Framework](../adr/not-implemented/ADR-Interactive-Planning-Framework.md) - Planning workflow
-- [ADR: Continuous System Reinforcement](../adr/not-implemented/ADR-Continuous-System-Reinforcement.md) - Feedback loops
+The name matters less than the principle: **humans focus on what humans do best; LLMs handle what LLMs do best; the result is greater than either alone.**
 
 ---
 
