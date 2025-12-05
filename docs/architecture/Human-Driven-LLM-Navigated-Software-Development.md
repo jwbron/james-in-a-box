@@ -28,7 +28,7 @@ This document articulates a new paradigm for software development: **human-drive
 - [The Workflow in Practice](#the-workflow-in-practice)
 - [Benefits for Humans](#benefits-for-humans)
 - [Benefits for Teams](#benefits-for-teams)
-- [Engineering Excellence Through Structured Feedback](#engineering-excellence-through-structured-feedback)
+- [Rigor Through Interactive Planning](#rigor-through-interactive-planning)
 - [Implementation Patterns](#implementation-patterns)
 - [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
 - [Success Criteria](#success-criteria)
@@ -282,42 +282,86 @@ When the cognitive burden is shared with LLMs:
 
 ---
 
-## Engineering Excellence Through Structured Feedback
+## Rigor Through Interactive Planning
 
-A notable benefit of LLM-navigated development is how the feedback process can help engineers learn established best practices. When configured with organizational standards, LLMs can provide consistent feedback that reinforces those patterns.
+The most significant benefit of LLM-navigated development isn't faster code—it's **enforced rigor** that would be impractical for humans alone. When LLMs drive the planning process through structured dialogue, they introduce consistency and thoroughness that transforms how software gets built.
 
-### Consistency in Feedback
+### The Interactive Planning Framework
 
-Human code review is valuable but varies based on reviewer availability and focus. LLM-assisted review can complement this by providing:
+For complex changes, an LLM-powered planning framework ensures nothing is missed:
 
-| Traditional Review | LLM-Assisted Review |
-|-------------------|---------------------|
-| Depends on reviewer availability | Available on demand |
-| Focus varies across reviews | Applies configured standards consistently |
-| Standards enforcement varies by reviewer | Same standards checked each time |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│            Interactive Planning Framework (IPF)                  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  PHASE 1: ELICITATION                                     │   │
+│  │  Transform vague intent → validated requirements          │   │
+│  │  • LLM asks clarifying questions                          │   │
+│  │  • Human articulates what they actually want              │   │
+│  │  • Ambiguities surfaced and resolved                      │   │
+│  │  → Human checkpoint: Approve requirements                 │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                            ↓                                     │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  PHASE 2: DESIGN                                          │   │
+│  │  Create comprehensive architecture before any code        │   │
+│  │  • LLM explores solution space exhaustively               │   │
+│  │  • Trade-offs enumerated with reasoning                   │   │
+│  │  • Edge cases identified proactively                      │   │
+│  │  → Human checkpoint: Choose approach                      │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                            ↓                                     │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  PHASE 3: PLANNING                                        │   │
+│  │  Break down into implementable tasks                      │   │
+│  │  • Phased implementation plan                             │   │
+│  │  • Detailed subtasks with dependencies                    │   │
+│  │  • Risk identification and mitigation                     │   │
+│  │  → Human checkpoint: Approve plan                         │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                            ↓                                     │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  PHASE 4: HANDOFF                                         │   │
+│  │  Package for autonomous execution                         │   │
+│  │  • Machine-readable task specifications                   │   │
+│  │  • Success criteria for each task                         │   │
+│  │  • Documentation thorough enough for implementation       │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-When engineers receive consistent feedback, they can internalize patterns more quickly.
+### Why This Rigor Matters
 
-### Learning Through Iteration
+**Without LLM-driven planning:** Requirements remain vague until implementation reveals gaps. Design decisions happen implicitly during coding. Edge cases discovered in production. Documentation lags behind reality.
 
-The feedback loop works like this: engineer writes code, LLM identifies gaps (error handling, test coverage, documentation), engineer sees what "complete" looks like, and applies learnings next time. This contextual feedback complements other learning approaches.
+**With LLM-driven planning:** Requirements interrogated before any code is written. Design decisions made explicitly with documented trade-offs. Edge cases enumerated systematically during design. Documentation created as a byproduct of the planning process.
 
-### Making Standards Explicit
+### Human-in-the-Loop Checkpoints
 
-Using LLMs effectively requires articulating what "good" looks like: production-readiness criteria, preferred patterns, security requirements, documentation expectations. This documentation benefits the organization beyond LLM usage—new engineers can reference it directly, and disagreements become discussions about documented standards rather than preferences.
+The framework introduces structured moments where human judgment is required:
 
-### Surfacing Implicit Knowledge
+| Phase | What LLM Presents | What Human Decides |
+|-------|-------------------|-------------------|
+| **Elicitation** | Clarified requirements with assumptions stated | "Yes, that's what I want" or corrections |
+| **Design** | 2-3 approaches with trade-offs | Which approach fits the situation |
+| **Planning** | Phased implementation with dependencies | Scope, priority, timing |
 
-Engineering organizations often rely on implicit knowledge—"everyone knows we don't do it that way." LLM-navigated development can help surface these assumptions by requiring explicit specification, which then becomes available to all team members.
+These checkpoints prevent the LLM from going too far down the wrong path while keeping humans focused on strategic decisions rather than implementation details.
 
-### Potential for More Consistent Quality
+### The Rigor Compounds
 
-With consistent feedback available, teams may see:
-- Junior engineers getting helpful guidance on every change
-- Engineers in unfamiliar areas receiving domain-specific pointers
-- More even code quality across the codebase
+Each project that goes through this framework:
+- **Codifies organizational knowledge** - Decisions and rationale are captured
+- **Raises the quality floor** - Even routine work gets systematic treatment
+- **Builds institutional memory** - Past decisions inform future ones
+- **Trains the team** - Engineers internalize thorough planning habits
 
-This doesn't replace human mentorship but can supplement it, particularly for async and remote teams.
+### Making Implicit Knowledge Explicit
+
+Engineering organizations often rely on implicit knowledge—"everyone knows we don't do it that way." The Interactive Planning Framework surfaces these assumptions by requiring explicit specification during the Elicitation phase, which then becomes available to all team members and future LLM interactions.
+
+See: [ADR: Interactive Planning Framework](../adr/in-progress/ADR-Interactive-Planning-Framework.md) for the complete technical specification.
 
 ---
 
