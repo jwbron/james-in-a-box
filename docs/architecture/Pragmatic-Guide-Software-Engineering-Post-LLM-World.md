@@ -181,6 +181,8 @@ The three pillars are not independent options or sequential phases—they are mu
 
 **How they reinforce each other:**
 
+- **Rigor + Improvement → Quality → Feasible Reviews:** This is the foundational causal chain. When humans provide clear direction (Pillar 2) and systems continuously improve (Pillar 3), the resulting code is higher quality from the start. Higher quality code means fewer issues to catch in review, making LLM-first review (Pillar 1) not just possible but practical. Without this upstream quality, review becomes a bottleneck no matter how good the review process.
+
 - **Reviews inform Self-Improvement:** Recurring review feedback becomes automated checks. Meta-review analyzes patterns across PRs.
 
 - **Self-Improvement enhances Reviews:** Better prompts, smarter checks, fewer false positives—all from learning what works.
