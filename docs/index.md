@@ -25,6 +25,9 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | Document | Description |
 |----------|-------------|
 | [Architecture Overview](architecture/README.md) | High-level system design, components, data flows |
+| [**Pragmatic Guide for Software Engineering in a Post-LLM World**](architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella document connecting the three pillars of LLM-augmented software engineering |
+| [Human-Directed, LLM-Navigated Development](architecture/LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration in software development |
+| [Radical Self-Improvement for LLMs](architecture/Radical-Self-Improvement-for-LLMs.md) | Strategic framework for autonomous LLM self-improvement |
 | [Slack Integration](architecture/slack-integration.md) | Bidirectional Slack messaging design |
 | [Host Slack Notifier](architecture/host-slack-notifier.md) | Notification system implementation details |
 
@@ -44,6 +47,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Reference Overview](reference/README.md) | Quick reference guides and troubleshooting |
 | [Beads Task Tracking](reference/beads.md) | Persistent task memory system - commands, workflows, best practices |
+| [LLM-First Code Reviews](reference/llm-assisted-code-review.md) | Practical guide to LLM-assisted code review |
 | [Features - Source Mapping](FEATURES.md) | Map of all features to their implementation locations |
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Khan Academy Culture](reference/khan-academy-culture.md) | L3-L4 engineering behavioral standards |
@@ -146,4 +150,4 @@ See [Generated Indexes README](generated/README.md) for details on structure and
 ---
 
 *This index follows the [llms.txt](https://llmstxt.org/) convention for LLM-friendly documentation.*
-*Last updated: 2025-12-02*
+*Last updated: 2025-12-05*
