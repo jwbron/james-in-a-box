@@ -30,7 +30,6 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Radical Self-Improvement for LLMs](architecture/Radical-Self-Improvement-for-LLMs.md) | Strategic framework for autonomous LLM self-improvement |
 | [Slack Integration](architecture/slack-integration.md) | Bidirectional Slack messaging design |
 | [Host Slack Notifier](architecture/host-slack-notifier.md) | Notification system implementation details |
-| [Radical Self-Improvement for LLMs](architecture/Radical-Self-Improvement-for-LLMs.md) | Strategic framework for autonomous LLM self-improvement |
 
 ### Setup Guides
 
