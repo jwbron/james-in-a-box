@@ -17,7 +17,7 @@ This document articulates a fundamental shift in how we think about code review:
 
 **The solution:** Invert the review model. Let LLMs handle mechanical validation while humans focus on strategic judgment. The result is faster feedback, higher consistency, and human attention directed where it matters most.
 
-**The goal:** Free human reviewers from repetitive, automatable feedback so they can focus on what only humans can evaluate—business context, architectural direction, and strategic alignment.
+**The goal:** Free human reviewers from repetitive feedback so they can focus on critical paths—the high-stakes decisions where human judgment, organizational context, and accountability matter most.
 
 ---
 
@@ -72,27 +72,32 @@ The majority of reviewer attention goes toward mechanical concerns—tasks that 
 
 ### The LLM-First Model
 
+Modern LLMs can assess far more than mechanical concerns. They can evaluate architecture decisions, identify security vulnerabilities, analyze business logic coherence, and suggest improvements across nearly every dimension of code quality. The question isn't "what can LLMs review?" but "where should humans focus?"
+
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │              LLM-FIRST REVIEW RESPONSIBILITY                   │
 │                                                                │
-│     HUMAN REVIEWER         │      LLM REVIEWER                 │
-│     ──────────────         │      ────────────                 │
-│  • Does this solve the     │  • Format and style validation    │
-│    right problem?          │  • Type safety verification       │
-│  • Is the architecture     │  • Pattern consistency checks     │
-│    sound?                  │  • Common anti-pattern detection  │
-│  • Are there security      │  • Documentation completeness     │
-│    implications?           │  • Test coverage analysis         │
-│  • Is this the right       │  • Naming convention enforcement  │
-│    direction?              │  • Automatic fix application      │
-│  • Should we proceed?      │                                   │
+│     HUMAN FOCUS            │      LLM REVIEWER                 │
+│     (Critical Paths)       │      (Comprehensive Analysis)     │
+│     ───────────────        │      ─────────────────────────    │
+│  • Final go/no-go on       │  • Format and style validation    │
+│    high-risk changes       │  • Type safety verification       │
+│  • Organizational context  │  • Pattern consistency checks     │
+│    LLMs can't access       │  • Anti-pattern detection         │
+│  • Accountability for      │  • Architecture assessment        │
+│    critical decisions      │  • Security vulnerability scan    │
+│  • Novel strategic         │  • Business logic coherence       │
+│    trade-offs              │  • Documentation completeness     │
+│  • Relationship & trust    │  • Test coverage analysis         │
+│    building with team      │  • Performance implications       │
+│                            │  • Suggested improvements         │
 │                            │                                   │
-│  Strategic, Judgment-based │  Mechanical, Rule-based           │
+│  High-stakes, Accountable  │  Comprehensive, Tireless          │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-Human attention is now concentrated entirely on what requires human judgment.
+Human attention is concentrated on critical paths—not because LLMs can't assess other areas, but because these paths require accountability, organizational context, and the kind of judgment that carries weight with stakeholders.
 
 ---
 
@@ -161,26 +166,59 @@ Traditional review accumulated problems that LLMs can solve:
 
 ## Division of Review Responsibilities
 
-### What Humans Review
+### What LLMs Can Review (Nearly Everything)
 
-| Domain | Focus | Why Human |
-|--------|-------|-----------|
-| **Business Requirements** | Does this solve the actual problem? | Requires understanding user needs, business context |
-| **Architecture** | Is this the right structural approach? | Requires system-wide judgment, trade-off analysis |
-| **Security** | Are there implications to flag? | Requires threat modeling, risk assessment |
-| **Strategy** | Is this the right direction? | Requires organizational knowledge, roadmap awareness |
-| **Novel Situations** | How do we handle this unprecedented case? | Requires creative problem-solving |
+Modern LLMs are capable reviewers across almost all dimensions of code quality:
 
-### What LLMs Review
+| Domain | LLM Capability | Effectiveness |
+|--------|----------------|---------------|
+| **Formatting & Style** | Perfect pattern matching | Excellent |
+| **Type Safety** | Exhaustive verification | Excellent |
+| **Patterns & Conventions** | Tireless consistency | Excellent |
+| **Common Bugs** | Known anti-pattern detection | Excellent |
+| **Documentation** | Completeness checking | Excellent |
+| **Test Coverage** | Systematic enumeration | Excellent |
+| **Architecture** | Structural analysis, coupling detection | Strong |
+| **Security** | Vulnerability patterns, input validation | Strong |
+| **Performance** | Algorithmic complexity, resource usage | Strong |
+| **Business Logic** | Coherence, edge cases, spec alignment | Moderate-Strong |
+| **Design Trade-offs** | Pattern selection, scalability concerns | Moderate |
 
-| Domain | Focus | Why LLM |
-|--------|-------|---------|
-| **Formatting** | Style consistency | Perfect pattern matching |
-| **Types** | Type safety | Exhaustive verification |
-| **Patterns** | Convention adherence | Tireless consistency |
-| **Common Bugs** | Obvious errors | Known anti-pattern detection |
-| **Documentation** | Completeness | No resistance to "boring" checks |
-| **Tests** | Coverage gaps | Systematic enumeration |
+### Where Humans Should Focus (Critical Paths)
+
+The question isn't whether LLMs *can* assess these areas—they can. The question is where human attention provides irreplaceable value:
+
+| Critical Path | Focus | Why Human |
+|---------------|-------|-----------|
+| **Go/No-Go Decisions** | Should we proceed with this change? | Accountability—someone must own the decision |
+| **Organizational Context** | How does this fit our roadmap, politics, constraints? | LLMs lack access to internal dynamics |
+| **Novel Strategic Trade-offs** | Unprecedented situations requiring judgment | Creative problem-solving in new territory |
+| **Stakeholder Trust** | Demonstrating human oversight to partners, regulators | Some contexts require human accountability |
+| **Team Dynamics** | Mentorship, relationship building, morale | Human-to-human interaction matters |
+
+### The Overlap Zone
+
+Many review concerns fall into an overlap zone where both LLMs and humans can contribute:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    THE OVERLAP ZONE                             │
+│                                                                 │
+│  LLM Primary          │  Shared              │  Human Primary   │
+│  ────────────         │  ──────              │  ─────────────   │
+│  • Formatting         │  • Architecture      │  • Go/no-go      │
+│  • Types              │  • Security          │  • Org context   │
+│  • Patterns           │  • Business logic    │  • Novel strategy│
+│  • Documentation      │  • Design trade-offs │  • Accountability│
+│  • Common bugs        │  • Performance       │  • Team dynamics │
+│                       │                      │                  │
+│  LLM handles fully    │  LLM provides        │  Human provides  │
+│                       │  analysis; human     │  irreplaceable   │
+│                       │  decides priority    │  value           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+In the overlap zone, LLMs provide comprehensive analysis while humans decide what matters most for this specific change.
 
 ### The Handoff Principle
 
@@ -205,26 +243,31 @@ have this issue
 
 ## The Review Stack
 
-Different tools handle different concerns. By the time a human sees the PR, mechanical issues should already be resolved.
+Different tools handle different concerns, but the stack is more nuanced than a simple hierarchy. LLM reviewers provide comprehensive analysis across nearly all domains, while humans focus on critical paths.
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │                     THE REVIEW STACK                           │
 │                                                                │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │  HUMAN REVIEWER (Top of Stack)                           │  │
-│  │  • Business logic, architecture, strategy                │  │
-│  │  • Judgment calls requiring context                      │  │
+│  │  HUMAN REVIEWER (Critical Paths)                         │  │
+│  │  • Go/no-go decisions with accountability                │  │
+│  │  • Organizational context & strategic fit                │  │
+│  │  • Team dynamics, mentorship, trust                      │  │
+│  │  Reviews LLM analysis, decides what matters              │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                           ▲                                    │
-│                           │ Only strategic concerns reach here │
+│                           │ LLM analysis informs human focus   │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │  LLM REVIEWER                                            │  │
+│  │  LLM REVIEWER (Comprehensive Analysis)                   │  │
+│  │  • Architecture assessment, coupling analysis            │  │
+│  │  • Security vulnerability detection                      │  │
+│  │  • Business logic coherence, edge cases                  │  │
+│  │  • Design trade-offs, performance implications           │  │
 │  │  • Code patterns, naming, duplication                    │  │
-│  │  • Semantic issues, over-engineering                     │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                           ▲                                    │
-│                           │ Semantic issues filtered          │
+│                           │ Semantic issues pre-analyzed       │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │  STATIC ANALYSIS (SAST)                                  │  │
 │  │  • Security basics (detect-secrets, semgrep)             │  │
@@ -240,13 +283,12 @@ Different tools handle different concerns. By the time a human sees the PR, mech
 │                           │ Type errors filtered              │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │  LINTERS & FORMATTERS (Base of Stack)                    │  │
-│  │  • Style, formatting, syntax (ruff, ESLint, prettier)    │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                                                                │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-Each layer filters out its category of issues. Human reviewers only see what requires human judgment.
+The LLM layer doesn't just filter—it provides comprehensive analysis that humans can use to prioritize their attention on what matters most for this specific change.
 
 ---
 
@@ -261,14 +303,15 @@ When LLMs handle mechanical validation:
 - **Less repetition** — Never give the same feedback twice
 - **More sustainable pace** — Review energy isn't depleted by tedious checks
 
-### Focus on High-Value Work
+### Focus on Critical Paths
 
-With mechanical concerns automated, reviewers can concentrate on:
+With LLMs providing comprehensive analysis, human reviewers can concentrate on:
 
-- **Mentorship** — Teaching architectural thinking, not style rules
-- **Design discussions** — Debating approaches, not formatting
-- **Security review** — Actual threat modeling, not "add input validation"
-- **Strategic alignment** — Ensuring code moves the product forward
+- **Accountability** — Owning the go/no-go decision for high-stakes changes
+- **Organizational context** — Applying knowledge LLMs don't have access to
+- **Mentorship** — Building relationships and teaching judgment, not rules
+- **Strategic prioritization** — Using LLM analysis to decide what matters most
+- **Trust building** — Demonstrating human oversight when stakeholders require it
 
 ### Better Decision Quality
 
@@ -462,18 +505,18 @@ Human: "LGTM" (after 30 seconds on 500-line change)
 
 **Solution:** If automated tools pass and you have no strategic concerns, explicitly note what you checked.
 
-### Anti-Pattern 4: Reviewing What's Already Validated
+### Anti-Pattern 4: Ignoring LLM Analysis
 
-**Problem:** Human re-checks things that passed automated validation
+**Problem:** Human reviewer doesn't read or use the LLM's comprehensive analysis
 
 ```
-Human: "Are you sure the types are correct?"
-(Types already validated by mypy)
+Human: "I'm worried about the architecture here."
+(LLM already flagged coupling issues and suggested refactoring)
 ```
 
-**Why it fails:** Duplicates work that's already done better by machines.
+**Why it fails:** Duplicates work and misses the opportunity to build on LLM insights.
 
-**Solution:** Trust the automation. Focus on what it can't check.
+**Solution:** Review the LLM review first. Use it to prioritize your attention on what matters most.
 
 ---
 
@@ -481,23 +524,25 @@ Human: "Are you sure the types are correct?"
 
 ### For Reviewers
 
-1. **Trust the automation** — If pre-commit passed, don't comment on formatting
-2. **Focus on strategy** — Architecture, business logic, security, direction
-3. **Think "automate or accept"** — Every manual comment should either become a rule or be acknowledged as human-only
-4. **When in doubt, approve** — If automated tools passed and you have no strategic concerns, approve
+1. **Trust the LLM analysis** — LLMs can assess architecture, security, and business logic; use their analysis as input
+2. **Focus on critical paths** — Go/no-go decisions, organizational context, accountability, team dynamics
+3. **Review the LLM review** — Scan what the LLM flagged; decide what's worth human attention
+4. **Think "automate or accept"** — Every manual comment should either become a rule or be acknowledged as uniquely human
+5. **Own your decisions** — When you approve, you're providing human accountability for the change
 
 ### For Teams
 
-1. **Audit your feedback** — What comments are given repeatedly? Automate them.
-2. **Configure the stack** — Linters → Type checkers → SAST → LLM reviewers → Human reviewers
-3. **Define human focus areas** — Explicitly list what humans should review
-4. **Track the loop** — Monitor feedback patterns; propose new automation
+1. **Configure LLMs for comprehensive review** — Architecture, security, business logic—not just formatting
+2. **Define critical paths** — Explicitly list where human attention is irreplaceable
+3. **Audit your feedback** — What comments are given repeatedly? Automate them via LLM prompts.
+4. **Build the stack** — Linters → Type checkers → SAST → LLM reviewers → Human critical path review
+5. **Track the loop** — Monitor what LLMs miss; refine their prompts
 
 ### The Goal
 
-The goal is not to eliminate human judgment—it's to focus human judgment where it matters most.
+The goal is not to limit LLM review to mechanical concerns—LLMs can assess nearly everything. The goal is to concentrate human attention on critical paths where accountability, organizational context, and human judgment are irreplaceable.
 
-When humans review architecture and strategy while machines handle mechanics, everyone wins: reviewers are more engaged, developers get faster feedback, and code quality improves.
+When LLMs provide comprehensive analysis and humans focus on high-stakes decisions, everyone wins: reviewers are more engaged, developers get faster feedback, and critical paths get the human attention they deserve.
 
 ---
 
