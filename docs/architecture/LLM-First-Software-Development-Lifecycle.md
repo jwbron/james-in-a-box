@@ -7,6 +7,10 @@
 
 ---
 
+> **Part of:** [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md)
+
+---
+
 ## Executive Summary
 
 This document articulates a new paradigm for software development: **human-directed, LLM-navigated**. The core insight is that humans and LLMs have complementary cognitive strengths, and optimal software development emerges when each focuses on what they do best.
@@ -301,7 +305,7 @@ For complex changes, use structured dialogue:
 4. **LLM implements precisely** - Execute the chosen path
 5. **Human reviews and approves** - Final authority
 
-See: [ADR: Interactive Planning Framework](../adr/in-progress/ADR-Codebase-Analyzer-Strategy.md)
+See: [ADR: Interactive Planning Framework](../adr/in-progress/ADR-Interactive-Planning-Framework.md)
 
 ### Pattern 2: Structured Handoffs
 
@@ -421,16 +425,12 @@ Human: "The LLM said this is the best approach, so it must be"
 
 ## Related Documents
 
-### Implementation ADRs
-
-- [ADR: Interactive Planning Framework](../adr/in-progress/ADR-Codebase-Analyzer-Strategy.md) - Structured human-LLM planning workflow
-- [ADR: Multi-Agent Pipeline Architecture](../adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) - Agent orchestration patterns
-- [ADR: Continuous System Reinforcement](../adr/not-implemented/ADR-Continuous-System-Reinforcement.md) - Feedback and improvement loops
-
-### Supporting Documents
-
-- [LLM-Assisted Code Review Guide](../guides/llm-assisted-code-review.md) - Human-LLM review patterns
-- [Coding Standards in the Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM.md) - Updated standards for LLM collaboration
+| Document | Description |
+|----------|-------------|
+| [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
+| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-first review practices |
+| [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Framework for autonomous LLM self-improvement |
+| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Complete architectural decision record with implementation phases and technical specifications |
 
 ---
 
