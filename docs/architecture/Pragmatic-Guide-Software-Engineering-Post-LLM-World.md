@@ -162,15 +162,15 @@ The three pillars are not independent—they form a reinforcing system:
          ┌─────────────────────────┼─────────────────────────┐
          │                         │                         │
          ▼                         ▼                         ▼
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   PILLAR 1      │     │   PILLAR 2      │     │   PILLAR 3      │
-│   LLM-First     │     │   Human-Driven  │     │   Radical       │
-│   Code Reviews  │     │   LLM-Navigated │     │   Self-Improve  │
-│                 │     │                 │     │                 │
-│  Entry point,   │     │  Philosophy,    │     │  Continuous     │
-│  immediate ROI  │────▶│  collaboration  │────▶│  evolution      │
-│                 │     │  model          │     │                 │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌────────────────────┐
+│   PILLAR 1      │     │   PILLAR 2      │     │   PILLAR 3         │
+│   LLM-First     │     │   Human-Driven  │     │   Radical          │
+│   Code Reviews  │     │   LLM-Navigated │     │   Self-Improvement │
+│                 │     │                 │     │                    │
+│  Entry point,   │     │  Philosophy,    │     │  Continuous        │
+│  immediate ROI  │────▶│  collaboration  │────▶│  evolution         │
+│                 │     │  model          │     │                    │
+└─────────────────┘     └─────────────────┘     └────────────────────┘
          │                         │                         │
          │                         │                         │
          └─────────────────────────┴─────────────────────────┘
