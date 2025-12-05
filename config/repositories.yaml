@@ -68,4 +68,5 @@ readable_repos:
 repo_settings:
   jwbron/james-in-a-box:
     restrict_to_configured_users: true
+    disable_auto_fix: true
 
