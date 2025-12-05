@@ -442,7 +442,7 @@ This document is **Pillar 3** in the Post-LLM Software Engineering series.
 | Pillar | Document | Focus |
 |--------|----------|-------|
 | **1** | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical review workflow |
-| **2** | [Human-Directed, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy of human-LLM collaboration |
+| **2** | [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy of human-LLM collaboration |
 | **3** | **This document** | Autonomous self-improvement |
 
 ### Implementation Documents
@@ -460,7 +460,7 @@ Umbrella: A Pragmatic Guide for Software Engineering in a Post-LLM World
     ├── Pillar 1: LLM-First Code Reviews (practical workflow)
     │       └── ADR: Coding Standards Post-LLM (technical specs)
     │
-    ├── Pillar 2: Human-Directed, LLM-Navigated Development (philosophy)
+    ├── Pillar 2: Human-Driven, LLM-Navigated Development (philosophy)
     │       └── ADR: Interactive Planning Framework (technical specs)
     │
     └── Pillar 3: Radical Self-Improvement for LLMs (this document)
@@ -475,7 +475,7 @@ Umbrella: A Pragmatic Guide for Software Engineering in a Post-LLM World
 
 - [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) - PR Review Reviewer concept
 - [ADR: LLM Inefficiency Reporting](../adr/implemented/ADR-LLM-Inefficiency-Reporting.md) - Self-reflection implementation
-- [Human-Directed, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) - Philosophy of collaboration
+- [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) - Philosophy of collaboration
 
 ### Research
 
@@ -496,7 +496,7 @@ Umbrella: A Pragmatic Guide for Software Engineering in a Post-LLM World
 |----------|-------------|
 | [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
 | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-first review practices |
-| [Human-Directed, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration |
+| [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration |
 | [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical ADR with implementation phases and specifications |
 
 ---
