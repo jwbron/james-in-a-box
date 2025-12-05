@@ -1,7 +1,7 @@
 # A Pragmatic Guide for Software Engineering in a Post-LLM World
 
 **Status:** Draft
-**Author:** James Wiesebron, Tyler Burleigh
+**Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
 **Purpose:** Strategic umbrella document connecting the three pillars of LLM-augmented software engineering
 
