@@ -165,11 +165,24 @@ HOST_FUNCTIONS = {
         "triggers": ["enrich spec", "add doc links"],
         "parameters": {"spec_path": "Path to spec file"},
     },
-    # Help
+    # Help - NOTE: triggers should be explicit requests for help with the BOT
+    # itself, not requests that happen to contain the word "help"
     "show_help": {
-        "description": "Show available commands and functions",
-        "triggers": ["help", "what can you do", "commands", "available functions"],
+        "description": "Show available commands and functions for this Slack bot",
+        "triggers": [
+            "show help",
+            "what can you do",
+            "what commands",
+            "list commands",
+            "available commands",
+            "available functions",
+            "what functions",
+            "how do i use you",
+            "what are your commands",
+        ],
         "parameters": {},
+        # Special flag: require exact match or explicit intent
+        "require_explicit": True,
     },
 }
 
@@ -214,7 +227,7 @@ The following functions can be executed immediately on the host machine:
 
 3. **response**: The message is a reply in a thread, responding to a previous notification. These continue existing work.
 
-4. **command**: The message is an explicit slash command like /jib, /service, or help.
+4. **command**: The message is an explicit slash command like /jib or /service.
 
 ## Instructions
 
@@ -238,6 +251,23 @@ Analyze the following message and return a JSON response:
 4. When extracting parameters, use reasonable defaults from the function descriptions
 5. Be conservative - if unsure, prefer "container_task" as it's more flexible
 6. Service names should include the .service suffix (e.g., "slack-notifier.service")
+
+## CRITICAL: show_help Function Rules
+
+The show_help function should ONLY be used when the user is explicitly asking about what this Slack bot can do or what commands are available. Examples:
+- "what commands can you run?" -> show_help
+- "what can you do?" -> show_help
+- "list your available functions" -> show_help
+- "how do I use this bot?" -> show_help
+
+DO NOT use show_help for:
+- "I need help with X" (this is asking for assistance WITH something, route to container_task)
+- "Can you help me debug this?" (assistance request, route to container_task)
+- "Help me understand this code" (assistance request, route to container_task)
+- "What are your thoughts on X?" (opinion request, route to container_task)
+- Any request that contains "help" as part of asking for assistance with a task
+
+The key distinction: show_help is ONLY for meta-questions about the bot's capabilities, NOT for requests that happen to include the word "help".
 
 ## Message to Categorize
 
@@ -272,6 +302,42 @@ class MessageCategorizer:
                 logger.warning("jib not available - categorization will use heuristics only")
         return self._jib_available
 
+    def _trigger_matches(self, trigger: str, text_lower: str, require_explicit: bool) -> bool:
+        """Check if a trigger matches the text.
+
+        Args:
+            trigger: The trigger phrase to check for
+            text_lower: Lowercase message text
+            require_explicit: If True, require the trigger to be more explicitly present
+                            (not just a substring that could be incidental)
+
+        Returns:
+            True if the trigger matches appropriately
+        """
+        import re
+
+        trigger_lower = trigger.lower()
+
+        if require_explicit:
+            # For explicit triggers, require word boundaries or near-exact match
+            # This prevents "I need help debugging" from matching "help"
+            # Build a regex pattern that requires word boundaries
+            pattern = r"\b" + re.escape(trigger_lower) + r"\b"
+            if re.search(pattern, text_lower):
+                # Additional check: the message should be primarily about this request
+                # Not a longer message that happens to contain the phrase
+                # Allow if trigger is substantial part of message or message is short
+                trigger_word_count = len(trigger_lower.split())
+                text_word_count = len(text_lower.split())
+                # If trigger is more than 1/3 of the message, it's likely intentional
+                if trigger_word_count >= text_word_count / 3 or text_word_count <= 10:
+                    return True
+            return False
+        else:
+            # For regular triggers, simple substring match is fine
+            # These are operational commands that are unlikely to appear incidentally
+            return trigger_lower in text_lower
+
     def _categorize_with_heuristics(
         self, text: str, is_thread_reply: bool = False
     ) -> CategorizationResult:
@@ -283,12 +349,13 @@ class MessageCategorizer:
         """
         text_lower = text.lower().strip()
 
-        # Check for explicit commands
-        if text_lower.startswith("/") or text_lower in ["help", "commands"]:
+        # Check for explicit commands (slash commands only, not bare "help")
+        # Bare "help" should go through the trigger matching logic
+        if text_lower.startswith("/"):
             return CategorizationResult(
                 category=MessageCategory.COMMAND,
                 confidence=0.95,
-                reasoning="Message starts with / or is a help command",
+                reasoning="Message starts with /",
                 original_text=text,
             )
 
@@ -303,12 +370,13 @@ class MessageCategorizer:
 
         # Check for host function triggers
         for func_name, info in HOST_FUNCTIONS.items():
+            require_explicit = info.get("require_explicit", False)
             for trigger in info.get("triggers", []):
-                if trigger.lower() in text_lower:
+                if self._trigger_matches(trigger, text_lower, require_explicit):
                     return CategorizationResult(
                         category=MessageCategory.HOST_FUNCTION,
                         function_name=func_name,
-                        confidence=0.7,
+                        confidence=0.7 if not require_explicit else 0.8,
                         reasoning=f"Message matches trigger '{trigger}' for {func_name}",
                         original_text=text,
                     )
@@ -411,12 +479,14 @@ class MessageCategorizer:
         # Quick checks that don't need LLM
         text_stripped = text.strip()
 
-        # Explicit commands bypass categorization
-        if text_stripped.startswith("/") or text_stripped.lower() in ["help", "commands"]:
+        # Slash commands bypass categorization
+        # NOTE: We no longer treat bare "help" or "commands" as explicit commands
+        # because users often say "help me with X" which shouldn't trigger show_help
+        if text_stripped.startswith("/"):
             return CategorizationResult(
                 category=MessageCategory.COMMAND,
                 confidence=1.0,
-                reasoning="Explicit command detected",
+                reasoning="Slash command detected",
                 original_text=text,
             )
 
