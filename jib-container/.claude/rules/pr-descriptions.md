@@ -1,85 +1,20 @@
-# PR Description Guidelines
-
-Concise, informative PR summaries for reviewers.
-
-## Format (Khan Academy Standard)
+# PR Description Format
 
 ```
-<one-line summary - 50 chars max>
+<one-line summary - 50 chars max, imperative verb>
 
-<full summary - 2-3 paragraphs>
+<2-3 paragraphs: Context → Changes → Impact>
 
 Issue: <JIRA link or "none">
 
 Test plan:
-<how this was tested>
-```
+<specific steps for reviewers>
 
-## Guidelines
-
-### One-Line Summary
-- **50 characters or less**
-- Start with imperative verb (Add, Fix, Update, Refactor, Remove)
-- Be specific about what changed
-
-### Full Summary
-- **2-3 paragraphs maximum, focus on WHAT and WHY**
-- Structure: Context → Changes → Impact
-- Avoid implementation details (don't describe every function)
-- Link to ADRs, Slack threads, docs if relevant
-
-### Issue Link
-- JIRA ticket, GitHub issue, or Slack thread
-- Use "none" if no formal tracking
-
-### Test Plan
-- **Specific steps** reviewers can follow
-- Include commands to run
-- Mention what to look for
-- Call out edge cases tested
-
-## Special Considerations
-
-**Breaking Changes**: Bold warning at top with migration path
-```
-**⚠️ BREAKING CHANGE**: Removes deprecated `getUserData()`.
-Migrate to `getUser()` instead.
-```
-
-**Draft PRs**: State what's complete, what feedback you need, what blockers exist
-
-**Large PRs (>500 lines)**: Consider splitting or add "Reviewer Guide" section
-
-## Length Target
-
-- One-line: ~50 chars
-- Summary: 200-400 words
-- Test plan: 3-7 bullets
-- **Total: Under 500 words**
-
-## Attribution
-
-When you create PRs, add attribution at the bottom:
-
-```
 Authored-by: jib
 ```
 
-**NEVER include** any of the following in PR descriptions:
-- "Generated with Claude Code"
-- Links to claude.ai or Claude Code
-- "Co-Authored-By: Claude"
-- Any AI/Claude/Anthropic branding
+**Under 500 words total.** Focus on WHAT and WHY, not implementation details.
 
-## Anti-Patterns
+**NEVER include**: "Claude Code", claude.ai links, "Co-Authored-By: Claude"
 
-❌ Too much detail ("Changed line 42 to use forEach")
-❌ Vague ("Updates to user service")
-❌ No context (jumping to changes without why)
-❌ Missing test plan
-❌ Implementation dump (listing every file)
-❌ Novel-length (1000+ words)
-❌ "Generated with Claude Code" or similar AI branding
-
----
-*Focus on what reviewers need to evaluate the change.*
+**Breaking changes**: Bold warning at top with migration path.
