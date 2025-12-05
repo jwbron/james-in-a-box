@@ -1,4 +1,17 @@
-# LLM-Assisted Code Review: A New Approach
+# LLM-First Code Reviews
+
+**Status:** Draft
+**Author:** James Wiesebron
+**Created:** December 2025
+**Purpose:** Practical guide to code review in a world where LLMs generate code faster than humans can review it
+
+---
+
+> **Part of:** [A Pragmatic Guide for Software Engineering in a Post-LLM World](../architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md)
+
+---
+
+## Introduction
 
 This guide introduces our approach to code review in a world where LLMs generate code faster than humans can review it.
 
@@ -99,4 +112,16 @@ The goal is not to eliminate human judgment—it's to focus human judgment where
 
 ---
 
-**Want the full details?** See [ADR: Coding Standards in a Post-LLM World](../adr/in-progress/ADR-PR-Review-Efficiency.md) for the complete architectural decision record, including implementation phases, success metrics, and technical specifications.
+## Related Documents
+
+| Document | Description |
+|----------|-------------|
+| [A Pragmatic Guide for Software Engineering in a Post-LLM World](../architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
+| [Human-Directed, LLM-Navigated Development](../architecture/LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration |
+| [Radical Self-Improvement for LLMs](../architecture/Radical-Self-Improvement-for-LLMs.md) | Framework for autonomous LLM self-improvement |
+| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Complete architectural decision record with implementation phases, success metrics, and technical specifications |
+
+---
+
+**Last Updated:** 2025-12-05
+**Next Review:** 2026-01-05 (Monthly)
