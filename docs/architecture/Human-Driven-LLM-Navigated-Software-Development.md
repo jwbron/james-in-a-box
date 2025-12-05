@@ -11,23 +11,11 @@
 
 ---
 
-## Executive Summary
-
 This document articulates a new paradigm for software development: **human-driven, LLM-navigated**. The core insight is that humans and LLMs have complementary cognitive strengths, and optimal software development emerges when each focuses on what they do best.
 
-**Humans excel at:**
-- Creative problem-solving and innovation
-- Strategic decision-making under uncertainty
-- Interpersonal collaboration and team dynamics
-- Intuitive judgment about what matters
-- Adapting to novel, ambiguous situations
+**Humans excel at:** Creative problem-solving, strategic decision-making under uncertainty, interpersonal collaboration, intuitive judgment about what matters, and adapting to novel situations.
 
-**LLMs excel at:**
-- Maintaining structural consistency across large codebases
-- Exhaustive enumeration of edge cases and considerations
-- Applying established patterns with unwavering precision
-- Processing and synthesizing large amounts of context
-- Tireless execution of well-defined implementation tasks
+**LLMs excel at:** Maintaining structural consistency across large codebases, exhaustive enumeration of edge cases, applying established patterns with unwavering precision, synthesizing large amounts of context, and tireless execution of well-defined tasks.
 
 **The goal:** Free human cognitive capacity for creativity, strategic thinking, and healthy collaboration by offloading structural rigor and implementation details to LLMs. This isn't about replacing humans—it's about *amplifying* what makes humans uniquely valuable.
 
