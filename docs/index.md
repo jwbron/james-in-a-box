@@ -25,6 +25,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | Document | Description |
 |----------|-------------|
 | [Architecture Overview](architecture/README.md) | High-level system design, components, data flows |
+| [LLM-First Software Development Lifecycle](architecture/LLM-First-Software-Development-Lifecycle.md) | Strategic framework for evaluating LLM-assisted development systems |
 | [Slack Integration](architecture/slack-integration.md) | Bidirectional Slack messaging design |
 | [Host Slack Notifier](architecture/host-slack-notifier.md) | Notification system implementation details |
 
