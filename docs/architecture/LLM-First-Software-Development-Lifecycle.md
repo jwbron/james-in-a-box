@@ -181,7 +181,7 @@ The majority of cognitive effort goes toward ensuring correctness, consistency, 
 The human expresses what they want to accomplish, not necessarily how:
 
 ```
-"I want to be able to revoke API access for users who leave the company"
+"I want to add granular permission scopes to our API so partners can request only the access they need"
 ```
 
 This is *driving*: the human decides the destination based on business needs.
@@ -190,10 +190,10 @@ This is *driving*: the human decides the destination based on business needs.
 
 The LLM exhaustively explores the solution space:
 
-- What existing patterns does the codebase use for access control?
-- What are the security implications of different revocation strategies?
+- What existing patterns does the codebase use for authorization?
+- What are the security implications of different scope hierarchies?
 - Which components need to be modified?
-- What edge cases must be handled (partial revocation, active sessions, etc.)?
+- What edge cases must be handled (scope inheritance, partial access, etc.)?
 - What do industry best practices recommend?
 
 This is *navigating*: systematic, thorough exploration of all paths.
@@ -202,9 +202,9 @@ This is *navigating*: systematic, thorough exploration of all paths.
 
 The LLM presents options with trade-offs. The human decides:
 
-- "Immediate revocation is more important than graceful session handling"
-- "We'll accept some increased complexity to support partial revocation"
-- "Let's prioritize security over backward compatibility"
+- "Keep scope hierarchies flat to reduce complexity"
+- "We'll accept some increased verbosity to support fine-grained permissions"
+- "Let's prioritize clarity over backward compatibility"
 
 This is *driving*: the human makes the judgment calls.
 
