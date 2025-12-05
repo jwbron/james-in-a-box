@@ -951,13 +951,14 @@ Measuring the effectiveness of the codebase analyzer is critical for iterative i
 
 ### Top-Line Success Metrics
 
-The following 3 metrics serve as primary indicators of system success:
+The following 2 metrics serve as primary indicators of system success:
 
 | Metric | Definition | Target | Measurement Method |
 |--------|------------|--------|-------------------|
 | **PR Acceptance Rate** | Percentage of analyzer-generated PRs that are merged (with or without modifications) | ≥75% | Track merged/closed status of generated PRs |
-| **Time to Remediation** | Average time from issue detection to merged fix | <48h for critical, <7d for high | Timestamp analysis of PR lifecycle |
 | **False Positive Rate** | Percentage of findings marked as "not an issue" or closed without action | <15% | Track PR rejection reasons and feedback |
+
+*Note: "Time to Remediation" was considered but excluded due to too many confounding factors (human availability, priority shifts, etc.) that would make it noisy and hard to interpret.*
 
 ### LLM-as-a-Judge Evaluation Framework
 
@@ -965,35 +966,47 @@ For subjective quality dimensions (documentation quality, code recommendation qu
 
 #### Quality Dimensions for Evaluation
 
+We evaluate multiple deliverables: (1) codebase documentation quality, (2) code fix quality, and (3) PR documentation quality. Each is scored on the following dimensions:
+
 | Dimension | Definition | Evaluation Criteria |
 |-----------|------------|---------------------|
 | **Accuracy** | Did the analysis correctly identify the issue? | No hallucinated issues; findings match actual code state |
 | **Comprehensiveness** | Did it miss anything critical? | Coverage of security, performance, maintainability concerns |
+| **Clarity** | Is the output easy to understand? | Clear language; well-organized; no ambiguity |
 | **Parsimony** | Did it avoid extraneous or unnecessary detail? | Concise recommendations; no redundant findings |
 | **Actionability** | Are recommendations specific enough to implement? | Clear steps; specific file/line references |
 | **Prioritization** | Are severity levels appropriate? | Critical items are truly critical; noise is filtered |
 
+Each dimension uses a 1-5 integer scale with labeled anchors:
+- **1 - Poor**: Fails to meet basic expectations
+- **2 - Below Average**: Significant issues present
+- **3 - Acceptable**: Meets minimum requirements
+- **4 - Good**: Exceeds expectations in most areas
+- **5 - Excellent**: Exceptional quality, best-in-class
+
 #### Multi-Model Judge Panel
 
-To mitigate individual model bias, we use a panel of 3 LLM judges with diverse perspectives:
+To mitigate individual model bias, we use a panel of 3 LLM judges from **different model families**. Model ensembles work best when errors are uncorrelated, which is achieved by using models from different organizations. See [Replacing Judges with Juries](https://arxiv.org/abs/2404.18796) for research supporting this approach.
 
 ```yaml
 # judge-panel-config.yaml
 judges:
-  - model: "claude-3-5-sonnet"
+  - model: "claude-sonnet-4"  # Anthropic family
     role: "technical_accuracy"
     focus: "Correctness of findings, false positive detection"
 
-  - model: "gpt-4o"
+  - model: "gpt-4o"  # OpenAI family
     role: "completeness_check"
     focus: "Missed issues, coverage gaps"
 
-  - model: "claude-3-5-haiku"
+  - model: "gemini-2.0-flash"  # Google family
     role: "actionability"
     focus: "Clarity and implementability of recommendations"
 
 consensus_threshold: 2  # 2 of 3 judges must agree
 ```
+
+**Key design choice:** Each judge comes from a different model family (Anthropic, OpenAI, Google) to minimize correlated errors.
 
 #### Evaluation Output Format
 
@@ -1003,26 +1016,29 @@ consensus_threshold: 2  # 2 of 3 judges must agree
   "analysis_run_id": "run-abc123",
   "judge_results": [
     {
-      "judge": "claude-3-5-sonnet",
+      "judge": "claude-sonnet-4",
       "scores": {
-        "accuracy": 4.2,
-        "comprehensiveness": 3.8,
-        "parsimony": 4.5,
-        "actionability": 4.0,
-        "prioritization": 3.9
+        "accuracy": 4,
+        "comprehensiveness": 4,
+        "clarity": 5,
+        "parsimony": 4,
+        "actionability": 4,
+        "prioritization": 3
       },
       "consensus_findings": ["finding-001", "finding-003"],
       "disputed_findings": ["finding-002"],
       "reasoning": "Finding-002 flagged as medium but is low severity..."
     }
   ],
-  "consensus_score": 4.1,
+  "consensus_score": 4,
   "improvement_recommendations": [
     "Reduce false positives in unused import detection",
     "Improve specificity of refactoring suggestions"
   ]
 }
 ```
+
+*Note: All scores are integers 1-5 per dimension. Consensus score is the median across judges.*
 
 ### Human Feedback Collection
 
@@ -1036,18 +1052,16 @@ For every rejected or heavily-modified analyzer-generated PR:
 ## Rejection/Modification Feedback
 
 **PR:** #XXX
-**Reason:** [ ] False positive [ ] Low priority [ ] Incorrect fix [ ] Style preference [ ] Other
+**Reason:** [ ] Not an issue [ ] Low priority [ ] Incorrect fix [ ] Style preference [ ] Other
 
 **Feedback Category:**
-- [ ] Analysis was wrong (false positive)
+- [ ] Analysis was wrong (not an issue)
 - [ ] Analysis was right, but fix was wrong
 - [ ] Analysis was right, fix was right, but priority was wrong
 - [ ] Analysis was right, but not worth the churn
 
 **Detailed Feedback:**
 [Free-form explanation]
-
-**Would this feedback apply to similar findings?** [ ] Yes [ ] No
 ```
 
 This feedback feeds back into the analyzer's calibration and the LLM judge panel's evaluation criteria.
@@ -1062,31 +1076,35 @@ Maintain a collection of "toy" codebases that serve as standardized test cases:
 
 | Codebase | Purpose | Characteristics |
 |----------|---------|-----------------|
-| **toy-webapp-python** | Python web app patterns | Flask/FastAPI, ~5K LoC, known issues injected |
+| **toy-webapp-python** | Python web app patterns | Flask/FastAPI, ~5K LoC, real-world issues |
 | **toy-cli-python** | CLI tool patterns | Click/Typer, ~2K LoC, good coverage |
 | **toy-legacy-python** | Legacy code patterns | Mixed styles, low coverage, tech debt |
 | **toy-microservices** | Multi-service patterns | Docker, 3 services, integration complexity |
 
 These codebases include:
-- **Known issues** (injected bugs, security vulnerabilities, coverage gaps)
-- **Ground truth labels** (what the analyzer should find)
+- **Real issues** (actual bugs, security vulnerabilities, coverage gaps found organically)
 - **Diverse patterns** (to avoid overfitting to webapp or any single codebase)
 
-#### A/B Comparison Protocol
+*Note: We use real issues rather than injected bugs to ensure ecological validity. Ground truth labels are avoided because they introduce bias—instead we use comparative judgments.*
+
+#### A/B Comparison Protocol (Pairwise Preference)
 
 ```
 For each test codebase:
 1. Run Analysis Version A → Collect findings A
 2. Run Analysis Version B → Collect findings B
-3. LLM Judge Panel evaluates both against ground truth
+3. LLM Judge Panel performs pairwise comparison:
+   - "Which analysis identified more real issues?"
+   - "Which recommendations are more actionable?"
+   - "Which output has better clarity and organization?"
 4. Calculate:
-   - Precision: % of findings that are correct
-   - Recall: % of known issues detected
-   - F1 score: Harmonic mean of precision/recall
+   - Win rate: % of comparisons where Version X preferred
    - Time: Analysis duration
    - Cost: Token consumption
-5. Human tiebreaker for disputed cases
+5. Humans perform same pairwise judgments for calibration
 ```
+
+*Key insight: Comparative judgments ("A vs B") are more reliable than absolute ratings against ground truth. See [Replacing Judges with Juries](https://arxiv.org/abs/2404.18796).*
 
 ### Measuring Impact on Agent Effectiveness
 
@@ -1107,10 +1125,12 @@ For each task:
 Measures:
   - Time to completion (wall clock)
   - Tokens consumed
-  - Solution quality (LLM judge panel)
+  - Solution quality (LLM judge panel, pairwise comparison)
   - Test pass rate
-  - Human review verdict (approve/reject)
+  - Human comparative judgment ("which solution is better?")
 ```
+
+*Note: Human judgments use the same pairwise comparison as the LLM judge panel. This enables calibration between human and LLM preferences.*
 
 ### Intermediate Artifact Caching
 
@@ -1407,6 +1427,7 @@ The multi-layered analysis approach and PR-based output pattern are established 
 - [Static Code Analyzers vs AI Code Reviewers](https://www.qodo.ai/blog/static-code-analyzers-vs-ai-code-reviewers-best-choice/) - Qodo
 
 ### LLM-as-a-Judge Evaluation
+- [Replacing Judges with Juries: Evaluating LLM Generations with a Panel of Diverse Models](https://arxiv.org/abs/2404.18796) - arXiv (multi-model judge panels, pairwise preference)
 - [A Survey on LLM-as-a-Judge](https://arxiv.org/abs/2411.15594) - arXiv comprehensive survey
 - [LLM-as-a-judge: A Complete Guide](https://www.evidentlyai.com/llm-guide/llm-as-a-judge) - Evidently AI
 - [LLMs-as-Judges: Comprehensive Survey on LLM-based Evaluation](https://arxiv.org/html/2412.05579v2) - arXiv
