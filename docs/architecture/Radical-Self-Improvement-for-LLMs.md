@@ -11,19 +11,20 @@
 
 ---
 
-## Executive Summary
+An LLM agent system should get measurably better at its job every week, automatically.
 
-An LLM agent system should get measurably better at its job every week, automatically. This document presents **Radical Self-Improvement** as a design principle: LLM systems that observe their own behavior, detect inefficiencies, and propose improvements—shifting human oversight from directing improvements to validating them.
+This document presents **Radical Self-Improvement** as a design principle: LLM systems that observe their own behavior, detect inefficiencies, and propose improvements—shifting human oversight from directing improvements to validating them.
 
-**Core Thesis:** LLM agents should not passively wait for humans to identify problems. They should actively monitor their own performance, detect patterns, and surface improvement opportunities.
+**The core thesis:** LLM agents should not passively wait for humans to identify problems. They should actively monitor their own performance, detect patterns, and surface improvement opportunities.
 
-**The Insight:** The culture of continuous improvement we build for LLMs represents a **best practice that transfers universally**. The same principles—self-reflection, evidence-based feedback, systematic improvement—can be applied to individual developers, teams, and entire organizations. What we learn by building self-improving LLMs teaches us how to build self-improving organizations.
+**The deeper insight:** The culture of continuous improvement we build for LLMs represents a best practice that transfers universally. The same principles—self-reflection, evidence-based feedback, systematic improvement—can be applied to individual developers, teams, and entire organizations. What we learn by building self-improving LLMs teaches us how to build self-improving organizations.
 
-**Key Capabilities:**
-1. **Automated Maintenance** - Repository hygiene, documentation freshness, dependency updates
-2. **Continuous Self-Reflection** - Metacognitive loop detecting patterns and inefficiencies
-3. **PR Review Reviewer** - Meta-review that turns human feedback into automated checks
-4. **Strategic Human Escalation** - Agent proposes, human validates
+**Four capabilities make this possible:**
+
+1. **Automated Maintenance** — Repository hygiene, documentation freshness, dependency updates
+2. **Continuous Self-Reflection** — Metacognitive loop detecting patterns and inefficiencies
+3. **PR Review Reviewer** — Meta-review that turns human feedback into automated checks
+4. **Strategic Human Escalation** — Agent proposes, human validates
 
 ---
 
