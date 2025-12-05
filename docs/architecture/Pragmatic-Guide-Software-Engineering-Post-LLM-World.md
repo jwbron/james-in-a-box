@@ -251,6 +251,7 @@ Every automated system should make humans' lives easier:
 Static systems cannot keep pace. The system should get better over time:
 - Recurring issues become automated checks
 - Human feedback improves LLM behavior
+- LLM feedback improves human behavior
 - Documentation evolves with the code
 
 ### 5. Transparency and Observability
