@@ -1,1 +1,1 @@
-../host-services/analysis/index-generator/index-generator.py
+../jib-container/jib-tasks/analysis/utilities/index_generator.py
