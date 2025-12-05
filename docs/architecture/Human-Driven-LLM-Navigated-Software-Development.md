@@ -24,6 +24,7 @@ This document articulates a new paradigm for software development: **human-drive
 ## Table of Contents
 
 - [The Core Philosophy](#the-core-philosophy)
+  - [Bidirectional Feedback and Growth](#bidirectional-feedback-and-growth)
 - [Division of Cognitive Labor](#division-of-cognitive-labor)
 - [The Workflow in Practice](#the-workflow-in-practice)
 - [Benefits for Humans](#benefits-for-humans)
@@ -94,6 +95,24 @@ The majority of cognitive effort goes toward ensuring correctness, consistency, 
 │  Creative, Strategic       │  Systematic, Exhaustive           │
 └────────────────────────────────────────────────────────────────┘
 ```
+
+### Bidirectional Feedback and Growth
+
+A core principle of this model is that **feedback flows both ways**: human feedback improves LLM behavior, and LLM feedback improves human behavior. This isn't a one-way relationship where humans simply direct and LLMs execute—it's a collaborative loop where both parties learn and adapt.
+
+**Human feedback improves LLM behavior:**
+- Course corrections help LLMs understand context and preferences
+- Reviews teach LLMs what "good" looks like in this specific codebase
+- Strategic decisions inform future navigation choices
+- Explicit feedback on quality shapes LLM outputs over time
+
+**LLM feedback improves human behavior:**
+- Systematic enumeration of edge cases trains human thoroughness
+- Consistent application of patterns raises human quality standards
+- Questions during elicitation sharpen human thinking about requirements
+- Comprehensive analysis reveals blind spots in human reasoning
+
+This bidirectional improvement creates a **virtuous cycle**: the more humans and LLMs work together, the better each becomes at their respective roles. The human becomes a better driver; the LLM becomes a better navigator. The partnership compounds over time.
 
 ---
 
