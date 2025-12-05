@@ -1,4 +1,4 @@
-# Human-Directed, LLM-Navigated Software Development
+# Human-Driven, LLM-Navigated Software Development
 
 **Status:** Draft
 **Author:** James Wiesebron, james-in-a-box
@@ -13,7 +13,7 @@
 
 ## Executive Summary
 
-This document articulates a new paradigm for software development: **human-directed, LLM-navigated**. The core insight is that humans and LLMs have complementary cognitive strengths, and optimal software development emerges when each focuses on what they do best.
+This document articulates a new paradigm for software development: **human-driven, LLM-navigated**. The core insight is that humans and LLMs have complementary cognitive strengths, and optimal software development emerges when each focuses on what they do best.
 
 **Humans excel at:**
 - Creative problem-solving and innovation
@@ -85,7 +85,7 @@ Traditional software development places an enormous cognitive burden on humans:
 
 The majority of cognitive effort goes toward ensuring correctness, consistency, and completeness—tasks that require exhaustive attention to detail rather than creative insight.
 
-### The Human-Directed, LLM-Navigated Model
+### The Human-Driven, LLM-Navigated Model
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -438,7 +438,7 @@ Human: "The LLM said this is the best approach, so it must be"
 
 This philosophy could be called several things:
 
-- **Human-Directed, LLM-Navigated Development** - Emphasizes the driver/navigator metaphor
+- **Human-Driven, LLM-Navigated Development** - Emphasizes the driver/navigator metaphor
 - **Cognitive Partnership Development** - Emphasizes the complementary strengths
 - **Amplified Development** - Emphasizes human capabilities being enhanced
 - **Sustainable AI-Augmented Development** - Emphasizes the long-term human benefits
