@@ -9,7 +9,6 @@
 Before ANY work, run these commands:
 
 ```bash
-cd ~/beads
 bd --allow-stale list --status in_progress   # Resume existing work?
 bd --allow-stale search "keywords"           # Related task exists?
 ```
@@ -73,7 +72,6 @@ bd --allow-stale create "Found: <issue>" --deps discovered-from:$CURRENT_TASK
 
 ```bash
 # 1. Check for existing work
-cd ~/beads
 bd --allow-stale list --status in_progress
 bd --allow-stale search "authentication"
 
@@ -104,7 +102,7 @@ bd --allow-stale update bd-xxxx --status closed --notes "Done. PR #42 created."
 | "Database out of sync" | Use `--allow-stale` |
 | Can't find task by label | Use `bd --allow-stale list --label "label"` not search |
 | Can't find task by text | `bd --allow-stale search "partial"` (title/desc only) |
-| Changes not saving | Verify `cd ~/beads` first |
+| "No beads database found" | Verify `BEADS_DIR` env var is set |
 
 ---
 

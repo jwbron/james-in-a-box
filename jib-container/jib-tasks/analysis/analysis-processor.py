@@ -33,26 +33,25 @@ import sys
 from pathlib import Path
 
 
-# Import shared modules - find shared directory dynamically
-# This works both in development (symlinked from jib-tasks/analysis) and in container
-# (baked into /opt/jib-runtime/jib-container/bin/)
-def _find_shared_path() -> Path:
-    """Find the shared directory by walking up from the script location."""
+# Import claude module - find jib-container directory dynamically
+# This works both in development and in container (baked into /opt/jib-runtime/jib-container/)
+def _find_claude_module_path() -> Path:
+    """Find the jib-container directory containing the claude module."""
     script_path = Path(__file__).resolve()
-    # Check multiple possible parent levels
+    # Check multiple possible parent levels for jib-container/claude
     for i in range(1, 6):
         if i < len(script_path.parents):
-            candidate = script_path.parents[i] / "shared"
+            candidate = script_path.parents[i] / "jib-container"
             if (candidate / "claude").is_dir():
                 return candidate
-    # Fallback: check /opt/jib-runtime/shared (container path)
-    container_shared = Path("/opt/jib-runtime/shared")
-    if (container_shared / "claude").is_dir():
-        return container_shared
-    raise ImportError(f"Cannot find shared/claude module from {script_path}")
+    # Fallback: check /opt/jib-runtime/jib-container (container path)
+    container_path = Path("/opt/jib-runtime/jib-container")
+    if (container_path / "claude").is_dir():
+        return container_path
+    raise ImportError(f"Cannot find jib-container/claude module from {script_path}")
 
 
-sys.path.insert(0, str(_find_shared_path()))
+sys.path.insert(0, str(_find_claude_module_path()))
 import contextlib
 
 from claude import run_claude
@@ -652,7 +651,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
         - repo_name: str (e.g., "james-in-a-box")
         - days: int (number of days to analyze, default 7)
         - dry_run: bool (if True, don't create PR, default False)
-        - max_workers: int (parallel LLM workers, default 5)
+        - max_workers: int (parallel LLM workers, default 20)
 
     Returns JSON with:
         - result.directories_analyzed: int
@@ -668,7 +667,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
     repo_name = context.get("repo_name", "james-in-a-box")
     days = context.get("days", 7)
     dry_run = context.get("dry_run", False)
-    max_workers = context.get("max_workers", 5)
+    max_workers = context.get("max_workers", 20)
 
     # Get repo path - inside container, repos are at ~/khan/<repo>
     repo_path = Path.home() / "khan" / repo_name
@@ -676,13 +675,10 @@ def handle_weekly_feature_analysis(context: dict) -> int:
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
 
-    # Import the analyzers from james-in-a-box's host-services directory
-    # These modules live in james-in-a-box, not in the target repository being analyzed
-    jib_path = Path.home() / "khan" / "james-in-a-box"
-    sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "feature-analyzer"))
-
+    # Import the analyzers from the container-local feature_analyzer module
+    # This module is in the same directory as this file
     try:
-        from weekly_analyzer import RepoAnalyzer, WeeklyAnalyzer
+        from feature_analyzer import RepoAnalyzer, WeeklyAnalyzer
     except ImportError as e:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
@@ -1065,7 +1061,8 @@ def handle_full_repo_analysis(context: dict) -> int:
     Context expected:
         - repo_name: str (e.g., "james-in-a-box")
         - dry_run: bool (if True, don't create PR, default False)
-        - max_workers: int (parallel LLM workers, default 5)
+        - max_workers: int (parallel LLM workers, default 20)
+        - use_root_level_scout: bool (if True, use faster root-level Scout, default True)
         - output_path: str (optional, custom output path for FEATURES.md)
 
     Returns JSON with:
@@ -1081,7 +1078,8 @@ def handle_full_repo_analysis(context: dict) -> int:
 
     repo_name = context.get("repo_name", "james-in-a-box")
     dry_run = context.get("dry_run", False)
-    max_workers = context.get("max_workers", 5)
+    max_workers = context.get("max_workers", 20)
+    use_root_level_scout = context.get("use_root_level_scout", True)
     output_path = context.get("output_path")
 
     # Get repo path - inside container, repos are at ~/khan/<repo>
@@ -1090,13 +1088,10 @@ def handle_full_repo_analysis(context: dict) -> int:
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
 
-    # Import the analyzers from james-in-a-box's host-services directory
-    # These modules live in james-in-a-box, not in the target repository being analyzed
-    jib_path = Path.home() / "khan" / "james-in-a-box"
-    sys.path.insert(0, str(jib_path / "host-services" / "analysis" / "feature-analyzer"))
-
+    # Import the analyzers from the container-local feature_analyzer module
+    # This module is in the same directory as this file
     try:
-        from weekly_analyzer import RepoAnalyzer
+        from feature_analyzer import RepoAnalyzer
     except ImportError as e:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
@@ -1134,20 +1129,23 @@ def handle_full_repo_analysis(context: dict) -> int:
             text=True,
         )
 
+        mode_name = "Root-Level" if use_root_level_scout else "Per-Directory"
         print("=" * 60)
-        print("Full Repository Feature Analysis (Multi-Agent Pipeline)")
+        print(f"Full Repository Feature Analysis ({mode_name} Mode)")
         print("=" * 60)
         print(f"Repository: {repo_path}")
         print(f"Parallel workers: {max_workers}")
+        print(f"Scout mode: {mode_name}")
         print()
 
-        # Run full repo analysis
-        print("Running full repository analysis...")
+        # Run full repo analysis with multi-agent pipeline
+        print(f"Running full repository analysis ({mode_name.lower()} scout)...")
         analyzer = RepoAnalyzer(repo_path, use_llm=True)
         result = analyzer.analyze_full_repo(
             dry_run=dry_run,
             output_path=Path(output_path) if output_path else None,
             max_workers=max_workers,
+            use_root_level_scout=use_root_level_scout,
         )
 
         # Build result data
@@ -1501,6 +1499,419 @@ def handle_github_pr_close(context: dict) -> int:
         return output_result(False, error=f"Error closing PR: {e}")
 
 
+def handle_repo_onboarding(context: dict) -> int:
+    """Handle full repository onboarding with all 4 phases.
+
+    This runs inside the jib container to avoid modifying the host's main branch.
+    All changes are made in a worktree branch and submitted via PR.
+
+    Phases:
+    1. Confluence Documentation Discovery (if not skipped)
+    2. Feature Analysis & Documentation
+    3. Index Generation (codebase.json, patterns.json, dependencies.json)
+    4. Documentation Index Updates (docs/index.md)
+
+    Context expected:
+        - repo_name: str (e.g., "james-in-a-box")
+        - skip_confluence: bool (default False)
+        - skip_features: bool (default False)
+        - public_repo: bool (default False)
+        - confluence_dir: str (default ~/context-sync/confluence)
+        - dry_run: bool (default False)
+        - max_workers: int (parallel LLM workers for feature analysis, default 20)
+        - use_root_level_scout: bool (if True, use faster root-level Scout, default True)
+
+    Returns JSON with:
+        - result.phases_completed: list[str]
+        - result.features_detected: int
+        - result.indexes_generated: list[str]
+        - result.pr_url: str (URL of created PR, if not dry_run)
+        - result.branch: str (branch name)
+    """
+    import subprocess
+    from datetime import UTC, datetime
+
+    repo_name = context.get("repo_name", "james-in-a-box")
+    skip_confluence = context.get("skip_confluence", False)
+    skip_features = context.get("skip_features", False)
+    public_repo = context.get("public_repo", False)
+    confluence_dir = context.get("confluence_dir", str(Path.home() / "context-sync" / "confluence"))
+    dry_run = context.get("dry_run", False)
+    max_workers = context.get("max_workers", 20)
+    use_root_level_scout = context.get("use_root_level_scout", True)
+
+    # Get repo path - inside container, repos are at ~/khan/<repo>
+    repo_path = Path.home() / "khan" / repo_name
+    confluence_path = Path(confluence_dir)
+
+    if not repo_path.exists():
+        return output_result(False, error=f"Repository not found: {repo_path}")
+
+    # Import the analysis tools from jib-container/jib-tasks/analysis/
+    # All utilities are now in the utilities/ subdirectory (moved from host-services/)
+    jib_path = Path.home() / "khan" / "james-in-a-box"
+    analysis_path = jib_path / "jib-container" / "jib-tasks" / "analysis"
+    sys.path.insert(0, str(analysis_path))  # feature_analyzer
+    sys.path.insert(
+        0, str(analysis_path / "utilities")
+    )  # confluence_doc_discoverer, index_generator, etc.
+
+    result_data = {
+        "phases_completed": [],
+        "features_detected": 0,
+        "indexes_generated": [],
+        "pr_url": None,
+        "branch": None,
+    }
+
+    try:
+        # Detect the default branch for this repo (main or master)
+        default_branch = get_default_branch(repo_path)
+
+        # Create a fresh branch from origin/<default>
+        branch_name = f"docs/repo-onboarding-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
+        result_data["branch"] = branch_name
+
+        subprocess.run(
+            ["git", "fetch", "origin", default_branch],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-b", branch_name, f"origin/{default_branch}"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        print("=" * 60)
+        print("Repository Onboarding (Container-Side)")
+        print("=" * 60)
+        print(f"Repository: {repo_path}")
+        print(f"Branch: {branch_name}")
+        print(f"Dry run: {dry_run}")
+        print()
+
+        # Create output directories
+        output_dir = repo_path / "docs" / "generated"
+        features_dir = repo_path / "docs" / "features"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        features_dir.mkdir(parents=True, exist_ok=True)
+
+        # ====================================================================
+        # Phase 1: Confluence Documentation Discovery
+        # ====================================================================
+        print("\n=== Phase 1: Confluence Documentation Discovery ===")
+
+        if skip_confluence:
+            print("  Skipping Confluence discovery (--skip-confluence)")
+        elif not confluence_path.exists():
+            print(f"  Confluence directory not found: {confluence_path}")
+            print("  Skipping Confluence discovery")
+        else:
+            try:
+                from confluence_doc_discoverer import ConfluenceDocDiscoverer
+
+                discoverer = ConfluenceDocDiscoverer(
+                    confluence_dir=confluence_path,
+                    repo_name=repo_name,
+                    output_path=output_dir / "external-docs.json",
+                    public_repo=public_repo,
+                )
+                discoverer.discover()
+                discoverer.save_results()
+                print(f"  ✓ Found {len(discoverer.discovered_docs)} relevant docs")
+                result_data["phases_completed"].append("confluence_discovery")
+            except ImportError as e:
+                print(f"  ⚠ Confluence discoverer not available: {e}")
+            except Exception as e:
+                print(f"  ⚠ Confluence discovery failed: {e}")
+
+        # ====================================================================
+        # Phase 2: Feature Analysis & Documentation
+        # ====================================================================
+        print("\n=== Phase 2: Feature Analysis & Documentation ===")
+
+        if skip_features:
+            print("  Skipping feature analysis (--skip-features)")
+        else:
+            try:
+                from feature_analyzer import RepoAnalyzer
+
+                mode_name = "root-level" if use_root_level_scout else "per-directory"
+                print(
+                    f"  Running feature analysis with {max_workers} workers ({mode_name} scout)..."
+                )
+                analyzer = RepoAnalyzer(repo_path, use_llm=True)
+                analysis_result = analyzer.analyze_full_repo(
+                    dry_run=False,
+                    output_path=repo_path / "docs" / "FEATURES.md",
+                    max_workers=max_workers,
+                    use_root_level_scout=use_root_level_scout,
+                )
+                result_data["features_detected"] = len(analysis_result.features_detected)
+                print(f"  ✓ Detected {len(analysis_result.features_detected)} features")
+                result_data["phases_completed"].append("feature_analysis")
+            except ImportError as e:
+                print(f"  ⚠ Feature analyzer not available: {e}")
+            except Exception as e:
+                print(f"  ⚠ Feature analysis failed: {e}")
+
+        # ====================================================================
+        # Phase 3: Index Generation
+        # ====================================================================
+        print("\n=== Phase 3: Index Generation ===")
+
+        try:
+            from index_generator import CodebaseIndexer
+
+            indexer = CodebaseIndexer(repo_path, output_dir)
+            indexer.generate_indexes()
+
+            # Check which indexes were generated
+            indexes_generated = []
+            for name in ["codebase.json", "patterns.json", "dependencies.json"]:
+                if (output_dir / name).exists():
+                    indexes_generated.append(name)
+
+            result_data["indexes_generated"] = indexes_generated
+            print(f"  ✓ Generated {len(indexes_generated)} indexes: {', '.join(indexes_generated)}")
+            result_data["phases_completed"].append("index_generation")
+        except ImportError as e:
+            print(f"  ⚠ Index generator not available: {e}")
+        except Exception as e:
+            print(f"  ⚠ Index generation failed: {e}")
+
+        # ====================================================================
+        # Phase 4: Documentation Index Updates
+        # ====================================================================
+        print("\n=== Phase 4: Documentation Index Updates ===")
+
+        try:
+            from docs_index_updater import DocsIndexUpdater, IndexConfig
+
+            features_md = repo_path / "docs" / "FEATURES.md"
+            config = IndexConfig(
+                repo_root=repo_path,
+                generated_dir=output_dir,
+                features_md=features_md if features_md.exists() else None,
+                dry_run=False,
+            )
+            updater = DocsIndexUpdater(config)
+            updater.run()
+            print("  ✓ Updated docs/index.md")
+            result_data["phases_completed"].append("docs_index_update")
+        except ImportError as e:
+            print(f"  ⚠ Docs index updater not available: {e}")
+        except Exception as e:
+            print(f"  ⚠ Docs index update failed: {e}")
+
+        # ====================================================================
+        # Check for changes and create PR
+        # ====================================================================
+        print("\n=== Finalizing ===")
+
+        if dry_run:
+            print("[DRY RUN] Would commit and create PR with changes")
+            return output_result(success=True, result=result_data)
+
+        # Check for changes
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        if not status_result.stdout.strip():
+            print("No changes to commit - repository is already up to date")
+            return output_result(success=True, result=result_data)
+
+        # Stage all changes
+        subprocess.run(
+            ["git", "add", "-A"],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Build commit message
+        phases_summary = ", ".join(result_data["phases_completed"])
+        commit_message = f"""docs: Repository onboarding via jib
+
+Completed phases: {phases_summary}
+Features detected: {result_data["features_detected"]}
+Indexes generated: {", ".join(result_data["indexes_generated"])}
+
+— Authored by jib"""
+
+        subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            check=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+
+        print(f"  ✓ Committed changes to branch: {branch_name}")
+
+        # Try to push - may fail for read-only repos
+        push_succeeded = False
+        push_error = None
+        try:
+            subprocess.run(
+                ["git", "push", "-u", "origin", branch_name],
+                check=True,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+            push_succeeded = True
+        except subprocess.CalledProcessError as e:
+            push_error = e.stderr or e.stdout or str(e)
+            # Check if this is a write access denied error
+            if "403" in push_error or "Write access" in push_error or "Permission" in push_error:
+                print(f"  ⚠ Cannot push to {repo_name} (read-only access)")
+                result_data["read_only"] = True
+            else:
+                # Re-raise for other git errors
+                raise
+
+        if push_succeeded:
+            # Build PR body
+            pr_body = f"""## Summary
+
+Repository onboarding generated documentation indexes for **{repo_name}**.
+
+### Phases Completed
+
+{chr(10).join(f"- ✓ {phase.replace('_', ' ').title()}" for phase in result_data["phases_completed"])}
+
+### Generated Content
+
+- Features detected: {result_data["features_detected"]}
+- Indexes generated: {", ".join(result_data["indexes_generated"]) or "none"}
+
+### Files Added
+
+- `docs/generated/*.json` - Machine-readable indexes (consider adding to .gitignore)
+- `docs/FEATURES.md` - Feature-to-source mapping
+- `docs/features/*.md` - Feature category documentation
+- `docs/index.md` - Updated navigation index
+
+## Test Plan
+
+- [x] All generated files are valid
+- [x] FEATURES.md contains accurate file paths
+- [ ] Human review for accuracy and completeness
+
+## Notes
+
+- Generated indexes (`docs/generated/*.json`) are for local LLM use
+- Consider adding `docs/generated/` to `.gitignore` if you don't want them in version control
+
+---
+
+— Authored by jib"""
+
+            pr_title = f"docs: Repository onboarding for {repo_name}"
+
+            # Create PR using gh CLI
+            pr_result = subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--title",
+                    pr_title,
+                    "--body",
+                    pr_body,
+                    "--base",
+                    default_branch,
+                    "--head",
+                    branch_name,
+                ],
+                check=True,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+
+            result_data["pr_url"] = pr_result.stdout.strip()
+            print(f"\n✓ PR created: {result_data['pr_url']}")
+        else:
+            # Read-only repo - send Slack notification instead
+            print(f"\n  Changes committed locally on branch: {branch_name}")
+            print("  Sending Slack notification...")
+
+            # Import and use the notifications library
+            try:
+                shared_path = Path.home() / "khan" / "james-in-a-box" / "shared"
+                if str(shared_path) not in sys.path:
+                    sys.path.insert(0, str(shared_path))
+                from notifications import NotificationContext, slack_notify
+
+                # Build summary of what was generated
+                phases_list = "\n".join(
+                    f"  • {phase.replace('_', ' ').title()}"
+                    for phase in result_data["phases_completed"]
+                )
+                indexes_list = ", ".join(result_data["indexes_generated"]) or "none"
+
+                notification_body = f"""Repository onboarding completed for **{repo_name}** but could not push (read-only access).
+
+**Branch:** `{branch_name}`
+**Repository path:** `{repo_path}`
+
+**Phases Completed:**
+{phases_list}
+
+**Generated Content:**
+  • Features detected: {result_data["features_detected"]}
+  • Indexes: {indexes_list}
+
+**Next Steps:**
+To apply these changes, you'll need to:
+1. Navigate to the repo: `cd {repo_path}`
+2. Review changes: `git diff HEAD~1`
+3. Push manually or create a PR from a fork
+
+The changes are committed locally and ready for review."""
+
+                ctx = NotificationContext(task_id=f"onboarding-{repo_name}", repository=repo_name)
+                slack_notify(
+                    f"📋 Onboarding Complete: {repo_name} (Read-Only)",
+                    notification_body,
+                    context=ctx,
+                )
+                print("  ✓ Slack notification sent")
+                result_data["slack_notified"] = True
+            except Exception as slack_err:
+                print(f"  ⚠ Failed to send Slack notification: {slack_err}")
+                result_data["slack_error"] = str(slack_err)
+
+        return output_result(success=True, result=result_data)
+
+    except subprocess.CalledProcessError as e:
+        return output_result(
+            False,
+            error=f"Git/GH operation failed: {e.stderr or e.stdout or str(e)}",
+        )
+    except Exception as e:
+        import traceback
+
+        return output_result(
+            False,
+            error=f"Error in repo onboarding: {e}\n{traceback.format_exc()}",
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analysis task processor for jib container",
@@ -1519,6 +1930,7 @@ def main():
             "create_pr",
             "weekly_feature_analysis",
             "full_repo_analysis",
+            "repo_onboarding",
             "github_pr_create",
             "github_pr_comment",
             "github_pr_close",
@@ -1549,6 +1961,7 @@ def main():
         "create_pr": handle_create_pr,
         "weekly_feature_analysis": handle_weekly_feature_analysis,
         "full_repo_analysis": handle_full_repo_analysis,
+        "repo_onboarding": handle_repo_onboarding,
         "github_pr_create": handle_github_pr_create,
         "github_pr_comment": handle_github_pr_comment,
         "github_pr_close": handle_github_pr_close,

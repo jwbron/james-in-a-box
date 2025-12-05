@@ -183,8 +183,12 @@ class TraceCollector:
             # Fail silently - don't let write failures break the hook
             pass
 
-    def _extract_params(self, tool_name: str, tool_input: dict[str, Any]) -> ToolCallParams:
+    def _extract_params(self, tool_name: str, tool_input: dict[str, Any] | list) -> ToolCallParams:
         """Extract normalized parameters from tool input."""
+        # Handle list inputs (rare, but possible)
+        if isinstance(tool_input, list):
+            return ToolCallParams(raw={"_list": tool_input})
+
         params = ToolCallParams(raw=tool_input.copy())
 
         # Extract path-like parameters
@@ -205,7 +209,7 @@ class TraceCollector:
 
         return params
 
-    def _parse_result(self, tool_name: str, tool_result: dict[str, Any] | str) -> ToolResult:
+    def _parse_result(self, tool_name: str, tool_result: dict[str, Any] | str | list) -> ToolResult:
         """Parse tool result into normalized structure."""
         # Handle string results (success messages)
         if isinstance(tool_result, str):
@@ -216,6 +220,13 @@ class TraceCollector:
                     error_message=tool_result[:500],  # Truncate long errors
                 )
             return ToolResult(status="success")
+
+        # Handle list results (some tools return arrays)
+        if isinstance(tool_result, list):
+            return ToolResult(
+                status="success",
+                file_count=len(tool_result) if tool_result else 0,
+            )
 
         # Handle dict results
         status = "success"
@@ -263,8 +274,8 @@ class TraceCollector:
     def record_tool_call(
         self,
         tool_name: str,
-        tool_input: dict[str, Any],
-        tool_result: dict[str, Any] | str | None = None,
+        tool_input: dict[str, Any] | list,
+        tool_result: dict[str, Any] | str | list | None = None,
         duration_ms: int = 0,
         tokens_in_context: int = 0,
         tokens_generated: int = 0,
@@ -466,8 +477,8 @@ def get_collector() -> TraceCollector:
 
 def record_tool_call(
     tool_name: str,
-    tool_input: dict[str, Any],
-    tool_result: dict[str, Any] | str | None = None,
+    tool_input: dict[str, Any] | list,
+    tool_result: dict[str, Any] | str | list | None = None,
     duration_ms: int = 0,
 ) -> TraceEvent:
     """

@@ -88,7 +88,7 @@ def _stream_pipe(
 def run_claude(
     prompt: str,
     *,
-    timeout: int = 1800,
+    timeout: int = 7200,
     cwd: Path | str | None = None,
     capture_output: bool = True,
     stream: bool = True,
@@ -107,7 +107,7 @@ def run_claude(
 
     Args:
         prompt: The prompt to send to Claude via stdin.
-        timeout: Maximum time in seconds to wait for Claude (default: 1800 = 30 min).
+        timeout: Maximum time in seconds to wait for Claude (default: 7200 = 2 hours).
         cwd: Working directory for Claude. If None, uses current directory.
         capture_output: If True, capture stdout/stderr. If False, let them
             pass through to the console (ignored if stream=True).

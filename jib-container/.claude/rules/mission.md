@@ -34,7 +34,6 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 
 **NEVER skip beads.** Before ANY work, you MUST:
 ```bash
-cd ~/beads
 bd --allow-stale list --status in_progress   # Check for work to resume
 bd --allow-stale search "keywords"           # Check for related tasks
 ```
@@ -71,7 +70,6 @@ See `environment.md` for details on git push and MCP tools.
 
 ### 1. Check Beads Task (ALWAYS FIRST)
 ```bash
-cd ~/beads
 bd --allow-stale list --status in_progress   # Resume work?
 bd --allow-stale search "keywords"           # Related task?
 bd --allow-stale create "Task description" --labels feature,jira-1234  # New task
@@ -289,6 +287,73 @@ git push origin <pr-branch-name>
 # Use MCP add_issue_comment to explain, then request human close it
 # (PRs are closed via GitHub UI by human)
 ```
+
+### 6.7. Responding to PR Review Comments (IMPORTANT)
+
+**When addressing feedback on PRs, you MUST respond to review comments directly** - don't just implement fixes silently.
+
+**For each review comment:**
+1. **Read the comment carefully** - understand what's being asked
+2. **Decide your response** - agree, partially agree, or disagree
+3. **Reply INLINE to the comment** (not as a general PR comment)
+4. **Implement changes** if you agree (or explain why you don't)
+
+**CRITICAL: Reply inline, not as a general comment.**
+Inline replies appear directly under each review comment, making it easy for reviewers to see your response in context. A single general comment forces reviewers to match up responses manually.
+
+**How to respond inline:**
+```python
+# Step 1: Create a pending review
+# Use MCP: pull_request_review_write(method="create", owner, repo, pullNumber)
+
+# Step 2: Add inline replies to each comment
+# Use MCP: add_comment_to_pending_review(
+#     owner, repo, pullNumber,
+#     path="path/to/file.py",  # Same file as the original comment
+#     line=42,                  # Same line as the original comment
+#     side="RIGHT",
+#     body="**Agreed.** Added error handling...",
+#     subjectType="LINE"
+# )
+
+# Step 3: Submit the review
+# Use MCP: pull_request_review_write(
+#     method="submit_pending", owner, repo, pullNumber,
+#     event="COMMENT",
+#     body="Inline responses added to each review comment."
+# )
+```
+
+**Response format:**
+- **If you agree**: `**Agreed.** [What you changed and why]`
+- **If you partially agree**: `**Partially agree.** [What you changed and what you didn't, with rationale]`
+- **If you disagree**: `**Disagree.** [Your reasoning - be specific]`
+
+**You are empowered to disagree.** Not every review suggestion should be blindly implemented:
+- If a suggestion would introduce complexity without clear benefit, say so
+- If something is "implementation detail" not "architecture decision", note that
+- If you have a better approach, propose it
+- Be respectful but firm when you have good reasons
+
+**Example inline response:**
+```markdown
+**Disagree.** The current approach is simpler and we only have one implementation.
+A factory pattern would add indirection without benefit here. Happy to discuss if
+there's a specific extensibility concern I'm missing.
+
+— Authored by jib
+```
+
+**When to use a general PR comment instead:**
+- Summarizing all changes after submitting inline responses
+- Responding to comments on the PR description (not on code)
+- Providing additional context that spans multiple comments
+
+**NEVER do this:**
+- Post all responses in a single general comment (hard to track)
+- Implement all suggestions without comment (reviewer can't tell what changed)
+- Stay silent when you disagree (leads to suboptimal code)
+- Make changes without explaining the rationale
 
 ### 7. Complete Task
 

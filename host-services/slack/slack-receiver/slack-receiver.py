@@ -31,7 +31,7 @@ from host_command_handler import HostCommandHandler
 from jib_logging import get_logger
 
 # Import message categorizer and host command handler
-from message_categorizer import MessageCategorizer, MessageCategory
+from message_categorizer import CategorizationResult, MessageCategorizer, MessageCategory
 
 
 # Check for required dependencies
@@ -544,6 +544,40 @@ class SlackReceiver:
         except Exception as e:
             self.logger.error("Failed to send acknowledgment", error=str(e))
 
+    def _build_workflow_context(self, categorization: CategorizationResult) -> str:
+        """Build a human-readable workflow context string from categorization.
+
+        This provides the user with visibility into how their message was
+        interpreted and what workflow will be triggered.
+
+        Args:
+            categorization: The result from MessageCategorizer
+
+        Returns:
+            Formatted string describing the workflow, ending with newline if non-empty
+        """
+        category = categorization.category
+        reasoning = categorization.reasoning
+
+        # Map categories to user-friendly descriptions
+        category_descriptions = {
+            MessageCategory.CONTAINER_TASK: "🤖 *Workflow:* General development task",
+            MessageCategory.RESPONSE: "💬 *Workflow:* Continuing conversation",
+            MessageCategory.HOST_FUNCTION: f"⚡ *Workflow:* Host function `{categorization.function_name}`",
+            MessageCategory.COMMAND: "🎮 *Workflow:* Command execution",
+            MessageCategory.UNKNOWN: "❓ *Workflow:* Unknown (defaulting to task)",
+        }
+
+        workflow_desc = category_descriptions.get(category, f"📋 *Workflow:* {category.value}")
+
+        # Add reasoning if available and confidence is less than 100%
+        if reasoning and categorization.confidence < 1.0:
+            # Truncate reasoning if too long
+            short_reasoning = reasoning[:80] + "..." if len(reasoning) > 80 else reasoning
+            return f"{workflow_desc}\n💡 _{short_reasoning}_\n"
+
+        return f"{workflow_desc}\n"
+
     def _create_failure_notification(
         self,
         task_id: str,
@@ -1051,15 +1085,20 @@ class SlackReceiver:
             task_id = filepath.stem
             log_file_path = f"~/.jib-sharing/logs/{task_id}.log"
 
+            # Build workflow context from categorization
+            workflow_context = self._build_workflow_context(categorization)
+
             if msg_type == "response":
                 ack_msg = (
                     f"✅ Response received and forwarded to Claude\n"
+                    f"{workflow_context}"
                     f"📁 Saved to: `{filepath.name}`\n"
                     f"📋 Stream logs: `tail -f {log_file_path}`"
                 )
             else:
                 ack_msg = (
                     f"✅ Task received and queued for Claude\n"
+                    f"{workflow_context}"
                     f"📁 Saved to: `{filepath.name}`\n"
                     f"📋 Stream logs: `tail -f {log_file_path}`"
                 )

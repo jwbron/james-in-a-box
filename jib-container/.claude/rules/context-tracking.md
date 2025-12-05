@@ -32,7 +32,6 @@ thread_ts: "1732567891.123456"
 
 **ALWAYS check for existing context first:**
 ```bash
-cd ~/beads
 # Use list --label to find tasks by task_id (search only checks title/description)
 bd --allow-stale list --label "$TASK_ID"
 # If found: load context with bd --allow-stale show <id>

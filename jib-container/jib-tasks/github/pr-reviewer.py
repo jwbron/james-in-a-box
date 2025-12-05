@@ -13,30 +13,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# Import shared modules (installed as packages via pip)
+from beads import PRContextManager
+from jib_logging import get_logger
 
-# Add shared directory to path for imports
-# Path: jib-container/jib-tasks/github/pr-reviewer.py -> repo-root/shared
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
-try:
-    from beads import PRContextManager
-    from jib_logging import get_logger
+from notifications import NotificationContext, get_slack_service
 
-    from notifications import NotificationContext, get_slack_service
-except ImportError as e:
-    print("=" * 60, file=sys.stderr)
-    print("ERROR: Cannot import shared libraries", file=sys.stderr)
-    print("=" * 60, file=sys.stderr)
-    print(f"  Import error: {e}", file=sys.stderr)
-    print(
-        f"  Expected path: {Path(__file__).parent.parent.parent.parent / 'shared'}", file=sys.stderr
-    )
-    print("", file=sys.stderr)
-    print("This usually means a shared module is missing.", file=sys.stderr)
-    print(
-        "Check that shared/ directory exists in the repo root.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
 
 logger = get_logger("pr-reviewer")
 

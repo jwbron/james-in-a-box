@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Weekly Code Analyzer - FEATURES.md Auto-Discovery (Phase 5 Enhanced)
+Feature Analyzer - FEATURES.md Auto-Discovery (Container-Side Module)
 
-This module scans merged code from the past week and identifies new features
-to add to FEATURES.md. It uses both commit analysis AND deep code-level
-analysis with LLM-powered feature extraction.
+This module provides feature analysis capabilities for use INSIDE the jib container.
+It scans repositories and identifies features using LLM-powered analysis.
+
+IMPORTANT: This module runs ONLY inside the container and uses run_claude directly.
+Host-side code should use jib_exec to invoke analysis-processor.py, which then
+imports this module.
 
 The analyzer performs thorough analysis including:
 1. Collects commits from the past N days
@@ -23,18 +26,11 @@ Key Features:
 - Auto-generates README.md for undocumented features
 - FEATURES.md is hooked into docs/index.md for LLM navigation
 
-Usage:
-    analyzer = WeeklyAnalyzer(repo_root)
-    result = analyzer.analyze_and_update(
-        days=7,
-        generate_docs=True,
-        deep_analysis=True
-    )
+Usage (container-side only):
+    from feature_analyzer import WeeklyAnalyzer, RepoAnalyzer
 
-CLI:
-    python weekly_analyzer.py --days 7 --repo-root /path/to/repo
-    python weekly_analyzer.py --no-deep-analysis  # Skip code-level analysis
-    python weekly_analyzer.py --no-docs           # Skip doc generation
+    analyzer = WeeklyAnalyzer(repo_root)
+    result = analyzer.analyze_and_update(days=7, generate_docs=True)
 """
 
 import json
@@ -48,91 +44,47 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
-# Add shared modules to path for jib_exec
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "shared"))
-
-# Import shared utilities
-# NOTE: Host-services code must ALWAYS use jib_exec, never direct Claude calls.
-# EXCEPTION: When this module is imported from inside the container (via analysis-processor),
-# we detect this and call run_claude directly instead of jib_exec (which would fail).
-from jib_exec import jib_exec
-
-
-def _is_running_in_container() -> bool:
-    """Detect if we're running inside the jib container.
-
-    When analysis-processor.py imports this module from inside the container,
-    we need to use run_claude directly instead of jib_exec (which is designed
-    for host-to-container calls and would fail or spawn nested containers).
-
-    Detection methods:
-    1. Check for /opt/jib-runtime (container-specific path)
-    2. Check for JIB_CONTAINER environment variable
-    """
-    # Primary: Check for container-specific path
-    if Path("/opt/jib-runtime").exists():
-        return True
-    # Secondary: Check environment variable
-    # NOTE: Import inside function to avoid issues when running on host where
-    # this module may be imported but os might not be needed at module load time
-    import os
-
-    return os.environ.get("JIB_CONTAINER") == "1"
+# Add jib-container to path for claude module
+def _find_claude_module_path() -> Path:
+    """Find the jib-container directory containing the claude module."""
+    script_path = Path(__file__).resolve()
+    # Check multiple possible parent levels for jib-container/claude
+    for i in range(1, 6):
+        if i < len(script_path.parents):
+            candidate = script_path.parents[i] / "jib-container"
+            if (candidate / "claude").is_dir():
+                return candidate
+    # Fallback: check /opt/jib-runtime/jib-container (container path)
+    container_path = Path("/opt/jib-runtime/jib-container")
+    if (container_path / "claude").is_dir():
+        return container_path
+    raise ImportError(f"Cannot find jib-container/claude module from {script_path}")
 
 
-# Lazy-loaded run_claude for container-side use
-_run_claude_func = None
+sys.path.insert(0, str(_find_claude_module_path()))
+
+# Import run_claude directly - this module runs only inside the container
+from claude import run_claude
 
 
-def _get_run_claude():
-    """Get the run_claude function, importing it only when needed (inside container)."""
-    global _run_claude_func
-    if _run_claude_func is None:
-        # Import from the shared claude module (available inside container)
-        from claude import run_claude
-
-        _run_claude_func = run_claude
-    return _run_claude_func
-
-
-def _run_llm_prompt_shared(
+def _run_llm_prompt(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, str, str | None]:
     """
-    Run an LLM prompt, adapting to execution context.
+    Run an LLM prompt via run_claude.
 
-    This shared function is used by both WeeklyAnalyzer and RepoAnalyzer.
-
-    Execution context detection:
-    - On host: Uses jib_exec to invoke analysis-processor in the container
-    - In container: Calls run_claude directly (jib_exec would fail from inside)
+    This function is used by both WeeklyAnalyzer and RepoAnalyzer for LLM calls.
+    It runs inside the container and calls run_claude directly.
 
     Args:
         repo_root: Path to the repository root
         prompt: The prompt to send to the LLM
-        context_name: Optional name for logging/debugging
+        context_name: Optional name for logging/debugging (not currently used)
 
     Returns:
         Tuple of (success, stdout, error_message)
     """
-    # When running inside the container, call run_claude directly
-    if _is_running_in_container():
-        return _run_llm_prompt_direct(repo_root, prompt, context_name)
-
-    # On host, use jib_exec to invoke container
-    return _run_llm_prompt_via_jib(repo_root, prompt, context_name)
-
-
-def _run_llm_prompt_direct(
-    repo_root: Path, prompt: str, context_name: str = ""
-) -> tuple[bool, str, str | None]:
-    """Run LLM prompt directly via run_claude (container-side execution).
-
-    Note: context_name is accepted for API compatibility but not currently used
-    in direct execution (could be added for logging in the future).
-    """
     try:
-        run_claude = _get_run_claude()
         result = run_claude(prompt=prompt, cwd=repo_root, stream=False)
 
         if result.success:
@@ -145,114 +97,30 @@ def _run_llm_prompt_direct(
         return (False, "", f"run_claude error: {e}")
 
 
-def _run_llm_prompt_via_jib(
-    repo_root: Path, prompt: str, context_name: str = ""
-) -> tuple[bool, str, str | None]:
-    """Run LLM prompt via jib_exec (host-side execution)."""
-    try:
-        # analysis-processor is in PATH via /opt/jib-runtime/bin
-        result = jib_exec(
-            processor="analysis-processor",
-            task_type="llm_prompt",
-            context={
-                "prompt": prompt,
-                "cwd": str(repo_root),
-                "stream": False,
-            },
-            # No timeout specified - let the shared claude module determine the default
-        )
-
-        if result.success and result.json_output:
-            output = result.json_output.get("result", {})
-            stdout = output.get("stdout", "")
-            return (True, stdout, None)
-
-        # Handle failure - build detailed error message
-        error_parts = []
-
-        # Check for jib-level error
-        if result.error:
-            error_parts.append(result.error)
-
-        # Check for processor-level error in JSON response
-        if result.json_output:
-            processor_error = result.json_output.get("error")
-            if processor_error:
-                error_parts.append(f"Processor: {processor_error}")
-            # Also check if there's a result with stderr
-            processor_result = result.json_output.get("result", {})
-            if isinstance(processor_result, dict) and processor_result.get("stderr"):
-                error_parts.append(f"stderr: {processor_result['stderr'][:200]}")
-
-        # If success=True but json_output is None, the jib command ran but
-        # we couldn't parse the output - include raw stdout for debugging
-        if result.success and not result.json_output:
-            if result.stdout:
-                stdout_preview = result.stdout[:300].replace("\n", "\\n")
-                error_parts.append(f"jib succeeded but no JSON parsed. stdout: {stdout_preview}")
-            else:
-                error_parts.append("jib succeeded but returned empty stdout")
-
-        # If nothing specific, check stderr
-        if not error_parts and result.stderr:
-            error_parts.append(f"stderr: {result.stderr[:200]}")
-
-        # Build final error message
-        error_msg = (
-            "; ".join(error_parts) if error_parts else "Unknown error (no details available)"
-        )
-        return (False, "", error_msg)
-
-    except Exception as e:
-        return (False, "", str(e))
-
-
-def _run_llm_prompt_to_file_shared(
+def _run_llm_prompt_to_file(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, list | dict | None, str | None]:
     """
-    Run an LLM prompt that writes JSON output to a file, adapting to execution context.
+    Run an LLM prompt that writes JSON output to a file.
 
     This avoids JSON parsing issues when the LLM includes explanatory text
     before/after the JSON in its stdout. The LLM writes JSON to a temp file,
     which is then read and parsed.
 
-    Execution context detection:
-    - On host: Uses jib_exec to invoke analysis-processor in the container
-    - In container: Calls run_claude directly with file-writing prompt enhancement
-
     Args:
         repo_root: Path to the repository root
         prompt: The prompt to send to the LLM (should request JSON output)
-        context_name: Optional name for logging/debugging
+        context_name: Optional name for logging/debugging (not currently used)
 
     Returns:
         Tuple of (success, parsed_json_content, error_message)
     """
-    # When running inside the container, call run_claude directly
-    if _is_running_in_container():
-        return _run_llm_prompt_to_file_direct(repo_root, prompt, context_name)
-
-    # On host, use jib_exec to invoke container
-    return _run_llm_prompt_to_file_via_jib(repo_root, prompt, context_name)
-
-
-def _run_llm_prompt_to_file_direct(
-    repo_root: Path, prompt: str, context_name: str = ""
-) -> tuple[bool, list | dict | None, str | None]:
-    """Run LLM prompt with file output directly via run_claude (container-side execution).
-
-    Note: context_name is accepted for API compatibility but not currently used
-    in direct execution (could be added for logging in the future).
-    """
-    # NOTE: Imports inside function because this code only runs inside the container,
-    # and we want to avoid unnecessary imports when the module is loaded on the host.
+    import contextlib
+    import os
     import tempfile
 
     # Generate a temporary file path
     fd, output_file = tempfile.mkstemp(suffix=".json", prefix="llm_output_")
-    import os
-
     os.close(fd)
     output_path = Path(output_file)
 
@@ -266,7 +134,6 @@ Use the Write tool to write the JSON array to {output_file}. Do NOT just print t
 After writing the file, confirm by saying "JSON written to {output_file}" but do NOT include the JSON content in your response."""
 
     try:
-        run_claude = _get_run_claude()
         run_claude(prompt=enhanced_prompt, cwd=repo_root, stream=False)
 
         # Read the JSON from the output file
@@ -280,8 +147,6 @@ After writing the file, confirm by saying "JSON written to {output_file}" but do
                 return (False, None, f"Failed to parse JSON from output file: {e}")
             finally:
                 # Clean up the temp file
-                import contextlib
-
                 with contextlib.suppress(OSError):
                     output_path.unlink()
 
@@ -293,55 +158,9 @@ After writing the file, confirm by saying "JSON written to {output_file}" but do
 
     except Exception as e:
         # Clean up temp file on error
-        import contextlib
-
         with contextlib.suppress(OSError):
             output_path.unlink()
         return (False, None, f"run_claude error: {e}")
-
-
-def _run_llm_prompt_to_file_via_jib(
-    repo_root: Path, prompt: str, context_name: str = ""
-) -> tuple[bool, list | dict | None, str | None]:
-    """Run LLM prompt with file output via jib_exec (host-side execution)."""
-    try:
-        # analysis-processor is in PATH via /opt/jib-runtime/bin
-        result = jib_exec(
-            processor="analysis-processor",
-            task_type="llm_prompt_to_file",
-            context={
-                "prompt": prompt,
-                "cwd": str(repo_root),
-            },
-            # No timeout specified - let the shared claude module determine the default
-        )
-
-        if result.success and result.json_output:
-            output = result.json_output.get("result", {})
-            json_content = output.get("json_content")
-            if json_content is not None:
-                return (True, json_content, None)
-            # If json_content is None but success=True, there was an issue
-            return (False, None, "LLM did not write JSON to file")
-
-        # Handle failure
-        error_parts = []
-
-        if result.error:
-            error_parts.append(result.error)
-
-        if result.json_output:
-            processor_error = result.json_output.get("error")
-            if processor_error:
-                error_parts.append(f"Processor: {processor_error}")
-
-        error_msg = (
-            "; ".join(error_parts) if error_parts else "Unknown error (no details available)"
-        )
-        return (False, None, error_msg)
-
-    except Exception as e:
-        return (False, None, str(e))
 
 
 @dataclass
@@ -451,10 +270,9 @@ class WeeklyAnalyzer:
 
     def _run_llm_prompt(self, prompt: str, context_name: str = "") -> tuple[bool, str, str | None]:
         """
-        Run an LLM prompt via jib container.
+        Run an LLM prompt via run_claude.
 
-        Host-side code cannot directly call Claude - it's only available inside
-        the container. This method uses jib_exec to invoke the analysis processor.
+        This module runs inside the container and calls run_claude directly.
 
         Args:
             prompt: The prompt to send to the LLM
@@ -463,7 +281,7 @@ class WeeklyAnalyzer:
         Returns:
             Tuple of (success, stdout, error_message)
         """
-        return _run_llm_prompt_shared(self.repo_root, prompt, context_name)
+        return _run_llm_prompt(self.repo_root, prompt, context_name)
 
     def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
         """Run a git command in the repo root."""
@@ -1615,10 +1433,9 @@ class RepoAnalyzer:
 
     def _run_llm_prompt(self, prompt: str, context_name: str = "") -> tuple[bool, str, str | None]:
         """
-        Run an LLM prompt via jib container.
+        Run an LLM prompt via run_claude.
 
-        Host-side code cannot directly call Claude - it's only available inside
-        the container. This method uses jib_exec to invoke the analysis processor.
+        This module runs inside the container and calls run_claude directly.
 
         Args:
             prompt: The prompt to send to the LLM
@@ -1627,7 +1444,7 @@ class RepoAnalyzer:
         Returns:
             Tuple of (success, stdout, error_message)
         """
-        return _run_llm_prompt_shared(self.repo_root, prompt, context_name)
+        return _run_llm_prompt(self.repo_root, prompt, context_name)
 
     def _run_llm_prompt_to_file(
         self, prompt: str, context_name: str = ""
@@ -1646,7 +1463,7 @@ class RepoAnalyzer:
         Returns:
             Tuple of (success, parsed_json_content, error_message)
         """
-        return _run_llm_prompt_to_file_shared(self.repo_root, prompt, context_name)
+        return _run_llm_prompt_to_file(self.repo_root, prompt, context_name)
 
     def _is_git_ignored(self, path: Path | str) -> bool:
         """
@@ -1748,9 +1565,12 @@ class RepoAnalyzer:
                     # Show first-level subdirectories
                     subdir_names = []
                     for subitem in sorted(item.iterdir()):
-                        if subitem.is_dir() and not subitem.name.startswith("."):
-                            if not self._should_skip(str(subitem)):
-                                subdir_names.append(subitem.name)
+                        if (
+                            subitem.is_dir()
+                            and not subitem.name.startswith(".")
+                            and not self._should_skip(str(subitem))
+                        ):
+                            subdir_names.append(subitem.name)
                     if subdir_names:
                         preview = subdir_names[:10]
                         more = (
@@ -1769,85 +1589,90 @@ class RepoAnalyzer:
 
     def _discover_feature_directories_with_llm(self) -> list[str]:
         """
-        Use LLM to analyze repository structure and identify feature-containing directories.
+        Use LLM (Cartographer Agent) to analyze repository structure and identify feature directories.
 
-        This replaces hardcoded directory lists with intelligent discovery. The LLM
-        analyzes the repo structure and returns a list of directories that likely
-        contain features/services/tools.
+        This is the Cartographer phase of multi-agent analysis. The LLM analyzes the repo
+        structure and returns a PRIORITIZED list of directories that likely contain features.
+
+        The Cartographer is smart about:
+        - Prioritizing directories (most important first for faster feedback)
+        - Skipping obvious non-feature directories (tests, vendor, generated code)
 
         Returns:
-            List of directory paths (relative to repo root) to scan for features
+            List of directory paths (relative to repo root) to scan for features,
+            ordered by priority (most important first)
         """
         repo_structure = self._get_top_level_structure()
 
-        prompt = f"""Analyze this repository structure and identify directories that contain features.
+        prompt = f"""You are the CARTOGRAPHER agent. Analyze this repository and identify ALL directories containing features, PRIORITIZED by importance.
 
 # Repository Structure
 
 {repo_structure}
 
-# Task
+# Your Mission
 
-Identify ALL directories that likely contain user-facing features, services, tools, or libraries.
+Return ALL directories that contain user-facing features, PRIORITIZED by importance (most important first).
 
-## What ARE Feature Directories?
+## Priority Order (highest to lowest)
 
-Feature directories contain one or more of:
-- Backend services (API endpoints, microservices)
-- CLI tools or scripts users can run
-- Libraries/packages with public APIs
-- Configuration systems
-- Deployment tools
-- Development utilities
-- Build systems
-- Testing frameworks/utilities (not individual test files)
+1. **Core services/APIs** - Main backend services users interact with
+2. **Key packages/libraries** - Shared code used across the codebase
+3. **Important tools** - Developer tools, scripts, utilities
+4. **Configuration** - Significant config systems
+5. **Secondary services** - Less critical services
 
-## What are NOT Feature Directories?
+## What to SKIP (do NOT include)
 
-- Generated code directories (genfiles/, genproto/, gengraphql/)
-- Third-party/vendor code (third_party/, vendor/, node_modules/)
+- `testdata/`, `fixtures/`, `mocks/` - Test data only
+- `vendor/`, `third_party/`, `node_modules/` - Third-party code
+- `genfiles/`, `genproto/`, `generated/` - Generated code
+- Individual test directories (`tests/`, `__tests__/`)
 - Build output directories
-- Documentation-only directories (docs/ with only .md files and no code)
-- Pure test directories that only contain tests (tests/, test/)
 
-## Repository Patterns to Recognize
+## Directory Granularity
 
-Different repos organize features differently:
-- **Monorepo with services**: `services/<service-name>/` each is a feature
-- **Go monorepo**: `pkg/<package>/` and `cmd/<command>/` are features
-- **Python project**: Top-level modules or `src/<module>/` are features
-- **Dev tools repo**: `tools/`, `scripts/`, `bin/` contain tools/features
-- **Container project**: Directories with Dockerfiles or systemd units
+Return the RIGHT level - the feature unit level:
+- For `services/foo/`, `services/bar/` → return ["services/foo", "services/bar"]
+- For `pkg/auth/`, `pkg/db/` → return ["pkg/auth", "pkg/db"]
+- NOT too coarse: ["services"] (missing individual services)
+- NOT too fine: ["services/foo/handlers"] (too granular)
 
 ## Output Format
 
-Return ONLY a JSON array of directory paths (relative to repo root).
-Include directories at the RIGHT level - the feature unit level, not too coarse (entire repo)
-and not too fine (every subdirectory).
-
-For a monorepo with services like `services/foo/`, `services/bar/`, return:
-["services/foo", "services/bar"]
-NOT just ["services"] (too coarse) or ["services/foo/handlers", "services/foo/models"] (too fine)
-
-For shared libraries in `pkg/`, return each package:
-["pkg/auth", "pkg/database", "pkg/utils"]
-
-For development tools, include them:
-["dev/linters", "dev/tools", "scripts"]
+Return ONLY a JSON object with prioritized directories and skipped categories:
 
 ```json
-["path/to/feature1", "path/to/feature2", ...]
+{{
+  "analyze": ["most/important/dir", "second/important", ...],
+  "skip_reasons": {{
+    "testdata": "Test fixtures only",
+    "vendor": "Third-party code"
+  }}
+}}
 ```
 
-If truly no feature directories found, return: `[]`
+The "analyze" array must be ordered by priority. Include ALL feature directories.
 """
 
-        success, json_content, error = self._run_llm_prompt_to_file(prompt, "discover-directories")
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, "cartographer")
 
-        if success and json_content and isinstance(json_content, list):
+        if success and json_content:
+            # Handle new format with analyze/skip_reasons
+            if isinstance(json_content, dict) and "analyze" in json_content:
+                dirs_list = json_content.get("analyze", [])
+                skip_reasons = json_content.get("skip_reasons", {})
+                if skip_reasons:
+                    print(f"    Cartographer skipping: {', '.join(skip_reasons.keys())}")
+            elif isinstance(json_content, list):
+                # Handle legacy format (just a list)
+                dirs_list = json_content
+            else:
+                dirs_list = []
+
             # Validate that returned paths are strings and directories exist
             valid_dirs = []
-            for item in json_content:
+            for item in dirs_list:
                 if isinstance(item, str):
                     dir_path = self.repo_root / item
                     if dir_path.exists() and dir_path.is_dir():
@@ -1858,10 +1683,11 @@ If truly no feature directories found, return: `[]`
                         dir_path = self.repo_root / clean_path
                         if dir_path.exists() and dir_path.is_dir():
                             valid_dirs.append(clean_path)
+
             return valid_dirs
 
         if error:
-            print(f"    Warning: LLM directory discovery failed: {error}")
+            print(f"    Warning: Cartographer failed: {error}")
 
         # Fallback: try stdout parsing
         success_fb, stdout, _ = self._run_llm_prompt(prompt, "discover-directories-fallback")
@@ -1918,42 +1744,526 @@ If truly no feature directories found, return: `[]`
         # Check for common parent directories
         for parent_name in common_parents:
             parent_path = self.repo_root / parent_name
-            if parent_path.exists() and parent_path.is_dir():
-                if not self._is_git_ignored(parent_name):
-                    # Add each subdirectory as a potential feature
-                    for subdir in parent_path.iterdir():
-                        if subdir.is_dir() and not subdir.name.startswith("."):
-                            rel_path = f"{parent_name}/{subdir.name}"
-                            if not self._is_git_ignored(rel_path):
-                                feature_dirs.append(rel_path)
+            if (
+                parent_path.exists()
+                and parent_path.is_dir()
+                and not self._is_git_ignored(parent_name)
+            ):
+                # Add each subdirectory as a potential feature
+                for subdir in parent_path.iterdir():
+                    if subdir.is_dir() and not subdir.name.startswith("."):
+                        rel_path = f"{parent_name}/{subdir.name}"
+                        if not self._is_git_ignored(rel_path):
+                            feature_dirs.append(rel_path)
 
         # Also check for standalone feature directories at root
         for item in self.repo_root.iterdir():
-            if item.is_dir() and not item.name.startswith("."):
-                if item.name not in common_parents:
-                    if not self._is_git_ignored(item.name):
-                        # Check if it looks like a feature (has README or source files)
-                        has_readme = (item / "README.md").exists()
-                        has_source = (
-                            any(item.glob("*.py"))
-                            or any(item.glob("*.go"))
-                            or any(item.glob("*.js"))
-                        )
-                        if has_readme or has_source:
-                            feature_dirs.append(item.name)
+            if (
+                item.is_dir()
+                and not item.name.startswith(".")
+                and item.name not in common_parents
+                and not self._is_git_ignored(item.name)
+            ):
+                # Check if it looks like a feature (has README or source files)
+                has_readme = (item / "README.md").exists()
+                has_source = (
+                    any(item.glob("*.py")) or any(item.glob("*.go")) or any(item.glob("*.js"))
+                )
+                if has_readme or has_source:
+                    feature_dirs.append(item.name)
 
         return feature_dirs
 
+    def _scout_recommend_files(
+        self, dir_path: str, files: list[Path], max_files: int = 5
+    ) -> list[Path]:
+        """
+        Scout Agent: Analyze file listing and recommend which files to read for feature detection.
+
+        The Scout is a lightweight LLM pass that looks at file names, sizes, and structure
+        to intelligently select which files should be read for the deeper analysis phase.
+        This avoids reading all files blindly.
+
+        Args:
+            dir_path: Directory path relative to repo root
+            files: List of file paths in the directory
+            max_files: Maximum number of files to recommend (default 5)
+
+        Returns:
+            List of recommended file paths to read (subset of input files)
+        """
+        if not files:
+            return []
+
+        # Always let Scout analyze and recommend files - even for small directories,
+        # Scout may have valuable insights about which files are most important.
+        # Previously we skipped Scout for <= max_files directories, but this
+        # optimization was removed to let agents determine what's worth processing.
+
+        # Build file listing with metadata (no content!)
+        file_info = []
+        readme_path = None
+
+        for f in files:
+            try:
+                size = f.stat().st_size
+                size_str = f"{size // 1024}KB" if size >= 1024 else f"{size}B"
+                rel_path = str(f.relative_to(self.repo_root))
+                file_info.append(f"  - {rel_path} ({size_str})")
+
+                # Track README for priority
+                if f.name.lower() == "readme.md":
+                    readme_path = f
+            except OSError:
+                continue
+
+        if not file_info:
+            return files[:max_files]
+
+        # Let Scout see ALL files - no artificial limits
+        # Scout agent will determine what's important to analyze
+        file_listing = "\n".join(file_info)
+
+        # Check for README content (small preview, no full read)
+        readme_hint = ""
+        if readme_path and readme_path.exists():
+            try:
+                readme_preview = readme_path.read_text()[:500]
+                readme_hint = f"\nREADME.md preview:\n{readme_preview}\n"
+            except (OSError, UnicodeDecodeError):
+                pass
+
+        prompt = f"""You are the SCOUT agent. Analyze this file listing and recommend which {max_files} files to read for feature detection.
+
+# Directory: {dir_path}
+{readme_hint}
+# Files in directory:
+{file_listing}
+
+# Your Mission
+
+Select the {max_files} BEST files to read for understanding what features this directory contains.
+
+## File Selection Priority
+
+1. **README.md** - Always include if present (describes the feature)
+2. **Main entry points** - main.py, main.go, index.ts, app.py, server.go
+3. **Core implementation** - Files with names suggesting core functionality
+4. **Configuration** - config files that reveal feature purpose
+5. **Public API** - Files defining public interfaces
+
+## Files to AVOID
+
+- Test files (*_test.py, *_test.go, *.test.ts)
+- Generated files (*.pb.go, *_generated.*)
+- Type definitions only (types.py, models.py without logic)
+- Utility helpers (utils.py, helpers.go)
+- Very large files (>50KB) unless they're the main implementation
+
+## Output Format
+
+Return ONLY a JSON object:
+
+```json
+{{
+  "read": ["path/to/file1.py", "path/to/file2.go"],
+  "reason": "Brief explanation of why these files"
+}}
+```
+
+The "read" array must have at most {max_files} file paths from the listing above.
+"""
+
+        success, json_content, error = self._run_llm_prompt_to_file(prompt, f"scout:{dir_path}")
+
+        if success and json_content and isinstance(json_content, dict):
+            recommended = json_content.get("read", [])
+            reason = json_content.get("reason", "")
+            if reason:
+                print(f"      Scout: {reason[:80]}...")
+
+            # Map recommended paths back to Path objects
+            result = []
+            for rec_path in recommended:
+                if isinstance(rec_path, str):
+                    # Try to find matching file
+                    for f in files:
+                        try:
+                            if (
+                                str(f.relative_to(self.repo_root)) == rec_path
+                                or f.name == rec_path
+                                or str(f).endswith(rec_path)
+                            ):
+                                result.append(f)
+                                break
+                        except ValueError:
+                            continue
+
+            if result:
+                return result[:max_files]
+
+        # Log Scout failure for troubleshooting
+        if error:
+            print(f"      Scout failed for {dir_path}: {error}")
+        elif not success:
+            print(f"      Scout failed for {dir_path}: LLM call unsuccessful")
+        elif not json_content or not isinstance(json_content, dict):
+            print(f"      Scout failed for {dir_path}: Invalid response format")
+
+        # Fallback: use heuristic selection
+        return self._scout_recommend_files_heuristically(files, max_files)
+
+    def _scout_recommend_files_heuristically(
+        self, files: list[Path], max_files: int = 5
+    ) -> list[Path]:
+        """
+        Heuristic file selection when Scout LLM is unavailable.
+
+        Uses simple rules to prioritize files:
+        1. README.md first
+        2. Main entry points (main.*, index.*, app.*, server.*)
+        3. Smaller files (often more focused)
+        4. Skip test files
+        """
+        priority_files = []
+        other_files = []
+
+        for f in files:
+            name = f.name.lower()
+
+            # Skip test files
+            if "_test." in name or ".test." in name or name.startswith("test_"):
+                continue
+
+            # Priority 1: README
+            if name == "readme.md":
+                priority_files.insert(0, f)
+            # Priority 2: Main entry points
+            elif (
+                name.startswith(("main.", "index.", "app.", "server.", "cli."))
+                or name == "__init__.py"
+            ):
+                priority_files.append(f)
+            else:
+                other_files.append(f)
+
+        # Sort other files by size (smaller first - often more focused)
+        other_files.sort(key=lambda f: f.stat().st_size if f.exists() else 0)
+
+        result = priority_files + other_files
+        return result[:max_files]
+
+    def _scout_root_level(
+        self, root_dir: str, all_files: list[Path], max_files: int = 20
+    ) -> list[Path]:
+        """
+        Root-Level Scout Agent: Analyze an entire root directory tree and recommend key files.
+
+        This is a more efficient alternative to per-subdirectory Scout calls.
+        Instead of running Scout on each of 929 feature directories, we run
+        Scout once per root directory (60 total) to select the most important
+        files across the entire subtree.
+
+        Args:
+            root_dir: Root directory path (e.g., "services/ai-guide")
+            all_files: ALL files from the root directory and its subdirectories
+            max_files: Maximum number of files to recommend (default 20)
+
+        Returns:
+            List of recommended file paths (subset of input files)
+        """
+        if not all_files:
+            return []
+
+        # Build file listing with metadata, grouped by subdirectory
+        file_info_by_subdir: dict[str, list[str]] = {}
+
+        for f in all_files:
+            try:
+                size = f.stat().st_size
+                size_str = f"{size // 1024}KB" if size >= 1024 else f"{size}B"
+                rel_path = str(f.relative_to(self.repo_root))
+
+                # Group by subdirectory
+                parts = rel_path.split("/")
+                if len(parts) > 1:
+                    # Get the subdirectory relative to root_dir
+                    subdir = "/".join(parts[:-1])
+                else:
+                    subdir = root_dir
+
+                if subdir not in file_info_by_subdir:
+                    file_info_by_subdir[subdir] = []
+                file_info_by_subdir[subdir].append(f"  - {rel_path} ({size_str})")
+
+            except OSError:
+                continue
+
+        if not file_info_by_subdir:
+            return all_files[:max_files]
+
+        # Build structured file listing
+        file_listing_parts = []
+        for subdir in sorted(file_info_by_subdir.keys()):
+            files_in_subdir = file_info_by_subdir[subdir]
+            # Limit files shown per subdir to avoid token explosion
+            if len(files_in_subdir) > 15:
+                files_in_subdir = files_in_subdir[:12] + [
+                    f"  ... and {len(files_in_subdir) - 12} more files"
+                ]
+            file_listing_parts.append(f"\n### {subdir}/\n" + "\n".join(files_in_subdir))
+
+        file_listing = "\n".join(file_listing_parts)
+
+        # Check for root README
+        readme_hint = ""
+        readme_path = self.repo_root / root_dir / "README.md"
+        if readme_path.exists():
+            try:
+                readme_preview = readme_path.read_text()[:800]
+                readme_hint = f"\n## README.md preview:\n{readme_preview}\n"
+            except (OSError, UnicodeDecodeError):
+                pass
+
+        prompt = f"""You are the ROOT-LEVEL SCOUT agent. Analyze this entire service/package directory tree and recommend the {max_files} BEST files to read for understanding ALL features it contains.
+
+# Root Directory: {root_dir}
+{readme_hint}
+# Files in directory tree:
+{file_listing}
+
+# Your Mission
+
+Select the {max_files} MOST IMPORTANT files across ALL subdirectories. Your goal is to help the Analyzer understand EVERY distinct feature in this root directory.
+
+## Selection Strategy
+
+1. **Coverage over depth**: Pick files from DIFFERENT subdirectories to cover more features
+2. **README.md files**: Include from each significant subdirectory (they explain features)
+3. **Main entry points**: main.py, main.go, index.ts, app.py, server.go, handler.go
+4. **Core implementations**: Files with names suggesting core functionality
+5. **Skip redundancy**: Don't pick 5 files from the same subdirectory
+
+## Files to AVOID
+
+- Test files (*_test.py, *_test.go, *.test.ts)
+- Generated files (*.pb.go, *_generated.*)
+- Pure type definitions (types.py, models.py without logic)
+- Utility helpers (utils.py, helpers.go)
+- Very large files (>50KB) unless they're main implementations
+
+## Output Format
+
+Return ONLY a JSON object:
+
+```json
+{{
+  "read": ["path/to/file1.py", "path/to/file2.go", ...],
+  "coverage": "Brief explanation of which subdirectories/features are covered"
+}}
+```
+
+The "read" array must have at most {max_files} file paths from the listing above.
+Ensure you cover as many distinct subdirectories as possible.
+"""
+
+        success, json_content, error = self._run_llm_prompt_to_file(
+            prompt, f"scout-root:{root_dir}"
+        )
+
+        if success and json_content and isinstance(json_content, dict):
+            recommended = json_content.get("read", [])
+            coverage = json_content.get("coverage", "")
+            if coverage:
+                print(f"      Scout: {coverage[:100]}...")
+
+            # Map recommended paths back to Path objects
+            result = []
+            for rec_path in recommended:
+                if isinstance(rec_path, str):
+                    for f in all_files:
+                        try:
+                            if (
+                                str(f.relative_to(self.repo_root)) == rec_path
+                                or f.name == rec_path
+                                or str(f).endswith(rec_path)
+                            ):
+                                result.append(f)
+                                break
+                        except ValueError:
+                            continue
+
+            if result:
+                return result[:max_files]
+
+        # Log Scout failure
+        if error:
+            print(f"      Root Scout failed for {root_dir}: {error}")
+        elif not success:
+            print(f"      Root Scout failed for {root_dir}: LLM call unsuccessful")
+
+        # Fallback: use heuristic selection across all files
+        return self._scout_recommend_files_heuristically(all_files, max_files)
+
+    def _analyze_root_directory(
+        self, root_dir: str, recommended_files: list[Path]
+    ) -> list[DetectedFeature]:
+        """
+        Analyze recommended files from a root directory to extract features.
+
+        This is called after root-level Scout to analyze the selected files
+        and identify all features within the root directory.
+
+        Args:
+            root_dir: Root directory path (e.g., "services/ai-guide")
+            recommended_files: Files recommended by root-level Scout
+
+        Returns:
+            List of detected features
+        """
+        if not recommended_files:
+            return []
+
+        # Extract file summaries (signatures + docstrings, not full content)
+        # This reduces token usage by ~90% compared to reading full files
+        file_contents = {}
+        for f in recommended_files:
+            content = self._extract_file_summary(f)
+            if content:
+                rel_path = str(f.relative_to(self.repo_root))
+                file_contents[rel_path] = content
+
+        if not file_contents:
+            return []
+
+        # Build code sections
+        code_sections = []
+        for file_path, content in file_contents.items():
+            ext = Path(file_path).suffix
+            lang = {
+                ".py": "python",
+                ".go": "go",
+                ".ts": "typescript",
+                ".js": "javascript",
+                ".sh": "bash",
+                ".md": "markdown",
+            }.get(ext, "")
+            code_sections.append(
+                f"## File: {file_path} (signatures + docstrings)\n\n```{lang}\n{content}\n```"
+            )
+
+        code_text = "\n---\n".join(code_sections)
+
+        # Check for root README
+        readme_section = ""
+        readme_path = self.repo_root / root_dir / "README.md"
+        if readme_path.exists():
+            readme_content = self._read_file_safe(readme_path, max_lines=200)
+            if readme_content:
+                readme_section = f"## README.md\n\n```markdown\n{readme_content}\n```\n"
+
+        # Get subdirectory list for context
+        subdirs = set()
+        for f in recommended_files:
+            rel = str(f.relative_to(self.repo_root))
+            parts = rel.split("/")
+            if len(parts) > 1:
+                # Get path up to second-to-last component
+                subdir = "/".join(parts[:-1])
+                subdirs.add(subdir)
+
+        subdir_list = "\n".join(f"- {s}" for s in sorted(subdirs))
+
+        prompt = f"""Analyze this root directory to identify ALL user-facing FEATURES.
+
+# Root Directory: {root_dir}
+
+## Subdirectories covered:
+{subdir_list}
+
+{readme_section}
+
+# File Summaries (signatures + docstrings only, not full implementations)
+
+{code_text}
+
+# Task
+
+Based on the function/class signatures and docstrings above, identify ALL distinct features.
+Each subdirectory often represents a distinct feature or capability.
+
+For each feature provide:
+
+1. **name**: Clear, descriptive name
+2. **description**: 2-3 sentence description (infer from signatures and docstrings)
+3. **category**: One of: Core Services, APIs, Data Processing, Integration, Configuration, Utilities, Infrastructure, Documentation
+4. **files**: Main implementation files (include ALL relevant files you saw)
+5. **confidence**: 0.0-1.0 (use 0.8+ for clear features)
+6. **subdirectory**: Which subdirectory this feature is primarily in
+
+# What IS a Feature?
+
+- Services/daemons (look for main(), serve(), run())
+- CLI tools (look for argparse, click, cobra)
+- APIs and endpoints (look for handlers, routes)
+- Data processors (look for process(), handle(), transform())
+- Integration points (look for client classes, API calls)
+- Configuration systems (look for config structs, settings)
+
+# What is NOT a Feature?
+
+- Pure test files
+- Empty __init__.py files
+- Generic base classes without specific functionality
+
+# Output
+
+Return a JSON array:
+
+[
+  {{
+    "name": "Feature Name",
+    "description": "Description",
+    "category": "Category",
+    "files": ["path/to/file.py"],
+    "confidence": 0.85,
+    "subdirectory": "root_dir/subdir"
+  }}
+]
+
+If truly no features, return: `[]`
+"""
+
+        success, json_content, error = self._run_llm_prompt_to_file(
+            prompt, f"analyze-root:{root_dir}"
+        )
+
+        if success and json_content and isinstance(json_content, list):
+            return self._json_to_features(json_content)
+
+        if not success:
+            # Fallback: try stdout parsing
+            success_fb, stdout, _ = self._run_llm_prompt(
+                prompt, f"analyze-root:{root_dir}-fallback"
+            )
+            if success_fb and stdout.strip():
+                return self._parse_llm_output(stdout, context=f"root:{root_dir}")
+
+            if error:
+                print(f"    Warning: Root Analyzer failed for {root_dir}: {error}")
+
+        return []
+
     def scan_directory_structure(self) -> dict[str, list[Path]]:
         """
-        Scan the repository to find ALL potential feature directories.
+        Scan the repository to find prioritized feature directories.
 
-        This method now uses LLM-based discovery to intelligently identify
-        feature-containing directories in any repository structure. No more
-        hardcoded directory lists!
+        This method uses the Cartographer agent (LLM) to intelligently identify
+        and PRIORITIZE feature-containing directories. Directories are returned
+        in priority order (most important first) for better user feedback.
 
         The process:
-        1. Ask LLM to analyze repo structure and identify feature directories
+        1. Cartographer analyzes repo structure and returns prioritized directories
         2. Fall back to heuristics if LLM unavailable
         3. Recursively scan each identified directory for source files
 
@@ -2055,12 +2365,12 @@ If truly no feature directories found, return: `[]`
                 if item.is_dir() and not self._should_skip(str(item)):
                     scan_recursively(item, depth + 1, max_depth)
 
-        # Step 1: Discover feature directories using LLM or heuristics
-        print("  Discovering feature directories...")
+        # Step 1: Cartographer discovers and prioritizes feature directories
+        print("  Cartographer analyzing repository structure...")
         if self.use_llm:
             discovered_dirs = self._discover_feature_directories_with_llm()
             if not discovered_dirs:
-                print("    LLM discovery returned empty, falling back to heuristics...")
+                print("    Cartographer returned empty, falling back to heuristics...")
                 discovered_dirs = self._discover_feature_directories_heuristically()
         else:
             discovered_dirs = self._discover_feature_directories_heuristically()
@@ -2079,12 +2389,393 @@ If truly no feature directories found, return: `[]`
         # Step 3: Check for standalone scripts at repo root
         for pattern in ["*.py", "*.go", "*.sh"]:
             for script in self.repo_root.glob(pattern):
-                if not self._should_skip(str(script)):
-                    if not self._is_git_ignored(script.name):
-                        key = str(script.relative_to(self.repo_root))
-                        feature_dirs[key] = [script]
+                if not self._should_skip(str(script)) and not self._is_git_ignored(script.name):
+                    key = str(script.relative_to(self.repo_root))
+                    feature_dirs[key] = [script]
 
         return feature_dirs
+
+    def _get_root_directories_with_all_files(self) -> dict[str, list[Path]]:
+        """
+        Get root directories with ALL their files for root-level analysis.
+
+        Unlike scan_directory_structure (which returns granular feature directories),
+        this method returns the Cartographer's root directories with ALL files
+        in their subtrees. This enables root-level Scout to see the full picture.
+
+        Example:
+            - scan_directory_structure returns:
+              {"services/ai-guide/admin_tools": [files], "services/ai-guide/ai_interface": [files]}
+              (929 directories, leads to 929 Scout calls)
+
+            - This method returns:
+              {"services/ai-guide": [all files from entire subtree]}
+              (60 directories, leads to 60 Scout calls)
+
+        Returns:
+            Dict mapping root directory paths to lists of ALL files in subtree
+        """
+        root_dirs: dict[str, list[Path]] = {}
+
+        def collect_all_files(base_path: Path) -> list[Path]:
+            """Collect ALL relevant source files from a directory tree."""
+            files = []
+            for pattern in ["*.py", "*.go", "*.js", "*.ts", "*.sh", "*.md"]:
+                for f in base_path.rglob(pattern):
+                    if self._should_skip(str(f)):
+                        continue
+                    try:
+                        rel_path = str(f.relative_to(self.repo_root))
+                        if self._is_git_ignored(rel_path):
+                            continue
+                    except ValueError:
+                        pass
+                    files.append(f)
+            return files
+
+        # Step 1: Get root directories from Cartographer
+        print("  Cartographer analyzing repository structure...")
+        if self.use_llm:
+            discovered_dirs = self._discover_feature_directories_with_llm()
+            if not discovered_dirs:
+                print("    Cartographer returned empty, falling back to heuristics...")
+                discovered_dirs = self._discover_feature_directories_heuristically()
+        else:
+            discovered_dirs = self._discover_feature_directories_heuristically()
+
+        print(f"    Discovered {len(discovered_dirs)} root directories to analyze")
+        for d in discovered_dirs[:20]:
+            print(f"      - {d}")
+        if len(discovered_dirs) > 20:
+            print(f"      ... and {len(discovered_dirs) - 20} more")
+
+        # Step 2: Collect ALL files from each root directory
+        for dir_path in discovered_dirs:
+            base_path = self.repo_root / dir_path
+            if base_path.exists() and base_path.is_dir():
+                files = collect_all_files(base_path)
+                if files:
+                    root_dirs[dir_path] = files
+
+        # Step 3: Check for standalone scripts at repo root
+        for pattern in ["*.py", "*.go", "*.sh"]:
+            for script in self.repo_root.glob(pattern):
+                if not self._should_skip(str(script)) and not self._is_git_ignored(script.name):
+                    key = str(script.relative_to(self.repo_root))
+                    root_dirs[key] = [script]
+
+        return root_dirs
+
+    def _extract_file_summary(self, path: Path) -> str:
+        """
+        Extract a lightweight summary of a file for feature detection.
+
+        Instead of reading entire files (1000+ lines), this extracts only:
+        - Module/package docstrings
+        - Class and function signatures (not bodies)
+        - Exports and public API
+
+        This reduces token usage by ~90% while preserving feature-relevant info.
+
+        Args:
+            path: Path to the file
+
+        Returns:
+            Extracted summary string
+        """
+        try:
+            suffix = path.suffix.lower()
+
+            # Markdown files: read full content (usually small and descriptive)
+            if suffix == ".md":
+                return self._read_file_safe(path, max_lines=100)
+
+            # Read the file
+            with path.open(encoding="utf-8") as f:
+                content = f.read(50_000)  # Cap at 50KB for safety
+
+            lines = content.split("\n")
+
+            if suffix == ".py":
+                return self._extract_python_summary(lines)
+            elif suffix == ".go":
+                return self._extract_go_summary(lines)
+            elif suffix in (".js", ".ts", ".tsx", ".jsx"):
+                return self._extract_js_summary(lines)
+            elif suffix == ".sh":
+                return self._extract_shell_summary(lines)
+            else:
+                # Unknown type: return first 50 lines as header
+                return "\n".join(lines[:50])
+
+        except (UnicodeDecodeError, OSError):
+            return ""
+
+    def _extract_python_summary(self, lines: list[str]) -> str:
+        """Extract Python module docstring + class/function signatures."""
+        result = []
+        in_docstring = False
+        docstring_char = None
+        i = 0
+
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Capture module-level docstring (first string literal)
+            if i < 10 and not result and (stripped.startswith(('"""', "'''"))):
+                docstring_char = stripped[:3]
+                result.append(line)
+                if stripped.count(docstring_char) >= 2 and len(stripped) > 6:
+                    # Single-line docstring
+                    i += 1
+                    continue
+                in_docstring = True
+                i += 1
+                while i < len(lines) and in_docstring:
+                    result.append(lines[i])
+                    if docstring_char in lines[i]:
+                        in_docstring = False
+                    i += 1
+                continue
+
+            # Capture imports (useful for understanding dependencies)
+            if stripped.startswith(("import ", "from ")):
+                result.append(line)
+                i += 1
+                continue
+
+            # Capture class definitions with their docstrings
+            if stripped.startswith("class "):
+                result.append(line)
+                # Look for class docstring
+                if i + 1 < len(lines):
+                    next_stripped = lines[i + 1].strip()
+                    if next_stripped.startswith(('"""', "'''")):
+                        i += 1
+                        docstring_char = next_stripped[:3]
+                        result.append(lines[i])
+                        if next_stripped.count(docstring_char) >= 2:
+                            i += 1
+                            continue
+                        i += 1
+                        while i < len(lines):
+                            result.append(lines[i])
+                            if docstring_char in lines[i]:
+                                break
+                            i += 1
+                i += 1
+                continue
+
+            # Capture function/method definitions with docstrings
+            if stripped.startswith(("def ", "async def ")):
+                result.append(line)
+                # Look for function docstring
+                if i + 1 < len(lines):
+                    next_stripped = lines[i + 1].strip()
+                    if next_stripped.startswith(('"""', "'''")):
+                        i += 1
+                        docstring_char = next_stripped[:3]
+                        result.append(lines[i])
+                        if next_stripped.count(docstring_char) >= 2:
+                            i += 1
+                            continue
+                        i += 1
+                        # Read until closing docstring (max 10 lines)
+                        docstring_lines = 0
+                        while i < len(lines) and docstring_lines < 10:
+                            result.append(lines[i])
+                            if docstring_char in lines[i]:
+                                break
+                            i += 1
+                            docstring_lines += 1
+                i += 1
+                continue
+
+            # Capture decorated functions/classes
+            if stripped.startswith("@"):
+                result.append(line)
+                i += 1
+                continue
+
+            # Capture module-level constants and assignments (first 30 lines only)
+            # Simple assignment at module level (not indented)
+            if (
+                i < 30
+                and "=" in stripped
+                and not stripped.startswith("#")
+                and not stripped.startswith((" ", "\t"))
+            ):
+                result.append(line)
+
+            i += 1
+
+        return "\n".join(result) if result else "\n".join(lines[:50])
+
+    def _extract_go_summary(self, lines: list[str]) -> str:
+        """Extract Go package doc + func/type signatures."""
+        result = []
+        in_block_comment = False
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Package comment (before package declaration)
+            if stripped.startswith("//") and i < 20:
+                result.append(line)
+                continue
+
+            # Block comments
+            if "/*" in stripped:
+                in_block_comment = True
+                result.append(line)
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+            if in_block_comment:
+                result.append(line)
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+
+            # Package declaration
+            if stripped.startswith("package "):
+                result.append(line)
+                continue
+
+            # Import statements
+            if stripped.startswith("import "):
+                result.append(line)
+                if "(" in stripped and ")" not in stripped:
+                    # Multi-line import
+                    i += 1
+                    while i < len(lines) and ")" not in lines[i]:
+                        result.append(lines[i])
+                        i += 1
+                    if i < len(lines):
+                        result.append(lines[i])
+                continue
+
+            # Type definitions
+            if stripped.startswith("type "):
+                result.append(line)
+                # Include struct/interface body summary
+                if ("struct {" in stripped or "interface {" in stripped) and "}" not in stripped:
+                    # Multi-line: read up to 20 lines
+                    depth = 1
+                    j = i + 1
+                    while j < len(lines) and depth > 0 and (j - i) < 20:
+                        result.append(lines[j])
+                        if "{" in lines[j]:
+                            depth += 1
+                        if "}" in lines[j]:
+                            depth -= 1
+                        j += 1
+                continue
+
+            # Function declarations
+            if stripped.startswith("func "):
+                result.append(line)
+                # Look for doc comment above (scan back)
+                for back in range(max(0, i - 5), i):
+                    if lines[back].strip().startswith("//") and lines[back] not in result:
+                        result.insert(-1, lines[back])
+                continue
+
+            # Const and var blocks
+            if stripped.startswith(("const ", "var ", "const(", "var(")):
+                result.append(line)
+                if "(" in stripped and ")" not in stripped:
+                    j = i + 1
+                    while j < len(lines) and ")" not in lines[j] and (j - i) < 30:
+                        result.append(lines[j])
+                        j += 1
+                    if j < len(lines):
+                        result.append(lines[j])
+                continue
+
+        return "\n".join(result) if result else "\n".join(lines[:50])
+
+    def _extract_js_summary(self, lines: list[str]) -> str:
+        """Extract JavaScript/TypeScript exports and function signatures."""
+        result = []
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # JSDoc comments
+            if stripped.startswith(("/**", "/*")):
+                result.append(line)
+                if "*/" not in stripped:
+                    j = i + 1
+                    while j < len(lines) and "*/" not in lines[j] and (j - i) < 20:
+                        result.append(lines[j])
+                        j += 1
+                    if j < len(lines):
+                        result.append(lines[j])
+                continue
+
+            # Import statements
+            if stripped.startswith("import "):
+                result.append(line)
+                continue
+
+            # Export statements
+            if stripped.startswith("export "):
+                result.append(line)
+                continue
+
+            # Function declarations
+            if any(
+                stripped.startswith(p)
+                for p in [
+                    "function ",
+                    "async function ",
+                    "const ",
+                    "let ",
+                    "var ",
+                    "class ",
+                    "interface ",
+                    "type ",
+                    "enum ",
+                ]
+            ):
+                result.append(line)
+                continue
+
+            # Arrow functions and object methods (capture signature line)
+            if "=>" in stripped or stripped.endswith("{"):
+                if any(kw in stripped for kw in ["const ", "let ", "function", "export"]):
+                    result.append(line)
+                continue
+
+        return "\n".join(result) if result else "\n".join(lines[:50])
+
+    def _extract_shell_summary(self, lines: list[str]) -> str:
+        """Extract shell script header and function definitions."""
+        result = []
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Shebang and header comments (first 30 lines)
+            if i < 30 and (stripped.startswith("#") or not stripped):
+                result.append(line)
+                continue
+
+            # Function definitions
+            if stripped.startswith("function ") or ("() {" in stripped or "(){" in stripped):
+                result.append(line)
+                continue
+
+            # Variable exports and key assignments
+            if stripped.startswith("export ") or (
+                i < 50 and "=" in stripped and not stripped.startswith("#")
+            ):
+                result.append(line)
+                continue
+
+        return "\n".join(result) if result else "\n".join(lines[:50])
 
     def _read_file_safe(self, path: Path, max_lines: int = 1000) -> str:
         """
@@ -2704,16 +3395,20 @@ Notes:
         return "\n".join(lines)
 
     def _analyze_single_directory(
-        self, dir_path: str, files: list[Path]
+        self, dir_path: str, files: list[Path], use_scout: bool = True
     ) -> tuple[str, int, list[DetectedFeature]]:
         """
-        Analyze a single directory for features.
+        Analyze a single directory for features using Scout → Analyzer pipeline.
 
         This method is designed to be called in parallel via ThreadPoolExecutor.
+        It now uses a two-phase approach:
+        1. Scout phase: Determine which files are worth reading
+        2. Analyzer phase: Deep analysis of selected files only
 
         Args:
             dir_path: Path to the directory relative to repo root
             files: List of files in the directory
+            use_scout: If True, use Scout agent to select files first (default True)
 
         Returns:
             Tuple of (dir_path, file_count, list of detected features)
@@ -2724,7 +3419,16 @@ Notes:
         file_count = len(files)
 
         if self.use_llm:
-            features = self._analyze_directory_with_llm(dir_path, files)
+            # Phase 1: Scout recommends which files to read
+            # Always let Scout make the decision on which files to analyze,
+            # regardless of directory size. Scout may have valuable insights.
+            if use_scout:
+                recommended_files = self._scout_recommend_files(dir_path, files, max_files=5)
+            else:
+                recommended_files = self._scout_recommend_files_heuristically(files, max_files=5)
+
+            # Phase 2: Analyze only the recommended files
+            features = self._analyze_directory_with_llm(dir_path, recommended_files)
             if not features:
                 features = self._analyze_directory_heuristically(dir_path, files)
         else:
@@ -2738,25 +3442,86 @@ Notes:
 
         return (dir_path, file_count, features)
 
+    def _analyze_root_with_pipeline(
+        self, root_dir: str, all_files: list[Path]
+    ) -> tuple[str, int, list[DetectedFeature]]:
+        """
+        Analyze a root directory using the root-level Scout → Analyzer pipeline.
+
+        This method runs ONE Scout call for the entire root directory (instead of
+        one per subdirectory), then ONE Analyzer call on the recommended files.
+
+        This is ~15x more efficient than the per-subdirectory approach:
+        - Old: 929 Scout calls + 929 Analyzer calls = 1858 LLM calls
+        - New: 60 Scout calls + 60 Analyzer calls = 120 LLM calls
+
+        Args:
+            root_dir: Root directory path (e.g., "services/ai-guide")
+            all_files: ALL files from the root directory and subdirectories
+
+        Returns:
+            Tuple of (root_dir, file_count, list of detected features)
+        """
+        if not all_files:
+            return (root_dir, 0, [])
+
+        file_count = len(all_files)
+
+        if self.use_llm:
+            # Phase 1: Root-level Scout recommends key files across entire tree
+            recommended_files = self._scout_root_level(root_dir, all_files, max_files=20)
+
+            # Phase 2: Analyzer processes the recommended files
+            features = self._analyze_root_directory(root_dir, recommended_files)
+
+            if not features:
+                # Fallback: try heuristic analysis on a subset of files
+                heuristic_files = self._scout_recommend_files_heuristically(all_files, max_files=15)
+                features = self._analyze_directory_with_llm(root_dir, heuristic_files)
+        else:
+            # No LLM: use heuristics
+            heuristic_files = self._scout_recommend_files_heuristically(all_files, max_files=15)
+            features = self._analyze_directory_heuristically(root_dir, heuristic_files)
+
+        # Find existing docs for each feature
+        for feature in features:
+            doc_path = self._find_existing_docs(feature)
+            if doc_path:
+                feature.doc_path = doc_path
+
+        return (root_dir, file_count, features)
+
     def analyze_full_repo(
         self,
         dry_run: bool = False,
         output_path: Path | None = None,
-        max_workers: int = 5,
+        max_workers: int = 20,
+        use_root_level_scout: bool = True,
     ) -> FullRepoAnalysisResult:
         """
         Analyze entire repository and generate comprehensive FEATURES.md.
 
-        Uses a multi-agent approach with parallel directory analysis:
-        1. Scan directories to build inventory
-        2. Analyze directories for features IN PARALLEL (LLM pass 1)
-        3. Consolidate and deduplicate all features (LLM pass 2)
-        4. Generate final FEATURES.md
+        Uses a multi-agent pipeline for efficient analysis. Two modes available:
+
+        **ROOT-LEVEL MODE (use_root_level_scout=True, DEFAULT - ~15x faster)**:
+        - Phase 0: Cartographer identifies ~60 root directories
+        - Phase 1: ONE Scout + Analyzer call per root directory (in parallel)
+        - Total: ~120 LLM calls instead of ~1858
+
+        **PER-DIRECTORY MODE (use_root_level_scout=False, legacy)**:
+        - Phase 0: Cartographer + recursive scan finds ~929 feature directories
+        - Phase 1: ONE Scout + Analyzer call per feature directory (in parallel)
+        - Total: ~1858 LLM calls
+
+        Both modes then:
+        - Phase 2: Consolidator deduplicates and organizes
+        - Phase 3: Generator produces FEATURES.md
 
         Args:
             dry_run: If True, don't write output file
             output_path: Custom output path (defaults to docs/FEATURES.md)
-            max_workers: Maximum number of parallel LLM calls (default 5)
+            max_workers: Maximum number of parallel LLM calls (default 20)
+            use_root_level_scout: If True, use faster root-level Scout (default True)
         """
         result = FullRepoAnalysisResult(
             analysis_date=datetime.now(UTC).isoformat(),
@@ -2764,54 +3529,93 @@ Notes:
 
         output = output_path or self.features_md
 
-        print("Full Repository Feature Analysis (Multi-Agent)")
-        print("=" * 50)
+        mode_name = "Root-Level" if use_root_level_scout else "Per-Directory"
+        print(f"Full Repository Feature Analysis ({mode_name} Mode)")
+        print("=" * 55)
         print(f"Repository: {self.repo_root}")
         print(f"Output: {output}")
         print(f"Parallel workers: {max_workers}")
+        print(f"Pipeline mode: {mode_name} Scout")
         print()
 
-        # Phase 1: Scan directory structure
-        print("Phase 1: Scanning directory structure...")
-        feature_dirs = self.scan_directory_structure()
-        result.directories_scanned = len(feature_dirs)
-        print(f"  Found {len(feature_dirs)} potential feature directories")
+        # Phase 0: Cartographer discovers directories
+        if use_root_level_scout:
+            # ROOT-LEVEL MODE: Get root directories with all their files
+            print("Phase 0: Cartographer discovering root directories...")
+            root_dirs = self._get_root_directories_with_all_files()
+            result.directories_scanned = len(root_dirs)
+            total_files = sum(len(files) for files in root_dirs.values())
+            print(
+                f"  Cartographer found {len(root_dirs)} root directories ({total_files} total files)"
+            )
 
-        # Phase 2: Analyze directories IN PARALLEL (LLM pass 1 - extraction)
-        print(f"\nPhase 2: Analyzing directories for features (parallel, {max_workers} workers)...")
-        all_features: list[DetectedFeature] = []
+            # Phase 1: Root-level Scout + Analyzer (parallel)
+            print(f"\nPhase 1: Root-Level Scout → Analyzer ({max_workers} workers)...")
+            all_features: list[DetectedFeature] = []
+            print_lock = threading.Lock()
 
-        # Use thread-safe lock for printing
-        print_lock = threading.Lock()
+            dirs_to_analyze = [(dp, files) for dp, files in root_dirs.items() if files]
 
-        # Filter out empty directories first
-        dirs_to_analyze = [(dp, files) for dp, files in feature_dirs.items() if files]
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_dir = {
+                    executor.submit(self._analyze_root_with_pipeline, root_dir, files): root_dir
+                    for root_dir, files in dirs_to_analyze
+                }
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all directory analysis tasks
-            future_to_dir = {
-                executor.submit(self._analyze_single_directory, dir_path, files): dir_path
-                for dir_path, files in dirs_to_analyze
-            }
+                for future in as_completed(future_to_dir):
+                    root_dir = future_to_dir[future]
+                    try:
+                        analyzed_dir, file_count, features = future.result()
+                        result.files_analyzed += file_count
 
-            # Process results as they complete
-            for future in as_completed(future_to_dir):
-                dir_path = future_to_dir[future]
-                try:
-                    analyzed_dir, file_count, features = future.result()
-                    result.files_analyzed += file_count
+                        with print_lock:
+                            print(f"  ✓ {analyzed_dir} ({file_count} files)")
+                            for feature in features:
+                                all_features.append(feature)
+                                print(
+                                    f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)"
+                                )
 
-                    with print_lock:
-                        print(f"  ✓ {analyzed_dir} ({file_count} files)")
-                        for feature in features:
-                            all_features.append(feature)
-                            print(
-                                f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)"
-                            )
+                    except Exception as e:
+                        with print_lock:
+                            print(f"  ✗ {root_dir}: Error - {e}")
+        else:
+            # PER-DIRECTORY MODE (legacy): Scan for feature directories
+            print("Phase 0: Cartographer discovering feature directories...")
+            feature_dirs = self.scan_directory_structure()
+            result.directories_scanned = len(feature_dirs)
+            print(f"  Cartographer found {len(feature_dirs)} feature directories")
 
-                except Exception as e:
-                    with print_lock:
-                        print(f"  ✗ {dir_path}: Error - {e}")
+            # Phase 1: Per-directory Scout + Analyzer (parallel)
+            print(f"\nPhase 1: Scout → Analyzer pipeline ({max_workers} workers)...")
+            all_features: list[DetectedFeature] = []
+            print_lock = threading.Lock()
+
+            dirs_to_analyze = [(dp, files) for dp, files in feature_dirs.items() if files]
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_dir = {
+                    executor.submit(self._analyze_single_directory, dir_path, files): dir_path
+                    for dir_path, files in dirs_to_analyze
+                }
+
+                for future in as_completed(future_to_dir):
+                    dir_path = future_to_dir[future]
+                    try:
+                        analyzed_dir, file_count, features = future.result()
+                        result.files_analyzed += file_count
+
+                        with print_lock:
+                            print(f"  ✓ {analyzed_dir} ({file_count} files)")
+                            for feature in features:
+                                all_features.append(feature)
+                                print(
+                                    f"    → Found: {feature.name} ({feature.confidence:.0%} confidence)"
+                                )
+
+                    except Exception as e:
+                        with print_lock:
+                            print(f"  ✗ {dir_path}: Error - {e}")
 
         result.features_detected = all_features
         print(f"\n  Total features detected: {len(all_features)}")
@@ -2820,8 +3624,8 @@ Notes:
             print("\n  No features detected. Skipping consolidation and generation.")
             return result
 
-        # Phase 3: Consolidate features (LLM pass 2 - deduplication/organization)
-        print("\nPhase 3: Consolidating and organizing (LLM)...")
+        # Phase 2: Consolidator deduplicates and organizes features
+        print("\nPhase 2: Consolidator organizing features...")
         if self.use_llm and len(all_features) > 1:
             consolidated_features = self._consolidate_features_with_llm(all_features)
             print(f"  Consolidated to {len(consolidated_features)} features")
@@ -2843,8 +3647,8 @@ Notes:
                 result.features_by_category[cat] = []
             result.features_by_category[cat].append(feature)
 
-        # Phase 4: Generate FEATURES.md
-        print("\nPhase 4: Generating FEATURES.md...")
+        # Phase 3: Generate FEATURES.md
+        print("\nPhase 3: Generating FEATURES.md...")
         repo_name = self.repo_root.name
         content = self.generate_features_md(consolidated_features, repo_name=repo_name)
 

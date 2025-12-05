@@ -33,19 +33,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-
-# Add shared modules to path
-sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
-
-try:
-    from claude import is_claude_available, run_claude
-except ImportError:
-    # Fallback if shared module not available
-    def is_claude_available() -> bool:
-        return False
-
-    def run_claude(*args, **kwargs):
-        return None
+# Import Claude module (installed as package via pip)
+from claude import is_claude_available, run_claude
 
 
 @dataclass
