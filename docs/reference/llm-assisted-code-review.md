@@ -117,7 +117,7 @@ The goal is not to eliminate human judgment—it's to focus human judgment where
 | Document | Description |
 |----------|-------------|
 | [A Pragmatic Guide for Software Engineering in a Post-LLM World](../architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
-| [Human-Directed, LLM-Navigated Development](../architecture/LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration |
+| [Human-Driven, LLM-Navigated Development](../architecture/LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration |
 | [Radical Self-Improvement for LLMs](../architecture/Radical-Self-Improvement-for-LLMs.md) | Framework for autonomous LLM self-improvement |
 | [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Complete architectural decision record with implementation phases, success metrics, and technical specifications |
 
