@@ -30,6 +30,7 @@ ADRs are organized by implementation status:
 | ADR | Summary |
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
+| [Codebase Analyzer Strategy](in-progress/ADR-Codebase-Analyzer-Strategy.md) | Multi-layered codebase analysis with external best practices integration and FEATURES.md maintenance |
 
 ### Not Implemented
 
