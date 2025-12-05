@@ -111,11 +111,24 @@ RUN cat > /usr/local/bin/entrypoint.sh << 'EOF'
 #!/bin/bash
 set -euo pipefail
 
+# Record entrypoint start time (for timing debug)
+ENTRYPOINT_START=$(date +%s.%N)
+
 # Runtime identity from docker run
 RUNTIME_USER="${RUNTIME_USER:-sandboxed}"
 RUNTIME_UID="${RUNTIME_UID:-1000}"
 RUNTIME_GID="${RUNTIME_GID:-1000}"
 JIB_QUIET="${JIB_QUIET:-0}"
+JIB_DEBUG_TIMING="${JIB_DEBUG_TIMING:-0}"
+
+# Helper function for timing debug
+log_timing() {
+    if [ "$JIB_DEBUG_TIMING" = "1" ]; then
+        local now=$(date +%s.%N)
+        local elapsed=$(echo "$now - $ENTRYPOINT_START" | bc)
+        echo "  [TIMING] $1: ${elapsed}s"
+    fi
+}
 
 # Helper functions for quiet mode
 # Note: Must use if/fi pattern (not && shorthand) to ensure return code 0
@@ -139,6 +152,7 @@ log_error() {
     echo "✗ $@" >&2
 }
 
+log_timing "Container process started"
 [ "$JIB_QUIET" = "0" ] && echo "Setting up sandboxed environment for user: ${RUNTIME_USER} (uid=${RUNTIME_UID}, gid=${RUNTIME_GID})"
 
 # Create user's home directory and ensure correct ownership
@@ -156,16 +170,19 @@ if ! getent passwd "${RUNTIME_UID}" >/dev/null 2>&1; then
     printf '%s ALL=(ALL) NOPASSWD:ALL\n' "${RUNTIME_USER}" > "/etc/sudoers.d/010-${RUNTIME_USER}-nopasswd"
     chmod 0440 "/etc/sudoers.d/010-${RUNTIME_USER}-nopasswd"
 fi
+log_timing "User setup complete"
 
 # Start PostgreSQL in container
 if ! pgrep -x postgres > /dev/null; then
     service postgresql start >/dev/null 2>&1 && log_success "PostgreSQL started" || log_warn "PostgreSQL failed to start"
 fi
+log_timing "PostgreSQL started"
 
 # Start Redis in container
 if ! pgrep -x redis-server > /dev/null; then
     service redis-server start >/dev/null 2>&1 && log_success "Redis started" || log_warn "Redis failed to start"
 fi
+log_timing "Redis started"
 
 # Set up environment
 export HOME="${USER_HOME}"
@@ -236,6 +253,7 @@ if [ -d "${USER_HOME}/.git-main" ]; then
     done
 fi
 log_success "Git configured to commit as jib <jib@khan.org>"
+log_timing "Git configuration complete"
 
 # Fix worktree .git files to point to mounted git directories
 # Worktrees have .git files that reference the main repo's .git directory
@@ -325,6 +343,7 @@ if [ "$worktree_setup_failed" = true ]; then
     log_error "Please check your jib setup and try again."
     exit 1
 fi
+log_timing "Worktree setup complete"
 
 # Create convenience symlink to ~/sharing/tmp
 # All shared data is now under ~/sharing/ for cleaner host organization
@@ -390,6 +409,7 @@ if [ -f "${RULES_DIR}/mission.md" ]; then
     log_info "  Combined ${#RULES_ORDER[@]} rule files (index-based per LLM Doc ADR)"
     log_info "  Note: Reference docs in ~/khan/james-in-a-box/docs/ (fetched on-demand)"
 fi
+log_timing "Agent rules installed"
 
 # Set up .claude directory structure
 # NOTE: ~/.claude is now container-local (ephemeral) to prevent history sharing
@@ -706,6 +726,7 @@ PYCONFIG2
         log_info "  Use mcp__github_readonly__* tools for repos like Khan/webapp"
     fi
 fi
+log_timing "MCP servers configured"
 
 # Create alias for Claude with permissions bypassed (safe in this sandboxed environment)
 # Note: PATH is already set in entrypoint to include /opt/jib-runtime/jib-container/bin
@@ -760,6 +781,7 @@ gosu "${RUNTIME_UID}:${RUNTIME_GID}" bd sync --import-only > /dev/null 2>&1 || t
 log_success "Beads memory system ready"
 log_info "  Location: ~/beads/ (symlink to ~/sharing/beads/)"
 log_info "  Usage: bd --allow-stale create 'task description' --labels feature,important"
+log_timing "Beads setup complete"
 
 # Generate documentation indexes (codebase.json, patterns.json, dependencies.json)
 # These are gitignored and regenerated on container startup to avoid merge conflicts
@@ -776,6 +798,7 @@ if [ -f "$INDEX_GENERATOR" ] && [ -d "${USER_HOME}/khan/james-in-a-box" ]; then
         log_warn "Documentation index generation failed (non-critical)"
     fi
 fi
+log_timing "Documentation indexes generated"
 
 # NOTE: All analysis uses exec-based pattern (no background processes)
 # Analysis scripts are triggered by host-side systemd services via `jib --exec`
@@ -889,6 +912,7 @@ if [ $# -eq 0 ]; then
         log_info "  Syncs to ~/.claude-auth/ immediately after /login"
         log_info ""
     fi
+    log_timing "Background watchers started"
 
     # Show banner only in verbose mode
     if [ "$JIB_QUIET" = "0" ]; then
@@ -961,6 +985,7 @@ if [ $# -eq 0 ]; then
         echo "✓ Ready. Type /help for available commands."
         echo ""
     fi
+    log_timing "ENTRYPOINT COMPLETE - launching Claude"
 
     # Start in khan directory
     cd "${USER_HOME}/khan" 2>/dev/null || cd "${USER_HOME}"

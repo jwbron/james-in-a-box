@@ -26,6 +26,17 @@ from statusbar import StatusBar, init_statusbar, status, status_success, status_
 # Global quiet mode flag
 _quiet_mode = False
 
+# Global debug timing flag
+_debug_timing = False
+
+
+def debug_time(label: str, start: float) -> float:
+    """Print timing debug info if enabled. Returns new start time."""
+    if _debug_timing:
+        elapsed = time.time() - start
+        print(f"  [TIMING] {label}: {elapsed:.3f}s")
+    return time.time()
+
 
 # Default log directory for container logs
 CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
@@ -1549,6 +1560,9 @@ def setup() -> bool:
 
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
+    timing_start = time.time()
+    phase_start = timing_start
+
     # Check if image exists
     if _quiet_mode:
         status("Checking Docker image...")
@@ -1628,9 +1642,11 @@ def run_claude() -> bool:
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
     if _quiet_mode:
         status("Building Docker image...")
+    phase_start = debug_time("Pre-build checks", phase_start)
     if not build_image():
         error("Docker build failed")
         return False
+    phase_start = debug_time("Docker build", phase_start)
 
     # Generate unique container ID
     if _quiet_mode:
@@ -1650,6 +1666,7 @@ def run_claude() -> bool:
         info("Creating isolated worktrees...")
         print()
     worktrees = create_worktrees(container_id)
+    phase_start = debug_time(f"Worktree creation ({len(worktrees)} repos)", phase_start)
 
     if worktrees and not _quiet_mode:
         print()
@@ -1752,6 +1769,7 @@ def run_claude() -> bool:
 
     if not _quiet_mode:
         print()
+    phase_start = debug_time(f"Mount configuration ({len(mount_args)} mounts)", phase_start)
 
     # Remove old container if exists (cleanup any previous runs)
     subprocess.run(["docker", "rm", "-f", container_id],
@@ -1770,6 +1788,7 @@ def run_claude() -> bool:
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
+        "-e", f"JIB_DEBUG_TIMING={'1' if _debug_timing else '0'}",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
@@ -1809,6 +1828,7 @@ def run_claude() -> bool:
         cmd.extend(["-e", f"GITHUB_READONLY_TOKEN={github_readonly_token}"])
         if not _quiet_mode:
             info("GitHub readonly: Token configured for external repos")
+    phase_start = debug_time("GitHub token generation", phase_start)
 
     if not _quiet_mode:
         info("Network mode: Bridge (isolated from host, outbound HTTP only)")
@@ -1829,9 +1849,19 @@ def run_claude() -> bool:
     if _quiet_mode:
         status("Launching Claude...")
 
+    # Track time before docker run to measure container startup
+    docker_start = time.time()
+
     # Run container
     try:
         subprocess.run(cmd)
+        # This timing won't be shown until after container exits, but it's useful for debugging
+        if _debug_timing:
+            total_time = time.time() - timing_start
+            docker_time = time.time() - docker_start
+            print()
+            print(f"  [TIMING] Total startup to container launch: {docker_start - timing_start:.3f}s")
+            print(f"  [TIMING] Container session duration: {docker_time:.3f}s")
         return True
     except KeyboardInterrupt:
         print()
@@ -2133,13 +2163,24 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         action="store_true",
         help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)"
     )
+    parser.add_argument(
+        "--debug-timing",
+        action="store_true",
+        help="Show timing information for each startup phase (helps diagnose slow startup)"
+    )
 
     args = parser.parse_args()
 
     # Initialize quiet mode globally
     # Quiet is the default; verbose (-v) overrides it
-    global _quiet_mode
+    global _quiet_mode, _debug_timing
     _quiet_mode = not args.verbose
+    _debug_timing = args.debug_timing
+    if _debug_timing:
+        # Force verbose mode when debugging timing
+        _quiet_mode = False
+        info("Timing debug enabled - showing startup phase durations")
+        print()
     if _quiet_mode:
         # Initialize statusbar with estimated steps for interactive mode
         # Steps: check docker image, check auth, build image, prepare container,
