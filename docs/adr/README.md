@@ -43,6 +43,7 @@ ADRs are organized by implementation status:
 | [Slack Bot GCP Integration](not-implemented/ADR-Slack-Bot-GCP-Integration.md) | GCP-hosted Slack bot architecture |
 | [Slack Integration Strategy](not-implemented/ADR-Slack-Integration-Strategy-MCP-vs-Custom.md) | Custom Slack integration vs MCP server |
 | [Standardized Logging Interface](in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
+| [Web Service Architecture](not-implemented/ADR-Web-Service-Architecture.md) | Unified REST API for web service deployment with intelligent task routing |
 
 ## ADR Template
 
