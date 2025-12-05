@@ -237,7 +237,9 @@ class ConfluenceSync:
         while True:
             # Use space ID instead of space key for the pages endpoint
             url = f"{self.config.BASE_URL}/api/v2/spaces/{space_id}/pages"
-            params = {"limit": limit}
+            # Include both current and draft pages to ensure we sync unpublished content
+            # By default, the API only returns "current" status pages
+            params = {"limit": limit, "status": "current,draft"}
             if cursor:
                 params["cursor"] = cursor
 
