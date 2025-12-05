@@ -78,7 +78,9 @@ def list_all_spaces(space_type: str | None = None, show_personal: bool = True):
         global_spaces = [s for s in all_spaces if s.get("type") == "global"]
         personal_spaces = [s for s in all_spaces if s.get("type") == "personal"]
 
-        print(f"Found {len(all_spaces)} spaces ({len(global_spaces)} global, {len(personal_spaces)} personal)")
+        print(
+            f"Found {len(all_spaces)} spaces ({len(global_spaces)} global, {len(personal_spaces)} personal)"
+        )
         print()
 
         # Show global spaces first (these are the team/project spaces)
@@ -105,8 +107,12 @@ def list_all_spaces(space_type: str | None = None, show_personal: bool = True):
         # Show helpful hint about configuring spaces
         if global_spaces:
             print("---")
-            print("TIP: To sync these spaces, add their keys to CONFLUENCE_SPACE_KEYS in your secrets.env:")
-            print(f"  CONFLUENCE_SPACE_KEYS=\"{','.join(s.get('key', '') for s in global_spaces[:5])}\"")
+            print(
+                "TIP: To sync these spaces, add their keys to CONFLUENCE_SPACE_KEYS in your secrets.env:"
+            )
+            print(
+                f'  CONFLUENCE_SPACE_KEYS="{",".join(s.get("key", "") for s in global_spaces[:5])}"'
+            )
             if len(global_spaces) > 5:
                 print(f"  (showing first 5 of {len(global_spaces)} global spaces)")
 
