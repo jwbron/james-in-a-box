@@ -1,7 +1,7 @@
 # Human-Directed, LLM-Navigated Software Development
 
 **Status:** Draft
-**Author:** James Wiesebron, Tyler Burleigh
+**Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
 **Purpose:** A philosophy and framework for software development where humans drive strategy while LLMs handle structural rigor and implementation
 
