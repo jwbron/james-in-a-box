@@ -1,9 +1,9 @@
-# Radical Self-Improvement for LLMs
+# Radical Self-Improvement: A Framework for Continuous Excellence
 
 **Status:** Draft
 **Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
-**Purpose:** Strategic framework for autonomous LLM self-improvement systems
+**Purpose:** A cultural framework for continuous improvement across LLMs, humans, teams, and organizations
 
 ---
 
@@ -13,25 +13,36 @@
 
 ## Executive Summary
 
-This document outlines a strategic vision for LLM systems that continuously improve themselves with minimal human intervention. Unlike reactive improvement (fixing bugs when they occur), radical self-improvement is **proactive, systematic, and self-sustaining**.
+This document presents **Radical Self-Improvement** as a cultural framework—not just a technical capability. While initially conceived for LLM agent systems, the principles apply universally: **LLMs, individual developers, teams, and entire organizations can all benefit from systematic, evidence-based continuous improvement**.
 
-**Core Thesis:** An LLM agent system should get measurably better at its job every week, automatically. Human oversight shifts from directing improvements to validating them.
+**Core Thesis:** Every participant in the software development lifecycle—human or AI—should receive constructive feedback, reflect on patterns, and continuously improve. Feedback flows in all directions.
+
+**The Cultural Shift:**
+
+| Traditional Model | Radical Self-Improvement Model |
+|------------------|-------------------------------|
+| Humans direct, LLMs execute | All participants give and receive feedback |
+| Feedback is top-down | Feedback flows in all directions |
+| Improvement is human-initiated | Improvement is systematic and continuous |
+| Problems are addressed reactively | Patterns are detected and addressed proactively |
 
 **Key Pillars:**
 1. **Automated Maintenance** - Repository hygiene, documentation freshness, dependency updates
-2. **Continuous Self-Reflection** - Pattern detection across interactions, inefficiency analysis
-3. **PR Review Reviewer** - Meta-review that improves the review process itself
-4. **Strategic Human Feedback** - Escalating systemic issues, not fixing individual bugs
+2. **Continuous Self-Reflection** - Pattern detection across all participants
+3. **Bidirectional Feedback** - Everyone gives and receives constructive feedback
+4. **Strategic Escalation** - Systemic issues elevated to the right level
 
 ---
 
 ## Table of Contents
 
-- [The Vision](#the-vision)
+- [The Vision: A Culture of Continuous Improvement](#the-vision-a-culture-of-continuous-improvement)
+- [Why Bidirectional Feedback Matters](#why-bidirectional-feedback-matters)
+- [Applying Radical Self-Improvement at Every Level](#applying-radical-self-improvement-at-every-level)
 - [Pillar 1: Automated Maintenance](#pillar-1-automated-maintenance)
 - [Pillar 2: Continuous Self-Reflection](#pillar-2-continuous-self-reflection)
-- [Pillar 3: PR Review Reviewer](#pillar-3-pr-review-reviewer)
-- [Pillar 4: Strategic Human Feedback](#pillar-4-strategic-human-feedback)
+- [Pillar 3: Bidirectional Feedback](#pillar-3-bidirectional-feedback)
+- [Pillar 4: Strategic Escalation](#pillar-4-strategic-escalation)
 - [Implementation Principles](#implementation-principles)
 - [Success Metrics](#success-metrics)
 - [Relationship to Other Documents](#relationship-to-other-documents)
@@ -39,37 +50,138 @@ This document outlines a strategic vision for LLM systems that continuously impr
 
 ---
 
-## The Vision
+## The Vision: A Culture of Continuous Improvement
 
-### Current State: Reactive Improvement
+### The Problem with One-Way Feedback
 
-Today, LLM agent systems improve primarily through:
-- Bug fixes when something breaks
-- Human-initiated prompt engineering
-- Manual documentation updates
-- Ad-hoc process improvements
+Traditional software development has established feedback mechanisms:
+- Code reviews provide feedback on code
+- Performance reviews provide feedback on individuals
+- Retrospectives provide feedback on team processes
+- Post-mortems provide feedback on incidents
 
-This is reactive: **problems must manifest before they're addressed**.
+But these mechanisms share a common limitation: **feedback flows primarily from senior to junior, from human to tool, from manager to team**. This creates blind spots:
 
-### Target State: Proactive Self-Improvement
+- Developers hesitate to give feedback to leadership
+- Teams rarely critique organizational processes
+- LLMs never provide feedback to the humans directing them
+- Systemic issues persist because no one "owns" cross-cutting concerns
 
-In a radically self-improving system:
-- The agent detects efficiency gaps before they cause failures
-- Documentation stays synchronized with code automatically
-- Review processes evolve based on feedback patterns
-- Human attention focuses on strategy, not maintenance
+### The Radical Shift: Everyone Improves
 
-**The key shift:** Humans approve improvements rather than conceive them.
+**Radical Self-Improvement** inverts this model. Every participant in the software development lifecycle:
 
-### Why This Matters
+1. **Receives feedback** - From tools, peers, subordinates, and systems
+2. **Reflects on patterns** - Identifies recurring issues in their own behavior
+3. **Proposes improvements** - Suggests changes to processes, not just code
+4. **Measures progress** - Tracks whether changes actually help
 
-| Factor | Reactive System | Self-Improving System |
-|--------|----------------|----------------------|
-| **Failure mode** | Problems accumulate until crisis | Problems detected and addressed early |
-| **Human effort** | High (directing all improvements) | Low (reviewing proposed improvements) |
-| **Improvement rate** | Limited by human bandwidth | Limited only by validation capacity |
-| **Documentation** | Drifts out of sync | Continuously synchronized |
-| **Knowledge loss** | High when team changes | Low (encoded in automation) |
+This includes:
+- **LLM agents** reflecting on their efficiency and proposing prompt improvements
+- **Individual developers** receiving feedback from LLMs about workflow patterns
+- **Teams** receiving feedback about processes that hinder productivity
+- **Organizations** receiving feedback about policies that create friction
+
+### Why This Is Cultural, Not Just Technical
+
+Technical improvements (better prompts, faster CI, more automation) are necessary but insufficient. **Radical Self-Improvement requires a cultural shift**:
+
+| Cultural Element | Traditional | Radical Self-Improvement |
+|-----------------|-------------|-------------------------|
+| **Who gives feedback** | Seniors, managers | Everyone, including LLMs |
+| **Who receives feedback** | Juniors, ICs | Everyone, including leadership |
+| **Response to feedback** | Defensive or dismissive | Curious and grateful |
+| **Feedback timing** | Periodic reviews | Continuous, in-the-moment |
+| **Feedback format** | Subjective opinions | Evidence-based observations |
+
+---
+
+## Why Bidirectional Feedback Matters
+
+### The Agent → Human Feedback Gap
+
+Today, LLM agents receive extensive feedback:
+- Prompt engineering refines their instructions
+- Human review corrects their mistakes
+- Metrics track their performance
+
+But LLM agents rarely provide feedback in the other direction. This is a missed opportunity:
+
+**What LLMs Can Observe:**
+- Ambiguous requirements that cause repeated clarification requests
+- Workflow patterns that introduce unnecessary delays
+- Documentation gaps that force repeated exploration
+- Process bottlenecks that slow development
+- Review feedback that contradicts previous guidance
+
+**Current Reality:** These observations are lost. The agent completes the task and moves on.
+
+**Radical Alternative:** The agent surfaces these patterns constructively, enabling systemic improvement.
+
+### Example: Detrimental Human Actions
+
+Consider an LLM agent that observes:
+
+> "Over the past two weeks, 7 of 12 tasks required re-work because requirements changed mid-implementation. Average token waste: 40%. Pattern: Requirements clarified only after initial PR submitted."
+
+This isn't about blaming anyone. It's about **surfacing a systemic issue** that affects the entire development cycle. The human may not realize the impact of late requirements changes. The agent can provide data-driven visibility.
+
+### Psychological Safety for Feedback
+
+For bidirectional feedback to work, the culture must ensure:
+
+1. **Feedback is welcome** - Recipients view feedback as helpful, not threatening
+2. **Feedback is evidence-based** - Observations, not accusations
+3. **Feedback is constructive** - Focused on improvement, not blame
+4. **Feedback is actionable** - Specific enough to enable change
+
+---
+
+## Applying Radical Self-Improvement at Every Level
+
+### Level 1: LLM Agents
+
+LLM agents should continuously improve their own performance:
+
+| Capability | Description |
+|------------|-------------|
+| **Self-Reflection** | Detect patterns in tool usage, token consumption, error rates |
+| **Improvement Proposals** | Suggest prompt refinements, new tools, decision frameworks |
+| **Feedback Reception** | Learn from human corrections and review comments |
+| **Feedback Provision** | Surface process issues and workflow inefficiencies |
+
+### Level 2: Individual Developers
+
+Developers should receive feedback from multiple sources:
+
+| Source | Feedback Type |
+|--------|--------------|
+| **LLM Agents** | Workflow patterns, requirement clarity, documentation gaps |
+| **Automated Tools** | Code quality, test coverage, security issues |
+| **Peers** | Code reviews, design discussions |
+| **Metrics** | Cycle time, defect rates, rework frequency |
+
+### Level 3: Teams
+
+Teams should reflect on their collective patterns:
+
+| Focus Area | Questions |
+|------------|-----------|
+| **Process Efficiency** | Where do handoffs cause delays? |
+| **Communication** | Are requirements clear before work begins? |
+| **Quality** | What types of bugs recur? |
+| **Collaboration** | How effectively do humans and LLMs work together? |
+
+### Level 4: Organizations
+
+Organizations should receive upward feedback:
+
+| Focus Area | Questions |
+|------------|-----------|
+| **Policy Impact** | Do policies help or hinder development? |
+| **Tool Investment** | Are the right tools available? |
+| **Culture** | Does the culture support continuous improvement? |
+| **Strategy** | Is technical strategy aligned with execution reality? |
 
 ---
 
@@ -77,7 +189,7 @@ In a radically self-improving system:
 
 ### Repository Hygiene
 
-The agent should autonomously maintain repository health:
+Automated systems should maintain repository health:
 
 **Documentation Drift Detection:**
 - Compare code structure to documentation structure
@@ -118,318 +230,315 @@ The agent should autonomously maintain repository health:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### Documentation Synchronization
-
-**Problem:** Documentation drifts from code because maintenance is manual and tedious.
-
-**Solution:** Automated detection and remediation:
-
-1. **Detection Phase:**
-   - Parse code to extract module/function signatures
-   - Parse documentation to extract referenced modules/functions
-   - Compare to find mismatches (undocumented code, stale references)
-
-2. **Remediation Phase:**
-   - For undocumented code: Generate documentation draft
-   - For stale references: Propose removal or update
-   - For structural changes: Update navigation/index
-
-3. **Review Phase:**
-   - Batch changes into coherent PRs
-   - Provide clear diff summary for human review
-   - Track acceptance rate to improve generation quality
-
 ---
 
 ## Pillar 2: Continuous Self-Reflection
 
-### The Metacognitive Loop
+### The Metacognitive Loop (Universal)
 
-A self-improving agent must understand its own behavior patterns:
+This loop applies to all participants—LLMs, individuals, teams, and organizations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Metacognitive Loop                           │
+│           (Applies to LLMs, Humans, Teams, Orgs)                │
 │                                                                 │
 │  ┌──────────────┐                                               │
-│  │ 1. OBSERVE   │  Track all interactions, tool calls, outcomes │
-│  │              │  - Token consumption per task type            │
-│  │              │  - Tool call patterns and success rates       │
-│  │              │  - Time-to-completion trends                  │
+│  │ 1. OBSERVE   │  Track interactions, patterns, outcomes       │
+│  │              │  - What am I doing repeatedly?                │
+│  │              │  - What causes friction or delays?            │
+│  │              │  - What succeeds consistently?                │
 │  └──────┬───────┘                                               │
 │         │                                                       │
 │         ▼                                                       │
 │  ┌──────────────┐                                               │
 │  │ 2. ANALYZE   │  Detect patterns and inefficiencies           │
-│  │              │  - Tool discovery failures                    │
-│  │              │  - Decision loops and oscillation             │
-│  │              │  - Retry storms and error patterns            │
+│  │              │  - What's the root cause?                     │
+│  │              │  - Is this systemic or isolated?              │
+│  │              │  - Who else is affected?                      │
 │  └──────┬───────┘                                               │
 │         │                                                       │
 │         ▼                                                       │
 │  ┌──────────────┐                                               │
 │  │ 3. PROPOSE   │  Generate improvement hypotheses              │
-│  │              │  - Prompt refinements                         │
-│  │              │  - New tool suggestions                       │
-│  │              │  - Decision frameworks                        │
+│  │              │  - What change would help?                    │
+│  │              │  - What's the expected impact?                │
+│  │              │  - What are the risks?                        │
 │  └──────┬───────┘                                               │
 │         │                                                       │
 │         ▼                                                       │
 │  ┌──────────────┐                                               │
 │  │ 4. VALIDATE  │  Test improvements, measure impact            │
-│  │              │  - A/B comparison where possible              │
-│  │              │  - Before/after metrics                       │
-│  │              │  - Rollback if negative impact                │
+│  │              │  - Did the change help?                       │
+│  │              │  - Are there unintended consequences?         │
+│  │              │  - Should we rollback or iterate?             │
 │  └──────────────┘                                               │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Self-Reflection Capabilities
+### Self-Reflection by Participant
 
-**Pattern Detection Across Sessions:**
+**LLM Agents:**
 - "I've made this same mistake 3 times this week"
 - "This type of task consistently takes 2x expected tokens"
 - "I always struggle to find files in this directory structure"
 
-**Root Cause Analysis:**
-- Why did tool discovery fail? (Missing documentation? Wrong search strategy?)
-- Why did I oscillate on this decision? (Unclear criteria? Conflicting signals?)
-- Why did this retry storm occur? (Missing prerequisite check? Error handling gap?)
+**Individual Developers:**
+- "I spend 30% of my time waiting for CI"
+- "My PRs often need multiple review rounds"
+- "I frequently miss edge cases in this module"
 
-**Improvement Hypothesis Generation:**
-- "If I add this to CLAUDE.md, I'll avoid this pattern"
-- "A new tool for X would eliminate this inefficiency"
-- "A decision framework for Y would prevent oscillation"
+**Teams:**
+- "Requirements churn causes 40% of our rework"
+- "Handoffs between frontend and backend cause delays"
+- "Our retrospective actions rarely get implemented"
 
-### Self-Reflection Artifacts
-
-The system generates structured artifacts from self-reflection:
-
-**Weekly Inefficiency Report:**
-- Token waste by category
-- Top recurring issues
-- Trend analysis vs. previous weeks
-- Specific improvement proposals
-
-**Improvement Proposals:**
-- Evidence: What patterns triggered this proposal?
-- Hypothesis: What change would address it?
-- Expected Impact: How much improvement expected?
-- Validation Plan: How will we measure success?
+**Organizations:**
+- "Our hiring process takes 3x industry average"
+- "Cross-team dependencies are our primary bottleneck"
+- "Our technical debt is growing faster than we address it"
 
 ---
 
-## Pillar 3: PR Review Reviewer
+## Pillar 3: Bidirectional Feedback
 
-### The Concept
-
-The "PR Review Reviewer" is an agent that reviews the review process itself:
-
-> **When a human provides feedback on a PR, that feedback represents a gap in automated review.** The PR Review Reviewer detects these gaps and proposes ways to close them.
-
-### How It Works
+### The Bidirectional Feedback Loop
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    PR Review Reviewer                               │
+│                    Bidirectional Feedback                           │
 │                                                                     │
-│  Input: All human review comments across PRs                        │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                   Pattern Detection                          │   │
-│  │                                                              │   │
-│  │  "Add type hints" - appeared 5 times this week               │   │
-│  │  "Missing error handling for X" - appeared 3 times           │   │
-│  │  "Follow pattern in module Y" - appeared 4 times             │   │
-│  │                                                              │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                      │
-│                              ▼                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                   Check Generation                           │   │
-│  │                                                              │   │
-│  │  Pattern: "Add type hints"                                   │   │
-│  │  → Proposed: Enable ANN rules in ruff config                 │   │
-│  │                                                              │   │
-│  │  Pattern: "Missing error handling for X"                     │   │
-│  │  → Proposed: Add to LLM review prompt examples               │   │
-│  │                                                              │   │
-│  │  Pattern: "Follow pattern in module Y"                       │   │
-│  │  → Proposed: Create pattern documentation + lint rule        │   │
-│  │                                                              │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                      │
-│                              ▼                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                   PR Generation                              │   │
-│  │                                                              │   │
-│  │  Creates PRs implementing the proposed checks                │   │
-│  │  Includes evidence, rationale, expected impact               │   │
-│  │  Human approves/rejects                                      │   │
-│  │                                                              │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-│  Output: Self-improving review infrastructure                       │
+│     ┌─────────────────────────────────────────────────────────┐     │
+│     │                                                         │     │
+│     │    ┌─────────┐           ┌─────────┐                    │     │
+│     │    │   LLM   │◄─────────▶│  Human  │                    │     │
+│     │    │  Agent  │           │   Dev   │                    │     │
+│     │    └────┬────┘           └────┬────┘                    │     │
+│     │         │                     │                         │     │
+│     │         │    ┌─────────┐      │                         │     │
+│     │         └───▶│  Team   │◄─────┘                         │     │
+│     │              └────┬────┘                                │     │
+│     │                   │                                     │     │
+│     │              ┌────▼────┐                                │     │
+│     │              │   Org   │                                │     │
+│     │              └─────────┘                                │     │
+│     │                                                         │     │
+│     │  ◄───▶ = Feedback flows BOTH directions                 │     │
+│     │                                                         │     │
+│     └─────────────────────────────────────────────────────────┘     │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Key Insight
+### LLM → Human Feedback
 
-> **Every recurring human review comment is a process failure.**
+When an LLM agent observes patterns that hinder the development cycle, it should surface them constructively:
 
-The comment should either:
-1. **Be automated** - Add a linter rule, LLM review prompt update, or custom check
-2. **Be questioned** - Is this feedback actually adding value?
+**Example Feedback Report:**
 
-The PR Review Reviewer makes this choice explicit and actionable.
+```markdown
+## Process Observation: Requirements Clarity
 
-### Integration with LLM-First Code Review
+### Pattern Detected
+Over the past 2 weeks, 7 of 12 tasks required significant re-work
+after initial implementation was reviewed.
 
-This concept is detailed in [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) (PR #379). The strategic implications:
+### Evidence
+- Task #123: Requirements changed after PR submitted (3 revision rounds)
+- Task #127: Undocumented edge case discovered in review
+- Task #131: API contract changed mid-implementation
 
-- **Reviewers become trainers** - Their feedback improves the system, not just the current PR
-- **Review time decreases over time** - As more patterns are automated
-- **Quality increases** - Consistent enforcement across all PRs
-- **Knowledge is preserved** - Patterns survive team changes
+### Impact
+- Estimated token waste: ~40%
+- Average task completion time: 2.3x initial estimate
+- Developer context-switching overhead: significant
+
+### Suggestion
+Consider a lightweight requirements clarification step before
+implementation begins. This could be as simple as:
+1. LLM summarizes understanding of requirements
+2. Human confirms or corrects
+3. Implementation begins only after confirmation
+
+### Tone
+This is offered as an observation, not criticism. The goal is to
+improve the collaboration between human and LLM.
+```
+
+### Human → LLM Feedback
+
+This already exists in the form of:
+- Review comments
+- Prompt engineering
+- Direct corrections
+
+The key is to make this feedback **systematic and cumulative** rather than ad-hoc.
+
+### Team → Organization Feedback
+
+Teams should be empowered to surface organizational friction:
+
+```markdown
+## Organizational Friction Report
+
+### Pattern: Cross-Team Dependency Delays
+
+### Evidence
+- Q4 average time blocked on other teams: 3.2 days per feature
+- 60% of sprint commitments missed due to external dependencies
+- 4 of 5 major features delayed by platform team backlog
+
+### Impact
+- Developer frustration (exit interviews cite this)
+- Predictability undermined
+- Customer commitments missed
+
+### Suggestion
+Consider dedicated cross-team liaison or dependency-aware sprint planning.
+```
+
+### PR Review Reviewer (Meta-Review)
+
+A special case of bidirectional feedback: **reviewing the review process itself**.
+
+> **When a human provides the same feedback repeatedly, that's a process failure.**
+
+The PR Review Reviewer detects patterns in human review comments and proposes systemic fixes:
+
+| Recurring Feedback | Proposed Fix |
+|-------------------|--------------|
+| "Add type hints" (5x this week) | Enable ANN rules in ruff config |
+| "Missing error handling for X" (3x) | Add to LLM review prompt |
+| "Follow pattern in module Y" (4x) | Create pattern documentation |
+
+This ensures that **human reviewers become trainers**—their feedback improves the system, not just the current PR.
 
 ---
 
-## Pillar 4: Strategic Human Feedback
+## Pillar 4: Strategic Escalation
 
-### Inverting the Feedback Model
+### Feedback at the Right Level
 
-Traditional: Human → Agent (Human tells agent what to improve)
-Radical: Agent → Human (Agent proposes improvements, human validates)
+Not all feedback needs to go to the same place:
 
-### When to Escalate to Humans
+| Issue Level | Handled By | Examples |
+|-------------|------------|----------|
+| **Individual fix** | Person involved | Typo in doc, missing import |
+| **Pattern fix** | Team discussion | Recurring code review feedback |
+| **Process change** | Team lead/manager | Workflow improvements |
+| **Organizational** | Leadership | Policy changes, resource allocation |
 
-Not every improvement requires human attention. The agent should escalate when:
+### Escalation Criteria
 
-**Strategic Decisions:**
-- Architectural changes affecting multiple systems
-- Trade-offs with no clear right answer
-- Changes affecting external interfaces
-- Security-sensitive modifications
+Escalate when:
 
-**High-Impact Proposals:**
-- Changes expected to affect >10% of interactions
-- New tools or capabilities
-- Modifications to core prompts
-
-**Novel Patterns:**
-- Issues not fitting existing categories
-- Patterns suggesting missing capabilities
-- Systemic issues requiring investigation
+1. **Impact is cross-cutting** - Affects multiple people or teams
+2. **Root cause is systemic** - Can't be fixed by one person
+3. **Authority is needed** - Requires decisions above your level
+4. **Visibility is important** - Leadership should be aware
 
 ### Escalation Format
 
 When escalating, provide:
 
 ```markdown
-## Strategic Issue: [Title]
+## Issue: [Title]
 
 ### Evidence
 [Specific data showing the pattern]
 
+### Impact
+[Who is affected and how much]
+
 ### Analysis
-[Why this matters, root cause hypothesis]
+[Root cause hypothesis]
 
 ### Options
 1. [Option A] - Pros, Cons
 2. [Option B] - Pros, Cons
-3. [Option C] - Pros, Cons
 
 ### Recommendation
-[Which option and why, or request for guidance]
+[Which option and why]
 
 ### Decision Needed
-[Specific question requiring human judgment]
+[Specific question requiring judgment at this level]
 ```
-
-### Feedback at the Right Level
-
-| Feedback Level | Who Handles | Examples |
-|---------------|-------------|----------|
-| **Individual fix** | Agent autonomously | Typo in doc, missing import |
-| **Pattern fix** | Agent proposes, human approves | New lint rule, prompt update |
-| **Process change** | Human decides, agent implements | New review workflow, tool addition |
-| **Strategic direction** | Human decides and directs | Architecture changes, capability priorities |
 
 ---
 
 ## Implementation Principles
 
-### Principle 1: Observe Before Acting
+### Principle 1: Feedback Is a Gift
 
-Collect data before proposing changes. Improvements should be evidence-based, not speculative.
+Cultural prerequisite: Everyone must view feedback as helpful, not threatening.
 
-**Anti-pattern:** "I think we should add X"
-**Pattern:** "Data shows X would reduce Y by Z%"
+**Signs of healthy feedback culture:**
+- People thank others for constructive criticism
+- Feedback is specific and actionable
+- Recipients ask clarifying questions, not defensive ones
+- Improvement is visible over time
 
-### Principle 2: Small, Reversible Changes
+### Principle 2: Evidence Over Opinion
 
-Make incremental improvements that can be rolled back:
+Feedback should be based on observable patterns, not feelings:
 
-- One change at a time
-- Clear before/after metrics
-- Rollback mechanism for each change
-- Grace period before next change
+**Anti-pattern:** "I think our process is slow"
+**Pattern:** "Data shows 40% of tasks require rework due to late requirement changes"
 
-### Principle 3: Human-in-the-Loop for Judgment
+### Principle 3: Start Small, Build Trust
 
-Automation handles detection and proposal. Humans handle:
+Introducing bidirectional feedback requires building trust incrementally:
 
-- Validating proposals make sense
-- Weighing trade-offs
-- Setting priorities
-- Catching blind spots
+1. **Week 1-4:** LLM agents provide factual observations (no recommendations)
+2. **Week 5-8:** LLM agents provide gentle suggestions
+3. **Week 9+:** Full bidirectional feedback with recommendations
 
-### Principle 4: Compounding Returns
+### Principle 4: Psychological Safety First
 
-Each improvement should make future improvements easier:
+Feedback mechanisms fail without psychological safety:
 
-- Better documentation makes pattern detection easier
-- Cleaner code makes analysis more accurate
-- Automated checks free time for strategic improvements
+- **No blame:** Focus on patterns, not individuals
+- **No retaliation:** Feedback providers are protected
+- **No dismissal:** All feedback is acknowledged
+- **Continuous calibration:** Feedback quality improves over time
 
-### Principle 5: Transparency
+### Principle 5: Measure What Matters
 
-All self-improvement activity should be visible:
+Track whether the feedback culture is working:
 
-- Weekly reports summarizing changes
-- Audit trail of all modifications
-- Clear attribution of human vs. agent changes
-- Metrics dashboards for tracking progress
+- Are improvement proposals being generated?
+- Are proposals being accepted?
+- Is measurable improvement occurring?
+- Do people feel safe giving feedback?
 
 ---
 
 ## Success Metrics
 
-### Leading Indicators (Process Health)
+### Leading Indicators (Culture Health)
 
 | Metric | Target | Why It Matters |
 |--------|--------|----------------|
-| **Improvement proposals generated/week** | 3-10 | System is finding opportunities |
+| **Feedback proposals generated/week** | 3-10 | System is finding opportunities |
 | **Proposal acceptance rate** | >70% | Proposals are high quality |
+| **Bidirectional feedback ratio** | >0.5 | LLMs provide feedback, not just receive |
 | **Time from detection to proposal** | <7 days | Quick feedback loop |
-| **Documentation freshness score** | >90% | Docs track code |
 
 ### Lagging Indicators (Outcome Quality)
 
 | Metric | Target | Why It Matters |
 |--------|--------|----------------|
-| **Weekly efficiency improvement** | 2-5% | System is actually improving |
-| **Human review time per PR** | Decreasing | Automation is taking load |
-| **Recurring feedback patterns** | Decreasing | Patterns being automated |
-| **Token waste percentage** | Decreasing | Efficiency improving |
+| **Rework rate** | Decreasing | Fewer late changes, clearer requirements |
+| **Cycle time** | Decreasing | Less friction, faster delivery |
+| **Recurring issues** | Decreasing | Systemic issues being addressed |
+| **Team satisfaction** | Increasing | Culture is healthy |
 
 ### North Star Metric
 
-> **Percentage of tasks completed successfully with zero human intervention**
+> **Percentage of systemic issues identified and addressed proactively**
 
-This captures the ultimate goal: an agent that reliably handles its workload autonomously, escalating only when truly needed.
+This captures the cultural goal: a system where everyone—LLM, human, team, org—continuously improves based on evidence-driven feedback.
 
 ---
 
@@ -443,14 +552,14 @@ This document is **Pillar 3** in the Post-LLM Software Engineering series.
 |--------|----------|-------|
 | **1** | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical review workflow |
 | **2** | [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy of human-LLM collaboration |
-| **3** | **This document** | Autonomous self-improvement |
+| **3** | **This document** | Culture of continuous improvement |
 
 ### Implementation Documents
 
 | Document | Relationship |
 |----------|-------------|
-| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical ADR implementing Pillar 3 (PR Review Reviewer) |
-| [ADR: LLM Inefficiency Reporting](../adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Technical ADR implementing Pillar 2 (Self-Reflection) |
+| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical ADR implementing PR Review Reviewer |
+| [ADR: LLM Inefficiency Reporting](../adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Technical ADR implementing Self-Reflection |
 
 ### Document Hierarchy
 
@@ -463,7 +572,7 @@ Umbrella: A Pragmatic Guide for Software Engineering in a Post-LLM World
     ├── Pillar 2: Human-Driven, LLM-Navigated Development (philosophy)
     │       └── ADR: Interactive Planning Framework (technical specs)
     │
-    └── Pillar 3: Radical Self-Improvement for LLMs (this document)
+    └── Pillar 3: Radical Self-Improvement (this document)
             └── ADR: LLM Inefficiency Reporting (technical specs)
 ```
 
@@ -487,6 +596,7 @@ Umbrella: A Pragmatic Guide for Software Engineering in a Post-LLM World
 
 - [Agentic AI Workflows Guide](https://retool.com/blog/agentic-ai-workflows) - Retool, 2025
 - [LLM Observability Tools Comparison](https://lakefs.io/blog/llm-observability-tools/) - LakeFS
+- [Psychological Safety in Teams](https://rework.withgoogle.com/guides/understanding-team-effectiveness/) - Google re:Work
 
 ---
 
