@@ -82,18 +82,51 @@ def write_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state))
 
 
-def reconfigure_mcp(token: str) -> bool:
-    """Reconfigure the GitHub MCP server with a new token."""
-    logger.info("Reconfiguring GitHub MCP server...")
-
-    # Remove existing MCP config (ignore errors if it doesn't exist)
-    with contextlib.suppress(Exception):
-        subprocess.run(
-            ["claude", "mcp", "remove", "github", "-s", "user"],
-            check=False,
+def mcp_config_exists(name: str = "github") -> bool:
+    """Check if an MCP server config already exists."""
+    try:
+        result = subprocess.run(
+            ["claude", "mcp", "get", name],
             capture_output=True,
+            text=True,
             timeout=30,
+            check=False,
         )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def reconfigure_mcp(token: str, force_update: bool = False) -> bool:
+    """
+    Configure or reconfigure the GitHub MCP server with a new token.
+
+    Args:
+        token: The GitHub token to use
+        force_update: If True, remove and re-add even if config exists.
+                      If False, only add if config doesn't exist.
+
+    Returns:
+        True if configuration succeeded, False otherwise
+    """
+    config_exists = mcp_config_exists("github")
+
+    if config_exists and not force_update:
+        logger.info("GitHub MCP config already exists, skipping add")
+        return True
+
+    if config_exists:
+        logger.info("Updating GitHub MCP server config...")
+        # Remove existing MCP config before re-adding with new token
+        with contextlib.suppress(Exception):
+            subprocess.run(
+                ["claude", "mcp", "remove", "github", "-s", "user"],
+                check=False,
+                capture_output=True,
+                timeout=30,
+            )
+    else:
+        logger.info("Adding GitHub MCP server config...")
 
     # Add new MCP config
     try:
@@ -118,17 +151,17 @@ def reconfigure_mcp(token: str) -> bool:
         )
 
         if result.returncode == 0:
-            logger.info("GitHub MCP server reconfigured successfully")
+            logger.info("GitHub MCP server configured successfully")
             return True
         else:
             logger.error("MCP add failed", stderr=result.stderr)
             return False
 
     except subprocess.TimeoutExpired:
-        logger.error("MCP reconfiguration timed out")
+        logger.error("MCP configuration timed out")
         return False
     except Exception as e:
-        logger.error("MCP reconfiguration error", error=str(e))
+        logger.error("MCP configuration error", error=str(e))
         return False
 
 
@@ -136,7 +169,7 @@ def check_and_update(force: bool = False) -> bool:
     """
     Check if token has changed and update MCP if needed.
 
-    Returns True if MCP was reconfigured.
+    Returns True if MCP was configured/reconfigured.
     """
     token_data = read_token_file()
     if not token_data:
@@ -152,16 +185,22 @@ def check_and_update(force: bool = False) -> bool:
     current_hash = get_token_hash(token_data)
     state = read_state()
     last_hash = state.get("token_hash", "")
+    token_changed = current_hash != last_hash
 
-    if current_hash == last_hash and not force:
-        logger.debug("Token unchanged, no update needed")
-        return False
+    if token_changed:
+        logger.info(
+            "Token changed",
+            old_hash=(last_hash[:8] + "..." if last_hash else "(none)"),
+            new_hash=current_hash[:8] + "...",
+        )
 
-    logger.info("Token changed", old_hash=last_hash[:8] + "...", new_hash=current_hash[:8] + "...")
+    # Determine if we need to force update (remove and re-add)
+    # Force update when: token changed, or --force flag provided
+    force_update = token_changed or force
 
-    # Reconfigure MCP
-    if reconfigure_mcp(token):
-        # Update state
+    # Configure MCP (will skip add if config exists and force_update=False)
+    if reconfigure_mcp(token, force_update=force_update):
+        # Update state with current token hash
         write_state(
             {
                 "token_hash": current_hash,
