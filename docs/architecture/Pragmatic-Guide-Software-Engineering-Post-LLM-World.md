@@ -7,16 +7,14 @@
 
 ---
 
-## Executive Summary
-
-We are witnessing a fundamental shift in software engineering. Large Language Models have moved from experimental tools to practical collaborators capable of generating, reviewing, and maintaining code at unprecedented scale. This creates both opportunity and challenge: opportunity to amplify human capabilities, challenge to adapt our practices accordingly.
+Large Language Models have moved from experimental tools to practical collaborators capable of generating, reviewing, and maintaining code at unprecedented scale. This creates both opportunity and challenge: opportunity to amplify human capabilities, challenge to adapt our practices accordingly.
 
 This document presents a **holistic philosophy** for software engineering in the post-LLM era, built on three mutually reinforcing pillars:
 
 | Pillar | Core Question | Document |
 |--------|---------------|----------|
 | **1. LLM-First Code Reviews** | How do we maintain quality at LLM speed? | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) |
-| **2. Human-Driven, LLM-Navigated Development** | How should humans and LLMs collaborate? | [Human-Driven, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md) |
+| **2. Human-Driven, LLM-Navigated Development** | How should humans and LLMs collaborate? | [Human-Driven, LLM-Navigated Software Development](Human-Driven-LLM-Navigated-Software-Development.md) |
 | **3. Radical Self-Improvement** | How do systems get better over time? | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) |
 
 **The core thesis:** Software engineering practices must evolve to leverage LLM strengths (exhaustive attention, pattern consistency, tireless execution) while preserving human strengths (strategic judgment, creative problem-solving, interpersonal collaboration). Each pillar addresses a different dimension of this evolution, and together they form a complete, pragmatic philosophy.
@@ -115,7 +113,7 @@ Each pillar addresses a fundamental question. Together, they form a complete phi
 
 **Connection to Other Pillars:** This model defines how humans and LLMs interact during review (Pillar 1) and improvement (Pillar 3). It's the philosophical foundation that unifies the framework.
 
-**Read more:** [Human-Driven, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md)
+**Read more:** [Human-Driven, LLM-Navigated Software Development](Human-Driven-LLM-Navigated-Software-Development.md)
 
 ---
 
