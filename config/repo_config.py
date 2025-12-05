@@ -270,6 +270,27 @@ def should_restrict_to_configured_users(repo: str) -> bool:
     return get_repo_setting(repo, "restrict_to_configured_users", False)
 
 
+def should_disable_auto_fix(repo: str) -> bool:
+    """
+    Check if auto-fix for check failures is disabled for a repository.
+
+    When enabled, jib will NOT automatically attempt to fix failing CI checks.
+    This is useful for repos where:
+    - GitHub Actions minutes are limited/exhausted
+    - Auto-fix attempts are not desired
+    - The repo should only be monitored for comments/reviews
+
+    Other functionality (comments, reviews, merge conflicts) is unaffected.
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        True if auto-fix should be disabled for this repo
+    """
+    return get_repo_setting(repo, "disable_auto_fix", False)
+
+
 def get_bot_username() -> str:
     """
     Get the configured bot username.

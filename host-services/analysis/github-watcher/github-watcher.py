@@ -118,7 +118,7 @@ sys.path.insert(0, str(_project_root))
 
 from jib_logging import ContextScope, get_logger
 
-from config.repo_config import should_restrict_to_configured_users
+from config.repo_config import should_disable_auto_fix, should_restrict_to_configured_users
 
 
 # Initialize logger
@@ -2003,18 +2003,19 @@ def process_repo_prs(
             # For writable repos only: check for failures and merge conflicts
             # (For read-only repos, we can't fix these, so don't bother detecting them)
             if not is_readonly:
-                # Check for failures
-                failure_ctx = check_pr_for_failures(repo, pr, state)
-                if failure_ctx:
-                    tasks.append(
-                        JibTask(
-                            task_type="check_failure",
-                            context=failure_ctx,
-                            signature_key="processed_failures",
-                            signature_value=failure_ctx["failure_signature"],
-                            is_readonly=False,
+                # Check for failures (unless auto-fix is disabled for this repo)
+                if not should_disable_auto_fix(repo):
+                    failure_ctx = check_pr_for_failures(repo, pr, state)
+                    if failure_ctx:
+                        tasks.append(
+                            JibTask(
+                                task_type="check_failure",
+                                context=failure_ctx,
+                                signature_key="processed_failures",
+                                signature_value=failure_ctx["failure_signature"],
+                                is_readonly=False,
+                            )
                         )
-                    )
 
                 # Check for merge conflicts
                 conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
@@ -2057,18 +2058,19 @@ def process_repo_prs(
         )
 
         for pr in bot_prs:
-            # Check for failures on bot's PRs
-            failure_ctx = check_pr_for_failures(repo, pr, state)
-            if failure_ctx:
-                tasks.append(
-                    JibTask(
-                        task_type="check_failure",
-                        context=failure_ctx,
-                        signature_key="processed_failures",
-                        signature_value=failure_ctx["failure_signature"],
-                        is_readonly=False,
+            # Check for failures on bot's PRs (unless auto-fix is disabled for this repo)
+            if not should_disable_auto_fix(repo):
+                failure_ctx = check_pr_for_failures(repo, pr, state)
+                if failure_ctx:
+                    tasks.append(
+                        JibTask(
+                            task_type="check_failure",
+                            context=failure_ctx,
+                            signature_key="processed_failures",
+                            signature_value=failure_ctx["failure_signature"],
+                            is_readonly=False,
+                        )
                     )
-                )
 
             # Check for comments on bot's PRs
             comment_ctx = check_pr_for_comments(
