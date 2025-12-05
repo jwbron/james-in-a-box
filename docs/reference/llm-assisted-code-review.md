@@ -3,7 +3,7 @@
 **Status:** Draft
 **Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
-**Purpose:** Practical guide to code review in a world where LLMs generate code faster than humans can review it
+**Purpose:** A practical guide to code review in a world where LLMs generate code faster than humans can review it
 
 ---
 
@@ -11,54 +11,84 @@
 
 ---
 
-## Introduction
+LLMs can now generate code faster than humans can review it. This creates a fundamental problem: traditional code review becomes a bottleneck, not a quality gate.
 
-This guide introduces our approach to code review in a world where LLMs generate code faster than humans can review it.
+This guide presents a solution: **invert the review model**. Instead of humans catching everything, let LLMs review first and humans approve last. The result is faster feedback, higher consistency, and human attention focused where it matters most.
 
-## What's Changing
+**The key insight:**
 
-**The old way:** You write code → You open a PR → A human reviewer checks everything → You fix their feedback → They re-review → Eventually it merges.
+> If you find yourself giving the same feedback twice, stop and automate it.
 
-**The new way:** You write code → You open a PR → LLMs automatically review and fix issues → A human does a final approval → It merges.
+Every piece of recurring feedback represents a process failure. It should either become an automated check or be questioned as not worth giving.
 
-The key insight:
+---
 
-> **If you as a reviewer see a pattern of feedback on a specific topic, it's your responsibility to add a linter to solve the problem systematically.**
->
-> **If you're not able to do that, you should assess the value-add of the feedback.**
+## Table of Contents
 
-In other words: every piece of recurring feedback is a process failure. It should either be automated or questioned.
+- [The Shift](#the-shift)
+- [What Changes for Reviewers](#what-changes-for-reviewers)
+- [What Changes for PR Authors](#what-changes-for-pr-authors)
+- [The Review Stack](#the-review-stack)
+- [The Self-Improving System](#the-self-improving-system)
+- [Getting Started](#getting-started)
+- [Related Documents](#related-documents)
 
-## Why This Matters
+---
 
-Traditional code review has problems:
+## The Shift
+
+Traditional code review worked like this:
+
+```
+You write code → You open a PR → A human reviewer checks everything →
+You fix their feedback → They re-review → Eventually it merges
+```
+
+The new model works like this:
+
+```
+You write code → You open a PR → LLMs automatically review and fix issues →
+A human does a final approval → It merges
+```
+
+This matters because traditional review has accumulated problems:
 
 - **Reviewers give the same feedback over and over** — "Add type hints," "Use const instead of let," "Missing docstring"
 - **Different reviewers catch different things** — Inconsistent quality enforcement
 - **Feedback comes late** — Issues found at PR time could've been caught at commit time
 - **It doesn't scale** — When LLMs can generate PRs in minutes, human review becomes the bottleneck
 
-We're solving this by flipping the model: **LLMs review first, humans approve last**.
+We solve this by flipping the model: **LLMs review first, humans approve last**.
 
-## What This Means for Reviewers
+---
 
-Your job changes from "catch everything" to "focus on what matters":
+## What Changes for Reviewers
 
-**Still your job:**
+Your job shifts from "catch everything" to "focus on what matters."
+
+### Still Your Job
+
 - Does this meet the business requirements?
 - Does the architecture make sense?
 - Are there security implications I should flag?
 - Is this the right direction strategically?
 
-**No longer your job:**
+### No Longer Your Job
+
 - Checking for style issues (linters do this)
 - Catching missing type hints (type checkers do this)
 - Spotting common anti-patterns (LLM reviewers do this)
 - Requesting minor fixes (LLM agents apply these automatically)
 
+### The New Responsibility
+
 When you *do* find something the automated tools missed, don't just request a fix—ask yourself: "Can I add this to the automation so no one has to catch this manually again?"
 
-## What This Means for PR Authors
+If the answer is yes, you have a new responsibility: turn your feedback into an automated check. If you don't know how, raise it with the team. But "I'll just keep commenting this manually forever" is not an acceptable long-term answer.
+
+---
+
+## What Changes for PR Authors
 
 Your workflow stays mostly the same, but with faster feedback:
 
@@ -67,37 +97,47 @@ Your workflow stays mostly the same, but with faster feedback:
 3. **LLM agents apply fixes** — Many issues get auto-fixed without you lifting a finger
 4. **Human review is the final step** — Focused on high-level concerns, not nitpicks
 
-Result: Less back-and-forth, faster merges, cleaner code.
+The result: less back-and-forth, faster merges, cleaner code.
+
+---
 
 ## The Review Stack
 
-Different tools handle different concerns:
+Different tools handle different concerns. By the time a human sees the PR, all the mechanical issues should already be resolved.
 
-| What | Who handles it |
-|------|----------------|
+| Concern | Handled By |
+|---------|------------|
 | Formatting, style, syntax | Linters (ruff, ESLint, prettier) |
 | Type safety | Type checkers (mypy, TypeScript) |
 | Security basics | SAST tools (detect-secrets, semgrep) |
 | Code patterns, naming, duplication | LLM reviewer |
 | Business logic, architecture, strategy | Human reviewer |
 
-The goal: by the time a human sees the PR, all the mechanical issues are already resolved.
+Notice how human attention sits at the top of the stack. Humans focus on judgment calls that require understanding business context, organizational goals, and strategic direction—things that can't be automated.
 
-## The Key Principle
+---
 
-> **When you find yourself giving the same feedback twice, stop and automate it.**
+## The Self-Improving System
 
-This applies to everyone—not just tooling experts. If you don't know how to create an automated check yourself, raise it with the team. But "I'll just keep commenting this manually" is not an acceptable long-term answer.
+Over time, this creates a feedback loop that makes the system better:
 
-Over time, this creates a self-improving system:
-
+```
 1. Human gives feedback on a PR
+           ↓
 2. System notices "this feedback has appeared 3+ times"
+           ↓
 3. A new automated check is proposed
+           ↓
 4. Team approves the check
+           ↓
 5. Future PRs never have this issue
+```
 
-Reviewers become *trainers* of the automation, not gatekeepers.
+In this model, reviewers become **trainers** of the automation, not gatekeepers. Every piece of feedback you give has the potential to improve the system for everyone.
+
+This is the connection to [Radical Self-Improvement for LLMs](../architecture/Radical-Self-Improvement-for-LLMs.md)—the review process isn't static, it evolves.
+
+---
 
 ## Getting Started
 
@@ -117,9 +157,9 @@ The goal is not to eliminate human judgment—it's to focus human judgment where
 | Document | Description |
 |----------|-------------|
 | [A Pragmatic Guide for Software Engineering in a Post-LLM World](../architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
-| [Human-Driven, LLM-Navigated Development](../architecture/LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration |
+| [Human-Driven, LLM-Navigated Development](../architecture/Human-Driven-LLM-Navigated-Software-Development.md) | Philosophy for human-LLM collaboration |
 | [Radical Self-Improvement for LLMs](../architecture/Radical-Self-Improvement-for-LLMs.md) | Framework for autonomous LLM self-improvement |
-| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Complete architectural decision record with implementation phases, success metrics, and technical specifications |
+| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Complete architectural decision record with implementation phases and technical specifications |
 
 ---
 
