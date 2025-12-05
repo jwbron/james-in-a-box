@@ -559,40 +559,71 @@ except:
 
 CURRENT_TOKEN=$(get_github_token)
 if [ -n "$CURRENT_TOKEN" ]; then
-    # OPTIMIZATION: Skip reconfiguration if already configured with same token
-    MCP_SETTINGS="${USER_HOME}/.claude/settings.local.json"
-    # Use sha256 truncated to 16 chars to match mcp-token-watcher.py algorithm
+    # Write MCP config directly to .claude.json instead of using `claude mcp add`
+    # This avoids creating ~/.claude.json.tmp.* files which pile up when multiple
+    # containers share the same .claude.json via bind mount
+    CLAUDE_JSON="${USER_HOME}/.claude.json"
+
+    # Check if MCP server already configured with same token (to avoid unnecessary updates)
     TOKEN_HASH=$(echo -n "${CURRENT_TOKEN}" | sha256sum | cut -c1-16)
-    CACHE_FILE="${USER_HOME}/.claude/.mcp_token_hash"
-    CACHED_HASH=""
-    [ -f "$CACHE_FILE" ] && CACHED_HASH=$(cat "$CACHE_FILE" 2>/dev/null)
+    NEEDS_UPDATE=true
 
-    # Check if MCP is already configured with same token
-    if [ -f "$MCP_SETTINGS" ] && [ "$TOKEN_HASH" = "$CACHED_HASH" ] && \
-       grep -q '"github"' "$MCP_SETTINGS" 2>/dev/null; then
-        log_success "GitHub MCP server already configured (skipped)"
-    else
-        # Remove any existing github MCP config to ensure clean state
-        # This handles upgrades from old configs (e.g., local scope → user scope)
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s local >/dev/null 2>&1 || true
-        gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github -s user >/dev/null 2>&1 || true
+    if [ -f "$CLAUDE_JSON" ]; then
+        # Check if github MCP server exists and has the same token hash
+        EXISTING_HASH=$(python3 -c "
+import json, hashlib
+try:
+    with open('$CLAUDE_JSON') as f:
+        config = json.load(f)
+    token = config.get('mcpServers', {}).get('github', {}).get('headers', {}).get('Authorization', '').replace('Bearer ', '')
+    if token:
+        print(hashlib.sha256(token.encode()).hexdigest()[:16])
+except:
+    pass
+" 2>/dev/null)
 
-        # Add fresh config with user scope
-        # Suppress output to avoid logging the Authorization header/token
-        # Use timeout to prevent hanging (MCP server validation can be slow)
-        if ! timeout 10 gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
-            --transport http \
-            --scope user \
-            github \
-            "https://api.githubcopilot.com/mcp/" \
-            --header "Authorization: Bearer ${CURRENT_TOKEN}" > /dev/null 2>&1; then
-            log_warn "GitHub MCP server configuration timed out or failed"
-            log_info "  Container will work but without GitHub MCP integration"
+        if [ "$EXISTING_HASH" = "$TOKEN_HASH" ]; then
+            NEEDS_UPDATE=false
+            log_success "GitHub MCP server already configured (token unchanged)"
         fi
+    fi
 
-        # Cache token hash for next startup
-        echo "$TOKEN_HASH" > "$CACHE_FILE"
-        chown "${RUNTIME_UID}:${RUNTIME_GID}" "$CACHE_FILE"
+    if [ "$NEEDS_UPDATE" = true ]; then
+        # Update MCP configuration by writing JSON directly
+        python3 << PYCONFIG
+import json
+import os
+
+claude_json_path = "$CLAUDE_JSON"
+token = "$CURRENT_TOKEN"
+
+# Load existing config or create new
+if os.path.exists(claude_json_path) and os.path.getsize(claude_json_path) > 2:
+    with open(claude_json_path) as f:
+        config = json.load(f)
+else:
+    config = {}
+
+# Ensure mcpServers exists
+if 'mcpServers' not in config:
+    config['mcpServers'] = {}
+
+# Add/update github MCP server
+config['mcpServers']['github'] = {
+    "type": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "headers": {
+        "Authorization": f"Bearer {token}"
+    }
+}
+
+# Write back atomically (Python handles this safely)
+with open(claude_json_path, 'w') as f:
+    json.dump(config, f, indent=2)
+PYCONFIG
+
+        chown "${RUNTIME_UID}:${RUNTIME_GID}" "$CLAUDE_JSON"
+        chmod 600 "$CLAUDE_JSON"
 
         # Check if token came from file (auto-refresh enabled)
         if [ -f "${USER_HOME}/sharing/.github-token" ]; then
@@ -613,22 +644,66 @@ fi
 # This uses GITHUB_READONLY_TOKEN (e.g., a PAT with access to Khan/webapp)
 # Tools will be prefixed with mcp__github_readonly__ (e.g., mcp__github_readonly__get_file_contents)
 if [ -n "${GITHUB_READONLY_TOKEN:-}" ]; then
-    # Remove any existing github-readonly MCP config
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github-readonly -s local >/dev/null 2>&1 || true
-    gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp remove github-readonly -s user >/dev/null 2>&1 || true
+    CLAUDE_JSON="${USER_HOME}/.claude.json"
+    READONLY_TOKEN_HASH=$(echo -n "${GITHUB_READONLY_TOKEN}" | sha256sum | cut -c1-16)
+    NEEDS_READONLY_UPDATE=true
 
-    # Add readonly MCP server for external repos (e.g., Khan/*)
-    # Use timeout to prevent hanging
-    if timeout 10 gosu "${RUNTIME_UID}:${RUNTIME_GID}" claude mcp add \
-        --transport http \
-        --scope user \
-        github-readonly \
-        "https://api.githubcopilot.com/mcp/" \
-        --header "Authorization: Bearer ${GITHUB_READONLY_TOKEN}" > /dev/null 2>&1; then
+    if [ -f "$CLAUDE_JSON" ]; then
+        EXISTING_READONLY_HASH=$(python3 -c "
+import json, hashlib
+try:
+    with open('$CLAUDE_JSON') as f:
+        config = json.load(f)
+    token = config.get('mcpServers', {}).get('github-readonly', {}).get('headers', {}).get('Authorization', '').replace('Bearer ', '')
+    if token:
+        print(hashlib.sha256(token.encode()).hexdigest()[:16])
+except:
+    pass
+" 2>/dev/null)
+
+        if [ "$EXISTING_READONLY_HASH" = "$READONLY_TOKEN_HASH" ]; then
+            NEEDS_READONLY_UPDATE=false
+            log_success "GitHub readonly MCP server already configured (token unchanged)"
+        fi
+    fi
+
+    if [ "$NEEDS_READONLY_UPDATE" = true ]; then
+        python3 << PYCONFIG2
+import json
+import os
+
+claude_json_path = "$CLAUDE_JSON"
+token = "$GITHUB_READONLY_TOKEN"
+
+# Load existing config
+if os.path.exists(claude_json_path) and os.path.getsize(claude_json_path) > 2:
+    with open(claude_json_path) as f:
+        config = json.load(f)
+else:
+    config = {}
+
+# Ensure mcpServers exists
+if 'mcpServers' not in config:
+    config['mcpServers'] = {}
+
+# Add/update github-readonly MCP server
+config['mcpServers']['github-readonly'] = {
+    "type": "http",
+    "url": "https://api.githubcopilot.com/mcp/",
+    "headers": {
+        "Authorization": f"Bearer {token}"
+    }
+}
+
+# Write back atomically (Python handles this safely)
+with open(claude_json_path, 'w') as f:
+    json.dump(config, f, indent=2)
+PYCONFIG2
+
+        chown "${RUNTIME_UID}:${RUNTIME_GID}" "$CLAUDE_JSON"
+        chmod 600 "$CLAUDE_JSON"
         log_success "GitHub readonly MCP server configured for external repos"
         log_info "  Use mcp__github_readonly__* tools for repos like Khan/webapp"
-    else
-        log_warn "GitHub readonly MCP server configuration timed out or failed"
     fi
 fi
 
