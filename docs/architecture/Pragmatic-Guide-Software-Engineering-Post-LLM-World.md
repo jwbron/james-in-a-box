@@ -155,9 +155,9 @@ The three pillars are not independent options or sequential phases—they are mu
                     │    weight of the whole idea"     │
                     └──────────────────────────────────┘
                                    │
-         ┌─────────────────────────┼─────────────────────────┐
-         │                         │                         │
-         ▼                         ▼                         ▼
+         ┌─────────────────────────┼───────────────────────┐
+         │                         │                       │
+         ▼                         ▼                       ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌────────────────────┐
 │   PILLAR 1      │◀───▶│   PILLAR 2      │◀───▶│   PILLAR 3         │
 │   LLM-First     │     │   Human-Driven  │     │   Radical          │
