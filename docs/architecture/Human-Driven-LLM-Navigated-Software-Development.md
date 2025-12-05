@@ -292,41 +292,41 @@ For complex changes, an LLM-powered planning framework ensures nothing is missed
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│            Interactive Planning Framework (IPF)                  │
-│                                                                  │
+│            Interactive Planning Framework (IPF)                 │
+│                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  PHASE 1: ELICITATION                                     │   │
-│  │  Transform vague intent → validated requirements          │   │
-│  │  • LLM asks clarifying questions                          │   │
-│  │  • Human articulates what they actually want              │   │
-│  │  • Ambiguities surfaced and resolved                      │   │
-│  │  → Human checkpoint: Approve requirements                 │   │
+│  │  PHASE 1: ELICITATION                                    │   │
+│  │  Transform vague intent → validated requirements         │   │
+│  │  • LLM asks clarifying questions                         │   │
+│  │  • Human articulates what they actually want             │   │
+│  │  • Ambiguities surfaced and resolved                     │   │
+│  │  → Human checkpoint: Approve requirements                │   │
 │  └──────────────────────────────────────────────────────────┘   │
-│                            ↓                                     │
+│                            ↓                                    │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  PHASE 2: DESIGN                                          │   │
-│  │  Create comprehensive architecture before any code        │   │
-│  │  • LLM explores solution space exhaustively               │   │
-│  │  • Trade-offs enumerated with reasoning                   │   │
-│  │  • Edge cases identified proactively                      │   │
-│  │  → Human checkpoint: Choose approach                      │   │
+│  │  PHASE 2: DESIGN                                         │   │
+│  │  Create comprehensive architecture before any code       │   │
+│  │  • LLM explores solution space exhaustively              │   │
+│  │  • Trade-offs enumerated with reasoning                  │   │
+│  │  • Edge cases identified proactively                     │   │
+│  │  → Human checkpoint: Choose approach                     │   │
 │  └──────────────────────────────────────────────────────────┘   │
-│                            ↓                                     │
+│                            ↓                                    │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  PHASE 3: PLANNING                                        │   │
-│  │  Break down into implementable tasks                      │   │
-│  │  • Phased implementation plan                             │   │
-│  │  • Detailed subtasks with dependencies                    │   │
-│  │  • Risk identification and mitigation                     │   │
-│  │  → Human checkpoint: Approve plan                         │   │
+│  │  PHASE 3: PLANNING                                       │   │
+│  │  Break down into implementable tasks                     │   │
+│  │  • Phased implementation plan                            │   │
+│  │  • Detailed subtasks with dependencies                   │   │
+│  │  • Risk identification and mitigation                    │   │
+│  │  → Human checkpoint: Approve plan                        │   │
 │  └──────────────────────────────────────────────────────────┘   │
-│                            ↓                                     │
+│                            ↓                                    │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  PHASE 4: HANDOFF                                         │   │
-│  │  Package for autonomous execution                         │   │
-│  │  • Machine-readable task specifications                   │   │
-│  │  • Success criteria for each task                         │   │
-│  │  • Documentation thorough enough for implementation       │   │
+│  │  PHASE 4: HANDOFF                                        │   │
+│  │  Package for autonomous execution                        │   │
+│  │  • Machine-readable task specifications                  │   │
+│  │  • Success criteria for each task                        │   │
+│  │  • Documentation thorough enough for implementation      │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
