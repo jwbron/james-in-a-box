@@ -7,6 +7,10 @@
 
 ---
 
+> **Part of:** [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md)
+
+---
+
 ## Executive Summary
 
 This document outlines a strategic vision for LLM systems that continuously improve themselves with minimal human intervention. Unlike reactive improvement (fixing bugs when they occur), radical self-improvement is **proactive, systematic, and self-sustaining**.
@@ -431,25 +435,36 @@ This captures the ultimate goal: an agent that reliably handles its workload aut
 
 ## Relationship to Other Documents
 
-This strategic document connects to several implementation-focused documents:
+This document is **Pillar 3** in the Post-LLM Software Engineering series.
+
+### The Three Pillars
+
+| Pillar | Document | Focus |
+|--------|----------|-------|
+| **1** | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical review workflow |
+| **2** | [Human-Directed, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy of human-LLM collaboration |
+| **3** | **This document** | Autonomous self-improvement |
+
+### Implementation Documents
 
 | Document | Relationship |
 |----------|-------------|
-| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) (PR #379) | Implements Pillar 3 (PR Review Reviewer) |
-| [LLM-Assisted Code Review Guide](../reference/llm-assisted-code-review.md) (PR #380) | User-facing guide for code review pillar |
-| [ADR: LLM Inefficiency Reporting](../adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Implements Pillar 2 (Self-Reflection) |
-| [LLM-First Software Development Lifecycle](LLM-First-Software-Development-Lifecycle.md) (PR #464) | Evaluation frameworks for measuring improvement |
-| [Features: Self-Improvement](../features/self-improvement.md) | Current implementation of trace collection and analysis |
+| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical ADR implementing Pillar 3 (PR Review Reviewer) |
+| [ADR: LLM Inefficiency Reporting](../adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Technical ADR implementing Pillar 2 (Self-Reflection) |
 
 ### Document Hierarchy
 
 ```
-Strategic Vision (this document)
-    ├── LLM-First SDLC (evaluation frameworks)
-    └── Implementation ADRs
-        ├── Coding Standards Post-LLM (PR Review Reviewer)
-        ├── LLM Inefficiency Reporting (Self-Reflection)
-        └── [Future] Automated Maintenance ADR
+Umbrella: A Pragmatic Guide for Software Engineering in a Post-LLM World
+    │
+    ├── Pillar 1: LLM-First Code Reviews (practical workflow)
+    │       └── ADR: Coding Standards Post-LLM (technical specs)
+    │
+    ├── Pillar 2: Human-Directed, LLM-Navigated Development (philosophy)
+    │       └── ADR: Interactive Planning Framework (technical specs)
+    │
+    └── Pillar 3: Radical Self-Improvement for LLMs (this document)
+            └── ADR: LLM Inefficiency Reporting (technical specs)
 ```
 
 ---
@@ -460,8 +475,7 @@ Strategic Vision (this document)
 
 - [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) - PR Review Reviewer concept
 - [ADR: LLM Inefficiency Reporting](../adr/implemented/ADR-LLM-Inefficiency-Reporting.md) - Self-reflection implementation
-- [LLM-First SDLC](LLM-First-Software-Development-Lifecycle.md) - Evaluation frameworks
-- [Features: Self-Improvement](../features/self-improvement.md) - Current capabilities
+- [Human-Directed, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) - Philosophy of collaboration
 
 ### Research
 
@@ -473,6 +487,17 @@ Strategic Vision (this document)
 
 - [Agentic AI Workflows Guide](https://retool.com/blog/agentic-ai-workflows) - Retool, 2025
 - [LLM Observability Tools Comparison](https://lakefs.io/blog/llm-observability-tools/) - LakeFS
+
+---
+
+## Related Documents
+
+| Document | Description |
+|----------|-------------|
+| [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
+| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-first review practices |
+| [Human-Directed, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration |
+| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical ADR with implementation phases and specifications |
 
 ---
 
