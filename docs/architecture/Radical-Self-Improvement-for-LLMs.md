@@ -1,7 +1,7 @@
 # Radical Self-Improvement for LLMs
 
 **Status:** Draft
-**Author:** James Wiesebron
+**Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
 **Purpose:** Strategic framework for autonomous LLM self-improvement systems
 
