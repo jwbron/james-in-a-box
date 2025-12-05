@@ -224,6 +224,8 @@ In the overlap zone, LLMs provide comprehensive analysis while humans decide wha
 
 When a human reviewer catches something mechanical, the response shouldn't be "please fix this"—it should be "how do we automate catching this?"
 
+This embodies a core tenet of LLM-first review: **every piece of recurring feedback should either become an automated check or be questioned as not worth giving.** If it can't be automated and isn't valuable enough to keep giving manually, perhaps it shouldn't be feedback at all.
+
 ```
 Human catches issue
         ↓
