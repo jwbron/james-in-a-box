@@ -249,6 +249,8 @@ Each container gets its own ephemeral git worktree, keeping your host repositori
 
 ## Quick Start
 
+**NOTE**: If you are not james-out-of-a-box, you probably don't want to run this quite yet. Some changes need to occur to make this more usable for other developers.
+
 ### Prerequisites
 
 - Docker installed and running
