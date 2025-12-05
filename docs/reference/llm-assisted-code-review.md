@@ -1,7 +1,7 @@
 # LLM-First Code Reviews
 
 **Status:** Draft
-**Author:** James Wiesebron
+**Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
 **Purpose:** Practical guide to code review in a world where LLMs generate code faster than humans can review it
 
