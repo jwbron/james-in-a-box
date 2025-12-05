@@ -27,6 +27,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Architecture Overview](architecture/README.md) | High-level system design, components, data flows |
 | [Slack Integration](architecture/slack-integration.md) | Bidirectional Slack messaging design |
 | [Host Slack Notifier](architecture/host-slack-notifier.md) | Notification system implementation details |
+| [Radical Self-Improvement for LLMs](architecture/Radical-Self-Improvement-for-LLMs.md) | Strategic framework for autonomous LLM self-improvement |
 
 ### Setup Guides
 
@@ -146,4 +147,4 @@ See [Generated Indexes README](generated/README.md) for details on structure and
 ---
 
 *This index follows the [llms.txt](https://llmstxt.org/) convention for LLM-friendly documentation.*
-*Last updated: 2025-12-02*
+*Last updated: 2025-12-05*
