@@ -16,7 +16,7 @@ This document serves as a **strategic overview** connecting three complementary 
 | Pillar | Focus | Document |
 |--------|-------|----------|
 | **1. LLM-First Code Reviews** | Lower the barrier to adoption by automating the review bottleneck | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) |
-| **2. Human-Directed, LLM-Navigated Development** | Philosophical framework for human-LLM collaboration | [Human-Directed, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md) |
+| **2. Human-Driven, LLM-Navigated Development** | Philosophical framework for human-LLM collaboration | [Human-Driven, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md) |
 | **3. Radical Self-Improvement** | Autonomous systems that continuously improve themselves | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) |
 
 **The core thesis:** Software engineering practices must evolve to leverage LLM strengths (exhaustive attention, pattern consistency, tireless execution) while preserving human strengths (strategic judgment, creative problem-solving, interpersonal collaboration).
@@ -96,7 +96,7 @@ We need practices that **reduce** human cognitive load while **increasing** code
 
 ---
 
-### Pillar 2: Human-Directed, LLM-Navigated Development
+### Pillar 2: Human-Driven, LLM-Navigated Development
 
 **Problem:** How should humans and LLMs collaborate on software development?
 
@@ -121,7 +121,7 @@ We need practices that **reduce** human cognitive load while **increasing** code
 - Neither role is subordinate; both are essential
 - Human judgment remains the final authority
 
-**Read more:** [Human-Directed, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md)
+**Read more:** [Human-Driven, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md)
 
 ---
 
@@ -164,7 +164,7 @@ The three pillars are not independent—they form a reinforcing system:
          ▼                         ▼                         ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   PILLAR 1      │     │   PILLAR 2      │     │   PILLAR 3      │
-│   LLM-First     │     │   Human-Directed│     │   Radical       │
+│   LLM-First     │     │   Human-Driven  │     │   Radical       │
 │   Code Reviews  │     │   LLM-Navigated │     │   Self-Improve  │
 │                 │     │                 │     │                 │
 │  Entry point,   │     │  Philosophy,    │     │  Continuous     │
@@ -341,7 +341,7 @@ Even self-improving systems need:
 | Document | Focus |
 |----------|-------|
 | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-assisted review |
-| [Human-Directed, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Collaboration philosophy |
+| [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Collaboration philosophy |
 | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Autonomous improvement framework |
 | [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical implementation details |
 
