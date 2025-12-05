@@ -24,7 +24,6 @@ This document articulates a new paradigm for software development: **human-drive
 ## Table of Contents
 
 - [The Core Philosophy](#the-core-philosophy)
-  - [Bidirectional Feedback and Growth](#bidirectional-feedback-and-growth)
 - [Division of Cognitive Labor](#division-of-cognitive-labor)
 - [The Workflow in Practice](#the-workflow-in-practice)
 - [Benefits for Humans](#benefits-for-humans)
