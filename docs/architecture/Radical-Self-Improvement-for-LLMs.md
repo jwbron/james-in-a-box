@@ -100,22 +100,22 @@ The agent should autonomously maintain repository health:
 ### Implementation Pattern
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                  Automated Maintenance Loop                      │
 │                                                                  │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │   Weekly     │───▶│   Analyze    │───▶│   Generate   │       │
-│  │   Trigger    │    │   Current    │    │   Fix PRs    │       │
-│  │              │    │   State      │    │              │       │
-│  └──────────────┘    └──────────────┘    └──────────────┘       │
-│                                                  │                │
-│                                                  ▼                │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐        │
+│  │   Weekly     │───▶│   Analyze    │───▶│   Generate   │        │
+│  │   Trigger    │    │   Current    │    │   Fix PRs    │        │
+│  │              │    │   State      │    │              │        │
+│  └──────────────┘    └──────────────┘    └──────────────┘        │
+│                                                  │               │
+│                                                  ▼               │
 │                            ┌──────────────────────────────────┐  │
 │                            │    Human Review & Merge          │  │
 │                            │    (Batch approval interface)    │  │
 │                            └──────────────────────────────────┘  │
 │                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Documentation Synchronization
@@ -149,39 +149,39 @@ A self-improving agent must understand its own behavior patterns:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Metacognitive Loop                            │
-│                                                                  │
+│                    Metacognitive Loop                           │
+│                                                                 │
 │  ┌──────────────┐                                               │
 │  │ 1. OBSERVE   │  Track all interactions, tool calls, outcomes │
 │  │              │  - Token consumption per task type            │
 │  │              │  - Tool call patterns and success rates       │
 │  │              │  - Time-to-completion trends                  │
 │  └──────┬───────┘                                               │
-│         │                                                        │
-│         ▼                                                        │
+│         │                                                       │
+│         ▼                                                       │
 │  ┌──────────────┐                                               │
 │  │ 2. ANALYZE   │  Detect patterns and inefficiencies           │
 │  │              │  - Tool discovery failures                    │
 │  │              │  - Decision loops and oscillation             │
 │  │              │  - Retry storms and error patterns            │
 │  └──────┬───────┘                                               │
-│         │                                                        │
-│         ▼                                                        │
+│         │                                                       │
+│         ▼                                                       │
 │  ┌──────────────┐                                               │
 │  │ 3. PROPOSE   │  Generate improvement hypotheses              │
 │  │              │  - Prompt refinements                         │
 │  │              │  - New tool suggestions                       │
 │  │              │  - Decision frameworks                        │
 │  └──────┬───────┘                                               │
-│         │                                                        │
-│         ▼                                                        │
+│         │                                                       │
+│         ▼                                                       │
 │  ┌──────────────┐                                               │
 │  │ 4. VALIDATE  │  Test improvements, measure impact            │
 │  │              │  - A/B comparison where possible              │
 │  │              │  - Before/after metrics                       │
 │  │              │  - Rollback if negative impact                │
 │  └──────────────┘                                               │
-│                                                                  │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -232,46 +232,46 @@ The "PR Review Reviewer" is an agent that reviews the review process itself:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    PR Review Reviewer                                │
-│                                                                      │
-│  Input: All human review comments across PRs                         │
-│                                                                      │
+│                    PR Review Reviewer                               │
+│                                                                     │
+│  Input: All human review comments across PRs                        │
+│                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                   Pattern Detection                           │   │
-│  │                                                               │   │
+│  │                   Pattern Detection                          │   │
+│  │                                                              │   │
 │  │  "Add type hints" - appeared 5 times this week               │   │
 │  │  "Missing error handling for X" - appeared 3 times           │   │
 │  │  "Follow pattern in module Y" - appeared 4 times             │   │
-│  │                                                               │   │
+│  │                                                              │   │
 │  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│                              ▼                                       │
+│                              │                                      │
+│                              ▼                                      │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                   Check Generation                            │   │
-│  │                                                               │   │
+│  │                   Check Generation                           │   │
+│  │                                                              │   │
 │  │  Pattern: "Add type hints"                                   │   │
 │  │  → Proposed: Enable ANN rules in ruff config                 │   │
-│  │                                                               │   │
+│  │                                                              │   │
 │  │  Pattern: "Missing error handling for X"                     │   │
 │  │  → Proposed: Add to LLM review prompt examples               │   │
-│  │                                                               │   │
+│  │                                                              │   │
 │  │  Pattern: "Follow pattern in module Y"                       │   │
 │  │  → Proposed: Create pattern documentation + lint rule        │   │
-│  │                                                               │   │
+│  │                                                              │   │
 │  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│                              ▼                                       │
+│                              │                                      │
+│                              ▼                                      │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                   PR Generation                               │   │
-│  │                                                               │   │
-│  │  Creates PRs implementing the proposed checks                 │   │
-│  │  Includes evidence, rationale, expected impact                │   │
-│  │  Human approves/rejects                                       │   │
-│  │                                                               │   │
+│  │                   PR Generation                              │   │
+│  │                                                              │   │
+│  │  Creates PRs implementing the proposed checks                │   │
+│  │  Includes evidence, rationale, expected impact               │   │
+│  │  Human approves/rejects                                      │   │
+│  │                                                              │   │
 │  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Output: Self-improving review infrastructure                        │
-│                                                                      │
+│                                                                     │
+│  Output: Self-improving review infrastructure                       │
+│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
