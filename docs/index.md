@@ -26,7 +26,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Architecture Overview](architecture/README.md) | High-level system design, components, data flows |
 | [**Pragmatic Guide for Software Engineering in a Post-LLM World**](architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella document connecting the three pillars of LLM-augmented software engineering |
-| [Human-Directed, LLM-Navigated Development](architecture/LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration in software development |
+| [Human-Driven, LLM-Navigated Development](architecture/Human-Driven-LLM-Navigated-Software-Development.md) | Philosophy for human-LLM collaboration in software development |
 | [Radical Self-Improvement for LLMs](architecture/Radical-Self-Improvement-for-LLMs.md) | Strategic framework for autonomous LLM self-improvement |
 | [Slack Integration](architecture/slack-integration.md) | Bidirectional Slack messaging design |
 | [Host Slack Notifier](architecture/host-slack-notifier.md) | Notification system implementation details |
