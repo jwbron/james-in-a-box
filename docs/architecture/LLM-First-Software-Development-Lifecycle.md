@@ -68,18 +68,18 @@ Traditional software development places an enormous cognitive burden on humans:
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│                    HUMAN COGNITIVE LOAD                         │
-│                                                                 │
-│  Strategic Thinking        │  Implementation Details            │
-│  ─────────────────         │  ──────────────────────            │
-│  • What should we build?   │  • Did I handle null?              │
-│  • Why does this matter?   │  • Is this pattern consistent?     │
-│  • How does this fit?      │  • Did I update all call sites?    │
-│                            │  • Are the tests comprehensive?    │
-│                            │  • Is the documentation current?   │
-│                            │  • Did I miss any edge cases?      │
-│                            │                                     │
-│        (~30%)              │          (~70%)                     │
+│                    HUMAN COGNITIVE LOAD                        │
+│                                                                │
+│  Strategic Thinking        │  Implementation Details           │
+│  ─────────────────         │  ──────────────────────           │
+│  • What should we build?   │  • Did I handle null?             │
+│  • Why does this matter?   │  • Is this pattern consistent?    │
+│  • How does this fit?      │  • Did I update all call sites?   │
+│                            │  • Are the tests comprehensive?   │
+│                            │  • Is the documentation current?  │
+│                            │  • Did I miss any edge cases?     │
+│                            │                                   │
+│        (~30%)              │          (~70%)                   │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -89,8 +89,8 @@ The majority of cognitive effort goes toward ensuring correctness, consistency, 
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│                    COGNITIVE LOAD REDISTRIBUTION                │
-│                                                                 │
+│                    COGNITIVE LOAD REDISTRIBUTION               │
+│                                                                │
 │     HUMAN (Driver)         │      LLM (Navigator)              │
 │     ──────────────         │      ─────────────────            │
 │  • What should we build?   │  • Enumerate all edge cases       │
@@ -101,8 +101,8 @@ The majority of cognitive effort goes toward ensuring correctness, consistency, 
 │  • Should we proceed?      │  • Validate against standards     │
 │  • What trade-offs are     │  • Track dependencies and         │
 │    acceptable?             │    implications                   │
-│                            │                                    │
-│  Creative, Strategic       │  Systematic, Exhaustive            │
+│                            │                                   │
+│  Creative, Strategic       │  Systematic, Exhaustive           │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -136,8 +136,8 @@ The majority of cognitive effort goes toward ensuring correctness, consistency, 
 ```
         Human                              LLM
           │                                  │
-          │  "I want to add OAuth2 to       │
-          │   the API for third-party       │
+          │  "I want to add OAuth2 to        │
+          │   the API for third-party        │
           │   integrations"                  │
           │─────────────────────────────────▶│
           │                                  │
@@ -147,18 +147,18 @@ The majority of cognitive effort goes toward ensuring correctness, consistency, 
           │                                  │ • Draft implementation plan
           │                                  │
           │◀─────────────────────────────────│
-          │  "Here are 3 approaches with    │
-          │   trade-offs. Approach A is     │
-          │   simplest but limits future    │
-          │   flexibility..."               │
+          │  "Here are 3 approaches with     │
+          │   trade-offs. Approach A is      │
+          │   simplest but limits future     │
+          │   flexibility..."                │
           │                                  │
-          │  [Human reviews, asks           │
-          │   clarifying questions,         │
-          │   makes strategic decision]     │
+          │  [Human reviews, asks            │
+          │   clarifying questions,          │
+          │   makes strategic decision]      │
           │                                  │
-          │  "Let's go with Approach B,     │
-          │   but use PKCE instead of       │
-          │   client secrets"               │
+          │  "Let's go with Approach B,      │
+          │   but use PKCE instead of        │
+          │   client secrets"                │
           │─────────────────────────────────▶│
           │                                  │
           │                                  │ • Implement Approach B with PKCE
@@ -167,7 +167,7 @@ The majority of cognitive effort goes toward ensuring correctness, consistency, 
           │                                  │ • Ensure consistency with codebase
           │                                  │
           │◀─────────────────────────────────│
-          │  [PR ready for human review]    │
+          │  [PR ready for human review]     │
           │                                  │
           ▼                                  ▼
 ```
