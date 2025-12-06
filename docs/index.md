@@ -25,6 +25,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | Document | Description |
 |----------|-------------|
 | [Architecture Overview](architecture/README.md) | High-level system design, components, data flows |
+| [Foundational Technical Requirements](architecture/Foundational-Technical-Requirements.md) | Technical foundations for Post-LLM SE: multi-agent, PR review, codebase analysis |
 | [Slack Integration](architecture/slack-integration.md) | Bidirectional Slack messaging design |
 | [Host Slack Notifier](architecture/host-slack-notifier.md) | Notification system implementation details |
 
@@ -146,4 +147,4 @@ See [Generated Indexes README](generated/README.md) for details on structure and
 ---
 
 *This index follows the [llms.txt](https://llmstxt.org/) convention for LLM-friendly documentation.*
-*Last updated: 2025-12-02*
+*Last updated: 2025-12-06*
