@@ -69,11 +69,10 @@ Traditional code review places an enormous burden on human reviewers:
 │  • Is this the right       │  • Are patterns followed?         │
 │    direction?              │  • Are imports organized?         │
 │                            │                                   │
-│        (~30%)              │          (~70%)                   │
 └────────────────────────────────────────────────────────────────┘
 ```
 
-The majority of reviewer attention goes toward mechanical concerns—tasks that require tedious attention to detail rather than strategic insight. This is backwards.
+A significant portion of reviewer attention goes toward mechanical concerns—tasks that require tedious attention to detail rather than strategic insight.
 
 ### The LLM-First Model
 
