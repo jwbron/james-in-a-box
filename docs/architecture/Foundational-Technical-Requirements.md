@@ -7,11 +7,11 @@
 
 ---
 
-> **This document bootstraps itself.** It defines the Interactive Planning Framework, then uses that framework to plan its own implementation. Once approved, we build using the methodology established here.
+> **This document bootstraps itself.** It defines the Collaborative Planning Framework, then uses that framework to plan its own implementation. Once approved, we build using the methodology established here.
 
 ---
 
-## The Interactive Planning Framework
+## The Collaborative Planning Framework
 
 Before diving into technical requirements, we establish the methodology for developing with LLMs. This framework governs how all subsequent planning—including the rest of this document—should proceed.
 
@@ -19,7 +19,7 @@ Before diving into technical requirements, we establish the methodology for deve
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│              Interactive Planning Framework (IPF)               │
+│              Collaborative Planning Framework (CPF)             │
 │                                                                 │
 │   IDEATION ──▶ ASSESSMENT ──▶ REINFORCEMENT ──▶ PLANNING       │
 │                                                                 │
@@ -96,7 +96,7 @@ The Post-LLM SE vision requires six foundational capabilities:
 | Foundation | What It Does | Enables |
 |------------|--------------|---------|
 | **Multi-Agent Framework** | Coordinates specialized LLM agents | All capabilities |
-| **Interactive Planning Framework** | Structured human-LLM collaboration | Pillar 2 |
+| **Collaborative Planning Framework** | Structured human-LLM collaboration | Pillar 2 |
 | **PR Reviewer System** | Automated specialized code review | Pillar 1 |
 | **Codebase Analysis Engine** | Deep code understanding | All capabilities |
 | **Continual Self-Reflection** | Autonomous system improvement | Pillar 3 |
@@ -135,7 +135,7 @@ The Post-LLM SE vision requires six foundational capabilities:
 
 ---
 
-## Foundation 2: Interactive Planning Framework (IPF)
+## Foundation 2: Collaborative Planning Framework (CPF)
 
 **Purpose:** Enable rigorous human-LLM collaboration through structured dialogue and documentation-driven development.
 
@@ -145,7 +145,7 @@ The Post-LLM SE vision requires six foundational capabilities:
 
 > **Core Philosophy:** Documentation isn't created after development—documentation IS development.
 
-In the IPF model, **documentation drives development**, not the reverse:
+In the CPF model, **documentation drives development**, not the reverse:
 
 | Traditional Development | Documentation-Driven Development |
 |------------------------|----------------------------------|
@@ -154,7 +154,7 @@ In the IPF model, **documentation drives development**, not the reverse:
 | Docs get stale | Docs are source of truth |
 | Implementation defines behavior | Documents define behavior |
 
-**Why this matters for IPF:**
+**Why this matters for CPF:**
 - The **Planning** phase produces a document that IS the implementation spec
 - LLM agents read the document and generate code from it
 - Human approval of the document = approval to build
@@ -162,7 +162,7 @@ In the IPF model, **documentation drives development**, not the reverse:
 
 ### Key Capabilities
 
-- **Phase Management**: Guide conversations through IPF phases
+- **Phase Management**: Guide conversations through CPF phases
 - **Decision Capture**: Record human decisions with rationale
 - **Context Persistence**: Maintain state across sessions
 - **Specification Output**: Generate machine-readable task specs
@@ -181,7 +181,7 @@ In the IPF model, **documentation drives development**, not the reverse:
 
 - How structured should the dialogue be?
 - How are planning artifacts versioned?
-- How does IPF integrate with task tracking?
+- How does CPF integrate with task tracking?
 - How do we ensure document quality is sufficient for LLM consumption?
 
 ---
@@ -309,7 +309,7 @@ Phase 0: Strategic Foundation (THIS DOCUMENT)
     ↓
 Phase 1: Multi-Agent Core
     ↓
-Phase 2: Interactive Planning Framework ←── Enables structured development
+Phase 2: Collaborative Planning Framework ←── Enables structured development
     ↓
 Phase 3: PR Review Pipeline ←── Quality gate for all subsequent work
     ↓

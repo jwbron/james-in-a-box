@@ -25,7 +25,7 @@ This document presents a **holistic philosophy** for software engineering in the
 
 **The core thesis:** Software engineering practices must evolve to leverage LLM strengths (exhaustive attention, pattern consistency, tireless execution) while preserving human strengths (strategic judgment, creative problem-solving, interpersonal collaboration). Each pillar addresses a different dimension of this evolution, and together they form a complete, pragmatic philosophy.
 
-**Technical Foundation:** The concrete technical requirements to implement this vision are detailed in the companion document [Foundational Technical Requirements](Foundational-Technical-Requirements.md), which defines the six technical foundations: Multi-Agent Framework, Interactive Development Framework, PR Reviewer System, Codebase Analysis Engine, Index-Based Documentation Strategy, and Continual Self-Reflection Framework.
+**Technical Foundation:** The concrete technical requirements to implement this vision are detailed in the companion document [Foundational Technical Requirements](Foundational-Technical-Requirements.md), which defines the six technical foundations: Multi-Agent Framework, Collaborative Planning Framework, PR Reviewer System, Codebase Analysis Engine, Index-Based Documentation Strategy, and Continual Self-Reflection Framework.
 
 ---
 

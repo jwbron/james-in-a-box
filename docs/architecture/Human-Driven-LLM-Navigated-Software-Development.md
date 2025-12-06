@@ -305,19 +305,19 @@ When the cognitive burden is shared with LLMs:
 
 ---
 
-## Rigor Through Interactive Planning
+## Rigor Through Collaborative Planning
 
 The most significant benefit of LLM-navigated development isn't faster code—it's **enforced rigor** that would be impractical for humans alone. When LLMs drive the planning process through structured dialogue, they introduce consistency and thoroughness that transforms how software gets built.
 
 This section embodies the guiding value of this entire pillar: rigor as a practice, not just an aspiration.
 
-### The Interactive Planning Framework
+### The Collaborative Planning Framework
 
 For complex changes, an LLM-powered planning framework ensures nothing is missed:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│            Interactive Planning Framework (IPF)                 │
+│            Collaborative Planning Framework (CPF)                 │
 │                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │  PHASE 1: ELICITATION                                    │   │
@@ -384,9 +384,9 @@ Each project that goes through this framework:
 
 ### Making Implicit Knowledge Explicit
 
-Engineering organizations often rely on implicit knowledge—"everyone knows we don't do it that way." The Interactive Planning Framework surfaces these assumptions by requiring explicit specification during the Elicitation phase, which then becomes available to all team members and future LLM interactions.
+Engineering organizations often rely on implicit knowledge—"everyone knows we don't do it that way." The Collaborative Planning Framework surfaces these assumptions by requiring explicit specification during the Elicitation phase, which then becomes available to all team members and future LLM interactions.
 
-See: [ADR: Interactive Planning Framework](../adr/in-progress/ADR-Interactive-Planning-Framework.md) for the complete technical specification.
+See: [ADR: Collaborative Planning Framework](../adr/in-progress/ADR-Collaborative-Planning-Framework.md) for the complete technical specification.
 
 ---
 
@@ -402,7 +402,7 @@ For complex changes, use structured dialogue:
 4. **LLM implements precisely** - Execute the chosen path
 5. **Human reviews and approves** - Final authority
 
-See: [ADR: Interactive Planning Framework](../adr/in-progress/ADR-Interactive-Planning-Framework.md)
+See: [ADR: Collaborative Planning Framework](../adr/in-progress/ADR-Collaborative-Planning-Framework.md)
 
 ### Pattern 2: Structured Handoffs
 

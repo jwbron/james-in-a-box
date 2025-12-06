@@ -467,7 +467,7 @@ Umbrella: A Pragmatic Guide for Software Engineering in a Post-LLM World
     │       └── ADR: Coding Standards Post-LLM (technical specs)
     │
     ├── Pillar 2: Human-Driven, LLM-Navigated Development (philosophy)
-    │       └── ADR: Interactive Planning Framework (technical specs)
+    │       └── ADR: Collaborative Planning Framework (technical specs)
     │
     └── Pillar 3: Radical Self-Improvement for LLMs (this document)
             └── ADR: LLM Inefficiency Reporting (technical specs)
