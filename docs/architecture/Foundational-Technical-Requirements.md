@@ -11,6 +11,42 @@
 
 ---
 
+## The Documents-as-Code Paradigm
+
+> **Core Insight:** In post-LLM software engineering, **documents ARE the code**.
+
+Traditional software engineering treats documentation as a secondary artifact—something written after the "real work" of coding. The post-LLM paradigm inverts this relationship:
+
+| Traditional Approach | Documents-as-Code Approach |
+|---------------------|---------------------------|
+| Code first, docs later | Docs first, code follows |
+| Docs describe what code does | Docs specify what code must do |
+| Docs drift from reality | Docs are the source of truth |
+| Humans read docs, write code | LLMs read docs, generate code |
+| Docs are optional polish | Docs are mandatory specifications |
+
+### Why Documents Become Primary
+
+1. **LLMs Execute from Specifications**: A well-structured document is directly executable by an LLM agent. The specification *is* the program.
+
+2. **Human Intent Preservation**: Documents capture the *why* and *what* that gets lost when humans jump straight to implementation. This context is essential for LLM-assisted maintenance and evolution.
+
+3. **Scalable Review**: Reviewing a design document is cognitively cheaper than reviewing implementation code. Humans should spend their limited attention on high-leverage artifacts.
+
+4. **Reproducibility**: A precise specification can regenerate code. Code cannot regenerate the reasoning behind design decisions.
+
+### Implications for This Document Series
+
+This document and its siblings are not just "planning documents"—they are **executable specifications** that will drive LLM agents to build the system. The quality of these documents directly determines the quality of the system.
+
+**Therefore, we must:**
+- Treat document refinement as seriously as code refinement
+- Apply the same rigor to document review as code review
+- Version and track documents with the same discipline as code
+- Continuously improve document precision and clarity
+
+---
+
 ## Executive Summary
 
 The Post-LLM Software Engineering vision requires six foundational technical capabilities:
@@ -24,12 +60,13 @@ The Post-LLM Software Engineering vision requires six foundational technical cap
 | **Index-Based Documentation** | Always-current, navigable documentation | Pillar 1, 2 |
 | **Continual Self-Reflection** | Autonomous system improvement | Pillar 3 |
 
-This document provides high-level technical requirements for each foundation, identifies dependencies and integration points, and proposes an implementation approach.
+This document provides high-level technical requirements for each foundation, identifies dependencies and integration points, and proposes an actionable implementation roadmap.
 
 ---
 
 ## Table of Contents
 
+- [The Documents-as-Code Paradigm](#the-documents-as-code-paradigm)
 - [Foundation 1: Multi-Agent Framework](#foundation-1-multi-agent-framework)
 - [Foundation 2: Interactive Development Framework](#foundation-2-interactive-development-framework)
 - [Foundation 3: PR Reviewer System](#foundation-3-pr-reviewer-system)
@@ -38,7 +75,7 @@ This document provides high-level technical requirements for each foundation, id
 - [Foundation 6: Continual Self-Reflection Framework](#foundation-6-continual-self-reflection-framework)
 - [Cross-Cutting Concerns](#cross-cutting-concerns)
 - [Integration Architecture](#integration-architecture)
-- [Implementation Approach](#implementation-approach)
+- [Actionable Implementation Roadmap](#actionable-implementation-roadmap)
 - [Success Metrics](#success-metrics)
 - [Open Questions](#open-questions)
 
@@ -652,57 +689,215 @@ Enable the system to observe its own behavior, detect inefficiencies, and propos
 
 ---
 
-## Implementation Approach
+## Actionable Implementation Roadmap
 
-### Phase 0: Foundation Infrastructure
+> **Principle:** Each phase produces working documents AND working code. Documents are refined iteratively alongside implementation—they evolve together.
 
-**Goal:** Establish the base infrastructure that all other foundations depend on.
+### Phase 0: Documentation Foundation (Current Phase)
 
-**Deliverables:**
-- Basic multi-agent orchestration
-- Execution tracing and logging
-- Beads integration for persistence
-- GitHub MCP integration
+**Goal:** Establish the document architecture that will guide all subsequent implementation.
 
-### Phase 1: Core Capabilities
+**Status:** IN PROGRESS
 
-**Goal:** Deliver minimum viable versions of each foundation.
+| Deliverable | Description | Document | Status |
+|-------------|-------------|----------|--------|
+| Philosophy Umbrella | The "why" of post-LLM SE | [Pragmatic Guide](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | In PR #470 |
+| Technical Requirements | This document—the "what" | This document | In PR #474 |
+| Pillar 1 Guide | LLM-First Code Reviews | TBD | Planned |
+| Pillar 2 Guide | Human-Driven, LLM-Navigated | [Draft exists](Human-Driven-LLM-Navigated-Software-Development.md) | Needs refinement |
+| Pillar 3 Guide | Radical Self-Improvement | [Draft exists](Radical-Self-Improvement-for-LLMs.md) | Needs refinement |
 
-**Deliverables:**
-- Basic agent types (Orchestrator, Implementer, Reviewer)
-- Simple PR review pipeline (one or two specialized reviewers)
-- Basic codebase analysis (file structure, imports)
-- Index generator for documentation
+**Exit Criteria:**
+- [ ] All six foundation sections in this document reviewed and approved
+- [ ] Each pillar has a dedicated design document
+- [ ] Document cross-references validated
+- [ ] Human sign-off on overall direction
 
-### Phase 2: Specialized Agents
+**Immediate Next Actions:**
+1. Complete review of this document (PR #474)
+2. Create detailed design docs for each foundation (separate PRs)
+3. Establish document review cadence
 
-**Goal:** Add specialized capabilities to each foundation.
+---
 
-**Deliverables:**
-- Full suite of PR review agents
-- Interactive Planning Framework
-- Deep codebase analysis (AST, patterns)
-- Documentation drift detection
+### Phase 1: Multi-Agent Core
 
-### Phase 3: Self-Improvement
+**Goal:** Build the execution layer that powers everything else.
 
-**Goal:** Enable the system to improve itself.
+**Prerequisites:** Phase 0 complete
 
-**Deliverables:**
-- Process analyzer
-- LLM inefficiency analyzer
-- PR Review Reviewer
-- Improvement proposal pipeline
+| Deliverable | Description | Specification Doc | Implementation |
+|-------------|-------------|-------------------|----------------|
+| Agent Registry | Central catalog of agent types and capabilities | `docs/design/agent-registry.md` | `src/agents/registry.py` |
+| Task Router | Route tasks to appropriate agents | `docs/design/task-routing.md` | `src/agents/router.py` |
+| Execution Tracer | Full observability of agent execution | `docs/design/execution-tracing.md` | `src/observability/tracer.py` |
+| Agent SDK | Base classes and utilities for building agents | `docs/design/agent-sdk.md` | `src/agents/sdk/` |
 
-### Phase 4: Refinement
+**Exit Criteria:**
+- [ ] Can define and register a new agent type
+- [ ] Can route a task to an agent and get a result
+- [ ] Full execution trace available for debugging
+- [ ] At least 3 working agents: Orchestrator, Implementer, Researcher
 
-**Goal:** Optimize, harden, and scale.
+**Acceptance Test:**
+```
+Given: A task "Fix the typo in README.md"
+When: Task submitted to system
+Then: Orchestrator analyzes → Routes to Implementer → Fix applied → PR created
+And: Full trace viewable
+```
 
-**Deliverables:**
-- Performance optimization
-- Scalability improvements
-- Advanced observability
-- Cross-foundation integration polish
+---
+
+### Phase 2: PR Review Pipeline
+
+**Goal:** Deliver automated code review with specialized agents.
+
+**Prerequisites:** Phase 1 complete (Multi-Agent Core)
+
+| Deliverable | Description | Specification Doc | Implementation |
+|-------------|-------------|-------------------|----------------|
+| Security Reviewer | OWASP, secrets, injection | `docs/design/security-reviewer.md` | `src/agents/reviewers/security.py` |
+| Architecture Reviewer | Design patterns, coupling | `docs/design/architecture-reviewer.md` | `src/agents/reviewers/architecture.py` |
+| Review Synthesizer | Aggregate and dedupe findings | `docs/design/review-synthesizer.md` | `src/agents/reviewers/synthesizer.py` |
+| GitHub Integration | Post reviews via GitHub API | `docs/design/github-review-integration.md` | `src/integrations/github/reviews.py` |
+
+**Exit Criteria:**
+- [ ] PRs automatically receive LLM review comments
+- [ ] At least 2 specialized reviewers operational
+- [ ] Findings categorized by severity
+- [ ] False positive rate < 20%
+
+**Acceptance Test:**
+```
+Given: A PR introducing a SQL injection vulnerability
+When: PR opened
+Then: Security Reviewer flags vulnerability with specific line reference
+And: Review posted as GitHub review comment
+```
+
+---
+
+### Phase 3: Interactive Planning Framework
+
+**Goal:** Enable structured human-LLM collaboration for complex tasks.
+
+**Prerequisites:** Phase 1 complete
+
+| Deliverable | Description | Specification Doc | Implementation |
+|-------------|-------------|-------------------|----------------|
+| Elicitation Agent | Transform vague intent to requirements | `docs/design/elicitation-agent.md` | `src/agents/planning/elicitation.py` |
+| Design Agent | Present options with trade-offs | `docs/design/design-agent.md` | `src/agents/planning/design.py` |
+| Task Breakdown Agent | Create phased implementation plan | `docs/design/task-breakdown-agent.md` | `src/agents/planning/breakdown.py` |
+| IPF Orchestrator | Coordinate planning phases | `docs/design/ipf-orchestrator.md` | `src/agents/planning/orchestrator.py` |
+
+**Exit Criteria:**
+- [ ] Can take vague request → structured task specification
+- [ ] Human checkpoints at each phase transition
+- [ ] Task specs are machine-readable and executable
+- [ ] Planning sessions resumable across time
+
+**Acceptance Test:**
+```
+Given: User says "I want to add user authentication"
+When: IPF session initiated
+Then: Elicitation asks clarifying questions
+And: Design presents OAuth vs JWT vs Session options
+And: User chooses, and detailed task breakdown generated
+```
+
+---
+
+### Phase 4: Codebase Analysis Engine
+
+**Goal:** Deep, structured understanding of code.
+
+**Prerequisites:** Phase 1 complete
+
+| Deliverable | Description | Specification Doc | Implementation |
+|-------------|-------------|-------------------|----------------|
+| AST Parser (Python) | Parse Python into traversable AST | `docs/design/python-parser.md` | `src/analysis/parsers/python.py` |
+| AST Parser (TS/JS) | Parse TypeScript/JS | `docs/design/typescript-parser.md` | `src/analysis/parsers/typescript.py` |
+| Dependency Mapper | Build module dependency graph | `docs/design/dependency-mapper.md` | `src/analysis/dependencies.py` |
+| Symbol Index | Searchable index of all symbols | `docs/design/symbol-index.md` | `src/analysis/symbols.py` |
+
+**Exit Criteria:**
+- [ ] Can parse Python and TypeScript codebases
+- [ ] Dependency graph queryable
+- [ ] "Find all usages of X" works
+- [ ] Incremental analysis on file change
+
+**Acceptance Test:**
+```
+Given: A Python codebase
+When: Analysis runs
+Then: Can query "what calls function foo()"
+And: Can query "what does module X depend on"
+```
+
+---
+
+### Phase 5: Self-Reflection Framework
+
+**Goal:** System observes and improves itself.
+
+**Prerequisites:** Phases 1-4 substantially complete
+
+| Deliverable | Description | Specification Doc | Implementation |
+|-------------|-------------|-------------------|----------------|
+| Metrics Collector | Gather token usage, success rates, etc. | `docs/design/metrics-collector.md` | `src/reflection/metrics.py` |
+| Inefficiency Detector | Identify wasted effort patterns | `docs/design/inefficiency-detector.md` | `src/reflection/inefficiency.py` |
+| Improvement Proposer | Generate hypotheses for improvement | `docs/design/improvement-proposer.md` | `src/reflection/proposer.py` |
+| Experiment Runner | A/B test improvements | `docs/design/experiment-runner.md` | `src/reflection/experiments.py` |
+
+**Exit Criteria:**
+- [ ] System tracks its own performance metrics
+- [ ] Inefficiencies automatically surfaced
+- [ ] Improvement proposals generated with estimated impact
+- [ ] At least one self-proposed improvement accepted and deployed
+
+**Acceptance Test:**
+```
+Given: System has been running for 2 weeks
+When: Reflection analysis runs
+Then: Report identifies top 3 inefficiencies
+And: Proposals include specific changes with expected improvement %
+```
+
+---
+
+### Phase 6: Documentation Intelligence
+
+**Goal:** Always-current, navigable documentation.
+
+**Prerequisites:** Phase 4 (Codebase Analysis)
+
+| Deliverable | Description | Specification Doc | Implementation |
+|-------------|-------------|-------------------|----------------|
+| Index Generator | Build navigable doc index | `docs/design/index-generator.md` | `src/docs/indexer.py` |
+| Drift Detector | Find stale documentation | `docs/design/drift-detector.md` | `src/docs/drift.py` |
+| Doc Generator | Generate docs from code | `docs/design/doc-generator.md` | `src/docs/generator.py` |
+| Freshness Tracker | Track and display doc age | `docs/design/freshness-tracker.md` | `src/docs/freshness.py` |
+
+**Exit Criteria:**
+- [ ] Auto-generated index always reflects actual docs
+- [ ] Stale docs flagged automatically
+- [ ] API docs generated from code comments
+- [ ] Freshness visible in doc index
+
+---
+
+### Implementation Principles
+
+1. **Document First**: Before implementing any component, write its specification document. The document IS the first implementation.
+
+2. **Iterative Refinement**: Documents improve as implementation reveals gaps. Code and docs evolve together.
+
+3. **Working Increments**: Each phase delivers working capability. No "big bang" integration.
+
+4. **Human Checkpoints**: Major phase transitions require human review and approval.
+
+5. **Dogfooding**: Use the system to build the system. PR reviews by the PR reviewer. Planning via IPF.
 
 ---
 
