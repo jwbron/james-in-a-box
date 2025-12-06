@@ -26,6 +26,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Architecture Overview](architecture/README.md) | High-level system design, components, data flows |
 | [**Pragmatic Guide for Software Engineering in a Post-LLM World**](architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella document connecting the three pillars of LLM-augmented software engineering |
+| [Foundational Technical Requirements](architecture/Foundational-Technical-Requirements.md) | Technical foundations for Post-LLM SE: multi-agent, PR review, codebase analysis |
 | [Human-Driven, LLM-Navigated Development](architecture/Human-Driven-LLM-Navigated-Software-Development.md) | Philosophy for human-LLM collaboration in software development |
 | [Radical Self-Improvement for LLMs](architecture/Radical-Self-Improvement-for-LLMs.md) | Strategic framework for autonomous LLM self-improvement |
 | [Slack Integration](architecture/slack-integration.md) | Bidirectional Slack messaging design |
@@ -150,4 +151,4 @@ See [Generated Indexes README](generated/README.md) for details on structure and
 ---
 
 *This index follows the [llms.txt](https://llmstxt.org/) convention for LLM-friendly documentation.*
-*Last updated: 2025-12-05*
+*Last updated: 2025-12-06*
