@@ -4,6 +4,7 @@
 **Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
 **Purpose:** A philosophy and framework for software development where humans drive strategy while LLMs handle structural rigor and implementation
+**Guiding Value:** Rigor
 
 ---
 
@@ -18,6 +19,8 @@ This document articulates a new paradigm for software development: **human-drive
 **LLMs excel at:** Maintaining structural consistency across large codebases, exhaustive enumeration of edge cases, applying established patterns with unwavering precision, synthesizing large amounts of context, and tireless execution of well-defined tasks.
 
 **The goal:** Free human cognitive capacity for creativity, strategic thinking, and healthy collaboration by offloading structural rigor and implementation details to LLMs. This isn't about replacing humans—it's about *amplifying* what makes humans uniquely valuable.
+
+**The guiding value—rigor:** Establish precise roles and maintain them consistently. The driver/navigator metaphor isn't just a suggestion—it's a discipline that prevents the chaos of undefined collaboration. When roles are clear and consistently maintained, both humans and LLMs can operate with confidence.
 
 ---
 
@@ -50,6 +53,8 @@ Consider the analogy of a road trip:
 The driver makes the decisions that matter—the destination, the purpose of the journey, whether to take the scenic route. The navigator handles the cognitive burden of tracking every detail, ensuring nothing is missed, and providing accurate information for decision-making.
 
 Neither role is subordinate to the other. Both are essential. But they require fundamentally different cognitive capabilities.
+
+This is rigor in action: defining roles precisely, and maintaining the discipline to stay in your lane.
 
 ### The Problem with Traditional Development
 
@@ -304,6 +309,8 @@ When the cognitive burden is shared with LLMs:
 
 The most significant benefit of LLM-navigated development isn't faster code—it's **enforced rigor** that would be impractical for humans alone. When LLMs drive the planning process through structured dialogue, they introduce consistency and thoroughness that transforms how software gets built.
 
+This section embodies the guiding value of this entire pillar: rigor as a practice, not just an aspiration.
+
 ### The Interactive Planning Framework
 
 For complex changes, an LLM-powered planning framework ensures nothing is missed:
@@ -518,7 +525,7 @@ Human: "The LLM said this is the best approach, so it must be"
 | Document | Description |
 |----------|-------------|
 | [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
-| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-first review practices |
+| [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) | Practical guide to LLM-first review practices |
 | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Framework for autonomous LLM self-improvement |
 | [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Complete architectural decision record with implementation phases and technical specifications |
 
@@ -534,6 +541,8 @@ This philosophy could be called several things:
 - **Sustainable AI-Augmented Development** - Emphasizes the long-term human benefits
 
 The name matters less than the principle: **humans focus on what humans do best; LLMs handle what LLMs do best; the result is greater than either alone.**
+
+What matters is the rigor with which you apply it: clear roles, consistent handoffs, disciplined checkpoints.
 
 ---
 

@@ -4,10 +4,11 @@
 **Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
 **Purpose:** A philosophy and framework for code review where LLMs handle mechanical validation and humans focus on strategic judgment
+**Guiding Value:** Intentionality
 
 ---
 
-> **Part of:** [A Pragmatic Guide for Software Engineering in a Post-LLM World](../architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md)
+> **Part of:** [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md)
 
 ---
 
@@ -18,6 +19,8 @@ This document articulates a fundamental shift in how we think about code review:
 **The solution:** Invert the review model. Let LLMs handle mechanical validation while humans focus on strategic judgment. The result is faster feedback, higher consistency, and human attention directed where it matters most.
 
 **The goal:** Free human reviewers from repetitive feedback so they can focus on critical paths—the high-stakes decisions where human judgment, organizational context, and accountability matter most.
+
+**The guiding value—intentionality:** Be deliberate about what deserves human cognitive investment. Every moment spent reviewing formatting is a moment not spent on architecture, security, or mentorship. This document is about reclaiming human attention for the work that only humans can do.
 
 ---
 
@@ -44,6 +47,8 @@ This document articulates a fundamental shift in how we think about code review:
 > If you find yourself giving the same feedback twice, stop and automate it.
 
 Every piece of recurring feedback represents a process failure. It should either become an automated check or be questioned as not worth giving. This simple principle drives everything that follows.
+
+This is intentionality in action: treating human attention as the scarce resource it is, and investing it only where it creates irreplaceable value.
 
 ### Why Traditional Review Fails at Scale
 
@@ -97,7 +102,7 @@ Modern LLMs can assess far more than mechanical concerns. They can evaluate arch
 └────────────────────────────────────────────────────────────────┘
 ```
 
-Human attention is concentrated on critical paths—not because LLMs can't assess other areas, but because these paths require accountability, organizational context, and the kind of judgment that carries weight with stakeholders.
+Human attention is concentrated on critical paths—not because LLMs can't assess other areas, but because these paths require accountability, organizational context, and the kind of judgment that carries weight with stakeholders. This is the heart of intentionality: knowing where your attention belongs, and protecting that focus.
 
 ---
 
@@ -545,6 +550,8 @@ Human: "I'm worried about the architecture here."
 The goal is not to limit LLM review to mechanical concerns—LLMs can assess nearly everything. The goal is to concentrate human attention on critical paths where accountability, organizational context, and human judgment are irreplaceable.
 
 When LLMs provide comprehensive analysis and humans focus on high-stakes decisions, everyone wins: reviewers are more engaged, developers get faster feedback, and critical paths get the human attention they deserve.
+
+This is what intentionality looks like in practice: a deliberate choice to protect human cognitive capacity for the decisions that matter most.
 
 ---
 

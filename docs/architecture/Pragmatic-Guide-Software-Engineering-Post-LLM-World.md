@@ -11,13 +11,17 @@
 
 We are witnessing a fundamental shift in software engineering. Large Language Models have moved from experimental tools to practical collaborators capable of generating, reviewing, and maintaining code at unprecedented scale. This creates both opportunity and challenge: opportunity to amplify human capabilities, challenge to adapt our practices accordingly.
 
+The idea that speed is an inherent benefit of software development with LLMs is a fallacy. With the models that exist currently, we don't have a path forward for automating the job of software engineers generally. We do, however, have a path towards radically improving the software development lifecycle, leading to higher quality code while reducing cognitive load on engineers.
+
+But we can only navigate this path with **intentionality**, **rigor**, and **care**.
+
 This document presents a **holistic philosophy** for software engineering in the post-LLM era, built on three mutually reinforcing pillars:
 
-| Pillar | Core Question | Document |
-|--------|---------------|----------|
-| **1. LLM-First Code Reviews** | How do we maintain quality at LLM speed? | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) |
-| **2. Human-Driven, LLM-Navigated Development** | How should humans and LLMs collaborate? | [Human-Driven, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md) |
-| **3. Radical Self-Improvement** | How do systems get better over time? | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) |
+| Pillar | Core Question | Guiding Value | Document |
+|--------|---------------|---------------|----------|
+| **1. LLM-First Code Reviews** | Where should human attention focus? | Intentionality | [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) |
+| **2. Human-Driven, LLM-Navigated Development** | How should humans and LLMs collaborate? | Rigor | [Human-Driven, LLM-Navigated Software Development](Human-Driven-LLM-Navigated-Software-Development.md) |
+| **3. Radical Self-Improvement** | How do systems get better over time? | Care | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) |
 
 **The core thesis:** Software engineering practices must evolve to leverage LLM strengths (exhaustive attention, pattern consistency, tireless execution) while preserving human strengths (strategic judgment, creative problem-solving, interpersonal collaboration). Each pillar addresses a different dimension of this evolution, and together they form a complete, pragmatic philosophy.
 
@@ -38,17 +42,25 @@ This document presents a **holistic philosophy** for software engineering in the
 
 ## Why This Matters Now
 
+### The Speed Fallacy
+
+There is a seductive narrative in the industry: LLMs will make software development faster. Ship more features. Move faster. 10x productivity.
+
+This narrative doesn't capture the subtlety of the reality we're facing.
+
+Speed without rigor creates technical debt. Speed without intentionality creates chaos. Speed without care creates systems that degrade over time. Speed as a metric is straightforward. Improving it is not.
+
 ### Three Shifts Require Three Responses
 
 LLMs have fundamentally changed three aspects of software development, and each requires a thoughtful response:
 
-**1. The Speed Gap** — LLMs generate code faster than traditional review processes can handle. Quality assurance must evolve to match.
+**1. Rethinking Engineer Focus** — LLMs generate code faster than traditional review processes can handle. Rather than trying to keep pace, we need to rethink where human attention creates irreplaceable value. This requires **intentionality**.
 
-**2. The Collaboration Question** — Human-computer interaction has moved from "human instructs, computer executes" to genuine collaboration. We need a new model for how humans and LLMs work together.
+**2. The Collaboration Question** — Human-computer interaction has moved from "human instructs, computer executes" to genuine collaboration. We need a new model for how humans and LLMs work together—one that maintains consistent structure and clear roles. This requires **rigor**.
 
-**3. The Improvement Imperative** — Static systems cannot keep pace with rapidly evolving capabilities. LLM-augmented systems must continuously improve themselves.
+**3. The Improvement Imperative** — Static systems cannot keep pace with rapidly evolving capabilities. LLM-augmented systems must continuously improve themselves, learning from every interaction. This requires **care**.
 
-These three challenges are interconnected. You cannot solve the speed gap without rethinking collaboration. You cannot establish sustainable collaboration without building in self-improvement. And self-improvement depends on having clear quality signals from review.
+These three challenges are interconnected. You cannot address the focus question without rethinking collaboration. You cannot establish sustainable collaboration without building in self-improvement. And self-improvement depends on having clear quality signals from review.
 
 ### The Human Factor
 
@@ -56,7 +68,7 @@ Engineers are already overwhelmed. Adding "work with LLMs" to their responsibili
 
 - Rubber-stamping (approving without genuine review)
 - Cognitive overload (trying to manage LLM output without clear frameworks)
-- Inconsistency (different team members collaborating with LLMs differently)
+- Inconsistency (applying organizational standards differently)
 - Stagnation (no mechanism for the system to improve)
 
 We need practices that **reduce** human cognitive load while **increasing** code quality and enabling **continuous improvement**.
@@ -69,9 +81,11 @@ Each pillar addresses a fundamental question. Together, they form a complete phi
 
 ### Pillar 1: LLM-First Code Reviews
 
-**Question:** How do we maintain quality at LLM speed?
+**Question:** Where should human attention focus?
 
 **Answer:** Invert the review model—LLMs review first, humans approve last.
+
+**Guiding Value — Intentionality:** Be deliberate about what deserves human cognitive investment. LLMs can assess patterns, catch bugs, and flag concerns—but humans must own the decisions that carry accountability.
 
 **Key Insight:**
 > Every piece of recurring human feedback represents a process failure. It should either be automated or questioned.
@@ -84,7 +98,7 @@ Each pillar addresses a fundamental question. Together, they form a complete phi
 
 **Connection to Other Pillars:** Review quality signals feed self-improvement (Pillar 3). The human/LLM division of labor in review reflects the broader collaboration model (Pillar 2).
 
-**Read more:** [LLM-First Code Reviews](../reference/llm-assisted-code-review.md)
+**Read more:** [LLM-First Code Reviews](LLM-Assisted-Code-Review.md)
 
 ---
 
@@ -93,6 +107,8 @@ Each pillar addresses a fundamental question. Together, they form a complete phi
 **Question:** How should humans and LLMs collaborate on software development?
 
 **Answer:** Humans drive strategy (the "driver"), LLMs handle structural rigor (the "navigator").
+
+**Guiding Value — Rigor:** Establish precise roles and maintain them consistently. The driver/navigator metaphor isn't just a suggestion—it's a discipline that prevents the chaos of undefined collaboration.
 
 **Key Insight:**
 > Humans and LLMs have complementary cognitive strengths. Optimal software development emerges when each focuses on what they do best.
@@ -115,7 +131,7 @@ Each pillar addresses a fundamental question. Together, they form a complete phi
 
 **Connection to Other Pillars:** This model defines how humans and LLMs interact during review (Pillar 1) and improvement (Pillar 3). It's the philosophical foundation that unifies the framework.
 
-**Read more:** [Human-Driven, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md)
+**Read more:** [Human-Driven, LLM-Navigated Software Development](Human-Driven-LLM-Navigated-Software-Development.md)
 
 ---
 
@@ -124,6 +140,8 @@ Each pillar addresses a fundamental question. Together, they form a complete phi
 **Question:** How do LLM systems improve over time without constant human intervention?
 
 **Answer:** Build systems that proactively detect inefficiencies and propose improvements.
+
+**Guiding Value — Care:** Treat the development process itself as something worth investing in and nurturing. Rather than accepting static tooling, invest in systems that actively reflect on their own behavior.
 
 **Key Insight:**
 > An LLM agent system should get measurably better at its job every week, automatically. Human oversight shifts from directing improvements to validating them.
@@ -163,8 +181,7 @@ The three pillars are not independent options or sequential phases—they are mu
 │   LLM-First     │     │   Human-Driven  │     │   Radical          │
 │   Code Reviews  │     │   LLM-Navigated │     │   Self-Improvement │
 │                 │     │                 │     │                    │
-│  Quality at     │     │  Collaboration  │     │  Continuous        │
-│  speed          │     │  model          │     │  evolution         │
+│  Intentionality │     │  Rigor          │     │  Care              │
 └────────┬────────┘     └────────┬────────┘     └──────────┬─────────┘
          │                       │                         │
          └───────────────────────┼─────────────────────────┘
@@ -326,12 +343,12 @@ Even self-improving systems need:
 
 ### This Document Series
 
-| Document | Focus |
-|----------|-------|
-| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-assisted review |
-| [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Collaboration philosophy |
-| [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Autonomous improvement framework |
-| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical implementation details |
+| Document | Guiding Value | Focus |
+|----------|---------------|-------|
+| [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) | Intentionality | Practical guide to LLM-assisted review |
+| [Human-Driven, LLM-Navigated Development](Human-Driven-LLM-Navigated-Software-Development.md) | Rigor | Collaboration philosophy |
+| [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Care | Autonomous improvement framework |
+| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | — | Technical implementation details |
 
 ### External Resources
 
@@ -341,5 +358,5 @@ Even self-improving systems need:
 
 ---
 
-**Last Updated:** 2025-12-05
-**Next Review:** 2026-01-05 (Monthly)
+**Last Updated:** 2025-12-06
+**Next Review:** 2026-01-06 (Monthly)

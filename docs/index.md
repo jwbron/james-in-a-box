@@ -47,7 +47,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Reference Overview](reference/README.md) | Quick reference guides and troubleshooting |
 | [Beads Task Tracking](reference/beads.md) | Persistent task memory system - commands, workflows, best practices |
-| [LLM-First Code Reviews](reference/llm-assisted-code-review.md) | Practical guide to LLM-assisted code review |
+| [LLM-First Code Reviews](architecture/LLM-Assisted-Code-Review.md) | Practical guide to LLM-assisted code review |
 | [Features - Source Mapping](FEATURES.md) | Map of all features to their implementation locations |
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Khan Academy Culture](reference/khan-academy-culture.md) | L3-L4 engineering behavioral standards |
