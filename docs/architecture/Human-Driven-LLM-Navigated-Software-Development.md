@@ -525,7 +525,7 @@ Human: "The LLM said this is the best approach, so it must be"
 | Document | Description |
 |----------|-------------|
 | [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
-| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-first review practices |
+| [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) | Practical guide to LLM-first review practices |
 | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Framework for autonomous LLM self-improvement |
 | [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Complete architectural decision record with implementation phases and technical specifications |
 

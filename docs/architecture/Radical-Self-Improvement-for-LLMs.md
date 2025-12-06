@@ -447,7 +447,7 @@ This document is **Pillar 3** in the Post-LLM Software Engineering series.
 
 | Pillar | Document | Focus |
 |--------|----------|-------|
-| **1** | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical review workflow |
+| **1** | [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) | Practical review workflow |
 | **2** | [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy of human-LLM collaboration |
 | **3** | **This document** | LLM self-improvement capabilities |
 
@@ -502,7 +502,7 @@ Umbrella: A Pragmatic Guide for Software Engineering in a Post-LLM World
 | Document | Description |
 |----------|-------------|
 | [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Strategic umbrella connecting all three pillars |
-| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-first review practices |
+| [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) | Practical guide to LLM-first review practices |
 | [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Philosophy for human-LLM collaboration |
 | [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical ADR with implementation phases and specifications |
 

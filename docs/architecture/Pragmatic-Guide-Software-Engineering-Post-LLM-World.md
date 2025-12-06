@@ -19,7 +19,7 @@ This document presents a **holistic philosophy** for software engineering in the
 
 | Pillar | Core Question | Guiding Value | Document |
 |--------|---------------|---------------|----------|
-| **1. LLM-First Code Reviews** | Where should human attention focus? | Intentionality | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) |
+| **1. LLM-First Code Reviews** | Where should human attention focus? | Intentionality | [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) |
 | **2. Human-Driven, LLM-Navigated Development** | How should humans and LLMs collaborate? | Rigor | [Human-Driven, LLM-Navigated Software Development](Human-Driven-LLM-Navigated-Software-Development.md) |
 | **3. Radical Self-Improvement** | How do systems get better over time? | Care | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) |
 
@@ -48,7 +48,7 @@ There is a seductive narrative in the industry: LLMs will make software developm
 
 This framing misses the point.
 
-Speed without quality creates technical debt. Speed without intentionality creates chaos. Speed without care creates systems that degrade over time. The real opportunity with LLMs is not to go faster—it's to go *better*.
+Speed without rigor creates technical debt. Speed without intentionality creates chaos. Speed without care creates systems that degrade over time. The real opportunity with LLMs is not to go faster—it's to go *better*.
 
 ### Three Shifts Require Three Responses
 
@@ -98,7 +98,7 @@ Each pillar addresses a fundamental question. Together, they form a complete phi
 
 **Connection to Other Pillars:** Review quality signals feed self-improvement (Pillar 3). The human/LLM division of labor in review reflects the broader collaboration model (Pillar 2).
 
-**Read more:** [LLM-First Code Reviews](../reference/llm-assisted-code-review.md)
+**Read more:** [LLM-First Code Reviews](LLM-Assisted-Code-Review.md)
 
 ---
 
@@ -345,7 +345,7 @@ Even self-improving systems need:
 
 | Document | Guiding Value | Focus |
 |----------|---------------|-------|
-| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Intentionality | Practical guide to LLM-assisted review |
+| [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) | Intentionality | Practical guide to LLM-assisted review |
 | [Human-Driven, LLM-Navigated Development](Human-Driven-LLM-Navigated-Software-Development.md) | Rigor | Collaboration philosophy |
 | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Care | Autonomous improvement framework |
 | [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | — | Technical implementation details |

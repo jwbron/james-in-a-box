@@ -8,7 +8,7 @@
 
 ---
 
-> **Part of:** [A Pragmatic Guide for Software Engineering in a Post-LLM World](../architecture/Pragmatic-Guide-Software-Engineering-Post-LLM-World.md)
+> **Part of:** [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md)
 
 ---
 
