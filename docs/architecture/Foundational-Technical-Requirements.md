@@ -137,9 +137,28 @@ The Post-LLM SE vision requires six foundational capabilities:
 
 ## Foundation 2: Interactive Planning Framework (IPF)
 
-**Purpose:** Enable rigorous human-LLM collaboration through structured dialogue.
+**Purpose:** Enable rigorous human-LLM collaboration through structured dialogue and documentation-driven development.
 
 **Strategic Intent:** Transform vague human intent into precise, executable specifications through the four-phase process (Ideation → Assessment → Reinforcement → Planning).
+
+### Documentation-Driven Development
+
+> **Core Philosophy:** Documentation isn't created after development—documentation IS development.
+
+In the IPF model, **documentation drives development**, not the reverse:
+
+| Traditional Development | Documentation-Driven Development |
+|------------------------|----------------------------------|
+| Write code, then document | Write spec document, code follows |
+| Documentation is overhead | Documentation is the work product |
+| Docs get stale | Docs are source of truth |
+| Implementation defines behavior | Documents define behavior |
+
+**Why this matters for IPF:**
+- The **Planning** phase produces a document that IS the implementation spec
+- LLM agents read the document and generate code from it
+- Human approval of the document = approval to build
+- Changes to behavior start with changes to documents
 
 ### Key Capabilities
 
@@ -147,6 +166,7 @@ The Post-LLM SE vision requires six foundational capabilities:
 - **Decision Capture**: Record human decisions with rationale
 - **Context Persistence**: Maintain state across sessions
 - **Specification Output**: Generate machine-readable task specs
+- **Document Generation**: Output approved plans as versioned specification documents
 
 ### Human Checkpoints
 
@@ -155,12 +175,14 @@ The Post-LLM SE vision requires six foundational capabilities:
 | Phase Transition | End of each phase | Approve to proceed |
 | Design Decision | Multiple valid options | Choose direction |
 | Risk Escalation | Uncertainty detected | Provide guidance |
+| Document Approval | Planning phase complete | Sign off on spec |
 
 ### Open Questions
 
 - How structured should the dialogue be?
 - How are planning artifacts versioned?
 - How does IPF integrate with task tracking?
+- How do we ensure document quality is sufficient for LLM consumption?
 
 ---
 
