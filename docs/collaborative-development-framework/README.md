@@ -1,6 +1,6 @@
-# Interactive Development Framework
+# Collaborative Development Framework
 
-A documentation-only repository providing frameworks, methodologies, and best practices for bootstrapping technical organizations into interactive, LLM-assisted development workflows.
+A documentation-only repository providing frameworks, methodologies, and best practices for bootstrapping technical organizations into collaborative, LLM-assisted development workflows.
 
 ## Purpose
 
@@ -17,7 +17,7 @@ This repository contains strategic documentation—not code—designed to help s
 
 ### The Three Pillars
 
-The Interactive Development Framework rests on three mutually reinforcing pillars:
+The Collaborative Development Framework rests on three mutually reinforcing pillars:
 
 | Pillar | Core Question | Guiding Value |
 |--------|---------------|---------------|
