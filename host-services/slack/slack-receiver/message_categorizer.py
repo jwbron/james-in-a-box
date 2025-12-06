@@ -490,24 +490,37 @@ class MessageCategorizer:
                 original_text=text,
             )
 
-        # Thread replies are always responses
+        # Thread replies are always responses (continuing conversation workflow)
         if is_thread_reply:
             return CategorizationResult(
                 category=MessageCategory.RESPONSE,
                 confidence=1.0,
-                reasoning="Thread reply detected",
+                reasoning="Thread reply detected - continuing conversation",
                 original_text=text,
             )
 
-        # Try LLM-based categorization via jib_exec
-        if self._check_jib_available():
-            llm_result = self._categorize_with_llm(text)
-            if llm_result is not None:
-                return llm_result
-            # Fall through to heuristics if LLM failed
+        # DISABLED: LLM-based intelligent classification was not working reliably.
+        # Instead, route all non-command, non-thread messages directly to container
+        # as general software tasks. Host functions can still be invoked via
+        # explicit slash commands.
+        #
+        # To re-enable LLM classification, uncomment the following block:
+        # if self._check_jib_available():
+        #     llm_result = self._categorize_with_llm(text)
+        #     if llm_result is not None:
+        #         return llm_result
+        #     # Fall through to heuristics if LLM failed
+        # logger.info("Using heuristic categorization")
+        # return self._categorize_with_heuristics(text, is_thread_reply)
 
-        logger.info("Using heuristic categorization")
-        return self._categorize_with_heuristics(text, is_thread_reply)
+        # Route directly to container task (general software task workflow)
+        logger.info("Routing to container task (LLM classification disabled)")
+        return CategorizationResult(
+            category=MessageCategory.CONTAINER_TASK,
+            confidence=1.0,
+            reasoning="Direct routing to container - general software task workflow",
+            original_text=text,
+        )
 
     def get_available_functions(self) -> dict[str, dict]:
         """Get the registry of available host functions.
