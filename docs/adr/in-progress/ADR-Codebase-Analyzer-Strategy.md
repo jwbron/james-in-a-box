@@ -977,12 +977,12 @@ We evaluate multiple deliverables: (1) codebase documentation quality, (2) code 
 | **Actionability** | Are recommendations specific enough to implement? | Clear steps; specific file/line references |
 | **Prioritization** | Are severity levels appropriate? | Critical items are truly critical; noise is filtered |
 
-Each dimension uses a 1-5 integer scale with labeled anchors:
-- **1 - Poor**: Fails to meet basic expectations
-- **2 - Below Average**: Significant issues present
-- **3 - Acceptable**: Meets minimum requirements
-- **4 - Good**: Exceeds expectations in most areas
-- **5 - Excellent**: Exceptional quality, best-in-class
+Each dimension uses a simplified 3-point scale to reduce human fatigue while maintaining sufficient signal:
+- **1 - Poor**: Fails to meet basic expectations; significant issues present
+- **2 - Acceptable**: Meets requirements; adequate quality
+- **3 - Good**: Exceeds expectations; high quality
+
+*Note: Simplified from 5-point scale per reviewer feedback—more dimensions with less fidelity provides better signal than fewer dimensions with fine-grained scores.*
 
 #### Multi-Model Judge Panel
 
@@ -1018,19 +1018,19 @@ consensus_threshold: 2  # 2 of 3 judges must agree
     {
       "judge": "claude-sonnet-4",
       "scores": {
-        "accuracy": 4,
-        "comprehensiveness": 4,
-        "clarity": 5,
-        "parsimony": 4,
-        "actionability": 4,
-        "prioritization": 3
+        "accuracy": 3,
+        "comprehensiveness": 2,
+        "clarity": 3,
+        "parsimony": 2,
+        "actionability": 3,
+        "prioritization": 2
       },
       "consensus_findings": ["finding-001", "finding-003"],
       "disputed_findings": ["finding-002"],
       "reasoning": "Finding-002 flagged as medium but is low severity..."
     }
   ],
-  "consensus_score": 4,
+  "consensus_score": 2,
   "improvement_recommendations": [
     "Reduce false positives in unused import detection",
     "Improve specificity of refactoring suggestions"
@@ -1038,7 +1038,7 @@ consensus_threshold: 2  # 2 of 3 judges must agree
 }
 ```
 
-*Note: All scores are integers 1-5 per dimension. Consensus score is the median across judges.*
+*Note: All scores are integers 1-3 per dimension. Consensus score is the median across judges.*
 
 ### Human Feedback Collection
 
