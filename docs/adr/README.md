@@ -37,7 +37,7 @@ ADRs are organized by implementation status:
 |-----|---------|
 | [Continuous System Reinforcement](not-implemented/ADR-Continuous-System-Reinforcement.md) | Systematic learning from breakages to strengthen the system |
 | [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
-| [Interactive Planning Framework](not-implemented/ADR-Interactive-Planning-Framework.md) | Transform vague user intent into implementation-ready plans through structured human-AI collaboration |
+| [Collaborative Planning Framework](not-implemented/ADR-Collaborative-Planning-Framework.md) | Transform vague user intent into implementation-ready plans through structured human-AI collaboration |
 | [Internet Tool Access Lockdown](not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
 | [Jib Repository Onboarding](not-implemented/ADR-Jib-Repo-Onboarding.md) | How jib onboards to and documents external repos |
 | [Message Queue Integration](not-implemented/ADR-Message-Queue-Slack-Integration.md) | GCP Pub/Sub for Slack message queuing |
