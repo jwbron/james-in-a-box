@@ -1291,7 +1291,7 @@ To support incremental analysis and failure/retry/resume scenarios:
 
 **Security Team Review (Blocking):**
 
-This ADR depends on the security team's ongoing review of model sandboxing and autonomous edit modes ([Slack thread](https://khanacademy.slack.com/archives/C0SAJPXCP/p1763130874358999)). Specifically:
+This ADR depends on the security team's ongoing review of model sandboxing and autonomous edit modes. Specifically:
 
 - **Model autonomy requirements:** The codebase analyzer requires the ability to run code analysis tools, which may trigger security concerns
 - **Sandboxing assurances:** We need clarity on what isolation guarantees the security team requires
