@@ -22,6 +22,8 @@
 - [Implementation Architecture](#implementation-architecture)
 - [Implementation Phases](#implementation-phases)
 - [Consequences](#consequences)
+- [Evaluation and Success Metrics](#evaluation-and-success-metrics)
+- [Security Considerations](#security-considerations)
 - [Cost Analysis](#cost-analysis)
 - [Checkpoint Flexibility](#checkpoint-flexibility)
 - [Example Walkthrough](#example-walkthrough)
@@ -977,6 +979,131 @@ phases:
 | **CLAUDE.md** | Context loading | Provide organizational standards to agents |
 | **Notifications** | Human alerting | Checkpoint readiness, feedback requests |
 
+### Beads Schema for IPF Sessions
+
+Each IPF planning session is tracked as a beads task with structured notes. This enables session resumption across container restarts.
+
+#### Example Bead Structure
+
+```yaml
+# Bead for IPF planning session
+id: beads-ipf-oauth2-001
+title: "IPF: Add OAuth2 Support for GitHub Authentication"
+status: in_progress  # open | in_progress | blocked | closed
+priority: P2
+labels:
+  - ipf-session
+  - feature
+  - slack-thread-12345  # Link to originating request
+
+description: |
+  Interactive Planning Framework session for adding GitHub OAuth2 authentication.
+  Initiated from Slack thread by @jwiesebron.
+
+# Structured notes field contains IPF state
+notes: |
+  ## IPF Session State
+
+  session_id: ipf-session-abc123
+  started: 2025-12-04T10:00:00Z
+  checkpoint_mode: condensed  # full | condensed | fast-path
+
+  ## Current Phase
+  phase: design
+  phase_status: awaiting_checkpoint
+  iteration: 1
+
+  ## Phase History
+  phases:
+    elicitation:
+      status: approved
+      iterations: 1
+      checkpoint_approved: 2025-12-04T10:15:00Z
+      tokens_used: 8200
+    design:
+      status: in_progress
+      iterations: 1
+      tokens_used: 12400
+
+  ## Artifacts Generated
+  artifacts:
+    - path: planning-output/requirements.md
+      phase: elicitation
+      generated: 2025-12-04T10:12:00Z
+    - path: planning-output/design-document.md
+      phase: design
+      generated: 2025-12-04T10:30:00Z
+      status: draft  # draft | checkpoint_ready | approved
+
+  ## Checkpoint History
+  checkpoints:
+    - id: checkpoint-1
+      phase: elicitation
+      outcome: APPROVE
+      human_time: "3m 45s"
+      feedback: null
+    - id: checkpoint-2
+      phase: design
+      outcome: pending
+      presented: 2025-12-04T10:31:00Z
+
+  ## Token Budget
+  token_budget:
+    limit: 150000
+    used: 20600
+    remaining: 129400
+
+  ## Resume Instructions
+  resume_context: |
+    Session paused at Design checkpoint. User was presented with:
+    - Architecture overview (4 components)
+    - Technical decisions (OAuth library choice)
+    - Security considerations (CSRF, token encryption)
+    Awaiting approval to proceed to Planning phase.
+```
+
+#### Session Resumption
+
+When resuming an IPF session:
+
+```python
+# Pseudocode for session resumption
+def resume_ipf_session(bead_id: str) -> IPFSession:
+    bead = beads.get(bead_id)
+
+    # Parse structured notes
+    state = parse_ipf_state(bead.notes)
+
+    # Validate state integrity
+    if not validate_state(state):
+        raise StateCorruptionError("IPF state invalid, manual recovery needed")
+
+    # Restore session
+    session = IPFSession(
+        id=state.session_id,
+        current_phase=state.phase,
+        phase_status=state.phase_status,
+        artifacts=load_artifacts(state.artifacts),
+        token_budget=state.token_budget
+    )
+
+    # Continue from checkpoint if awaiting
+    if state.phase_status == "awaiting_checkpoint":
+        session.present_checkpoint()
+
+    return session
+```
+
+#### Beads Labels for IPF
+
+| Label | Purpose |
+|-------|---------|
+| `ipf-session` | Identifies all IPF planning sessions |
+| `ipf-phase-{phase}` | Current phase (elicitation, design, planning, handoff) |
+| `ipf-awaiting-human` | Session blocked on human checkpoint |
+| `ipf-completed` | Successfully completed planning sessions |
+| `ipf-abandoned` | Sessions that were cancelled or timed out |
+
 ## Implementation Phases
 
 ### Phase 1: Foundation
@@ -1100,6 +1227,261 @@ phases:
 | Inconsistent outputs | Medium | Low | Validation schemas, review agent |
 | Token cost overrun | Medium | Medium | Cost monitoring, phase limits, model tiering |
 
+## Evaluation and Success Metrics
+
+Understanding how to measure IPF's effectiveness is critical for validating the investment and guiding improvements.
+
+### Top-Line Success Metrics
+
+| Metric | Target | Measurement Method |
+|--------|--------|-------------------|
+| **First-Checkpoint Approval Rate** | ≥70% | % of checkpoints approved without revision on first presentation |
+| **Implementation Revision Rate** | <15% | % of tasks requiring significant revision after implementation starts (vs. current ~30% baseline) |
+| **Planning-to-Implementation Ratio** | <0.5 | Planning token cost ÷ Implementation token cost (goal: planning is cheap relative to execution) |
+| **Human Time per Session** | <30 min | Total human time spent on checkpoints and feedback |
+| **Plan Completeness Score** | ≥85% | % of implementation decisions made in plan (no TODOs/TBDs deferred) |
+
+### Quality Dimensions for Artifacts
+
+Each artifact type is evaluated against specific quality dimensions, adapted from the Codebase Analyzer ADR:
+
+#### Requirements Document Quality
+
+| Dimension | Definition | Measurement |
+|-----------|------------|-------------|
+| **Completeness** | All necessary requirements captured | Checklist coverage + LLM-as-Judge rating |
+| **Clarity** | Requirements are unambiguous | Ambiguity detection (LLM scan for "may", "might", "could") |
+| **Testability** | Each requirement has measurable acceptance criteria | % of requirements with testable criteria |
+| **Prioritization** | Must-have vs. nice-to-have clearly distinguished | Binary: is prioritization present? |
+
+#### Design Document Quality
+
+| Dimension | Definition | Measurement |
+|-----------|------------|-------------|
+| **Architectural Soundness** | Design follows established patterns | LLM-as-Judge against architecture guidelines |
+| **Technical Feasibility** | Design is implementable with available resources | Expert review or LLM feasibility check |
+| **Security Coverage** | Security considerations addressed | Presence of security section with threat analysis |
+| **Test Strategy Coverage** | Testing approach defined | Presence of test strategy with coverage targets |
+
+#### Task Breakdown Quality
+
+| Dimension | Definition | Measurement |
+|-----------|------------|-------------|
+| **Granularity** | Tasks are appropriately sized (not too big/small) | Average subtask count per task (target: 3-8) |
+| **Dependency Accuracy** | Dependencies correctly identified | Post-implementation validation of declared dependencies |
+| **Acceptance Criteria Quality** | Criteria are specific and testable | LLM-as-Judge for specificity |
+| **Actionability** | Tasks can be started immediately without clarification | First-attempt success rate during implementation |
+
+### LLM-as-Judge Evaluation
+
+For subjective quality dimensions, use a dedicated evaluation prompt:
+
+```
+You are evaluating the quality of a planning artifact.
+
+Artifact Type: {requirements_doc | design_doc | task_breakdown}
+Artifact Content: {content}
+
+Rate the following dimensions on a 1-5 scale with brief justification:
+
+1. Completeness: Are all necessary elements present?
+2. Clarity: Is the content unambiguous?
+3. Actionability: Can someone act on this without further clarification?
+4. Consistency: Does it align with other artifacts and project context?
+
+Output format:
+{
+  "completeness": {"score": N, "justification": "..."},
+  "clarity": {"score": N, "justification": "..."},
+  "actionability": {"score": N, "justification": "..."},
+  "consistency": {"score": N, "justification": "..."},
+  "overall": N,
+  "improvement_suggestions": ["...", "..."]
+}
+```
+
+### A/B Testing Framework
+
+To validate IPF effectiveness:
+
+1. **Control Group**: Tasks assigned via current reactive approach
+2. **Test Group**: Tasks processed through IPF
+3. **Metrics Tracked**:
+   - Implementation revision count
+   - Total tokens to completion
+   - Human intervention count
+   - Time to PR merge
+   - Post-merge bug count (30-day window)
+
+### Feedback Collection Mechanism
+
+When a checkpoint is rejected or revised, structured feedback is captured:
+
+```yaml
+# checkpoint_feedback.yaml
+checkpoint_id: "session-abc123-checkpoint-2"
+phase: "design"
+iteration: 2
+outcome: "REVISE"  # APPROVE | APPROVE_WITH_COMMENTS | REVISE | RESTART
+
+# Structured feedback categories
+feedback:
+  category: "incomplete"  # incomplete | incorrect | unclear | missing_context | other
+  affected_sections:
+    - "security_model"
+    - "authentication_flows"
+  human_comment: "Need more detail on OAuth token lifecycle"
+
+  # Machine-parseable improvement hints
+  improvement_hints:
+    - type: "expand"
+      target: "security_model.authentication"
+      detail: "Add token refresh, expiry, revocation flows"
+    - type: "add"
+      target: "security_model"
+      detail: "Add sequence diagram for OAuth flow"
+
+# Metrics for learning
+metrics:
+  time_to_feedback: "5m 32s"
+  artifact_tokens: 2340
+  human_edit_distance: 0  # 0 if no direct edits, >0 if human modified artifact
+```
+
+**Feedback Integration Flow:**
+
+```
+Human Feedback Received
+        │
+        ▼
+┌─────────────────────────────────────────┐
+│  1. Parse structured feedback           │
+│  2. Classify feedback type              │
+│  3. Route to appropriate agent          │
+│  4. Agent generates revision            │
+│  5. Store feedback for pattern analysis │
+└─────────────────────────────────────────┘
+        │
+        ▼
+Pattern Analysis (Periodic):
+- Common rejection reasons by phase
+- Agent-specific improvement opportunities
+- Prompt refinement suggestions
+```
+
+### Success Criteria for IPF Launch
+
+IPF is considered validated when:
+
+1. **Quantitative**: 10 planning sessions completed with metrics showing improvement over baseline
+2. **Qualitative**: User feedback indicates planning feels "productive" not "bureaucratic"
+3. **Economic**: Token cost per successful implementation is ≤2x current reactive approach
+
+## Security Considerations
+
+Agent orchestration introduces security considerations that must be addressed.
+
+### Threat Model
+
+| Threat | Risk Level | Mitigation |
+|--------|------------|------------|
+| **Prompt Injection via User Input** | High | Input sanitization, system prompt hardening, output validation |
+| **Agent-to-Agent Message Tampering** | Medium | Structured message formats, validation at agent boundaries |
+| **Credential Exposure in Artifacts** | High | Artifact scanning for secrets before storage, `.gitignore` patterns |
+| **Excessive Permission Escalation** | Medium | Principle of least privilege for each agent, capability-based access |
+| **State Corruption** | Low | Beads integrity checks, session state validation |
+
+### Sandboxing Requirements
+
+Each agent operates within defined boundaries:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    AGENT SANDBOXING MODEL                         │
+│                                                                   │
+│  ┌───────────────────────────────────────────────────────────┐   │
+│  │                    ORCHESTRATOR                             │   │
+│  │                                                             │   │
+│  │  Capabilities:                                              │   │
+│  │  ✓ Invoke specialist agents                                │   │
+│  │  ✓ Read/write beads state                                  │   │
+│  │  ✓ Generate artifacts to planning-output/                  │   │
+│  │  ✓ Send checkpoint notifications                           │   │
+│  │  ✗ Execute arbitrary code                                  │   │
+│  │  ✗ Access production systems                               │   │
+│  │  ✗ Modify files outside planning-output/                   │   │
+│  └───────────────────────────────────────────────────────────┘   │
+│                                                                   │
+│  ┌───────────────────────────────────────────────────────────┐   │
+│  │                  SPECIALIST AGENTS                          │   │
+│  │  (Elicitation, Architecture, Planning, Review)              │   │
+│  │                                                             │   │
+│  │  Capabilities:                                              │   │
+│  │  ✓ Receive context from orchestrator                       │   │
+│  │  ✓ Generate structured output                              │   │
+│  │  ✓ Read codebase (for context)                             │   │
+│  │  ✗ Write any files directly                                │   │
+│  │  ✗ Execute commands                                        │   │
+│  │  ✗ Access network resources                                │   │
+│  │  ✗ Invoke other agents directly                            │   │
+│  └───────────────────────────────────────────────────────────┘   │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Artifact Security Scanning
+
+Before storing any artifact:
+
+1. **Secret Detection**: Scan for API keys, tokens, passwords using pattern matching
+2. **PII Detection**: Flag potential personally identifiable information
+3. **Path Validation**: Ensure artifact paths are within allowed directories
+4. **Content Validation**: Verify artifact matches expected schema
+
+```python
+# Example artifact validation
+def validate_artifact(artifact_type: str, content: str, path: str) -> bool:
+    # Path must be within planning-output/
+    if not path.startswith("planning-output/"):
+        raise SecurityError("Artifact path outside allowed directory")
+
+    # Scan for secrets
+    if contains_secrets(content):
+        raise SecurityError("Artifact contains potential secrets")
+
+    # Validate schema
+    if not matches_schema(artifact_type, content):
+        raise ValidationError("Artifact does not match expected schema")
+
+    return True
+```
+
+### Security Review Requirement
+
+**This ADR requires security team review before implementation** due to:
+
+1. Multi-agent orchestration complexity
+2. User input handling across multiple agents
+3. Artifact generation and storage
+4. Integration with existing authentication/authorization
+
+### Audit Logging
+
+All IPF operations are logged for security audit:
+
+```yaml
+# audit_log entry
+timestamp: "2025-12-04T10:30:00Z"
+session_id: "ipf-session-abc123"
+event_type: "checkpoint_approved"  # agent_invoked | artifact_generated | checkpoint_* | session_*
+actor: "human:jwiesebron"  # or "agent:orchestrator"
+details:
+  phase: "design"
+  checkpoint_id: "checkpoint-2"
+  artifact_count: 3
+  token_cost: 14000
+```
+
 ## Cost Analysis
 
 Understanding the economic impact of IPF is critical before implementation.
@@ -1116,6 +1498,38 @@ Based on industry research showing multi-agent systems use ~15x more tokens than
 | **Handoff** | Orchestrator | ~6,000 | ~3,000 | ~9,000 |
 | **Iterations** (2x average) | Various | ~10,000 | ~8,000 | ~18,000 |
 | **TOTAL** | | | | **~64,000 tokens** |
+
+### Cost Distribution by Percentile
+
+The P50 estimate above assumes 2 iterations. Real-world sessions vary significantly:
+
+| Percentile | Scenario | Iterations | Total Tokens | Cost |
+|------------|----------|------------|--------------|------|
+| **P25** | Straightforward requirements, fast approval | 1 | ~46,000 | ~$0.83 |
+| **P50** | Typical session with minor revisions | 2 | ~64,000 | ~$1.15 |
+| **P75** | Complex requirements, design debates | 4 | ~100,000 | ~$1.80 |
+| **P90** | Significant scope changes, major redesign | 6 | ~150,000 | ~$2.70 |
+| **P95** | Contentious project, multiple restarts | 8+ | ~200,000 | ~$3.60 |
+
+**P95 Breakdown:**
+
+```
+P95 Session (200K tokens) - "Contentious Architecture Decision"
+├── Elicitation:     ~12,000 (3 iterations - unclear stakeholder alignment)
+├── Design:          ~45,000 (4 iterations - architecture debates)
+├── Planning:        ~25,000 (2 iterations - dependency complexity)
+├── Handoff:         ~15,000 (1 iteration)
+├── Re-work:         ~50,000 (partial restart after design rejection)
+└── Overhead:        ~53,000 (context loading, summaries, coordination)
+```
+
+**Cost Alerting Thresholds:**
+
+| Threshold | Tokens | Action |
+|-----------|--------|--------|
+| **Warning** | 100,000 (P75) | Log warning, notify user of elevated cost |
+| **Alert** | 150,000 (P90) | Require explicit human approval to continue |
+| **Hard Cap** | 200,000 (P95) | Pause session, escalate for cost review |
 
 ### Cost Comparison
 
