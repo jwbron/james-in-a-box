@@ -3,11 +3,48 @@
 **Status:** Draft
 **Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
-**Purpose:** High-level planning document defining the technical foundations needed to implement the Post-LLM Software Engineering vision
+**Purpose:** Strategic technical vision for implementing Post-LLM Software Engineering
 
 ---
 
-> **Context:** This document defines the foundational technical requirements that enable the philosophy outlined in [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md). Each requirement maps to capabilities needed to realize the three pillars.
+> **This document bootstraps itself.** It defines the Interactive Planning Framework, then uses that framework to plan its own implementation. Once approved, we build using the methodology established here.
+
+---
+
+## The Interactive Planning Framework
+
+Before diving into technical requirements, we establish the methodology for developing with LLMs. This framework governs how all subsequent planning—including the rest of this document—should proceed.
+
+### The Four Phases
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              Interactive Planning Framework (IPF)               │
+│                                                                 │
+│   IDEATION ──▶ ASSESSMENT ──▶ REINFORCEMENT ──▶ PLANNING       │
+│                                                                 │
+│   "What if..."  "Is this      "Let's sharpen   "Here's how     │
+│                  valuable?"    this concept"    we build it"    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| Phase | Purpose | Key Activities | Output |
+|-------|---------|----------------|--------|
+| **Ideation** | Generate possibilities | Brainstorm, explore adjacent ideas, identify opportunities | Raw concepts and directions |
+| **Assessment** | Evaluate value and feasibility | Analyze trade-offs, estimate effort, identify risks | Go/no-go decision with rationale |
+| **Reinforcement** | Sharpen the concept | Clarify requirements, resolve ambiguities, build shared understanding | Crisp problem statement and success criteria |
+| **Planning** | Design implementation | Break down into phases, identify dependencies, create actionable spec | Implementation-ready specification |
+
+### How This Framework Applies to This Document
+
+This document is the first artifact built using IPF:
+
+- **Ideation**: The vision for Post-LLM SE emerged from observing LLM development patterns
+- **Assessment**: We determined this vision is both valuable and achievable
+- **Reinforcement**: This document sharpens the concept into six technical foundations
+- **Planning**: The high-level plan below will guide implementation
+
+**Once this document is approved**, detailed design documents for each foundation will follow the same IPF process.
 
 ---
 
@@ -15,953 +52,378 @@
 
 > **Core Insight:** In post-LLM software engineering, **documents ARE the code**.
 
-Traditional software engineering treats documentation as a secondary artifact—something written after the "real work" of coding. The post-LLM paradigm inverts this relationship:
-
-| Traditional Approach | Documents-as-Code Approach |
-|---------------------|---------------------------|
+| Traditional | Documents-as-Code |
+|-------------|-------------------|
 | Code first, docs later | Docs first, code follows |
-| Docs describe what code does | Docs specify what code must do |
-| Docs drift from reality | Docs are the source of truth |
-| Humans read docs, write code | LLMs read docs, generate code |
-| Docs are optional polish | Docs are mandatory specifications |
+| Docs describe implementation | Docs specify intent |
+| Docs drift from reality | Docs are source of truth |
+| Humans read, code | LLMs read docs, generate code |
 
-### Why Documents Become Primary
-
-1. **LLMs Execute from Specifications**: A well-structured document is directly executable by an LLM agent. The specification *is* the program.
-
-2. **Human Intent Preservation**: Documents capture the *why* and *what* that gets lost when humans jump straight to implementation. This context is essential for LLM-assisted maintenance and evolution.
-
-3. **Scalable Review**: Reviewing a design document is cognitively cheaper than reviewing implementation code. Humans should spend their limited attention on high-leverage artifacts.
-
-4. **Reproducibility**: A precise specification can regenerate code. Code cannot regenerate the reasoning behind design decisions.
-
-### Implications for This Document Series
-
-This document and its siblings are not just "planning documents"—they are **executable specifications** that will drive LLM agents to build the system. The quality of these documents directly determines the quality of the system.
-
-**Therefore, we must:**
-- Treat document refinement as seriously as code refinement
-- Apply the same rigor to document review as code review
-- Version and track documents with the same discipline as code
-- Continuously improve document precision and clarity
+**Why this matters:** A well-structured document is directly executable by an LLM. The specification *is* the program. This document will drive LLM agents to build the system it describes.
 
 ---
 
-## Executive Summary
+## Strategic Overview: The Six Foundations
 
-The Post-LLM Software Engineering vision requires six foundational technical capabilities:
-
-| Foundation | Purpose | Enables |
-|------------|---------|---------|
-| **Multi-Agent Framework** | Coordinate specialized LLM agents | All pillars |
-| **Interactive Development Framework** | Structured human-LLM collaboration | Pillar 2 |
-| **PR Reviewer System** | Automated, specialized code review | Pillar 1 |
-| **Codebase Analysis Engine** | Deep understanding of code structure | All pillars |
-| **Index-Based Documentation** | Always-current, navigable documentation | Pillar 1, 2 |
-| **Continual Self-Reflection** | Autonomous system improvement | Pillar 3 |
-
-This document provides high-level technical requirements for each foundation, identifies dependencies and integration points, and proposes an actionable implementation roadmap.
-
----
-
-## Table of Contents
-
-- [The Documents-as-Code Paradigm](#the-documents-as-code-paradigm)
-- [Foundation 1: Multi-Agent Framework](#foundation-1-multi-agent-framework)
-- [Foundation 2: Interactive Development Framework](#foundation-2-interactive-development-framework)
-- [Foundation 3: PR Reviewer System](#foundation-3-pr-reviewer-system)
-- [Foundation 4: Codebase Analysis Engine](#foundation-4-codebase-analysis-engine)
-- [Foundation 5: Index-Based Documentation Strategy](#foundation-5-index-based-documentation-strategy)
-- [Foundation 6: Continual Self-Reflection Framework](#foundation-6-continual-self-reflection-framework)
-- [Cross-Cutting Concerns](#cross-cutting-concerns)
-- [Integration Architecture](#integration-architecture)
-- [Actionable Implementation Roadmap](#actionable-implementation-roadmap)
-- [Success Metrics](#success-metrics)
-- [Open Questions](#open-questions)
-
----
-
-## Foundation 1: Multi-Agent Framework
-
-### Purpose
-
-Provide infrastructure for coordinating multiple specialized LLM agents that collaborate on complex tasks. This is the **execution layer** that powers all other foundations.
-
-### Core Requirements
-
-#### Agent Orchestration
-
-| Requirement | Description | Priority |
-|-------------|-------------|----------|
-| **Agent Registry** | Central registry of available agents with capabilities, constraints, and configuration | P0 |
-| **Task Routing** | Route tasks to appropriate agents based on task type and agent capabilities | P0 |
-| **Agent Communication** | Enable agents to hand off work, share context, and collaborate | P0 |
-| **Execution Modes** | Support sequential, parallel, and hierarchical agent execution | P1 |
-| **State Management** | Maintain shared state across agent invocations within a task | P0 |
-
-#### Agent Types (Initial Set)
-
-| Agent | Specialization | Use Cases |
-|-------|---------------|-----------|
-| **Orchestrator** | Task decomposition and delegation | Complex multi-step tasks |
-| **Researcher** | Information gathering and synthesis | Context collection, documentation lookup |
-| **Implementer** | Code generation and modification | Feature implementation, bug fixes |
-| **Reviewer** | Code analysis and feedback | PR review, quality checks |
-| **Documenter** | Documentation generation and maintenance | API docs, README updates |
-| **Analyst** | Pattern detection and insights | Performance analysis, inefficiency detection |
-
-#### Agent Lifecycle
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                     Agent Lifecycle                            │
-│                                                                │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐  │
-│  │  CREATE  │───▶│ CONFIGURE│───▶│  EXECUTE │───▶│ COMPLETE │  │
-│  │          │    │          │    │          │    │          │  │
-│  │ • Load   │    │ • Set    │    │ • Run    │    │ • Return │  │
-│  │   config │    │   context│    │   tools  │    │   result │  │
-│  │ • Init   │    │ • Apply  │    │ • Track  │    │ • Clean  │  │
-│  │   state  │    │   limits │    │   state  │    │   up     │  │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘  │
-│                                                                │
-└────────────────────────────────────────────────────────────────┘
-```
-
-#### Observability
-
-| Requirement | Description | Priority |
-|-------------|-------------|----------|
-| **Execution Tracing** | Full trace of agent execution, tool calls, and decisions | P0 |
-| **Token Tracking** | Track token usage per agent, task, and session | P0 |
-| **Performance Metrics** | Latency, success rate, retry count per agent type | P1 |
-| **Audit Logging** | Immutable log of all agent actions for accountability | P0 |
-
-### Key Design Decisions
-
-1. **Agent Isolation vs. Shared State**: How much context do agents share?
-2. **Synchronous vs. Async Execution**: When should agents run in parallel?
-3. **Error Handling**: How do agents recover from failures? Retry? Escalate?
-4. **Resource Limits**: Per-agent token budgets, time limits, tool restrictions
-
-### Dependencies
-
-- LLM provider integration (Claude, potentially others)
-- Tool infrastructure (filesystem, git, MCP servers)
-- State persistence (beads, database)
-
----
-
-## Foundation 2: Interactive Development Framework
-
-### Purpose
-
-Enable structured, rigorous collaboration between humans and LLMs during the development process. This is the **collaboration layer** that implements Pillar 2 (Human-Driven, LLM-Navigated).
-
-### Core Requirements
-
-#### Interactive Planning Framework (IPF)
-
-The IPF provides structured dialogue for complex development tasks:
-
-| Phase | Purpose | Outputs |
-|-------|---------|---------|
-| **Elicitation** | Transform vague intent into validated requirements | Requirements document with stated assumptions |
-| **Design** | Explore solution space and present options | Design options with trade-offs |
-| **Planning** | Break down into implementable tasks | Phased task breakdown with dependencies |
-| **Handoff** | Package for autonomous execution | Machine-readable task specifications |
-
-#### Human-in-the-Loop Checkpoints
-
-| Checkpoint Type | Trigger | Required Action |
-|-----------------|---------|-----------------|
-| **Approval** | Phase transition | Human must explicitly approve |
-| **Decision** | Multiple valid options | Human must choose |
-| **Review** | Significant output | Human must validate |
-| **Escalation** | Agent uncertainty or risk | Human must provide guidance |
-
-#### Dialogue Management
-
-| Requirement | Description | Priority |
-|-------------|-------------|----------|
-| **Structured Questions** | LLM asks targeted questions to elicit requirements | P0 |
-| **Context Persistence** | Maintain conversation context across sessions | P0 |
-| **Decision Capture** | Record human decisions with rationale | P0 |
-| **Progress Tracking** | Show where in the planning process the user is | P1 |
-| **Resumability** | Resume interrupted planning sessions | P1 |
-
-#### Task Specification Format
-
-```yaml
-# Example task specification output from IPF
-task:
-  id: task-001
-  title: "Add rate limiting to API"
-  type: implementation
-
-requirements:
-  functional:
-    - "Limit requests to 100/minute per API key"
-    - "Return 429 status with retry-after header when exceeded"
-  non_functional:
-    - "Must not add >5ms latency to requests"
-    - "Must work in distributed deployment"
-
-constraints:
-  - "Must not break existing clients"
-  - "Prefer Redis for distributed rate limiting"
-
-design_decisions:
-  - decision: "Use sliding window algorithm"
-    rationale: "Better handles burst traffic than fixed window"
-    alternatives_considered: ["fixed window", "token bucket"]
-    decided_by: "human"
-
-success_criteria:
-  - "All existing tests pass"
-  - "New tests cover rate limit scenarios"
-  - "Documentation updated"
-
-phases:
-  - phase: 1
-    tasks:
-      - "Implement rate limiter core logic"
-      - "Add Redis integration"
-  - phase: 2
-    tasks:
-      - "Add middleware to API"
-      - "Update API documentation"
-```
-
-### Key Design Decisions
-
-1. **Framework vs. Freeform**: How structured should the planning dialogue be?
-2. **Synchronous vs. Async**: Can planning happen over multiple sessions?
-3. **Persistence**: How are planning artifacts stored and versioned?
-4. **Integration**: How does IPF integrate with task tracking (beads)?
-
-### Dependencies
-
-- Multi-Agent Framework (agent orchestration)
-- Task tracking system (beads)
-- Context persistence layer
-
----
-
-## Foundation 3: PR Reviewer System
-
-### Purpose
-
-Provide automated, specialized code review that catches issues before human review. This is the **quality layer** that implements Pillar 1 (LLM-First Code Reviews).
-
-### Core Requirements
-
-#### Specialized Review Agents
-
-| Agent | Focus Area | Checks |
-|-------|------------|--------|
-| **Security Reviewer** | Security vulnerabilities | OWASP Top 10, auth/authz issues, secrets exposure, injection vectors |
-| **Infrastructure Reviewer** | DevOps and infrastructure | Resource limits, scaling concerns, configuration issues, deployment safety |
-| **Product Reviewer** | Business logic and UX | Requirement alignment, edge cases, user impact, accessibility |
-| **Architecture Reviewer** | Design patterns and structure | Consistency, coupling, separation of concerns, technical debt |
-| **Nitpicker** | Code quality and style | Naming, formatting, documentation, test coverage |
-
-#### Review Workflow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    PR Review Pipeline                           │
-│                                                                 │
-│  ┌───────────────┐                                              │
-│  │  PR Created   │                                              │
-│  └───────┬───────┘                                              │
-│          │                                                      │
-│          ▼                                                      │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Automated Checks (Parallel)                              │  │
-│  │  • Linting, Type Checking, Tests                          │  │
-│  │  • SAST, Dependency Scanning                              │  │
-│  └───────────────────────────┬───────────────────────────────┘  │
-│                              │                                  │
-│                              ▼                                  │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Specialized Agent Reviews (Parallel or Sequential)       │  │
-│  │  • Security → Infrastructure → Product → Architecture     │  │
-│  └───────────────────────────┬───────────────────────────────┘  │
-│                              │                                  │
-│                              ▼                                  │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Review Synthesis                                         │  │
-│  │  • Aggregate findings                                     │  │
-│  │  • Deduplicate and prioritize                             │  │
-│  │  • Generate unified review                                │  │
-│  └───────────────────────────┬───────────────────────────────┘  │
-│                              │                                  │
-│                              ▼                                  │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Human Review                                             │  │
-│  │  • Focus on strategic concerns                            │  │
-│  │  • Approve, request changes, or escalate                  │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-#### Review Configuration
-
-| Requirement | Description | Priority |
-|-------------|-------------|----------|
-| **Agent Selection** | Choose which reviewers run based on PR characteristics | P0 |
-| **Severity Levels** | Categorize findings (critical, warning, suggestion) | P0 |
-| **Blocking Rules** | Configure which findings block merge | P1 |
-| **Custom Rules** | Add organization-specific review rules | P1 |
-| **Review Templates** | Consistent output format across agents | P0 |
-
-#### Feedback Learning
-
-| Requirement | Description | Priority |
-|-------------|-------------|----------|
-| **Feedback Capture** | Track which review comments are accepted/rejected | P0 |
-| **Pattern Detection** | Identify recurring review themes | P1 |
-| **Rule Generation** | Propose new automated checks from patterns | P1 |
-| **False Positive Tracking** | Learn from dismissed findings | P1 |
-
-### Key Design Decisions
-
-1. **Agent Independence**: Do reviewers share context or review independently?
-2. **Review Order**: Sequential (findings inform later reviews) or parallel (faster)?
-3. **GitHub Integration**: Native GitHub review API or custom UI?
-4. **Scope Limits**: Maximum PR size for automated review?
-
-### Dependencies
-
-- Multi-Agent Framework (agent coordination)
-- Codebase Analysis Engine (code understanding)
-- GitHub MCP (PR integration)
-- Continual Self-Reflection (feedback learning)
-
----
-
-## Foundation 4: Codebase Analysis Engine
-
-### Purpose
-
-Provide deep, structured understanding of codebase structure, patterns, and semantics. This is the **knowledge layer** that powers code-aware operations across all foundations.
-
-### Core Requirements
-
-#### Code Understanding
-
-| Capability | Description | Priority |
-|------------|-------------|----------|
-| **Syntax Analysis** | Parse code into AST across supported languages | P0 |
-| **Semantic Analysis** | Understand types, symbols, and their relationships | P0 |
-| **Dependency Mapping** | Map import/export relationships between modules | P0 |
-| **Pattern Detection** | Identify common patterns and anti-patterns | P1 |
-| **Change Impact Analysis** | Determine what's affected by a code change | P1 |
-
-#### Analysis Outputs
-
-| Output | Description | Use Cases |
-|--------|-------------|-----------|
-| **Module Graph** | Dependency graph of modules/packages | Impact analysis, architecture visualization |
-| **Symbol Index** | Searchable index of functions, classes, variables | Code navigation, refactoring |
-| **Pattern Catalog** | Detected patterns with locations | Consistency checking, documentation |
-| **Complexity Metrics** | Cyclomatic complexity, coupling, cohesion | Quality assessment, refactoring targets |
-| **Test Coverage Map** | What code is covered by which tests | Risk assessment, test gap identification |
-
-#### Analysis Modes
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                    Analysis Modes                              │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  FULL ANALYSIS                                           │  │
-│  │  • Complete codebase scan                                │  │
-│  │  • Expensive but comprehensive                           │  │
-│  │  • Run: On major changes, periodically                   │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  INCREMENTAL ANALYSIS                                    │  │
-│  │  • Only analyze changed files + affected dependents      │  │
-│  │  • Fast, efficient                                       │  │
-│  │  • Run: On every commit/PR                               │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  TARGETED ANALYSIS                                       │  │
-│  │  • Analyze specific paths or patterns                    │  │
-│  │  • On-demand                                             │  │
-│  │  • Run: When specific questions need answering           │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                │
-└────────────────────────────────────────────────────────────────┘
-```
-
-#### Language Support
-
-| Language | Analysis Depth | Priority |
-|----------|---------------|----------|
-| **Python** | Full (AST, types, imports) | P0 |
-| **TypeScript/JavaScript** | Full | P0 |
-| **Go** | Full | P1 |
-| **Java** | Partial | P2 |
-| **Generic** | Basic (text search, regex) | P0 |
-
-### Key Design Decisions
-
-1. **Analysis Storage**: In-memory, filesystem, or database?
-2. **Cache Invalidation**: How to know when analysis is stale?
-3. **Incremental Updates**: How to efficiently update partial analysis?
-4. **Multi-Repo**: Support for monorepos and multi-repo setups?
-
-### Dependencies
-
-- Language parsers (tree-sitter, language servers)
-- Storage layer for analysis results
-- File watching for incremental updates
-
----
-
-## Foundation 5: Index-Based Documentation Strategy
-
-### Purpose
-
-Maintain always-current, navigable documentation through automated index generation and drift detection. This is the **navigation layer** that keeps humans and LLMs oriented.
-
-### Core Requirements
-
-#### Index Generation
-
-| Requirement | Description | Priority |
-|-------------|-------------|----------|
-| **Automated Index** | Generate index from directory structure and file metadata | P0 |
-| **Topic Clustering** | Group related documents by topic | P1 |
-| **Cross-References** | Detect and maintain links between documents | P0 |
-| **Navigation Hierarchy** | Multi-level navigation (category → subcategory → document) | P0 |
-
-#### Documentation Types
-
-| Type | Location | Update Trigger |
-|------|----------|----------------|
-| **Architecture Docs** | `docs/architecture/` | Manual + drift detection |
-| **ADRs** | `docs/adr/` | Decision events |
-| **Reference** | `docs/reference/` | Code changes |
-| **Guides** | `docs/guides/` | Manual |
-| **API Docs** | Generated | Code changes |
-
-#### Drift Detection
-
-```
-┌────────────────────────────────────────────────────────────────┐
-│                  Documentation Drift Detection                 │
-│                                                                │
-│  ┌──────────────────┐         ┌──────────────────┐             │
-│  │     Code         │◀───────▶│   Documentation  │             │
-│  │    Reality       │  SYNC?  │    Claims        │             │
-│  └────────┬─────────┘         └────────┬─────────┘             │
-│           │                            │                       │
-│           ▼                            ▼                       │
-│  ┌──────────────────┐         ┌──────────────────┐             │
-│  │  Code Analysis   │         │   Doc Analysis   │             │
-│  │  • Functions     │         │  • References    │             │
-│  │  • Classes       │         │  • Examples      │             │
-│  │  • Patterns      │         │  • Diagrams      │             │
-│  └────────┬─────────┘         └────────┬─────────┘             │
-│           │                            │                       │
-│           └───────────┬────────────────┘                       │
-│                       ▼                                        │
-│           ┌──────────────────────────────┐                     │
-│           │       DRIFT REPORT           │                     │
-│           │  • Outdated references       │                     │
-│           │  • Missing documentation     │                     │
-│           │  • Stale examples            │                     │
-│           │  • Broken links              │                     │
-│           └──────────────────────────────┘                     │
-│                                                                │
-└────────────────────────────────────────────────────────────────┘
-```
-
-#### Documentation Features
-
-| Requirement | Description | Priority |
-|-------------|-------------|----------|
-| **Search** | Full-text search across all documentation | P1 |
-| **Versioning** | Link documentation to code versions | P2 |
-| **Freshness Indicators** | Show last update date and staleness warnings | P0 |
-| **Auto-Generation** | Generate docs from code comments and structure | P1 |
-
-### Key Design Decisions
-
-1. **Single Source of Truth**: Markdown files or generated from code?
-2. **Hosting**: Static site generation or dynamic rendering?
-3. **Update Frequency**: Real-time vs. batch updates?
-4. **LLM Integration**: How do LLMs consume documentation?
-
-### Dependencies
-
-- Codebase Analysis Engine (code understanding)
-- File system access for document management
-- Index generator tooling
-
----
-
-## Foundation 6: Continual Self-Reflection Framework
-
-### Purpose
-
-Enable the system to observe its own behavior, detect inefficiencies, and propose improvements. This is the **improvement layer** that implements Pillar 3 (Radical Self-Improvement).
-
-### Core Requirements
-
-#### Observation and Metrics
-
-| Metric | Description | Collection |
-|--------|-------------|------------|
-| **Token Efficiency** | Tokens used per task type | Per-session |
-| **Task Success Rate** | First-attempt success vs. rework needed | Per-task |
-| **Clarification Frequency** | How often agent asks for clarification | Per-task |
-| **Error Patterns** | Recurring error types | Per-session |
-| **Execution Time** | Time to complete task types | Per-task |
-
-#### Analysis Components
-
-| Component | Purpose | Outputs |
-|-----------|---------|---------|
-| **Process Analyzer** | Detect inefficiencies in development process | Process improvement proposals |
-| **LLM Inefficiency Analyzer** | Identify patterns of wasted tokens or rework | Prompt improvements, tool suggestions |
-| **PR Review Reviewer** | Analyze human review feedback for patterns | New automated checks, rule updates |
-| **Documentation Analyzer** | Find gaps between code and docs | Documentation update tasks |
-
-#### Improvement Lifecycle
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                  Self-Improvement Loop                          │
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │   OBSERVE    │───▶│   ANALYZE    │───▶│   PROPOSE    │       │
-│  │              │    │              │    │              │       │
-│  │ • Collect    │    │ • Detect     │    │ • Generate   │       │
-│  │   metrics    │    │   patterns   │    │   hypothesis │       │
-│  │ • Track      │    │ • Identify   │    │ • Estimate   │       │
-│  │   outcomes   │    │   root cause │    │   impact     │       │
-│  └──────────────┘    └──────────────┘    └──────────────┘       │
-│                                                │                │
-│                                                ▼                │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │   MEASURE    │◀───│   IMPLEMENT  │◀───│   VALIDATE   │       │
-│  │              │    │              │    │  (Human)     │       │
-│  │ • Track      │    │ • Apply      │    │              │       │
-│  │   outcomes   │    │   changes    │    │ • Review     │       │
-│  │ • Compare    │    │ • Update     │    │ • Approve    │       │
-│  │   to baseline│    │   systems    │    │ • Reject     │       │
-│  └──────────────┘    └──────────────┘    └──────────────┘       │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-#### Proposal Types
-
-| Type | Description | Approval Required |
-|------|-------------|-------------------|
-| **Rule Addition** | New linting or review rule | Human approval |
-| **Prompt Update** | Improved agent prompts | Human review |
-| **Process Change** | Workflow modification | Human approval |
-| **Documentation** | Auto-generated doc updates | Auto-merge (low risk) |
-| **Tool Enhancement** | New tool or tool improvement | Human approval |
-
-#### Memory and Persistence
-
-| Requirement | Description | Priority |
-|-------------|-------------|----------|
-| **Pattern Log** | Persistent record of detected patterns | P0 |
-| **Experiment Tracking** | Record of improvement experiments and results | P0 |
-| **Cross-Session Context** | Maintain analysis context across sessions | P0 |
-| **Historical Trends** | Track metrics over time | P1 |
-
-### Key Design Decisions
-
-1. **Human Approval Threshold**: What changes require human approval?
-2. **Rollback Mechanism**: How to revert improvements that don't work?
-3. **Experiment Design**: A/B testing vs. before/after comparison?
-4. **Feedback Latency**: How quickly can we know if a change helped?
-
-### Dependencies
-
-- Multi-Agent Framework (specialized analysis agents)
-- PR Reviewer System (feedback source)
-- Metrics and logging infrastructure
-- Beads or similar for persistence
-
----
-
-## Cross-Cutting Concerns
-
-### Security
-
-| Concern | Mitigation | Priority |
-|---------|------------|----------|
-| **Secret Exposure** | Never log or expose secrets, sanitize all outputs | P0 |
-| **Code Execution** | Sandbox all code execution, limit filesystem access | P0 |
-| **API Security** | Authenticate all API calls, rate limit | P0 |
-| **Data Isolation** | Separate data between organizations/projects | P0 |
-
-### Scalability
-
-| Concern | Approach | Priority |
-|---------|----------|----------|
-| **Large Codebases** | Incremental analysis, caching | P0 |
-| **Concurrent Users** | Stateless agents, horizontal scaling | P1 |
-| **Token Costs** | Budget management, caching, prompt optimization | P0 |
-| **Storage** | Efficient storage of analysis results, pruning | P1 |
-
-### Reliability
-
-| Concern | Approach | Priority |
-|---------|----------|----------|
-| **Agent Failures** | Retry logic, graceful degradation | P0 |
-| **Partial Results** | Handle incomplete analysis gracefully | P0 |
-| **Idempotency** | Operations should be safely repeatable | P0 |
-| **Audit Trail** | Full logging for debugging and accountability | P0 |
-
-### Observability
-
-| Concern | Approach | Priority |
-|---------|----------|----------|
-| **Logging** | Structured logging at all levels | P0 |
-| **Metrics** | Key metrics for each foundation | P0 |
-| **Tracing** | Distributed tracing across agents | P1 |
-| **Alerting** | Alerts for failures and anomalies | P1 |
-
----
-
-## Integration Architecture
-
-### Component Relationships
+The Post-LLM SE vision requires six foundational capabilities:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Integration Architecture                         │
+│                    The Six Foundations                              │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐    │
-│  │                   MULTI-AGENT FRAMEWORK                     │    │
-│  │              (Orchestration & Execution Layer)              │    │
+│  │           1. MULTI-AGENT FRAMEWORK                          │    │
+│  │              The execution layer powering everything        │    │
 │  └───────┬──────────────┬──────────────┬──────────────┬────────┘    │
 │          │              │              │              │             │
 │          ▼              ▼              ▼              ▼             │
 │  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐     │
-│  │ INTERACTIVE│  │ PR REVIEW  │  │ CODEBASE   │  │ SELF-      │     │
-│  │ DEVELOPMENT│  │ SYSTEM     │  │ ANALYSIS   │  │ REFLECTION │     │
-│  │ FRAMEWORK  │  │            │  │ ENGINE     │  │ FRAMEWORK  │     │
+│  │ 2. IPF     │  │ 3. PR      │  │ 4. CODE    │  │ 5. SELF-   │     │
+│  │ Interactive│  │ REVIEWER   │  │ ANALYSIS   │  │ REFLECTION │     │
+│  │ Planning   │  │ System     │  │ Engine     │  │ Framework  │     │
 │  └──────┬─────┘  └──────┬─────┘  └──────┬─────┘  └──────┬─────┘     │
 │         │               │               │               │           │
 │         └───────────────┴───────┬───────┴───────────────┘           │
 │                                 │                                   │
 │                                 ▼                                   │
 │         ┌───────────────────────────────────────────────┐           │
-│         │         INDEX-BASED DOCUMENTATION             │           │
-│         │              (Navigation Layer)               │           │
+│         │      6. INDEX-BASED DOCUMENTATION             │           │
+│         │         The navigation layer                  │           │
 │         └───────────────────────────────────────────────┘           │
-│                                                                     │
-│  ═══════════════════════════════════════════════════════════════    │
-│                        INFRASTRUCTURE                               │
-│                                                                     │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐    │
-│  │  LLM    │  │  Git    │  │  GitHub │  │ Storage │  │ Metrics │    │
-│  │ Provider│  │         │  │   MCP   │  │ (Beads) │  │/Logging │    │
-│  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘    │
-│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Data Flow
-
-| Flow | From | To | Data |
-|------|------|----|------|
-| **Task Creation** | Interactive Framework | Multi-Agent | Task specifications |
-| **Code Context** | Codebase Analysis | PR Review, Interactive | Analysis results |
-| **Review Feedback** | PR Review | Self-Reflection | Review comments, outcomes |
-| **Improvements** | Self-Reflection | All foundations | Configuration updates |
-| **Documentation** | All foundations | Index System | Generated docs |
+| Foundation | What It Does | Enables |
+|------------|--------------|---------|
+| **Multi-Agent Framework** | Coordinates specialized LLM agents | All capabilities |
+| **Interactive Planning Framework** | Structured human-LLM collaboration | Pillar 2 |
+| **PR Reviewer System** | Automated specialized code review | Pillar 1 |
+| **Codebase Analysis Engine** | Deep code understanding | All capabilities |
+| **Continual Self-Reflection** | Autonomous system improvement | Pillar 3 |
+| **Index-Based Documentation** | Always-current navigation | Pillars 1, 2 |
 
 ---
 
-## Actionable Implementation Roadmap
+## Foundation 1: Multi-Agent Framework
 
-> **Principle:** Each phase produces working documents AND working code. Documents are refined iteratively alongside implementation—they evolve together.
+**Purpose:** Provide infrastructure for coordinating multiple specialized LLM agents.
 
-### Phase 0: Documentation Foundation (Current Phase)
+**Strategic Intent:** Enable complex tasks to be decomposed and handled by purpose-built agents working in concert.
 
-**Goal:** Establish the document architecture that will guide all subsequent implementation.
+### Key Capabilities
 
-**Status:** IN PROGRESS
+- **Agent Registry**: Catalog of agents with capabilities and constraints
+- **Task Routing**: Match tasks to appropriate agents
+- **Agent Communication**: Enable handoffs and context sharing
+- **Observability**: Full execution tracing and token tracking
 
-| Deliverable | Description | Document | Status |
-|-------------|-------------|----------|--------|
-| Philosophy Umbrella | The "why" of post-LLM SE | [Pragmatic Guide](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | In PR #470 |
-| Technical Requirements | This document—the "what" | This document | In PR #474 |
-| Pillar 1 Guide | LLM-First Code Reviews | TBD | Planned |
-| Pillar 2 Guide | Human-Driven, LLM-Navigated | [Draft exists](Human-Driven-LLM-Navigated-Software-Development.md) | Needs refinement |
-| Pillar 3 Guide | Radical Self-Improvement | [Draft exists](Radical-Self-Improvement-for-LLMs.md) | Needs refinement |
+### Initial Agent Types
+
+| Agent | Role |
+|-------|------|
+| Orchestrator | Task decomposition and delegation |
+| Researcher | Information gathering |
+| Implementer | Code generation |
+| Reviewer | Code analysis |
+| Documenter | Documentation maintenance |
+
+### Open Questions
+
+- How much context should agents share?
+- When should agents run in parallel vs. sequential?
+- How do agents recover from failures?
+
+---
+
+## Foundation 2: Interactive Planning Framework (IPF)
+
+**Purpose:** Enable rigorous human-LLM collaboration through structured dialogue and documentation-driven development.
+
+**Strategic Intent:** Transform vague human intent into precise, executable specifications through the four-phase process (Ideation → Assessment → Reinforcement → Planning).
+
+### Documentation-Driven Development
+
+> **Core Philosophy:** Documentation isn't created after development—documentation IS development.
+
+In the IPF model, **documentation drives development**, not the reverse:
+
+| Traditional Development | Documentation-Driven Development |
+|------------------------|----------------------------------|
+| Write code, then document | Write spec document, code follows |
+| Documentation is overhead | Documentation is the work product |
+| Docs get stale | Docs are source of truth |
+| Implementation defines behavior | Documents define behavior |
+
+**Why this matters for IPF:**
+- The **Planning** phase produces a document that IS the implementation spec
+- LLM agents read the document and generate code from it
+- Human approval of the document = approval to build
+- Changes to behavior start with changes to documents
+
+### Key Capabilities
+
+- **Phase Management**: Guide conversations through IPF phases
+- **Decision Capture**: Record human decisions with rationale
+- **Context Persistence**: Maintain state across sessions
+- **Specification Output**: Generate machine-readable task specs
+- **Document Generation**: Output approved plans as versioned specification documents
+
+### Human Checkpoints
+
+| Checkpoint | When | Human Action |
+|------------|------|--------------|
+| Phase Transition | End of each phase | Approve to proceed |
+| Design Decision | Multiple valid options | Choose direction |
+| Risk Escalation | Uncertainty detected | Provide guidance |
+| Document Approval | Planning phase complete | Sign off on spec |
+
+### Open Questions
+
+- How structured should the dialogue be?
+- How are planning artifacts versioned?
+- How does IPF integrate with task tracking?
+- How do we ensure document quality is sufficient for LLM consumption?
+
+---
+
+## Foundation 3: PR Reviewer System
+
+**Purpose:** Automated, specialized code review that catches issues before human review.
+
+**Strategic Intent:** Implement "LLM-first, human-last" review where LLMs handle comprehensive analysis and humans focus on critical paths.
+
+### Specialized Reviewers
+
+| Reviewer | Focus |
+|----------|-------|
+| Security | OWASP Top 10, secrets, injection |
+| Infrastructure | Resource limits, deployment safety |
+| Product | Business logic, requirement alignment |
+| Architecture | Patterns, coupling, tech debt |
+| Nitpicker | Style, naming, documentation |
+
+### Key Capabilities
+
+- **Review Synthesis**: Aggregate and deduplicate findings
+- **Severity Classification**: Critical, warning, suggestion
+- **Feedback Learning**: Turn recurring human feedback into automated checks
+- **GitHub Integration**: Native review API integration
+
+### Open Questions
+
+- Should reviewers share context or review independently?
+- What's the maximum PR size for automated review?
+- How do we minimize false positives?
+
+---
+
+## Foundation 4: Codebase Analysis Engine
+
+**Purpose:** Deep, structured understanding of code.
+
+**Strategic Intent:** Power code-aware operations across all foundations by maintaining rich knowledge of codebase structure, patterns, and relationships.
+
+### Key Capabilities
+
+- **Syntax Analysis**: AST parsing across languages
+- **Semantic Analysis**: Types, symbols, relationships
+- **Dependency Mapping**: Module relationships
+- **Pattern Detection**: Common patterns and anti-patterns
+- **Change Impact Analysis**: What's affected by changes
+
+### Language Priorities
+
+| Priority | Languages |
+|----------|-----------|
+| P0 | Python, TypeScript/JavaScript |
+| P1 | Go |
+| P2 | Java, others |
+
+### Open Questions
+
+- In-memory, filesystem, or database storage?
+- How to efficiently support incremental analysis?
+- How to handle monorepos?
+
+---
+
+## Foundation 5: Continual Self-Reflection Framework
+
+**Purpose:** Enable the system to observe and improve itself.
+
+**Strategic Intent:** Implement Pillar 3 (Radical Self-Improvement) where the system detects inefficiencies and proposes improvements.
+
+### Key Capabilities
+
+- **Metrics Collection**: Token usage, success rates, error patterns
+- **Inefficiency Detection**: Identify wasted effort patterns
+- **Improvement Proposals**: Generate hypotheses with estimated impact
+- **Experiment Tracking**: Record what works and what doesn't
+
+### Analysis Components
+
+| Component | Purpose |
+|-----------|---------|
+| Process Analyzer | Detect workflow inefficiencies |
+| LLM Inefficiency Analyzer | Identify token waste, unnecessary rework |
+| PR Review Reviewer | Learn from human review feedback |
+| Documentation Analyzer | Find doc-code drift |
+
+### Open Questions
+
+- What changes require human approval?
+- How do we rollback improvements that don't work?
+- How quickly can we measure if changes help?
+
+---
+
+## Foundation 6: Index-Based Documentation Strategy
+
+**Purpose:** Maintain always-current, navigable documentation.
+
+**Strategic Intent:** Keep humans and LLMs oriented through automated index generation and drift detection.
+
+### Key Capabilities
+
+- **Automated Index Generation**: Index from directory structure
+- **Cross-Reference Maintenance**: Detect and maintain links
+- **Drift Detection**: Find where docs diverge from code
+- **Freshness Tracking**: Flag stale documentation
+
+### Open Questions
+
+- Markdown files as source of truth, or generate from code?
+- Real-time vs. batch index updates?
+- How do LLMs best consume documentation?
+
+---
+
+## High-Level Implementation Plan
+
+> **Principle:** Each phase produces working documents AND working code. Documents evolve alongside implementation.
+
+### Phase Sequence
+
+```
+Phase 0: Strategic Foundation (THIS DOCUMENT)
+    ↓
+Phase 1: Multi-Agent Core
+    ↓
+Phase 2: Interactive Planning Framework ←── Enables structured development
+    ↓
+Phase 3: PR Review Pipeline ←── Quality gate for all subsequent work
+    ↓
+Phase 4: Codebase Analysis
+    ↓
+Phase 5: Self-Reflection
+    ↓
+Phase 6: Documentation Intelligence
+```
+
+### Phase 0: Strategic Foundation (Current)
+
+**Goal:** Establish the vision and methodology.
+
+**Deliverables:**
+- This document (Foundational Technical Requirements)
+- Umbrella document (Pragmatic Guide)
+- Pillar documents (LLM-First Reviews, Human-Driven Development, Self-Improvement)
 
 **Exit Criteria:**
-- [ ] All six foundation sections in this document reviewed and approved
-- [ ] Each pillar has a dedicated design document
-- [ ] Document cross-references validated
-- [ ] Human sign-off on overall direction
-
-**Immediate Next Actions:**
-1. Complete review of this document (PR #474)
-2. Create detailed design docs for each foundation (separate PRs)
-3. Establish document review cadence
-
----
+- Human approval of strategic direction
+- Clear methodology (IPF) established
+- Six foundations defined at appropriate level of abstraction
 
 ### Phase 1: Multi-Agent Core
 
-**Goal:** Build the execution layer that powers everything else.
+**Goal:** Build the execution layer that powers everything.
 
-**Prerequisites:** Phase 0 complete
-
-| Deliverable | Description | Specification Doc | Implementation |
-|-------------|-------------|-------------------|----------------|
-| Agent Registry | Central catalog of agent types and capabilities | `docs/design/agent-registry.md` | `src/agents/registry.py` |
-| Task Router | Route tasks to appropriate agents | `docs/design/task-routing.md` | `src/agents/router.py` |
-| Execution Tracer | Full observability of agent execution | `docs/design/execution-tracing.md` | `src/observability/tracer.py` |
-| Agent SDK | Base classes and utilities for building agents | `docs/design/agent-sdk.md` | `src/agents/sdk/` |
+**Key Deliverables:**
+- Agent registry and lifecycle management
+- Task routing infrastructure
+- Execution tracing
 
 **Exit Criteria:**
-- [ ] Can define and register a new agent type
-- [ ] Can route a task to an agent and get a result
-- [ ] Full execution trace available for debugging
-- [ ] At least 3 working agents: Orchestrator, Implementer, Researcher
+- Can register, route to, and execute agents
+- At least 3 working agents (Orchestrator, Implementer, Researcher)
 
-**Acceptance Test:**
-```
-Given: A task "Fix the typo in README.md"
-When: Task submitted to system
-Then: Orchestrator analyzes → Routes to Implementer → Fix applied → PR created
-And: Full trace viewable
-```
+### Phases 2-6: To Be Planned
+
+Detailed planning for subsequent phases will follow IPF:
+1. Each phase gets its own Ideation → Assessment → Reinforcement → Planning cycle
+2. Phase planning happens just-in-time, informed by learnings from prior phases
+3. Human checkpoints at each phase transition
 
 ---
 
-### Phase 2: PR Review Pipeline
+## Cross-Cutting Concerns
 
-**Goal:** Deliver automated code review with specialized agents.
+### Security
+- Never expose secrets
+- Sandbox code execution
+- Authenticate all API calls
 
-**Prerequisites:** Phase 1 complete (Multi-Agent Core)
+### Scalability
+- Support large codebases through incremental analysis
+- Manage token costs through caching and budgets
 
-| Deliverable | Description | Specification Doc | Implementation |
-|-------------|-------------|-------------------|----------------|
-| Security Reviewer | OWASP, secrets, injection | `docs/design/security-reviewer.md` | `src/agents/reviewers/security.py` |
-| Architecture Reviewer | Design patterns, coupling | `docs/design/architecture-reviewer.md` | `src/agents/reviewers/architecture.py` |
-| Review Synthesizer | Aggregate and dedupe findings | `docs/design/review-synthesizer.md` | `src/agents/reviewers/synthesizer.py` |
-| GitHub Integration | Post reviews via GitHub API | `docs/design/github-review-integration.md` | `src/integrations/github/reviews.py` |
-
-**Exit Criteria:**
-- [ ] PRs automatically receive LLM review comments
-- [ ] At least 2 specialized reviewers operational
-- [ ] Findings categorized by severity
-- [ ] False positive rate < 20%
-
-**Acceptance Test:**
-```
-Given: A PR introducing a SQL injection vulnerability
-When: PR opened
-Then: Security Reviewer flags vulnerability with specific line reference
-And: Review posted as GitHub review comment
-```
-
----
-
-### Phase 3: Interactive Planning Framework
-
-**Goal:** Enable structured human-LLM collaboration for complex tasks.
-
-**Prerequisites:** Phase 1 complete
-
-| Deliverable | Description | Specification Doc | Implementation |
-|-------------|-------------|-------------------|----------------|
-| Elicitation Agent | Transform vague intent to requirements | `docs/design/elicitation-agent.md` | `src/agents/planning/elicitation.py` |
-| Design Agent | Present options with trade-offs | `docs/design/design-agent.md` | `src/agents/planning/design.py` |
-| Task Breakdown Agent | Create phased implementation plan | `docs/design/task-breakdown-agent.md` | `src/agents/planning/breakdown.py` |
-| IPF Orchestrator | Coordinate planning phases | `docs/design/ipf-orchestrator.md` | `src/agents/planning/orchestrator.py` |
-
-**Exit Criteria:**
-- [ ] Can take vague request → structured task specification
-- [ ] Human checkpoints at each phase transition
-- [ ] Task specs are machine-readable and executable
-- [ ] Planning sessions resumable across time
-
-**Acceptance Test:**
-```
-Given: User says "I want to add user authentication"
-When: IPF session initiated
-Then: Elicitation asks clarifying questions
-And: Design presents OAuth vs JWT vs Session options
-And: User chooses, and detailed task breakdown generated
-```
-
----
-
-### Phase 4: Codebase Analysis Engine
-
-**Goal:** Deep, structured understanding of code.
-
-**Prerequisites:** Phase 1 complete
-
-| Deliverable | Description | Specification Doc | Implementation |
-|-------------|-------------|-------------------|----------------|
-| AST Parser (Python) | Parse Python into traversable AST | `docs/design/python-parser.md` | `src/analysis/parsers/python.py` |
-| AST Parser (TS/JS) | Parse TypeScript/JS | `docs/design/typescript-parser.md` | `src/analysis/parsers/typescript.py` |
-| Dependency Mapper | Build module dependency graph | `docs/design/dependency-mapper.md` | `src/analysis/dependencies.py` |
-| Symbol Index | Searchable index of all symbols | `docs/design/symbol-index.md` | `src/analysis/symbols.py` |
-
-**Exit Criteria:**
-- [ ] Can parse Python and TypeScript codebases
-- [ ] Dependency graph queryable
-- [ ] "Find all usages of X" works
-- [ ] Incremental analysis on file change
-
-**Acceptance Test:**
-```
-Given: A Python codebase
-When: Analysis runs
-Then: Can query "what calls function foo()"
-And: Can query "what does module X depend on"
-```
-
----
-
-### Phase 5: Self-Reflection Framework
-
-**Goal:** System observes and improves itself.
-
-**Prerequisites:** Phases 1-4 substantially complete
-
-| Deliverable | Description | Specification Doc | Implementation |
-|-------------|-------------|-------------------|----------------|
-| Metrics Collector | Gather token usage, success rates, etc. | `docs/design/metrics-collector.md` | `src/reflection/metrics.py` |
-| Inefficiency Detector | Identify wasted effort patterns | `docs/design/inefficiency-detector.md` | `src/reflection/inefficiency.py` |
-| Improvement Proposer | Generate hypotheses for improvement | `docs/design/improvement-proposer.md` | `src/reflection/proposer.py` |
-| Experiment Runner | A/B test improvements | `docs/design/experiment-runner.md` | `src/reflection/experiments.py` |
-
-**Exit Criteria:**
-- [ ] System tracks its own performance metrics
-- [ ] Inefficiencies automatically surfaced
-- [ ] Improvement proposals generated with estimated impact
-- [ ] At least one self-proposed improvement accepted and deployed
-
-**Acceptance Test:**
-```
-Given: System has been running for 2 weeks
-When: Reflection analysis runs
-Then: Report identifies top 3 inefficiencies
-And: Proposals include specific changes with expected improvement %
-```
-
----
-
-### Phase 6: Documentation Intelligence
-
-**Goal:** Always-current, navigable documentation.
-
-**Prerequisites:** Phase 4 (Codebase Analysis)
-
-| Deliverable | Description | Specification Doc | Implementation |
-|-------------|-------------|-------------------|----------------|
-| Index Generator | Build navigable doc index | `docs/design/index-generator.md` | `src/docs/indexer.py` |
-| Drift Detector | Find stale documentation | `docs/design/drift-detector.md` | `src/docs/drift.py` |
-| Doc Generator | Generate docs from code | `docs/design/doc-generator.md` | `src/docs/generator.py` |
-| Freshness Tracker | Track and display doc age | `docs/design/freshness-tracker.md` | `src/docs/freshness.py` |
-
-**Exit Criteria:**
-- [ ] Auto-generated index always reflects actual docs
-- [ ] Stale docs flagged automatically
-- [ ] API docs generated from code comments
-- [ ] Freshness visible in doc index
-
----
-
-### Implementation Principles
-
-1. **Document First**: Before implementing any component, write its specification document. The document IS the first implementation.
-
-2. **Iterative Refinement**: Documents improve as implementation reveals gaps. Code and docs evolve together.
-
-3. **Working Increments**: Each phase delivers working capability. No "big bang" integration.
-
-4. **Human Checkpoints**: Major phase transitions require human review and approval.
-
-5. **Dogfooding**: Use the system to build the system. PR reviews by the PR reviewer. Planning via IPF.
+### Reliability
+- Graceful degradation on agent failures
+- Full audit trail for accountability
 
 ---
 
 ## Success Metrics
 
-### Foundation Metrics
+### North Star
+| Metric | Target |
+|--------|--------|
+| Human cognitive load reduction | -50% |
+| Defect escape rate | -30% |
+| Development velocity | +25% |
 
-| Foundation | Key Metric | Target |
-|------------|------------|--------|
-| **Multi-Agent** | Task completion rate | >95% |
-| **Interactive Development** | First-attempt success rate | >80% |
-| **PR Review** | Issues caught before human review | >70% |
-| **Codebase Analysis** | Analysis accuracy | >95% |
-| **Documentation** | Documentation freshness (< 30 days stale) | >90% |
-| **Self-Reflection** | Improvement proposals accepted | >60% |
-
-### North Star Metrics
-
-| Metric | Description | Target |
-|--------|-------------|--------|
-| **Human Cognitive Load** | Self-reported reduction in tedious tasks | -50% |
-| **Code Quality** | Defect escape rate | -30% |
-| **Development Velocity** | Tasks completed per week | +25% |
-| **System Improvement** | New automated checks per month | 5+ |
+### Foundation-Specific
+| Foundation | Metric | Target |
+|------------|--------|--------|
+| Multi-Agent | Task completion rate | >95% |
+| IPF | First-attempt success | >80% |
+| PR Review | Issues caught pre-human | >70% |
+| Self-Reflection | Proposals accepted | >60% |
 
 ---
 
-## Open Questions
+## Open Strategic Questions
 
-### Technical
+1. **Build vs. Buy**: Which components warrant custom development?
+2. **LLM Provider**: How dependent on a single provider?
+3. **Open Source**: Which components should be public?
+4. **Rollout**: How do we introduce capabilities incrementally?
 
-1. **Agent Communication Protocol**: How do agents share context and hand off work?
-2. **State Management**: Where does shared state live? How is it synchronized?
-3. **Multi-Repository Support**: How do we handle analysis across multiple repos?
-4. **Language Support Prioritization**: Which languages need full vs. partial support?
+---
 
-### Process
+## What's Next
 
-1. **Rollout Strategy**: How do we introduce these capabilities incrementally?
-2. **Human Training**: What training do humans need to work effectively with the system?
-3. **Feedback Collection**: How do we systematically gather user feedback?
-4. **Success Measurement**: How do we measure whether the system is achieving its goals?
+**Immediate actions upon approval:**
+1. Merge this document into PR #470
+2. Begin Phase 1 (Multi-Agent Core) design using IPF
+3. Establish document review cadence
 
-### Strategic
-
-1. **Build vs. Buy**: Which components should be built custom vs. using existing tools?
-2. **Open Source vs. Proprietary**: Which components should be open-sourced?
-3. **Multi-Tenancy**: Is this a platform for one team or many?
-4. **LLM Provider Lock-in**: How dependent should we be on a single LLM provider?
+**This document will evolve** as implementation reveals gaps and new insights emerge. That's intentional—documents and code evolve together.
 
 ---
 
 ## Related Documents
 
-| Document | Description |
-|----------|-------------|
-| [A Pragmatic Guide for Software Engineering in a Post-LLM World](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Philosophy umbrella document |
-| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Pillar 1 implementation guide |
-| [Human-Driven, LLM-Navigated Development](Human-Driven-LLM-Navigated-Software-Development.md) | Pillar 2 philosophy |
-| [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Pillar 3 framework |
+| Document | Purpose |
+|----------|---------|
+| [Pragmatic Guide](Pragmatic-Guide-Software-Engineering-Post-LLM-World.md) | Philosophy umbrella |
+| [LLM-First Code Reviews](LLM-Assisted-Code-Review.md) | Pillar 1 |
+| [Human-Driven Development](Human-Driven-LLM-Navigated-Software-Development.md) | Pillar 2 |
+| [Radical Self-Improvement](Radical-Self-Improvement-for-LLMs.md) | Pillar 3 |
 
 ---
 
 **Last Updated:** 2025-12-06
-**Next Review:** 2026-01-06 (Monthly)
+**Next Review:** After human approval
 
 Authored-by: jib
