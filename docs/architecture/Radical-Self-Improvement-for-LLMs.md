@@ -4,6 +4,7 @@
 **Author:** James Wiesebron, james-in-a-box
 **Created:** December 2025
 **Purpose:** A framework for LLM systems that continuously improve with minimal human intervention
+**Guiding Value:** Care
 
 ---
 
@@ -18,6 +19,8 @@ This document presents **Radical Self-Improvement** as a design principle: LLM s
 **The core thesis:** LLM agents should not passively wait for humans to identify problems. They should actively monitor their own performance, detect patterns, and surface improvement opportunities.
 
 **The deeper insight:** The culture of continuous improvement we build for LLMs represents a best practice that transfers universally. The same principles—self-reflection, evidence-based feedback, systematic improvement—can be applied to individual developers, teams, and entire organizations. What we learn by building self-improving LLMs teaches us how to build self-improving organizations.
+
+**The guiding value—care:** Treat the development process itself as something worth investing in and nurturing. Rather than accepting static tooling or tolerating recurring friction, invest in systems that actively reflect on their own behavior and propose improvements. This is care in action: the belief that things can always get better, and the commitment to making that happen.
 
 **Four capabilities make this possible:**
 
@@ -88,6 +91,8 @@ Week 5: Clarification requests decrease 40%, agent measures and reports
 ```
 
 The human didn't have to notice the pattern, diagnose the cause, or devise the solution. The agent did all of that—the human just validated.
+
+This is care made operational: the system actively nurtures its own improvement rather than waiting to be fixed.
 
 ---
 
@@ -266,6 +271,8 @@ The **PR Review Reviewer** is a special case of self-improvement: analyzing huma
 
 Human reviewers become **trainers**. Their feedback improves the system, not just the current PR. Over time, the types of issues that require human attention shifts toward higher-level concerns—architecture, business logic, strategic decisions—rather than mechanical issues that could be automated.
 
+This is what care looks like in practice: feedback isn't just given—it's invested, compounding over time into systemic improvement.
+
 ---
 
 ## Pillar 4: Strategic Human Escalation
@@ -357,6 +364,8 @@ Building self-improving LLM systems teaches us how to build self-improving organ
 - **What we learn from strategic escalation** → Applies to bottom-up organizational feedback
 
 The investment in LLM self-improvement pays dividends across the entire organization.
+
+This is the ultimate expression of care: building systems that teach us how to be better at building systems.
 
 ---
 
