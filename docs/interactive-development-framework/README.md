@@ -25,7 +25,7 @@ The Interactive Development Framework rests on three mutually reinforcing pillar
 | **Human-Driven, LLM-Navigated Development** | How should humans and LLMs collaborate? | Rigor |
 | **Radical Self-Improvement** | How do systems get better over time? | Care |
 
-### The Interactive Planning Framework (IPF)
+### The Collaborative Planning Framework (CPF)
 
 A structured methodology for human-LLM collaboration through four phases:
 
@@ -38,7 +38,7 @@ IDEATION ──▶ ASSESSMENT ──▶ REINFORCEMENT ──▶ PLANNING
 ### The Six Technical Foundations
 
 1. **Multi-Agent Framework** — Infrastructure for coordinating specialized LLM agents
-2. **Interactive Planning Framework** — Structured human-LLM collaboration
+2. **Collaborative Planning Framework** — Structured human-LLM collaboration
 3. **PR Reviewer System** — Automated specialized code review
 4. **Codebase Analysis Engine** — Deep code understanding
 5. **Continual Self-Reflection** — Autonomous system improvement
