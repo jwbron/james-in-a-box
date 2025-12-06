@@ -9,23 +9,28 @@
 
 ## Executive Summary
 
-We are witnessing a fundamental shift in software engineering. Large Language Models have moved from experimental tools to practical collaborators capable of generating, reviewing, and maintaining code at unprecedented scale. This creates both opportunity and challenge: opportunity to amplify human capabilities, challenge to adapt our practices accordingly.
+The idea that speed is an inherent benefit of software development with LLMs is a fallacy.
 
-This document presents a **holistic philosophy** for software engineering in the post-LLM era, built on three mutually reinforcing pillars:
+With the models that exist currently, we don't have a path forward for automating the job of software engineers generally. We do, however, have a path towards radically improving the software development lifecycle, leading to higher quality code while reducing cognitive load on engineers.
 
-| Pillar | Core Question | Document |
-|--------|---------------|----------|
-| **1. LLM-First Code Reviews** | How do we maintain quality at LLM speed? | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) |
-| **2. Human-Driven, LLM-Navigated Development** | How should humans and LLMs collaborate? | [Human-Driven, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md) |
-| **3. Radical Self-Improvement** | How do systems get better over time? | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) |
+But we can only navigate this path with **intentionality**, **rigor**, and **care**.
 
-**The core thesis:** Software engineering practices must evolve to leverage LLM strengths (exhaustive attention, pattern consistency, tireless execution) while preserving human strengths (strategic judgment, creative problem-solving, interpersonal collaboration). Each pillar addresses a different dimension of this evolution, and together they form a complete, pragmatic philosophy.
+This document presents a philosophy for software engineering in the post-LLM era, built on three mutually reinforcing pillars—each aligned with one of these guiding values:
+
+| Value | Pillar | Core Question | Document |
+|-------|--------|---------------|----------|
+| **Intentionality** | LLM-First Code Reviews | Where should human attention focus? | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) |
+| **Rigor** | Human-Driven, LLM-Navigated Development | How do we maintain structural discipline? | [Human-Driven, LLM-Navigated Software Development](Human-Driven-LLM-Navigated-Software-Development.md) |
+| **Care** | Radical Self-Improvement | How do systems get better over time? | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) |
+
+**The core thesis:** The promise of LLMs in software engineering is not speed—it's quality. By approaching this new paradigm with intentionality about where humans focus, rigor in how humans and LLMs collaborate, and care for continuous improvement, we can build better software while making engineering more sustainable.
 
 ---
 
 ## Table of Contents
 
-- [Why This Matters Now](#why-this-matters-now)
+- [The Speed Fallacy](#the-speed-fallacy)
+- [Intentionality, Rigor, and Care](#intentionality-rigor-and-care)
 - [The Three Pillars](#the-three-pillars)
 - [How They Work Together](#how-they-work-together)
 - [Adopting the Philosophy](#adopting-the-philosophy)
@@ -36,21 +41,53 @@ This document presents a **holistic philosophy** for software engineering in the
 
 ---
 
+## The Speed Fallacy
+
+There is a seductive narrative in the industry: LLMs will make software development faster. Ship more features. Move faster. 10x productivity.
+
+This framing is wrong—and dangerous.
+
+**Why it's wrong:** Speed without quality creates technical debt. Speed without intentionality creates chaos. Speed without care creates systems that degrade over time. The organizations chasing "faster" with LLMs will find themselves moving faster toward failure.
+
+**Why it's dangerous:** When speed becomes the goal, engineers become rubber-stampers. Review becomes a formality. Quality becomes someone else's problem. The very practices that make software engineering sustainable get sacrificed on the altar of velocity.
+
+**What we actually have:** With current models, we cannot automate software engineering. We cannot replace the judgment, creativity, and accountability that humans bring. What we *can* do is fundamentally reshape *how* humans and LLMs work together—in ways that produce higher quality outcomes while reducing the cognitive burden on engineers.
+
+But this requires a different mindset entirely.
+
+---
+
+## Intentionality, Rigor, and Care
+
+The path forward requires three qualities that stand in direct opposition to the "move fast" mentality:
+
+### Intentionality
+
+> Where should human attention focus?
+
+LLMs can process vast amounts of code, but they cannot decide what matters. **Intentionality** means deliberately choosing where human cognitive capacity should be invested—and systematically offloading everything else.
+
+This isn't about humans doing less. It's about humans doing *what only humans can do*: making strategic decisions, providing accountability, exercising judgment that carries weight.
+
+### Rigor
+
+> How do we maintain structural discipline?
+
+LLMs enable a new kind of collaboration, but without clear structure, that collaboration becomes chaos. **Rigor** means establishing precise roles—humans as drivers of strategy, LLMs as navigators handling structural discipline—and maintaining that division consistently.
+
+This isn't about bureaucracy. It's about the kind of systematic discipline that produces reliable outcomes at scale.
+
+### Care
+
+> How do systems get better over time?
+
+Static systems cannot keep pace with evolving needs. **Care** means building systems that actively improve themselves—detecting inefficiencies, learning from feedback, and proposing their own enhancements.
+
+This isn't about automation for its own sake. It's about treating the development process itself as something worth investing in, nurturing, and continuously refining.
+
+---
+
 ## Why This Matters Now
-
-### Three Shifts Require Three Responses
-
-LLMs have fundamentally changed three aspects of software development, and each requires a thoughtful response:
-
-**1. The Speed Gap** — LLMs generate code faster than traditional review processes can handle. Quality assurance must evolve to match.
-
-**2. The Collaboration Question** — Human-computer interaction has moved from "human instructs, computer executes" to genuine collaboration. We need a new model for how humans and LLMs work together.
-
-**3. The Improvement Imperative** — Static systems cannot keep pace with rapidly evolving capabilities. LLM-augmented systems must continuously improve themselves.
-
-These three challenges are interconnected. You cannot solve the speed gap without rethinking collaboration. You cannot establish sustainable collaboration without building in self-improvement. And self-improvement depends on having clear quality signals from review.
-
-### The Human Factor
 
 Engineers are already overwhelmed. Adding "work with LLMs" to their responsibilities without changing how work happens leads to:
 
@@ -59,86 +96,93 @@ Engineers are already overwhelmed. Adding "work with LLMs" to their responsibili
 - Inconsistency (different team members collaborating with LLMs differently)
 - Stagnation (no mechanism for the system to improve)
 
-We need practices that **reduce** human cognitive load while **increasing** code quality and enabling **continuous improvement**.
+The answer is not "go faster." The answer is to approach this paradigm shift with the intentionality, rigor, and care it deserves—and in doing so, create practices that **reduce** human cognitive load while **increasing** code quality.
 
 ---
 
 ## The Three Pillars
 
-Each pillar addresses a fundamental question. Together, they form a complete philosophy for LLM-augmented software engineering.
+Each pillar embodies one of the guiding values—intentionality, rigor, and care—and together they form a complete philosophy for LLM-augmented software engineering.
 
-### Pillar 1: LLM-First Code Reviews
+### Pillar 1: LLM-First Code Reviews (Intentionality)
 
-**Question:** How do we maintain quality at LLM speed?
+**Value:** Intentionality — Where should human attention focus?
 
-**Answer:** Invert the review model—LLMs review first, humans approve last.
+**Core Practice:** Invert the review model—LLMs review first, humans approve last.
 
 **Key Insight:**
 > Every piece of recurring human feedback represents a process failure. It should either be automated or questioned.
 
-**Core Practices:**
-- Automated tools (linters, type checkers, SAST) catch mechanical issues
-- LLM reviewers catch semantic issues (patterns, naming, complexity)
-- Human reviewers focus on strategy, architecture, and business logic
-- Recurring feedback becomes new automated checks
+Intentionality in code review means being deliberate about what deserves human cognitive investment. LLMs can assess architecture, security, and business logic—but humans must own the go/no-go decisions that carry accountability.
 
-**Connection to Other Pillars:** Review quality signals feed self-improvement (Pillar 3). The human/LLM division of labor in review reflects the broader collaboration model (Pillar 2).
+**The Intentional Division:**
+- **Automate ruthlessly:** Formatting, types, patterns, common bugs
+- **LLM analysis:** Architecture assessment, security scanning, business logic coherence
+- **Human focus:** Accountability, organizational context, strategic trade-offs, team dynamics
+
+**Why Intentionality:** Without intentionality, human reviewers drown in mechanical concerns while strategic issues slip through. With intentionality, every piece of human attention is invested where it creates irreplaceable value.
+
+**Connection to Other Pillars:** Intentional focus requires the structural rigor of Pillar 2 to define clear boundaries. Review signals feed the caring systems of Pillar 3 for continuous improvement.
 
 **Read more:** [LLM-First Code Reviews](../reference/llm-assisted-code-review.md)
 
 ---
 
-### Pillar 2: Human-Driven, LLM-Navigated Development
+### Pillar 2: Human-Driven, LLM-Navigated Development (Rigor)
 
-**Question:** How should humans and LLMs collaborate on software development?
+**Value:** Rigor — How do we maintain structural discipline?
 
-**Answer:** Humans drive strategy (the "driver"), LLMs handle structural rigor (the "navigator").
+**Core Practice:** Humans drive strategy (the "driver"), LLMs handle structural rigor (the "navigator").
 
 **Key Insight:**
-> Humans and LLMs have complementary cognitive strengths. Optimal software development emerges when each focuses on what they do best.
+> Humans and LLMs have complementary cognitive strengths. Optimal software development emerges when each focuses on what they do best—and that division is maintained with discipline.
 
-**Division of Labor:**
+Rigor in human-LLM collaboration means establishing precise roles and maintaining them consistently. The driver/navigator metaphor isn't just a suggestion—it's a discipline that prevents the chaos of undefined collaboration.
 
-| Human Responsibilities | LLM Responsibilities |
-|----------------------|---------------------|
+**The Rigorous Division:**
+
+| Human (Driver) | LLM (Navigator) |
+|----------------|-----------------|
 | Define vision and goals | Enumerate edge cases and considerations |
 | Make strategic decisions | Ensure pattern consistency |
 | Review and approve changes | Generate comprehensive tests |
 | Handle novel situations | Keep documentation current |
 | Collaborate with stakeholders | Track dependencies and implications |
 
-**Core Philosophy:**
-- Humans decide **what** and **why**
-- LLMs handle **how** with precision
-- Neither role is subordinate; both are essential
-- Human judgment remains the final authority
+**Why Rigor:** Without rigor, collaboration with LLMs becomes ad-hoc and inconsistent. Different team members interact differently; quality varies unpredictably. With rigor, the collaboration model produces reliable, repeatable outcomes.
 
-**Connection to Other Pillars:** This model defines how humans and LLMs interact during review (Pillar 1) and improvement (Pillar 3). It's the philosophical foundation that unifies the framework.
+**The Interactive Planning Framework:** For complex changes, the [Interactive Planning Framework](../adr/in-progress/ADR-Interactive-Planning-Framework.md) enforces rigor through structured phases—elicitation, design, planning, handoff—each with human checkpoints.
 
-**Read more:** [Human-Driven, LLM-Navigated Software Development](LLM-First-Software-Development-Lifecycle.md)
+**Connection to Other Pillars:** Rigor defines how humans exercise intentionality (Pillar 1) and validates improvements (Pillar 3). It's the structural foundation that makes the other pillars practical.
+
+**Read more:** [Human-Driven, LLM-Navigated Software Development](Human-Driven-LLM-Navigated-Software-Development.md)
 
 ---
 
-### Pillar 3: Radical Self-Improvement for LLMs
+### Pillar 3: Radical Self-Improvement for LLMs (Care)
 
-**Question:** How do LLM systems improve over time without constant human intervention?
+**Value:** Care — How do systems get better over time?
 
-**Answer:** Build systems that proactively detect inefficiencies and propose improvements.
+**Core Practice:** Build systems that proactively detect inefficiencies and propose improvements.
 
 **Key Insight:**
 > An LLM agent system should get measurably better at its job every week, automatically. Human oversight shifts from directing improvements to validating them.
 
-**Four Capabilities:**
-1. **Automated Maintenance** - Repository hygiene, documentation sync, dependency health
-2. **Continuous Self-Reflection** - Pattern detection, inefficiency analysis, root cause identification
-3. **PR Review Reviewer** - Meta-review that improves the review process itself
-4. **Strategic Human Escalation** - Surfacing systemic issues for human decision
+Care in software systems means treating the development process itself as something worth nurturing. Rather than accepting static tooling, we invest in systems that actively reflect on their own behavior and propose their own improvements.
+
+**The Caring System:**
+1. **Automated Maintenance** — Repository hygiene, documentation sync, dependency health
+2. **Continuous Self-Reflection** — Pattern detection, inefficiency analysis, root cause identification
+3. **PR Review Reviewer** — Meta-review that turns human feedback into automated checks
+4. **Strategic Human Escalation** — Surfacing systemic issues for human decision
+
+**Why Care:** Without care, systems stagnate. The same mistakes repeat. Technical debt accumulates. With care, every interaction becomes an opportunity for the system—and the team—to improve.
 
 **The Shift:**
 - **Old model:** Humans tell the system what to improve
 - **New model:** System proposes improvements, humans validate
 
-**Connection to Other Pillars:** Self-improvement learns from review patterns (Pillar 1) and operates within the human-driven collaboration model (Pillar 2).
+**Connection to Other Pillars:** Care learns from the intentional review patterns of Pillar 1 and operates within the rigorous collaboration model of Pillar 2.
 
 **Read more:** [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md)
 
@@ -146,11 +190,11 @@ Each pillar addresses a fundamental question. Together, they form a complete phi
 
 ## How They Work Together
 
-The three pillars are not independent options or sequential phases—they are mutually reinforcing aspects of a single philosophy:
+The three pillars—and their values of intentionality, rigor, and care—are not independent options or sequential phases. They are mutually reinforcing aspects of a single philosophy:
 
 ```
                     ┌──────────────────────────────────┐
-                    │          PHILOSOPHY              │
+                    │    INTENTIONALITY, RIGOR, CARE   │
                     │   "Each pillar supports the      │
                     │    weight of the whole idea"     │
                     └──────────────────────────────────┘
@@ -160,11 +204,10 @@ The three pillars are not independent options or sequential phases—they are mu
          ▼                         ▼                       ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌────────────────────┐
 │   PILLAR 1      │◀───▶│   PILLAR 2      │◀───▶│   PILLAR 3         │
-│   LLM-First     │     │   Human-Driven  │     │   Radical          │
-│   Code Reviews  │     │   LLM-Navigated │     │   Self-Improvement │
+│ (Intentionality)│     │    (Rigor)      │     │     (Care)         │
 │                 │     │                 │     │                    │
-│  Quality at     │     │  Collaboration  │     │  Continuous        │
-│  speed          │     │  model          │     │  evolution         │
+│  LLM-First      │     │  Human-Driven   │     │  Radical           │
+│  Code Reviews   │     │  LLM-Navigated  │     │  Self-Improvement  │
 └────────┬────────┘     └────────┬────────┘     └──────────┬─────────┘
          │                       │                         │
          └───────────────────────┼─────────────────────────┘
@@ -172,24 +215,25 @@ The three pillars are not independent options or sequential phases—they are mu
                                  ▼
                     ┌──────────────────────────────────┐
                     │       MUTUAL REINFORCEMENT       │
-                    │   Reviews generate improvement   │
-                    │   signals. Improvements enhance  │
-                    │   reviews. Both follow the       │
-                    │   collaboration model.           │
+                    │  Intentionality without rigor    │
+                    │  becomes chaos. Rigor without    │
+                    │  care becomes stagnation. Care   │
+                    │  without intentionality wastes   │
+                    │  effort on the wrong things.     │
                     └──────────────────────────────────┘
 ```
 
 **How they reinforce each other:**
 
-- **Rigor + Improvement → Quality → Feasible Reviews:** This is the foundational causal chain. When humans provide clear direction (Pillar 2) and systems continuously improve (Pillar 3), the resulting code is higher quality from the start. Higher quality code means fewer issues to catch in review, making LLM-first review (Pillar 1) not just possible but practical. Without this upstream quality, review becomes a bottleneck no matter how good the review process.
+- **Rigor + Care → Quality → Intentional Focus:** This is the foundational causal chain. When humans maintain rigorous collaboration (Pillar 2) and systems continuously improve with care (Pillar 3), the resulting code is higher quality from the start. Higher quality code means fewer issues to catch in review, allowing intentional focus (Pillar 1) on what truly matters.
 
-- **Reviews inform Self-Improvement:** Recurring review feedback becomes automated checks. Meta-review analyzes patterns across PRs.
+- **Intentionality informs Care:** When humans focus intentionally on strategic concerns, their review feedback becomes higher signal—exactly what self-improving systems need to learn from.
 
-- **Self-Improvement enhances Reviews:** Better prompts, smarter checks, fewer false positives—all from learning what works.
+- **Care enhances Intentionality:** As systems improve themselves, they handle more mechanical concerns automatically, freeing even more human attention for intentional focus.
 
-- **The Collaboration Model governs both:** The human-as-driver principle applies whether you're reviewing code, approving improvements, or designing the system.
+- **Rigor governs both:** The human-as-driver, LLM-as-navigator discipline applies whether you're reviewing code, approving improvements, or designing the system.
 
-- **Each pillar is incomplete without the others:** Reviews without improvement stagnate. Improvement without a collaboration model has no guardrails. Collaboration without review has no feedback loop.
+- **Each value requires the others:** Intentionality without rigor becomes scattered. Rigor without care becomes brittle. Care without intentionality wastes effort on the wrong improvements.
 
 ---
 
@@ -199,27 +243,27 @@ You don't adopt these pillars sequentially—you adopt them together as aspects 
 
 ### For Teams New to LLM Collaboration
 
-**Focus first on:** Understanding the collaboration model (Pillar 2). This provides the mental framework for everything else.
+**Start with rigor:** Establish the driver/navigator model (Pillar 2) before anything else. Without this structural discipline, the other pillars have no foundation.
 
-**Then establish:** Review practices (Pillar 1) that reflect the human/LLM division of labor.
+**Then add intentionality:** Once roles are clear, establish review practices (Pillar 1) that deliberately focus human attention on strategic concerns.
 
-**Build toward:** Self-improvement capabilities (Pillar 3) as the system matures.
+**Build toward care:** As the system matures, introduce self-improvement capabilities (Pillar 3) that learn from your team's patterns.
 
 ### For Teams Already Using LLM Tools
 
-**Assess:** Are your review practices keeping pace with LLM output speed? (Pillar 1)
+**Assess intentionality:** Are humans focused on what only humans can do? Or are they drowning in mechanical concerns? (Pillar 1)
 
-**Clarify:** Is there a consistent collaboration model, or does each team member interact with LLMs differently? (Pillar 2)
+**Assess rigor:** Is there a consistent collaboration model? Or does each team member interact with LLMs differently, producing inconsistent results? (Pillar 2)
 
-**Enable:** Are you learning from your experience, or making the same mistakes repeatedly? (Pillar 3)
+**Assess care:** Are you learning from your experience? Or making the same mistakes repeatedly with no mechanism for improvement? (Pillar 3)
 
-### Success Indicators Across All Pillars
+### Success Indicators
 
-| Dimension | What to Measure |
-|-----------|-----------------|
-| **Quality** | Defect rates, review iteration count, time to production |
-| **Collaboration** | Task specification clarity, first-attempt success rate, human cognitive load |
-| **Improvement** | Automated check growth, proposal acceptance rate, decreasing intervention |
+| Value | What to Measure |
+|-------|-----------------|
+| **Intentionality** | Human review time spent on strategic concerns vs. mechanical issues |
+| **Rigor** | Task specification clarity, first-attempt success rate, consistency across team members |
+| **Care** | Automated check growth, proposal acceptance rate, decreasing repetition of feedback |
 
 ---
 
@@ -295,30 +339,30 @@ Even self-improving systems need:
 
 ### Understand the Philosophy
 
-1. **Read Pillar 2 first** — The collaboration model provides the conceptual foundation
-2. **Then Pillar 1** — See how the collaboration model applies to review
-3. **Then Pillar 3** — Understand how the system improves over time
+1. **Read Pillar 2 first (Rigor)** — The driver/navigator model provides the structural foundation for everything else
+2. **Then Pillar 1 (Intentionality)** — See how to focus human attention where it creates irreplaceable value
+3. **Then Pillar 3 (Care)** — Understand how to build systems that continuously improve
 
 ### For Individual Contributors
 
-1. **Internalize the driver/navigator model** — You drive strategic decisions; LLMs navigate details
-2. **Trust appropriate automation** — If automated checks pass, focus on higher-level concerns
-3. **Give feedback intentionally** — Your input shapes how the system improves
-4. **Focus on what matters** — Strategy, architecture, business logic are your domain
+1. **Embrace rigor** — Internalize the driver/navigator model; you drive strategic decisions, LLMs navigate details
+2. **Practice intentionality** — If automated checks pass, focus on strategic concerns, not mechanical ones
+3. **Give feedback with care** — Your review feedback shapes how the system improves; make it high-signal
+4. **Resist the speed trap** — Quality and sustainability matter more than velocity
 
 ### For Tech Leads
 
-1. **Model the collaboration** — Demonstrate the driver/navigator dynamic with your team
-2. **Establish consistent practices** — Everyone should collaborate with LLMs the same way
-3. **Champion continuous improvement** — When you see patterns, help turn them into automated checks
-4. **Track meaningful metrics** — Quality, collaboration effectiveness, improvement rate
+1. **Model rigor** — Demonstrate the driver/navigator dynamic consistently with your team
+2. **Establish intentional practices** — Define clearly where human attention should focus
+3. **Champion care** — When you see recurring patterns, help turn them into automated improvements
+4. **Measure what matters** — Intentionality, rigor, and care—not just speed
 
 ### For Engineering Leadership
 
-1. **Set the vision** — Commit to LLM-augmented development as a philosophy, not just tooling
-2. **Invest holistically** — All three pillars need support, not just the technical ones
+1. **Reject the speed fallacy** — Commit to quality and sustainability, not velocity
+2. **Invest in all three values** — Intentionality, rigor, and care each need support and resources
 3. **Validate the model** — Ensure human oversight remains meaningful as automation grows
-4. **Learn and adapt** — This is a new paradigm; expect to iterate on your approach
+4. **Lead the mindset shift** — This is a new paradigm that requires cultural change, not just tooling
 
 ---
 
@@ -326,12 +370,12 @@ Even self-improving systems need:
 
 ### This Document Series
 
-| Document | Focus |
-|----------|-------|
-| [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-assisted review |
-| [Human-Driven, LLM-Navigated Development](LLM-First-Software-Development-Lifecycle.md) | Collaboration philosophy |
-| [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Autonomous improvement framework |
-| [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical implementation details |
+| Value | Document | Focus |
+|-------|----------|-------|
+| Intentionality | [LLM-First Code Reviews](../reference/llm-assisted-code-review.md) | Practical guide to LLM-assisted review |
+| Rigor | [Human-Driven, LLM-Navigated Development](Human-Driven-LLM-Navigated-Software-Development.md) | Collaboration philosophy |
+| Care | [Radical Self-Improvement for LLMs](Radical-Self-Improvement-for-LLMs.md) | Autonomous improvement framework |
+| — | [ADR: Coding Standards in a Post-LLM World](../adr/not-implemented/ADR-Coding-Standards-Post-LLM-World.md) | Technical implementation details |
 
 ### External Resources
 
