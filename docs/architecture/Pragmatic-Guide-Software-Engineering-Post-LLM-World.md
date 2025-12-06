@@ -68,7 +68,7 @@ Engineers are already overwhelmed. Adding "work with LLMs" to their responsibili
 
 - Rubber-stamping (approving without genuine review)
 - Cognitive overload (trying to manage LLM output without clear frameworks)
-- Inconsistency (different team members collaborating with LLMs differently)
+- Inconsistency (applying organizational standards differently)
 - Stagnation (no mechanism for the system to improve)
 
 We need practices that **reduce** human cognitive load while **increasing** code quality and enabling **continuous improvement**.
