@@ -11,7 +11,7 @@
 
 We are witnessing a fundamental shift in software engineering. Large Language Models have moved from experimental tools to practical collaborators capable of generating, reviewing, and maintaining code at unprecedented scale. This creates both opportunity and challenge: opportunity to amplify human capabilities, challenge to adapt our practices accordingly.
 
-But how we adapt matters. The dominant narrative—that LLMs will simply make everything faster—misses the point. The idea that speed is an inherent benefit of software development with LLMs is a fallacy. With the models that exist currently, we don't have a path forward for automating the job of software engineers generally. We do, however, have a path towards radically improving the software development lifecycle, leading to higher quality code while reducing cognitive load on engineers.
+But how we adapt matters. The dominant narrative—that LLMs will simply make everything faster—is misleading. The idea that speed is an inherent benefit of software development with LLMs is a fallacy. With the models that exist currently, we don't have a path forward for automating the job of software engineers generally. We do, however, have a path towards radically improving the software development lifecycle, leading to higher quality code while reducing cognitive load on engineers.
 
 But we can only navigate this path with **intentionality**, **rigor**, and **care**.
 
