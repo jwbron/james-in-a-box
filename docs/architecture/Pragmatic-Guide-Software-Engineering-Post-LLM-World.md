@@ -46,9 +46,9 @@ This document presents a **holistic philosophy** for software engineering in the
 
 There is a seductive narrative in the industry: LLMs will make software development faster. Ship more features. Move faster. 10x productivity.
 
-This framing misses the point.
+This narrative doesn't capture the subtlety of the reality we're facing.
 
-Speed without rigor creates technical debt. Speed without intentionality creates chaos. Speed without care creates systems that degrade over time. The real opportunity with LLMs is not to go faster—it's to go *better*.
+Speed without rigor creates technical debt. Speed without intentionality creates chaos. Speed without care creates systems that degrade over time. Speed as a metric is straightforward. Improving it is not.
 
 ### Three Shifts Require Three Responses
 
