@@ -35,6 +35,7 @@ ADRs are organized by implementation status:
 
 | ADR | Summary |
 |-----|---------|
+| [Codebase Analyzer Strategy](not-implemented/ADR-Codebase-Analyzer-Strategy.md) | Multi-layered codebase analysis with external best practices integration |
 | [Continuous System Reinforcement](not-implemented/ADR-Continuous-System-Reinforcement.md) | Systematic learning from breakages to strengthen the system |
 | [GCP Deployment](not-implemented/ADR-GCP-Deployment-Terraform.md) | Terraform-based GCP deployment |
 | [Internet Tool Access Lockdown](not-implemented/ADR-Internet-Tool-Access-Lockdown.md) | Security restrictions on agent network access |
