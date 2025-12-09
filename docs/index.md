@@ -19,6 +19,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [LLM Inefficiency Reporting](adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Self-improvement through inefficiency detection and reporting |
 | [Standardized Logging](adr/in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging with GCP compatibility |
 | [Multi-Agent Pipeline](adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Multi-agent pipeline design for complex tasks |
+| [Automated PR Review Agent](adr/not-implemented/ADR-Automated-PR-Review-Agent.md) | Bounded-context automated PR review agent |
 
 ### Architecture
 
@@ -103,6 +104,7 @@ When working on specific tasks, consult these documents first:
 | **Security-related changes** | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) | See open PR #243 for Internet Lockdown ADR |
 | **Context sync modifications** | [ADR: Context Sync](adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | [Setup Overview](setup/README.md) |
 | **GCP deployment changes** | See open PR #240 for ADR | See open PR #245 for Slack GCP ADR |
+| **PR review automation** | [ADR: PR Review Agent](adr/not-implemented/ADR-Automated-PR-Review-Agent.md) | [ADR: Autonomous SE](adr/in-progress/ADR-Autonomous-Software-Engineer.md) |
 | **Documentation updates** | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | This file |
 | **ADR research/generation** | [ADR Researcher](../host-services/analysis/adr-researcher/README.md) | [ADR: Doc Index Strategy](adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) |
 | **Feature discovery** | [Features Index](features/README.md) | [FEATURES.md](FEATURES.md), [Feature Analyzer](../host-services/analysis/feature-analyzer/README.md) |
