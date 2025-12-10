@@ -9,8 +9,8 @@ from importlib import import_module
 from textwrap import dedent
 
 
-# Import the module (it's a script, not a package)
-index_generator = import_module("index-generator")
+# Import the module (moved to jib-container/jib-tasks/analysis/utilities/)
+index_generator = import_module("index_generator")
 CodebaseIndexer = index_generator.CodebaseIndexer
 
 
