@@ -5,13 +5,10 @@ Tests for the codebase index generator.
 import json
 
 # Import will work due to conftest.py sys.path setup
-from importlib import import_module
 from textwrap import dedent
 
-
-# Import the module (it's a script, not a package)
-index_generator = import_module("index-generator")
-CodebaseIndexer = index_generator.CodebaseIndexer
+# Import from the new location in jib-container/jib-tasks/analysis/utilities/
+from index_generator import CodebaseIndexer
 
 
 class TestCodebaseIndexerInit:
