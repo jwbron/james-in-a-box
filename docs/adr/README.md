@@ -30,6 +30,8 @@ ADRs are organized by implementation status:
 | ADR | Summary |
 |-----|---------|
 | [Autonomous Software Engineer](in-progress/ADR-Autonomous-Software-Engineer.md) | Core system architecture, security model, operating principles |
+| [Standardized Logging Interface](in-progress/ADR-Standardized-Logging-Interface.md) | Structured JSON logging across all jib components (Phases 1-4 complete) |
+| [Log Analyzer - Error Classification](in-progress/ADR-Log-Analyzer-Error-Classification.md) | Claude-powered error detection and classification for centralized logs |
 
 ### Not Implemented
 
