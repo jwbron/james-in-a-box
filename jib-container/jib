@@ -1765,6 +1765,7 @@ def run_claude() -> bool:
         "--rm",  # Auto-remove container after exit
         "-it",   # Interactive with TTY
         "--name", container_id,
+        "-it",
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
@@ -1994,6 +1995,7 @@ def exec_in_new_container(
     cmd = [
         "docker", "run",
         "--name", container_id,
+        "-it",
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
@@ -2124,14 +2126,14 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         help="Timeout in minutes for --exec commands (default: 30)"
     )
     parser.add_argument(
-        "--exec",
-        nargs=argparse.REMAINDER,
-        help="Execute a command in a new ephemeral container (automatic cleanup)"
-    )
-    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)"
+    )
+    parser.add_argument(
+        "--exec",
+        nargs=argparse.REMAINDER,
+        help="Execute a command in a new ephemeral container (automatic cleanup)"
     )
 
     args = parser.parse_args()
