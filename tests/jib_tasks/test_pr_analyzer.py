@@ -440,7 +440,7 @@ class TestMain:
     def test_successful_analysis(self, mock_stop, temp_dir):
         """Test successful PR analysis."""
         # Import ClaudeResult for mocking
-        from claude import ClaudeResult
+        from llm import AgentResult as ClaudeResult
 
         # Create a mock ClaudeResult for successful run
         mock_result = ClaudeResult(
@@ -469,7 +469,7 @@ class TestMain:
             )
         )
 
-        with patch.object(pr_analyzer, "run_claude", return_value=mock_result) as mock_claude:
+        with patch.object(pr_analyzer, "run_agent", return_value=mock_result) as mock_claude:
             with patch.object(sys, "argv", ["pr-analyzer.py", str(context_file)]):
                 exit_code = pr_analyzer.main()
 

@@ -26,10 +26,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Import modules (installed as packages via pip)
-from claude import run_claude
 from enrichment import enrich_task
 from jib_logging import get_logger
+
+# Import modules (installed as packages via pip)
+from llm import run_agent
 
 
 # Initialize jib_logging logger
@@ -255,10 +256,9 @@ Process this task now."""
     # and provides consistent behavior across all Claude invocations
     logger.info("Starting Claude Code", task_id=original_task_id)
 
-    claude_result = run_claude(
+    claude_result = run_agent(
         prompt=prompt,
         cwd=Path.home() / "khan",  # Start in khan directory
-        capture_output=True,
     )
     logger.info("Claude completed", return_code=claude_result.returncode, task_id=original_task_id)
     if claude_result.stderr:
@@ -649,10 +649,9 @@ Process this response now."""
     # If we have a referenced notification, use that ID so slack-notifier threads correctly
     task_id = referenced_notif if referenced_notif else message_file.stem
 
-    claude_result = run_claude(
+    claude_result = run_agent(
         prompt=prompt,
         cwd=Path.home() / "khan",  # Start in khan directory
-        capture_output=True,
     )
     logger.info(
         "Claude completed", return_code=claude_result.returncode, task_id=task_id_for_search

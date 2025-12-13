@@ -51,13 +51,14 @@ class ClaudeResult:
 
 
 try:
-    from claude import is_claude_available, run_claude
+    from llm import run_agent
+
+    _claude_available = True
 except ImportError:
     # Fallback if shared module not available
-    def is_claude_available() -> bool:
-        return False
+    _claude_available = False
 
-    def run_claude(*args, **kwargs) -> ClaudeResult:
+    def run_agent(*args, **kwargs) -> ClaudeResult:
         return ClaudeResult(success=False, stdout="")
 
 
@@ -291,13 +292,10 @@ Provide the final formatted markdown document. Include all content, properly for
     def __init__(self, verbose: bool = False, project_root: Path | None = None):
         self.verbose = verbose
         self.project_root = project_root or Path.cwd()
-        self._available = None
 
     def is_available(self) -> bool:
-        """Check if Claude is available."""
-        if self._available is None:
-            self._available = is_claude_available()
-        return self._available
+        """Check if Claude Agent SDK is available."""
+        return _claude_available
 
     def analyze_context(
         self,
@@ -317,7 +315,7 @@ Provide the final formatted markdown document. Include all content, properly for
             existing_docs="\n".join(f"- {doc}" for doc in existing_docs[:10]) or "None found",
         )
 
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             timeout=self.DEFAULT_CONTEXT_TIMEOUT,
             stream=self.verbose,
@@ -398,7 +396,7 @@ Provide the final formatted markdown document. Include all content, properly for
             date=datetime.now(UTC).strftime("%Y-%m-%d"),
         )
 
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             timeout=self.DEFAULT_DRAFT_TIMEOUT,
             stream=self.verbose,
@@ -435,7 +433,7 @@ Provide the final formatted markdown document. Include all content, properly for
             code_examples="\n".join(context.code_examples[:10]) or "None",
         )
 
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             timeout=self.DEFAULT_REVIEW_TIMEOUT,
             stream=self.verbose,
@@ -489,7 +487,7 @@ Provide the final formatted markdown document. Include all content, properly for
             review_notes=review_notes,
         )
 
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             timeout=self.DEFAULT_FORMAT_TIMEOUT,
             stream=self.verbose,

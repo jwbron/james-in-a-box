@@ -70,7 +70,6 @@ repo_settings:
   jwbron/james-in-a-box:
     restrict_to_configured_users: true
     disable_auto_fix: true
-  jwbron/james-in-a-box:
+  jwbron/collaborative-development-framework:
     restrict_to_configured_users: true
     disable_auto_fix: true
-

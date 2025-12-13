@@ -33,8 +33,8 @@ from pathlib import Path
 # Import shared modules
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
 from beads import PRContextManager
-from claude import run_claude
 from jib_logging import ContextScope
+from llm import run_agent
 
 
 # Global PR context manager for beads integration
@@ -103,7 +103,7 @@ def handle_check_failure(context: dict):
     # This allows full access to tools and filesystem
     print("Invoking Claude for analysis...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, cwd=cwd)
+    result = run_agent(prompt, cwd=cwd)
 
     if result.success:
         print("Claude analysis completed successfully")
@@ -375,7 +375,7 @@ def handle_comment(context: dict):
     # This allows full access to tools and filesystem
     print("Invoking Claude for response generation...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, cwd=cwd)
+    result = run_agent(prompt, cwd=cwd)
 
     if result.success:
         print("Claude response generation completed")
@@ -660,7 +660,7 @@ def handle_review_request(context: dict):
     # This allows full access to tools and filesystem
     print("Invoking Claude for code review...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, cwd=cwd)
+    result = run_agent(prompt, cwd=cwd)
 
     if result.success:
         print("Claude code review completed")
@@ -967,7 +967,7 @@ def handle_merge_conflict(context: dict):
     # Run Claude Code via stdin
     print("Invoking Claude for conflict resolution...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, cwd=cwd)
+    result = run_agent(prompt, cwd=cwd)
 
     if result.success:
         print("Claude conflict resolution completed successfully")
@@ -1314,7 +1314,7 @@ def handle_pr_review_response(context: dict):
     # Run Claude Code via stdin
     print("Invoking Claude for review response...")
     cwd = repo_path if repo_path.exists() else Path.home() / "khan"
-    result = run_claude(prompt, cwd=cwd)
+    result = run_agent(prompt, cwd=cwd)
 
     if result.success:
         print("Claude review response completed successfully")

@@ -11,7 +11,7 @@ Container code should NOT import from host-services because:
 4. Clarity: Makes dependencies explicit and prevents accidental coupling
 
 CORRECT patterns:
-    - Import from within jib-container/ (e.g., from claude import run_claude)
+    - Import from within jib-container/ (e.g., from llm import run_agent)
     - Import from jib-container/jib-tasks/analysis/utilities/ for shared utilities
     - Standard library and pip-installed packages
 

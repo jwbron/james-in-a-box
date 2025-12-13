@@ -73,17 +73,85 @@ def error(msg: str) -> None:
         print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
 
 
-def check_claude_credentials() -> bool:
+def get_anthropic_api_key() -> Optional[str]:
     """
-    Check if Claude credentials exist.
+    Get Anthropic API key from environment or config file.
 
     Returns:
-        bool: credentials_exist
+        API key string if found, None otherwise.
     """
-    claude_dir = Path.home() / ".claude"
-    credentials_file = claude_dir / ".credentials.json"
+    # Check environment variable first
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return os.environ["ANTHROPIC_API_KEY"]
+    
+    # Check config file
+    api_key_file = Config.USER_CONFIG_DIR / "anthropic-api-key"
+    if api_key_file.exists():
+        return api_key_file.read_text().strip()
+    
+    return None
 
-    return credentials_file.exists()
+
+def get_google_api_key() -> Optional[str]:
+    """
+    Get Google API key from environment or config file.
+
+    Returns:
+        API key string if found, None otherwise.
+    """
+    # Check environment variables (support both names)
+    if os.environ.get("GOOGLE_API_KEY"):
+        return os.environ["GOOGLE_API_KEY"]
+    if os.environ.get("GEMINI_API_KEY"):
+        return os.environ["GEMINI_API_KEY"]
+    
+    # Check config file
+    api_key_file = Config.USER_CONFIG_DIR / "google-api-key"
+    if api_key_file.exists():
+        return api_key_file.read_text().strip()
+    
+    return None
+
+
+def get_openai_api_key() -> Optional[str]:
+    """
+    Get OpenAI API key from environment or config file.
+
+    Returns:
+        API key string if found, None otherwise.
+    """
+    if os.environ.get("OPENAI_API_KEY"):
+        return os.environ["OPENAI_API_KEY"]
+    
+    # Check config file
+    api_key_file = Config.USER_CONFIG_DIR / "openai-api-key"
+    if api_key_file.exists():
+        return api_key_file.read_text().strip()
+    
+    return None
+
+
+def get_llm_provider() -> str:
+    """
+    Get the LLM provider preference from environment or config file.
+
+    Returns:
+        Provider name: 'anthropic', 'openai', or 'google'
+    """
+    # Check environment variable
+    provider = os.environ.get("LLM_PROVIDER", "").lower()
+    if provider in ("anthropic", "openai", "google", "gemini"):
+        return "google" if provider == "gemini" else provider
+    
+    # Check config file
+    provider_file = Config.USER_CONFIG_DIR / "llm-provider"
+    if provider_file.exists():
+        provider = provider_file.read_text().strip().lower()
+        if provider in ("anthropic", "openai", "google", "gemini"):
+            return "google" if provider == "gemini" else provider
+    
+    # Default to anthropic
+    return "anthropic"
 
 
 class Config:
@@ -99,10 +167,6 @@ class Config:
     # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
     TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
-    # Shared Claude auth files only (NOT full .claude directory to avoid history sharing)
-    # Auth files: .credentials.json, settings.json
-    # Container creates its own ephemeral: history.jsonl, debug/, session-env/, etc.
-    CLAUDE_AUTH_DIR = CONFIG_DIR / "claude-auth"
     # Worktree base directory (ephemeral workspaces per container)
     WORKTREE_BASE = Path.home() / ".jib-worktrees"
 
@@ -668,7 +732,7 @@ def create_dockerfile() -> None:
     jib_container_dest = Config.CONFIG_DIR / "jib-container"
     jib_container_dest.mkdir(parents=True, exist_ok=True)
 
-    runtime_dirs = ["bin", "claude", "jib-tasks", "jib-tools", "scripts"]
+    runtime_dirs = ["bin", "llm", "jib-tasks", "jib-tools", "scripts"]
     for dir_name in runtime_dirs:
         src = script_dir / dir_name
         dest = jib_container_dest / dir_name
@@ -679,7 +743,7 @@ def create_dockerfile() -> None:
 
     # Copy shared directory from repo root to build context (sibling of jib-container)
     # The jib-tasks processors import shared modules (e.g., jib_logging, notifications)
-    # Note: claude module is in jib-container/claude/ (copied via runtime_dirs above)
+    # Note: llm module is in jib-container/llm/ (copied via runtime_dirs above)
     repo_root = script_dir.parent  # jib-container's parent is james-in-a-box
     shared_src = repo_root / "shared"
     shared_dest = Config.CONFIG_DIR / "shared"
@@ -705,6 +769,16 @@ def create_dockerfile() -> None:
     # Avoids issues with stale/revoked OAuth tokens from previous builds
     if not _quiet_mode:
         info("Claude credentials will be mounted from host at runtime (see setup output above)")
+
+    # Copy entrypoint.sh from script directory
+    entrypoint_src = script_dir / "entrypoint.sh"
+    entrypoint_dest = Config.CONFIG_DIR / "entrypoint.sh"
+    if entrypoint_src.exists():
+        shutil.copy(entrypoint_src, entrypoint_dest)
+        entrypoint_dest.chmod(0o755)
+    else:
+        error(f"entrypoint.sh not found at {entrypoint_src}")
+        error("Cannot build without entrypoint script")
 
     # Copy Dockerfile from script directory
     dockerfile_src = script_dir / "Dockerfile"
@@ -1418,7 +1492,6 @@ def setup() -> bool:
     # Sharing directory - single location for ALL persistent data
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
-    Config.CLAUDE_AUTH_DIR.mkdir(parents=True, exist_ok=True)  # claude-auth/ for auth files only
 
     sharing_container_path = f"/home/{os.environ['USER']}/sharing"
     # Add :z flag for SELinux systems
@@ -1435,38 +1508,20 @@ def setup() -> bool:
     # Create convenience symlink in container for tmp
     # Note: Actual symlink creation happens in container entrypoint
 
-    # Mount shared Claude auth files (NOT the whole .claude directory)
-    # This prevents history/session data from being shared across containers
-    # while still sharing authentication credentials
+    # Check Anthropic API key authentication
     print()
     print(f"{Colors.BOLD}Claude Code authentication...{Colors.NC}")
 
-    # Mount Claude auth directory (contains .credentials.json and settings.json)
-    # Container's entrypoint will copy these to ~/.claude/ on startup
-    claude_auth_container_path = f"/home/{os.environ['USER']}/.claude-auth"
-    mounts.append(f"{Config.CLAUDE_AUTH_DIR}:{claude_auth_container_path}:rw,z")
-
-    # Mount ~/.claude.json file (user state with userID)
-    claude_json_file = Config.CONFIG_DIR / "claude.json"
-    if not claude_json_file.exists():
-        # Initialize with empty JSON object (Claude Code will populate on first run)
-        claude_json_file.write_text("{}\n")
-    claude_json_container_path = f"/home/{os.environ['USER']}/.claude.json"
-    mounts.append(f"{claude_json_file}:{claude_json_container_path}:rw,z")
-
-    # Check if credentials already exist in shared directory
-    shared_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
-    if shared_creds.exists():
-        success("Claude credentials found in shared directory")
-        print(f"  Auth files shared via: {Config.CLAUDE_AUTH_DIR}")
-        print(f"  Session data: ephemeral (per-container)")
+    api_key = get_anthropic_api_key()
+    if api_key:
+        success("Anthropic API key configured")
+        print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
     else:
-        info("Claude credentials not yet configured")
-        print(f"  Auth files will be saved to: {Config.CLAUDE_AUTH_DIR}")
+        warn("Anthropic API key not configured")
+        print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+        print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
         print()
-        info("The first container will authenticate and save credentials.")
-        info("All other containers will automatically use the same credentials.")
-        info("Session history is NOT shared (each container has its own).")
+        info("Container will not be able to use Claude without an API key.")
 
     print()
     print("Add additional directories? (optional)")
@@ -1563,65 +1618,25 @@ def run_claude() -> bool:
         if not setup():
             return False
 
-    # Ensure shared authentication directory exists
+    # Check Anthropic API key authentication
     if _quiet_mode:
         status("Checking authentication...")
-    Config.CLAUDE_AUTH_DIR.mkdir(parents=True, exist_ok=True)
-    claude_json_file = Config.CONFIG_DIR / "claude.json"
-    if not claude_json_file.exists():
-        # Initialize with empty JSON object (Claude Code will populate on first run)
-        claude_json_file.write_text("{}\n")
-
-    # Migration: copy credentials from old shared directory if it exists
-    old_claude_dir = Config.CONFIG_DIR / "claude"  # Old location: ~/.jib/claude/
-    old_creds = old_claude_dir / ".credentials.json"
-    new_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
-    if old_creds.exists() and not new_creds.exists():
-        import shutil
-        info("Migrating credentials from old shared directory...")
-        shutil.copy2(old_creds, new_creds)
-        new_creds.chmod(0o600)
-        success("Credentials migrated to new auth-only directory")
-        print(f"  Old: {old_claude_dir} (can be deleted)")
-        print(f"  New: {Config.CLAUDE_AUTH_DIR}")
-        print()
-
-    # Check Claude Code authentication in shared auth directory
+    
+    api_key = get_anthropic_api_key()
+    
     if not _quiet_mode:
         print()
         print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
-        shared_creds = Config.CLAUDE_AUTH_DIR / ".credentials.json"
-
-        if shared_creds.exists():
-            try:
-                with open(shared_creds, 'r') as f:
-                    creds = json.load(f)
-
-                scopes = creds.get("claudeAiOauth", {}).get("scopes", [])
-                required_scopes = {
-                    "user:inference",
-                    "user:profile",
-                    "user:sessions:claude_code"
-                }
-
-                if required_scopes.issubset(set(scopes)):
-                    success("Claude Code authenticated with full scopes")
-                    print(f"  Auth shared via: {Config.CLAUDE_AUTH_DIR}")
-                    print(f"  Session history: ephemeral (per-container)")
-                else:
-                    warn("Claude Code credentials found but missing required scopes")
-                    warn("  Container will work with limited functionality (--print mode only)")
-                    print(f"  Location: {Config.CLAUDE_AUTH_DIR}")
-            except Exception as e:
-                warn(f"Could not read shared credentials: {e}")
-                warn("Container will prompt for authentication on first run")
+        if api_key:
+            success("Anthropic API key configured")
+            print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
         else:
-            info("Claude Code not yet authenticated")
-            info("Container will prompt for authentication on first launch")
-            info("Credentials will be saved and shared across all containers")
-            info("Session history is NOT shared (each container has its own)")
-            print(f"  Auth location: {Config.CLAUDE_AUTH_DIR}")
+            warn("Anthropic API key not configured")
+            print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+            print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
+            print()
+            warn("Container will not be able to use Claude without an API key.")
 
         print()
 
@@ -1810,13 +1825,29 @@ def run_claude() -> bool:
         if not _quiet_mode:
             info("GitHub readonly: Token configured for external repos")
 
+    # Add LLM provider preference and API keys
+    llm_provider = get_llm_provider()
+    cmd.extend(["-e", f"LLM_PROVIDER={llm_provider}"])
+    
+    # Add provider-specific API keys
+    google_api_key = get_google_api_key()
+    openai_api_key = get_openai_api_key()
+    
+    if google_api_key:
+        cmd.extend(["-e", f"GOOGLE_API_KEY={google_api_key}"])
+    if openai_api_key:
+        cmd.extend(["-e", f"OPENAI_API_KEY={openai_api_key}"])
+    
+    # Set Anthropic API key if available
+    # For non-Anthropic providers, the router handles auth via ANTHROPIC_AUTH_TOKEN
+    if api_key:
+        cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
+
     if not _quiet_mode:
+        info(f"LLM Provider: {llm_provider}")
         info("Network mode: Bridge (isolated from host, outbound HTTP only)")
         print("  Container can: Access Claude API, download packages")
         print("  Container cannot: Access host services, accept inbound connections")
-        print()
-
-        info("Claude authentication: Will authenticate with browser on first run")
         print()
 
     # Add mount arguments
@@ -2027,6 +2058,24 @@ def exec_in_new_container(
     github_readonly_token = get_github_readonly_token()
     if github_readonly_token:
         cmd.extend(["-e", f"GITHUB_READONLY_TOKEN={github_readonly_token}"])
+
+    # Add LLM provider preference and API keys
+    llm_provider = get_llm_provider()
+    cmd.extend(["-e", f"LLM_PROVIDER={llm_provider}"])
+    
+    # Add provider-specific API keys
+    api_key = get_anthropic_api_key()
+    google_api_key = get_google_api_key()
+    openai_api_key = get_openai_api_key()
+    
+    if google_api_key:
+        cmd.extend(["-e", f"GOOGLE_API_KEY={google_api_key}"])
+    if openai_api_key:
+        cmd.extend(["-e", f"OPENAI_API_KEY={openai_api_key}"])
+    
+    # Set Anthropic API key if available
+    if api_key:
+        cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
 
     # Add mount arguments
     cmd.extend(mount_args)

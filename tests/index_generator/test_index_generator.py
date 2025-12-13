@@ -10,7 +10,7 @@ from textwrap import dedent
 
 
 # Import the module (it's a script, not a package)
-index_generator = import_module("index-generator")
+index_generator = import_module("index_generator")
 CodebaseIndexer = index_generator.CodebaseIndexer
 
 

@@ -307,7 +307,7 @@ Please help with this task.
         notifications_dir = temp_dir / "sharing" / "notifications"
         notifications_dir.mkdir(parents=True)
 
-        # Mock run_claude directly since it uses subprocess.Popen in streaming mode
+        # Mock run_agent directly since it uses subprocess.Popen in streaming mode
         mock_result = MagicMock()
         mock_result.success = True
         mock_result.returncode = 0
@@ -318,14 +318,14 @@ Please help with this task.
         # Need to reload to pick up HOME change for Path.home()
         with (
             patch.object(Path, "home", return_value=temp_dir),
-            patch.object(incoming_processor, "run_claude", return_value=mock_result) as mock_claude,
+            patch.object(incoming_processor, "run_agent", return_value=mock_result) as mock_claude,
         ):
             result = incoming_processor.process_task(task_file)
 
         # Should complete successfully
         assert result is True
 
-        # run_claude should have been called
+        # run_agent should have been called
         mock_claude.assert_called_once()
 
 
@@ -358,7 +358,7 @@ Here is my response to your question.
         (temp_dir / "khan").mkdir()
         monkeypatch.setenv("HOME", str(temp_dir))
 
-        # Mock run_claude directly since it uses subprocess.Popen in streaming mode
+        # Mock run_agent directly since it uses subprocess.Popen in streaming mode
         mock_result = MagicMock()
         mock_result.success = True
         mock_result.returncode = 0
@@ -368,7 +368,7 @@ Here is my response to your question.
 
         with (
             patch.object(Path, "home", return_value=temp_dir),
-            patch.object(incoming_processor, "run_claude", return_value=mock_result) as mock_claude,
+            patch.object(incoming_processor, "run_agent", return_value=mock_result) as mock_claude,
         ):
             result = incoming_processor.process_response(response_file)
 

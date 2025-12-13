@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Import shared Claude runner
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
+from llm import run_agent
 
 
 def main():
@@ -154,7 +154,7 @@ For each ticket:
 Analyze these tickets now and take appropriate action."""
 
     # Run Claude Code
-    result = run_claude(prompt, capture_output=False)
+    result = run_agent(prompt)
 
     if result.success:
         print("✅ Ticket analysis complete")

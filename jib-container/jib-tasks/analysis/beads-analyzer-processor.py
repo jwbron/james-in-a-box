@@ -820,7 +820,7 @@ def run_claude_analysis(
 
     # Import claude module (shared/ is at repo root, not jib-container/shared)
     sys.path.insert(0, str(REPO_ROOT / "shared"))
-    from claude import run_claude
+    from llm import run_agent
 
     task_summaries = []
     for task in tasks[:50]:
@@ -949,7 +949,7 @@ Only output valid JSON, no other text."""
     analysis = ClaudeAnalysis()
 
     try:
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             timeout=120,
             cwd=REPO_ROOT,

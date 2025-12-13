@@ -249,37 +249,6 @@ class TestIsDangerousDir:
         assert jib.is_dangerous_dir(khan_dir) is False
 
 
-class TestCheckClaudeCredentials:
-    """Tests for Claude credentials checking."""
-
-    def test_no_claude_dir(self, temp_dir, monkeypatch):
-        """Test when .claude directory doesn't exist."""
-        # Use patch.object to mock Path.home() without reloading module
-        with patch.object(Path, "home", return_value=temp_dir):
-            result = jib.check_claude_credentials()
-            assert result is False
-
-    def test_no_credentials_file(self, temp_dir, monkeypatch):
-        """Test when credentials file doesn't exist."""
-        claude_dir = temp_dir / ".claude"
-        claude_dir.mkdir()
-
-        with patch.object(Path, "home", return_value=temp_dir):
-            result = jib.check_claude_credentials()
-            assert result is False
-
-    def test_credentials_exist(self, temp_dir, monkeypatch):
-        """Test when credentials file exists."""
-        claude_dir = temp_dir / ".claude"
-        claude_dir.mkdir()
-        creds_file = claude_dir / ".credentials.json"
-        creds_file.write_text('{"test": true}')
-
-        with patch.object(Path, "home", return_value=temp_dir):
-            result = jib.check_claude_credentials()
-            assert result is True
-
-
 class TestGenerateContainerId:
     """Tests for container ID generation."""
 

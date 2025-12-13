@@ -370,12 +370,12 @@ class TestHandlers:
             "failed_checks": [{"name": "test", "state": "FAILURE"}],
         }
 
-        # Mock run_claude instead of subprocess.run since the handler uses run_claude
-        with patch.object(github_processor, "run_claude") as mock_claude:
+        # Mock run_agent instead of subprocess.run since the handler uses run_agent
+        with patch.object(github_processor, "run_agent") as mock_claude:
             mock_claude.return_value = MagicMock(success=True, stdout="", stderr="")
             github_processor.handle_check_failure(context)
 
-            # Should invoke run_claude with a prompt
+            # Should invoke run_agent with a prompt
             mock_claude.assert_called_once()
             call_kwargs = mock_claude.call_args
             # First arg is the prompt
@@ -393,8 +393,8 @@ class TestHandlers:
             "comments": [{"author": "user", "body": "Please fix", "type": "comment"}],
         }
 
-        # Mock run_claude instead of subprocess.run since the handler uses run_claude
-        with patch.object(github_processor, "run_claude") as mock_claude:
+        # Mock run_agent instead of subprocess.run since the handler uses run_agent
+        with patch.object(github_processor, "run_agent") as mock_claude:
             mock_claude.return_value = MagicMock(success=True, stdout="", stderr="")
             github_processor.handle_comment(context)
 
@@ -420,9 +420,9 @@ class TestHandlers:
             "diff": "diff content",
         }
 
-        # Mock run_claude and subprocess.run for check_existing_review
+        # Mock run_agent and subprocess.run for check_existing_review
         with (
-            patch.object(github_processor, "run_claude") as mock_claude,
+            patch.object(github_processor, "run_agent") as mock_claude,
             patch("subprocess.run") as mock_subprocess,
         ):
             mock_claude.return_value = MagicMock(success=True, stdout="", stderr="")

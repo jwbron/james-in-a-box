@@ -83,6 +83,12 @@ declare -a SYMLINKS=(
     "analysis-processor:../jib-tasks/analysis/analysis-processor.py"
     "beads-analyzer-processor:../jib-tasks/analysis/beads-analyzer-processor.py"
     "doc-generator-processor:../jib-tasks/analysis/doc-generator-processor.py"
+    "feature_analyzer:../jib-tasks/analysis/feature_analyzer.py"
+    
+    # Analysis utilities
+    "confluence_doc_discoverer:../jib-tasks/analysis/utilities/confluence_doc_discoverer.py"
+    "docs_index_updater:../jib-tasks/analysis/utilities/docs_index_updater.py"
+    "index_generator:../jib-tasks/analysis/utilities/index_generator.py"
     "confluence-processor:../jib-tasks/confluence/confluence-processor.py"
     "github-command-handler:../jib-tasks/github/command-handler.py"
     "github-comment-responder:../jib-tasks/github/comment-responder.py"
