@@ -129,7 +129,7 @@ SLACK_APP_TOKEN="xapp-..."       # App-Level Token (Socket Mode)
 # Non-secret settings - safe to version control (without personal values)
 
 # Bot identity
-bot_name: "jib"
+bot_name: "james-in-a-box"
 github_username: ""              # Your GitHub username
 
 # Repositories
@@ -183,7 +183,7 @@ jib --setup --full               # Same as ./setup.py --full
 When run with default mode, setup.py prompts for:
 
 1. **GitHub username** (for repo configuration)
-2. **Bot name** (defaults to "jib")
+2. **Bot name** (defaults to "james-in-a-box")
 3. **Slack tokens** (required for core functionality)
 4. **GitHub App** or PAT configuration
 5. **Writable/readable repositories**
