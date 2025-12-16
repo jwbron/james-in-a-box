@@ -117,23 +117,22 @@ RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
 
 # Note: User will be created dynamically at runtime to match host UID/GID
 
-# Copy entrypoint script (extracted from inline for maintainability)
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Copy entrypoint script (Python for maintainability)
+COPY entrypoint.py /usr/local/bin/entrypoint.py
+RUN chmod +x /usr/local/bin/entrypoint.py
 
 # WORKDIR is set dynamically in entrypoint based on RUNTIME_USER
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["python3", "/usr/local/bin/entrypoint.py"]
 
 # =============================================================================
 # END OF DOCKERFILE
 # =============================================================================
-# The entrypoint script (entrypoint.sh) handles:
+# The entrypoint script (entrypoint.py) handles:
 # - User creation to match host UID/GID
-# - PostgreSQL and Redis startup
-# - Git configuration
-# - Worktree setup
+# - Git configuration and worktree setup
 # - Claude Code router configuration (multi-provider support)
+# - Agent rules installation (CLAUDE.md, GEMINI.md)
 # - Beads persistent memory initialization
 # - Interactive/exec mode handling
 # =============================================================================
