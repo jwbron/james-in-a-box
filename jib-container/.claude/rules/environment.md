@@ -4,7 +4,7 @@ You run in a sandboxed Docker container. Network: outbound HTTP/HTTPS only. No S
 
 ## Capabilities
 
-**CAN**: Read/edit `~/khan/`, run tests, `git push` (HTTPS), GitHub MCP (PRs, issues), PostgreSQL, Redis, Python, Node.js, Go, Java
+**CAN**: Read/edit `~/khan/`, run tests, `git push` (HTTPS), `gh` CLI (PRs, issues), PostgreSQL, Redis, Python, Node.js, Go, Java
 
 **CANNOT**: Merge PRs, SSH push, deploy to GCP/AWS, access production
 

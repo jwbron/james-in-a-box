@@ -72,7 +72,7 @@ declare -a SYMLINKS=(
     # Scripts - runtime utilities for the container
     "git:../scripts/git"  # Git wrapper to block remote modifications and validate push
     "git-credential-github-token:../scripts/git-credential-github-token"
-    "mcp-token-watcher:../scripts/mcp-token-watcher.py"
+    "gh:../scripts/gh"  # gh CLI wrapper to use fresh token from file
 
     # Tools - user-facing commands
     "discover-tests:../jib-tools/discover-tests.py"
@@ -83,6 +83,12 @@ declare -a SYMLINKS=(
     "analysis-processor:../jib-tasks/analysis/analysis-processor.py"
     "beads-analyzer-processor:../jib-tasks/analysis/beads-analyzer-processor.py"
     "doc-generator-processor:../jib-tasks/analysis/doc-generator-processor.py"
+    "feature_analyzer:../jib-tasks/analysis/feature_analyzer.py"
+    
+    # Analysis utilities
+    "confluence_doc_discoverer:../jib-tasks/analysis/utilities/confluence_doc_discoverer.py"
+    "docs_index_updater:../jib-tasks/analysis/utilities/docs_index_updater.py"
+    "index_generator:../jib-tasks/analysis/utilities/index_generator.py"
     "confluence-processor:../jib-tasks/confluence/confluence-processor.py"
     "github-command-handler:../jib-tasks/github/command-handler.py"
     "github-comment-responder:../jib-tasks/github/comment-responder.py"

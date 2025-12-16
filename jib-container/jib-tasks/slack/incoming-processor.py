@@ -26,10 +26,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Import modules (installed as packages via pip)
-from claude import run_claude
 from enrichment import enrich_task
 from jib_logging import get_logger
+
+# Import modules (installed as packages via pip)
+from llm import run_agent
 
 
 # Initialize jib_logging logger
@@ -219,8 +220,8 @@ bd --allow-stale update <id> --status in_progress
    - Commit changes with clear messages
 
 ### 4. Create PR (if code changes were made)
-   - Use GitHub MCP to create the PR: `create_pull_request(owner, repo, title, head, base, body)`
-   - Push the branch first using MCP `push_files` if needed
+   - Push the branch: `git push origin <branch>`
+   - Create PR: `gh pr create --title "..." --body "..." --base main --reviewer jwiesebron`
    - Request review from @jwiesebron
    - Your output will be captured and threaded correctly
 
@@ -245,7 +246,7 @@ Print a clear summary to stdout with:
 - **Create a PR after completing code changes** - this lets the user review on GitHub
 - **Beads is your persistent memory** - ALWAYS check and update beads
 - Working directory: You can access all repos in `~/khan/`
-- Use GitHub MCP to create PRs and request review from @jwiesebron
+- Use `gh pr create` to create PRs and request review from @jwiesebron
 - **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack notification automatically
 
 Process this task now."""
@@ -255,10 +256,9 @@ Process this task now."""
     # and provides consistent behavior across all Claude invocations
     logger.info("Starting Claude Code", task_id=original_task_id)
 
-    claude_result = run_claude(
+    claude_result = run_agent(
         prompt=prompt,
         cwd=Path.home() / "khan",  # Start in khan directory
-        capture_output=True,
     )
     logger.info("Claude completed", return_code=claude_result.returncode, task_id=original_task_id)
     if claude_result.stderr:
@@ -649,10 +649,9 @@ Process this response now."""
     # If we have a referenced notification, use that ID so slack-notifier threads correctly
     task_id = referenced_notif if referenced_notif else message_file.stem
 
-    claude_result = run_claude(
+    claude_result = run_agent(
         prompt=prompt,
         cwd=Path.home() / "khan",  # Start in khan directory
-        capture_output=True,
     )
     logger.info(
         "Claude completed", return_code=claude_result.returncode, task_id=task_id_for_search
@@ -784,25 +783,6 @@ def main():
 
     message_file = Path(sys.argv[1])
     logger.info("Starting incoming-processor", file=str(message_file))
-
-    # Refresh GitHub MCP authentication using existing mcp-token-watcher script
-    # This ensures GitHub MCP stays authenticated in long-running containers
-    try:
-        watcher_script = (
-            Path.home() / "khan/james-in-a-box/jib-container/scripts/mcp-token-watcher.py"
-        )
-        result = subprocess.run(
-            ["python3", str(watcher_script), "--once"],
-            check=False,
-            capture_output=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            logger.info("GitHub MCP authentication refreshed")
-        else:
-            logger.warning("MCP token refresh returned non-zero", returncode=result.returncode)
-    except Exception as e:
-        logger.warning("Failed to refresh GitHub MCP auth - continuing anyway", error=str(e))
 
     if not message_file.exists():
         logger.error("File not found", file=str(message_file))

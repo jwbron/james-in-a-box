@@ -54,8 +54,8 @@ def _find_claude_module_path() -> Path:
 sys.path.insert(0, str(_find_claude_module_path()))
 import contextlib
 
-from claude import run_claude
 from git_utils import get_default_branch
+from llm import run_agent
 
 
 def output_result(success: bool, result: dict | str | None = None, error: str | None = None):
@@ -87,7 +87,7 @@ def handle_llm_prompt(context: dict) -> int:
     if not prompt:
         return output_result(False, error="No prompt provided in context")
 
-    # Only pass timeout if explicitly provided; otherwise let run_claude use its default
+    # Only pass timeout if explicitly provided; otherwise let run_agent use its default
     timeout = context.get("timeout")
     cwd = context.get("cwd")
     if cwd:
@@ -100,7 +100,7 @@ def handle_llm_prompt(context: dict) -> int:
         if timeout is not None:
             kwargs["timeout"] = timeout
 
-        result = run_claude(**kwargs)
+        result = run_agent(**kwargs)
 
         return output_result(
             success=result.success,
@@ -172,7 +172,7 @@ After writing the file, confirm by saying "JSON written to {output_file}" but do
         if timeout is not None:
             kwargs["timeout"] = timeout
 
-        result = run_claude(**kwargs)
+        result = run_agent(**kwargs)
 
         # Read the JSON from the output file
         json_content = None
@@ -277,7 +277,7 @@ Output ONLY the updated documentation content. Do not include any explanation or
 """
 
     try:
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             cwd=Path(repo_root),
             stream=False,
@@ -539,7 +539,7 @@ Output ONLY the JSON array, no other text.
 """
 
     try:
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             cwd=Path(repo_root),
             stream=False,

@@ -2,6 +2,14 @@
 # ========================
 # Single entry point for common development tasks
 
+# Virtual environment configuration
+# The venv is in host-services/ and managed by uv
+VENV_DIR := host-services/.venv
+VENV_BIN := $(VENV_DIR)/bin
+PYTHON := $(VENV_BIN)/python
+RUFF := $(VENV_BIN)/ruff
+YAMLLINT := $(VENV_BIN)/yamllint
+
 .PHONY: help \
         test test-quick test-python test-bash \
         lint lint-fix lint-fix-jib \
@@ -10,7 +18,7 @@
         lint-yaml lint-yaml-fix \
         lint-docker lint-workflows \
         lint-host-services lint-container-paths lint-bin-symlinks \
-        install-linters check-linters
+        install-linters check-linters venv
 
 # Default target
 help:
@@ -49,19 +57,19 @@ help:
 
 # Run all tests using pytest
 test:
-	python -m pytest tests/ -v
+	$(PYTHON) -m pytest tests/ -v
 
 # Quick syntax-only check (no pytest overhead)
 test-quick:
-	python tests/run_tests.py --quick -v
+	$(PYTHON) tests/run_tests.py --quick -v
 
 # Run Python tests only
 test-python:
-	python -m pytest tests/test_python_syntax.py -v
+	$(PYTHON) -m pytest tests/test_python_syntax.py -v
 
 # Run Bash tests only
 test-bash:
-	python -m pytest tests/test_bash_syntax.py -v
+	$(PYTHON) -m pytest tests/test_bash_syntax.py -v
 
 # ============================================================================
 # Linting Targets
@@ -103,24 +111,30 @@ lint-fix-jib:
 # ----------------------------------------------------------------------------
 lint-python:
 	@echo "==> Linting Python files with ruff..."
-	@ruff check . || (echo "Python linting failed. Run 'make lint-python-fix' to auto-fix." && exit 1)
-	@ruff format --check . || (echo "Python formatting issues found. Run 'make lint-python-fix' to auto-fix." && exit 1)
+	@$(RUFF) check . || (echo "Python linting failed. Run 'make lint-python-fix' to auto-fix." && exit 1)
+	@$(RUFF) format --check . || (echo "Python formatting issues found. Run 'make lint-python-fix' to auto-fix." && exit 1)
 	@echo "Python linting passed!"
 
 lint-python-fix:
 	@echo "==> Fixing Python files with ruff..."
-	@ruff check --fix --unsafe-fixes .
-	@ruff format .
+	@$(RUFF) check --fix --unsafe-fixes .
+	@$(RUFF) format .
 	@echo "Python files fixed!"
 
 # ----------------------------------------------------------------------------
 # Shell (shellcheck + shfmt)
 # ----------------------------------------------------------------------------
-SHELL_FILES := $(shell find . -name "*.sh" -not -path "./.venv/*" -not -path "./venv/*" -not -path "./.git/*" 2>/dev/null)
+SHELL_FILES := $(shell find . -name "*.sh" -not -path "./.venv/*" -not -path "./venv/*" -not -path "./host-services/.venv/*" -not -path "./.git/*" 2>/dev/null)
 
 lint-shell:
 	@echo "==> Linting shell scripts with shellcheck..."
-	@if [ -n "$(SHELL_FILES)" ]; then \
+	@if ! command -v shellcheck >/dev/null 2>&1; then \
+		echo "ERROR: shellcheck not installed."; \
+		echo "Install with:"; \
+		echo "  Fedora/RHEL: sudo dnf install ShellCheck"; \
+		echo "  macOS: brew install shellcheck"; \
+		exit 1; \
+	elif [ -n "$(SHELL_FILES)" ]; then \
 		shellcheck --severity=warning $(SHELL_FILES) || (echo "Shell linting failed!" && exit 1); \
 		echo "Shell linting passed!"; \
 	else \
@@ -142,11 +156,11 @@ lint-shell-fix:
 # YAML (yamllint)
 # ----------------------------------------------------------------------------
 YAML_FILES := $(shell find . \( -name "*.yaml" -o -name "*.yml" \) \
-	-not -path "./.venv/*" -not -path "./venv/*" -not -path "./node_modules/*" -not -path "./.git/*" 2>/dev/null)
+	-not -path "./.venv/*" -not -path "./venv/*" -not -path "./host-services/.venv/*" -not -path "./node_modules/*" -not -path "./.git/*" 2>/dev/null)
 
 lint-yaml:
 	@echo "==> Linting YAML files with yamllint..."
-	@yamllint -c .yamllint.yaml . || (echo "YAML linting failed!" && exit 1)
+	@$(YAMLLINT) -c .yamllint.yaml . || (echo "YAML linting failed!" && exit 1)
 	@echo "YAML linting passed!"
 
 lint-yaml-fix:
@@ -162,7 +176,7 @@ lint-yaml-fix:
 		done; \
 		echo "YAML files fixed!"; \
 		echo "==> Running yamllint..."; \
-		yamllint -c .yamllint.yaml . || echo "Some YAML issues require manual fixes (see above)."; \
+		$(YAMLLINT) -c .yamllint.yaml . || echo "Some YAML issues require manual fixes (see above)."; \
 	else \
 		echo "No YAML files found."; \
 	fi
@@ -174,7 +188,14 @@ DOCKERFILES := $(shell find . -name "Dockerfile*" -not -path "./.venv/*" -not -p
 
 lint-docker:
 	@echo "==> Linting Dockerfiles with hadolint..."
-	@if [ -n "$(DOCKERFILES)" ]; then \
+	@if ! command -v hadolint >/dev/null 2>&1; then \
+		echo "ERROR: hadolint not installed."; \
+		echo "Install with:"; \
+		echo "  Fedora/RHEL: sudo dnf install hadolint"; \
+		echo "  macOS: brew install hadolint"; \
+		echo "  Manual: wget -O ~/.local/bin/hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-arm64 && chmod +x ~/.local/bin/hadolint"; \
+		exit 1; \
+	elif [ -n "$(DOCKERFILES)" ]; then \
 		for f in $(DOCKERFILES); do \
 			echo "  Checking $$f..."; \
 			hadolint --config .hadolint.yaml "$$f" || exit 1; \
@@ -202,9 +223,9 @@ lint-workflows:
 lint-host-services:
 	@echo "==> Checking host-services for forbidden patterns..."
 	@echo "  Checking for Claude imports..."
-	@python3 scripts/check-claude-imports.py
+	@$(PYTHON) scripts/check-claude-imports.py
 	@echo "  Checking for gh CLI write operations..."
-	@python3 scripts/check-gh-cli-usage.py
+	@$(PYTHON) scripts/check-gh-cli-usage.py
 	@echo "Host services checks passed!"
 
 # ----------------------------------------------------------------------------
@@ -212,28 +233,33 @@ lint-host-services:
 # ----------------------------------------------------------------------------
 lint-container-paths:
 	@echo "==> Checking for problematic sys.path patterns..."
-	@python3 scripts/check-container-paths.py
+	@$(PYTHON) scripts/check-container-paths.py
 
 # ----------------------------------------------------------------------------
 # Container Bin Symlinks Check
 # ----------------------------------------------------------------------------
 lint-bin-symlinks:
 	@echo "==> Checking jib-container/bin/ symlinks..."
-	@python3 scripts/check-bin-symlinks.py
+	@$(PYTHON) scripts/check-bin-symlinks.py
 
 # ============================================================================
 # Setup Targets
 # ============================================================================
 
+# Ensure venv exists and has dev dependencies
+venv:
+	@if [ ! -f "$(RUFF)" ]; then \
+		echo "==> Installing dev dependencies in host-services venv..."; \
+		cd host-services && uv pip install -e ".[dev]"; \
+	else \
+		echo "Dev dependencies already installed."; \
+	fi
+
 # Install all linting tools
-install-linters:
+install-linters: venv
 	@echo "Installing linting tools..."
 	@echo ""
-	@echo "==> Installing ruff (Python linter)..."
-	uv tool install ruff
-	@echo ""
-	@echo "==> Installing yamllint (YAML linter)..."
-	uv tool install yamllint
+	@echo "==> ruff and yamllint installed in venv via 'make venv'"
 	@echo ""
 	@echo "==> Checking for shfmt..."
 	@if ! command -v shfmt >/dev/null 2>&1; then \
@@ -282,14 +308,14 @@ install-linters:
 check-linters:
 	@echo "Checking linting tools..."
 	@echo ""
-	@echo -n "ruff: "
-	@if command -v ruff >/dev/null 2>&1; then ruff --version; else echo "NOT INSTALLED"; fi
+	@echo -n "ruff (venv): "
+	@if [ -f "$(RUFF)" ]; then $(RUFF) --version; else echo "NOT INSTALLED - run 'make venv'"; fi
+	@echo -n "yamllint (venv): "
+	@if [ -f "$(YAMLLINT)" ]; then $(YAMLLINT) --version; else echo "NOT INSTALLED - run 'make venv'"; fi
 	@echo -n "shfmt: "
 	@if command -v shfmt >/dev/null 2>&1; then shfmt --version; else echo "NOT INSTALLED"; fi
 	@echo -n "shellcheck: "
 	@if command -v shellcheck >/dev/null 2>&1; then shellcheck --version | head -1; else echo "NOT INSTALLED"; fi
-	@echo -n "yamllint: "
-	@if command -v yamllint >/dev/null 2>&1; then yamllint --version; else echo "NOT INSTALLED"; fi
 	@echo -n "hadolint: "
 	@if command -v hadolint >/dev/null 2>&1; then hadolint --version; else echo "NOT INSTALLED"; fi
 	@echo -n "actionlint: "

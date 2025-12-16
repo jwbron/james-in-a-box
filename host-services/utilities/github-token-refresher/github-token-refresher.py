@@ -10,7 +10,7 @@ Token Flow:
 1. This service generates a fresh token using github-app-token.py
 2. Token is written to ~/.jib-sharing/.github-token (JSON with metadata)
 3. Containers read from this file instead of relying on stale env vars
-4. Git credential helper and MCP server use the refreshed token
+4. Git credential helper and gh CLI use the refreshed token
 
 Usage:
     github-token-refresher.py [--once] [--verbose]

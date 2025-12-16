@@ -1,0 +1,136 @@
+#!/bin/bash
+#
+# gh CLI wrapper for jib container
+# Ensures fresh GitHub token is used for all gh operations.
+#
+# GitHub App installation tokens expire after 1 hour. This wrapper reads
+# the refreshed token from ~/sharing/.github-token (written by the
+# github-token-refresher host service) instead of relying on the stale
+# GITHUB_TOKEN environment variable set at container start.
+#
+# Token Sources (in priority order):
+#   1. ~/sharing/.github-token file (refreshed by github-token-refresher)
+#   2. GITHUB_TOKEN environment variable (fallback)
+#
+
+REAL_GH=/usr/bin/gh
+TOKEN_FILE="${HOME}/sharing/.github-token"
+
+# Function to show no token error message
+show_no_token_message() {
+    cat >&2 << 'EOF'
+
+================================================================================
+  GITHUB TOKEN NOT AVAILABLE
+================================================================================
+
+Cannot run gh command: No GitHub token available.
+
+The gh CLI requires authentication to interact with GitHub.
+
+Please check:
+  1. Container was launched via the jib launcher (provides GITHUB_TOKEN)
+  2. GitHub App is configured at ~/.config/jib/github-app-*
+  3. github-token-refresher service is running on host:
+     systemctl --user status github-token-refresher
+
+Token sources checked:
+  - ~/sharing/.github-token (not found or invalid)
+  - GITHUB_TOKEN environment variable (not set)
+
+================================================================================
+
+EOF
+    return 1
+}
+
+# Function to show token file expired warning
+show_token_expired_warning() {
+    local expires_at="$1"
+    cat >&2 << EOF
+
+================================================================================
+  WARNING: Token may be expired
+================================================================================
+
+Token from ~/sharing/.github-token may have expired.
+Expires at: $expires_at
+
+If you see authentication errors, try:
+  1. Check host service: systemctl --user status github-token-refresher
+  2. Force refresh: ~/.jib-sharing/.github-token-refresher/github-token-refresher.py --once
+
+Proceeding with potentially expired token...
+
+================================================================================
+
+EOF
+}
+
+# Get fresh token from file if available
+get_fresh_token() {
+    if [ -f "$TOKEN_FILE" ]; then
+        # Extract token from JSON file and check expiry
+        python3 -c "
+import json
+import sys
+from datetime import datetime, timezone
+
+try:
+    with open('$TOKEN_FILE') as f:
+        data = json.load(f)
+    
+    token = data.get('token', '')
+    if not token:
+        sys.exit(1)
+    
+    # Check expiry
+    expires_at_unix = data.get('expires_at_unix', 0)
+    now = datetime.now(timezone.utc).timestamp()
+    
+    # Output token and expiry status
+    # Format: token|expired|expires_at
+    expired = '1' if now > expires_at_unix else '0'
+    expires_at = data.get('expires_at', 'unknown')
+    
+    print(f'{token}|{expired}|{expires_at}')
+except Exception:
+    sys.exit(1)
+" 2>/dev/null
+    fi
+}
+
+# Try to get fresh token from file
+TOKEN_INFO=$(get_fresh_token)
+TOKEN_READ_SUCCESS=$?
+
+if [ $TOKEN_READ_SUCCESS -eq 0 ] && [ -n "$TOKEN_INFO" ]; then
+    # Parse token info: token|expired|expires_at
+    FRESH_TOKEN=$(echo "$TOKEN_INFO" | cut -d'|' -f1)
+    TOKEN_EXPIRED=$(echo "$TOKEN_INFO" | cut -d'|' -f2)
+    EXPIRES_AT=$(echo "$TOKEN_INFO" | cut -d'|' -f3)
+    
+    if [ -n "$FRESH_TOKEN" ]; then
+        # Warn if token appears expired
+        if [ "$TOKEN_EXPIRED" = "1" ]; then
+            show_token_expired_warning "$EXPIRES_AT"
+        fi
+        
+        # Use fresh token from file
+        export GH_TOKEN="$FRESH_TOKEN"
+    fi
+fi
+
+# Fall back to env var if no token from file
+if [ -z "$GH_TOKEN" ]; then
+    if [ -n "$GITHUB_TOKEN" ]; then
+        export GH_TOKEN="$GITHUB_TOKEN"
+    else
+        # No token available at all
+        show_no_token_message
+        exit 1
+    fi
+fi
+
+# Run the real gh CLI
+exec "$REAL_GH" "$@"

@@ -24,7 +24,7 @@ for _i in range(len(_script.parents)):
     if (_script.parents[_i] / "shared").is_dir():
         sys.path.insert(0, str(_script.parents[_i] / "shared"))
         break
-from claude import run_claude
+from llm import run_agent
 
 
 def main():
@@ -198,7 +198,7 @@ For each document:
 Analyze these documents now and take appropriate action."""
 
     # Run Claude Code
-    result = run_claude(prompt, capture_output=False)
+    result = run_agent(prompt)
 
     if result.success:
         print("✅ Documentation analysis complete")

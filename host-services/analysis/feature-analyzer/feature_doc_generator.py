@@ -96,7 +96,6 @@ CATEGORY_CONFIG = {
         "related_docs": [
             "[GitHub App Setup](../setup/github-app-setup.md)",
             "[PR Context Manager](workflow-context.md)",
-            "[GitHub MCP Environment](../reference/environment.md)",
         ],
     },
     "Self-Improvement System": {

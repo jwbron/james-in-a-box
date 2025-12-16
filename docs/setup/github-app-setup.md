@@ -72,12 +72,7 @@ The GitHub token is configured in your environment:
 export GITHUB_TOKEN="your-token-here"
 ```
 
-For the GitHub MCP server, the token is configured at container startup:
-
-```bash
-claude mcp add --transport http github "https://api.githubcopilot.com/mcp/" \
-    --header "Authorization: Bearer ${GITHUB_TOKEN}"
-```
+The `gh` CLI and `git push` automatically use this token for authentication.
 
 ## Verifying Permissions
 

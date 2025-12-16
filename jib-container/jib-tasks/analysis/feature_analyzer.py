@@ -5,7 +5,7 @@ Feature Analyzer - FEATURES.md Auto-Discovery (Container-Side Module)
 This module provides feature analysis capabilities for use INSIDE the jib container.
 It scans repositories and identifies features using LLM-powered analysis.
 
-IMPORTANT: This module runs ONLY inside the container and uses run_claude directly.
+IMPORTANT: This module runs ONLY inside the container and uses run_agent directly.
 Host-side code should use jib_exec to invoke analysis-processor.py, which then
 imports this module.
 
@@ -63,18 +63,18 @@ def _find_claude_module_path() -> Path:
 
 sys.path.insert(0, str(_find_claude_module_path()))
 
-# Import run_claude directly - this module runs only inside the container
-from claude import run_claude
+# Import run_agent directly - this module runs only inside the container
+from llm import run_agent
 
 
 def _run_llm_prompt(
     repo_root: Path, prompt: str, context_name: str = ""
 ) -> tuple[bool, str, str | None]:
     """
-    Run an LLM prompt via run_claude.
+    Run an LLM prompt via run_agent.
 
     This function is used by both WeeklyAnalyzer and RepoAnalyzer for LLM calls.
-    It runs inside the container and calls run_claude directly.
+    It runs inside the container and calls run_agent directly.
 
     Args:
         repo_root: Path to the repository root
@@ -85,7 +85,7 @@ def _run_llm_prompt(
         Tuple of (success, stdout, error_message)
     """
     try:
-        result = run_claude(prompt=prompt, cwd=repo_root, stream=False)
+        result = run_agent(prompt=prompt, cwd=repo_root)
 
         if result.success:
             return (True, result.stdout, None)
@@ -94,7 +94,7 @@ def _run_llm_prompt(
             return (False, "", error)
 
     except Exception as e:
-        return (False, "", f"run_claude error: {e}")
+        return (False, "", f"run_agent error: {e}")
 
 
 def _run_llm_prompt_to_file(
@@ -134,7 +134,7 @@ Use the Write tool to write the JSON array to {output_file}. Do NOT just print t
 After writing the file, confirm by saying "JSON written to {output_file}" but do NOT include the JSON content in your response."""
 
     try:
-        run_claude(prompt=enhanced_prompt, cwd=repo_root, stream=False)
+        run_agent(prompt=enhanced_prompt, cwd=repo_root)
 
         # Read the JSON from the output file
         json_content = None
@@ -160,7 +160,7 @@ After writing the file, confirm by saying "JSON written to {output_file}" but do
         # Clean up temp file on error
         with contextlib.suppress(OSError):
             output_path.unlink()
-        return (False, None, f"run_claude error: {e}")
+        return (False, None, f"run_agent error: {e}")
 
 
 @dataclass
@@ -270,9 +270,9 @@ class WeeklyAnalyzer:
 
     def _run_llm_prompt(self, prompt: str, context_name: str = "") -> tuple[bool, str, str | None]:
         """
-        Run an LLM prompt via run_claude.
+        Run an LLM prompt via run_agent.
 
-        This module runs inside the container and calls run_claude directly.
+        This module runs inside the container and calls run_agent directly.
 
         Args:
             prompt: The prompt to send to the LLM
@@ -1433,9 +1433,9 @@ class RepoAnalyzer:
 
     def _run_llm_prompt(self, prompt: str, context_name: str = "") -> tuple[bool, str, str | None]:
         """
-        Run an LLM prompt via run_claude.
+        Run an LLM prompt via run_agent.
 
-        This module runs inside the container and calls run_claude directly.
+        This module runs inside the container and calls run_agent directly.
 
         Args:
             prompt: The prompt to send to the LLM

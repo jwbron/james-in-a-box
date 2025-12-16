@@ -215,16 +215,11 @@ Processes user commands received via Slack for GitHub operations like 'review PR
 ### 19. GitHub App Token Generator
 **Location:** `jib-container/jib-tools/github-app-token.py`
 
-Generates short-lived (1 hour) GitHub App installation access tokens from stored credentials. Used by jib launcher to authenticate MCP server and git operations without SSH keys.
-
-### 20. MCP Token Watcher
-**Location:** `jib-container/scripts/mcp-token-watcher.py`
-
-Daemon that monitors the shared GitHub token file and automatically reconfigures the GitHub MCP server when the token changes. Ensures MCP server always uses valid tokens.
+Generates short-lived (1 hour) GitHub App installation access tokens from stored credentials. Used by jib launcher to authenticate gh CLI and git operations without SSH keys.
 
 ## Self-Improvement System
 
-### 21. LLM Trace Collector
+### 20. LLM Trace Collector
 **Location:**
 - `host-services/analysis/trace-collector/trace_collector.py`
 - `host-services/analysis/trace-collector/hook_handler.py`
@@ -243,7 +238,7 @@ Collects structured traces of LLM tool calls for inefficiency analysis. Records 
 - **Trace Reader and Query CLI** (`host-services/analysis/trace-collector/trace_reader.py`)
   - Utilities for reading, querying, and analyzing collected traces with filtering, export, and summary capabilities.
 
-### 22. LLM Inefficiency Detector
+### 21. LLM Inefficiency Detector
 **Location:**
 - `host-services/analysis/inefficiency-detector/inefficiency_detector.py`
 - `host-services/analysis/inefficiency-detector/inefficiency_schema.py`
@@ -267,7 +262,7 @@ Analyzes LLM trace sessions to detect processing inefficiencies such as tool dis
 - **Weekly Report Generator** (`host-services/analysis/inefficiency-detector/weekly_report_generator.py`)
   - Automates weekly inefficiency analysis with PR creation and Slack notifications for human-in-the-loop approval.
 
-### 23. Beads Integration Analyzer
+### 22. Beads Integration Analyzer
 **Location:**
 - `host-services/analysis/beads-analyzer/beads-analyzer.py`
 - `host-services/analysis/beads-analyzer/README.md`
@@ -289,7 +284,7 @@ Analyzes health and effectiveness of the Beads task tracking system across the j
 - **Beads Health Report Generator** (`jib-container/jib-tasks/analysis/beads-analyzer-processor.py`)
   - Generates comprehensive markdown reports with health scores, metrics tables, and trend comparison.
 
-### 24. Conversation Analyzer Service
+### 23. Conversation Analyzer Service
 **Location:**
 - `host-services/analysis/conversation-analyzer/conversation-analyzer.service`
 - `host-services/analysis/conversation-analyzer/conversation-analyzer.timer`
@@ -299,7 +294,7 @@ Weekly analysis service that analyzes Slack/GitHub conversation patterns to iden
 
 ## Documentation System
 
-### 25. Feature Analyzer Service
+### 24. Feature Analyzer Service
 **Location:**
 - `host-services/analysis/feature-analyzer/feature-analyzer.py`
 - `host-services/analysis/feature-analyzer/adr_watcher.py`
@@ -307,7 +302,7 @@ Weekly analysis service that analyzes Slack/GitHub conversation patterns to iden
 
 Automated feature detection and documentation sync workflow implementing ADR detection, multi-doc updates with LLM generation, PR creation, validation/rollback tooling, and full repository analysis for comprehensive feature lists.
 
-### 26. ADR Researcher Service
+### 25. ADR Researcher Service
 **Location:**
 - `host-services/analysis/adr-researcher/adr-researcher.py`
 - `host-services/analysis/adr-researcher/README.md`
@@ -331,12 +326,12 @@ Research-driven ADR workflow tool that researches open ADR PRs, updates merged A
 - **Structured Research Result Parser** (`host-services/analysis/adr-researcher/adr-researcher.py`)
   - Parses Claude's markdown research output into strongly-typed Python dataclasses.
 
-### 27. ADR Processor
+### 26. ADR Processor
 **Location:** `jib-container/jib-tasks/adr/adr-processor.py`
 
 Container-side dispatcher for ADR research tasks. Receives context from host-side adr-researcher via jib --exec and dispatches to specialized handlers for researching, generating, and reviewing ADRs.
 
-### 28. Documentation Generator Pipeline
+### 27. Documentation Generator Pipeline
 **Location:**
 - `host-services/analysis/doc-generator/doc-generator.py`
 - `host-services/analysis/doc-generator/setup.sh`
@@ -352,12 +347,12 @@ A 4-agent pipeline (Context, Draft, Review, Output) that automatically generates
 - **Documentation PR Creation** (`host-services/analysis/doc-generator/setup.sh`)
   - Automated GitHub PR creation for generated documentation changes with descriptive messages.
 
-### 29. Documentation Drift Detector
+### 28. Documentation Drift Detector
 **Location:** `host-services/analysis/doc-generator/drift-detector.py`, `bin/check-doc-drift`
 
 Compares documentation against current code to find discrepancies such as references to deleted files, stale line references, broken markdown links, and outdated paths. Provides suggestions for fixes.
 
-### 30. Codebase Index Generator
+### 29. Codebase Index Generator
 **Location:**
 - `host-services/analysis/index-generator/index-generator.py`
 - `host-services/analysis/index-generator/setup.sh`
@@ -366,29 +361,29 @@ Compares documentation against current code to find discrepancies such as refere
 
 Analyzes Python codebases to generate machine-readable JSON indexes (codebase.json, patterns.json, dependencies.json) for efficient LLM navigation without loading entire files into context.
 
-### 31. Spec Enricher CLI
+### 30. Spec Enricher CLI
 **Location:** `host-services/analysis/spec-enricher/spec-enricher.py`, `host-services/analysis/spec-enricher/setup.sh`
 
 Command-line tool that enriches task specifications with relevant documentation links and code examples. Accepts specs from files or stdin and outputs in multiple formats (YAML, JSON, Markdown).
 
-### 32. Documentation Link Fixer
+### 31. Documentation Link Fixer
 **Location:** `scripts/fix-doc-links.py`
 
 Automatically fixes broken links in documentation files by updating links to moved files, removing references to deleted files, and fixing relative path issues.
 
-### 33. Confluence Documentation Watcher
+### 32. Confluence Documentation Watcher
 **Location:** `jib-container/jib-tasks/confluence/confluence-processor.py`
 
 Monitors Confluence documentation for changes focusing on ADRs and Runbooks. Uses Claude to analyze content and impact, creates tracking tasks in Beads, and sends notifications.
 
-### 34. Documentation Index
+### 33. Documentation Index
 **Location:** `docs/index.md`
 
 Central navigation hub for all james-in-a-box documentation following the llms.txt standard for efficient LLM navigation.
 
 ## Custom Commands
 
-### 35. Claude Custom Commands
+### 34. Claude Custom Commands
 **Location:** `jib-container/.claude/commands/README.md`
 
 Slash command system for common agent operations including context management, PR creation, task status, and metrics display.
@@ -400,7 +395,7 @@ Slash command system for common agent operations including context management, P
 - **Save Context Command** (`jib-container/.claude/commands/save-context.md`)
   - Saves current session knowledge using ACE methodology (Generation -> Reflection -> Curation) to context documents.
 - **Create PR Command** (`jib-container/.claude/commands/create-pr.md`)
-  - Automated PR creation with smart description generation, JIRA issue extraction, and GitHub MCP integration.
+  - Automated PR creation with smart description generation, JIRA issue extraction, and gh CLI integration.
 - **Beads Status Command** (`jib-container/.claude/commands/beads-status.md`)
   - Displays current Beads task status with ready, in-progress, blocked, and completed tasks plus recommendations.
 - **Beads Sync Command** (`jib-container/.claude/commands/beads-sync.md`)
@@ -412,7 +407,7 @@ Slash command system for common agent operations including context management, P
 
 ## Container Infrastructure
 
-### 36. JIB Container Management System
+### 35. JIB Container Management System
 **Location:**
 - `bin/jib`
 - `bin/view-logs`
@@ -428,12 +423,12 @@ The core 'jib' command provides the primary interface for starting, managing, an
 - **Container Log Viewer** (`bin/view-logs`)
   - Provides convenient access to Docker container logs for debugging and monitoring container activity.
 
-### 37. Docker Development Environment Setup
+### 36. Docker Development Environment Setup
 **Location:** `bin/docker-setup.py`
 
 Automates complete installation of Khan Academy development tools in the Docker container, including Python 3.11, Node.js 20.x, Go, Java 11, PostgreSQL, Redis, and various development utilities with cross-platform support for Ubuntu and Fedora.
 
-### 38. Analysis Task Processor
+### 37. Analysis Task Processor
 **Location:** `jib-container/jib-tasks/analysis/analysis-processor.py`, `jib-container/jib-tasks/analysis/__init__.py`
 
 Container-side dispatcher handling various analysis tasks via jib --exec. Provides task routing for LLM prompts, documentation generation, feature extraction, and PR creation.
@@ -449,44 +444,44 @@ Container-side dispatcher handling various analysis tasks via jib --exec. Provid
 - **Container-Based PR Creation** (`jib-container/jib-tasks/analysis/analysis-processor.py`)
   - Creates GitHub PRs directly from container's isolated git worktree via gh CLI.
 
-### 39. Session End Hook
+### 38. Session End Hook
 **Location:** `jib-container/.claude/hooks/session-end.sh`, `jib-container/.claude/README.md`
 
 Claude Code session hook that automatically executes the Beads session-ending protocol when sessions end. Warns about in-progress tasks, shows open tasks, and syncs the Beads database.
 
-### 40. Container Directory Communication System
+### 39. Container Directory Communication System
 **Location:** `jib-container/README.md`
 
 Shared directory structure enabling communication between container and host including notifications (agent -> human), incoming (human -> agent), responses, and context directories.
 
 ## Utilities
 
-### 41. Documentation Search Utility
+### 40. Documentation Search Utility
 **Location:** `host-services/sync/context-sync/utils/search.py`
 
 Provides local full-text search across all synced documentation with context and relevance ranking. Supports filtering by space, case-sensitive search, and statistics display.
 
-### 42. Sync Maintenance Tools
+### 41. Sync Maintenance Tools
 **Location:** `host-services/sync/context-sync/utils/maintenance.py`
 
 Provides sync status monitoring showing statistics across spaces and pages, and cleanup utilities to find and remove orphaned files.
 
-### 43. Symlink Management for Projects
+### 42. Symlink Management for Projects
 **Location:** `host-services/sync/context-sync/utils/create_symlink.py`, `host-services/sync/context-sync/utils/link_to_khan_projects.py`
 
 Tools to create and manage symlinks from other projects to synced documentation, making it available in multiple Khan Academy projects.
 
-### 44. Rate Limiting Handler
+### 43. Rate Limiting Handler
 **Location:** `host-services/sync/context-sync/connectors/jira/sync.py`, `host-services/sync/context-sync/connectors/confluence/sync.py`
 
 Automatic rate limit detection and retry logic for both JIRA and Confluence APIs with Retry-After header respect and configurable delays.
 
-### 45. Codebase Index Query Tool
+### 44. Codebase Index Query Tool
 **Location:** `host-services/analysis/index-generator/query-index.py`
 
 CLI tool for querying generated codebase indexes with subcommands for summaries, components, patterns, dependencies, structure, and search across all indexes.
 
-### 46. Worktree Watcher Service
+### 45. Worktree Watcher Service
 **Location:**
 - `host-services/utilities/worktree-watcher/worktree-watcher.sh`
 - `host-services/utilities/worktree-watcher/worktree-watcher.service`
@@ -494,14 +489,14 @@ CLI tool for querying generated codebase indexes with subcommands for summaries,
 
 Automatically cleans up orphaned git worktrees and temporary branches from stopped/crashed jib containers every 15 minutes. Prevents accumulation, saves disk space, and safely deletes branches only when work is captured.
 
-### 47. Test Discovery Tool
+### 46. Test Discovery Tool
 **Location:** `jib-container/scripts/discover-tests.py`, `jib-container/jib-tools/discover-tests.py`
 
 Dynamically discovers test configurations and frameworks in any codebase. Supports Python (pytest/unittest), JavaScript (Jest/Mocha/Vitest/Playwright), Go, and Java (Gradle/Maven). Provides recommended test commands.
 
 ## Security Features
 
-### 48. GitHub Token Refresher Service
+### 47. GitHub Token Refresher Service
 **Location:**
 - `host-services/utilities/github-token-refresher/github-token-refresher.py`
 - `host-services/utilities/github-token-refresher/github-token-refresher.service`
@@ -511,7 +506,7 @@ Systemd daemon that automatically refreshes GitHub App installation tokens every
 
 ## Configuration
 
-### 49. Master Setup System
+### 48. Master Setup System
 **Location:** `setup.sh`
 
 Comprehensive installation and configuration script for all james-in-a-box host components. Handles initial setup, updates, and force reinstalls with interactive prompts, dependency checking, service management, and configuration validation.
@@ -531,12 +526,12 @@ Comprehensive installation and configuration script for all james-in-a-box host 
 - **Docker Image Pre-Build** (`setup.sh`)
   - Pre-builds the james-in-a-box Docker image during setup so the first 'jib' command runs quickly.
 
-### 50. Interactive Configuration Setup
+### 49. Interactive Configuration Setup
 **Location:** `host-services/sync/context-sync/utils/setup.py`
 
 Interactive setup wizard for configuring connector credentials and settings with secure credential storage in environment files with proper permissions.
 
-### 51. Claude Agent Rules System
+### 50. Claude Agent Rules System
 **Location:**
 - `jib-container/.claude/rules/mission.md`
 - `jib-container/.claude/rules/environment.md`
@@ -552,7 +547,7 @@ Core behavioral configuration defining the Claude agent's role, operating model,
 - **Agent Mission Rules** (`jib-container/.claude/rules/mission.md`)
   - Defines agent's role, workflow (beads -> context -> plan -> implement -> test -> PR), decision framework, and quality standards.
 - **Sandbox Environment Rules** (`jib-container/.claude/rules/environment.md`)
-  - Documents technical constraints of sandboxed Docker environment including security model and GitHub MCP configuration.
+  - Documents technical constraints of sandboxed Docker environment including security model and gh CLI configuration.
 - **Khan Academy Development Standards** (`jib-container/.claude/rules/khan-academy.md`)
   - Tech stack, code standards for Python and JavaScript, testing requirements, and common commands.
 - **PR Description Guidelines** (`jib-container/.claude/rules/pr-descriptions.md`)

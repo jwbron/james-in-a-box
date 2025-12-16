@@ -24,7 +24,7 @@ from pathlib import Path
 
 # Import shared Claude runner
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
+from llm import run_agent
 
 
 def load_context(context_file: Path) -> dict:
@@ -347,11 +347,11 @@ def analyze_with_claude(prompt: str, interactive: bool = False) -> bool:
 
     if interactive:
         # Interactive mode - show output in real-time
-        result = run_claude(prompt, cwd=cwd, capture_output=False)
+        result = run_agent(prompt, cwd=cwd)
         return result.success
     else:
         # Non-interactive - capture output
-        result = run_claude(prompt, cwd=cwd)
+        result = run_agent(prompt, cwd=cwd)
 
         if result.success:
             print("=" * 60)

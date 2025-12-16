@@ -108,9 +108,8 @@ These affect developer experience and consistency.
 | 2.3 | **Missing pr-reviewer.py** | Command Handler (#18) | `command-handler.py` | References script that may not exist at expected path |
 | 2.4 | **Conversation Analyzer missing** | Feature #24 | Unknown | Documented in FEATURES.md but implementation not found |
 | 2.5 | **Feature Analyzer deps** | Feature Analyzer (#25) | `feature-analyzer.py` | Imports doc_generator, pr_creator, rollback modules - verify they exist |
-| 2.6 | **Verbose flag not implemented** | MCP Token Watcher (#20) | `mcp-token-watcher.py` | --verbose flag exists but doesn't change logging level |
 
-**Estimated effort:** 3-4 hours total
+**Estimated effort:** 2-3 hours total
 
 ### P3: Code Quality and Maintenance
 

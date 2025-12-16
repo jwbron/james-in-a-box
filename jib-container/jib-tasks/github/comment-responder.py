@@ -65,8 +65,8 @@ _repo_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(_repo_root / "jib-container"))  # for claude
 sys.path.insert(0, str(_repo_root / "shared"))  # for jib_logging, notifications
 try:
-    from claude import is_claude_available, run_claude
     from jib_logging import get_logger
+    from llm import run_agent
 
     from notifications import NotificationContext, get_slack_service
 except ImportError as e:
@@ -289,8 +289,9 @@ class CommentResponder:
             raise RuntimeError("claude CLI not found - required for response generation")
 
     def _check_claude_cli(self) -> bool:
-        """Check if claude CLI is available."""
-        return is_claude_available()
+        """Check if Claude Agent SDK is available."""
+        # SDK is always installed in the jib container
+        return True
 
     def load_state(self) -> dict:
         """Load previously processed comment IDs."""
@@ -692,7 +693,7 @@ Now process the pending comments and take the appropriate actions."""
 
         # Change to repo directory if available
         cwd = repo_dir if repo_dir else Path.home() / "khan"
-        result = run_claude(prompt, cwd=cwd)
+        result = run_agent(prompt, cwd=cwd)
 
         if not result.success:
             print(f"  {result.error}")
@@ -835,7 +836,7 @@ IMPORTANT:
 Return ONLY the JSON, no other text."""
 
         print("  Calling Claude to generate response...")
-        result = run_claude(prompt)
+        result = run_agent(prompt)
 
         if not result.success:
             print(f"  {result.error}")
@@ -1097,7 +1098,7 @@ After making changes, output a JSON summary:
 Make the changes now using the available tools (Read, Edit, Write, Bash for git commands)."""
 
             # Use claude with full tool access for making changes
-            result = run_claude(prompt, cwd=repo_dir)
+            result = run_agent(prompt, cwd=repo_dir)
 
             if not result.success:
                 print(f"  Code change failed: {result.error}")
@@ -1204,7 +1205,7 @@ After making changes, output a JSON summary:
 Make the changes now using the available tools (Read, Edit, Write, Bash for git commands)."""
 
             # Use claude with full tool access for making changes
-            result = run_claude(prompt, cwd=repo_dir)
+            result = run_agent(prompt, cwd=repo_dir)
 
             if not result.success:
                 print(f"  Code change failed: {result.error}")

@@ -30,7 +30,7 @@ from pathlib import Path
 
 # Import shared modules
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "shared"))
-from claude import run_claude
+from llm import run_agent
 
 
 def utc_now_iso() -> str:
@@ -62,7 +62,7 @@ def handle_research_adr(context: dict) -> dict:
 
     # Run Claude for research
     print("Invoking Claude for research...")
-    result = run_claude(prompt, cwd=Path.home() / "khan")
+    result = run_agent(prompt, cwd=Path.home() / "khan")
 
     if result.success:
         print("Claude research completed successfully")
@@ -262,7 +262,7 @@ def handle_generate_adr(context: dict) -> dict:
 
     # Run Claude for generation
     print("Invoking Claude for ADR generation...")
-    result = run_claude(prompt, cwd=Path.home() / "khan" / "james-in-a-box")
+    result = run_agent(prompt, cwd=Path.home() / "khan" / "james-in-a-box")
 
     if result.success:
         print("Claude ADR generation completed successfully")
@@ -503,7 +503,7 @@ def handle_review_adr(context: dict) -> dict:
 
     # Run Claude for review
     print("Invoking Claude for ADR review...")
-    result = run_claude(prompt, cwd=Path.home() / "khan" / "james-in-a-box")
+    result = run_agent(prompt, cwd=Path.home() / "khan" / "james-in-a-box")
 
     if result.success:
         print("Claude ADR review completed successfully")
@@ -733,7 +733,7 @@ Begin research now.
 
     # Run Claude for research
     print("Invoking Claude for topic research...")
-    result = run_claude(prompt, cwd=Path.home() / "khan")
+    result = run_agent(prompt, cwd=Path.home() / "khan")
 
     if result.success:
         print("Claude topic research completed successfully")

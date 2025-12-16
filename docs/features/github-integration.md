@@ -176,21 +176,14 @@ readable_repos:
 
 ### GitHub App Token Generator
 
-**Purpose**: Generates short-lived (1 hour) GitHub App installation access tokens from stored credentials. Used by jib launcher to authenticate MCP server and git operations without SSH keys.
+**Purpose**: Generates short-lived (1 hour) GitHub App installation access tokens from stored credentials. Used by jib launcher to authenticate gh CLI and git operations without SSH keys.
 
 **Location**: `jib-container/jib-tools/github-app-token.py`
-
-### MCP Token Watcher
-
-**Purpose**: Daemon that monitors the shared GitHub token file and automatically reconfigures the GitHub MCP server when the token changes. Ensures MCP server always uses valid tokens.
-
-**Location**: `jib-container/scripts/mcp-token-watcher.py`
 
 ## Related Documentation
 
 - [GitHub App Setup](../setup/github-app-setup.md)
 - [PR Context Manager](workflow-context.md)
-- [GitHub MCP Environment](../../jib-container/.claude/rules/environment.md)
 
 ## Source Files
 
@@ -204,7 +197,6 @@ readable_repos:
 | PR Analyzer Tool | `host-services/analysis/analyze-pr/analyze-pr.py` |
 | GitHub Command Handler | `jib-container/jib-tasks/github/command-handler.py` |
 | GitHub App Token Generator | `jib-container/jib-tools/github-app-token.py` |
-| MCP Token Watcher | `jib-container/scripts/mcp-token-watcher.py` |
 
 ---
 

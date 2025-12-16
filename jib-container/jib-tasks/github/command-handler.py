@@ -38,13 +38,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path.home() / "khan" / "james-in-a-box" / "shared"))
 
 try:
-    from claude import is_claude_available, run_claude
+    from llm import run_agent
+
+    _claude_available = True
 except ImportError:
     # Fallback if shared module not available
-    def is_claude_available() -> bool:
-        return False
+    _claude_available = False
 
-    def run_claude(*args, **kwargs):
+    def run_agent(*args, **kwargs):
         return None
 
 
@@ -124,13 +125,11 @@ If no commands are found, return:
 
     def __init__(self, verbose: bool = False):
         self.verbose = verbose
-        self._available = None
 
     def is_available(self) -> bool:
-        """Check if Claude is available for parsing."""
-        if self._available is None:
-            self._available = is_claude_available()
-        return self._available
+        """Check if Claude Agent SDK is available for parsing."""
+        # Returns True if import succeeded, False otherwise
+        return _claude_available
 
     def parse_message(self, content: str) -> list[ParsedCommand]:
         """Parse a message for commands using Claude.
@@ -150,7 +149,7 @@ If no commands are found, return:
         prompt = self.COMMAND_PARSE_PROMPT.format(message=content[: self.MAX_MESSAGE_LENGTH])
 
         # Call Claude
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             timeout=self.PARSE_TIMEOUT_SECONDS,
             stream=self.verbose,

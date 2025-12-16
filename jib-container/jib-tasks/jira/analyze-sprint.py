@@ -34,7 +34,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Import Claude module (installed as package via pip)
-from claude import is_claude_available, run_claude
+from llm import run_agent
 
 
 @dataclass
@@ -141,13 +141,11 @@ Respond with JSON only (no markdown code blocks):
 
     def __init__(self, verbose: bool = False):
         self.verbose = verbose
-        self._available = None
 
     def is_available(self) -> bool:
-        """Check if Claude is available for analysis."""
-        if self._available is None:
-            self._available = is_claude_available()
-        return self._available
+        """Check if Claude Agent SDK is available for analysis."""
+        # SDK is always installed in the jib container
+        return True
 
     def analyze_ticket(self, ticket: dict) -> TicketAnalysis | None:
         """Analyze a single ticket using Claude."""
@@ -169,7 +167,7 @@ Respond with JSON only (no markdown code blocks):
         )
 
         # Call Claude
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             timeout=60,  # 1 minute per ticket
             stream=self.verbose,
@@ -238,7 +236,7 @@ Respond with JSON only (no markdown code blocks):
             tickets_json=tickets_json,
         )
 
-        result = run_claude(
+        result = run_agent(
             prompt=prompt,
             timeout=90,  # 1.5 minutes for batch analysis
             stream=self.verbose,

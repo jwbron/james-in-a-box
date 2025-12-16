@@ -41,9 +41,13 @@ def check_file_for_claude_import(file_path: Path) -> list[tuple[int, str]]:
     """
     violations = []
 
-    # Patterns that indicate direct Claude/Anthropic usage
+    # Patterns that indicate direct Claude/Anthropic/LLM usage
     forbidden_patterns = [
-        # Claude module (container-only)
+        # LLM module (container-only - unified interface)
+        r"^\s*from\s+llm\s+import",  # from llm import ...
+        r"^\s*import\s+llm\b",  # import llm
+        r"^\s*from\s+llm\.",  # from llm.module import ...
+        # Claude module (container-only - backward compat wrapper)
         r"^\s*from\s+claude\s+import",  # from claude import ...
         r"^\s*import\s+claude\b",  # import claude
         r"^\s*from\s+claude\.",  # from claude.module import ...

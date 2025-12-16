@@ -125,7 +125,7 @@ Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handle
 |--------|-------------|---------|
 | **Confluence** | Hourly file sync | ADRs, runbooks, engineering docs |
 | **JIRA** | Hourly file sync | Open tickets, epics, sprint data |
-| **GitHub** | MCP (on-demand) | PRs, issues, commits, file contents |
+| **GitHub** | `gh` CLI (on-demand) | PRs, issues, commits, file contents |
 | **Web (on-demand)** | As needed | Latest docs, research, advisories |
 
 **Post-Sync Intelligence:**
@@ -384,7 +384,7 @@ jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly docum
 | [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | In Progress | Core system architecture, security model, self-improvement |
 | [Standardized Logging Interface](docs/adr/in-progress/ADR-Standardized-Logging-Interface.md) | Implemented | Structured JSON logging with tool wrappers and OpenTelemetry alignment |
 | [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | Implemented | How documentation is structured for efficient LLM navigation |
-| [Context Sync Strategy](docs/adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Partially Implemented | GitHub MCP active, JIRA MCP pending, Confluence custom sync retained |
+| [Context Sync Strategy](docs/adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Partially Implemented | GitHub via gh CLI, JIRA via file sync, Confluence custom sync retained |
 | [Feature Analyzer Documentation Sync](docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Implemented | Automated sync between ADRs and FEATURES.md |
 | [LLM Inefficiency Reporting](docs/adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Implemented | Detecting and reporting inefficient LLM operations |
 | [Multi-Agent Pipeline Architecture](docs/adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Proposed | Multi-agent orchestration with sequential, parallel, and conditional patterns |
@@ -412,7 +412,7 @@ jib separates concerns between the host machine and the sandboxed container:
 │  ├── Access to synced context (read-only)                           │
 │  ├── Code workspace (read-write, isolated worktree)                 │
 │  ├── Beads task memory (persistent, git-backed, shared across runs) │
-│  └── GitHub MCP server (PR/issue operations)                        │
+│  └── GitHub CLI (PR/issue operations)                               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -459,7 +459,7 @@ For detailed component documentation, see:
 **Sandbox Isolation:**
 - No SSH keys (git push via GitHub App token credential helper)
 - No cloud credentials (can't deploy)
-- Network: Outbound HTTP only (Claude API, packages, GitHub MCP)
+- Network: Outbound HTTP only (Claude API, packages, GitHub API)
 - Container: No inbound ports, bridge networking
 
 ## Roadmap
@@ -479,9 +479,8 @@ For detailed component documentation, see:
 - ✅ Beads health monitoring and task tracking analysis
 
 **Phase 2** (In Progress):
-- ✅ GitHub MCP server integration (real-time PR/issue access)
-- 🔄 JIRA MCP server integration (pending)
-- 🔄 Bi-directional operations (update JIRA tickets via MCP)
+- ✅ GitHub CLI integration (real-time PR/issue access)
+- 🔄 Bi-directional operations (update JIRA tickets)
 - 🔄 Enhanced security filtering (content classification, allowlists)
 - 🔄 Documentation drift detection and auto-update
 

@@ -19,7 +19,6 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 | JIRA | `~/context-sync/jira/` | Tickets, requirements, sprint info |
 | Slack | `~/sharing/incoming/` | Task requests |
 | Beads | `~/beads/` | Persistent task memory |
-| **GitHub MCP** | Real-time API access | PRs, issues, repos, comments |
 
 Before complex tasks, consult `~/khan/james-in-a-box/docs/index.md` for task-specific guides.
 
@@ -39,7 +38,7 @@ bd --allow-stale update <id> --status closed --notes "Summary"
 ## GitHub Operations
 
 - **Push code**: `git push origin <branch>` (HTTPS only, GitHub App token)
-- **Create PRs**: Use GitHub MCP `create_pull_request(owner, repo, title, head, base, body)`
+- **Create PRs**: `gh pr create --title "..." --body "..." --base main`
 - **Get owner/repo**: Check `git remote -v` first - don't assume
 
 ## Workflow
@@ -54,7 +53,7 @@ bd --allow-stale update <id> --status closed --notes "Summary"
 ```bash
 git add <files> && git commit -m "Brief description"
 git push origin <branch>
-# Then use MCP: create_pull_request(...)
+gh pr create --title "Brief description" --body "..." --base main
 ```
 
 **Commit Attribution**: Author is `jib <jib@khan.org>`. NEVER include "Claude Code" or "Co-Authored-By: Claude".
@@ -74,7 +73,7 @@ git branch --show-current && git log --oneline -3
 
 ### PR Lifecycle
 
-**Before updating a PR**: Check status via MCP `get_pull_request`. If merged/closed, create NEW PR.
+**Before updating a PR**: Check status via `gh pr view`. If merged/closed, create NEW PR.
 
 **Updating existing PR**: Checkout branch → make changes → push → update description if scope changed.
 
@@ -84,10 +83,10 @@ git branch --show-current && git log --oneline -3
 
 ### Responding to PR Reviews
 
-**Reply INLINE to each comment** (not general comments). Use MCP:
-1. `pull_request_review_write(method="create", ...)` - create pending review
-2. `add_comment_to_pending_review(...)` - add inline replies
-3. `pull_request_review_write(method="submit_pending", ...)` - submit
+**Reply INLINE to each comment** (not general comments). Use `gh`:
+```bash
+gh pr review <PR> --comment --body "Response to review comments"
+```
 
 **Response format**: `**Agreed.** [what changed]` | `**Disagree.** [reasoning]`
 
