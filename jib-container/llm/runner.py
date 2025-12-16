@@ -55,7 +55,7 @@ def run_interactive(config: LLMConfig | None = None) -> None:
 
 def _launch_claude_interactive(config: LLMConfig) -> None:
     """Launch Claude Code CLI in interactive mode."""
-    cmd = ["claude", "--dangerously-skip-permissions"]
+    cmd = ["claude", "--dangerously-skip-permissions", "--model", "claude-opus-4-5"]
 
     # Set up environment for Claude
     env = os.environ.copy()
@@ -70,7 +70,7 @@ def _launch_claude_interactive(config: LLMConfig) -> None:
     env.setdefault("DISABLE_COST_WARNINGS", "1")
     env.setdefault("NO_PROXY", "127.0.0.1")
 
-    print("[llm] Launching Claude Code...")
+    print("[llm] Launching Claude Code with Opus 4.5...")
     os.execvpe(cmd[0], cmd, env)
 
 
