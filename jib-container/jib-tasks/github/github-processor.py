@@ -399,7 +399,7 @@ def build_comment_prompt(context: dict, beads_id: str | None = None) -> str:
 
     # Extract owner and repo name for use in f-strings
     repo_parts = repo.split("/")
-    owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
+    repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
     repo_name = repo_parts[-1]
 
     prompt = f"""# PR Comment Response
@@ -693,7 +693,7 @@ def build_review_prompt(
 
     # Extract owner and repo name for use in f-strings
     repo_parts = repo.split("/")
-    owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
+    repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
     repo_name = repo_parts[-1]
 
     # Build different instructions based on readonly mode
@@ -1320,7 +1320,7 @@ def build_pr_review_response_prompt(
         beads_context = pr_context_manager.get_context_summary(repo, pr_num)
 
     repo_parts = repo.split("/")
-    owner = repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
+    repo_parts[0] if len(repo_parts) > 1 else context.get("owner", "OWNER")
     repo_name = repo_parts[-1]
 
     # Format reviews
