@@ -594,6 +594,298 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+class MinimalSetup:
+    """Handles the minimal setup flow."""
+
+    def __init__(self, logger: SetupLogger, config_manager: ConfigManager, prompter: UserPrompter, verbose: bool = False):
+        self.logger = logger
+        self.config_manager = config_manager
+        self.prompter = prompter
+        self.verbose = verbose
+
+    def detect_github_username(self) -> Optional[str]:
+        """Try to detect GitHub username from gh CLI."""
+        try:
+            result = subprocess.run(
+                ["gh", "api", "user", "--jq", ".login"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        return None
+
+    def prompt_github_username(self) -> str:
+        """Prompt for GitHub username with auto-detection."""
+        self.logger.header("GitHub Configuration")
+
+        detected = self.detect_github_username()
+        if detected:
+            self.logger.info(f"Detected GitHub username: {detected}")
+            if self.prompter.prompt_yes_no("Use this username?", default=True):
+                return detected
+
+        return self.prompter.prompt(
+            "Enter your GitHub username",
+            required=True
+        )
+
+    def prompt_bot_name(self) -> str:
+        """Prompt for bot name."""
+        return self.prompter.prompt(
+            "Bot name",
+            default="james-in-a-box",
+            required=True
+        )
+
+    def validate_slack_token(self, token: str, prefix: str):
+        """Validate Slack token has correct prefix."""
+        if not token.startswith(prefix):
+            raise ValueError(f"Token must start with '{prefix}'")
+
+    def prompt_slack_tokens(self) -> dict[str, str]:
+        """Prompt for Slack tokens with validation."""
+        self.logger.header("Slack Integration")
+        self.logger.info("Get tokens from: https://api.slack.com/apps")
+        self.logger.info("")
+
+        bot_token = self.prompter.prompt(
+            "Slack Bot Token (xoxb-...)",
+            required=True,
+            validator=lambda t: self.validate_slack_token(t, "xoxb-")
+        )
+
+        app_token = self.prompter.prompt(
+            "Slack App Token (xapp-...)",
+            required=True,
+            validator=lambda t: self.validate_slack_token(t, "xapp-")
+        )
+
+        return {
+            "SLACK_TOKEN": bot_token,
+            "SLACK_APP_TOKEN": app_token,
+        }
+
+    def prompt_github_auth(self) -> dict[str, str]:
+        """Prompt for GitHub authentication (App or PAT)."""
+        self.logger.header("GitHub Authentication")
+        self.logger.info("Choose authentication method:")
+        self.logger.info("  1. GitHub App (recommended for team usage)")
+        self.logger.info("  2. Personal Access Token (simpler for personal use)")
+        self.logger.info("")
+
+        choice = self.prompter.prompt(
+            "Choose authentication method [1/2]",
+            default="2",
+            validator=lambda c: None if c in ["1", "2"] else ValueError("Choose 1 or 2")
+        )
+
+        secrets = {}
+
+        if choice == "1":
+            # GitHub App configuration
+            self.logger.info("\nGitHub App Configuration")
+            self.logger.info("You'll need: App ID, Installation ID, and Private Key")
+            self.logger.info("")
+
+            app_id = self.prompter.prompt("GitHub App ID", required=True)
+            installation_id = self.prompter.prompt("GitHub App Installation ID", required=True)
+            private_key_path = self.prompter.prompt(
+                "Path to private key file",
+                required=True
+            )
+
+            # Read and store private key
+            try:
+                private_key_file = Path(private_key_path).expanduser()
+                if not private_key_file.exists():
+                    self.logger.error(f"Private key file not found: {private_key_path}")
+                    return self.prompt_github_auth()  # Retry
+
+                # Create GitHub App config files
+                gh_app_id_file = self.config_manager.config_dir / "github-app-id"
+                gh_app_installation_file = self.config_manager.config_dir / "github-app-installation-id"
+                gh_app_key_file = self.config_manager.config_dir / "github-app-private-key.pem"
+
+                gh_app_id_file.write_text(app_id)
+                gh_app_installation_file.write_text(installation_id)
+                gh_app_key_file.write_text(private_key_file.read_text())
+
+                # Secure permissions
+                os.chmod(gh_app_id_file, 0o600)
+                os.chmod(gh_app_installation_file, 0o600)
+                os.chmod(gh_app_key_file, 0o600)
+
+                self.logger.success("GitHub App configuration saved")
+
+            except Exception as e:
+                self.logger.error(f"Failed to read private key: {e}")
+                return self.prompt_github_auth()  # Retry
+
+        else:
+            # Personal Access Token
+            self.logger.info("\nPersonal Access Token Configuration")
+            self.logger.info("Create a token at: https://github.com/settings/tokens")
+            self.logger.info("Required scopes: repo, workflow")
+            self.logger.info("")
+
+            token = self.prompter.prompt(
+                "GitHub Personal Access Token (ghp_...)",
+                required=True,
+                validator=lambda t: None if t.startswith("ghp_") else ValueError("Token must start with 'ghp_'")
+            )
+
+            secrets["GITHUB_TOKEN"] = token
+
+            # Optionally prompt for read-only token
+            if self.prompter.prompt_yes_no("Do you have a separate read-only token for monitoring external repos?", default=False):
+                readonly_token = self.prompter.prompt(
+                    "GitHub Read-Only Token (ghp_...)",
+                    validator=lambda t: None if t.startswith("ghp_") else ValueError("Token must start with 'ghp_'")
+                )
+                if readonly_token:
+                    secrets["GITHUB_READONLY_TOKEN"] = readonly_token
+
+        return secrets
+
+    def prompt_repositories(self, github_username: str) -> tuple[list[str], list[str]]:
+        """Prompt for repository configuration."""
+        self.logger.header("Repository Configuration")
+
+        default_writable = f"{github_username}/james-in-a-box"
+        self.logger.info(f"Default writable repo: {default_writable}")
+        self.logger.info("")
+
+        writable_repos = [default_writable]
+
+        if self.prompter.prompt_yes_no("Add more writable repositories?", default=False):
+            self.logger.info("Enter repositories one per line (empty line to finish):")
+            while True:
+                repo = self.prompter.prompt("Repository (owner/name)")
+                if not repo:
+                    break
+                writable_repos.append(repo)
+
+        readable_repos = []
+        if self.prompter.prompt_yes_no("Add read-only repositories to monitor?", default=False):
+            self.logger.info("Enter repositories one per line (empty line to finish):")
+            while True:
+                repo = self.prompter.prompt("Repository (owner/name)")
+                if not repo:
+                    break
+                readable_repos.append(repo)
+
+        return writable_repos, readable_repos
+
+    def get_slack_channel_id(self) -> str:
+        """Try to get the user's Slack DM channel ID."""
+        self.logger.info("\nFinding your Slack DM channel...")
+        self.logger.info("You can find your channel ID by:")
+        self.logger.info("  1. Open Slack")
+        self.logger.info("  2. Click on your DM with the bot")
+        self.logger.info("  3. Look at the URL: /client/T.../D... <- that D... is your channel ID")
+        self.logger.info("")
+
+        channel_id = self.prompter.prompt(
+            "Slack channel ID (starts with D, C, or G)",
+            validator=lambda c: None if c and c[0] in ['D', 'C', 'G'] else ValueError("Channel ID must start with D, C, or G")
+        )
+
+        return channel_id if channel_id else ""
+
+    def get_slack_user_id(self) -> str:
+        """Prompt for Slack user ID."""
+        self.logger.info("\nYour Slack User ID is needed for access control.")
+        self.logger.info("Find it at: Slack -> Profile -> More -> Copy member ID")
+        self.logger.info("")
+
+        user_id = self.prompter.prompt(
+            "Your Slack user ID (starts with U)",
+            validator=lambda u: None if u and u.startswith('U') else ValueError("User ID must start with U")
+        )
+
+        return user_id if user_id else ""
+
+    def run(self) -> bool:
+        """Run the minimal setup flow.
+
+        Returns:
+            True if setup completed successfully, False otherwise.
+        """
+        self.logger.header("Phase 2: Minimal Setup")
+        self.logger.info("This will configure the essential settings to get jib running.")
+        self.logger.info("You can run './setup.py --full' later for optional components.")
+        self.logger.info("")
+
+        try:
+            # 1. GitHub username
+            github_username = self.prompt_github_username()
+
+            # 2. Bot name
+            bot_name = self.prompt_bot_name()
+
+            # 3. Slack tokens
+            slack_secrets = self.prompt_slack_tokens()
+
+            # 4. Slack channel and user
+            slack_channel = self.get_slack_channel_id()
+            slack_user = self.get_slack_user_id()
+
+            # 5. GitHub authentication
+            github_secrets = self.prompt_github_auth()
+
+            # 6. Repositories
+            writable_repos, readable_repos = self.prompt_repositories(github_username)
+
+            # Save configuration
+            self.logger.header("Saving Configuration")
+
+            # Combine all secrets
+            all_secrets = {**slack_secrets, **github_secrets}
+            self.config_manager.write_secrets(all_secrets)
+
+            # Write main config
+            config = {
+                "bot_name": bot_name,
+                "github_username": github_username,
+                "slack_channel": slack_channel,
+                "allowed_users": [slack_user] if slack_user else [],
+                "context_sync_interval": 30,
+                "github_sync_interval": 5,
+            }
+            self.config_manager.write_config(config)
+
+            # Write repository config
+            self.config_manager.write_repositories(writable_repos, readable_repos)
+
+            self.logger.success("\n✓ Minimal setup complete!")
+            self.logger.info("")
+            self.logger.info("Configuration saved to:")
+            self.logger.info(f"  - {self.config_manager.secrets_file}")
+            self.logger.info(f"  - {self.config_manager.config_file}")
+            self.logger.info(f"  - {self.config_manager.repos_file}")
+            self.logger.info("")
+            self.logger.info("Next steps:")
+            self.logger.info("  1. Review the configuration files")
+            self.logger.info("  2. Run './setup.py --enable-services' to start jib services")
+            self.logger.info("  3. Run './setup.py --full' for additional components")
+
+            return True
+
+        except KeyboardInterrupt:
+            self.logger.warning("\n\nSetup cancelled by user")
+            return False
+        except Exception as e:
+            self.logger.error(f"\n\nSetup failed: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+            return False
+
+
 def main():
     """Main setup entry point."""
     args = parse_args()
@@ -625,16 +917,23 @@ def main():
     config_manager = ConfigManager(logger)
     config_manager.ensure_config_dir()
 
-    logger.header("Phase 1: Core Setup Module")
-    logger.info("This is Phase 1 implementation - minimal functionality")
-    logger.info("Full setup flow will be implemented in future phases")
+    # Run minimal setup flow
+    prompter = UserPrompter(logger)
+    minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
 
-    logger.success("\n✓ Phase 1 Complete: Core setup module created")
-    logger.info("Next phases:")
-    logger.info("  - Phase 2: Minimal setup flow")
-    logger.info("  - Phase 3: Service management")
-    logger.info("  - Phase 4: Full setup mode")
-    logger.info("  - Phase 5: Integration and migration")
+    if args.full:
+        logger.warning("Full setup mode not yet implemented (Phase 4)")
+        logger.info("Running minimal setup for now...")
+
+    success = minimal_setup.run()
+
+    if success:
+        logger.info("\n" + "="*60)
+        logger.success("Setup completed successfully!")
+        logger.info("="*60)
+        sys.exit(0)
+    else:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
