@@ -373,15 +373,92 @@ class ServiceManager:
         "jib-adr-researcher.timer",
     ]
 
+    # Mapping of service names to their setup script paths
+    SERVICE_SETUP_SCRIPTS = {
+        "jib-slack-notifier.service": "host-services/slack/slack-notifier/setup.sh",
+        "jib-slack-receiver.service": "host-services/slack/slack-receiver/setup.sh",
+        "jib-github-token-refresher.service": "host-services/utilities/github-token-refresher/setup.sh",
+        "jib-worktree-watcher.timer": "host-services/utilities/worktree-watcher/setup.sh",
+        "jib-context-sync.timer": "host-services/sync/context-sync/setup.sh",
+        "jib-github-watcher.timer": "host-services/analysis/github-watcher/setup.sh",
+        "jib-conversation-analyzer.timer": "host-services/analysis/beads-analyzer/setup.sh",
+        "jib-doc-generator.timer": "host-services/analysis/doc-generator/setup.sh",
+        "jib-adr-researcher.timer": "host-services/analysis/adr-researcher/setup.sh",
+    }
+
     def __init__(self, logger: SetupLogger):
         self.logger = logger
         self.has_systemctl = shutil.which("systemctl") is not None
+        self.repo_root = Path(__file__).parent
 
-    def enable_service(self, service: str) -> bool:
+    def _daemon_reload(self) -> bool:
+        """Reload systemd daemon to pick up service file changes.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.has_systemctl:
+            return False
+
+        try:
+            subprocess.run(
+                ["systemctl", "--user", "daemon-reload"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to reload systemd daemon: {e.stderr}")
+            return False
+
+    def _run_service_setup(self, service: str) -> bool:
+        """Run the setup script for a service if it exists.
+
+        Args:
+            service: Service name (e.g., "jib-slack-notifier.service")
+
+        Returns:
+            True if successful or no setup script exists, False on error
+        """
+        setup_script = self.SERVICE_SETUP_SCRIPTS.get(service)
+        if not setup_script:
+            # No setup script defined, that's okay
+            return True
+
+        script_path = self.repo_root / setup_script
+        if not script_path.exists():
+            self.logger.warning(f"Setup script not found: {setup_script}")
+            return True  # Don't fail if script is missing
+
+        try:
+            self.logger.step(f"Running setup script for {service}")
+            result = subprocess.run(
+                ["bash", str(script_path)],
+                cwd=self.repo_root,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if result.returncode != 0:
+                self.logger.warning(f"Setup script exited with code {result.returncode}")
+                if result.stderr:
+                    self.logger.warning(f"  {result.stderr.strip()}")
+                # Don't fail - setup script may have warnings
+            return True
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Setup script timed out for {service}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Failed to run setup script for {service}: {e}")
+            return False
+
+    def enable_service(self, service: str, run_setup: bool = True) -> bool:
         """Enable and start a single service.
 
         Args:
             service: Service name (e.g., "jib-slack-notifier.service")
+            run_setup: Whether to run the service's setup script first
 
         Returns:
             True if successful, False otherwise
@@ -389,6 +466,14 @@ class ServiceManager:
         if not self.has_systemctl:
             self.logger.warning("systemctl not available, skipping service management")
             return False
+
+        # Run setup script if requested
+        if run_setup:
+            if not self._run_service_setup(service):
+                self.logger.warning(f"Setup script failed for {service}, continuing anyway")
+
+        # Reload daemon to pick up any service file changes
+        self._daemon_reload()
 
         try:
             subprocess.run(
@@ -505,11 +590,11 @@ class ServiceManager:
 
         return success
 
-    def get_service_status(self) -> dict[str, str]:
+    def get_service_status(self) -> dict[str, dict[str, str]]:
         """Get status of all jib services.
 
         Returns:
-            Dictionary mapping service names to status strings
+            Dictionary mapping service names to status info (active, enabled, is_core)
         """
         if not self.has_systemctl:
             return {}
@@ -518,17 +603,72 @@ class ServiceManager:
         statuses = {}
 
         for service in all_services:
+            # Check if active
             try:
-                result = subprocess.run(
+                active_result = subprocess.run(
                     ["systemctl", "--user", "is-active", service],
                     capture_output=True,
                     text=True
                 )
-                statuses[service] = result.stdout.strip()
+                active = active_result.stdout.strip()
             except subprocess.CalledProcessError:
-                statuses[service] = "unknown"
+                active = "unknown"
+
+            # Check if enabled
+            enabled_result = subprocess.run(
+                ["systemctl", "--user", "is-enabled", service],
+                capture_output=True,
+                text=True
+            )
+            enabled = enabled_result.stdout.strip() if enabled_result.returncode == 0 else "disabled"
+
+            statuses[service] = {
+                "active": active,
+                "enabled": enabled,
+                "is_core": service in self.CORE_SERVICES,
+            }
 
         return statuses
+
+    def print_service_status(self) -> None:
+        """Print a formatted table of service statuses."""
+        statuses = self.get_service_status()
+        if not statuses:
+            self.logger.warning("No service status available")
+            return
+
+        self.logger.header("Service Status")
+
+        # Print core services
+        self.logger.info("\nCore Services:")
+        for service in self.CORE_SERVICES:
+            status = statuses.get(service, {})
+            active = status.get("active", "unknown")
+            enabled = status.get("enabled", "unknown")
+
+            # Color code the status
+            active_indicator = "●" if active == "active" else "○"
+            active_color = Colors.OKGREEN if active == "active" else Colors.FAIL
+            enabled_str = "enabled" if enabled == "enabled" else enabled
+
+            status_line = f"  {active_color}{active_indicator}{Colors.ENDC} {service:<40} {enabled_str:>10}"
+            print(Colors.strip_if_no_tty(status_line))
+
+        # Print LLM services
+        self.logger.info("\nLLM-Based Services:")
+        for service in self.LLM_SERVICES:
+            status = statuses.get(service, {})
+            active = status.get("active", "unknown")
+            enabled = status.get("enabled", "unknown")
+
+            active_indicator = "●" if active == "active" else "○"
+            active_color = Colors.OKGREEN if active == "active" else Colors.FAIL
+            enabled_str = "enabled" if enabled == "enabled" else enabled
+
+            status_line = f"  {active_color}{active_indicator}{Colors.ENDC} {service:<40} {enabled_str:>10}"
+            print(Colors.strip_if_no_tty(status_line))
+
+        self.logger.info("")
 
 
 def parse_args() -> argparse.Namespace:
@@ -559,6 +699,11 @@ def parse_args() -> argparse.Namespace:
         help="Enable all jib systemd services (core + LLM)"
     )
     service_group.add_argument(
+        "--enable-core-services",
+        action="store_true",
+        help="Enable only core services (non-LLM)"
+    )
+    service_group.add_argument(
         "--disable-services",
         action="store_true",
         help="Disable all jib systemd services"
@@ -572,6 +717,11 @@ def parse_args() -> argparse.Namespace:
         "--disable",
         metavar="SERVICE",
         help="Disable a specific service"
+    )
+    service_group.add_argument(
+        "--status",
+        action="store_true",
+        help="Show status of all services"
     )
 
     # Other options
@@ -895,17 +1045,22 @@ def main():
     logger.header("🤖 jib Setup - Declarative Setup Architecture")
 
     # Handle service-only operations (no setup required)
-    if args.enable_services or args.disable_services or args.enable or args.disable:
+    if args.enable_services or args.enable_core_services or args.disable_services or args.enable or args.disable or args.status:
         service_manager = ServiceManager(logger)
 
         if args.enable_services:
             sys.exit(0 if service_manager.enable_all_services() else 1)
+        elif args.enable_core_services:
+            sys.exit(0 if service_manager.enable_core_services() else 1)
         elif args.disable_services:
             sys.exit(0 if service_manager.disable_all_services() else 1)
         elif args.enable:
             sys.exit(0 if service_manager.enable_service(args.enable) else 1)
         elif args.disable:
             sys.exit(0 if service_manager.disable_service(args.disable) else 1)
+        elif args.status:
+            service_manager.print_service_status()
+            sys.exit(0)
 
     # Check dependencies (unless skipped)
     if not args.skip_deps:
