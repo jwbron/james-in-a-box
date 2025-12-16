@@ -27,7 +27,7 @@ bot_username: james-in-a-box
 # These are repos where jib can:
 # - Respond to PR comments
 # - Push code changes
-# - Create PRs via GitHub MCP
+# - Create PRs via gh CLI
 # - Implement fixes for failed CI checks
 writable_repos:
   - jwbron/james-in-a-box

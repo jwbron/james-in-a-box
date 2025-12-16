@@ -435,7 +435,7 @@ if [ "$github_configured" = false ]; then
     echo "GitHub auth is required for:"
     echo "  • Creating pull requests"
     echo "  • Pushing code from containers"
-    echo "  • GitHub MCP server access"
+    echo "  • GitHub CLI (gh) access"
     echo ""
     echo "Options:"
     echo "  1. GitHub App (RECOMMENDED): Will be configured later in setup"

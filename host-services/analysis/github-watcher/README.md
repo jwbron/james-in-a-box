@@ -25,7 +25,7 @@ For writable repos: Trigger jib container via `jib --exec` for analysis
 For read-only repos: Send Slack notification for user review
     |
     v
-Writable: Container analyzes and takes action via GitHub CLI/MCP
+Writable: Container analyzes and takes action via gh CLI
 Read-only: User reviews notification and responds manually
 ```
 

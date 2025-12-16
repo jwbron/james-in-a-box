@@ -72,7 +72,7 @@ declare -a SYMLINKS=(
     # Scripts - runtime utilities for the container
     "git:../scripts/git"  # Git wrapper to block remote modifications and validate push
     "git-credential-github-token:../scripts/git-credential-github-token"
-    "mcp-token-watcher:../scripts/mcp-token-watcher.py"
+    "gh:../scripts/gh"  # gh CLI wrapper to use fresh token from file
 
     # Tools - user-facing commands
     "discover-tests:../jib-tools/discover-tests.py"

@@ -255,8 +255,8 @@ class TestBuildReviewPrompt:
         assert "-50" in prompt
         assert "src/app.py" in prompt
         assert "new code" in prompt
-        # Should contain GitHub MCP instructions for writable repos
-        assert "mcp__github__pull_request_review_write" in prompt
+        # Should contain gh CLI instructions for writable repos
+        assert "gh pr review" in prompt
 
     def test_build_review_prompt_readonly(self):
         """Test building review prompt for read-only repos outputs to Slack."""
@@ -278,11 +278,11 @@ class TestBuildReviewPrompt:
 
         # Should indicate read-only mode
         assert "read-only" in prompt.lower()
-        # Should contain Slack notification instructions instead of GitHub MCP
+        # Should contain Slack notification instructions instead of gh CLI
         assert "notifications" in prompt
         assert "notif_file" in prompt
-        # Should NOT contain GitHub MCP instructions
-        assert "mcp__github__pull_request_review_write" not in prompt
+        # Should NOT contain gh CLI review instructions
+        assert "gh pr review" not in prompt
         # Should still contain basic PR info
         assert "owner/repo" in prompt
         assert "#123" in prompt

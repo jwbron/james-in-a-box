@@ -18,7 +18,7 @@ Task types:
 
 Per ADR-Context-Sync-Strategy-Custom-vs-MCP Section 4 "Option B":
     - Host-side watcher queries GitHub and triggers container
-    - Container performs analysis and takes action via GitHub CLI/MCP
+    - Container performs analysis and takes action via gh CLI
     - No watching/polling logic lives in the container
 """
 
@@ -267,16 +267,12 @@ Review the output carefully. Note which failures match the CI logs vs new/differ
 9. **Commit** - Commit fixes with clear message
 10. **Push** - Push to the PR branch: `git push origin {pr_branch}`
 11. **Update PR description** - Update the PR description to document the fixes:
-    ```python
-    # First, get the current PR to retrieve the existing body
-    # Use MCP: mcp__github__pull_request_read(owner="{repo.split("/")[0]}", repo="{repo.split("/")[-1]}", pullNumber={pr_num}, method="get")
-    # Then update with the fixes documented:
-    # Use MCP: mcp__github__update_pull_request(
-    #     owner="{repo.split("/")[0]}",
-    #     repo="{repo.split("/")[-1]}",
-    #     pullNumber={pr_num},
-    #     body="<existing body>\\n\\n## Updates\\n- Fixed: <list what was fixed>"
-    # )
+    ```bash
+    # Get the current PR body, update with fixes documented:
+    gh pr edit {pr_num} --body "$(gh pr view {pr_num} --json body -q .body)
+
+## Updates
+- Fixed: <list what was fixed>"
     ```
 12. **Comment** - Add PR comment explaining fixes. Use the signature helper to add workflow context:
     ```python
@@ -466,11 +462,11 @@ Review the comments above and respond appropriately:
 
 ### Step 2: Handle Suggested Changes (If Any)
 
-If a comment contains a GitHub suggestion (```suggestion blocks), you can commit it directly using the GitHub MCP:
+If a comment contains a GitHub suggestion (```suggestion blocks), you can handle it:
 
-```python
-# Use MCP: mcp__github__pull_request_read(owner="{owner}", repo="{repo_name}", pullNumber={pr_num}, method="get_review_comments")
-# This will show you all review comments including suggestions
+```bash
+# View all review comments on the PR
+gh pr view {pr_num} --comments
 ```
 
 To commit a suggestion:
@@ -529,16 +525,12 @@ git push origin {pr_branch}
 
 **d. Update the PR description:**
 If changes were significant, update the PR description to document what was addressed:
-```python
-# First, get the current PR body:
-# Use MCP: mcp__github__pull_request_read(owner="{owner}", repo="{repo_name}", pullNumber={pr_num}, method="get")
-# Then update with a new "Updates" section:
-# Use MCP: mcp__github__update_pull_request(
-#     owner="{owner}",
-#     repo="{repo_name}",
-#     pullNumber={pr_num},
-#     body="<existing body>\\n\\n## Updates\\n- Addressed review feedback: <summary>"
-# )
+```bash
+# Update PR body with a new "Updates" section:
+gh pr edit {pr_num} --body "$(gh pr view {pr_num} --json body -q .body)
+
+## Updates
+- Addressed review feedback: <summary>"
 ```
 
 **e. Comment on the PR to explain what you did:**
@@ -803,74 +795,53 @@ Update the beads task with your review summary{f" (task: {beads_id})" if beads_i
 Begin review now.
 """
     else:
-        # For writable repos, post review directly to GitHub via MCP
+        # For writable repos, post review directly to GitHub via gh CLI
         review_instructions = rf"""## Your Task
 
-Review this PR and provide constructive feedback using **inline comments with suggested fixes**:
+Review this PR and provide constructive feedback:
 
-### Step 1: Create a Pending Review
+### Step 1: Review the Changes
 
-Use the GitHub MCP tool to create a pending review:
-```python
-# Use MCP: mcp__github__pull_request_review_write(method="create", owner="{owner}", repo="{repo_name}", pullNumber={pr_num})
+Examine the diff and identify issues:
+```bash
+# View the full diff
+gh pr diff {pr_num}
+
+# View PR details
+gh pr view {pr_num}
 ```
 
-### Step 2: Add Inline Comments with Suggested Fixes
+### Step 2: Submit Your Review
 
-For each issue you find, add inline comments using the GitHub MCP tool:
+Use the gh CLI to submit your review:
 
-```python
-# Use MCP: mcp__github__add_comment_to_pending_review(
-#     owner="{owner}",
-#     repo="{repo_name}",
-#     pullNumber={pr_num},
-#     path="path/to/file.py",
-#     body="Comment with suggested fix",
-#     line=42,
-#     side="RIGHT",
-#     subjectType="LINE"
-# )
+```bash
+# For general comments:
+gh pr review {pr_num} --comment --body "Your review summary here. — Reviewed by jib"
+
+# To approve:
+gh pr review {pr_num} --approve --body "Looks good! — Reviewed by jib"
+
+# To request changes:
+gh pr review {pr_num} --request-changes --body "Please address the following issues:
+- Issue 1
+- Issue 2
+— Reviewed by jib"
 ```
 
-**Important parameters:**
-- `path`: Relative path to the file (from repo root)
-- `line`: The line number in the diff where the comment applies
-- `side`: "RIGHT" for new code, "LEFT" for old code
-- `subjectType`: "LINE" for single-line comments, "FILE" for file-level comments
-- `body`: Your comment - use markdown to include suggested fixes
+### Step 3: Add Specific Comments (If Needed)
 
-**Suggested fix format:**
-When suggesting code changes, use this format in the `body`:
-```markdown
-Consider refactoring this for better readability:
+For specific feedback on files or issues:
+```bash
+gh pr comment {pr_num} --body "**Re: path/to/file.py line 42**
 
-\`\`\`suggestion
-def improved_function():
-    # Your suggested code here
-    pass
-\`\`\`
-```
-
-The `suggestion` code fence will render as a suggested change that can be committed directly from GitHub.
-
-### Step 3: Submit the Review
-
-After adding all inline comments, submit the review:
-```python
-# Use MCP: mcp__github__pull_request_review_write(
-#     method="submit_pending",
-#     owner="{owner}",
-#     repo="{repo_name}",
-#     pullNumber={pr_num},
-#     body="Overall review summary here. — Reviewed by jib",
-#     event="COMMENT"  # or "APPROVE" or "REQUEST_CHANGES"
-# )
+Consider refactoring this for better readability. — Reviewed by jib"
 ```
 
 **Review event types:**
-- `COMMENT`: General feedback without approval/rejection
-- `APPROVE`: Approve the PR
-- `REQUEST_CHANGES`: Request changes before merging
+- `--comment`: General feedback without approval/rejection
+- `--approve`: Approve the PR
+- `--request-changes`: Request changes before merging
 
 ### Step 4: What to Review
 
@@ -1067,16 +1038,11 @@ git push origin {pr_branch}
 
 ### Step 8: Update the PR description
 Update the PR description to document the merge conflict resolution:
-```python
-# First, get the current PR body:
-# Use MCP: mcp__github__pull_request_read(owner="{repo.split("/")[0]}", repo="{repo.split("/")[-1]}", pullNumber={pr_num}, method="get")
-# Then update with conflict resolution details:
-# Use MCP: mcp__github__update_pull_request(
-#     owner="{repo.split("/")[0]}",
-#     repo="{repo.split("/")[-1]}",
-#     pullNumber={pr_num},
-#     body="<existing body>\\n\\n## Updates\\n- Resolved merge conflicts with {base_branch}: <summary of resolution>"
-# )
+```bash
+gh pr edit {pr_num} --repo {repo} --body "$(gh pr view {pr_num} --repo {repo} --json body -q .body)
+
+## Updates
+- Resolved merge conflicts with {base_branch}: <summary of resolution>"
 ```
 
 ### Step 9: Comment on the PR
@@ -1470,13 +1436,11 @@ For comments on specific lines, you can reply in the review thread.
 ### Step 4: Update PR Description (if significant changes)
 
 If you made substantial changes, update the PR description:
-```python
-# Use MCP: mcp__github__update_pull_request(
-#     owner="{owner}",
-#     repo="{repo_name}",
-#     pullNumber={pr_num},
-#     body="<existing body>\\n\\n## Updates (Iteration {iteration})\\n- Addressed review feedback: <summary>"
-# )
+```bash
+gh pr edit {pr_num} --body "$(gh pr view {pr_num} --json body -q .body)
+
+## Updates (Iteration {iteration})
+- Addressed review feedback: <summary>"
 ```
 
 ### Step 5: Update Beads

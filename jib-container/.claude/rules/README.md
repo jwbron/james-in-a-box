@@ -26,7 +26,7 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 
 - **environment.md** - Technical constraints
   - Sandbox security model
-  - GitHub MCP server configuration
+  - GitHub CLI (`gh`) for PRs and issues
   - File system layout and access
   - Services and package installation
 

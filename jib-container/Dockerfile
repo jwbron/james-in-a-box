@@ -134,7 +134,6 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # - Git configuration
 # - Worktree setup
 # - Claude Code router configuration (multi-provider support)
-# - GitHub MCP server setup
 # - Beads persistent memory initialization
 # - Interactive/exec mode handling
 # =============================================================================

@@ -5,7 +5,7 @@ PR Creator - Automated Pull Request Creation (Phase 3-4)
 This module creates GitHub PRs with documentation updates. It:
 1. Creates a branch with the documentation changes
 2. Commits the changes with proper traceability
-3. Creates a PR via GitHub MCP or gh CLI
+3. Creates a PR via gh CLI
 4. Creates git tags for audit trail (Phase 4)
 5. Returns the PR URL for tracking
 

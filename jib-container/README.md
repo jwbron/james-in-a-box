@@ -74,9 +74,9 @@ No manual setup required inside the container.
 **What the agent CAN do**:
 - Read/write code in `~/khan/` (isolated git worktree)
 - Git commits locally
-- Create/manage PRs via GitHub MCP
-- Query issues, repos, comments via GitHub MCP
-- Push files/changes via GitHub MCP
+- Create/manage PRs via `gh` CLI
+- Query issues, repos, comments via `gh` CLI
+- Push changes via `git push` (HTTPS, GitHub App token)
 - Run tests and builds
 - Read context docs (Confluence, JIRA)
 - Write notifications for human review
@@ -88,16 +88,21 @@ No manual setup required inside the container.
 - Modify host filesystem (only mounted directories)
 - Push to protected branches (main/master)
 
-## GitHub MCP Server
+## GitHub CLI
 
-The container uses the GitHub MCP server for all GitHub operations. This provides real-time, bi-directional access:
+The container uses the `gh` CLI for GitHub operations, authenticated via `GITHUB_TOKEN`:
 
-| Category | Tools |
-|----------|-------|
-| **Repositories** | `search_repositories`, `get_file_contents`, `push_files` |
-| **Issues** | `search_issues`, `get_issue`, `create_issue`, `update_issue` |
-| **Pull Requests** | `create_pull_request`, `get_pull_request`, `list_pull_requests` |
-| **Comments** | `add_issue_comment`, `list_issue_comments` |
-| **Branches** | `create_branch`, `list_branches` |
+```bash
+# Pull Requests
+gh pr create --title "..." --body "..." --base main
+gh pr view [<number>]
+gh pr list
 
-MCP server is configured in `~/.mcp.json` and authenticated via `GITHUB_TOKEN`.
+# Issues
+gh issue list
+gh issue view <number>
+
+# Comments
+gh pr comment <number> --body "..."
+gh pr review <number> --comment --body "..."
+```

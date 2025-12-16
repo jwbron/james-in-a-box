@@ -516,25 +516,13 @@ This is a strong candidate for Claude replacement as it's currently limited by r
 
 ## Feature 20: MCP Token Watcher
 
-**Files:** `jib-container/scripts/mcp-token-watcher.py`
+> **Note:** This feature was removed in December 2024 when GitHub MCP server integration was replaced with direct `gh` CLI usage.
 
-### Findings
+**Files:** `jib-container/scripts/mcp-token-watcher.py` (DELETED)
 
-| Issue | Severity | Type |
-|-------|----------|------|
-| Good hash-based change detection | - | Positive |
-| Daemon mode with configurable interval | - | Positive |
-| State persistence for token tracking | - | Positive |
-| Good use of structured logging | - | Positive |
-| `--verbose` flag acknowledged but not implemented | Low | Incomplete |
+### Status: REMOVED
 
-### Recommendations
-
-1. **Implement verbose logging** - The flag exists but logging level isn't changed
-
-### Claude Leverage Opportunity
-
-- **None identified** - This is infrastructure monitoring that should remain deterministic
+The MCP Token Watcher was removed as part of simplifying the GitHub integration. GitHub operations now use the `gh` CLI directly, which reads the `GITHUB_TOKEN` environment variable.
 
 ---
 

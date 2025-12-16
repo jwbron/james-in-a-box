@@ -47,6 +47,8 @@ See `docs/setup/github-app-setup.md` for instructions.
 
 ## Container Integration
 
+Both `git` and `gh` use wrapper scripts that read the fresh token from the shared file:
+
 ### Git Credential Helper
 
 The git credential helper (`jib-container/scripts/git-credential-github-token`) reads
@@ -58,12 +60,18 @@ from the token file first, falling back to the `GITHUB_TOKEN` env var:
 # 2. GITHUB_TOKEN environment variable (set at container start)
 ```
 
-### MCP Server
+### gh CLI Wrapper
 
-The container includes a token watcher script that:
-1. Monitors `~/sharing/.github-token` for changes
-2. Reconfigures the GitHub MCP server with the new token
-3. Runs automatically in the background
+The gh wrapper (`jib-container/scripts/gh`) sets `GH_TOKEN` from the token file:
+
+```bash
+# Priority:
+# 1. ~/sharing/.github-token file (refreshed by this service)
+# 2. GITHUB_TOKEN environment variable (set at container start)
+```
+
+Both wrappers are installed via symlinks in `/opt/jib-runtime/jib-container/bin/`
+which is on the PATH before `/usr/bin/`, so they intercept the real commands.
 
 ## Manual Operations
 
@@ -88,14 +96,11 @@ Host                                 Container
 ┌─────────────────────────┐         ┌─────────────────────────┐
 │ github-token-refresher  │         │                         │
 │                         │         │  git credential helper  │
-│ Every 45 min:           │         │  reads from:            │
+│ Every 45 min:           │         │  + gh CLI read from:    │
 │ 1. Generate token       │         │  1. ~/sharing/.github-  │
 │ 2. Write to shared file │─────────│     token (preferred)   │
 │                         │         │  2. $GITHUB_TOKEN       │
 │ ~/.jib-sharing/         │         │     (fallback)          │
 │   .github-token         │         │                         │
-└─────────────────────────┘         │  MCP token watcher      │
-                                    │  reconfigures MCP when  │
-                                    │  token file changes     │
-                                    └─────────────────────────┘
+└─────────────────────────┘         └─────────────────────────┘
 ```
