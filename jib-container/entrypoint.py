@@ -499,7 +499,7 @@ def setup_claude(config: Config, logger: Logger) -> None:
         "editorMode": "normal",
         "autoUpdate": False,
         "outputStyle": "default",
-        "defaultModel": "claude-opus-4-20250514",
+        "defaultModel": "claude-opus-4-5",
         "hooks": {
             "PostToolUse": [
                 {
@@ -524,6 +524,19 @@ def setup_claude(config: Config, logger: Logger) -> None:
     settings_file.write_text(json.dumps(settings, indent=2))
     os.chown(settings_file, config.runtime_uid, config.runtime_gid)
 
+    # Create ~/.claude.json user state to skip onboarding prompts
+    user_state = {
+        "hasCompletedOnboarding": True,
+        "lastOnboardingVersion": "2.0.69",
+        "numStartups": 1,
+        "installMethod": "api_key",
+        "autoUpdates": False,
+    }
+    user_state_file = config.user_home / ".claude.json"
+    user_state_file.write_text(json.dumps(user_state, indent=2))
+    os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
+    user_state_file.chmod(0o600)
+
     # Fix ownership
     chown_recursive(config.claude_dir, config.runtime_uid, config.runtime_gid)
     chown_recursive(
@@ -532,6 +545,7 @@ def setup_claude(config: Config, logger: Logger) -> None:
     config.claude_dir.chmod(0o700)
 
     logger.success(f"Claude settings created: {settings_file}")
+    logger.success(f"Claude user state created: {user_state_file} (onboarding skipped)")
     if not config.quiet:
         print(json.dumps(settings, indent=2))
         print()
@@ -632,14 +646,13 @@ def setup_router(config: Config, logger: Logger) -> None:
     else:  # anthropic (default)
         if not config.anthropic_api_key:
             logger.warn("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY not set")
+        else:
+            logger.success("Anthropic API key configured")
 
-        # Passthrough mode - router forwards to Anthropic API
-        router_config = {
-            "log": False,
-            "NON_INTERACTIVE_MODE": True,
-            "Router": {"default": "anthropic"},
-        }
-        logger.success("Router configured for Anthropic Claude Opus 4.5")
+        # Claude Code natively supports Anthropic via ANTHROPIC_API_KEY env var
+        # No router needed - just ensure the env var is set
+        logger.info("Using Claude Code directly with API key (no router)")
+        return
 
     # Write config
     config.router_config.write_text(json.dumps(router_config, indent=2))

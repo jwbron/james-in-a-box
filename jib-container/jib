@@ -770,14 +770,14 @@ def create_dockerfile() -> None:
     if not _quiet_mode:
         info("Claude credentials will be mounted from host at runtime (see setup output above)")
 
-    # Copy entrypoint.sh from script directory
-    entrypoint_src = script_dir / "entrypoint.sh"
-    entrypoint_dest = Config.CONFIG_DIR / "entrypoint.sh"
+    # Copy entrypoint.py from script directory
+    entrypoint_src = script_dir / "entrypoint.py"
+    entrypoint_dest = Config.CONFIG_DIR / "entrypoint.py"
     if entrypoint_src.exists():
         shutil.copy(entrypoint_src, entrypoint_dest)
         entrypoint_dest.chmod(0o755)
     else:
-        error(f"entrypoint.sh not found at {entrypoint_src}")
+        error(f"entrypoint.py not found at {entrypoint_src}")
         error("Cannot build without entrypoint script")
 
     # Copy Dockerfile from script directory
