@@ -131,15 +131,22 @@ def run_agent(
 def _setup_environment(config: ClaudeConfig) -> None:
     """Set up environment variables for the SDK.
 
-    Note: The router is always running in the jib container,
-    so we always point to it. The router handles the actual
-    provider selection based on its config.json.
+    For Anthropic provider: Use ANTHROPIC_API_KEY directly (no router needed).
+    For other providers: Use claude-code-router to translate requests.
     """
-    # Always use the router - it's started at container boot
-    # Router config determines actual provider (Anthropic, OpenAI, Gemini, etc.)
+    # Check if we should use the router
+    # Router is only needed for non-Anthropic providers (OpenAI, Gemini via router)
+    llm_provider = os.environ.get("LLM_PROVIDER", "anthropic").lower()
+    has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+    if llm_provider == "anthropic" and has_api_key:
+        # Direct Anthropic access - no router needed
+        # Don't set ANTHROPIC_BASE_URL so SDK uses default Anthropic API
+        return
+
+    # Non-Anthropic provider or no API key - use router
     base_url = config.router_base_url or f"http://localhost:{config.router_port}"
 
-    # Only set if not already set (allows override from container env)
     if not os.environ.get("ANTHROPIC_BASE_URL"):
         os.environ["ANTHROPIC_BASE_URL"] = base_url
 
