@@ -264,6 +264,42 @@ class ConfigManager:
             self.logger.error(f"Please ensure {self.config_dir.parent} is writable")
             raise
 
+    def load_secrets(self) -> dict[str, str]:
+        """Load secrets from secrets.env.
+
+        Returns:
+            Dictionary of secret key-value pairs
+        """
+        secrets = {}
+        if self.secrets_file.exists():
+            with open(self.secrets_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        secrets[key.strip()] = value.strip().strip('"\'')
+        return secrets
+
+    def load_config(self) -> dict[str, Any]:
+        """Load config from config.yaml.
+
+        Returns:
+            Dictionary of configuration values
+        """
+        if self.config_file.exists():
+            try:
+                import yaml
+                with open(self.config_file) as f:
+                    return yaml.safe_load(f) or {}
+            except ImportError:
+                # Fallback to JSON
+                import json
+                config_json = self.config_dir / "config.json"
+                if config_json.exists():
+                    with open(config_json) as f:
+                        return json.load(f)
+        return {}
+
     def write_secrets(self, secrets: dict[str, str]):
         """Write secrets to secrets.env with secure permissions.
 
@@ -744,6 +780,315 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+class FullSetup:
+    """Handles the full setup flow including Docker, beads, and optional components."""
+
+    def __init__(self, logger: SetupLogger, config_manager: ConfigManager, prompter: UserPrompter, verbose: bool = False):
+        self.logger = logger
+        self.config_manager = config_manager
+        self.prompter = prompter
+        self.verbose = verbose
+        self.repo_root = Path(__file__).parent
+        self.shared_dir = Path.home() / ".jib-sharing"
+        self.beads_dir = self.shared_dir / "beads"
+
+    def build_docker_image(self) -> bool:
+        """Build the jib Docker image.
+
+        Returns:
+            True if build succeeded or image already exists, False on error
+        """
+        self.logger.header("Building Docker Image")
+
+        # Check if image already exists
+        try:
+            result = subprocess.run(
+                ["docker", "image", "inspect", "james-in-a-box"],
+                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            image_exists = result.returncode == 0
+        except FileNotFoundError:
+            self.logger.error("Docker is not installed")
+            return False
+
+        if image_exists:
+            self.logger.success("Docker image 'james-in-a-box' already exists")
+            if not self.prompter.prompt_yes_no("Rebuild the image?", default=False):
+                self.logger.info("Skipping image rebuild")
+                return True
+
+        # Build the image
+        self.logger.info("Building Docker image (this may take a few minutes)...")
+        self.logger.info("")
+
+        try:
+            # Use bin/jib --setup to build the image
+            jib_script = self.repo_root / "bin" / "jib"
+            if not jib_script.exists():
+                self.logger.error(f"jib script not found at {jib_script}")
+                return False
+
+            # Run jib --setup with auto-yes
+            process = subprocess.Popen(
+                [str(jib_script), "--setup"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=self.repo_root
+            )
+
+            # Send 'yes' to any prompts and show output
+            stdout, _ = process.communicate(input="yes\n")
+
+            if self.verbose:
+                print(stdout)
+
+            if process.returncode == 0:
+                self.logger.success("Docker image built successfully")
+                return True
+            else:
+                self.logger.error("Docker image build failed")
+                self.logger.error("You can rebuild later with: bin/jib --setup")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Failed to build Docker image: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+            return False
+
+    def create_shared_directories(self) -> bool:
+        """Create shared directories for communication with containers.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        self.logger.header("Creating Shared Directories")
+
+        try:
+            # Create main shared directory
+            self.shared_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.success(f"Shared directory ready: {self.shared_dir}")
+
+            # Create subdirectories
+            subdirs = ["notifications", "incoming", "responses", "context", "beads", "logs"]
+            for subdir in subdirs:
+                (self.shared_dir / subdir).mkdir(exist_ok=True)
+                self.logger.success(f"  - {subdir}/")
+
+            return True
+
+        except PermissionError as e:
+            self.logger.error(f"Permission denied creating shared directories: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Failed to create shared directories: {e}")
+            return False
+
+    def initialize_beads(self) -> bool:
+        """Initialize the beads persistent memory system.
+
+        Returns:
+            True if successful or already initialized, False otherwise
+        """
+        self.logger.header("Initializing Beads Persistent Memory")
+
+        # Check if bd command is available
+        if not shutil.which("bd"):
+            self.logger.warning("beads (bd) not found")
+            self.logger.info("Install from: https://github.com/steveyegge/beads")
+
+            if not self.prompter.prompt_yes_no("Continue without beads?", default=True):
+                return False
+            return True
+
+        # Check if already initialized
+        beads_config = self.beads_dir / ".beads" / "issues.jsonl"
+        if beads_config.exists():
+            self.logger.success(f"Beads already initialized: {self.beads_dir}")
+            return True
+
+        # Initialize beads
+        self.logger.info(f"Initializing beads repository at {self.beads_dir}...")
+
+        try:
+            # Create directory
+            self.beads_dir.mkdir(parents=True, exist_ok=True)
+
+            # Initialize git (required by beads)
+            self.logger.step("Initializing git repository...")
+            result = subprocess.run(
+                ["git", "init"],
+                cwd=self.beads_dir,
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                self.logger.error(f"Failed to initialize git: {result.stderr}")
+                return False
+
+            # Initialize beads
+            self.logger.step("Initializing beads...")
+            result = subprocess.run(
+                ["bd", "init"],
+                cwd=self.beads_dir,
+                input="n\n",  # Say no to git hooks
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode != 0:
+                self.logger.error(f"Failed to initialize beads: {result.stderr}")
+                return False
+
+            self.logger.success(f"Beads initialized: {self.beads_dir}")
+            self.logger.info("Usage in container: bd --allow-stale create 'task description' --labels feature")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to initialize beads: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+            return False
+
+    def validate_context_sync(self) -> bool:
+        """Validate context sync configuration.
+
+        Returns:
+            True if validation passes or user skips, False on error
+        """
+        self.logger.header("Context Sync Configuration")
+
+        # Check for Confluence/JIRA config
+        config = self.config_manager.load_config()
+        secrets = self.config_manager.load_secrets()
+
+        has_confluence = bool(secrets.get("CONFLUENCE_BASE_URL") and secrets.get("CONFLUENCE_API_TOKEN"))
+        has_jira = bool(secrets.get("JIRA_BASE_URL") and secrets.get("JIRA_API_TOKEN"))
+
+        if has_confluence:
+            self.logger.success("Confluence configuration found")
+        if has_jira:
+            self.logger.success("JIRA configuration found")
+
+        if not has_confluence and not has_jira:
+            self.logger.info("No Confluence or JIRA configuration found")
+            if self.prompter.prompt_yes_no("Configure Confluence/JIRA sync now?", default=False):
+                return self.prompt_context_sync_config()
+            else:
+                self.logger.info("Skipping context sync configuration")
+                self.logger.info("You can configure it later by editing ~/.config/jib/secrets.env")
+                return True
+
+        return True
+
+    def prompt_context_sync_config(self) -> bool:
+        """Prompt for Confluence and JIRA configuration.
+
+        Returns:
+            True if configuration saved, False otherwise
+        """
+        secrets = self.config_manager.load_secrets()
+        updated = False
+
+        # Confluence
+        if self.prompter.prompt_yes_no("Configure Confluence sync?", default=False):
+            self.logger.info("\nConfluence Configuration:")
+            base_url = self.prompter.prompt("Confluence Base URL (e.g., https://company.atlassian.net/wiki)")
+            username = self.prompter.prompt("Confluence Username/Email")
+            api_token = self.prompter.prompt("Confluence API Token", required=True)
+            space_keys = self.prompter.prompt("Space Keys (comma-separated, e.g., ENG,TEAM)", required=False)
+
+            if base_url:
+                secrets["CONFLUENCE_BASE_URL"] = base_url
+            if username:
+                secrets["CONFLUENCE_USERNAME"] = username
+            if api_token:
+                secrets["CONFLUENCE_API_TOKEN"] = api_token
+            if space_keys:
+                secrets["CONFLUENCE_SPACE_KEYS"] = space_keys
+            updated = True
+
+        # JIRA
+        if self.prompter.prompt_yes_no("Configure JIRA sync?", default=False):
+            self.logger.info("\nJIRA Configuration:")
+            base_url = self.prompter.prompt("JIRA Base URL (e.g., https://company.atlassian.net)")
+            username = self.prompter.prompt("JIRA Username/Email")
+            api_token = self.prompter.prompt("JIRA API Token", required=True)
+            jql_query = self.prompter.prompt(
+                "JQL Query (e.g., project = ENG AND status != Done)",
+                default="status != Done"
+            )
+
+            if base_url:
+                secrets["JIRA_BASE_URL"] = base_url
+            if username:
+                secrets["JIRA_USERNAME"] = username
+            if api_token:
+                secrets["JIRA_API_TOKEN"] = api_token
+            if jql_query:
+                secrets["JIRA_JQL_QUERY"] = jql_query
+            updated = True
+
+        if updated:
+            self.config_manager.write_secrets(secrets)
+            self.logger.success("Context sync configuration saved")
+
+        return True
+
+    def run(self) -> bool:
+        """Run the full setup flow.
+
+        Returns:
+            True if setup completed successfully, False otherwise
+        """
+        self.logger.header("Phase 4: Full Setup Mode")
+        self.logger.info("This will set up all components including Docker, beads, and optional features.")
+        self.logger.info("")
+
+        try:
+            # 1. Create shared directories
+            if not self.create_shared_directories():
+                self.logger.error("Failed to create shared directories")
+                return False
+
+            # 2. Build Docker image
+            if not self.build_docker_image():
+                self.logger.warning("Docker image build failed, but continuing...")
+
+            # 3. Initialize beads
+            if not self.initialize_beads():
+                self.logger.warning("Beads initialization failed, but continuing...")
+
+            # 4. Validate context sync
+            if not self.validate_context_sync():
+                self.logger.warning("Context sync validation failed, but continuing...")
+
+            self.logger.success("\n✓ Full setup complete!")
+            self.logger.info("")
+            self.logger.info("Next steps:")
+            self.logger.info("  1. Review the configuration files")
+            self.logger.info("  2. Run './setup.py --enable-services' to start all jib services")
+            self.logger.info("  3. Test the bot by sending a message in Slack")
+
+            return True
+
+        except KeyboardInterrupt:
+            self.logger.warning("\n\nSetup cancelled by user")
+            return False
+        except Exception as e:
+            self.logger.error(f"\n\nFull setup failed: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+            return False
+
+
 class MinimalSetup:
     """Handles the minimal setup flow."""
 
@@ -1071,16 +1416,25 @@ def main():
     # Initialize managers
     config_manager = ConfigManager(logger)
     config_manager.ensure_config_dir()
-
-    # Run minimal setup flow
     prompter = UserPrompter(logger)
-    minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
 
+    # Run appropriate setup flow
     if args.full:
-        logger.warning("Full setup mode not yet implemented (Phase 4)")
-        logger.info("Running minimal setup for now...")
+        # Full setup mode: includes minimal setup + Docker + beads + optional components
+        logger.info("Running full setup mode (minimal setup + all components)")
 
-    success = minimal_setup.run()
+        # First run minimal setup to get config
+        minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
+        if not minimal_setup.run():
+            sys.exit(1)
+
+        # Then run full setup for additional components
+        full_setup = FullSetup(logger, config_manager, prompter, verbose=args.verbose)
+        success = full_setup.run()
+    else:
+        # Minimal setup only (default)
+        minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
+        success = minimal_setup.run()
 
     if success:
         logger.info("\n" + "="*60)
