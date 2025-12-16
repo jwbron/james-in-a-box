@@ -167,6 +167,10 @@ jira_output_dir: "~/context-sync/jira"
 # Disable all systemd services
 ./setup.py --disable-services
 
+# Enable/disable individual service
+./setup.py --enable slack-notifier
+./setup.py --disable context-sync
+
 # Update mode (reload configs, restart services)
 ./setup.py --update
 
@@ -192,19 +196,47 @@ All other settings use sensible defaults. Users can run `--full` later for optio
 
 ### Service Management
 
-The `--enable-services` and `--disable-services` flags manage these services:
+Services are categorized into **core services** and **LLM-based services**:
+
+#### Core Services (Enabled by Default)
+
+These services don't require LLM tokens and are enabled automatically during setup:
 
 | Service | Type | Purpose |
 |---------|------|---------|
-| slack-notifier.service | Always on | Send notifications to Slack |
-| slack-receiver.service | Always on | Receive messages from Slack |
-| github-token-refresher.service | Always on | Refresh GitHub App tokens |
-| context-sync.timer | Timer | Sync Confluence/JIRA |
-| github-watcher.timer | Timer | Watch GitHub PRs/issues |
+| slack-notifier.service | Service | Send notifications to Slack |
+| slack-receiver.service | Service | Receive messages from Slack |
+| github-token-refresher.service | Service | Refresh GitHub App tokens |
 | worktree-watcher.timer | Timer | Clean up orphaned worktrees |
-| conversation-analyzer.timer | Timer | Analyze conversations daily |
-| jib-doc-generator.timer | Timer | Generate docs weekly |
-| adr-researcher.timer | Timer | Research ADRs weekly |
+
+#### LLM-Based Services (Opt-in)
+
+These services require LLM API tokens (Anthropic, OpenAI, etc.) and must be explicitly enabled:
+
+| Service | Type | Purpose | Token Required |
+|---------|------|---------|----------------|
+| context-sync.timer | Timer | Sync Confluence/JIRA | Anthropic API |
+| github-watcher.timer | Timer | Watch GitHub PRs/issues | Anthropic API |
+| conversation-analyzer.timer | Timer | Analyze conversations daily | Anthropic API |
+| jib-doc-generator.timer | Timer | Generate docs weekly | Anthropic API |
+| adr-researcher.timer | Timer | Research ADRs weekly | Anthropic API |
+
+#### Service Management Commands
+
+```bash
+# Enable all services (core + LLM-based)
+./setup.py --enable-services
+
+# Disable all services
+./setup.py --disable-services
+
+# Enable/disable individual service
+./setup.py --enable context-sync
+./setup.py --disable github-watcher
+
+# Enable only core services (default behavior during setup)
+./setup.py --enable-core-services
+```
 
 ## Implementation Details
 
@@ -230,13 +262,15 @@ The `--enable-services` and `--disable-services` flags manage these services:
 - **Success criteria:** New user can complete minimal setup in <5 minutes
 
 **Phase 3: Service Management**
-- **Goal:** Implement systemd service enable/disable
+- **Goal:** Implement systemd service enable/disable with core/LLM service distinction
 - **Components:**
-  - Service discovery (find all jib-related services)
-  - Batch enable/disable with `systemctl --user`
+  - Service categorization (core vs LLM-based services)
+  - Core service auto-enable (slack-notifier, slack-receiver, github-token-refresher, worktree-watcher)
+  - Batch enable/disable with `systemctl --user` for all services
+  - Individual service enable/disable support
   - Status reporting (which services are enabled/running)
   - Individual service setup script calls
-- **Success criteria:** `--enable-services` starts all services, `--disable-services` stops them
+- **Success criteria:** Core services enabled by default, `--enable-services` starts all services, individual service control works
 
 **Phase 4: Full Setup Mode**
 - **Goal:** Complete feature parity with current setup.sh
@@ -254,15 +288,15 @@ The `--enable-services` and `--disable-services` flags manage these services:
   - Update `jib` script to delegate to setup.py
   - Migration from legacy config locations
   - Deprecation warnings for old config paths
+  - **Delete `setup.sh`** - Remove old bash setup script entirely
   - Documentation updates
-- **Success criteria:** `jib --setup` works, existing configs migrate cleanly
+- **Success criteria:** `jib --setup` works, existing configs migrate cleanly, setup.sh is removed
 
 ### File Structure
 
 ```
 james-in-a-box/
 ├── setup.py                     # Main setup script (new)
-├── setup.sh                     # Deprecated, delegates to setup.py
 ├── config/
 │   ├── setup/                   # Setup module (new)
 │   │   ├── __init__.py
@@ -339,49 +373,81 @@ class ConfigManager:
 # config/setup/services.py
 import subprocess
 from dataclasses import dataclass
+from typing import List
 
 @dataclass
 class Service:
     name: str
     description: str
-    required: bool = True
+    is_core: bool  # Core services are enabled by default
 
-SERVICES = [
-    Service("slack-notifier.service", "Slack Notifier", required=True),
-    Service("slack-receiver.service", "Slack Receiver", required=True),
-    Service("github-token-refresher.service", "GitHub Token Refresher", required=True),
-    Service("context-sync.timer", "Context Sync Timer", required=False),
-    Service("github-watcher.timer", "GitHub Watcher Timer", required=False),
-    Service("worktree-watcher.timer", "Worktree Watcher Timer", required=False),
-    Service("conversation-analyzer.timer", "Conversation Analyzer", required=False),
-    Service("jib-doc-generator.timer", "Documentation Generator", required=False),
-    Service("adr-researcher.timer", "ADR Researcher", required=False),
+# Core services - enabled by default, no LLM tokens required
+CORE_SERVICES = [
+    Service("slack-notifier.service", "Slack Notifier", is_core=True),
+    Service("slack-receiver.service", "Slack Receiver", is_core=True),
+    Service("github-token-refresher.service", "GitHub Token Refresher", is_core=True),
+    Service("worktree-watcher.timer", "Worktree Watcher", is_core=True),
 ]
+
+# LLM-based services - require API tokens, opt-in only
+LLM_SERVICES = [
+    Service("context-sync.timer", "Context Sync Timer", is_core=False),
+    Service("github-watcher.timer", "GitHub Watcher Timer", is_core=False),
+    Service("conversation-analyzer.timer", "Conversation Analyzer", is_core=False),
+    Service("jib-doc-generator.timer", "Documentation Generator", is_core=False),
+    Service("adr-researcher.timer", "ADR Researcher", is_core=False),
+]
+
+ALL_SERVICES = CORE_SERVICES + LLM_SERVICES
 
 class ServiceManager:
     """Manages jib systemd services."""
 
-    def enable_all(self) -> None:
-        """Enable and start all services."""
+    def enable_core_services(self) -> None:
+        """Enable and start core services (default behavior)."""
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-        for service in SERVICES:
+        for service in CORE_SERVICES:
             subprocess.run(
                 ["systemctl", "--user", "enable", "--now", service.name],
                 check=False  # Don't fail if service missing
             )
 
+    def enable_all(self) -> None:
+        """Enable and start all services (core + LLM-based)."""
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+        for service in ALL_SERVICES:
+            subprocess.run(
+                ["systemctl", "--user", "enable", "--now", service.name],
+                check=False
+            )
+
     def disable_all(self) -> None:
         """Disable and stop all services."""
-        for service in SERVICES:
+        for service in ALL_SERVICES:
             subprocess.run(
                 ["systemctl", "--user", "disable", "--now", service.name],
                 check=False
             )
 
+    def enable_service(self, service_name: str) -> None:
+        """Enable and start a specific service."""
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+        subprocess.run(
+            ["systemctl", "--user", "enable", "--now", service_name],
+            check=True
+        )
+
+    def disable_service(self, service_name: str) -> None:
+        """Disable and stop a specific service."""
+        subprocess.run(
+            ["systemctl", "--user", "disable", "--now", service_name],
+            check=True
+        )
+
     def status(self) -> dict[str, dict]:
         """Get status of all services."""
         status = {}
-        for service in SERVICES:
+        for service in ALL_SERVICES:
             result = subprocess.run(
                 ["systemctl", "--user", "is-active", service.name],
                 capture_output=True, text=True
@@ -394,7 +460,7 @@ class ServiceManager:
                 "active": result.stdout.strip() == "active",
                 "enabled": enabled.stdout.strip() == "enabled",
                 "description": service.description,
-                "required": service.required,
+                "is_core": service.is_core,
             }
         return status
 ```
