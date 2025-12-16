@@ -243,6 +243,152 @@ class UserPrompter:
         return [item.strip() for item in response.split(delimiter) if item.strip()]
 
 
+class ConfigMigrator:
+    """Handles migration from legacy config locations to new structure."""
+
+    def __init__(self, logger: SetupLogger):
+        self.logger = logger
+        self.new_config_dir = Path.home() / ".config" / "jib"
+        self.new_secrets_file = self.new_config_dir / "secrets.env"
+        self.new_config_file = self.new_config_dir / "config.yaml"
+
+        # Legacy config locations
+        self.legacy_locations = {
+            "anthropic_api_key": self.new_config_dir / "anthropic-api-key",
+            "google_api_key": self.new_config_dir / "google-api-key",
+            "openai_api_key": self.new_config_dir / "openai-api-key",
+            "github_app_id": self.new_config_dir / "github-app-id",
+            "github_app_installation": self.new_config_dir / "github-app-installation-id",
+            "github_app_key": self.new_config_dir / "github-app-private-key.pem",
+        }
+
+    def check_needs_migration(self) -> bool:
+        """Check if any legacy config files exist that need migration.
+
+        Returns:
+            True if migration is needed, False otherwise
+        """
+        # Check for standalone API key files
+        for name, path in self.legacy_locations.items():
+            if path.exists() and "api_key" in name:
+                return True
+
+        return False
+
+    def migrate_configs(self) -> bool:
+        """Migrate legacy configurations to new structure.
+
+        Returns:
+            True if migration succeeded, False otherwise
+        """
+        if not self.check_needs_migration():
+            return True  # Nothing to migrate
+
+        self.logger.header("Migrating Legacy Configuration")
+        self.logger.info("Found legacy configuration files. Migrating to new structure...")
+        self.logger.info("")
+
+        migrated = False
+        secrets = {}
+
+        # Load existing secrets if any
+        if self.new_secrets_file.exists():
+            with open(self.new_secrets_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        secrets[key.strip()] = value.strip().strip('"\'')
+
+        # Migrate API keys to secrets.env
+        api_key_mapping = {
+            "anthropic_api_key": "ANTHROPIC_API_KEY",
+            "google_api_key": "GOOGLE_API_KEY",
+            "openai_api_key": "OPENAI_API_KEY",
+        }
+
+        for legacy_name, secret_name in api_key_mapping.items():
+            legacy_file = self.legacy_locations[legacy_name]
+            if legacy_file.exists() and secret_name not in secrets:
+                try:
+                    api_key = legacy_file.read_text().strip()
+                    if api_key:
+                        secrets[secret_name] = api_key
+                        self.logger.success(f"Migrated {legacy_name} → {secret_name}")
+                        migrated = True
+                except Exception as e:
+                    self.logger.warning(f"Failed to migrate {legacy_name}: {e}")
+
+        # Save migrated secrets
+        if migrated:
+            self._write_secrets(secrets)
+            self.logger.success("\n✓ Configuration migration complete")
+            self.logger.info("")
+            self.logger.info("Legacy API key files have been migrated to:")
+            self.logger.info(f"  {self.new_secrets_file}")
+            self.logger.info("")
+            self.logger.warning("IMPORTANT: The legacy files still exist for backward compatibility.")
+            self.logger.warning("You can safely delete them after verifying jib works correctly:")
+            for name, path in self.legacy_locations.items():
+                if "api_key" in name and path.exists():
+                    self.logger.warning(f"  rm {path}")
+            self.logger.info("")
+
+        return True
+
+    def _write_secrets(self, secrets: dict[str, str]):
+        """Write secrets to secrets.env with proper formatting.
+
+        Args:
+            secrets: Dictionary of secret key-value pairs
+        """
+        lines = [
+            "# jib Secrets Configuration",
+            "# This file contains sensitive credentials - DO NOT COMMIT",
+            "",
+        ]
+
+        # Group secrets by service
+        groups = {
+            "LLM API Keys": ["ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"],
+            "Slack Integration": ["SLACK_TOKEN", "SLACK_APP_TOKEN"],
+            "GitHub": ["GITHUB_TOKEN", "GITHUB_READONLY_TOKEN"],
+            "Confluence": [
+                "CONFLUENCE_BASE_URL",
+                "CONFLUENCE_USERNAME",
+                "CONFLUENCE_API_TOKEN",
+                "CONFLUENCE_SPACE_KEYS",
+            ],
+            "JIRA": [
+                "JIRA_BASE_URL",
+                "JIRA_USERNAME",
+                "JIRA_API_TOKEN",
+                "JIRA_JQL_QUERY",
+            ],
+        }
+
+        written = set()
+        for group_name, keys in groups.items():
+            group_secrets = [(k, secrets.get(k)) for k in keys if secrets.get(k)]
+            if group_secrets:
+                lines.append(f"# {group_name}")
+                for key, value in group_secrets:
+                    lines.append(f'{key}="{value}"')
+                    written.add(key)
+                lines.append("")
+
+        # Write any remaining secrets not in groups
+        remaining = [(k, v) for k, v in secrets.items() if k not in written]
+        if remaining:
+            lines.append("# Other")
+            for key, value in remaining:
+                lines.append(f'{key}="{value}"')
+            lines.append("")
+
+        self.new_secrets_file.write_text("\n".join(lines))
+        os.chmod(self.new_secrets_file, 0o600)
+
+
 class ConfigManager:
     """Manages configuration file reading and writing."""
 
@@ -1417,6 +1563,12 @@ def main():
     config_manager = ConfigManager(logger)
     config_manager.ensure_config_dir()
     prompter = UserPrompter(logger)
+
+    # Run configuration migration if needed
+    migrator = ConfigMigrator(logger)
+    if not migrator.migrate_configs():
+        logger.error("Configuration migration failed")
+        sys.exit(1)
 
     # Run appropriate setup flow
     if args.full:

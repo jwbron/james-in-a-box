@@ -265,7 +265,7 @@ Each container gets its own ephemeral git worktree, keeping your host repositori
 
 2. **Run master setup script**:
    ```bash
-   ./setup.sh
+   ./setup.py
    ```
 
    This will:
@@ -277,7 +277,7 @@ Each container gets its own ephemeral git worktree, keeping your host repositori
 
    **Updating existing installation:**
    ```bash
-   ./setup.sh --update
+   ./setup.py --update
    ```
 
 3. **Configure Slack tokens**:
@@ -565,7 +565,7 @@ journalctl --user -u slack-notifier.service --no-pager
 
 **Common issues**:
 - Missing Slack tokens in `~/.config/jib-notifier/config.json`
-- Python dependencies not installed (run `uv sync` or re-run `setup.sh`)
+- Python dependencies not installed (run `uv sync` or re-run `setup.py`)
 - Notification directory doesn't exist (create `~/.jib-sharing/notifications/`)
 
 ### Container Issues

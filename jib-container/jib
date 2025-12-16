@@ -401,19 +401,19 @@ def check_docker_permissions() -> bool:
 
 
 def get_setup_script_path() -> Optional[Path]:
-    """Find the setup.sh script relative to the jib launcher location"""
-    # Try to find setup.sh relative to the jib script
+    """Find the setup.py script relative to the jib launcher location"""
+    # Try to find setup.py relative to the jib script
     jib_script = Path(__file__).resolve()
 
-    # jib is at jib-container/jib, setup.sh is at repo root
+    # jib is at jib-container/jib, setup.py is at repo root
     repo_root = jib_script.parent.parent
-    setup_script = repo_root / "setup.sh"
+    setup_script = repo_root / "setup.py"
 
     if setup_script.exists():
         return setup_script
 
-    # Fallback: check ~/khan/james-in-a-box/setup.sh
-    fallback = Path.home() / "khan" / "james-in-a-box" / "setup.sh"
+    # Fallback: check ~/khan/james-in-a-box/setup.py
+    fallback = Path.home() / "khan" / "james-in-a-box" / "setup.py"
     if fallback.exists():
         return fallback
 
@@ -421,29 +421,29 @@ def get_setup_script_path() -> Optional[Path]:
 
 
 def run_setup_script() -> bool:
-    """Run the setup.sh script to configure jib"""
+    """Run the setup.py script to configure jib"""
     setup_script = get_setup_script_path()
 
     if not setup_script:
-        error("Could not find setup.sh script")
+        error("Could not find setup.py script")
         print()
         print("Please run setup manually:")
         print("  cd ~/khan/james-in-a-box")
-        print("  ./setup.sh")
+        print("  ./setup.py")
         return False
 
     info(f"Running setup: {setup_script}")
     print()
 
     try:
-        # Run setup.sh in its directory
+        # Run setup.py in its directory
         result = subprocess.run(
-            ["bash", str(setup_script)],
+            [sys.executable, str(setup_script)],
             cwd=setup_script.parent
         )
         return result.returncode == 0
     except Exception as e:
-        error(f"Failed to run setup.sh: {e}")
+        error(f"Failed to run setup.py: {e}")
         return False
 
 
@@ -506,8 +506,8 @@ def check_host_setup() -> bool:
         print("  • Shared directories for notifications and task communication")
         print()
 
-        # Auto-run setup.sh when config is missing
-        info("Running setup.sh to configure jib...")
+        # Auto-run setup.py when config is missing
+        info("Running setup.py to configure jib...")
         print()
         if run_setup_script():
             success("Setup completed!")
@@ -2144,7 +2144,7 @@ def main():
 Examples:
   jib                                      # Run Claude Code (progress bar by default, auto-setup if needed)
   jib -v                                   # Run in verbose mode (detailed output)
-  jib --setup                              # Run full setup (delegates to setup.sh)
+  jib --setup                              # Run full setup (delegates to setup.py)
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
   jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
@@ -2237,9 +2237,9 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     if not check_host_setup():
         return 1
 
-    # Handle setup - delegate to setup.sh
+    # Handle setup - delegate to setup.py
     if args.setup:
-        info("Delegating to setup.sh for complete jib configuration...")
+        info("Delegating to setup.py for complete jib configuration...")
         print()
         if not run_setup_script():
             return 1
