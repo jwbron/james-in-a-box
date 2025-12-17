@@ -176,6 +176,8 @@ def process_task(message_file: Path):
 2. If found, load the previous work context before proceeding (EVEN IF MARKED AS CLOSED)
 3. If not found, create a new beads task with this thread ID as a label
 4. If this thread is about a specific PR, link the tasks (add PR label to thread task, reference thread in PR task)
+
+**Full thread history:** If you need to see the full Slack thread conversation, look in `~/sharing/incoming/` and `~/sharing/responses/` for files with `thread_ts: "{thread_ts}"` in their frontmatter. Use beads context first - you rarely need the full thread.
 """
 
     # Construct prompt for Claude with full context

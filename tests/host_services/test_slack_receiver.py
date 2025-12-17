@@ -128,12 +128,6 @@ user_name: "Test User"
 received: "2024-11-24 11:27:05"
 ---
 
-# New Task from Test User
-
-**Received:** 2024-11-24 11:27:05
-**User ID:** U12345678
-**Channel:** D12345678
-
 ## Current Message
 
 Please implement a new feature.

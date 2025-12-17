@@ -459,15 +459,9 @@ class SlackReceiver:
         doc_parts.append(f'received: "{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"')
         doc_parts.append("---")
         doc_parts.append("")
-        doc_parts.append(f"**Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        doc_parts.append(f"**User ID:** {metadata.get('user_id', 'unknown')}")
-        doc_parts.append(f"**Channel:** {metadata.get('channel', 'unknown')}")
 
-        # Include thread_ts if present (also in body for visibility)
-        if thread_ts:
-            doc_parts.append(f"**Thread:** {thread_ts}")
-
-        doc_parts.append("\n## Current Message\n")
+        # Message content starts here - no metadata in body since it's in frontmatter
+        doc_parts.append("## Current Message\n")
         doc_parts.append(content)
 
         doc_parts.append("\n---")
@@ -832,71 +826,6 @@ class SlackReceiver:
                 stderr_output="",
             )
 
-    def _get_thread_parent_text(self, channel: str, thread_ts: str) -> str:
-        """Fetch the parent message text from a thread."""
-        try:
-            # Get the parent message
-            response = self.web_client.conversations_history(
-                channel=channel, latest=thread_ts, inclusive=True, limit=1
-            )
-
-            if response["ok"] and response["messages"]:
-                return response["messages"][0].get("text", "")
-        except Exception as e:
-            self.logger.error("Failed to fetch thread parent", error=str(e))
-
-        return ""
-
-    def _get_full_thread_context(self, channel: str, thread_ts: str) -> list:
-        """Fetch all messages in a thread for full context.
-
-        Returns list of messages in chronological order (oldest first).
-        Each message is a dict with 'user', 'text', 'ts' fields.
-        """
-        try:
-            # Get all replies in the thread
-            response = self.web_client.conversations_replies(
-                channel=channel,
-                ts=thread_ts,
-                inclusive=True,  # Include the parent message
-                limit=100,  # Should be enough for most threads
-            )
-
-            if response["ok"] and response["messages"]:
-                messages = []
-                for msg in response["messages"]:
-                    # Get user name for each message
-                    user_id = msg.get("user")
-                    if user_id:
-                        try:
-                            user_info = self.web_client.users_info(user=user_id)
-                            user_name = (
-                                user_info["user"]["real_name"] if user_info["ok"] else user_id
-                            )
-                        except:
-                            user_name = user_id
-                    else:
-                        user_name = "Unknown"
-
-                    messages.append(
-                        {
-                            "user": user_name,
-                            "user_id": user_id,
-                            "text": msg.get("text", ""),
-                            "ts": msg.get("ts", ""),
-                        }
-                    )
-
-                self.logger.info(
-                    "Fetched thread messages", message_count=len(messages), thread_ts=thread_ts
-                )
-                return messages
-
-        except Exception as e:
-            self.logger.error("Failed to fetch full thread context", error=str(e))
-
-        return []
-
     def _process_message(self, event: dict[str, Any]):
         """Process incoming message event."""
         # Extract event data
@@ -948,24 +877,19 @@ class SlackReceiver:
             thread_ts=thread_ts or None,
         )
 
-        # If this is a thread reply, get full thread context
+        # If this is a thread reply, extract notification timestamp if present
+        # We don't fetch the full thread here - Claude can look it up from files if needed
         referenced_notif = None
-        thread_context = None
         if thread_ts:
-            # Fetch full thread for context
-            thread_context = self._get_full_thread_context(channel, thread_ts)
-            if thread_context:
-                # Extract notification timestamp from first message in thread
-                parent_text = thread_context[0]["text"]
-                import re
-
-                timestamp_pattern = r"\b\d{8}-\d{6}\b"
-                match = re.search(timestamp_pattern, parent_text)
-                if match:
-                    referenced_notif = match.group(0)
-                    self.logger.info(
-                        "Extracted notification timestamp", referenced_notif=referenced_notif
-                    )
+            # Try to extract notification timestamp from the current message
+            import re
+            timestamp_pattern = r"\b\d{8}-\d{6}\b"
+            match = re.search(timestamp_pattern, text)
+            if match:
+                referenced_notif = match.group(0)
+                self.logger.info(
+                    "Extracted notification timestamp", referenced_notif=referenced_notif
+                )
 
         # Use LLM-based categorization to determine message type and routing
         # This enables natural language commands like "run beads analyzer" or "check container status"
@@ -1058,7 +982,6 @@ class SlackReceiver:
             "channel": channel,
             "referenced_notification": referenced_notif,
             "thread_ts": reply_thread_ts,
-            "thread_context": thread_context,
             "categorization": categorization.to_dict(),  # Include categorization info
         }
 
