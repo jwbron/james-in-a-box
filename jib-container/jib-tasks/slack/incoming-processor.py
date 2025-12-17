@@ -172,9 +172,10 @@ def process_task(message_file: Path):
 
 **Thread ID:** `{thread_ts}`
 **This is part of an ongoing Slack conversation.** You MUST:
-1. Search beads for existing context: `bd --allow-stale search "{original_task_id}"`
-2. If found, load the previous work context before proceeding
+1. Search beads for existing context: `bd --allow-stale search "{original_task_id}"` OR `bd --allow-stale list --label "thread:{thread_ts}"`
+2. If found, load the previous work context before proceeding (EVEN IF MARKED AS CLOSED)
 3. If not found, create a new beads task with this thread ID as a label
+4. If this thread is about a specific PR, link the tasks (add PR label to thread task, reference thread in PR task)
 """
 
     # Construct prompt for Claude with full context
@@ -201,7 +202,8 @@ You received a task via Slack. Process it according to the workflow below.
 ```bash
 cd ~/beads
 bd --allow-stale search "{original_task_id}"
-# If found: bd --allow-stale show <found-id> to load context
+# Also try: bd --allow-stale list --label "thread:{thread_ts}"
+# If found: bd --allow-stale show <found-id> to load context (EVEN IF CLOSED)
 # If not found: Create new task below
 ```
 
@@ -209,9 +211,21 @@ bd --allow-stale search "{original_task_id}"
 
 If no existing task was found:
 ```bash
-bd --allow-stale create "Slack: {original_task_id}" --labels slack-thread,"{original_task_id}" --description "Task from Slack thread"
+bd --allow-stale create "Slack: {original_task_id}" --labels slack-thread,"{original_task_id}","thread:{thread_ts}" --description "Task from Slack thread"
 bd --allow-stale update <id> --status in_progress
 ```
+
+**If working on a specific PR:**
+- Determine the PR number and repo from the task content
+- Search for the PR's beads task: `bd --allow-stale list --label "pr-<repo>-<num>"`
+- If PR task exists: Load its context AND link the thread task to it
+  ```bash
+  # Add PR label to thread task
+  bd --allow-stale update <thread-task-id> --notes "Working on PR #<num> in <repo>"
+  # Reference thread in PR task
+  bd --allow-stale update <pr-task-id> --notes "Slack thread {thread_ts} discussing this PR"
+  ```
+- This creates a bidirectional link between the Slack thread and the PR
 
 ### 3. Execute the task
    - Read relevant code/documentation
@@ -589,7 +603,9 @@ You sent a notification that prompted a response from the user. Process their re
 ```bash
 cd ~/beads
 bd --allow-stale search "{task_id_for_search}"
-# If found: bd --allow-stale show <found-id> to load full context
+# Also try: bd --allow-stale list --label "thread:{thread_ts}"
+# If found: bd --allow-stale show <found-id> to load full context (EVEN IF CLOSED)
+# Load ALL related tasks: if this thread is about a PR, also load the PR's beads task
 ```
 
 ## Original Notification
@@ -607,7 +623,9 @@ bd --allow-stale search "{task_id_for_search}"
 ```bash
 cd ~/beads
 bd --allow-stale search "{task_id_for_search}"
-bd --allow-stale show <found-id>  # Review what you did before
+# Also try: bd --allow-stale list --label "thread:{thread_ts}"
+bd --allow-stale show <found-id>  # Review what you did before (EVEN IF CLOSED)
+# If this thread is about a PR, also load the PR's beads task for full context
 ```
 
 ### 2. Understand the response

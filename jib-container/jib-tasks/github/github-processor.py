@@ -79,6 +79,7 @@ def handle_check_failure(context: dict):
     print(f"  Failed checks: {[c.get('name', 'unknown') for c in failed_checks]}")
 
     # Get or create beads task for this PR (persistent context across sessions)
+    # Note: This loads the task even if it was previously marked as closed
     beads_id = pr_context_manager.get_or_create_context(
         repo, pr_num, pr_title, task_type="github-pr"
     )
@@ -347,6 +348,7 @@ def handle_comment(context: dict):
     print(f"Handling {len(comments)} comment(s) for PR #{pr_num} in {repo}")
 
     # Get or create beads task for this PR (persistent context across sessions)
+    # Note: This loads the task even if it was previously marked as closed
     beads_id = pr_context_manager.get_or_create_context(
         repo, pr_num, pr_title, task_type="github-pr"
     )
@@ -630,6 +632,7 @@ def handle_review_request(context: dict):
         return
 
     # Get or create beads task for this PR (persistent context across sessions)
+    # Note: This loads the task even if it was previously marked as closed
     beads_id = pr_context_manager.get_or_create_context(
         repo, pr_num, pr_title, task_type="github-pr"
     )
@@ -917,6 +920,7 @@ def handle_merge_conflict(context: dict):
     print(f"  Branch: {pr_branch} has conflicts with {base_branch}")
 
     # Get or create beads task for this PR (persistent context across sessions)
+    # Note: This loads the task even if it was previously marked as closed
     beads_id = pr_context_manager.get_or_create_context(
         repo, pr_num, pr_title, task_type="github-pr"
     )
@@ -1210,6 +1214,7 @@ def handle_pr_review_response(context: dict):
     print(f"  Line comments: {len(context.get('line_comments', []))}")
 
     # Get or create beads task for this PR (persistent context across sessions)
+    # Note: This loads the task even if it was previously marked as closed
     beads_id = pr_context_manager.get_or_create_context(
         repo, pr_num, pr_title, task_type="github-pr"
     )
