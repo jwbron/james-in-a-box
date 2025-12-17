@@ -252,7 +252,7 @@ class ConfigMigrator:
         self.new_secrets_file = self.new_config_dir / "secrets.env"
         self.new_config_file = self.new_config_dir / "config.yaml"
 
-        # Legacy config locations
+        # Legacy config locations in ~/.config/jib (standalone files)
         self.legacy_locations = {
             "anthropic_api_key": self.new_config_dir / "anthropic-api-key",
             "google_api_key": self.new_config_dir / "google-api-key",
@@ -260,7 +260,12 @@ class ConfigMigrator:
             "github_app_id": self.new_config_dir / "github-app-id",
             "github_app_installation": self.new_config_dir / "github-app-installation-id",
             "github_app_key": self.new_config_dir / "github-app-private-key.pem",
+            "github_token": self.new_config_dir / "github-token",
         }
+
+        # Legacy config from other services
+        self.legacy_notifier_config = Path.home() / ".config" / "jib-notifier" / "config.json"
+        self.legacy_context_sync_env = Path.home() / ".config" / "context-sync" / ".env"
 
     def check_needs_migration(self) -> bool:
         """Check if any legacy config files exist that need migration.
@@ -268,10 +273,16 @@ class ConfigMigrator:
         Returns:
             True if migration is needed, False otherwise
         """
-        # Check for standalone API key files
+        # Check for standalone API key files and other legacy files
         for name, path in self.legacy_locations.items():
-            if path.exists() and "api_key" in name:
+            if path.exists():
                 return True
+
+        # Check for legacy service configs
+        if self.legacy_notifier_config.exists():
+            return True
+        if self.legacy_context_sync_env.exists():
+            return True
 
         return False
 
@@ -290,6 +301,7 @@ class ConfigMigrator:
 
         migrated = False
         secrets = {}
+        config = {}
 
         # Load existing secrets if any
         if self.new_secrets_file.exists():
@@ -300,7 +312,68 @@ class ConfigMigrator:
                         key, value = line.split('=', 1)
                         secrets[key.strip()] = value.strip().strip('"\'')
 
-        # Migrate API keys to secrets.env
+        # Load existing config if any
+        if self.new_config_file.exists():
+            try:
+                import yaml
+                with open(self.new_config_file) as f:
+                    config = yaml.safe_load(f) or {}
+            except ImportError:
+                import json
+                config_json = self.new_config_dir / "config.json"
+                if config_json.exists():
+                    with open(config_json) as f:
+                        config = json.load(f)
+
+        # Migrate from jib-notifier config.json
+        if self.legacy_notifier_config.exists():
+            self.logger.info(f"Migrating from {self.legacy_notifier_config}")
+            try:
+                with open(self.legacy_notifier_config) as f:
+                    notifier_config = json.load(f)
+
+                # Extract secrets
+                if notifier_config.get("slack_token") and "SLACK_TOKEN" not in secrets:
+                    secrets["SLACK_TOKEN"] = notifier_config["slack_token"]
+                    self.logger.success("Migrated Slack bot token")
+                    migrated = True
+                if notifier_config.get("slack_app_token") and "SLACK_APP_TOKEN" not in secrets:
+                    secrets["SLACK_APP_TOKEN"] = notifier_config["slack_app_token"]
+                    self.logger.success("Migrated Slack app token")
+                    migrated = True
+
+                # Extract non-secret settings
+                if notifier_config.get("slack_channel") and "slack_channel" not in config:
+                    config["slack_channel"] = notifier_config["slack_channel"]
+                    self.logger.success("Migrated slack_channel")
+                    migrated = True
+                if notifier_config.get("allowed_users") and "allowed_users" not in config:
+                    config["allowed_users"] = notifier_config["allowed_users"]
+                    self.logger.success("Migrated allowed_users")
+                    migrated = True
+
+            except Exception as e:
+                self.logger.warning(f"Failed to migrate jib-notifier config: {e}")
+
+        # Migrate from context-sync .env
+        if self.legacy_context_sync_env.exists():
+            self.logger.info(f"Migrating from {self.legacy_context_sync_env}")
+            try:
+                with open(self.legacy_context_sync_env) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, value = line.split("=", 1)
+                            key = key.strip()
+                            value = value.strip().strip("\"'")
+                            if value and key not in secrets:
+                                secrets[key] = value
+                                self.logger.success(f"Migrated {key}")
+                                migrated = True
+            except Exception as e:
+                self.logger.warning(f"Failed to migrate context-sync env: {e}")
+
+        # Migrate standalone API key files
         api_key_mapping = {
             "anthropic_api_key": "ANTHROPIC_API_KEY",
             "google_api_key": "GOOGLE_API_KEY",
@@ -319,19 +392,41 @@ class ConfigMigrator:
                 except Exception as e:
                     self.logger.warning(f"Failed to migrate {legacy_name}: {e}")
 
+        # Migrate GitHub token file
+        github_token_file = self.legacy_locations.get("github_token")
+        if github_token_file and github_token_file.exists() and "GITHUB_TOKEN" not in secrets:
+            try:
+                token = github_token_file.read_text().strip()
+                if token:
+                    secrets["GITHUB_TOKEN"] = token
+                    self.logger.success("Migrated github-token → GITHUB_TOKEN")
+                    migrated = True
+            except Exception as e:
+                self.logger.warning(f"Failed to migrate github-token: {e}")
+
         # Save migrated secrets
         if migrated:
-            self._write_secrets(secrets)
+            if secrets:
+                self._write_secrets(secrets)
+            if config:
+                try:
+                    import yaml
+                    self.new_config_file.write_text(yaml.dump(config, default_flow_style=False))
+                    self.logger.success(f"Config written to {self.new_config_file}")
+                except ImportError:
+                    import json
+                    config_json = self.new_config_dir / "config.json"
+                    config_json.write_text(json.dumps(config, indent=2))
+                    self.logger.success(f"Config written to {config_json}")
+
             self.logger.success("\n✓ Configuration migration complete")
             self.logger.info("")
-            self.logger.info("Legacy API key files have been migrated to:")
+            self.logger.info("Legacy files have been migrated to:")
             self.logger.info(f"  {self.new_secrets_file}")
+            self.logger.info(f"  {self.new_config_file}")
             self.logger.info("")
             self.logger.warning("IMPORTANT: The legacy files still exist for backward compatibility.")
-            self.logger.warning("You can safely delete them after verifying jib works correctly:")
-            for name, path in self.legacy_locations.items():
-                if "api_key" in name and path.exists():
-                    self.logger.warning(f"  rm {path}")
+            self.logger.warning("You can safely delete them after verifying jib works correctly.")
             self.logger.info("")
 
         return True
@@ -1244,6 +1339,38 @@ class MinimalSetup:
         self.prompter = prompter
         self.verbose = verbose
 
+        # Load existing configuration
+        self.existing_secrets = self.config_manager.load_secrets()
+        self.existing_config = self.config_manager.load_config()
+
+    def is_already_configured(self) -> bool:
+        """Check if essential configuration already exists.
+
+        Returns:
+            True if all essential config is present, False otherwise
+        """
+        # Required secrets
+        required_secrets = ["SLACK_TOKEN", "SLACK_APP_TOKEN"]
+        # Need either GITHUB_TOKEN or GitHub App config
+        has_github = "GITHUB_TOKEN" in self.existing_secrets or (
+            (self.config_manager.config_dir / "github-app-id").exists()
+            and (self.config_manager.config_dir / "github-app-private-key.pem").exists()
+        )
+
+        # Check all required secrets exist
+        for secret in required_secrets:
+            if not self.existing_secrets.get(secret):
+                return False
+
+        if not has_github:
+            return False
+
+        # Check essential config values
+        if not self.existing_config.get("github_username"):
+            return False
+
+        return True
+
     def detect_github_username(self) -> Optional[str]:
         """Try to detect GitHub username from gh CLI."""
         try:
@@ -1261,6 +1388,12 @@ class MinimalSetup:
 
     def prompt_github_username(self) -> str:
         """Prompt for GitHub username with auto-detection."""
+        # Check if we already have it
+        existing = self.existing_config.get("github_username")
+        if existing:
+            self.logger.success(f"Using existing GitHub username: {existing}")
+            return existing
+
         self.logger.header("GitHub Configuration")
 
         detected = self.detect_github_username()
@@ -1276,6 +1409,12 @@ class MinimalSetup:
 
     def prompt_bot_name(self) -> str:
         """Prompt for bot name."""
+        # Check if we already have it
+        existing = self.existing_config.get("bot_name")
+        if existing:
+            self.logger.success(f"Using existing bot name: {existing}")
+            return existing
+
         return self.prompter.prompt(
             "Bot name",
             default="james-in-a-box",
@@ -1289,29 +1428,71 @@ class MinimalSetup:
 
     def prompt_slack_tokens(self) -> dict[str, str]:
         """Prompt for Slack tokens with validation."""
+        secrets = {}
+
+        # Check if we already have Slack tokens
+        existing_bot_token = self.existing_secrets.get("SLACK_TOKEN")
+        existing_app_token = self.existing_secrets.get("SLACK_APP_TOKEN")
+
+        if existing_bot_token and existing_app_token:
+            self.logger.success("Using existing Slack tokens")
+            return {
+                "SLACK_TOKEN": existing_bot_token,
+                "SLACK_APP_TOKEN": existing_app_token,
+            }
+
         self.logger.header("Slack Integration")
         self.logger.info("Get tokens from: https://api.slack.com/apps")
         self.logger.info("")
 
-        bot_token = self.prompter.prompt(
-            "Slack Bot Token (xoxb-...)",
-            required=True,
-            validator=lambda t: self.validate_slack_token(t, "xoxb-")
-        )
+        if existing_bot_token:
+            self.logger.info(f"Using existing Slack bot token: {existing_bot_token[:20]}...")
+            secrets["SLACK_TOKEN"] = existing_bot_token
+        else:
+            bot_token = self.prompter.prompt(
+                "Slack Bot Token (xoxb-...)",
+                required=True,
+                validator=lambda t: self.validate_slack_token(t, "xoxb-")
+            )
+            secrets["SLACK_TOKEN"] = bot_token
 
-        app_token = self.prompter.prompt(
-            "Slack App Token (xapp-...)",
-            required=True,
-            validator=lambda t: self.validate_slack_token(t, "xapp-")
-        )
+        if existing_app_token:
+            self.logger.info(f"Using existing Slack app token: {existing_app_token[:20]}...")
+            secrets["SLACK_APP_TOKEN"] = existing_app_token
+        else:
+            app_token = self.prompter.prompt(
+                "Slack App Token (xapp-...)",
+                required=True,
+                validator=lambda t: self.validate_slack_token(t, "xapp-")
+            )
+            secrets["SLACK_APP_TOKEN"] = app_token
 
-        return {
-            "SLACK_TOKEN": bot_token,
-            "SLACK_APP_TOKEN": app_token,
-        }
+        return secrets
 
     def prompt_github_auth(self) -> dict[str, str]:
         """Prompt for GitHub authentication (App or PAT)."""
+        secrets = {}
+
+        # Check if GitHub auth already exists
+        has_github_token = "GITHUB_TOKEN" in self.existing_secrets
+        has_github_app = (
+            (self.config_manager.config_dir / "github-app-id").exists()
+            and (self.config_manager.config_dir / "github-app-private-key.pem").exists()
+        )
+
+        if has_github_token or has_github_app:
+            if has_github_app:
+                self.logger.success("Using existing GitHub App configuration")
+            else:
+                self.logger.success("Using existing GitHub token")
+
+            # Return existing tokens
+            if has_github_token:
+                secrets["GITHUB_TOKEN"] = self.existing_secrets["GITHUB_TOKEN"]
+            if "GITHUB_READONLY_TOKEN" in self.existing_secrets:
+                secrets["GITHUB_READONLY_TOKEN"] = self.existing_secrets["GITHUB_READONLY_TOKEN"]
+            return secrets
+
         self.logger.header("GitHub Authentication")
         self.logger.info("Choose authentication method:")
         self.logger.info("  1. GitHub App (recommended for team usage, REQUIRED for PR check status)")
@@ -1326,8 +1507,6 @@ class MinimalSetup:
             default="2",
             validator=lambda c: None if c in ["1", "2"] else ValueError("Choose 1 or 2")
         )
-
-        secrets = {}
 
         if choice == "1":
             # GitHub App configuration
@@ -1470,6 +1649,23 @@ class MinimalSetup:
         self.logger.info("This will configure the essential settings to get jib running.")
         self.logger.info("You can run './setup.py --full' later for optional components.")
         self.logger.info("")
+
+        # Check if already configured
+        if self.is_already_configured():
+            self.logger.success("\n✓ Configuration already exists!")
+            self.logger.info("")
+            self.logger.info("All essential settings are already configured:")
+            self.logger.info(f"  - GitHub username: {self.existing_config.get('github_username')}")
+            self.logger.info(f"  - Bot name: {self.existing_config.get('bot_name', 'james-in-a-box')}")
+            self.logger.info("  - Slack tokens: ✓")
+            self.logger.info("  - GitHub authentication: ✓")
+            self.logger.info("")
+            self.logger.info("Re-running setup will reuse existing values.")
+            self.logger.info("To update configuration, edit:")
+            self.logger.info(f"  - {self.config_manager.secrets_file}")
+            self.logger.info(f"  - {self.config_manager.config_file}")
+            self.logger.info("")
+            return True
 
         try:
             # 1. GitHub username
