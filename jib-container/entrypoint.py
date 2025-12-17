@@ -145,8 +145,37 @@ def run_cmd(
 
 
 def chown_recursive(path: Path, uid: int, gid: int) -> None:
-    """Recursively change ownership of a path."""
-    run_cmd(["chown", "-R", f"{uid}:{gid}", str(path)])
+    """Recursively change ownership of a path, skipping read-only files.
+
+    This handles cases where files are mounted read-only (e.g., secrets)
+    and cannot have their ownership changed. Such files are silently skipped.
+    """
+    # Try the directory itself first
+    try:
+        os.chown(path, uid, gid)
+    except (PermissionError, OSError):
+        # Skip if we can't chown the root (might be read-only mount)
+        pass
+
+    # Walk through all subdirectories and files
+    for root, dirs, files in os.walk(path):
+        # Change ownership of directories
+        for directory in dirs:
+            dir_path = Path(root) / directory
+            try:
+                os.chown(dir_path, uid, gid)
+            except (PermissionError, OSError):
+                # Skip read-only directories (e.g., read-only mounts)
+                pass
+
+        # Change ownership of files
+        for file in files:
+            file_path = Path(root) / file
+            try:
+                os.chown(file_path, uid, gid)
+            except (PermissionError, OSError):
+                # Skip read-only files (e.g., secrets mounted with :ro flag)
+                pass
 
 
 # =============================================================================
