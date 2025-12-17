@@ -196,7 +196,7 @@ All other settings use sensible defaults. Users can run `--full` later for optio
 
 ### Service Management
 
-Services are categorized into **core services** and **LLM-based services**:
+Services are categorized into **core services** (enabled by default) and **LLM-based services** (opt-in):
 
 #### Core Services (Enabled by Default)
 
@@ -223,19 +223,22 @@ These services require LLM API tokens (Anthropic, OpenAI, etc.) and must be expl
 
 #### Service Management Commands
 
+Users can enable/disable all services, or manage individual services:
+
 ```bash
 # Enable all services (core + LLM-based)
 ./setup.py --enable-services
 
-# Disable all services
+# Disable all services (core + LLM-based)
 ./setup.py --disable-services
 
-# Enable/disable individual service
+# Enable/disable individual service (works for both core and LLM services)
+./setup.py --enable slack-notifier
 ./setup.py --enable context-sync
 ./setup.py --disable github-watcher
 
-# Enable only core services (default behavior during setup)
-./setup.py --enable-core-services
+# Note: Core services are enabled by default during initial setup
+# Use --disable to turn off individual core services if needed
 ```
 
 ## Implementation Details
