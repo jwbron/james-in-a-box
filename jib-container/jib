@@ -1765,14 +1765,21 @@ def run_claude() -> bool:
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
-    # Mount GitHub token file as read-only (if it exists)
+    # Mount secret files as read-only (overlay on top of sharing/ mount)
     # This prevents the container from modifying or deleting its own secrets
-    github_token_file = Config.SHARING_DIR / ".github-token"
-    if github_token_file.exists():
-        github_token_container = f"/home/{os.environ['USER']}/sharing/.github-token"
-        mount_args.extend(["-v", f"{github_token_file}:{github_token_container}:ro,z"])
-        if not _quiet_mode:
-            print(f"  • ~/sharing/.github-token (READ-ONLY, secret protection)")
+    # The sharing/ directory is mounted read-write, but we overlay specific
+    # secret files with read-only mounts for additional security
+    secret_files = [
+        (Config.SHARING_DIR / ".github-token", "~/sharing/.github-token"),
+        # Add any future secret files here with the same pattern
+    ]
+
+    for secret_file, display_path in secret_files:
+        if secret_file.exists():
+            secret_container_path = f"/home/{os.environ['USER']}/sharing/{secret_file.name}"
+            mount_args.extend(["-v", f"{secret_file}:{secret_container_path}:ro,z"])
+            if not _quiet_mode:
+                print(f"  • {display_path} (READ-ONLY, secret protection)")
 
     if not _quiet_mode:
         print()
@@ -2086,13 +2093,20 @@ def exec_in_new_container(
     if api_key:
         cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
 
-    # Mount GitHub token file as read-only (if it exists)
+    # Mount secret files as read-only (overlay on top of sharing/ mount)
     # This prevents the container from modifying or deleting its own secrets
-    github_token_file = Config.SHARING_DIR / ".github-token"
-    if github_token_file.exists():
-        github_token_container = f"/home/{os.environ['USER']}/sharing/.github-token"
-        mount_args.extend(["-v", f"{github_token_file}:{github_token_container}:ro,z"])
-        print(f"  • ~/sharing/.github-token (READ-ONLY, secret protection)")
+    # The sharing/ directory is mounted read-write, but we overlay specific
+    # secret files with read-only mounts for additional security
+    secret_files = [
+        (Config.SHARING_DIR / ".github-token", "~/sharing/.github-token"),
+        # Add any future secret files here with the same pattern
+    ]
+
+    for secret_file, display_path in secret_files:
+        if secret_file.exists():
+            secret_container_path = f"/home/{os.environ['USER']}/sharing/{secret_file.name}"
+            mount_args.extend(["-v", f"{secret_file}:{secret_container_path}:ro,z"])
+            print(f"  • {display_path} (READ-ONLY, secret protection)")
 
     # Add mount arguments
     cmd.extend(mount_args)
