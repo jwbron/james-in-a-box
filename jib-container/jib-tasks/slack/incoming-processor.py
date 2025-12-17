@@ -585,12 +585,17 @@ If you cannot find or access this specific PR, say so explicitly.
         thread_section = f"""
 ## Full Thread History
 
-The complete conversation history from this Slack thread is available in the response file you're processing.
 **Thread ID:** `{thread_ts}`
-**Location:** Check the original message file passed to this processor (contains full thread context in the "Thread Context" section)
-**Alternative:** Thread context is also stored in `~/sharing/responses/` and `~/sharing/incoming/` files with matching thread_ts in frontmatter
 
-To access the full thread history if needed, read the original message file or search for files with this thread_ts.
+The full Slack thread conversation history is NOT included in this prompt to keep it concise.
+If you need to review the full thread history, it's available in these locations:
+
+1. **Primary location:** The response file being processed (check for "## Thread Context" section)
+2. **Notification files:** `~/sharing/responses/` and `~/sharing/incoming/`
+   - Files have `thread_ts: "{thread_ts}"` in their frontmatter
+   - Use: `grep -l "thread_ts.*{thread_ts}" ~/sharing/responses/*.md ~/sharing/incoming/*.md`
+
+Most of the time you won't need the full thread - the beads context is sufficient.
 """
 
     prompt = f"""# Slack Response Processing
