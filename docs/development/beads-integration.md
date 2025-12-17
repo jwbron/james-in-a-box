@@ -10,6 +10,34 @@ Beads provides persistent task memory across ephemeral container sessions. When 
 - Maintain context between related tasks
 - Enable discovery of prior work on the same PR/issue/thread
 
+## Core Requirements
+
+**MANDATORY: Every PR and every Slack thread MUST have a beads task.**
+
+1. **PR Tasks**: Each GitHub PR gets a unique beads task (via `PRContextManager`)
+   - Task is created on first interaction (review, comment, check failure, etc.)
+   - Task persists across all interactions with that PR
+   - Task is loaded on EVERY PR interaction, even if marked as closed
+   - Multiple Slack threads about the same PR should link to the PR's beads task
+
+2. **Slack Thread Tasks**: Each Slack thread gets a unique beads task
+   - Task is created when thread starts (first message)
+   - Task persists across all replies in the thread
+   - Task is loaded on EVERY thread reply, even if marked as closed
+   - If thread is about a specific PR, link the thread task to the PR task
+
+3. **Loading Closed Tasks**: Tasks marked as "closed" are still loaded when:
+   - Receiving a new message in that Slack thread
+   - Receiving a new GitHub event for that PR
+   - User explicitly references that PR or thread
+   - This ensures context is preserved even after work is "done"
+
+4. **Full Thread Context Discovery**: The LLM must be able to discover full context:
+   - Slack thread history should be included in the prompt
+   - Beads tasks should be searchable by both task ID and thread ID
+   - PR-related Slack threads should reference the PR in labels
+   - Instructions should explicitly tell Claude how to find and load all related context
+
 ## When to Integrate
 
 **Beads integration is required for container tasks that:**
@@ -217,8 +245,34 @@ Use consistent, searchable context IDs:
 |--------|--------|---------|
 | GitHub PR | `pr-{repo}-{number}` | `pr-james-in-a-box-75` |
 | Slack thread | `task-{task_id}` | `task-20251128-134500` |
+| Slack thread ID | `thread:{thread_ts}` | `thread:1765932352.046209` |
 | JIRA ticket | `jira-{ticket}` | `jira-PROJECT-1234` |
 | Confluence page | `confluence-{page_id}` | `confluence-12345678` |
+
+## Linking Tasks
+
+When a Slack thread is focused on a specific PR, create a bidirectional link:
+
+```python
+# Create Slack thread task with PR reference in labels
+slack_task_id = manager.create_context(
+    identifier=f"task-{timestamp}",
+    title=f"Slack: Discussion about PR #{pr_num}",
+    labels=["slack-thread", f"thread:{thread_ts}", f"pr-{repo_name}-{pr_num}"]
+)
+
+# Update PR task to reference the Slack thread
+pr_task_id = pr_manager.get_or_create_context(repo, pr_num, pr_title)
+pr_manager.update_context(
+    pr_task_id,
+    f"Slack thread {thread_ts} discussing this PR"
+)
+```
+
+This allows:
+- Finding all Slack discussions about a PR: `bd list --label pr-{repo}-{pr_num}`
+- Finding the PR being discussed in a thread: Search labels for `pr-*` pattern
+- Maintaining context across both GitHub and Slack interactions
 
 ## Labeling Strategy
 

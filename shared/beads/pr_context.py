@@ -70,6 +70,8 @@ class PRContextManager:
         """Search for existing beads task for this PR.
 
         Uses label search to find the task by its context ID label.
+        NOTE: This returns the task even if it's marked as closed, allowing
+        context to be preserved across PR lifecycle.
 
         Args:
             repo: Repository in "owner/repo" format
@@ -247,6 +249,8 @@ class PRContextManager:
         """Get existing context or create new one.
 
         This is the primary method for ensuring a PR has a beads task.
+        NOTE: This loads existing tasks even if they're marked as closed,
+        ensuring context is preserved when working on a PR.
 
         Args:
             repo: Repository in "owner/repo" format
