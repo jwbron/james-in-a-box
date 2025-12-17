@@ -68,6 +68,7 @@ async def run_agent_async(
     options_kwargs = {
         "cwd": str(cwd) if cwd else None,
         "permission_mode": "bypassPermissions",
+        "model": "opus",
     }
 
     # Only set allowed_tools if explicitly configured
