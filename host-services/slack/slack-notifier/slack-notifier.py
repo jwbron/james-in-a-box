@@ -213,7 +213,11 @@ class SlackNotifier:
         self.running = False
 
     def _should_ignore(self, path: str) -> bool:
-        """Check if a path should be ignored."""
+        """Check if a path should be ignored.
+
+        Specifically ignores incoming/ and responses/ directories which contain
+        messages FROM Slack, not notifications TO Slack.
+        """
         ignore_patterns = [
             ".swp",
             ".tmp",
@@ -223,6 +227,18 @@ class SlackNotifier:
             "__pycache__/",
             "node_modules/",
             ".venv/",
+            # Don't send incoming messages back to Slack - they came FROM Slack
+            "/incoming/",
+            "/incoming",
+            # Don't send response files - they're also from Slack
+            "/responses/",
+            "/responses",
+            # Don't send log files
+            "/logs/",
+            "/logs",
+            # Don't send tracking files
+            "/tracking/",
+            "/tracking",
         ]
         return any(pattern in path for pattern in ignore_patterns)
 

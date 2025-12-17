@@ -128,19 +128,7 @@ user_name: "Test User"
 received: "2024-11-24 11:27:05"
 ---
 
-# New Task from Test User
-
-**Received:** 2024-11-24 11:27:05
-**User ID:** U12345678
-**Channel:** D12345678
-
-## Current Message
-
 Please implement a new feature.
-
----
-
-*Delivered via Slack → incoming/ → Claude*
 """
 
         filepath.write_text(content)
@@ -162,12 +150,6 @@ task_id: "RESPONSE-notification-20251124-111907"
 thread_ts: "1732428847.123456"
 referenced_notification: "notification-20251124-111907"
 ---
-
-# Response from User
-
-**Re:** Notification `notification-20251124-111907`
-
-## Current Message
 
 Thanks for the update, please proceed.
 """

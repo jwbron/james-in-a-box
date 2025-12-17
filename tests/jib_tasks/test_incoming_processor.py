@@ -236,7 +236,7 @@ class TestMain:
         incoming_dir = temp_dir / "incoming"
         incoming_dir.mkdir()
         task_file = incoming_dir / "task.md"
-        task_file.write_text("## Current Message\n\nTest task")
+        task_file.write_text("Test task")
 
         with (
             patch.object(incoming_processor, "process_task", return_value=True) as mock_task,
@@ -252,7 +252,7 @@ class TestMain:
         responses_dir = temp_dir / "responses"
         responses_dir.mkdir()
         response_file = responses_dir / "response.md"
-        response_file.write_text("## Current Message\n\nTest response")
+        response_file.write_text("Test response")
 
         with (
             patch.object(
@@ -293,8 +293,6 @@ class TestProcessTask:
 thread_ts: "1234567890.123456"
 task_id: "slack-task-001"
 ---
-
-## Current Message
 
 Please help with this task.
 """)
@@ -342,8 +340,6 @@ class TestProcessResponse:
 thread_ts: "1234567890.123456"
 referenced_notification: "20251124-123456"
 ---
-
-## Current Message
 
 Here is my response to your question.
 """)
