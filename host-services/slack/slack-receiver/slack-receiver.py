@@ -459,19 +459,8 @@ class SlackReceiver:
         doc_parts.append(f'received: "{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"')
         doc_parts.append("---")
         doc_parts.append("")
-        doc_parts.append(f"**Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        doc_parts.append(f"**User ID:** {metadata.get('user_id', 'unknown')}")
-        doc_parts.append(f"**Channel:** {metadata.get('channel', 'unknown')}")
-
-        # Include thread_ts if present (also in body for visibility)
-        if thread_ts:
-            doc_parts.append(f"**Thread:** {thread_ts}")
-
-        doc_parts.append("\n## Current Message\n")
+        doc_parts.append("## Current Message\n")
         doc_parts.append(content)
-
-        doc_parts.append("\n---")
-        doc_parts.append(f"\n*Delivered via Slack → {target_dir.name}/ → Claude*")
 
         # Write file
         try:
