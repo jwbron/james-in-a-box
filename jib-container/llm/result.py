@@ -1,6 +1,7 @@
 """Shared result type for all LLM providers."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -15,6 +16,7 @@ class AgentResult:
         stderr: Error output (if any)
         returncode: Exit code (0 = success)
         error: Human-readable error message if something went wrong
+        metadata: Optional dict with provider-specific info (e.g., model used)
     """
 
     success: bool
@@ -22,6 +24,7 @@ class AgentResult:
     stderr: str
     returncode: int
     error: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 # Backward compatibility alias
