@@ -8,8 +8,7 @@ It consolidates all configuration into:
   - ~/.config/jib/config.yaml  (non-secret settings)
 
 Usage:
-  ./setup.py                    # Minimal setup (default)
-  ./setup.py --full             # Full setup with optional components
+  ./setup.py                    # Full setup (default)
   ./setup.py --enable-services  # Enable all systemd services
   ./setup.py --disable-services # Disable all systemd services
   ./setup.py --enable SERVICE   # Enable specific service
@@ -958,11 +957,6 @@ def parse_args() -> argparse.Namespace:
     # Setup modes
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
-        "--full",
-        action="store_true",
-        help="Full setup including optional components (default: minimal setup)"
-    )
-    mode_group.add_argument(
         "--update",
         action="store_true",
         help="Update mode: reload configs and restart services"
@@ -1032,75 +1026,6 @@ class FullSetup:
         self.repo_root = Path(__file__).parent
         self.shared_dir = Path.home() / ".jib-sharing"
         self.beads_dir = self.shared_dir / "beads"
-
-    def build_docker_image(self) -> bool:
-        """Build the jib Docker image.
-
-        Returns:
-            True if build succeeded or image already exists, False on error
-        """
-        self.logger.header("Building Docker Image")
-
-        # Check if image already exists
-        try:
-            result = subprocess.run(
-                ["docker", "image", "inspect", "james-in-a-box"],
-                capture_output=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            image_exists = result.returncode == 0
-        except FileNotFoundError:
-            self.logger.error("Docker is not installed")
-            return False
-
-        if image_exists:
-            self.logger.success("Docker image 'james-in-a-box' already exists")
-            if not self.prompter.prompt_yes_no("Rebuild the image?", default=False):
-                self.logger.info("Skipping image rebuild")
-                return True
-
-        # Build the image
-        self.logger.info("Building Docker image (this may take a few minutes)...")
-        self.logger.info("")
-
-        try:
-            # Use bin/jib --setup to build the image
-            jib_script = self.repo_root / "bin" / "jib"
-            if not jib_script.exists():
-                self.logger.error(f"jib script not found at {jib_script}")
-                return False
-
-            # Run jib --setup with auto-yes
-            process = subprocess.Popen(
-                [str(jib_script), "--setup"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                cwd=self.repo_root
-            )
-
-            # Send 'yes' to any prompts and show output
-            stdout, _ = process.communicate(input="yes\n")
-
-            if self.verbose:
-                print(stdout)
-
-            if process.returncode == 0:
-                self.logger.success("Docker image built successfully")
-                return True
-            else:
-                self.logger.error("Docker image build failed")
-                self.logger.error("You can rebuild later with: bin/jib --setup")
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Failed to build Docker image: {e}")
-            if self.verbose:
-                import traceback
-                traceback.print_exc()
-            return False
 
     def create_shared_directories(self) -> bool:
         """Create shared directories for communication with containers.
@@ -1219,7 +1144,8 @@ class FullSetup:
 
         if not has_confluence and not has_jira:
             self.logger.info("No Confluence or JIRA configuration found")
-            if self.prompter.prompt_yes_no("Configure Confluence/JIRA sync now?", default=False):
+            self.logger.info("Context sync is optional and can be configured later.")
+            if self.prompter.prompt_yes_no("Would you like to configure Confluence/JIRA sync now?", default=False):
                 return self.prompt_context_sync_config()
             else:
                 self.logger.info("Skipping context sync configuration")
@@ -1288,7 +1214,7 @@ class FullSetup:
         Returns:
             True if setup completed successfully, False otherwise
         """
-        self.logger.header("Phase 4: Full Setup Mode")
+        self.logger.header("Full Setup Mode")
         self.logger.info("This will set up all components including Docker, beads, and optional features.")
         self.logger.info("")
 
@@ -1298,15 +1224,11 @@ class FullSetup:
                 self.logger.error("Failed to create shared directories")
                 return False
 
-            # 2. Build Docker image
-            if not self.build_docker_image():
-                self.logger.warning("Docker image build failed, but continuing...")
-
-            # 3. Initialize beads
+            # 2. Initialize beads
             if not self.initialize_beads():
                 self.logger.warning("Beads initialization failed, but continuing...")
 
-            # 4. Validate context sync
+            # 3. Validate context sync (optional)
             if not self.validate_context_sync():
                 self.logger.warning("Context sync validation failed, but continuing...")
 
@@ -1645,9 +1567,8 @@ class MinimalSetup:
         Returns:
             True if setup completed successfully, False otherwise.
         """
-        self.logger.header("Phase 2: Minimal Setup")
+        self.logger.header("jib Setup")
         self.logger.info("This will configure the essential settings to get jib running.")
-        self.logger.info("You can run './setup.py --full' later for optional components.")
         self.logger.info("")
 
         # Check if already configured
@@ -1777,22 +1698,17 @@ def main():
         sys.exit(1)
 
     # Run appropriate setup flow
-    if args.full:
-        # Full setup mode: includes minimal setup + Docker + beads + optional components
-        logger.info("Running full setup mode (minimal setup + all components)")
+    # Default: Full setup mode (includes minimal setup + Docker + beads + optional components)
+    logger.info("Running setup (all components)")
 
-        # First run minimal setup to get config
-        minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
-        if not minimal_setup.run():
-            sys.exit(1)
+    # First run minimal setup to get config
+    minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
+    if not minimal_setup.run():
+        sys.exit(1)
 
-        # Then run full setup for additional components
-        full_setup = FullSetup(logger, config_manager, prompter, verbose=args.verbose)
-        success = full_setup.run()
-    else:
-        # Minimal setup only (default)
-        minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
-        success = minimal_setup.run()
+    # Then run full setup for additional components
+    full_setup = FullSetup(logger, config_manager, prompter, verbose=args.verbose)
+    success = full_setup.run()
 
     if success:
         logger.info("\n" + "="*60)
