@@ -55,7 +55,7 @@ def run_interactive(config: LLMConfig | None = None) -> None:
 
 def _launch_claude_interactive(config: LLMConfig) -> None:
     """Launch Claude Code CLI in interactive mode."""
-    cmd = ["claude", "--dangerously-skip-permissions", "--model", "claude-opus-4-5"]
+    cmd = ["claude", "--dangerously-skip-permissions", "--model", "opus"]
 
     # Set up environment for Claude
     env = os.environ.copy()

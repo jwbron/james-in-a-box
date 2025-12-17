@@ -499,7 +499,7 @@ def setup_claude(config: Config, logger: Logger) -> None:
         "editorMode": "normal",
         "autoUpdate": False,
         "outputStyle": "default",
-        "defaultModel": "claude-opus-4-5",
+        "defaultModel": "opus",
         "hooks": {
             "PostToolUse": [
                 {
