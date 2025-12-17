@@ -1765,6 +1765,15 @@ def run_claude() -> bool:
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
+    # Mount GitHub token file as read-only (if it exists)
+    # This prevents the container from modifying or deleting its own secrets
+    github_token_file = Config.SHARING_DIR / ".github-token"
+    if github_token_file.exists():
+        github_token_container = f"/home/{os.environ['USER']}/sharing/.github-token"
+        mount_args.extend(["-v", f"{github_token_file}:{github_token_container}:ro,z"])
+        if not _quiet_mode:
+            print(f"  • ~/sharing/.github-token (READ-ONLY, secret protection)")
+
     if not _quiet_mode:
         print()
 
@@ -2076,6 +2085,14 @@ def exec_in_new_container(
     # Set Anthropic API key if available
     if api_key:
         cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
+
+    # Mount GitHub token file as read-only (if it exists)
+    # This prevents the container from modifying or deleting its own secrets
+    github_token_file = Config.SHARING_DIR / ".github-token"
+    if github_token_file.exists():
+        github_token_container = f"/home/{os.environ['USER']}/sharing/.github-token"
+        mount_args.extend(["-v", f"{github_token_file}:{github_token_container}:ro,z"])
+        print(f"  • ~/sharing/.github-token (READ-ONLY, secret protection)")
 
     # Add mount arguments
     cmd.extend(mount_args)
