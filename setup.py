@@ -1314,8 +1314,11 @@ class MinimalSetup:
         """Prompt for GitHub authentication (App or PAT)."""
         self.logger.header("GitHub Authentication")
         self.logger.info("Choose authentication method:")
-        self.logger.info("  1. GitHub App (recommended for team usage)")
+        self.logger.info("  1. GitHub App (recommended for team usage, REQUIRED for PR check status)")
         self.logger.info("  2. Personal Access Token (simpler for personal use)")
+        self.logger.info("")
+        self.logger.info("Note: GitHub App is required to read PR check run status.")
+        self.logger.info("PATs work for most operations but cannot access check runs API.")
         self.logger.info("")
 
         choice = self.prompter.prompt(
@@ -1330,6 +1333,7 @@ class MinimalSetup:
             # GitHub App configuration
             self.logger.info("\nGitHub App Configuration")
             self.logger.info("You'll need: App ID, Installation ID, and Private Key")
+            self.logger.info("See: docs/setup/github-app-setup.md for setup instructions")
             self.logger.info("")
 
             app_id = self.prompter.prompt("GitHub App ID", required=True)
@@ -1370,7 +1374,9 @@ class MinimalSetup:
             # Personal Access Token
             self.logger.info("\nPersonal Access Token Configuration")
             self.logger.info("Create a token at: https://github.com/settings/tokens")
-            self.logger.info("Required scopes: repo, workflow")
+            self.logger.info("")
+            self.logger.info("For writable repositories, create a token with READ/WRITE permissions:")
+            self.logger.info("  Required scopes: repo (full), workflow")
             self.logger.info("")
 
             token = self.prompter.prompt(
@@ -1382,7 +1388,11 @@ class MinimalSetup:
             secrets["GITHUB_TOKEN"] = token
 
             # Optionally prompt for read-only token
+            self.logger.info("")
             if self.prompter.prompt_yes_no("Do you have a separate read-only token for monitoring external repos?", default=False):
+                self.logger.info("\nFor read-only repositories, create a token with READ-ONLY permissions:")
+                self.logger.info("  Required scopes: repo (read-only)")
+                self.logger.info("")
                 readonly_token = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...)",
                     validator=lambda t: None if t.startswith("ghp_") else ValueError("Token must start with 'ghp_'")
