@@ -318,54 +318,6 @@ def get_github_app_token() -> Optional[str]:
     return None
 
 
-def write_github_token_file(token: str) -> bool:
-    """Write GitHub token to the shared file for container consumption.
-
-    The token file is written to ~/.jib-sharing/.github-token and contains
-    JSON with the token and metadata. This allows long-running containers
-    to read fresh tokens even after the initial env var becomes stale.
-
-    The github-token-refresher service will continuously update this file,
-    but we write an initial version here so containers have a valid token
-    immediately at startup.
-
-    Args:
-        token: The GitHub token to write
-
-    Returns:
-        True if successful, False otherwise
-    """
-    import json
-    from datetime import datetime, timezone
-
-    token_file = Config.SHARING_DIR / ".github-token"
-    validity_seconds = 60 * 60  # 1 hour
-
-    # Ensure sharing directory exists
-    Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
-
-    now = datetime.now(timezone.utc)
-    expires_at = now.timestamp() + validity_seconds
-
-    data = {
-        "token": token,
-        "generated_at": now.isoformat(),
-        "expires_at_unix": expires_at,
-        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
-        "generated_by": "jib-launcher",
-        "validity_seconds": validity_seconds
-    }
-
-    try:
-        # Write atomically using temp file
-        temp_file = token_file.with_suffix(".tmp")
-        temp_file.write_text(json.dumps(data, indent=2) + "\n")
-        temp_file.chmod(0o600)  # Restrict permissions
-        temp_file.rename(token_file)
-        return True
-    except Exception as e:
-        warn(f"Failed to write token file: {e}")
-        return False
 
 
 def check_docker_permissions() -> bool:
@@ -1765,6 +1717,15 @@ def run_claude() -> bool:
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
+    # Mount GitHub token file as read-only (if it exists)
+    # This prevents the container from modifying or deleting its own secrets
+    github_token_file = Config.SHARING_DIR / ".github-token"
+    if github_token_file.exists():
+        github_token_container = f"/home/{os.environ['USER']}/sharing/.github-token"
+        mount_args.extend(["-v", f"{github_token_file}:{github_token_container}:ro,z"])
+        if not _quiet_mode:
+            print(f"  • ~/sharing/.github-token (READ-ONLY, secret protection)")
+
     if not _quiet_mode:
         print()
 
@@ -1789,26 +1750,21 @@ def run_claude() -> bool:
     ]
 
     # Add GitHub token for container (prefer App token, fall back to PAT)
-    # Also write token to shared file for long-running container support
     if _quiet_mode:
         status("Configuring GitHub access...")
     github_app_token = get_github_app_token()
     if github_app_token:
         cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
-        # Write token to shared file for auto-refresh support
-        write_github_token_file(github_app_token)
         if not _quiet_mode:
             info("GitHub auth: App installation token (auto-refresh enabled)")
-            print("  Token written to ~/.jib-sharing/.github-token")
-            print("  github-token-refresher service will keep it fresh")
+            print("  Token managed by github-token-refresher service")
+            print("  Mounted read-only at ~/.jib-sharing/.github-token")
             print("  Full GitHub API access including Checks API")
     else:
         # Fall back to PAT if App not configured
         github_token = get_github_token()
         if github_token:
             cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
-            # Also write PAT to shared file (won't be auto-refreshed but provides consistency)
-            write_github_token_file(github_token)
             if not _quiet_mode:
                 info("GitHub auth: Personal Access Token (fallback)")
                 warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
@@ -2043,16 +1999,13 @@ def exec_in_new_container(
         cmd.extend(["-e", f"JIB_THREAD_TS={thread_ts}"])
 
     # Add GitHub token for container (prefer App token, fall back to PAT)
-    # Also write token to shared file for auto-refresh support
     github_app_token = get_github_app_token()
     if github_app_token:
         cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
-        write_github_token_file(github_app_token)
     else:
         github_token = get_github_token()
         if github_token:
             cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
-            write_github_token_file(github_token)
 
     # Add GITHUB_READONLY_TOKEN for repos outside the App's scope (e.g., Khan/webapp)
     github_readonly_token = get_github_readonly_token()
@@ -2076,6 +2029,14 @@ def exec_in_new_container(
     # Set Anthropic API key if available
     if api_key:
         cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
+
+    # Mount GitHub token file as read-only (if it exists)
+    # This prevents the container from modifying or deleting its own secrets
+    github_token_file = Config.SHARING_DIR / ".github-token"
+    if github_token_file.exists():
+        github_token_container = f"/home/{os.environ['USER']}/sharing/.github-token"
+        mount_args.extend(["-v", f"{github_token_file}:{github_token_container}:ro,z"])
+        print(f"  • ~/sharing/.github-token (READ-ONLY, secret protection)")
 
     # Add mount arguments
     cmd.extend(mount_args)
