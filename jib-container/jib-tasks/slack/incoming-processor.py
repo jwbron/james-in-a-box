@@ -579,15 +579,18 @@ The user is responding in a thread that discusses the PR(s) listed above.
 If you cannot find or access this specific PR, say so explicitly.
 """
 
-    # Build thread context section
+    # Build thread context section - just tell the LLM where to find it
     thread_section = ""
-    if thread_context_text:
+    if thread_ts:
         thread_section = f"""
 ## Full Thread History
 
-The following is the complete conversation history from this Slack thread:
+The complete conversation history from this Slack thread is available in the response file you're processing.
+**Thread ID:** `{thread_ts}`
+**Location:** Check the original message file passed to this processor (contains full thread context in the "Thread Context" section)
+**Alternative:** Thread context is also stored in `~/sharing/responses/` and `~/sharing/incoming/` files with matching thread_ts in frontmatter
 
-{thread_context_text}
+To access the full thread history if needed, read the original message file or search for files with this thread_ts.
 """
 
     prompt = f"""# Slack Response Processing
