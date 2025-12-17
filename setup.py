@@ -635,32 +635,32 @@ class ServiceManager:
 
     # Core services that should always be enabled (non-LLM)
     CORE_SERVICES = [
-        "jib-slack-notifier.service",
-        "jib-slack-receiver.service",
-        "jib-github-token-refresher.service",
-        "jib-worktree-watcher.timer",
+        "slack-notifier.service",
+        "slack-receiver.service",
+        "github-token-refresher.service",
+        "worktree-watcher.timer",
     ]
 
     # LLM-based services that use tokens (opt-in)
     LLM_SERVICES = [
-        "jib-context-sync.timer",
-        "jib-github-watcher.timer",
-        "jib-conversation-analyzer.timer",
+        "context-sync.timer",
+        "github-watcher.timer",
+        "beads-analyzer.timer",
         "jib-doc-generator.timer",
-        "jib-adr-researcher.timer",
+        "adr-researcher.timer",
     ]
 
     # Mapping of service names to their setup script paths
     SERVICE_SETUP_SCRIPTS = {
-        "jib-slack-notifier.service": "host-services/slack/slack-notifier/setup.sh",
-        "jib-slack-receiver.service": "host-services/slack/slack-receiver/setup.sh",
-        "jib-github-token-refresher.service": "host-services/utilities/github-token-refresher/setup.sh",
-        "jib-worktree-watcher.timer": "host-services/utilities/worktree-watcher/setup.sh",
-        "jib-context-sync.timer": "host-services/sync/context-sync/setup.sh",
-        "jib-github-watcher.timer": "host-services/analysis/github-watcher/setup.sh",
-        "jib-conversation-analyzer.timer": "host-services/analysis/beads-analyzer/setup.sh",
+        "slack-notifier.service": "host-services/slack/slack-notifier/setup.sh",
+        "slack-receiver.service": "host-services/slack/slack-receiver/setup.sh",
+        "github-token-refresher.service": "host-services/utilities/github-token-refresher/setup.sh",
+        "worktree-watcher.timer": "host-services/utilities/worktree-watcher/setup.sh",
+        "context-sync.timer": "host-services/sync/context-sync/setup.sh",
+        "github-watcher.timer": "host-services/analysis/github-watcher/setup.sh",
+        "beads-analyzer.timer": "host-services/analysis/beads-analyzer/setup.sh",
         "jib-doc-generator.timer": "host-services/analysis/doc-generator/setup.sh",
-        "jib-adr-researcher.timer": "host-services/analysis/adr-researcher/setup.sh",
+        "adr-researcher.timer": "host-services/analysis/adr-researcher/setup.sh",
     }
 
     def __init__(self, logger: SetupLogger):
