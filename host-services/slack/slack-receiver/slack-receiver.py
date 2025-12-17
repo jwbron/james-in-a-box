@@ -459,13 +459,8 @@ class SlackReceiver:
         doc_parts.append(f'received: "{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"')
         doc_parts.append("---")
         doc_parts.append("")
-
-        # Message content starts here - no metadata in body since it's in frontmatter
-        doc_parts.append("## Current Message\n")
+        # Message content directly after frontmatter (metadata is in frontmatter)
         doc_parts.append(content)
-
-        doc_parts.append("\n---")
-        doc_parts.append(f"\n*Delivered via Slack → {target_dir.name}/ → Claude*")
 
         # Write file
         try:

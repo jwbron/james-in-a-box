@@ -131,20 +131,26 @@ def process_task(message_file: Path):
 
     logger.info("Task metadata", task_id=original_task_id, thread_ts=thread_ts or None)
 
-    # Extract task description (after "## Current Message" header)
-    task_lines = []
-    in_message_section = False
-    for line in content.split("\n"):
-        if line.startswith("## Current Message"):
-            in_message_section = True
-            continue
-        if in_message_section:
-            if line.startswith("---"):
-                break
-            if line.strip():
-                task_lines.append(line)
-
-    task_content = "\n".join(task_lines).strip()
+    # Extract task content
+    # New format: content is directly after frontmatter
+    # Old format: content is after "## Current Message" header
+    if "## Current Message" in content:
+        # Old format - extract after header
+        task_lines = []
+        in_message_section = False
+        for line in content.split("\n"):
+            if line.startswith("## Current Message"):
+                in_message_section = True
+                continue
+            if in_message_section:
+                if line.startswith("---"):
+                    break
+                if line.strip():
+                    task_lines.append(line)
+        task_content = "\n".join(task_lines).strip()
+    else:
+        # New format - content is directly the message
+        task_content = content.strip()
 
     if not task_content:
         logger.warning("Empty task content - nothing to process", task_id=original_task_id)
@@ -529,19 +535,25 @@ def process_response(message_file: Path):
             logger.info("Loaded original notification", file=original_file.name)
 
     # Extract response content
-    response_lines = []
-    in_message_section = False
-    for line in content.split("\n"):
-        if line.startswith("## Current Message"):
-            in_message_section = True
-            continue
-        if in_message_section:
-            if line.startswith("---"):
-                break
-            if line.strip():
-                response_lines.append(line)
-
-    response_content = "\n".join(response_lines).strip()
+    # New format: content is directly after frontmatter
+    # Old format: content is after "## Current Message" header
+    if "## Current Message" in content:
+        # Old format - extract after header
+        response_lines = []
+        in_message_section = False
+        for line in content.split("\n"):
+            if line.startswith("## Current Message"):
+                in_message_section = True
+                continue
+            if in_message_section:
+                if line.startswith("---"):
+                    break
+                if line.strip():
+                    response_lines.append(line)
+        response_content = "\n".join(response_lines).strip()
+    else:
+        # New format - content is directly the message
+        response_content = content.strip()
 
     if not response_content:
         logger.warning("Empty response content - nothing to process", file=message_file.name)
