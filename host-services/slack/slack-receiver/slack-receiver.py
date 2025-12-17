@@ -459,29 +459,13 @@ class SlackReceiver:
         doc_parts.append(f'received: "{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"')
         doc_parts.append("---")
         doc_parts.append("")
-
-        if msg_type == "response":
-            doc_parts.append(f"# Response from {metadata.get('user_name', 'User')}")
-            if referenced_notification:
-                doc_parts.append(f"\n**Re:** Notification `{referenced_notification}`")
-        else:
-            doc_parts.append(f"# New Task from {metadata.get('user_name', 'User')}")
-
-        doc_parts.append(f"\n**Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        doc_parts.append(f"**Received:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         doc_parts.append(f"**User ID:** {metadata.get('user_id', 'unknown')}")
         doc_parts.append(f"**Channel:** {metadata.get('channel', 'unknown')}")
 
         # Include thread_ts if present (also in body for visibility)
         if thread_ts:
             doc_parts.append(f"**Thread:** {thread_ts}")
-
-        # Include full thread context if available
-        if metadata.get("thread_context"):
-            doc_parts.append("\n## Thread Context\n")
-            doc_parts.append("Full conversation history:\n")
-            for i, msg in enumerate(metadata["thread_context"], 1):
-                doc_parts.append(f"**{i}. {msg['user']}:**")
-                doc_parts.append(f"{msg['text']}\n")
 
         doc_parts.append("\n## Current Message\n")
         doc_parts.append(content)

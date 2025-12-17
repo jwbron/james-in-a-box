@@ -61,7 +61,6 @@ This exec-based pattern ensures processing only runs when messages are received 
 
 - Socket Mode (no webhook endpoint needed)
 - Thread context detection
-- Full conversation history in task files
 - User authentication and allowlisting
 - **Remote control commands** (restart/rebuild container, manage services)
 - **Event-driven processing** via `jib --exec` (no background watchers)
