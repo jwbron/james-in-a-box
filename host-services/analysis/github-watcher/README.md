@@ -98,14 +98,6 @@ systemctl --user start ci-fixer.service
 systemctl --user start comment-responder.service
 systemctl --user start pr-reviewer.service
 
-# Or run all via dispatcher (optional)
-python3 dispatcher.py
-
-# Run a specific service via dispatcher
-python3 dispatcher.py --service ci-fixer
-python3 dispatcher.py --service comment-responder
-python3 dispatcher.py --service pr-reviewer
-
 # Watch progress
 journalctl --user -u ci-fixer.service -f
 journalctl --user -u comment-responder.service -f
