@@ -7,7 +7,7 @@ OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/github-watcher/github-watcher.py
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/github-watcher/dispatcher.py
 Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/khan/james-in-a-box/bin
 
 # Logging

@@ -2,32 +2,52 @@
 
 Host-side service that monitors GitHub repositories and triggers jib container analysis.
 
-**Status**: Replaces deprecated `github-sync` service
+**Status**: Refactored from monolithic `github-watcher.py` to three focused services
 **Type**: Host-side systemd timer service
 **Purpose**: Event-driven GitHub monitoring following ADR-Context-Sync-Strategy-Custom-vs-MCP
 
 ## Architecture
 
-Following ADR Section 4 "Option B: Scheduled Analysis with MCP":
+The watcher is split into three focused services, coordinated by a dispatcher:
 
 ```
 Scheduled job (every 5 min) - HOST SIDE
     |
     v
-Query GitHub via CLI for events since last run:
-- Open PRs with check failures (writable repos only)
-- PRs with new comments (since last check)
-- PRs with merge conflicts (writable repos only)
-- PRs where user is requested as reviewer
+dispatcher.py orchestrates three services:
+    |
+    +-> ci_fixer.py - Fix check failures & merge conflicts
+    |
+    +-> comment_responder.py - Respond to PR comments
+    |
+    +-> pr_reviewer.py - Review PRs (opt-in via assignment/tagging)
     |
     v
-For writable repos: Trigger jib container via `jib --exec` for analysis
-For read-only repos: Send Slack notification for user review
-    |
-    v
-Writable: Container analyzes and takes action via gh CLI
-Read-only: User reviews notification and responds manually
+Each service queries GitHub, detects relevant events,
+and triggers jib container via `jib --exec`
 ```
+
+### Service Details
+
+| Service | Purpose | Trigger Condition |
+|---------|---------|-------------------|
+| **CI Fixer** | Fix check failures and merge conflicts | User's PRs + Bot's PRs (automatic) |
+| **Comment Responder** | Respond to comments and review feedback | PRs where jib is assigned, tagged, or author |
+| **PR Reviewer** | Review PRs using collaborative development | PRs where jib is explicitly assigned/tagged (opt-in) |
+
+**Key changes from previous version:**
+- PR review is now opt-in (must be assigned/tagged) instead of proactive
+- Modular architecture enables independent testing and maintenance
+- Services share state via `gwlib/state.py` to avoid duplicate processing
+
+### Shared Library (gwlib/)
+
+Common functionality extracted into `gwlib/`:
+- `github_api.py` - gh CLI wrappers with rate limiting
+- `state.py` - Thread-safe state management
+- `tasks.py` - Task execution with parallel support
+- `config.py` - Configuration loading
+- `detection.py` - PR event detection logic
 
 **Note:** The watcher tracks when it last ran. If your machine is off for a period,
 the first run after boot will pull all GitHub events since it last ran, ensuring
@@ -60,8 +80,13 @@ gh auth status
 ### Manual Run
 
 ```bash
-# Run watcher manually
+# Run all services manually
 systemctl --user start github-watcher.service
+
+# Run a specific service
+python3 dispatcher.py --service ci-fixer
+python3 dispatcher.py --service comment-responder
+python3 dispatcher.py --service pr-reviewer
 
 # Watch progress
 journalctl --user -u github-watcher.service -f
@@ -77,57 +102,39 @@ systemctl --user enable --now github-watcher.timer
 systemctl --user status github-watcher.timer
 ```
 
-## What It Does
+## What Each Service Does
 
-The watcher handles writable and read-only repos differently:
+### CI Fixer (Automatic)
 
-### Writable Repos (Full Functionality)
+Monitors PRs authored by jib or the configured user:
 
-For repositories in `writable_repos`, jib has full access and can:
+- **Check Failures**: Detects failing CI checks, invokes jib to analyze logs and fix code
+- **Merge Conflicts**: Detects PRs with conflicts, invokes jib to resolve
 
-1. **Fix Check Failures**
-   - Detects failing CI checks on your PRs and bot's PRs
-   - Invokes `jib --exec github-processor.py --task check_failure`
-   - Container analyzes logs, fixes code, pushes commits
+### Comment Responder (On Engaged PRs)
 
-2. **Resolve Merge Conflicts**
-   - Detects PRs with merge conflicts
-   - Invokes `jib --exec github-processor.py --task merge_conflict`
-   - Container resolves conflicts and pushes
+Monitors PRs where jib is engaged (assigned, tagged, or author):
 
-3. **Respond to PR Comments**
-   - Monitors comments on your PRs and bot's PRs
-   - Invokes `jib --exec github-processor.py --task comment`
-   - Container posts responses directly to GitHub
+- **Comments**: Responds to new comments on PRs
+- **Review Feedback**: Addresses review feedback on bot's PRs
 
-4. **Review Other Authors' PRs**
-   - Proactively reviews ALL PRs from other authors
-   - Invokes `jib --exec github-processor.py --task review_request`
-   - Container posts review comments to GitHub
+### PR Reviewer (Opt-In)
 
-### Read-Only Repos (Notification Only)
+Reviews PRs only when explicitly requested:
 
-For repositories in `readable_repos`, jib cannot push/comment directly:
+- **Review Requests**: Reviews PRs where jib is assigned as reviewer or tagged
+- **For read-only repos**: Outputs review to Slack instead of GitHub
 
-1. **Monitor PR Comments** (your PRs only)
-   - Detects new comments on PRs you authored
-   - Sends Slack notification with comment details
-   - You formulate response and post manually
-
-2. **Review Requested PRs** (directly tagged only)
-   - Only PRs where you are DIRECTLY requested as reviewer (not via team)
-   - Sends Slack notification with PR details for review
-   - You review and respond manually on GitHub
-
-**NOT monitored for read-only repos:**
-- Check failures (can't fix without write access)
-- Merge conflicts (can't resolve without write access)
+**Note:** This is a change from previous behavior which proactively reviewed ALL PRs.
 
 ## Configuration
 
 Repositories are configured in `config/repositories.yaml`:
 
 ```yaml
+github_username: jwbron
+bot_username: james-in-a-box
+
 # Full access - jib can push, comment, fix issues
 writable_repos:
   - jwbron/james-in-a-box
@@ -150,23 +157,6 @@ When the watcher runs, it filters comments and new PRs to only those created aft
 `last_run`. This means if your machine was off for hours/days, the first run will
 catch up on everything that happened since the last successful run.
 
-## Migration from github-sync
-
-This service replaces the deprecated `github-sync` which:
-- Synced PR data to `~/context-sync/github/` files
-- Required container scripts to read from files
-
-The new approach:
-- Queries GitHub directly via CLI
-- No intermediate file sync needed
-- Real-time data, not stale files
-- Tracks last run time to catch up after downtime
-- Simpler architecture
-
-To migrate:
-1. Disable old service: `systemctl --user disable github-sync.timer`
-2. Enable new service: `systemctl --user enable --now github-watcher.timer`
-
 ## Troubleshooting
 
 **GitHub CLI errors**:
@@ -183,10 +173,16 @@ which jib
 ~/khan/james-in-a-box/bin/jib --help
 ```
 
-**Container analysis fails**:
+**Service analysis fails**:
 ```bash
-# Check container logs
+# Check service logs
 journalctl --user -u github-watcher.service -f
 # Test container manually
 jib --exec python3 -c "print('hello')"
+```
+
+**Run single service for debugging**:
+```bash
+cd ~/khan/james-in-a-box/host-services/analysis/github-watcher
+python3 dispatcher.py --service ci-fixer
 ```
