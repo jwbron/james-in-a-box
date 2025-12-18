@@ -625,17 +625,35 @@ class ConfigManager:
             config_json.write_text(json.dumps(config, indent=2))
             self.logger.warning(f"PyYAML not available, wrote JSON to {config_json}")
 
-    def write_repositories(self, writable: list[str], readable: list[str]):
+    def load_repositories(self) -> dict[str, Any]:
+        """Load repository configuration.
+
+        Returns:
+            Dictionary with writable_repos and readable_repos lists
+        """
+        if self.repos_file.exists():
+            try:
+                import yaml
+
+                with open(self.repos_file) as f:
+                    return yaml.safe_load(f) or {}
+            except ImportError:
+                pass
+        return {"writable_repos": [], "readable_repos": []}
+
+    def write_repositories(self, writable: list[str], readable: list[str], github_username: str = ""):
         """Write repository configuration.
 
         Args:
             writable: List of repositories with write access
             readable: List of repositories with read-only access
+            github_username: GitHub username for config file
         """
         try:
             import yaml
 
             repos_config = {
+                "github_username": github_username,
                 "writable_repos": writable,
                 "readable_repos": readable,
             }
@@ -1266,15 +1284,18 @@ class MinimalSetup:
         config_manager: ConfigManager,
         prompter: UserPrompter,
         verbose: bool = False,
+        update_mode: bool = False,
     ):
         self.logger = logger
         self.config_manager = config_manager
         self.prompter = prompter
         self.verbose = verbose
+        self.update_mode = update_mode
 
         # Load existing configuration
         self.existing_secrets = self.config_manager.load_secrets()
         self.existing_config = self.config_manager.load_config()
+        self.existing_repos = self.config_manager.load_repositories()
 
     def is_already_configured(self) -> bool:
         """Check if essential configuration already exists.
@@ -1319,8 +1340,18 @@ class MinimalSetup:
 
     def prompt_github_username(self) -> str:
         """Prompt for GitHub username with auto-detection."""
-        # Check if we already have it
         existing = self.existing_config.get("github_username")
+
+        # In update mode, always prompt with existing as default
+        if self.update_mode:
+            self.logger.header("GitHub Configuration")
+            if existing:
+                return self.prompter.prompt(
+                    "GitHub username", default=existing, required=True
+                )
+            # Fall through to normal flow if no existing value
+
+        # Check if we already have it (non-update mode)
         if existing:
             self.logger.success(f"Using existing GitHub username: {existing}")
             return existing
@@ -1337,8 +1368,13 @@ class MinimalSetup:
 
     def prompt_bot_name(self) -> str:
         """Prompt for bot name."""
-        # Check if we already have it
         existing = self.existing_config.get("bot_name")
+
+        # In update mode, always prompt with existing as default
+        if self.update_mode and existing:
+            return self.prompter.prompt("Bot name", default=existing, required=True)
+
+        # Check if we already have it (non-update mode)
         if existing:
             self.logger.success(f"Using existing bot name: {existing}")
             return existing
@@ -1350,6 +1386,14 @@ class MinimalSetup:
         if not token.startswith(prefix):
             raise ValueError(f"Token must start with '{prefix}'")
 
+    def _mask_secret(self, secret: str, visible_chars: int = 8) -> str:
+        """Mask a secret for display, showing only first few characters."""
+        if not secret:
+            return ""
+        if len(secret) <= visible_chars:
+            return "*" * len(secret)
+        return secret[:visible_chars] + "..." + "*" * 8
+
     def prompt_slack_tokens(self) -> dict[str, str]:
         """Prompt for Slack tokens with validation."""
         secrets = {}
@@ -1358,6 +1402,44 @@ class MinimalSetup:
         existing_bot_token = self.existing_secrets.get("SLACK_TOKEN")
         existing_app_token = self.existing_secrets.get("SLACK_APP_TOKEN")
 
+        # In update mode, prompt with option to keep existing
+        if self.update_mode:
+            self.logger.header("Slack Integration")
+            self.logger.info("Get tokens from: https://api.slack.com/apps")
+            self.logger.info("Press Enter to keep existing value, or enter new token.")
+            self.logger.info("")
+
+            if existing_bot_token:
+                self.logger.info(f"Current bot token: {self._mask_secret(existing_bot_token)}")
+                new_bot_token = self.prompter.prompt(
+                    "Slack Bot Token (xoxb-...) [keep existing]",
+                    validator=lambda t: self.validate_slack_token(t, "xoxb-") if t else None,
+                )
+                secrets["SLACK_TOKEN"] = new_bot_token if new_bot_token else existing_bot_token
+            else:
+                secrets["SLACK_TOKEN"] = self.prompter.prompt(
+                    "Slack Bot Token (xoxb-...)",
+                    required=True,
+                    validator=lambda t: self.validate_slack_token(t, "xoxb-"),
+                )
+
+            if existing_app_token:
+                self.logger.info(f"Current app token: {self._mask_secret(existing_app_token)}")
+                new_app_token = self.prompter.prompt(
+                    "Slack App Token (xapp-...) [keep existing]",
+                    validator=lambda t: self.validate_slack_token(t, "xapp-") if t else None,
+                )
+                secrets["SLACK_APP_TOKEN"] = new_app_token if new_app_token else existing_app_token
+            else:
+                secrets["SLACK_APP_TOKEN"] = self.prompter.prompt(
+                    "Slack App Token (xapp-...)",
+                    required=True,
+                    validator=lambda t: self.validate_slack_token(t, "xapp-"),
+                )
+
+            return secrets
+
+        # Non-update mode: use existing if available
         if existing_bot_token and existing_app_token:
             self.logger.success("Using existing Slack tokens")
             return {
@@ -1403,6 +1485,48 @@ class MinimalSetup:
             self.config_manager.config_dir / "github-app-private-key.pem"
         ).exists()
 
+        # In update mode, allow updating existing tokens
+        if self.update_mode and has_github_token:
+            self.logger.header("GitHub Authentication")
+            existing_token = self.existing_secrets.get("GITHUB_TOKEN", "")
+            self.logger.info(f"Current GitHub token: {self._mask_secret(existing_token)}")
+            self.logger.info("Press Enter to keep existing, or enter new token.")
+            self.logger.info("")
+
+            new_token = self.prompter.prompt(
+                "GitHub Personal Access Token (ghp_...) [keep existing]",
+                validator=lambda t: None
+                if not t or t.startswith("ghp_")
+                else ValueError("Token must start with 'ghp_'"),
+            )
+            secrets["GITHUB_TOKEN"] = new_token if new_token else existing_token
+
+            # Handle read-only token
+            existing_readonly = self.existing_secrets.get("GITHUB_READONLY_TOKEN", "")
+            if existing_readonly:
+                self.logger.info(f"Current read-only token: {self._mask_secret(existing_readonly)}")
+                new_readonly = self.prompter.prompt(
+                    "GitHub Read-Only Token (ghp_...) [keep existing]",
+                    validator=lambda t: None
+                    if not t or t.startswith("ghp_")
+                    else ValueError("Token must start with 'ghp_'"),
+                )
+                secrets["GITHUB_READONLY_TOKEN"] = new_readonly if new_readonly else existing_readonly
+            elif self.prompter.prompt_yes_no(
+                "Add a read-only token for monitoring external repos?", default=False
+            ):
+                readonly_token = self.prompter.prompt(
+                    "GitHub Read-Only Token (ghp_...)",
+                    validator=lambda t: None
+                    if t.startswith("ghp_")
+                    else ValueError("Token must start with 'ghp_'"),
+                )
+                if readonly_token:
+                    secrets["GITHUB_READONLY_TOKEN"] = readonly_token
+
+            return secrets
+
+        # Non-update mode: use existing if available
         if has_github_token or has_github_app:
             if has_github_app:
                 self.logger.success("Using existing GitHub App configuration")
@@ -1520,6 +1644,61 @@ class MinimalSetup:
         """Prompt for repository configuration."""
         self.logger.header("Repository Configuration")
 
+        # Load existing repos
+        existing_writable = self.existing_repos.get("writable_repos", [])
+        existing_readable = self.existing_repos.get("readable_repos", [])
+
+        # In update mode, show existing and allow modification
+        if self.update_mode and (existing_writable or existing_readable):
+            self.logger.info("Current writable repositories:")
+            for repo in existing_writable:
+                self.logger.info(f"  - {repo}")
+            if existing_readable:
+                self.logger.info("\nCurrent read-only repositories:")
+                for repo in existing_readable:
+                    self.logger.info(f"  - {repo}")
+            self.logger.info("")
+
+            if not self.prompter.prompt_yes_no("Modify repository configuration?", default=False):
+                return existing_writable, existing_readable
+
+            # Allow full reconfiguration
+            self.logger.info("\nReconfiguring repositories...")
+            self.logger.info("Enter writable repositories one per line (empty line to finish):")
+            self.logger.info(f"(Press Enter with no input to keep: {', '.join(existing_writable)})")
+
+            writable_repos = []
+            first_input = self.prompter.prompt("Repository (owner/name)")
+            if not first_input:
+                # Keep existing
+                writable_repos = existing_writable
+            else:
+                writable_repos.append(first_input)
+                while True:
+                    repo = self.prompter.prompt("Repository (owner/name)")
+                    if not repo:
+                        break
+                    writable_repos.append(repo)
+
+            self.logger.info("\nEnter read-only repositories one per line (empty line to finish):")
+            if existing_readable:
+                self.logger.info(f"(Press Enter with no input to keep: {', '.join(existing_readable)})")
+
+            readable_repos = []
+            first_input = self.prompter.prompt("Repository (owner/name)")
+            if not first_input and existing_readable:
+                readable_repos = existing_readable
+            elif first_input:
+                readable_repos.append(first_input)
+                while True:
+                    repo = self.prompter.prompt("Repository (owner/name)")
+                    if not repo:
+                        break
+                    readable_repos.append(repo)
+
+            return writable_repos, readable_repos
+
+        # Non-update mode: standard flow
         default_writable = f"{github_username}/james-in-a-box"
         self.logger.info(f"Default writable repo: {default_writable}")
         self.logger.info("")
@@ -1547,6 +1726,18 @@ class MinimalSetup:
 
     def get_slack_channel_id(self) -> str:
         """Try to get the user's Slack DM channel ID."""
+        existing = self.existing_config.get("slack_channel", "")
+
+        # In update mode, show existing and allow modification
+        if self.update_mode and existing:
+            return self.prompter.prompt(
+                "Slack channel ID (starts with D, C, or G)",
+                default=existing,
+                validator=lambda c: None
+                if not c or c[0] in ["D", "C", "G"]
+                else ValueError("Channel ID must start with D, C, or G"),
+            ) or existing
+
         self.logger.info("\nFinding your Slack DM channel...")
         self.logger.info("You can find your channel ID by:")
         self.logger.info("  1. Open Slack")
@@ -1565,6 +1756,19 @@ class MinimalSetup:
 
     def get_slack_user_id(self) -> str:
         """Prompt for Slack user ID."""
+        existing_users = self.existing_config.get("allowed_users", [])
+        existing = existing_users[0] if existing_users else ""
+
+        # In update mode, show existing and allow modification
+        if self.update_mode and existing:
+            return self.prompter.prompt(
+                "Your Slack user ID (starts with U)",
+                default=existing,
+                validator=lambda u: None
+                if not u or u.startswith("U")
+                else ValueError("User ID must start with U"),
+            ) or existing
+
         self.logger.info("\nYour Slack User ID is needed for access control.")
         self.logger.info("Find it at: Slack -> Profile -> More -> Copy member ID")
         self.logger.info("")
@@ -1584,12 +1788,17 @@ class MinimalSetup:
         Returns:
             True if setup completed successfully, False otherwise.
         """
-        self.logger.header("jib Setup")
-        self.logger.info("This will configure the essential settings to get jib running.")
-        self.logger.info("")
+        if self.update_mode:
+            self.logger.header("jib Configuration Update")
+            self.logger.info("Update your configuration. Press Enter to keep existing values.")
+            self.logger.info("")
+        else:
+            self.logger.header("jib Setup")
+            self.logger.info("This will configure the essential settings to get jib running.")
+            self.logger.info("")
 
-        # Check if already configured
-        if self.is_already_configured():
+        # Check if already configured (skip in update mode)
+        if not self.update_mode and self.is_already_configured():
             self.logger.success("\n✓ Configuration already exists!")
             self.logger.info("")
             self.logger.info("All essential settings are already configured:")
@@ -1600,10 +1809,7 @@ class MinimalSetup:
             self.logger.info("  - Slack tokens: ✓")
             self.logger.info("  - GitHub authentication: ✓")
             self.logger.info("")
-            self.logger.info("Re-running setup will reuse existing values.")
-            self.logger.info("To update configuration, edit:")
-            self.logger.info(f"  - {self.config_manager.secrets_file}")
-            self.logger.info(f"  - {self.config_manager.config_file}")
+            self.logger.info("To update configuration, run: ./setup.py --update")
             self.logger.info("")
             return True
 
@@ -1646,9 +1852,12 @@ class MinimalSetup:
             self.config_manager.write_config(config)
 
             # Write repository config
-            self.config_manager.write_repositories(writable_repos, readable_repos)
+            self.config_manager.write_repositories(writable_repos, readable_repos, github_username)
 
-            self.logger.success("\n✓ Minimal setup complete!")
+            if self.update_mode:
+                self.logger.success("\n✓ Configuration updated!")
+            else:
+                self.logger.success("\n✓ Minimal setup complete!")
             self.logger.info("")
             self.logger.info("Configuration saved to:")
             self.logger.info(f"  - {self.config_manager.secrets_file}")
@@ -1725,17 +1934,36 @@ def main():
         sys.exit(1)
 
     # Run appropriate setup flow
-    # Default: Full setup mode (includes minimal setup + Docker + beads + optional components)
-    logger.info("Running setup (all components)")
+    if args.update:
+        # Update mode: prompt for all settings with existing values as defaults
+        logger.info("Running configuration update")
+        minimal_setup = MinimalSetup(
+            logger, config_manager, prompter, verbose=args.verbose, update_mode=True
+        )
+        if not minimal_setup.run():
+            sys.exit(1)
 
-    # First run minimal setup to get config
-    minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
-    if not minimal_setup.run():
-        sys.exit(1)
+        # Restart services after update
+        logger.header("Restarting Services")
+        service_manager = ServiceManager(logger)
+        service_manager._daemon_reload()
+        logger.success("Configuration updated. Services will use new config on next run.")
+        logger.info("")
+        logger.info("To restart services now:")
+        logger.info("  systemctl --user restart slack-notifier slack-receiver")
+        success = True
+    else:
+        # Default: Full setup mode (includes minimal setup + Docker + beads + optional components)
+        logger.info("Running setup (all components)")
 
-    # Then run full setup for additional components
-    full_setup = FullSetup(logger, config_manager, prompter, verbose=args.verbose)
-    success = full_setup.run()
+        # First run minimal setup to get config
+        minimal_setup = MinimalSetup(logger, config_manager, prompter, verbose=args.verbose)
+        if not minimal_setup.run():
+            sys.exit(1)
+
+        # Then run full setup for additional components
+        full_setup = FullSetup(logger, config_manager, prompter, verbose=args.verbose)
+        success = full_setup.run()
 
     if success:
         logger.info("\n" + "=" * 60)

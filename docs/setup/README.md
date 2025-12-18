@@ -92,17 +92,30 @@ All configuration is stored in `~/.config/jib/`:
 | doc-generator | Weekly documentation updates | Included (optional enable) |
 | index-generator | Codebase indexing | Included (optional enable) |
 
-## Updating jib
+## Updating Configuration
 
-To update after code changes:
+To update your configuration (secrets, repositories, etc.):
 
 ```bash
 ./setup.py --update
 ```
 
-This reloads all service configurations and restarts services.
+This will prompt you for each setting with your current values as defaults:
+- Press Enter to keep the existing value
+- Enter a new value to update it
 
-**Note:** To reconfigure repositories (update mounts), run `./setup.py` without flags to go through the full setup flow.
+Settings you can update:
+- GitHub username
+- Bot name
+- Slack tokens (bot and app tokens)
+- GitHub authentication token
+- Repository configuration (writable and read-only repos)
+- Slack channel and user ID
+
+After updating, restart services to apply changes:
+```bash
+systemctl --user restart slack-notifier slack-receiver
+```
 
 ## Troubleshooting
 
