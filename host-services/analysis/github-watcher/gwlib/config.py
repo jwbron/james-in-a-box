@@ -4,8 +4,8 @@
 from pathlib import Path
 
 import yaml
-
 from jib_logging import get_logger
+
 
 logger = get_logger("github-config")
 
@@ -28,17 +28,24 @@ def load_config() -> dict:
                 config.setdefault("readable_repos", [])
                 return config
 
-    return {"writable_repos": [], "readable_repos": [], "github_username": "jib", "bot_username": "jib"}
+    return {
+        "writable_repos": [],
+        "readable_repos": [],
+        "github_username": "jib",
+        "bot_username": "jib",
+    }
 
 
 def should_disable_auto_fix(repo: str) -> bool:
     """Check if auto-fix is disabled for a repo."""
     # Import here to avoid circular dependency
     from config.repo_config import should_disable_auto_fix as _should_disable_auto_fix
+
     return _should_disable_auto_fix(repo)
 
 
 def should_restrict_to_configured_users(repo: str) -> bool:
     """Check if repo is restricted to configured users only."""
     from config.repo_config import should_restrict_to_configured_users as _should_restrict
+
     return _should_restrict(repo)

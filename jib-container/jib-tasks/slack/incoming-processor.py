@@ -511,7 +511,7 @@ def process_response(message_file: Path):
         logger.info("Found original task ID from thread", task_id=original_task_id)
 
     # Extract thread context and PR references from the message
-    thread_context_text, pr_refs = extract_thread_context(content)
+    _thread_context_text, pr_refs = extract_thread_context(content)
     if pr_refs:
         logger.info("PR references found", pr_refs=pr_refs)
 

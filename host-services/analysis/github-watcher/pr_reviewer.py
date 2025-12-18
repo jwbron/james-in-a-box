@@ -17,17 +17,18 @@ Runs as part of the github-watcher dispatcher.
 import sys
 from pathlib import Path
 
+
 _project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(_project_root / "shared"))
 sys.path.insert(0, str(_project_root))
-
-from jib_logging import ContextScope, get_logger
 
 from gwlib.config import load_config
 from gwlib.detection import check_prs_for_review
 from gwlib.github_api import check_gh_auth, gh_json
 from gwlib.state import ThreadSafeState, load_state, save_state, utc_now_iso
 from gwlib.tasks import JibTask, execute_tasks_parallel
+from jib_logging import ContextScope, get_logger
+
 
 logger = get_logger("pr-reviewer")
 
@@ -55,8 +56,16 @@ def collect_review_tasks(
     """
     # Fetch all open PRs
     all_prs = gh_json(
-        ["pr", "list", "--repo", repo, "--state", "open", "--json",
-         "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files"],
+        [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,url,headRefName,baseRefName,headRefOid,author,createdAt,additions,deletions,files",
+        ],
         repo=repo,
     )
 
@@ -66,7 +75,12 @@ def collect_review_tasks(
 
     # Use new opt-in behavior: require explicit assignment/tagging
     review_contexts = check_prs_for_review(
-        repo, all_prs, state, github_username, bot_username, since_timestamp,
+        repo,
+        all_prs,
+        state,
+        github_username,
+        bot_username,
+        since_timestamp,
         is_readonly=is_readonly,
         require_explicit_request=True,  # KEY: This enables the new opt-in behavior
     )
@@ -105,13 +119,17 @@ def main() -> int:
     # Process writable repos (post reviews to GitHub)
     for repo in writable_repos:
         with ContextScope(repository=repo, service="pr-reviewer", access_level="writable"):
-            tasks = collect_review_tasks(repo, state, github_username, bot_username, since_timestamp, is_readonly=False)
+            tasks = collect_review_tasks(
+                repo, state, github_username, bot_username, since_timestamp, is_readonly=False
+            )
             all_tasks.extend(tasks)
 
     # Process readable repos (output to Slack)
     for repo in readable_repos:
         with ContextScope(repository=repo, service="pr-reviewer", access_level="readable"):
-            tasks = collect_review_tasks(repo, state, github_username, bot_username, since_timestamp, is_readonly=True)
+            tasks = collect_review_tasks(
+                repo, state, github_username, bot_username, since_timestamp, is_readonly=True
+            )
             all_tasks.extend(tasks)
 
     if all_tasks:

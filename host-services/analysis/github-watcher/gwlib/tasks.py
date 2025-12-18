@@ -11,6 +11,7 @@ from pathlib import Path
 
 from jib_logging import get_logger
 
+
 logger = get_logger("github-tasks")
 
 MAX_PARALLEL_JIB = 20
@@ -53,10 +54,26 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     context["workflow_type"] = task_type
     context_json = json.dumps(context)
 
-    processor_path = "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
-    cmd = ["jib", "--exec", "python3", processor_path, "--task", task_type, "--context", context_json]
+    processor_path = (
+        "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
+    )
+    cmd = [
+        "jib",
+        "--exec",
+        "python3",
+        processor_path,
+        "--task",
+        task_type,
+        "--context",
+        context_json,
+    ]
 
-    logger.info("Invoking jib", task_type=task_type, repository=context.get("repository"), pr_number=context.get("pr_number"))
+    logger.info(
+        "Invoking jib",
+        task_type=task_type,
+        repository=context.get("repository"),
+        pr_number=context.get("pr_number"),
+    )
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -64,7 +81,12 @@ def invoke_jib(task_type: str, context: dict) -> bool:
             logger.info("jib completed successfully", task_type=task_type)
             return True
         else:
-            logger.error("jib failed", task_type=task_type, return_code=result.returncode, stderr=result.stderr[-2000:])
+            logger.error(
+                "jib failed",
+                task_type=task_type,
+                return_code=result.returncode,
+                stderr=result.stderr[-2000:],
+            )
             return False
     except FileNotFoundError:
         logger.error("jib command not found")
@@ -111,7 +133,9 @@ task_id: "{task_id}"
 
     try:
         filepath.write_text(file_content)
-        logger.info("Read-only notification sent", task_type=task_type, repository=repo, pr_number=pr_number)
+        logger.info(
+            "Read-only notification sent", task_type=task_type, repository=repo, pr_number=pr_number
+        )
         return True
     except Exception as e:
         logger.error("Failed to write readonly notification", error=str(e))
