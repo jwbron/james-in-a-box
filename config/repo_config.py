@@ -44,8 +44,8 @@ def _get_config_path() -> Path:
     if config_file.exists():
         return config_file
 
-    # Try relative to ~/khan/james-in-a-box (when running from container)
-    home_config = Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml"
+    # Try relative to ~/repos/james-in-a-box (when running from container)
+    home_config = Path.home() / "repos" / "james-in-a-box" / "config" / "repositories.yaml"
     if home_config.exists():
         return home_config
 

@@ -5,8 +5,9 @@ import subprocess
 
 from jib_logging import get_logger
 
+from .config import should_restrict_to_configured_users
 from .github_api import gh_json, gh_text
-from .config import should_disable_auto_fix, should_restrict_to_configured_users
+
 
 logger = get_logger("github-detection")
 
@@ -58,7 +59,9 @@ def is_billing_exhaustion(failed_checks: list[dict], check_runs: list[dict]) -> 
     return False
 
 
-def is_jib_engaged(pr_data: dict, bot_username: str, all_comments: list[dict] | None = None) -> bool:
+def is_jib_engaged(
+    pr_data: dict, bot_username: str, all_comments: list[dict] | None = None
+) -> bool:
     """Check if jib is assigned, tagged, or the author of a PR.
 
     Args:
@@ -85,9 +88,8 @@ def is_jib_engaged(pr_data: dict, bot_username: str, all_comments: list[dict] | 
     # Check if review requested
     review_requests = pr_data.get("reviewRequests", [])
     for req in review_requests:
-        if req.get("__typename") == "User":
-            if req.get("login", "").lower() in bot_variants:
-                return True
+        if req.get("__typename") == "User" and req.get("login", "").lower() in bot_variants:
+            return True
 
     # Check if mentioned in comments
     if all_comments:
@@ -105,7 +107,10 @@ def is_user_directly_requested(pr_data: dict, github_username: str) -> bool:
     """Check if a user is directly requested as a reviewer (not via team)."""
     review_requests = pr_data.get("reviewRequests", [])
     for request in review_requests:
-        if request.get("__typename") == "User" and request.get("login", "").lower() == github_username.lower():
+        if (
+            request.get("__typename") == "User"
+            and request.get("login", "").lower() == github_username.lower()
+        ):
             return True
     return False
 
@@ -173,7 +178,15 @@ def check_pr_for_failures(repo: str, pr_data: dict, state: dict) -> dict | None:
         return None
 
     pr_details = gh_json(
-        ["pr", "view", str(pr_num), "--repo", repo, "--json", "number,title,body,url,headRefName,baseRefName,state"],
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "number,title,body,url,headRefName,baseRefName,state",
+        ],
         repo=repo,
     )
 
@@ -226,7 +239,15 @@ def check_pr_for_merge_conflict(repo: str, pr_data: dict, state: dict) -> dict |
     head_sha = pr_data.get("headRefOid", "")
 
     pr_details = gh_json(
-        ["pr", "view", str(pr_num), "--repo", repo, "--json", "number,title,body,url,headRefName,baseRefName,mergeable,mergeStateStatus"],
+        [
+            "pr",
+            "view",
+            str(pr_num),
+            "--repo",
+            repo,
+            "--json",
+            "number,title,body,url,headRefName,baseRefName,mergeable,mergeStateStatus",
+        ],
         repo=repo,
     )
 
@@ -244,7 +265,9 @@ def check_pr_for_merge_conflict(repo: str, pr_data: dict, state: dict) -> dict |
     if conflict_signature in state.get("processed_conflicts", {}):
         return None
 
-    logger.info("Merge conflict detected", pr_number=pr_num, mergeable=mergeable, merge_state=merge_state)
+    logger.info(
+        "Merge conflict detected", pr_number=pr_num, mergeable=mergeable, merge_state=merge_state
+    )
 
     return {
         "type": "merge_conflict",
@@ -282,7 +305,9 @@ def check_pr_for_comments(
     """
     pr_num = pr_data["number"]
 
-    comments = gh_json(["pr", "view", str(pr_num), "--repo", repo, "--json", "comments,reviews"], repo=repo)
+    comments = gh_json(
+        ["pr", "view", str(pr_num), "--repo", repo, "--json", "comments,reviews"], repo=repo
+    )
     if comments is None:
         return None
 
@@ -290,40 +315,46 @@ def check_pr_for_comments(
 
     # Issue comments
     for c in comments.get("comments", []):
-        all_comments.append({
-            "id": c.get("id", ""),
-            "author": c.get("author", {}).get("login", "unknown"),
-            "body": c.get("body", ""),
-            "created_at": c.get("createdAt", ""),
-            "type": "comment",
-        })
+        all_comments.append(
+            {
+                "id": c.get("id", ""),
+                "author": c.get("author", {}).get("login", "unknown"),
+                "body": c.get("body", ""),
+                "created_at": c.get("createdAt", ""),
+                "type": "comment",
+            }
+        )
 
     # Review body comments
     for r in comments.get("reviews", []):
         if r.get("body"):
-            all_comments.append({
-                "id": r.get("id", ""),
-                "author": r.get("author", {}).get("login", "unknown"),
-                "body": r.get("body", ""),
-                "created_at": r.get("submittedAt", ""),
-                "type": "review",
-                "state": r.get("state", ""),
-            })
+            all_comments.append(
+                {
+                    "id": r.get("id", ""),
+                    "author": r.get("author", {}).get("login", "unknown"),
+                    "body": r.get("body", ""),
+                    "created_at": r.get("submittedAt", ""),
+                    "type": "review",
+                    "state": r.get("state", ""),
+                }
+            )
 
     # Line-level review comments
     review_comments = gh_json(["api", f"repos/{repo}/pulls/{pr_num}/comments"], repo=repo)
     if review_comments:
         for rc in review_comments:
-            all_comments.append({
-                "id": str(rc.get("id", "")),
-                "author": rc.get("user", {}).get("login", "unknown"),
-                "body": rc.get("body", ""),
-                "created_at": rc.get("created_at", ""),
-                "type": "review_comment",
-                "path": rc.get("path", ""),
-                "line": rc.get("line"),
-                "diff_hunk": rc.get("diff_hunk", ""),
-            })
+            all_comments.append(
+                {
+                    "id": str(rc.get("id", "")),
+                    "author": rc.get("user", {}).get("login", "unknown"),
+                    "body": rc.get("body", ""),
+                    "created_at": rc.get("created_at", ""),
+                    "type": "review_comment",
+                    "path": rc.get("path", ""),
+                    "line": rc.get("line"),
+                    "diff_hunk": rc.get("diff_hunk", ""),
+                }
+            )
 
     if not all_comments:
         return None
@@ -350,7 +381,9 @@ def check_pr_for_comments(
     # Filter by timestamp
     failed_tasks = state.get("failed_tasks", {})
     has_failed_task = any(
-        info.get("task_type") == "comment" and info.get("repository") == repo and info.get("pr_number") == pr_num
+        info.get("task_type") == "comment"
+        and info.get("repository") == repo
+        and info.get("pr_number") == pr_num
         for info in failed_tasks.values()
     )
 
@@ -414,15 +447,25 @@ def check_pr_for_review_response(
     if not reviews:
         return None
 
-    bot_variants = {bot_username.lower(), f"{bot_username.lower()}[bot]", f"app/{bot_username.lower()}"}
-    other_reviews = [r for r in reviews if r.get("author", {}).get("login", "").lower() not in bot_variants]
+    bot_variants = {
+        bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
+        f"app/{bot_username.lower()}",
+    }
+    other_reviews = [
+        r for r in reviews if r.get("author", {}).get("login", "").lower() not in bot_variants
+    ]
 
     if not other_reviews:
         return None
 
     if should_restrict_to_configured_users(repo):
         allowed_users = {github_username.lower()}
-        other_reviews = [r for r in other_reviews if r.get("author", {}).get("login", "").lower() in allowed_users]
+        other_reviews = [
+            r
+            for r in other_reviews
+            if r.get("author", {}).get("login", "").lower() in allowed_users
+        ]
         if not other_reviews:
             return None
 
@@ -447,26 +490,33 @@ def check_pr_for_review_response(
         for rc in review_comments:
             rc_author = rc.get("user", {}).get("login", "").lower()
             if rc_author not in bot_variants:
-                line_comments.append({
-                    "id": str(rc.get("id", "")),
-                    "author": rc.get("user", {}).get("login", "unknown"),
-                    "body": rc.get("body", ""),
-                    "path": rc.get("path", ""),
-                    "line": rc.get("line"),
-                    "original_line": rc.get("original_line"),
-                    "diff_hunk": rc.get("diff_hunk", ""),
-                    "created_at": rc.get("created_at", ""),
-                })
+                line_comments.append(
+                    {
+                        "id": str(rc.get("id", "")),
+                        "author": rc.get("user", {}).get("login", "unknown"),
+                        "body": rc.get("body", ""),
+                        "path": rc.get("path", ""),
+                        "line": rc.get("line"),
+                        "original_line": rc.get("original_line"),
+                        "diff_hunk": rc.get("diff_hunk", ""),
+                        "created_at": rc.get("created_at", ""),
+                    }
+                )
 
-    review_info = [{
-        "id": r.get("id", ""),
-        "author": r.get("author", {}).get("login", "unknown"),
-        "state": r.get("state", "COMMENTED"),
-        "body": r.get("body", ""),
-        "submitted_at": r.get("submittedAt", ""),
-    } for r in other_reviews]
+    review_info = [
+        {
+            "id": r.get("id", ""),
+            "author": r.get("author", {}).get("login", "unknown"),
+            "state": r.get("state", "COMMENTED"),
+            "body": r.get("body", ""),
+            "submitted_at": r.get("submittedAt", ""),
+        }
+        for r in other_reviews
+    ]
 
-    logger.info("Bot PR has reviews needing response", pr_number=pr_num, review_count=len(review_info))
+    logger.info(
+        "Bot PR has reviews needing response", pr_number=pr_num, review_count=len(review_info)
+    )
 
     diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo], repo=repo)
 
@@ -513,8 +563,14 @@ def check_prs_for_review(
     if not all_prs:
         return []
 
-    excluded_authors = {github_username.lower(), bot_username.lower(), f"{bot_username.lower()}[bot]"}
-    other_prs = [p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors]
+    excluded_authors = {
+        github_username.lower(),
+        bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
+    }
+    other_prs = [
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() not in excluded_authors
+    ]
 
     if not other_prs:
         return []
@@ -547,7 +603,8 @@ def check_prs_for_review(
 
     if since_timestamp:
         other_prs = [
-            p for p in other_prs
+            p
+            for p in other_prs
             if p.get("createdAt", "") >= since_timestamp or p["number"] in failed_review_pr_numbers
         ]
         if not other_prs:
@@ -571,21 +628,23 @@ def check_prs_for_review(
 
         diff = gh_text(["pr", "diff", str(pr_num), "--repo", repo], repo=repo)
 
-        results.append({
-            "type": "review_request",
-            "repository": repo,
-            "pr_number": pr_num,
-            "pr_title": pr.get("title", ""),
-            "pr_url": pr.get("url", ""),
-            "pr_branch": pr.get("headRefName", ""),
-            "base_branch": pr.get("baseRefName", ""),
-            "author": pr.get("author", {}).get("login", ""),
-            "additions": pr.get("additions", 0),
-            "deletions": pr.get("deletions", 0),
-            "files": [f.get("path", "") for f in pr.get("files", [])],
-            "diff": truncate_diff(diff),
-            "review_signature": review_signature,
-            "is_rereview": is_rereview,
-        })
+        results.append(
+            {
+                "type": "review_request",
+                "repository": repo,
+                "pr_number": pr_num,
+                "pr_title": pr.get("title", ""),
+                "pr_url": pr.get("url", ""),
+                "pr_branch": pr.get("headRefName", ""),
+                "base_branch": pr.get("baseRefName", ""),
+                "author": pr.get("author", {}).get("login", ""),
+                "additions": pr.get("additions", 0),
+                "deletions": pr.get("deletions", 0),
+                "files": [f.get("path", "") for f in pr.get("files", [])],
+                "diff": truncate_diff(diff),
+                "review_signature": review_signature,
+                "is_rereview": is_rereview,
+            }
+        )
 
     return results

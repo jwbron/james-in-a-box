@@ -11,15 +11,11 @@ Note: Most setup functions require root and container environment,
 so we focus on testing logic that can be unit tested.
 """
 
-import json
 import os
-import subprocess
 import sys
-from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Load the entrypoint module
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "jib-container"))
@@ -84,13 +80,13 @@ class TestConfig:
 
         assert config.user_home == Path("/home/myuser")
 
-    def test_khan_dir_property(self, monkeypatch):
-        """Test the khan_dir property."""
+    def test_repos_dir_property(self, monkeypatch):
+        """Test the repos_dir property."""
         monkeypatch.setenv("RUNTIME_USER", "myuser")
 
         config = entrypoint.Config()
 
-        assert config.khan_dir == Path("/home/myuser/khan")
+        assert config.repos_dir == Path("/home/myuser/repos")
 
     def test_sharing_dir_property(self, monkeypatch):
         """Test the sharing_dir property."""
@@ -203,7 +199,7 @@ class TestRunCmd:
         """Test command execution with output capture."""
         mock_run.return_value = MagicMock(returncode=0, stdout="output")
 
-        result = entrypoint.run_cmd(["cat", "file"], capture=True)
+        entrypoint.run_cmd(["cat", "file"], capture=True)
 
         mock_run.assert_called_once()
         call_kwargs = mock_run.call_args[1]
@@ -349,7 +345,9 @@ class TestFixRepoConfig:
         mock_run_cmd.side_effect = [
             MagicMock(returncode=0),  # set user.name
             MagicMock(returncode=0),  # set user.email
-            MagicMock(returncode=0, stdout="https://x-access-token:ghp_xxx@github.com/owner/repo.git"),  # get URL
+            MagicMock(
+                returncode=0, stdout="https://x-access-token:ghp_xxx@github.com/owner/repo.git"
+            ),  # get URL
             MagicMock(returncode=0),  # set cleaned URL
         ]
 
@@ -358,7 +356,9 @@ class TestFixRepoConfig:
 
         # Check that the URL was cleaned
         calls = mock_run_cmd.call_args_list
-        set_url_calls = [c for c in calls if "remote.origin.url" in str(c) and "https://github.com" in str(c)]
+        set_url_calls = [
+            c for c in calls if "remote.origin.url" in str(c) and "https://github.com" in str(c)
+        ]
         assert len(set_url_calls) == 1
 
     @patch.object(entrypoint, "run_cmd")
@@ -383,16 +383,16 @@ class TestFixRepoConfig:
 class TestSetupWorktrees:
     """Tests for the setup_worktrees function."""
 
-    def test_returns_true_if_khan_dir_missing(self, temp_dir, monkeypatch):
-        """Test that function returns True if khan directory doesn't exist."""
-        # Create a fake home dir structure where khan doesn't exist
+    def test_returns_true_if_repos_dir_missing(self, temp_dir, monkeypatch):
+        """Test that function returns True if repos directory doesn't exist."""
+        # Create a fake home dir structure where repos doesn't exist
         fake_home = temp_dir / "home" / "testuser"
         fake_home.mkdir(parents=True)
         monkeypatch.setenv("RUNTIME_USER", "testuser")
 
         # Create a mock config that uses the temp paths
         config = MagicMock()
-        config.khan_dir = fake_home / "khan"  # Doesn't exist
+        config.repos_dir = fake_home / "repos"  # Doesn't exist
         config.git_main_dir = fake_home / ".git-main"
 
         logger = entrypoint.Logger(quiet=True)
@@ -404,11 +404,11 @@ class TestSetupWorktrees:
         """Test that function returns True if no worktrees exist."""
         fake_home = temp_dir / "home" / "testuser"
         fake_home.mkdir(parents=True)
-        khan_dir = fake_home / "khan"
-        khan_dir.mkdir()
+        repos_dir = fake_home / "repos"
+        repos_dir.mkdir()
 
         config = MagicMock()
-        config.khan_dir = khan_dir
+        config.repos_dir = repos_dir
         config.git_main_dir = fake_home / ".git-main"
 
         logger = entrypoint.Logger(quiet=True)
@@ -421,14 +421,14 @@ class TestSetupWorktrees:
         fake_home = temp_dir / "home" / "testuser"
         fake_home.mkdir(parents=True)
 
-        khan_dir = fake_home / "khan"
-        khan_dir.mkdir()
-        repo_dir = khan_dir / "repo"
+        repos_dir = fake_home / "repos"
+        repos_dir.mkdir()
+        repo_dir = repos_dir / "repo"
         repo_dir.mkdir()
         (repo_dir / ".git").write_text("gitdir: /original/path")
 
         config = MagicMock()
-        config.khan_dir = khan_dir
+        config.repos_dir = repos_dir
         config.git_main_dir = fake_home / ".git-main-nonexistent"  # Doesn't exist
 
         logger = entrypoint.Logger(quiet=False)
@@ -544,4 +544,3 @@ class TestSetupBeads:
         # Check symlink was created
         beads_link = user_home / "beads"
         assert beads_link.is_symlink()
-

@@ -243,10 +243,10 @@ class TestIsDangerousDir:
         safe_dir.mkdir()
         assert jib.is_dangerous_dir(safe_dir) is False
 
-    def test_khan_dir_is_safe(self):
-        """Test khan directory is safe."""
-        khan_dir = Path.home() / "khan"
-        assert jib.is_dangerous_dir(khan_dir) is False
+    def test_repos_dir_is_safe(self):
+        """Test repos directory is safe."""
+        repos_dir = Path.home() / "repos"
+        assert jib.is_dangerous_dir(repos_dir) is False
 
 
 class TestGenerateContainerId:

@@ -267,7 +267,7 @@ Print a clear summary to stdout with:
 - All work should be committed to git
 - **Create a PR after completing code changes** - this lets the user review on GitHub
 - **Beads is your persistent memory** - ALWAYS check and update beads
-- Working directory: You can access all repos in `~/khan/`
+- Working directory: You can access all repos in `~/repos/`
 - Use `gh pr create` to create PRs and request review from @jwiesebron
 - **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack notification automatically
 
@@ -511,7 +511,7 @@ def process_response(message_file: Path):
         logger.info("Found original task ID from thread", task_id=original_task_id)
 
     # Extract thread context and PR references from the message
-    thread_context_text, pr_refs = extract_thread_context(content)
+    _thread_context_text, pr_refs = extract_thread_context(content)
     if pr_refs:
         logger.info("PR references found", pr_refs=pr_refs)
 

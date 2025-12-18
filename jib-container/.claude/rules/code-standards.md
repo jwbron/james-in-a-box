@@ -1,4 +1,4 @@
-# Coding Standards
+# Code Standards
 
 **Tech**: Python/Django, React/TypeScript, Jest/PyTest, PostgreSQL/Redis
 
