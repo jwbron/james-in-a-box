@@ -815,7 +815,8 @@ def setup_beads(config: Config, logger: Logger) -> bool:
 def generate_docs_indexes(config: Config, logger: Logger) -> None:
     """Generate documentation indexes."""
     index_generator = (
-        config.repos_dir / "james-in-a-box/host-services/analysis/index-generator/index-generator.py"
+        config.repos_dir
+        / "james-in-a-box/host-services/analysis/index-generator/index-generator.py"
     )
     jib_dir = config.repos_dir / "james-in-a-box"
 

@@ -200,7 +200,7 @@ def main():
 
         if (distro == "ubuntu" and apt_packages) or (distro == "fedora" and dnf_packages):
             extra = apt_packages if distro == "ubuntu" else dnf_packages
-            print(f"\nInstalled extra packages:")
+            print("\nInstalled extra packages:")
             for pkg in extra:
                 print(f"  ✓ {pkg}")
 
