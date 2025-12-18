@@ -36,10 +36,6 @@ for service in ci-fixer comment-responder pr-reviewer; do
     ln -sf "${SCRIPT_DIR}/${service}.timer" ~/.config/systemd/user/
 done
 
-# Keep legacy service/timer for backward compatibility (optional manual use)
-ln -sf "${SCRIPT_DIR}/github-watcher.service" ~/.config/systemd/user/
-ln -sf "${SCRIPT_DIR}/github-watcher.timer" ~/.config/systemd/user/
-
 # Reload systemd
 systemctl --user daemon-reload
 
