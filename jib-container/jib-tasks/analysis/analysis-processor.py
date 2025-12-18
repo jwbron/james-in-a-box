@@ -346,8 +346,8 @@ def handle_create_pr(context: dict) -> int:
     if not files and not symlinks and not files_to_delete:
         return output_result(False, error="No files, symlinks, or deletions provided")
 
-    # Get repo path - inside container, repos are at ~/khan/<repo>
-    repo_path = Path.home() / "khan" / repo_name
+    # Get repo path - inside container, repos are at ~/repos/<repo>
+    repo_path = Path.home() / "repos" / repo_name
 
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
@@ -615,8 +615,8 @@ def handle_weekly_feature_analysis(context: dict) -> int:
     dry_run = context.get("dry_run", False)
     max_workers = context.get("max_workers", 20)
 
-    # Get repo path - inside container, repos are at ~/khan/<repo>
-    repo_path = Path.home() / "khan" / repo_name
+    # Get repo path - inside container, repos are at ~/repos/<repo>
+    repo_path = Path.home() / "repos" / repo_name
 
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
@@ -1028,8 +1028,8 @@ def handle_full_repo_analysis(context: dict) -> int:
     use_root_level_scout = context.get("use_root_level_scout", True)
     output_path = context.get("output_path")
 
-    # Get repo path - inside container, repos are at ~/khan/<repo>
-    repo_path = Path.home() / "khan" / repo_name
+    # Get repo path - inside container, repos are at ~/repos/<repo>
+    repo_path = Path.home() / "repos" / repo_name
 
     if not repo_path.exists():
         return output_result(False, error=f"Repository not found: {repo_path}")
@@ -1486,8 +1486,8 @@ def handle_repo_onboarding(context: dict) -> int:
     max_workers = context.get("max_workers", 20)
     use_root_level_scout = context.get("use_root_level_scout", True)
 
-    # Get repo path - inside container, repos are at ~/khan/<repo>
-    repo_path = Path.home() / "khan" / repo_name
+    # Get repo path - inside container, repos are at ~/repos/<repo>
+    repo_path = Path.home() / "repos" / repo_name
     confluence_path = Path(confluence_dir)
 
     if not repo_path.exists():

@@ -267,7 +267,7 @@ Print a clear summary to stdout with:
 - All work should be committed to git
 - **Create a PR after completing code changes** - this lets the user review on GitHub
 - **Beads is your persistent memory** - ALWAYS check and update beads
-- Working directory: You can access all repos in `~/khan/`
+- Working directory: You can access all repos in `~/repos/`
 - Use `gh pr create` to create PRs and request review from @jwiesebron
 - **DO NOT create notification files directly** - your stdout will be captured and sent as a threaded Slack notification automatically
 

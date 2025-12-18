@@ -24,11 +24,11 @@ class TestGetConfigPath:
 
         assert config_file.exists()
 
-    def test_finds_config_in_khan_directory(self, temp_dir, monkeypatch):
-        """Test finding config in ~/khan/james-in-a-box/config/."""
+    def test_finds_config_in_repos_directory(self, temp_dir, monkeypatch):
+        """Test finding config in ~/repos/james-in-a-box/config/."""
         monkeypatch.setenv("HOME", str(temp_dir))
 
-        config_path = temp_dir / "khan" / "james-in-a-box" / "config"
+        config_path = temp_dir / "repos" / "james-in-a-box" / "config"
         config_path.mkdir(parents=True, exist_ok=True)
 
         config_file = config_path / "repositories.yaml"

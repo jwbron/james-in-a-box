@@ -4,7 +4,7 @@ You run in a sandboxed Docker container. Network: outbound HTTP/HTTPS only. No S
 
 ## Capabilities
 
-**CAN**: Read/edit `~/khan/`, run tests, `git push` (HTTPS), `gh` CLI (PRs, issues), PostgreSQL, Redis, Python, Node.js, Go, Java
+**CAN**: Read/edit `~/repos/`, run tests, `git push` (HTTPS), `gh` CLI (PRs, issues), PostgreSQL, Redis, Python, Node.js, Go, Java
 
 **CANNOT**: Merge PRs, SSH push, deploy to GCP/AWS, access production
 
@@ -18,7 +18,7 @@ If push fails: Check `git remote -v` is HTTPS, check `GITHUB_TOKEN` is set.
 
 | Path | Purpose |
 |------|---------|
-| `~/khan/` | Code workspace (RW) |
+| `~/repos/` | Code workspace (RW) - mounted repositories |
 | `~/context-sync/` | Confluence/JIRA (RO) |
 | `~/sharing/` | Persistent data, notifications, context |
 | `~/beads/` | Task memory |

@@ -65,7 +65,7 @@ Creates Slack notification with analysis and suggested actions
 **Usage:**
 ```bash
 # Run manually (normally triggered automatically)
-jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py
+jib --exec python3 ~/repos/james-in-a-box/jib-container/jib-tasks/github/github-processor.py
 ```
 
 ## PR Auto-Review (`pr-reviewer.py --watch`)
@@ -100,13 +100,13 @@ Marks PR as reviewed (tracks in state file)
 **Usage:**
 ```bash
 # Watch mode (scan and review new PRs) - normally triggered automatically
-jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py --watch
+jib --exec python3 ~/repos/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py --watch
 
 # Review specific PR
-jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py 123
+jib --exec python3 ~/repos/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py 123
 
 # Review specific PR in repo
-jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py 123 repo-name
+jib --exec python3 ~/repos/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py 123 repo-name
 ```
 
 ## PR Code Review (On-Demand)
@@ -332,16 +332,16 @@ All scripts should be run via `jib --exec`:
 
 ```bash
 # Run github processor manually
-jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py
+jib --exec python3 ~/repos/james-in-a-box/jib-container/jib-tasks/github/github-processor.py
 
 # Run PR reviewer in watch mode
-jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py --watch
+jib --exec python3 ~/repos/james-in-a-box/jib-container/jib-tasks/github/pr-reviewer.py --watch
 
 # Run comment responder
-jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/comment-responder.py
+jib --exec python3 ~/repos/james-in-a-box/jib-container/jib-tasks/github/comment-responder.py
 
 # Run command handler
-jib --exec python3 ~/khan/james-in-a-box/jib-container/jib-tasks/github/command-handler.py
+jib --exec python3 ~/repos/james-in-a-box/jib-container/jib-tasks/github/command-handler.py
 ```
 
 ## Configuration

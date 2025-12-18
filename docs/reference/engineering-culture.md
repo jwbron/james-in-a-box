@@ -1,7 +1,7 @@
-# Khan Academy Engineering Culture
+# Engineering Culture Standards
 
 > Reference document for understanding L3-L4 (Senior Software Engineer) behavioral standards.
-> Originally from Khan Academy Career Ladder.
+> Customize this document to match your organization's engineering culture and career ladder.
 
 ## Target Level: Senior Software Engineer I-II (L3-L4)
 
@@ -84,10 +84,12 @@
 2. **Nurture Engineers** - Learn from mistakes and share knowledge
 3. **Collaborate Compassionately** - Assume good intent, communicate clearly
 
-## Sources
+## Customization
 
-- Khan Academy Career Ladder: Senior Software Engineer I, Senior Software Engineer II
-- Engineering Principles documentation
+This document provides a template for engineering culture standards. Customize it to match your organization's:
+- Career ladder levels and expectations
+- Engineering principles and values
+- Communication and collaboration norms
 
 ---
 *This is reference material. See [docs/index.md](../index.md) for navigation.*
