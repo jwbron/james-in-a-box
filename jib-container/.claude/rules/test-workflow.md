@@ -1,6 +1,6 @@
 # Test Discovery
 
-**ALWAYS run `discover-tests ~/khan/<repo>` first** - don't assume test commands.
+**ALWAYS run `discover-tests ~/repos/<repo>` first** - don't assume test commands.
 
 1. Run existing tests before changes (baseline)
 2. Run tests frequently during development

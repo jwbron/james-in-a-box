@@ -5,6 +5,7 @@ Tests the Docker development environment setup:
 - Distribution detection
 - Architecture detection
 - Run command helpers
+- Configuration loading
 
 Note: Most installation functions require root and package managers,
 so we focus on testing detection and helper functions.
@@ -27,6 +28,8 @@ run = docker_setup.run
 run_shell = docker_setup.run_shell
 detect_distro = docker_setup.detect_distro
 get_arch = docker_setup.get_arch
+load_config = docker_setup.load_config
+get_extra_packages = docker_setup.get_extra_packages
 
 
 class TestRun:
@@ -111,51 +114,6 @@ class TestRunShell:
 class TestDetectDistro:
     """Tests for Linux distribution detection."""
 
-    def test_detect_fedora(self, temp_dir):
-        """Test detecting Fedora."""
-        fedora_release = temp_dir / "fedora-release"
-        fedora_release.write_text("Fedora release 39")
-
-        with patch.object(
-            Path,
-            "__truediv__",
-            lambda self, other: temp_dir / other
-            if str(self) == "/etc"
-            else Path.__truediv__(self, other),
-        ):
-            # Need to mock the Path("/etc/fedora-release").exists() call
-            with patch("pathlib.Path.exists"):
-
-                def exists_side_effect():
-                    # This is a bit hacky but works for the test
-                    return True
-
-                # Actually, let's just test the logic directly
-
-    def test_detect_distro_fedora_path(self, temp_dir, monkeypatch):
-        """Test Fedora detection via file check."""
-        # Create mock fedora-release
-        etc_dir = temp_dir / "etc"
-        etc_dir.mkdir()
-        (etc_dir / "fedora-release").write_text("Fedora")
-
-        # Need to mock Path to use our temp dir as /etc
-        original_path = Path
-
-        def mock_path(path_str):
-            if path_str == "/etc/fedora-release":
-                return etc_dir / "fedora-release"
-            elif path_str == "/etc/lsb-release":
-                return etc_dir / "lsb-release"
-            elif path_str == "/etc/debian_version":
-                return etc_dir / "debian_version"
-            return original_path(path_str)
-
-        # Mock at module level
-        with patch.object(docker_setup, "Path", side_effect=mock_path):
-            # The function uses Path directly, so we need different approach
-            pass
-
     def test_detect_distro_returns_string(self):
         """Test that detect_distro returns a string."""
         result = detect_distro()
@@ -191,81 +149,133 @@ class TestGetArch:
         assert result == "armv7l"
 
 
-class TestInstallJava:
-    """Tests for Java installation."""
+class TestGetExtraPackages:
+    """Tests for extra package configuration."""
+
+    def test_get_extra_packages_empty_config(self):
+        """Test with empty config returns empty lists."""
+        apt, dnf = get_extra_packages({}, "ubuntu")
+        assert apt == []
+        assert dnf == []
+
+    def test_get_extra_packages_apt_only(self):
+        """Test apt-specific packages."""
+        config = {
+            "docker_setup": {
+                "extra_packages": {
+                    "apt": ["nodejs", "python3.11"],
+                }
+            }
+        }
+        apt, dnf = get_extra_packages(config, "ubuntu")
+        assert apt == ["nodejs", "python3.11"]
+        assert dnf == []
+
+    def test_get_extra_packages_dnf_only(self):
+        """Test dnf-specific packages."""
+        config = {
+            "docker_setup": {
+                "extra_packages": {
+                    "dnf": ["golang", "java-11-openjdk"],
+                }
+            }
+        }
+        apt, dnf = get_extra_packages(config, "fedora")
+        assert apt == []
+        assert dnf == ["golang", "java-11-openjdk"]
+
+    def test_get_extra_packages_generic(self):
+        """Test generic packages added to both lists."""
+        config = {
+            "docker_setup": {
+                "extra_packages": {
+                    "packages": ["vim", "htop"],
+                }
+            }
+        }
+        apt, dnf = get_extra_packages(config, "ubuntu")
+        assert apt == ["vim", "htop"]
+        assert dnf == ["vim", "htop"]
+
+    def test_get_extra_packages_combined(self):
+        """Test combining distro-specific and generic packages."""
+        config = {
+            "docker_setup": {
+                "extra_packages": {
+                    "apt": ["nodejs"],
+                    "dnf": ["nodejs"],
+                    "packages": ["vim"],
+                }
+            }
+        }
+        apt, dnf = get_extra_packages(config, "ubuntu")
+        assert apt == ["nodejs", "vim"]
+        assert dnf == ["nodejs", "vim"]
+
+
+class TestInstallCorePackages:
+    """Tests for core package installation."""
 
     @patch.object(docker_setup, "run")
-    @patch.object(docker_setup, "run_shell")
-    def test_install_java_ubuntu(self, mock_run_shell, mock_run, capsys):
-        """Test Java installation on Ubuntu."""
+    def test_install_core_packages_ubuntu(self, mock_run, capsys):
+        """Test core package installation on Ubuntu."""
         mock_run.return_value = MagicMock(returncode=0)
-        mock_run_shell.return_value = MagicMock(returncode=0)
 
-        docker_setup.install_java("ubuntu")
+        docker_setup.install_core_packages("ubuntu")
 
-        # Should install openjdk-11-jdk
-        mock_run.assert_called()
+        # Should call apt-get update and install
         calls = mock_run.call_args_list
-        apt_calls = [c for c in calls if "apt-get" in str(c)]
-        assert len(apt_calls) > 0
+        assert len(calls) >= 2
+        # First call should be apt-get update
+        assert "apt-get" in str(calls[0])
 
     @patch.object(docker_setup, "run")
-    @patch.object(docker_setup, "run_shell")
-    def test_install_java_fedora(self, mock_run_shell, mock_run, capsys):
-        """Test Java installation on Fedora."""
+    def test_install_core_packages_fedora(self, mock_run, capsys):
+        """Test core package installation on Fedora."""
         mock_run.return_value = MagicMock(returncode=0)
-        mock_run_shell.return_value = MagicMock(returncode=0)
 
-        docker_setup.install_java("fedora")
+        docker_setup.install_core_packages("fedora")
 
-        # Should install java-11-openjdk
-        mock_run.assert_called()
+        # Should call dnf install
         calls = mock_run.call_args_list
-        dnf_calls = [c for c in calls if "dnf" in str(c)]
-        assert len(dnf_calls) > 0
+        assert len(calls) >= 1
+        assert "dnf" in str(calls[0])
 
 
-class TestInstallGo:
-    """Tests for Go installation."""
-
-    @patch.object(docker_setup, "run")
-    @patch.object(docker_setup, "run_shell")
-    def test_install_go_already_installed(self, mock_run_shell, mock_run, capsys):
-        """Test Go installation when already installed."""
-        # First call is go version check
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout="go version go1.22.0 linux/amd64"),
-        ]
-
-        docker_setup.install_go("ubuntu")
-
-        # Should skip installation
-        captured = capsys.readouterr()
-        assert "already installed" in captured.out or "skipping" in captured.out.lower()
-
-
-class TestInstallNodejs:
-    """Tests for Node.js installation."""
+class TestInstallExtraPackages:
+    """Tests for extra package installation."""
 
     @patch.object(docker_setup, "run")
-    @patch.object(docker_setup, "run_shell")
-    @patch("builtins.open", create=True)
-    def test_install_nodejs_ubuntu(self, mock_open, mock_run_shell, mock_run, capsys):
-        """Test Node.js installation on Ubuntu."""
+    def test_install_extra_packages_ubuntu(self, mock_run, capsys):
+        """Test extra package installation on Ubuntu."""
         mock_run.return_value = MagicMock(returncode=0)
-        mock_run_shell.return_value = MagicMock(returncode=0)
 
-        # Mock file operations
-        mock_file = MagicMock()
-        mock_open.return_value.__enter__ = MagicMock(return_value=mock_file)
-        mock_open.return_value.__exit__ = MagicMock(return_value=False)
+        docker_setup.install_extra_packages("ubuntu", ["nodejs", "golang"], [])
 
-        docker_setup.install_nodejs("ubuntu")
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "apt-get" in call_args
+        assert "nodejs" in call_args
+        assert "golang" in call_args
 
-        # Should make curl and apt calls
-        mock_run_shell.assert_called()
-        captured = capsys.readouterr()
-        assert "Node.js" in captured.out
+    @patch.object(docker_setup, "run")
+    def test_install_extra_packages_fedora(self, mock_run, capsys):
+        """Test extra package installation on Fedora."""
+        mock_run.return_value = MagicMock(returncode=0)
+
+        docker_setup.install_extra_packages("fedora", [], ["nodejs", "golang"])
+
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "dnf" in call_args
+        assert "nodejs" in call_args
+        assert "golang" in call_args
+
+    @patch.object(docker_setup, "run")
+    def test_install_extra_packages_empty(self, mock_run):
+        """Test that empty package list doesn't call install."""
+        docker_setup.install_extra_packages("ubuntu", [], [])
+        mock_run.assert_not_called()
 
 
 class TestConfigureSystem:

@@ -489,7 +489,7 @@ The core 'jib' command provides the primary interface for starting, managing, an
 ### 38. Docker Development Environment Setup
 **Location:** `bin/docker-setup.py`
 
-Automates complete installation of Khan Academy development tools in the Docker container, including Python 3.11, Node.js 20.x, Go, Java 11, PostgreSQL, Redis, and various development utilities with cross-platform support for Ubuntu and Fedora.
+Automates complete installation of development tools in the Docker container, including Python 3.11, Node.js 20.x, Go, Java 11, PostgreSQL, Redis, and various development utilities with cross-platform support for Ubuntu and Fedora.
 
 ### 39. Analysis Task Processor
 **Location:** `jib-container/jib-tasks/analysis/analysis-processor.py`, `jib-container/jib-tasks/analysis/__init__.py`
@@ -530,9 +530,9 @@ Provides local full-text search across all synced documentation with context and
 Provides sync status monitoring showing statistics across spaces and pages, and cleanup utilities to find and remove orphaned files.
 
 ### 44. Symlink Management for Projects
-**Location:** `host-services/sync/context-sync/utils/create_symlink.py`, `host-services/sync/context-sync/utils/link_to_khan_projects.py`
+**Location:** `host-services/sync/context-sync/utils/create_symlink.py`, `host-services/sync/context-sync/utils/link_to_projects.py`
 
-Tools to create and manage symlinks from other projects to synced documentation, making it available in multiple Khan Academy projects.
+Tools to create and manage symlinks from other projects to synced documentation, making it available in multiple projects across your workspace.
 
 ### 45. Rate Limiting Handler
 **Location:** `host-services/sync/context-sync/connectors/jira/sync.py`, `host-services/sync/context-sync/connectors/confluence/sync.py`
@@ -600,7 +600,7 @@ Interactive setup wizard for configuring connector credentials and settings with
 - `jib-container/.claude/rules/environment.md`
 - `jib-container/.claude/rules/beads-usage.md`
 - `jib-container/.claude/rules/context-tracking.md`
-- `jib-container/.claude/rules/khan-academy.md`
+- `jib-container/.claude/rules/coding-standards.md`
 - *...and 4 more*
 
 Core behavioral configuration defining the Claude agent's role, operating model, workflow patterns, decision frameworks, quality standards, and communication style for autonomous software engineering.
@@ -611,10 +611,10 @@ Core behavioral configuration defining the Claude agent's role, operating model,
   - Defines agent's role, workflow (beads -> context -> plan -> implement -> test -> PR), decision framework, and quality standards.
 - **Sandbox Environment Rules** (`jib-container/.claude/rules/environment.md`)
   - Documents technical constraints of sandboxed Docker environment including security model and gh CLI configuration.
-- **Khan Academy Development Standards** (`jib-container/.claude/rules/khan-academy.md`)
+- **Coding Standards** (`jib-container/.claude/rules/coding-standards.md`)
   - Tech stack, code standards for Python and JavaScript, testing requirements, and common commands.
 - **PR Description Guidelines** (`jib-container/.claude/rules/pr-descriptions.md`)
-  - Standardized PR description format following Khan Academy conventions with format templates and anti-patterns.
+  - Standardized PR description format following team conventions with format templates and anti-patterns.
 - **Test Workflow Rules** (`jib-container/.claude/rules/test-workflow.md`)
   - Comprehensive test discovery and execution workflow rules for different codebases.
 - **Notification Guidelines** (`jib-container/.claude/rules/notification-template.md`)

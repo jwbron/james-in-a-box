@@ -46,8 +46,10 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
     update-alternatives --set python3 /usr/bin/python3.11
 
-# Install Khan Academy development tools
-# This includes: Node.js 20, Go, Java 11, PostgreSQL, etc.
+# Install pyyaml early - required by docker-setup.py for reading config
+RUN pip3 install --no-cache-dir pyyaml
+
+# Install development tools (configurable via repositories.yaml)
 COPY docker-setup.py /tmp/docker-setup.py
 RUN chmod +x /tmp/docker-setup.py && \
     apt-get update && \
@@ -65,6 +67,14 @@ RUN pip3 install --no-cache-dir \
 # When running as root, the install script puts bd directly in /usr/local/bin
 RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
     which bd
+
+# Install Node.js 20.x (required for npm packages: claude-code, claude-code-router, gemini-cli)
+RUN mkdir -p /usr/share/keyrings && \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
+    apt-get update && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -110,7 +120,7 @@ RUN chmod +x /opt/jib-runtime/jib-container/bin/* 2>/dev/null || true && \
 
 # Make jib-container and shared modules importable via PYTHONPATH
 # This is simpler than pip install and doesn't require pyproject.toml
-ENV PYTHONPATH="/opt/jib-runtime/jib-container:/opt/jib-runtime/shared:${PYTHONPATH}"
+ENV PYTHONPATH="/opt/jib-runtime/jib-container:/opt/jib-runtime/shared"
 
 # Create tmp directory in image (not mounted - container-only scratch space)
 RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp

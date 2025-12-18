@@ -42,7 +42,7 @@ The jib container provides a sandboxed development environment:
 
 ### Docker Development Environment Setup
 
-**Purpose**: Automates complete installation of Khan Academy development tools in the Docker container, including Python 3.11, Node.js 20.x, Go, Java 11, PostgreSQL, Redis, and various development utilities with cross-platform support for Ubuntu and Fedora.
+**Purpose**: Automates complete installation of development tools in the Docker container, including Python 3.11, Node.js 20.x, Go, Java 11, PostgreSQL, Redis, and various development utilities with cross-platform support for Ubuntu and Fedora.
 
 **Location**: `bin/docker-setup.py`
 
