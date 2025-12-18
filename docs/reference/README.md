@@ -24,13 +24,13 @@ Common Slack operations and commands.
 - Troubleshooting connection issues
 - Managing channels and tokens
 
-### [Khan Academy Culture](khan-academy-culture.md)
-Engineering culture standards from the Khan Academy Career Ladder.
+### [Engineering Culture](engineering-culture.md)
+Engineering culture standards template for L3-L4 behavioral expectations.
 
 **Information about:**
 - L3-L4 (Senior Software Engineer) behavioral expectations
 - Problem solving, communication, and collaboration standards
-- Engineering principles
+- Engineering principles (customizable for your organization)
 
 ### [Conversation Analysis Criteria](conversation-analysis-criteria.md)
 Assessment criteria for the conversation analyzer.

@@ -225,7 +225,7 @@ def setup_git(config: Config, logger: Logger) -> None:
 
     # Set git identity
     run_cmd(["git", "config", "--global", "user.name", "jib"], as_user=user_tuple)
-    run_cmd(["git", "config", "--global", "user.email", "jib@khan.org"], as_user=user_tuple)
+    run_cmd(["git", "config", "--global", "user.email", "jib@localhost"], as_user=user_tuple)
 
     # Configure credential helper if token available
     if config.github_token:
@@ -258,14 +258,14 @@ def setup_git(config: Config, logger: Logger) -> None:
         for repo_config in config.git_main_dir.glob("*/config"):
             _fix_repo_config(repo_config, logger)
 
-    logger.success("Git configured to commit as jib <jib@khan.org>")
+    logger.success("Git configured to commit as jib <jib@localhost>")
 
 
 def _fix_repo_config(repo_config: Path, logger: Logger) -> None:
     """Fix a single repo config file (identity, token cleanup, SSH->HTTPS)."""
     # Set identity
     run_cmd(["git", "config", "-f", str(repo_config), "user.name", "jib"])
-    run_cmd(["git", "config", "-f", str(repo_config), "user.email", "jib@khan.org"])
+    run_cmd(["git", "config", "-f", str(repo_config), "user.email", "jib@localhost"])
 
     # Get remote URL
     try:
@@ -399,7 +399,7 @@ def setup_agent_rules(config: Config, logger: Logger) -> None:
         "environment.md",
         "beads-usage.md",
         "context-tracking.md",
-        "khan-academy.md",
+        "coding-standards.md",
         "test-workflow.md",
         "pr-descriptions.md",
         "notification-template.md",

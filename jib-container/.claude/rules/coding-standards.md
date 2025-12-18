@@ -1,4 +1,4 @@
-# Khan Academy Standards
+# Coding Standards
 
 **Tech**: Python/Django, React/TypeScript, Jest/PyTest, PostgreSQL/Redis
 

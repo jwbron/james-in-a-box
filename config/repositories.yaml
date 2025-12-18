@@ -58,7 +58,8 @@ github_sync:
 #
 # Authentication: Uses GITHUB_TOKEN (PAT) - no GitHub App needed for read-only
 readable_repos:
-  - khan/webapp
+  # Add repos you want to monitor but not modify here
+  # Example: - some-org/some-repo
 
 # Per-repository configuration overrides
 # Each key is a repository name in "owner/repo" format
