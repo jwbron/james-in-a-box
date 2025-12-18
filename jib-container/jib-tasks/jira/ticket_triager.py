@@ -26,17 +26,23 @@ from typing import TYPE_CHECKING
 # Add shared modules to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "llm"))
 
-from context_gatherer import ContextGatherer, GatheredContext
-from plan_generator import GeneratedPlan, PlanGenerator
-from triviality_assessor import Classification, TrivialityAssessment, TrivialityAssessor
+# Import from same directory (jira modules)
+from .context_gatherer import ContextGatherer, GatheredContext
+from .plan_generator import GeneratedPlan, PlanGenerator
+from .triviality_assessor import Classification, TrivialityAssessment, TrivialityAssessor
 
 
 if TYPE_CHECKING:
     from llm import AgentResult
 
 
-# JIB tag labels (case-insensitive)
-JIB_TAG_LABELS = ["jib", "james-in-a-box"]
+# JIB tag labels - use config for single source of truth
+# Fallback to james-in-a-box if config not available
+try:
+    from host_services.sync.context_sync.connectors.jira.config import JIRAConfig
+    JIB_TAG_LABELS = JIRAConfig.get_jib_tag_labels()
+except ImportError:
+    JIB_TAG_LABELS = ["james-in-a-box"]
 
 
 @dataclass
@@ -380,9 +386,9 @@ Triviality Score: {result.assessment.score}/100
             )
 
             if push_result.returncode != 0:
-                # Try force push if branch exists
+                # Try force-with-lease if branch exists (safer than -f)
                 subprocess.run(
-                    ["git", "push", "-u", "-f", "origin", branch_name],
+                    ["git", "push", "-u", "--force-with-lease", "origin", branch_name],
                     cwd=repo_path,
                     capture_output=True,
                 )

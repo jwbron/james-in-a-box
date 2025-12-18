@@ -55,8 +55,8 @@ class JIRAConfig:
     # Repositories enabled for JIB triage (comma-separated)
     JIB_TRIAGE_ENABLED_REPOS: str = os.getenv("JIB_TRIAGE_ENABLED_REPOS", "jwbron/james-in-a-box")
 
-    # Labels that identify JIB-tagged tickets (comma-separated, case-insensitive)
-    JIB_TAG_LABELS: str = os.getenv("JIB_TAG_LABELS", "jib,james-in-a-box")
+    # Label that identifies JIB-tagged tickets (case-insensitive)
+    JIB_TAG_LABELS: str = os.getenv("JIB_TAG_LABELS", "james-in-a-box")
 
     # Score threshold for trivial classification (0-100)
     JIB_TRIVIALITY_THRESHOLD: int = int(os.getenv("JIB_TRIVIALITY_THRESHOLD", "50"))

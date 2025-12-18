@@ -97,16 +97,16 @@ When a JIRA ticket is tagged for "James-in-a-box" (via label, custom field, or m
 
 ### 1. JIB Tag Detection
 
-**Decision:** Use JIRA labels (`jib`, `james-in-a-box`, or `JIB`) to identify tickets for automation.
+**Decision:** Use JIRA label `james-in-a-box` to identify tickets for automation.
 
 See [Design Decisions](#1-jib-tag-mechanism-jira-label) for full rationale.
 
 **Implementation:**
 ```python
 def is_jib_tagged(ticket: dict) -> bool:
-    """Check if ticket has JIB label (case-insensitive)."""
+    """Check if ticket has james-in-a-box label (case-insensitive)."""
     labels = [l.lower() for l in ticket.get("labels", [])]
-    return any(tag in labels for tag in ["jib", "james-in-a-box"])
+    return "james-in-a-box" in labels
 ```
 
 ### 2. Context Gathering
@@ -126,51 +126,36 @@ When a JIB-tagged ticket is detected, gather context:
 
 ### 3. Triviality Assessment
 
-Criteria for determining if a fix is "trivial":
+**Key Insight:** Triviality is NOT about line count. A 500-line test suite addition might be trivial, while a tricky one-line bug fix might be complex. Triviality is determined by whether JIB has **enough context to execute the task** confidently.
+
+**Default Behavior:** The default (and most common outcome) should be to create a PR with a planning document. Trivial classification is the exception, not the rule.
+
+**Criteria for determining if a fix is "trivial":**
 
 | Factor | Trivial | Non-Trivial |
 |--------|---------|-------------|
-| **Scope** | Single file or 2-3 closely related files | Multiple components/services |
-| **Type** | Bug fix, typo, config change | Feature, architecture change |
+| **Context Confidence** | JIB has clear understanding of what's needed | Ambiguity about requirements |
+| **Type** | Bug fix, typo, config change, simple test | Feature, architecture change |
 | **Tests** | Existing tests cover the area | New test patterns needed |
 | **Dependencies** | No new dependencies | New packages/services |
 | **Ambiguity** | Clear requirements | Multiple interpretations possible |
 | **Risk** | Low (isolated change) | High (security, data, performance) |
-| **Estimated Lines** | < 50-100 lines changed | > 100 lines or complex refactor |
 
-**Scoring System (Proposed):**
+**Triviality Decision Logic:**
 ```
-trivial_score = 0
+# Default is NON-TRIVIAL (planning doc)
+is_trivial = False
 
-# File scope
-if files_affected == 1: trivial_score += 30
-elif files_affected <= 3: trivial_score += 15
-else: trivial_score -= 20
+# Only mark trivial if JIB has high confidence it can execute
+if has_sufficient_context AND requirements_clear AND no_disqualifiers:
+    is_trivial = True
 
-# Change type
-if is_bug_fix: trivial_score += 20
-if is_config_change: trivial_score += 20
-if is_new_feature: trivial_score -= 30
-
-# Test coverage
-if existing_tests_cover_area: trivial_score += 20
-else: trivial_score -= 10
-
-# Ambiguity
-if requirements_clear: trivial_score += 20
-if questions_identified: trivial_score -= 10 * num_questions
-
-# Dependencies
-if new_dependencies_needed: trivial_score -= 30
-
-# Risk assessment
-if security_implications: trivial_score -= 40
-if data_migration: trivial_score -= 30
-
-# TRIVIAL if trivial_score >= 50 AND no auto-disqualifiers
+# Human can pre-define triviality via JIRA tag
+if has_trivial_tag:  # e.g., "james-in-a-box-trivial"
+    is_trivial = True
 ```
 
-**Decision:** Threshold of 50 with automatic disqualifiers. See [Design Decisions](#2-triviality-threshold-score--50-with-auto-disqualifiers) for details.
+**Decision:** Default to non-trivial (create planning doc). See [Design Decisions](#2-triviality-threshold-score--50-with-auto-disqualifiers) for details.
 
 **Auto-Disqualifiers (bypass scoring, always non-trivial):**
 - `security_implications`: True
@@ -405,10 +390,11 @@ After human merges this planning PR:
 
 | File | Type | Description |
 |------|------|-------------|
-| `jib-container/jib-tasks/jira/ticket-triager.py` | New | Main triage logic |
-| `jib-container/jib-tasks/jira/context-gatherer.py` | New | Context collection utilities |
-| `jib-container/jib-tasks/jira/triviality-assessor.py` | New | Scoring logic for trivial vs non-trivial |
-| `jib-container/jib-tasks/jira/plan-generator.py` | New | CPF document generator |
+| `jib-container/jib-tasks/jira/ticket_triager.py` | New | Main triage logic |
+| `jib-container/jib-tasks/jira/context_gatherer.py` | New | Context collection utilities |
+| `jib-container/jib-tasks/jira/triviality_assessor.py` | New | Context-based assessment |
+| `jib-container/jib-tasks/jira/plan_generator.py` | New | CPF document generator |
+| `jib-container/jib-tasks/jira/__init__.py` | New | Module initialization |
 | `jib-container/jib-tasks/jira/jira-processor.py` | Modified | Add JIB tag detection, call triager |
 | `host-services/sync/context-sync/connectors/jira/config.py` | Modified | Add JIB label config |
 
@@ -417,8 +403,7 @@ After human merges this planning PR:
 ```bash
 # New environment variables
 JIB_TRIAGE_ENABLED=true
-JIB_TAG_LABELS="jib,james-in-a-box"
-JIB_TRIVIALITY_THRESHOLD=50
+JIB_TAG_LABELS="james-in-a-box"
 JIB_AUTO_SECURITY_NONTRIVIAL=true  # Security tickets always non-trivial
 JIB_PLAN_OUTPUT_DIR="docs/plans"
 ```
@@ -434,22 +419,15 @@ JIB_PLAN_OUTPUT_DIR="docs/plans"
 | **Slack** | Notifications for triage decisions and PRs |
 | **GitHub** | PR creation for both trivial fixes and plans |
 
-#### With CPF (Post-Plan Approval)
+#### With CPF (Planning Documents)
 
-After human approves a planning PR:
-1. JIB detects merged planning doc
-2. Enters CPF implementation workflow
-3. Creates implementation PR(s) with checkpoints
-4. Follows standard review process
+JIB creates planning document PRs that follow CPF guidelines. Humans review and provide feedback through PR comments.
 
-**Decision:** PR merge triggers implementation. See [Design Decisions](#3-approval-detection-pr-merge-triggers-implementation) for details.
-
-**Detection Flow:**
-1. GitHub sync runs every 15 minutes
-2. Detects merged PRs with planning docs in `docs/plans/`
-3. Parses planning doc to extract implementation plan
-4. Creates Beads task for implementation
-5. Enters CPF implementation workflow
+**Flow:**
+1. JIB opens planning document PR
+2. Human reviews, comments, and requests changes if needed
+3. Human merges when satisfied
+4. JIB can proceed with implementation (manual trigger or future automation)
 
 ## Worked Example
 
@@ -528,7 +506,7 @@ The following design decisions have been made based on analysis and system align
 
 ### 1. JIB Tag Mechanism: JIRA Label
 
-**Decision:** Use JIRA labels `jib` or `james-in-a-box` to tag tickets for automation.
+**Decision:** Use JIRA label `james-in-a-box` to tag tickets for automation.
 
 **Rationale:**
 - Easy to add/remove without custom field configuration
@@ -536,10 +514,11 @@ The following design decisions have been made based on analysis and system align
 - Queryable via JQL for monitoring and debugging
 - Consistent with existing JIRA workflows
 - No JIRA admin setup required
+- Single, clear label avoids confusion
 
 **Implementation:**
 ```python
-JIB_TAG_LABELS = ["jib", "james-in-a-box", "JIB"]  # Case-insensitive matching
+JIB_TAG_LABELS = ["james-in-a-box"]  # Case-insensitive matching
 ```
 
 ### 2. Triviality Threshold: Score >= 50 with Auto-Disqualifiers
@@ -558,47 +537,51 @@ JIB_TAG_LABELS = ["jib", "james-in-a-box", "JIB"]  # Case-insensitive matching
 - Public API changes (breaking changes possible)
 - Infrastructure/deployment changes
 
-### 3. Approval Detection: PR Merge Triggers Implementation
+### 3. PR Creation: JIB Opens PRs As Needed
 
-**Decision:** When a planning document PR is merged, JIB detects this and proceeds with CPF implementation.
+**Decision:** JIB can open PRs directly when it determines appropriate action. No separate approval detection mechanism is needed.
 
 **Rationale:**
-- Uses existing PR review workflow (no new tools)
-- PR merge is an explicit human approval action
-- Creates audit trail via git history
-- Allows inline comments on planning doc before approval
+- Simpler architecture without approval detection overhead
+- JIB can open implementation PRs or planning PRs as the situation warrants
+- Human reviews PRs through normal GitHub workflow
+- Reduces complexity and potential failure points
 
 **Implementation:**
 ```
-Planning PR merged → GitHub webhook → JIB detects merged planning doc
-                  → Extracts implementation plan from doc
-                  → Enters CPF implementation workflow
-                  → Creates implementation PR(s)
+JIB triages ticket → Determines appropriate action → Opens PR
+                  → Human reviews PR
+                  → Merges or requests changes
 ```
 
-### 4. Repository Scope: Start with james-in-a-box
+### 4. Repository Scope: Read-Write Repos Only
 
-**Decision:** Initial rollout targets only `james-in-a-box` repository, with configuration to expand later.
+**Decision:** Only enable triage for repositories where JIB has read-write access.
 
 **Rationale:**
-- Lower risk for initial testing
-- Self-referential (JIB improving itself)
-- Team is familiar with the codebase
-- Easy to expand via configuration once proven
+- JIB needs write access to create branches and PRs
+- Read-only repos cannot receive automated changes
+- Prevents failed PR creation attempts
+- Clear operational boundary
 
 **Configuration:**
 ```bash
-JIB_TRIAGE_ENABLED_REPOS="jwbron/james-in-a-box"  # Comma-separated for expansion
+JIB_TRIAGE_ENABLED_REPOS="jwbron/james-in-a-box"  # Only read-write repos
 ```
 
-### 5. Context Depth: Progressive with Cost Controls
+**Note:** Expand to other read-write repos as needed, but never include read-only repos.
 
-**Decision:** Use progressive context gathering with token/cost limits.
+### 5. Context Depth: Simple First Pass
 
-**Levels:**
-1. **Always gathered** (low cost): Ticket description, comments, linked tickets
-2. **Smart gathered** (medium cost): Related code files (keyword/path matching), recent PRs touching similar files
-3. **On-demand** (high cost): Full codebase search, historical ticket analysis
+**Decision:** Start with simple context gathering: Confluence search and target repo search. Go deeper only as needed to build an initial plan.
+
+**First Pass (Default):**
+1. Search Confluence for relevant documentation
+2. Search the target repository for related files
+3. Review ticket description and comments
+
+**Deeper Analysis (On-Demand):**
+Only go deeper if the first pass is insufficient to form an initial plan. Don't be excessively thorough on the first iteration.
 
 **Cost Control:**
 ```python
@@ -617,31 +600,24 @@ CONTEXT_TIMEOUT_SECONDS = 60  # Don't spend too long gathering
 
 ### 7. Human Override: Ticket Labels
 
-**Decision:** Allow human override of classification via additional labels.
+**Decision:** Allow human to pre-define triviality via JIRA label tags.
 
 **Labels:**
-- `jib-trivial`: Force trivial classification (skip planning, go straight to implementation)
-- `jib-plan`: Force non-trivial classification (always create planning doc)
+- `james-in-a-box-trivial`: Force trivial classification (skip planning, go straight to implementation)
+- `james-in-a-box-plan`: Force non-trivial classification (always create planning doc)
 
 **Use Cases:**
-- `jib-trivial`: Human knows the fix is simple despite JIB's scoring
-- `jib-plan`: Human wants planning doc even for simple-seeming tickets
+- `james-in-a-box-trivial`: Human knows the fix is simple and wants JIB to proceed directly
+- `james-in-a-box-plan`: Human wants planning doc even for simple-seeming tickets
 
-## Open Questions (To Be Resolved During Implementation)
+## Future Considerations (Nice to Have - Deferred)
 
-### Important (Iteration Candidates)
+These features are considered nice-to-haves for future iterations:
 
-1. **Learning/Feedback:** Should JIB track misclassifications to improve scoring?
-   - *Leaning:* Yes, track in Beads with outcome labels (accurate/over-planned/under-planned)
-   - *Defer to:* Phase 2 after initial rollout provides data
-
-2. **Templates:** Should planning docs be customizable per project?
-   - *Leaning:* Not initially; use standard CPF template
-   - *Defer to:* Add customization if needed based on feedback
-
-3. **Metrics:** What should we track?
-   - *Leaning:* Time-to-PR, classification accuracy, planning doc approval rate, implementation success rate
-   - *Defer to:* Implement basic metrics in Phase 1, expand in Phase 2
+1. **Learning/Feedback:** Track misclassifications to improve assessment
+2. **Templates:** Customizable planning doc templates per project
+3. **Metrics:** Time-to-PR, classification accuracy, approval rates
+4. **Historical Analysis:** Learn from past similar tickets
 
 ## Success Criteria
 
@@ -689,9 +665,8 @@ CONTEXT_TIMEOUT_SECONDS = 60  # Don't spend too long gathering
 ```bash
 # Environment variables for JIRA Triage Workflow
 JIB_TRIAGE_ENABLED=true                          # Enable/disable triage workflow
-JIB_TRIAGE_ENABLED_REPOS="jwbron/james-in-a-box" # Repos to process (comma-separated)
-JIB_TAG_LABELS="jib,james-in-a-box"              # Labels that trigger JIB processing
-JIB_TRIVIALITY_THRESHOLD=50                      # Score threshold for trivial classification
+JIB_TRIAGE_ENABLED_REPOS="jwbron/james-in-a-box" # Repos to process (read-write only)
+JIB_TAG_LABELS="james-in-a-box"                  # Label that triggers JIB processing
 JIB_AUTO_SECURITY_NONTRIVIAL=true                # Security tickets always non-trivial
 JIB_PLAN_OUTPUT_DIR="docs/plans"                 # Where to store planning docs
 JIB_MAX_CONTEXT_TOKENS=50000                     # Token limit for context gathering

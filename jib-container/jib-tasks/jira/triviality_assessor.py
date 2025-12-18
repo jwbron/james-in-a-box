@@ -191,23 +191,23 @@ class TrivialityAssessor:
 
         # Check for human override labels
         override_label = None
-        if "jib-trivial" in labels:
-            override_label = "jib-trivial"
+        if "james-in-a-box-trivial" in labels:
+            override_label = "james-in-a-box-trivial"
             return TrivialityAssessment(
                 classification=Classification.FORCED_TRIVIAL,
                 score=100,
                 threshold=self.threshold,
                 override_label=override_label,
-                reasoning="Human override via jib-trivial label",
+                reasoning="Human override via james-in-a-box-trivial label",
             )
-        elif "jib-plan" in labels:
-            override_label = "jib-plan"
+        elif "james-in-a-box-plan" in labels:
+            override_label = "james-in-a-box-plan"
             return TrivialityAssessment(
                 classification=Classification.FORCED_NON_TRIVIAL,
                 score=0,
                 threshold=self.threshold,
                 override_label=override_label,
-                reasoning="Human override via jib-plan label",
+                reasoning="Human override via james-in-a-box-plan label",
             )
 
         # Check auto-disqualifiers
