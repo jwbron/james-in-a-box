@@ -4,47 +4,6 @@ This directory contains slash command documentation for Claude Code CLI in the s
 
 ## Available Commands
 
-### /load-context <filename>
-Load accumulated knowledge from a context-sharing document.
-
-**Usage**: `/load-context terraform-migration`
-
-**What it does**:
-- Reads context document from `~/sharing/context/<filename>.md`
-- Loads all sessions, playbooks, anti-patterns, and decision logs
-- Applies accumulated wisdom to current work
-
-**File**: `load-context.md`
-
-### /save-context <filename>
-Save current session knowledge to a context document using ACE methodology.
-
-**Usage**: `/save-context tf-hackathon`
-
-**What it does**:
-- Analyzes current session work
-- Generates structured content (Generation → Reflection → Curation)
-- Appends to existing document or creates new one
-- Preserves all historical content
-
-**File**: `save-context.md`
-
-### /create-pr [audit] [draft]
-Automated pull request creation with smart description generation.
-
-**Usage**:
-- `/create-pr`
-- `/create-pr audit`
-- `/create-pr draft`
-
-**What it does**:
-- Analyzes git branch and commits
-- Generates comprehensive PR description
-- Extracts Jira issue from branch name
-- Creates PR via GitHub MCP
-
-**File**: `create-pr.md`
-
 ### /beads-status
 Show current Beads task status.
 
@@ -67,18 +26,6 @@ Sync Beads repository with git.
 
 **File**: `beads-sync.md`
 
-### /update-confluence-doc <path>
-Prepare updates for a Confluence document based on inline comments.
-
-**Usage**: `/update-confluence-doc ~/context-sync/confluence/ENG/ADRs/ADR-123.md`
-
-**What it does**:
-- Reads document and synced comments
-- Generates "Changed Sections Only" document
-- Formats output for copy-paste into Confluence
-
-**File**: `update-confluence-doc.md`
-
 ### /show-metrics
 Generate a monitoring report showing recent agent activity.
 
@@ -95,8 +42,8 @@ Generate a monitoring report showing recent agent activity.
 
 These commands are **slash commands** for Claude Code. They are markdown files that provide instructions to Claude on how to respond when you use the command syntax.
 
-When you say `/load-context myproject` in Claude Code:
-1. Claude reads the instructions from `~/.claude/commands/load-context.md`
+When you say `/beads-status` in Claude Code:
+1. Claude reads the instructions from `~/.claude/commands/beads-status.md`
 2. Executes the workflow described in the file
 3. Uses available tools (Read, Write, Bash, etc.) to complete the task
 
@@ -106,9 +53,9 @@ When you say `/load-context myproject` in Claude Code:
 
 | Correct | Incorrect |
 |---------|-----------|
-| `/load-context myproject` | `@load-context myproject` |
-| `/save-context feature-x` | `@save-context feature-x` |
-| `/create-pr audit` | `@create-pr audit` |
+| `/beads-status` | `@beads-status` |
+| `/beads-sync` | `@beads-sync` |
+| `/show-metrics` | `@show-metrics` |
 
 ## Viewing Command Details
 
@@ -118,10 +65,10 @@ Inside the container:
 ls ~/.claude/commands/
 
 # View a specific command
-cat ~/.claude/commands/load-context.md
+cat ~/.claude/commands/beads-status.md
 
 # Or use Read tool in Claude Code
-# Read: ~/.claude/commands/create-pr.md
+# Read: ~/.claude/commands/show-metrics.md
 ```
 
 ## Location in Container
@@ -148,4 +95,4 @@ Claude Code will follow these instructions when users invoke the slash command s
 
 ---
 
-**Last Updated**: 2025-11-26
+**Last Updated**: 2025-12-18
