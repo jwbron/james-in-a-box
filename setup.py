@@ -26,7 +26,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 # Add config directory to path for imports
@@ -160,7 +160,7 @@ class UserPrompter:
         question: str,
         default: str | None = None,
         required: bool = False,
-        validator: callable | None = None,
+        validator: Callable | None = None,
     ) -> str:
         """Prompt user for input with validation.
 
