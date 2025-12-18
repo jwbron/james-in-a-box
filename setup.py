@@ -641,7 +641,9 @@ class ConfigManager:
                 pass
         return {"writable_repos": [], "readable_repos": []}
 
-    def write_repositories(self, writable: list[str], readable: list[str], github_username: str = ""):
+    def write_repositories(
+        self, writable: list[str], readable: list[str], github_username: str = ""
+    ):
         """Write repository configuration.
 
         Args:
@@ -1346,9 +1348,7 @@ class MinimalSetup:
         if self.update_mode:
             self.logger.header("GitHub Configuration")
             if existing:
-                return self.prompter.prompt(
-                    "GitHub username", default=existing, required=True
-                )
+                return self.prompter.prompt("GitHub username", default=existing, required=True)
             # Fall through to normal flow if no existing value
 
         # Check if we already have it (non-update mode)
@@ -1511,7 +1511,9 @@ class MinimalSetup:
                     if not t or t.startswith("ghp_")
                     else ValueError("Token must start with 'ghp_'"),
                 )
-                secrets["GITHUB_READONLY_TOKEN"] = new_readonly if new_readonly else existing_readonly
+                secrets["GITHUB_READONLY_TOKEN"] = (
+                    new_readonly if new_readonly else existing_readonly
+                )
             elif self.prompter.prompt_yes_no(
                 "Add a read-only token for monitoring external repos?", default=False
             ):
@@ -1682,7 +1684,9 @@ class MinimalSetup:
 
             self.logger.info("\nEnter read-only repositories one per line (empty line to finish):")
             if existing_readable:
-                self.logger.info(f"(Press Enter with no input to keep: {', '.join(existing_readable)})")
+                self.logger.info(
+                    f"(Press Enter with no input to keep: {', '.join(existing_readable)})"
+                )
 
             readable_repos = []
             first_input = self.prompter.prompt("Repository (owner/name)")
@@ -1730,13 +1734,16 @@ class MinimalSetup:
 
         # In update mode, show existing and allow modification
         if self.update_mode and existing:
-            return self.prompter.prompt(
-                "Slack channel ID (starts with D, C, or G)",
-                default=existing,
-                validator=lambda c: None
-                if not c or c[0] in ["D", "C", "G"]
-                else ValueError("Channel ID must start with D, C, or G"),
-            ) or existing
+            return (
+                self.prompter.prompt(
+                    "Slack channel ID (starts with D, C, or G)",
+                    default=existing,
+                    validator=lambda c: None
+                    if not c or c[0] in ["D", "C", "G"]
+                    else ValueError("Channel ID must start with D, C, or G"),
+                )
+                or existing
+            )
 
         self.logger.info("\nFinding your Slack DM channel...")
         self.logger.info("You can find your channel ID by:")
@@ -1761,13 +1768,16 @@ class MinimalSetup:
 
         # In update mode, show existing and allow modification
         if self.update_mode and existing:
-            return self.prompter.prompt(
-                "Your Slack user ID (starts with U)",
-                default=existing,
-                validator=lambda u: None
-                if not u or u.startswith("U")
-                else ValueError("User ID must start with U"),
-            ) or existing
+            return (
+                self.prompter.prompt(
+                    "Your Slack user ID (starts with U)",
+                    default=existing,
+                    validator=lambda u: None
+                    if not u or u.startswith("U")
+                    else ValueError("User ID must start with U"),
+                )
+                or existing
+            )
 
         self.logger.info("\nYour Slack User ID is needed for access control.")
         self.logger.info("Find it at: Slack -> Profile -> More -> Copy member ID")
