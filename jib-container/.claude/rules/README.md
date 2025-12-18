@@ -9,7 +9,7 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 **Installation:**
 - `~/CLAUDE.md` → All rules combined
 
-**Why one file?** Since `~/repos/` is mounted from the host (not copied), we can't reliably write to it during container startup. Combining all rules into `~/CLAUDE.md` ensures they're always available.
+**Why one file?** Since `~/khan/` is mounted from the host (not copied), we can't reliably write to it during container startup. Combining all rules into `~/CLAUDE.md` ensures they're always available.
 
 **Note**: `CLAUDE.md` is the [official Claude Code format](https://www.anthropic.com/engineering/claude-code-best-practices) for providing context and instructions to the agent.
 
@@ -44,9 +44,9 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
   - NEVER include "Generated with Claude Code" branding
   - GitHub comment sign-off format
 
-### Code Standards
+### Khan Academy Standards
 
-- **code-standards.md** - Tech stack and code standards
+- **khan-academy.md** - Tech stack and code standards
   - Technologies (Python, React, TypeScript)
   - Code style guidelines
   - Common commands
@@ -54,7 +54,7 @@ Claude Code reads `CLAUDE.md` files automatically when starting. During containe
 ### Quality & Communication
 
 - **pr-descriptions.md** - PR writing guidelines
-  - Standard PR format
+  - Khan Academy PR format
   - Length targets
 
 - **test-workflow.md** - Test discovery and execution
@@ -72,7 +72,7 @@ The following content has been moved to `docs/reference/` for on-demand access:
 - **khan-academy-culture.md** - L3-L4 engineering behavioral standards
 - **conversation-analysis-criteria.md** - Performance assessment dimensions
 
-See `~/repos/james-in-a-box/docs/index.md` for navigation to all documentation.
+See `~/khan/james-in-a-box/docs/index.md` for navigation to all documentation.
 
 ## Design Principles
 

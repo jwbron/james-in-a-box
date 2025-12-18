@@ -56,9 +56,8 @@ class Config:
         return Path(f"/home/{self.runtime_user}")
 
     @property
-    def repos_dir(self) -> Path:
-        """The directory containing mounted repositories."""
-        return self.user_home / "repos"
+    def khan_dir(self) -> Path:
+        return self.user_home / "khan"
 
     @property
     def sharing_dir(self) -> Path:
@@ -226,7 +225,7 @@ def setup_git(config: Config, logger: Logger) -> None:
 
     # Set git identity
     run_cmd(["git", "config", "--global", "user.name", "jib"], as_user=user_tuple)
-    run_cmd(["git", "config", "--global", "user.email", "jib@localhost"], as_user=user_tuple)
+    run_cmd(["git", "config", "--global", "user.email", "jib@khan.org"], as_user=user_tuple)
 
     # Configure credential helper if token available
     if config.github_token:
@@ -259,14 +258,14 @@ def setup_git(config: Config, logger: Logger) -> None:
         for repo_config in config.git_main_dir.glob("*/config"):
             _fix_repo_config(repo_config, logger)
 
-    logger.success("Git configured to commit as jib <jib@localhost>")
+    logger.success("Git configured to commit as jib <jib@khan.org>")
 
 
 def _fix_repo_config(repo_config: Path, logger: Logger) -> None:
     """Fix a single repo config file (identity, token cleanup, SSH->HTTPS)."""
     # Set identity
     run_cmd(["git", "config", "-f", str(repo_config), "user.name", "jib"])
-    run_cmd(["git", "config", "-f", str(repo_config), "user.email", "jib@localhost"])
+    run_cmd(["git", "config", "-f", str(repo_config), "user.email", "jib@khan.org"])
 
     # Get remote URL
     try:
@@ -302,12 +301,12 @@ def _fix_repo_config(repo_config: Path, logger: Logger) -> None:
 
 def setup_worktrees(config: Config, logger: Logger) -> bool:
     """Configure git worktrees. Returns False if setup failed fatally."""
-    if not config.repos_dir.exists():
-        logger.warn("Repos workspace not found - check mount configuration")
+    if not config.khan_dir.exists():
+        logger.warn("Khan workspace not found - check mount configuration")
         return True
 
     # Check for worktrees
-    worktree_dirs = [d for d in config.repos_dir.iterdir() if (d / ".git").is_file()]
+    worktree_dirs = [d for d in config.khan_dir.iterdir() if (d / ".git").is_file()]
     if not worktree_dirs:
         return True
 
@@ -358,7 +357,7 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
         return False
 
     if configured > 0:
-        logger.success(f"Repo worktrees configured: {configured} repo(s)")
+        logger.success(f"Khan worktrees configured: {configured} repo(s)")
         logger.info("  Git metadata mounted read-write from ~/.git-main/")
 
     return True
@@ -400,7 +399,7 @@ def setup_agent_rules(config: Config, logger: Logger) -> None:
         "environment.md",
         "beads-usage.md",
         "context-tracking.md",
-        "code-standards.md",
+        "khan-academy.md",
         "test-workflow.md",
         "pr-descriptions.md",
         "notification-template.md",
@@ -421,13 +420,13 @@ def setup_agent_rules(config: Config, logger: Logger) -> None:
     claude_md.write_text("\n\n---\n\n".join(content_parts))
     os.chown(claude_md, config.runtime_uid, config.runtime_gid)
 
-    # Symlink in ~/repos/
-    if config.repos_dir.exists():
-        repos_claude = config.repos_dir / "CLAUDE.md"
-        if repos_claude.is_symlink():
-            repos_claude.unlink()
-        repos_claude.symlink_to(claude_md)
-        os.lchown(repos_claude, config.runtime_uid, config.runtime_gid)
+    # Symlink in ~/khan/
+    if config.khan_dir.exists():
+        khan_claude = config.khan_dir / "CLAUDE.md"
+        if khan_claude.is_symlink():
+            khan_claude.unlink()
+        khan_claude.symlink_to(claude_md)
+        os.lchown(khan_claude, config.runtime_uid, config.runtime_gid)
 
     # Create GEMINI.md as symlink to CLAUDE.md
     gemini_md = config.user_home / "GEMINI.md"
@@ -436,16 +435,16 @@ def setup_agent_rules(config: Config, logger: Logger) -> None:
     gemini_md.symlink_to(claude_md)
     os.lchown(gemini_md, config.runtime_uid, config.runtime_gid)
 
-    if config.repos_dir.exists():
-        repos_gemini = config.repos_dir / "GEMINI.md"
-        if repos_gemini.is_symlink():
-            repos_gemini.unlink()
-        repos_gemini.symlink_to(claude_md)
-        os.lchown(repos_gemini, config.runtime_uid, config.runtime_gid)
+    if config.khan_dir.exists():
+        khan_gemini = config.khan_dir / "GEMINI.md"
+        if khan_gemini.is_symlink():
+            khan_gemini.unlink()
+        khan_gemini.symlink_to(claude_md)
+        os.lchown(khan_gemini, config.runtime_uid, config.runtime_gid)
 
-    logger.success("AI agent rules installed: ~/CLAUDE.md and ~/GEMINI.md (symlinked to ~/repos/)")
+    logger.success("AI agent rules installed: ~/CLAUDE.md and ~/GEMINI.md (symlinked to ~/khan/)")
     logger.info(f"  Combined {len(rules_order)} rule files (index-based per LLM Doc ADR)")
-    logger.info("  Note: Reference docs in ~/repos/james-in-a-box/docs/ (fetched on-demand)")
+    logger.info("  Note: Reference docs in ~/khan/james-in-a-box/docs/ (fetched on-demand)")
 
 
 def setup_claude(config: Config, logger: Logger) -> None:
@@ -489,7 +488,7 @@ def setup_claude(config: Config, logger: Logger) -> None:
 
     # Create settings.json
     trace_collector = (
-        config.repos_dir / "james-in-a-box/host-services/analysis/trace-collector/hook_handler.py"
+        config.khan_dir / "james-in-a-box/host-services/analysis/trace-collector/hook_handler.py"
     )
     beads_hook = config.claude_dir / "hooks/session-end.sh"
 
@@ -815,10 +814,9 @@ def setup_beads(config: Config, logger: Logger) -> bool:
 def generate_docs_indexes(config: Config, logger: Logger) -> None:
     """Generate documentation indexes."""
     index_generator = (
-        config.repos_dir
-        / "james-in-a-box/host-services/analysis/index-generator/index-generator.py"
+        config.khan_dir / "james-in-a-box/host-services/analysis/index-generator/index-generator.py"
     )
-    jib_dir = config.repos_dir / "james-in-a-box"
+    jib_dir = config.khan_dir / "james-in-a-box"
 
     if not index_generator.exists() or not jib_dir.exists():
         return
@@ -840,7 +838,7 @@ def generate_docs_indexes(config: Config, logger: Logger) -> None:
             capture=True,
         )
         logger.success("Documentation indexes generated")
-        logger.info("  Location: ~/repos/james-in-a-box/docs/generated/")
+        logger.info("  Location: ~/khan/james-in-a-box/docs/generated/")
     except Exception:
         logger.warn("Documentation index generation failed (non-critical)")
 
@@ -904,9 +902,9 @@ def run_interactive(config: Config, logger: Logger) -> None:
     logger.info("  - Message processing: Triggered by slack-receiver")
     logger.info("")
 
-    # Change to repos directory
-    if config.repos_dir.exists():
-        os.chdir(config.repos_dir)
+    # Change to khan directory
+    if config.khan_dir.exists():
+        os.chdir(config.khan_dir)
     else:
         os.chdir(config.user_home)
 

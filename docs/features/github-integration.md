@@ -51,7 +51,7 @@ GITHUB_READONLY_TOKEN="ghp_your_readonly_token_here"
 
 1. **Principle of Least Privilege**: Read-only repos don't need write-capable tokens
 2. **Different Organizations**: Your GitHub App may only be installed on your personal
-   repos, while you want to monitor repos from other orgs
+   repos, while you want to monitor repos from other orgs (e.g., `khan/webapp`)
 3. **Security Isolation**: If the read-only token is compromised, it can't modify repos
 
 ### Creating a Read-Only Token

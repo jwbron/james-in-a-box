@@ -58,8 +58,7 @@ github_sync:
 #
 # Authentication: Uses GITHUB_TOKEN (PAT) - no GitHub App needed for read-only
 readable_repos:
-  # Add repos you want to monitor but not modify here
-  # Example: - some-org/some-repo
+  - khan/webapp
 
 # Per-repository configuration overrides
 # Each key is a repository name in "owner/repo" format
@@ -74,29 +73,3 @@ repo_settings:
   jwbron/collaborative-development-framework:
     restrict_to_configured_users: true
     disable_auto_fix: true
-
-# Docker container setup configuration
-# Controls what gets installed when running docker-setup.py
-docker_setup:
-  # Extra packages to install beyond core utilities
-  # Core utilities (always installed): git, curl, wget, jq, unzip, vim, htop,
-  #   tree, lsof, build-essential/gcc+make
-  extra_packages:
-    # Packages for apt (Ubuntu/Debian)
-    apt: []
-    # Packages for dnf (Fedora/RHEL)
-    dnf: []
-    # Common packages that work on both (package names must match)
-    packages: []
-  # Examples:
-  #   apt:
-  #     - nodejs
-  #     - python3.11
-  #     - golang-go
-  #     - openjdk-11-jdk
-  #     - postgresql-14
-  #   dnf:
-  #     - nodejs
-  #     - python3.11
-  #     - golang
-  #     - java-11-openjdk

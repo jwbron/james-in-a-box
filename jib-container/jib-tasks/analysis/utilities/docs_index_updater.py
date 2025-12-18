@@ -246,9 +246,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --repo-root ~/repos/webapp --generated-dir ~/repos/webapp/docs/generated
+  %(prog)s --repo-root ~/khan/webapp --generated-dir ~/khan/webapp/docs/generated
   %(prog)s --repo-root . --features-md ./docs/FEATURES.md
-  %(prog)s --repo-root ~/repos/webapp --dry-run
+  %(prog)s --repo-root ~/khan/webapp --dry-run
         """,
     )
 

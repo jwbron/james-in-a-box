@@ -733,7 +733,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s                              # Index current project
-  %(prog)s --project ~/repos/webapp     # Index specific project
+  %(prog)s --project ~/khan/webapp      # Index specific project
   %(prog)s --output ./custom-output     # Custom output directory
         """,
     )
