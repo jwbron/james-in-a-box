@@ -642,7 +642,11 @@ class ConfigManager:
         return {"writable_repos": [], "readable_repos": []}
 
     def write_repositories(
-        self, writable: list[str], readable: list[str], github_username: str = ""
+        self,
+        writable: list[str],
+        readable: list[str],
+        github_username: str = "",
+        local_repos: list[str] | None = None,
     ):
         """Write repository configuration.
 
@@ -650,6 +654,7 @@ class ConfigManager:
             writable: List of repositories with write access
             readable: List of repositories with read-only access
             github_username: GitHub username for config file
+            local_repos: List of local repository paths to mount
         """
         try:
             import yaml
@@ -658,11 +663,46 @@ class ConfigManager:
                 "github_username": github_username,
                 "writable_repos": writable,
                 "readable_repos": readable,
+                "local_repos": {"paths": local_repos or []},
             }
             self.repos_file.write_text(yaml.dump(repos_config, default_flow_style=False))
             self.logger.success(f"Repository config written to {self.repos_file}")
         except ImportError:
             self.logger.warning("PyYAML not available, skipping repositories.yaml")
+
+    def write_mounts_conf(self, local_repos: list[str]):
+        """Write mounts.conf for jib container.
+
+        Args:
+            local_repos: List of local repository paths to mount
+        """
+        jib_dir = Path.home() / ".jib"
+        jib_dir.mkdir(parents=True, exist_ok=True)
+        mounts_file = jib_dir / "mounts.conf"
+
+        # Build mount entries
+        mounts = []
+        user = os.environ.get("USER", "user")
+
+        for repo_path in local_repos:
+            path = Path(repo_path).expanduser().resolve()
+            if path.exists():
+                # Mount format: host_path:container_path:mode,z
+                # Container path mirrors host path structure under ~/repos/
+                repo_name = path.name
+                container_path = f"/home/{user}/repos/{repo_name}"
+                mounts.append(f"{path}:{container_path}:rw,z")
+
+        # Also add the sharing directory mount (standard for all jib setups)
+        sharing_dir = Path.home() / ".jib-sharing"
+        if sharing_dir.exists():
+            mounts.append(f"{sharing_dir}:/home/{user}/sharing:rw,z")
+
+        if mounts:
+            mounts_file.write_text("\n".join(mounts) + "\n")
+            self.logger.success(f"Mounts config written to {mounts_file}")
+        else:
+            self.logger.warning("No local repos configured, mounts.conf not written")
 
 
 class ServiceManager:
@@ -1728,6 +1768,81 @@ class MinimalSetup:
 
         return writable_repos, readable_repos
 
+    def prompt_local_repos(self) -> list[str]:
+        """Prompt for local repository paths to mount into the container."""
+        self.logger.header("Local Repository Configuration")
+
+        # Load existing local repos
+        existing_local = self.existing_repos.get("local_repos", {})
+        existing_paths = existing_local.get("paths", []) if isinstance(existing_local, dict) else []
+
+        # In update mode, show existing and allow modification
+        if self.update_mode and existing_paths:
+            self.logger.info("Current local repositories:")
+            for path in existing_paths:
+                self.logger.info(f"  - {path}")
+            self.logger.info("")
+
+            if not self.prompter.prompt_yes_no("Modify local repository paths?", default=False):
+                return existing_paths
+
+            # Allow full reconfiguration
+            self.logger.info("\nReconfiguring local repositories...")
+            self.logger.info("Enter local repo paths one per line (empty line to finish):")
+            self.logger.info(f"(Press Enter with no input to keep existing paths)")
+
+            local_repos = []
+            first_input = self.prompter.prompt("Local repo path (absolute)")
+            if not first_input:
+                # Keep existing
+                return existing_paths
+            else:
+                expanded = str(Path(first_input).expanduser().resolve())
+                if Path(expanded).exists():
+                    local_repos.append(expanded)
+                else:
+                    self.logger.warning(f"Path does not exist: {expanded}")
+
+                while True:
+                    repo_path = self.prompter.prompt("Local repo path (absolute)")
+                    if not repo_path:
+                        break
+                    expanded = str(Path(repo_path).expanduser().resolve())
+                    if Path(expanded).exists():
+                        local_repos.append(expanded)
+                    else:
+                        self.logger.warning(f"Path does not exist: {expanded}")
+
+            return local_repos
+
+        # Non-update mode: standard flow
+        self.logger.info("Configure local repositories that jib will have access to.")
+        self.logger.info("These paths will be volume-mounted into the container and")
+        self.logger.info("git worktrees will be created for isolated development.")
+        self.logger.info("")
+        self.logger.info("Example paths:")
+        self.logger.info("  ~/projects/my-app")
+        self.logger.info("  /home/user/work/repo")
+        self.logger.info("")
+
+        local_repos = []
+        if self.prompter.prompt_yes_no("Add local repositories?", default=True):
+            self.logger.info("Enter local repo paths one per line (empty line to finish):")
+            while True:
+                repo_path = self.prompter.prompt("Local repo path (absolute)")
+                if not repo_path:
+                    break
+                expanded = str(Path(repo_path).expanduser().resolve())
+                if Path(expanded).exists():
+                    local_repos.append(expanded)
+                    self.logger.success(f"Added: {expanded}")
+                else:
+                    self.logger.warning(f"Path does not exist: {expanded}")
+                    if self.prompter.prompt_yes_no("Add anyway?", default=False):
+                        local_repos.append(expanded)
+
+        return local_repos
+
     def get_slack_channel_id(self) -> str:
         """Try to get the user's Slack DM channel ID."""
         existing = self.existing_config.get("slack_channel", "")
@@ -1843,6 +1958,9 @@ class MinimalSetup:
             # 6. Repositories
             writable_repos, readable_repos = self.prompt_repositories(github_username)
 
+            # 7. Local repositories (for volume mounts)
+            local_repos = self.prompt_local_repos()
+
             # Save configuration
             self.logger.header("Saving Configuration")
 
@@ -1862,7 +1980,12 @@ class MinimalSetup:
             self.config_manager.write_config(config)
 
             # Write repository config
-            self.config_manager.write_repositories(writable_repos, readable_repos, github_username)
+            self.config_manager.write_repositories(
+                writable_repos, readable_repos, github_username, local_repos
+            )
+
+            # Write mounts.conf for jib container
+            self.config_manager.write_mounts_conf(local_repos)
 
             if self.update_mode:
                 self.logger.success("\n✓ Configuration updated!")
@@ -1873,11 +1996,13 @@ class MinimalSetup:
             self.logger.info(f"  - {self.config_manager.secrets_file}")
             self.logger.info(f"  - {self.config_manager.config_file}")
             self.logger.info(f"  - {self.config_manager.repos_file}")
+            if local_repos:
+                self.logger.info(f"  - {Path.home() / '.jib' / 'mounts.conf'}")
             self.logger.info("")
             self.logger.info("Next steps:")
             self.logger.info("  1. Review the configuration files")
             self.logger.info("  2. Run './setup.py --enable-services' to start jib services")
-            self.logger.info("  3. Run './setup.py --full' for additional components")
+            self.logger.info("  3. Run 'jib' to start using the container")
 
             return True
 

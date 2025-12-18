@@ -76,6 +76,26 @@ repo_settings:
   #   restrict_to_configured_users: true
   #   disable_auto_fix: true
 
+# Local repository configuration
+# These are local directories on your machine that will be:
+# 1. Volume-mounted into the jib container
+# 2. Set up with git worktrees for isolated development
+#
+# Each repo gets its own worktree so the agent can work without affecting
+# your working directory. Changes are committed to the worktree branch,
+# then you review and merge.
+local_repos:
+  # List of absolute paths to local git repositories
+  # Example:
+  #   - /home/username/projects/my-app
+  #   - /home/username/work/another-repo
+  #
+  # These paths will be:
+  # - Mounted read-only (the main repo stays clean)
+  # - Git metadata mounted read-write (for worktree commits)
+  # - Worktrees created at ~/.jib-worktrees/<container-id>/<repo-name>
+  paths: []
+
 # Docker container setup configuration
 # Controls what gets installed when running docker-setup.py
 docker_setup:
