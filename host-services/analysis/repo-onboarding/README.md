@@ -55,14 +55,6 @@ jib-regenerate-indexes
 jib-regenerate-indexes ~/khan/webapp
 ```
 
-### docs-index-updater.py
-
-Updates or creates docs/index.md with references to generated content.
-
-```bash
-docs-index-updater --repo-root ~/khan/webapp
-```
-
 ## Generated Artifacts
 
 | File | Location | Git Tracked | Purpose |
@@ -88,14 +80,10 @@ cp templates/check-feature-docs.yml ~/khan/webapp/.github/workflows/
 repo-onboarding/
 ├── jib-internal-devtools-setup  # Main orchestration script
 ├── jib-regenerate-indexes       # Quick index regeneration
-├── docs-index-updater.py        # Updates docs/index.md
 ├── setup.sh                     # Installation script
 ├── templates/
 │   └── check-feature-docs.yml   # GitHub Actions template
 └── README.md                    # This file
-
-../confluence-doc-discoverer/
-└── confluence-doc-discoverer.py # Confluence doc discovery
 ```
 
 ## Related Tools

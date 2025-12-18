@@ -32,14 +32,6 @@ Engineering culture standards template for L3-L4 behavioral expectations.
 - Problem solving, communication, and collaboration standards
 - Engineering principles (customizable for your organization)
 
-### [Conversation Analysis Criteria](conversation-analysis-criteria.md)
-Assessment criteria for the conversation analyzer.
-
-**Information about:**
-- Assessment dimensions and scoring
-- Positive and negative indicators
-- Target performance levels
-
 ## Common Issues
 
 **Slack not receiving notifications:**
