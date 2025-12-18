@@ -164,7 +164,7 @@ Recommendation: Start with **both** - respond when mentioned OR when added as re
 2. **Three separate timers** - Each service has its own timer (allows different intervals)
 3. **Shared timer, parallel execution** - Single timer runs all three in parallel
 
-Recommendation: **Option 1** initially for simplicity. Can split timers later if needed.
+**Decision:** **Option 2** - Three separate systemd services and timers for maximum flexibility and isolation.
 
 ### Q4: Read-Only Repo Behavior
 
@@ -1905,7 +1905,7 @@ if __name__ == "__main__":
 
 ```
 host-services/analysis/github-watcher/
-├── lib/
+├── gwlib/
 │   ├── __init__.py           # Package marker
 │   ├── github_api.py         # gh CLI wrappers, rate limiting (~100 lines)
 │   ├── state.py              # State management, ThreadSafeState (~100 lines)
@@ -1915,10 +1915,15 @@ host-services/analysis/github-watcher/
 ├── comment_responder.py      # Service 1: Comment responses (~150 lines)
 ├── pr_reviewer.py            # Service 2: PR reviews (~120 lines)
 ├── ci_fixer.py               # Service 3: CI/conflict fixes (~130 lines)
-├── dispatcher.py             # Main entry point (~100 lines)
-├── github-watcher.py         # DEPRECATED - kept for rollback (~2300 lines)
-├── github-watcher.service    # Updated to run dispatcher
-├── github-watcher.timer      # Unchanged
+├── dispatcher.py             # Optional: Run all three services sequentially
+├── comment-responder.service # Systemd service for comment responder
+├── comment-responder.timer   # Systemd timer for comment responder
+├── pr-reviewer.service       # Systemd service for PR reviewer
+├── pr-reviewer.timer         # Systemd timer for PR reviewer
+├── ci-fixer.service          # Systemd service for CI fixer
+├── ci-fixer.timer            # Systemd timer for CI fixer
+├── github-watcher.service    # DEPRECATED - legacy unified service
+├── github-watcher.timer      # DEPRECATED - legacy unified timer
 └── README.md                 # Updated documentation
 ```
 
@@ -1931,47 +1936,40 @@ host-services/analysis/github-watcher/
 ## Service Interaction Diagram
 
 ```
-                    ┌─────────────────────────┐
-                    │   github-watcher.timer  │
-                    │   (every 5 minutes)     │
-                    └───────────┬─────────────┘
-                                │
-                                ▼
-                    ┌─────────────────────────┐
-                    │     dispatcher.py       │
-                    │  (orchestrates all 3)   │
-                    └───────────┬─────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        │                       │                       │
-        ▼                       ▼                       ▼
-┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-│  ci_fixer.py  │     │   comment_    │     │ pr_reviewer.py│
-│               │     │ responder.py  │     │               │
-│ - check_failure│    │ - comment     │     │ - review_req  │
-│ - merge_conflict│   │ - pr_review_  │     │               │
-│               │     │   response    │     │               │
-└───────┬───────┘     └───────┬───────┘     └───────┬───────┘
-        │                     │                     │
-        └─────────────────────┼─────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────────────┐
-                    │   lib/ (shared code)    │
-                    │ - github_api.py         │
-                    │ - state.py              │
-                    │ - tasks.py              │
-                    │ - detection.py          │
-                    │ - config.py             │
-                    └───────────┬─────────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    │                       │
-                    ▼                       ▼
-            ┌───────────────┐       ┌───────────────┐
-            │  jib --exec   │       │ Slack notify  │
-            │ (writable)    │       │ (readonly)    │
-            └───────────────┘       └───────────────┘
+    ┌────────────────────┐   ┌────────────────────┐   ┌────────────────────┐
+    │  ci-fixer.timer    │   │comment-responder   │   │ pr-reviewer.timer  │
+    │  (every 5 min)     │   │     .timer         │   │  (every 5 min)     │
+    └─────────┬──────────┘   │  (every 5 min)     │   └─────────┬──────────┘
+              │              └─────────┬──────────┘             │
+              ▼                        ▼                        ▼
+    ┌────────────────────┐   ┌────────────────────┐   ┌────────────────────┐
+    │  ci-fixer.service  │   │ comment-responder  │   │pr-reviewer.service │
+    │                    │   │     .service       │   │                    │
+    │  ci_fixer.py       │   │                    │   │  pr_reviewer.py    │
+    │                    │   │comment_responder.py│   │                    │
+    │ - check_failure    │   │ - comment          │   │ - review_request   │
+    │ - merge_conflict   │   │ - pr_review_resp   │   │                    │
+    └─────────┬──────────┘   └─────────┬──────────┘   └─────────┬──────────┘
+              │                        │                        │
+              └────────────────────────┼────────────────────────┘
+                                       │
+                                       ▼
+                         ┌─────────────────────────┐
+                         │   gwlib/ (shared code)  │
+                         │ - github_api.py         │
+                         │ - state.py              │
+                         │ - tasks.py              │
+                         │ - detection.py          │
+                         │ - config.py             │
+                         └───────────┬─────────────┘
+                                     │
+                         ┌───────────┴───────────┐
+                         │                       │
+                         ▼                       ▼
+                 ┌───────────────┐       ┌───────────────┐
+                 │  jib --exec   │       │ Slack notify  │
+                 │ (writable)    │       │ (readonly)    │
+                 └───────────────┘       └───────────────┘
 ```
 
 ---
@@ -2124,7 +2122,7 @@ The old `github-watcher.py` is preserved until new architecture is proven stable
 |----------|--------|-----------|
 | PR Reviewer Scope | Opt-in (explicit request) | Less noise, more respectful, aligns with being a helpful assistant rather than an unsolicited reviewer |
 | Tagged Definition | Both mention AND review request | Flexibility - users can @mention or use GitHub UI |
-| Service Scheduling | Single dispatcher | Simpler, shared state, easier to reason about |
+| Service Scheduling | Three separate services | Maximum flexibility, independent scheduling, isolated failure domains |
 | State Management | Single file, namespaced keys | Simpler migration, atomic updates |
 | Service Execution | Sequential in dispatcher | Avoids race conditions in state management |
 

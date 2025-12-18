@@ -1,0 +1,23 @@
+[Unit]
+Description=CI Fixer - Fix check failures and merge conflicts on PRs
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/github-watcher/README.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/github-watcher/ci_fixer.py
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/khan/james-in-a-box/bin
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ci-fixer
+
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,23 @@
+[Unit]
+Description=Comment Responder - Respond to comments and review feedback on PRs
+Documentation=file://%h/khan/james-in-a-box/host-services/analysis/github-watcher/README.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=service-failure-notify@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/github-watcher/comment_responder.py
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:%h/.local/bin:%h/khan/james-in-a-box/bin
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=comment-responder
+
+# Security (baseline)
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
