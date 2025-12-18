@@ -345,7 +345,7 @@ class TestWorktreeHelpers:
         """Test cleanup when worktree directory doesn't exist."""
         monkeypatch.setattr(Config, "WORKTREE_BASE", temp_dir / "worktrees")
         # Mock get_local_repos to return empty list (no repos configured)
-        monkeypatch.setattr(jib, "get_local_repos", lambda: [])
+        monkeypatch.setattr(jib, "get_local_repos", list)
 
         # Should not raise
         jib.cleanup_worktrees("test-container-id")
