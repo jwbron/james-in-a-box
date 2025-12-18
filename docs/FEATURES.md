@@ -6,6 +6,31 @@
 >
 > **Total Features:** 50 top-level features (118 including sub-features)
 
+## ⚠️ Important Disclaimers
+
+### Analyzers Are Works In Progress
+
+All analyzer services in the **Self-Improvement System** and **Documentation System** sections should be considered **experimental and works in progress**. While the code exists and can be run, these analyzers:
+
+- May produce inconsistent or inaccurate results
+- Have not been extensively validated in production
+- May require manual review of all generated output
+- Are subject to significant architectural changes
+
+**Affected analyzers:**
+- LLM Trace Collector (#20)
+- LLM Inefficiency Detector (#21)
+- Beads Integration Analyzer (#22)
+- Feature Analyzer Service (#23)
+- ADR Researcher Service (#24)
+- Documentation Generator Pipeline (#26)
+- Documentation Drift Detector (#27)
+- Codebase Index Generator (#28)
+
+### Confluence Sync Limitations
+
+The **Confluence Connector** (#6) only syncs pages from **explicitly configured Confluence spaces** specified in the `CONFLUENCE_SPACE_KEYS` environment variable. It does **not** automatically discover or sync all available Confluence documentation. To sync additional spaces, you must manually add their space keys to the configuration.
+
 ## Table of Contents
 
 - [Communication](#communication)

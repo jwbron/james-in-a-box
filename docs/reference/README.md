@@ -32,14 +32,6 @@ Engineering culture standards from the Khan Academy Career Ladder.
 - Problem solving, communication, and collaboration standards
 - Engineering principles
 
-### [Conversation Analysis Criteria](conversation-analysis-criteria.md)
-Assessment criteria for the conversation analyzer.
-
-**Information about:**
-- Assessment dimensions and scoring
-- Positive and negative indicators
-- Target performance levels
-
 ## Common Issues
 
 **Slack not receiving notifications:**

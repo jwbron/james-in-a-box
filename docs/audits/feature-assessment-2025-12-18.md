@@ -3,10 +3,20 @@
 **Date:** 2025-12-18
 **Author:** jib (Autonomous Software Engineering Agent)
 **Task ID:** task-20251217-235446
+**Updated:** 2025-12-18 (expanded scope per user feedback)
 
 ## Executive Summary
 
 This assessment identifies features in james-in-a-box that are "half-baked" - either documented but not implemented, partially implemented, or outdated relative to current architecture. Each feature is categorized with a recommended action: **REMOVE**, **IMPROVE**, or **DOCUMENT ACCURATELY**.
+
+### Key Changes in This PR
+
+Based on user feedback requesting a more aggressive cleanup:
+
+1. **Added WIP disclaimers** to FEATURES.md explicitly marking all analyzers as works-in-progress
+2. **Added Confluence sync limitation caveat** noting that sync only pulls configured spaces, not all available docs
+3. **Removed obsolete documentation:**
+   - `docs/reference/conversation-analysis-criteria.md` - referenced non-existent conversation analyzer
 
 ## Methodology
 
@@ -224,13 +234,16 @@ These features are correctly documented and implemented. No changes needed.
 
 ## Implementation Plan
 
-### Phase 1: Documentation Cleanup (This PR)
+### Phase 1: Documentation Cleanup (This PR) ✅ COMPLETED
 **Priority: High | Effort: Low**
 
-1. [ ] Update `jib-container/.claude/commands/README.md` - remove undocumented commands
-2. [ ] Remove Conversation Analyzer Service from FEATURES.md
-3. [ ] Fix repo-onboarding/README.md references
-4. [ ] Update FEATURES.md for GitHub Watcher modular architecture
+1. [x] Update `jib-container/.claude/commands/README.md` - remove undocumented commands
+2. [x] Remove Conversation Analyzer Service from FEATURES.md
+3. [x] Fix repo-onboarding/README.md references
+4. [x] Update FEATURES.md for GitHub Watcher modular architecture
+5. [x] **Added:** WIP disclaimers for all analyzers in FEATURES.md
+6. [x] **Added:** Confluence sync limitation caveat
+7. [x] **Added:** Removed `docs/reference/conversation-analysis-criteria.md` (obsolete)
 
 ### Phase 2: Quick Wins (Next PR)
 **Priority: High | Effort: Medium**
@@ -252,12 +265,14 @@ These features are correctly documented and implemented. No changes needed.
 
 | Category | Count | Action Required |
 |----------|-------|-----------------|
-| REMOVE | 4 features/references | Documentation updates |
-| IMPROVE | 5 features | Code changes |
-| DOCUMENT ACCURATELY | 1 feature | Documentation update |
+| REMOVE | 4 features/references | ✅ Documentation updates (COMPLETED) |
+| ADD DISCLAIMERS | 8 analyzers | ✅ WIP warnings added |
+| IMPROVE | 5 features | Code changes (Phase 2-3) |
+| DOCUMENT ACCURATELY | 1 feature | ✅ Documentation update (COMPLETED) |
 | KEEP AS-IS | 41 features | None |
 
 **Total Features Assessed:** 51 top-level features
+**Obsolete Docs Removed:** 1 (`conversation-analysis-criteria.md`)
 
 ---
 
