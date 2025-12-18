@@ -1,0 +1,91 @@
+name: Fix Documentation Links
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-and-fix-links:
+    name: Check and Fix Doc Links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run drift detector (check)
+        id: drift-check
+        continue-on-error: true
+        run: |
+          python3 host-services/analysis/doc-generator/drift-detector.py --suggest-fixes
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Run link fixer (on PR)
+        if: steps.drift-check.outcome == 'failure' && github.event_name == 'pull_request'
+        id: fix-links
+        run: |
+          echo "Running link fixer..."
+          python3 scripts/fix-doc-links.py --apply --verbose
+          echo "Link fix complete"
+
+      - name: Commit and push fixes
+        if: steps.drift-check.outcome == 'failure' && github.event_name == 'pull_request'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "fix: auto-fix broken documentation links"
+          commit_author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+
+      - name: Re-check after fixes
+        if: steps.drift-check.outcome == 'failure' && github.event_name == 'pull_request'
+        run: |
+          echo "Re-running drift detector after fixes..."
+          # Allow some issues (templates, examples) - only fail on true broken links
+          python3 host-services/analysis/doc-generator/drift-detector.py --json > drift-report.json || true
+
+          # Count only broken_link issues (not missing_file for templates)
+          broken_count=$(python3 -c "
+          import json
+          with open('drift-report.json') as f:
+              data = json.load(f)
+          broken = [i for i in data['issues'] if i['issue_type'] == 'broken_link']
+          print(len(broken))
+          ")
+
+          echo "Remaining broken links: $broken_count"
+
+          if [ "$broken_count" -gt 10 ]; then
+            echo "Too many broken links remain. Please fix manually."
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Documentation Link Check Summary" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.drift-check.outcome }}" == "success" ]; then
+            echo "All documentation links are valid." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Some documentation issues were found." >> $GITHUB_STEP_SUMMARY
+            if [ "${{ github.event_name }}" == "pull_request" ]; then
+              echo "Automatic fixes have been applied where possible." >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
