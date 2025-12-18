@@ -1,6 +1,6 @@
 # Beads Reference
 
-> Full docs: `~/repos/james-in-a-box/docs/reference/beads.md`
+> Full docs: `~/khan/james-in-a-box/docs/reference/beads.md`
 
 | Command | Purpose |
 |---------|---------|

@@ -208,25 +208,25 @@ This ADR establishes the architecture, security model, and operational patterns 
 
 **Rationale:** Start on laptop to validate quickly, evolve to cloud-native infrastructure for production scale and multi-engineer support.
 
-**7. Agent Demeanor and Cultural Alignment: Engineering Standards**
+**7. Agent Demeanor and Cultural Alignment: Khan Academy Engineering Standards**
 - **Current approach:** Agent behavior defined by `jib-container/.claude/rules/` configuration files
-- **Core principle:** Agent should embody team engineering values and expectations
+- **Core principle:** Agent should embody Khan Academy engineering values and expectations
 - **Implementation:**
-  - Load engineering guidelines from Confluence docs (if available)
+  - Load Khan Academy engineering guidelines from Confluence docs
   - Software Engineer level expectations (L3, L4, L5 criteria)
   - Code quality standards and best practices
   - Communication style (clarity, precision, collaboration)
   - Problem-solving approach (systematic, data-driven, user-focused)
 - **Continuous refinement:** Conversation analyzer evaluates tone, collaboration quality, technical communication
-- **Configuration location:** `jib-container/.claude/rules/code-standards.md` and referenced documentation
+- **Configuration location:** `jib-container/.claude/rules/khan-academy-culture.md` references Confluence guidelines
 
-**Rationale:** Agent effectiveness depends on cultural fit, not just technical capability. Organizations have specific expectations for engineers (thoroughness, clarity, user empathy, collaborative problem-solving). Agent should demonstrate these values in all interactions. Using team-documented standards ensures alignment with actual organizational expectations.
+**Rationale:** Agent effectiveness depends on cultural fit, not just technical capability. Khan Academy has specific expectations for engineers (thoroughness, clarity, user empathy, collaborative problem-solving). Agent should demonstrate these values in all interactions. Using Confluence-documented standards ensures alignment with actual organizational expectations.
 
 **Example Integration:**
 ```markdown
-# jib-container/.claude/rules/engineering-culture.md (example)
+# jib-container/.claude/rules/khan-academy-culture.md
 
-## Engineering Values (from team documentation)
+## Khan Academy Engineering Values (from Confluence)
 
 ### Technical Excellence
 - Write clear, maintainable code (not clever code)
@@ -241,7 +241,7 @@ This ADR establishes the architecture, security model, and operational patterns 
 - Honest about uncertainty ("I don't know" over guessing)
 
 ### Problem-Solving Approach
-- User impact first (how does this help end users?)
+- User impact first (how does this help learners/teachers?)
 - Systematic debugging (reproduce, isolate, fix, test)
 - Consider edge cases and failure modes
 - Security and accessibility by default
@@ -253,7 +253,7 @@ This ADR establishes the architecture, security model, and operational patterns 
 - Share knowledge (document learnings for team)
 
 ### Software Engineer Level Expectations
-Reference: Team career framework documentation
+Reference: ~/confluence-docs/ENG/Career-Framework/
 
 L3 (Mid-level): Execute well-defined projects, ask good questions
 L4 (Senior): Lead projects, mentor, architectural input
@@ -271,7 +271,7 @@ Agent should demonstrate L3-L4 behaviors:
 - Output quality matches organizational expectations
 - Communication style familiar to engineers
 - Cultural consistency across human and agent work
-- Easier adoption (feels like working with a team engineer)
+- Easier adoption (feels like working with a Khan engineer)
 
 ### Decision Matrix
 
@@ -286,7 +286,7 @@ Agent should demonstrate L3-L4 behaviors:
 | **Deployment Model** | Human reviews and approves all changes | Safety, learning opportunity, regulatory compliance | Fully autonomous deployment, staged rollout, feature flags |
 | **Improvement Mechanism** | Automated analyzers with prompt refinement | Data-driven, continuous improvement, low overhead | Manual tuning, A/B testing, user feedback only |
 | **Infrastructure Deployment** | Laptop (Phase 1), Cloud Run via Terraform (Phase 3) | Fast MVP iteration, scales to cloud-native production | Direct cloud deployment, VM-based, Kubernetes |
-| **Cultural Alignment** | Team-documented engineering standards in jib-container/.claude/rules/ | Behavior aligns with org values, feels like team engineer | Generic LLM behavior, manual prompt tuning, no cultural context |
+| **Cultural Alignment** | Confluence-sourced KA engineering standards in jib-container/.claude/rules/ | Behavior aligns with org values, feels like KA engineer | Generic LLM behavior, manual prompt tuning, no cultural context |
 
 ## High-Level Design
 
@@ -327,7 +327,7 @@ Agent should demonstrate L3-L4 behaviors:
 │  │ Code    │   │ Context │   │ Prompts  │   │ Memory   │   │ Analysis │  │
 │  │ (R/W)   │   │ (R/O)   │   │ (R/O)    │   │ (R/W)    │   │ (Output) │  │
 │  │         │   │         │   │          │   │          │   │          │  │
-│  │~/repos │   │ Confl.  │   │ jib-     │   │ ~/beads  │   │ ~/sharing│  │
+│  │ ~/khan  │   │ Confl.  │   │ jib-     │   │ ~/beads  │   │ ~/sharing│  │
 │  │         │   │ JIRA    │   │ container│   │ (tasks   │   │ /notif.  │  │
 │  │         │   │         │   │ /.claude │   │  state)  │   │          │  │
 │  └─────────┘   └─────────┘   └──────────┘   └──────────┘   └──────────┘  │
@@ -1030,17 +1030,17 @@ Detailed remediation plan in Future Enhancements section.
 
 **Cultural Alignment Evaluation:**
 The conversation analyzer specifically assesses:
-- **Technical communication:** Clear, concise, data-driven
+- **Technical communication:** Clear, concise, data-driven (KA standard)
 - **Collaboration quality:** Respectful, constructive, proactive (L3-L4 behavior)
 - **Problem-solving approach:** Systematic debugging, edge case consideration
-- **User empathy:** End user impact mentioned in decisions
+- **User empathy:** Learner/teacher impact mentioned in decisions
 - **Honesty:** Admitting uncertainty vs. guessing
 - **Escalation timing:** Asking for help appropriately (not too early, not thrashing)
 
-If agent drifts from team engineering culture, analyzer recommends:
-- Specific prompt adjustments to agent rules
+If agent drifts from Khan Academy engineering culture, analyzer recommends:
+- Specific prompt adjustments to `jib-container/.claude/rules/khan-academy-culture.md`
 - Examples of desired vs. observed behavior
-- Training data from team guidelines to reinforce standards
+- Training data from Confluence guidelines to reinforce standards
 
 ### Feedback Loops
 
@@ -1423,41 +1423,41 @@ Benefits:
 
 **6. Cultural Alignment Self-Assessment**
 ```
-Agent self-evaluates adherence to team engineering standards:
+Agent self-evaluates adherence to Khan Academy engineering standards:
 
 Automated Assessment:
-- After each task completion, agent scores itself on team values
+- After each task completion, agent scores itself on KA values
 - Technical excellence (code quality, testing, documentation)
 - Communication clarity (PR descriptions, commit messages)
 - Problem-solving approach (systematic, user-focused)
 - Collaboration quality (respectful, constructive feedback)
 
 Reference Standards:
-- Load Software Engineer level expectations from documentation
+- Load Software Engineer level expectations from Confluence
 - Compare output quality to L3/L4 criteria
 - Identify gaps between expected and actual behavior
 
 Self-Improvement Loop:
 - Flag areas for improvement to conversation analyzer
 - Request additional guidance when uncertain about cultural fit
-- Propose prompt refinements to better align with team standards
+- Propose prompt refinements to better align with KA standards
 - Track cultural alignment metrics over time
 
 Examples:
 Good: "I wrote comprehensive tests covering edge cases (L4 behavior)"
-Gap: "I didn't consider user impact in this API design (missing user focus)"
-Correction: "Let me revise to prioritize user workflow efficiency"
+Gap: "I didn't consider learner impact in this API design (missing KA user focus)"
+Correction: "Let me revise to prioritize teacher workflow efficiency"
 
 Success Metrics:
 - >90% of agent outputs match L3-L4 communication standards
-- User empathy (end user impact) mentioned in >75% of feature decisions
+- User empathy (learner/teacher impact) mentioned in >75% of feature decisions
 - Cultural alignment score >85% (conversation analyzer evaluation)
 - Zero complaints about agent demeanor or collaboration style
-- Engineer feedback: "Feels like working with a team engineer"
+- Engineer feedback: "Feels like working with a Khan Academy engineer"
 
 Benefits:
 - Continuous cultural alignment without manual monitoring
-- Agent learns team standards through self-reflection
+- Agent learns KA standards through self-reflection
 - Earlier detection of cultural drift
 - Data for conversation analyzer to refine prompts
 ```
@@ -1724,7 +1724,7 @@ Cost Estimate: ~$114/month (see ADR for breakdown)
 - [x] Comment response suggestions (contextual response generation)
 - [x] Full repo PR sync (--repo and --all-prs flags)
 - [ ] Mobile-optimized review workflow (quick actions, inline diffs)
-- [ ] **Team cultural alignment** (`.claude/rules/code-standards.md` and team documentation)
+- [ ] **Khan Academy cultural alignment** (`.claude/rules/khan-academy-culture.md` from Confluence)
 - [ ] **Conversation analyzer demeanor evaluation** (cultural fit assessment)
 - [ ] **Context source filtering** (Confluence space allowlist, JIRA project allowlist)
 - [ ] **Document classification policy** (what's safe to send to Claude API)

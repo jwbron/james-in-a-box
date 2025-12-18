@@ -1,42 +1,42 @@
-# Exclude workspace directories that shouldn't be copied into Docker image
+# Exclude Khan Academy directories that shouldn't be copied into Docker image
 
 # Mobile app dependencies and build artifacts
-**/mobile/app/ios/Pods/
-**/mobile/app/ios/build/
-**/mobile/app/android/build/
-**/mobile/node_modules/
+khan/mobile/app/ios/Pods/
+khan/mobile/app/ios/build/
+khan/mobile/app/android/build/
+khan/mobile/node_modules/
 
 # Terraform vendored modules (contain nested .git directories)
-**/.terraform/
+khan/**/.terraform/
 
 # Node modules (can be reinstalled if needed)
-**/node_modules/
+khan/**/node_modules/
 
 # Python virtual environments
-**/__pycache__/
-**/*.pyc
-**/.venv/
-**/.virtualenv/
+khan/**/__pycache__/
+khan/**/*.pyc
+khan/**/.venv/
+khan/**/.virtualenv/
 
 # Build artifacts
-**/dist/
-**/build/
-**/*.egg-info/
+khan/**/dist/
+khan/**/build/
+khan/**/*.egg-info/
 
 # IDE and editor files
-**/.vscode/
-**/.idea/
-**/*.swp
-**/*.swo
+khan/**/.vscode/
+khan/**/.idea/
+khan/**/*.swp
+khan/**/*.swo
 
 # OS files
-**/.DS_Store
-**/Thumbs.db
+khan/**/.DS_Store
+khan/**/Thumbs.db
 
 # Logs
-**/*.log
+khan/**/*.log
 
 # Temporary files
-**/tmp/
-**/temp/
+khan/**/tmp/
+khan/**/temp/
 

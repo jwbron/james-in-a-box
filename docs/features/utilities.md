@@ -25,11 +25,11 @@ Supporting tools and utilities:
 
 ### Symlink Management for Projects
 
-**Purpose**: Tools to create and manage symlinks from other projects to synced documentation, making it available in multiple projects across your workspace.
+**Purpose**: Tools to create and manage symlinks from other projects to synced documentation, making it available in multiple Khan Academy projects.
 
 **Location**:
 - `host-services/sync/context-sync/utils/create_symlink.py`
-- `host-services/sync/context-sync/utils/link_to_projects.py`
+- `host-services/sync/context-sync/utils/link_to_khan_projects.py`
 
 ### Rate Limiting Handler
 
@@ -100,12 +100,12 @@ Supporting tools and utilities:
 - `jib-container/.claude/rules/environment.md`
 - `jib-container/.claude/rules/beads-usage.md`
 - `jib-container/.claude/rules/context-tracking.md`
-- `jib-container/.claude/rules/coding-standards.md`
+- `jib-container/.claude/rules/khan-academy.md`
 
 **Components**:
 - **Agent Mission Rules** (`jib-container/.claude/rules/mission.md`)
 - **Sandbox Environment Rules** (`jib-container/.claude/rules/environment.md`)
-- **Coding Standards** (`jib-container/.claude/rules/coding-standards.md`)
+- **Khan Academy Development Standards** (`jib-container/.claude/rules/khan-academy.md`)
 - **PR Description Guidelines** (`jib-container/.claude/rules/pr-descriptions.md`)
 - **Test Workflow Rules** (`jib-container/.claude/rules/test-workflow.md`)
 - **Notification Guidelines** (`jib-container/.claude/rules/notification-template.md`)

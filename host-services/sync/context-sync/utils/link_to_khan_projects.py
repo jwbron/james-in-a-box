@@ -1,24 +1,13 @@
 #!/usr/bin/env python3
 """
-Automatically create symlinks to Confluence documentation in all git projects in the workspace.
+Automatically create symlinks to Confluence documentation in all Khan Academy git projects.
 """
 
-import os
 import sys
 from pathlib import Path
 
 from connectors.confluence.config import ConfluenceConfig
 from dotenv import load_dotenv
-
-
-# Default workspace directory - can be overridden via WORKSPACE_DIR env var
-DEFAULT_WORKSPACE_DIR = "workspace"
-
-
-def get_workspace_path() -> Path:
-    """Get the workspace path, defaulting to ~/workspace or using WORKSPACE_DIR env var."""
-    workspace_name = os.environ.get("WORKSPACE_DIR", DEFAULT_WORKSPACE_DIR)
-    return Path.home() / workspace_name
 
 
 def find_git_projects(base_path: str) -> list[Path]:
@@ -115,8 +104,8 @@ The confluence-docs directory contains synced internal company documentation tha
     return True
 
 
-def create_symlinks_for_projects(link_name: str = "confluence-docs", dry_run: bool = False):
-    """Create symlinks in all git projects in the workspace."""
+def create_symlinks_for_khan_projects(link_name: str = "confluence-docs", dry_run: bool = False):
+    """Create symlinks in all Khan Academy git projects."""
     load_dotenv()
     config = ConfluenceConfig()
 
@@ -132,15 +121,15 @@ def create_symlinks_for_projects(link_name: str = "confluence-docs", dry_run: bo
         print("Run 'make docs-sync' first to sync documentation.")
         return False
 
-    # Find all git projects under workspace
-    workspace_path = get_workspace_path()
-    git_projects = find_git_projects(workspace_path)
+    # Find all git projects under ~/khan
+    khan_path = Path.home() / "khan"
+    git_projects = find_git_projects(khan_path)
 
     if not git_projects:
-        print(f"No git projects found under {workspace_path}")
+        print(f"No git projects found under {khan_path}")
         return False
 
-    print(f"Found {len(git_projects)} git projects under {workspace_path}:")
+    print(f"Found {len(git_projects)} git projects under {khan_path}:")
     for project in git_projects:
         print(f"  - {project.name}")
     print()
@@ -205,8 +194,8 @@ def create_symlinks_for_projects(link_name: str = "confluence-docs", dry_run: bo
     return len(created_links) > 0 or len(skipped_links) > 0
 
 
-def list_projects_with_links():
-    """List projects that have symlinks to the documentation."""
+def list_khan_projects_with_links():
+    """List Khan Academy projects that have symlinks to the documentation."""
     load_dotenv()
     config = ConfluenceConfig()
 
@@ -215,10 +204,10 @@ def list_projects_with_links():
         print("No synced documentation found.")
         return
 
-    workspace_path = get_workspace_path()
-    git_projects = find_git_projects(workspace_path)
+    khan_path = Path.home() / "khan"
+    git_projects = find_git_projects(khan_path)
 
-    print(f"Projects with Confluence documentation symlinks (in {workspace_path}):")
+    print("Khan Academy projects with Confluence documentation symlinks:")
     print("=" * 60)
 
     found_links = []
@@ -237,16 +226,16 @@ def list_projects_with_links():
         for project, symlink in found_links:
             print(f"  {project.name}: {symlink.name}")
     else:
-        print("  No symlinks found in workspace projects.")
+        print("  No symlinks found in Khan Academy projects.")
 
 
 def main():
     """Main function."""
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  python link_to_projects.py [--dry-run] [--execute] [--list]")
-        print("  python link_to_projects.py --link-name docs [--execute]")
-        print("  python link_to_projects.py --setup-cursor")
+        print("  python link_to_khan_projects.py [--dry-run] [--execute] [--list]")
+        print("  python link_to_khan_projects.py --link-name docs [--execute]")
+        print("  python link_to_khan_projects.py --setup-cursor")
         print()
         print("Options:")
         print("  --dry-run     Show what would be done without creating symlinks")
@@ -255,16 +244,12 @@ def main():
         print("  --link-name   Custom name for the symlink (default: confluence-docs)")
         print("  --setup-cursor Create Cursor rule for confluence-docs directories")
         print()
-        print("Environment Variables:")
-        print("  WORKSPACE_DIR  Name of workspace directory under $HOME (default: workspace)")
-        print()
         print("Examples:")
-        print("  python link_to_projects.py --dry-run")
-        print("  python link_to_projects.py --execute")
-        print("  python link_to_projects.py --link-name docs --execute")
-        print("  python link_to_projects.py --list")
-        print("  python link_to_projects.py --setup-cursor")
-        print("  WORKSPACE_DIR=projects python link_to_projects.py --execute")
+        print("  python link_to_khan_projects.py --dry-run")
+        print("  python link_to_khan_projects.py --execute")
+        print("  python link_to_khan_projects.py --link-name docs --execute")
+        print("  python link_to_khan_projects.py --list")
+        print("  python link_to_khan_projects.py --setup-cursor")
         return
 
     # Parse arguments
@@ -281,9 +266,9 @@ def main():
     if setup_cursor:
         ensure_cursor_rule(link_name)
     elif list_mode:
-        list_projects_with_links()
+        list_khan_projects_with_links()
     else:
-        create_symlinks_for_projects(link_name, dry_run)
+        create_symlinks_for_khan_projects(link_name, dry_run)
 
 
 if __name__ == "__main__":
