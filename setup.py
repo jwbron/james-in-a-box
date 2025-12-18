@@ -1789,7 +1789,7 @@ class MinimalSetup:
             # Allow full reconfiguration
             self.logger.info("\nReconfiguring local repositories...")
             self.logger.info("Enter local repo paths one per line (empty line to finish):")
-            self.logger.info(f"(Press Enter with no input to keep existing paths)")
+            self.logger.info("(Press Enter with no input to keep existing paths)")
 
             local_repos = []
             first_input = self.prompter.prompt("Local repo path (absolute)")
