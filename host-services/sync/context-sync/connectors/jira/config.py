@@ -45,6 +45,44 @@ class JIRAConfig:
     # Incremental sync
     INCREMENTAL_SYNC: bool = os.getenv("JIRA_INCREMENTAL_SYNC", "true").lower() == "true"
 
+    # -------------------------------------------------------------------------
+    # JIB Triage Configuration (ADR: JIRA Ticket Triage Workflow)
+    # -------------------------------------------------------------------------
+
+    # Enable/disable JIB triage workflow
+    JIB_TRIAGE_ENABLED: bool = os.getenv("JIB_TRIAGE_ENABLED", "true").lower() == "true"
+
+    # Repositories enabled for JIB triage (comma-separated)
+    JIB_TRIAGE_ENABLED_REPOS: str = os.getenv("JIB_TRIAGE_ENABLED_REPOS", "jwbron/james-in-a-box")
+
+    # Labels that identify JIB-tagged tickets (comma-separated, case-insensitive)
+    JIB_TAG_LABELS: str = os.getenv("JIB_TAG_LABELS", "jib,james-in-a-box")
+
+    # Score threshold for trivial classification (0-100)
+    JIB_TRIVIALITY_THRESHOLD: int = int(os.getenv("JIB_TRIVIALITY_THRESHOLD", "50"))
+
+    # Auto-classify security tickets as non-trivial
+    JIB_AUTO_SECURITY_NONTRIVIAL: bool = os.getenv("JIB_AUTO_SECURITY_NONTRIVIAL", "true").lower() == "true"
+
+    # Directory for planning documents (relative to repo)
+    JIB_PLAN_OUTPUT_DIR: str = os.getenv("JIB_PLAN_OUTPUT_DIR", "docs/plans")
+
+    # Maximum tokens for context gathering
+    JIB_MAX_CONTEXT_TOKENS: int = int(os.getenv("JIB_MAX_CONTEXT_TOKENS", "50000"))
+
+    # Timeout for context gathering (seconds)
+    JIB_CONTEXT_TIMEOUT_SECONDS: int = int(os.getenv("JIB_CONTEXT_TIMEOUT_SECONDS", "60"))
+
+    @classmethod
+    def get_jib_tag_labels(cls) -> list[str]:
+        """Get list of JIB tag labels."""
+        return [l.strip().lower() for l in cls.JIB_TAG_LABELS.split(",")]
+
+    @classmethod
+    def get_jib_enabled_repos(cls) -> list[str]:
+        """Get list of enabled repositories for JIB triage."""
+        return [r.strip() for r in cls.JIB_TRIAGE_ENABLED_REPOS.split(",")]
+
     @classmethod
     def validate(cls) -> bool:
         """Validate that required configuration is present."""
