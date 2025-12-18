@@ -84,31 +84,24 @@ declare -a SYMLINKS=(
     "feature-analyzer:../host-services/analysis/feature-analyzer/feature-analyzer.py"
     "fix-doc-links:../scripts/fix-doc-links.py"
     "generate-docs:../host-services/analysis/doc-generator/doc-generator.py"
-    "github-watcher:../host-services/analysis/github-watcher/github-watcher.py"
-    "index-generator:../host-services/analysis/index-generator/index-generator.py"
     "inefficiency-report:../host-services/analysis/inefficiency-detector/weekly_report_generator.py"
     "query-index:../host-services/analysis/index-generator/query-index.py"
     "spec-enricher:../host-services/analysis/spec-enricher/spec-enricher.py"
 
     # Repository onboarding tools
-    "confluence-doc-discoverer:../host-services/analysis/confluence-doc-discoverer/confluence-doc-discoverer.py"
     "jib-internal-devtools-setup:../host-services/analysis/repo-onboarding/jib-internal-devtools-setup"
     "jib-regenerate-indexes:../host-services/analysis/repo-onboarding/jib-regenerate-indexes"
-    "docs-index-updater:../host-services/analysis/repo-onboarding/docs-index-updater.py"
 
     # Setup scripts for installing services
     "setup-beads-analyzer:../host-services/analysis/beads-analyzer/setup.sh"
     "setup-doc-generator:../host-services/analysis/doc-generator/setup.sh"
     "setup-feature-analyzer:../host-services/analysis/feature-analyzer/setup.sh"
-    "setup-github-watcher:../host-services/analysis/github-watcher/setup.sh"
-    "setup-index-generator:../host-services/analysis/index-generator/setup.sh"
     "setup-inefficiency-detector:../host-services/analysis/inefficiency-detector/setup.sh"
     "setup-slack-notifier:../host-services/slack/slack-notifier/setup.sh"
     "setup-slack-receiver:../host-services/slack/slack-receiver/setup.sh"
     "setup-spec-enricher:../host-services/analysis/spec-enricher/setup.sh"
     "setup-trace-collector:../host-services/analysis/trace-collector/setup.sh"
     "setup-repo-onboarding:../host-services/analysis/repo-onboarding/setup.sh"
-    "setup-confluence-doc-discoverer:../host-services/analysis/confluence-doc-discoverer/setup.sh"
     "setup-github-token-refresher:../host-services/utilities/github-token-refresher/setup.sh"
     "setup-worktree-watcher:../host-services/utilities/worktree-watcher/setup.sh"
 

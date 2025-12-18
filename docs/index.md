@@ -47,7 +47,6 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 | [Features - Source Mapping](FEATURES.md) | Map of all features to their implementation locations |
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Khan Academy Culture](reference/khan-academy-culture.md) | L3-L4 engineering behavioral standards |
-| [Conversation Analysis Criteria](reference/conversation-analysis-criteria.md) | Assessment criteria for agent performance |
 | [Log Persistence](reference/log-persistence.md) | Container log persistence and correlation |
 | [Prompt Caching](reference/prompt-caching.md) | Claude prompt caching optimization and monitoring |
 
