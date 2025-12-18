@@ -36,31 +36,36 @@ import yaml
 
 
 def _get_config_path() -> Path:
-    """Get the path to repositories.yaml config file."""
-    # Try relative to this file first (when running from repo)
-    config_dir = Path(__file__).parent
-    config_file = config_dir / "repositories.yaml"
+    """Get the path to repositories.yaml config file.
 
-    if config_file.exists():
-        return config_file
-
-    # Try relative to ~/repos/james-in-a-box (when running from container)
-    home_config = Path.home() / "repos" / "james-in-a-box" / "config" / "repositories.yaml"
-    if home_config.exists():
-        return home_config
-
-    # Try environment variable
+    Search order:
+    1. Environment variable JIB_REPO_CONFIG (explicit override)
+    2. Host config: ~/.config/jib/repositories.yaml (preferred location)
+    3. Container mount: ~/khan/james-in-a-box/config/repositories.yaml
+    """
+    # Try environment variable first (allows explicit override)
     env_path = os.environ.get("JIB_REPO_CONFIG")
     if env_path:
         env_config = Path(env_path)
         if env_config.exists():
             return env_config
 
+    # Try host config location (preferred - set up by setup.py)
+    host_config = Path.home() / ".config" / "jib" / "repositories.yaml"
+    if host_config.exists():
+        return host_config
+
+    # Try container mount path (when running inside jib container)
+    container_config = Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml"
+    if container_config.exists():
+        return container_config
+
     raise FileNotFoundError(
         f"Could not find repositories.yaml. Checked:\n"
-        f"  - {config_file}\n"
-        f"  - {home_config}\n"
-        f"  - JIB_REPO_CONFIG env var"
+        f"  - JIB_REPO_CONFIG env var\n"
+        f"  - {host_config} (host config)\n"
+        f"  - {container_config} (container mount)\n"
+        f"\nRun ./setup.py to create the configuration."
     )
 
 
@@ -89,7 +94,7 @@ def get_github_username() -> str:
     if not username:
         raise ValueError(
             "github_username not configured in repositories.yaml. "
-            "Run setup.sh to configure, or add 'github_username: your-username' to the config."
+            "Run ./setup.py to configure, or add 'github_username: your-username' to ~/.config/jib/repositories.yaml."
         )
     return username
 

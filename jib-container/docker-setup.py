@@ -3,7 +3,7 @@
 Docker Development Environment Setup
 
 Installs common development utilities in the Docker container.
-For additional packages, configure extra_packages in repositories.yaml.
+For additional packages, configure extra_packages in ~/.config/jib/repositories.yaml.
 """
 
 import os
@@ -41,17 +41,36 @@ def get_arch() -> str:
 
 
 def load_config() -> dict:
-    """Load repository configuration to get extra packages."""
-    config_paths = [
-        Path(__file__).parent.parent / "config" / "repositories.yaml",
-        Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml",
-    ]
+    """Load repository configuration to get extra packages.
 
-    for config_path in config_paths:
-        if config_path.exists():
-            with config_path.open() as f:
+    Search order:
+    1. JIB_REPO_CONFIG env var (explicit override)
+    2. Host config: ~/.config/jib/repositories.yaml
+    3. Container mount: ~/khan/james-in-a-box/config/repositories.yaml
+
+    Returns empty dict if no config found (uses defaults only).
+    """
+    # Check env var first
+    env_path = os.environ.get("JIB_REPO_CONFIG")
+    if env_path:
+        env_config = Path(env_path)
+        if env_config.exists():
+            with env_config.open() as f:
                 return yaml.safe_load(f) or {}
 
+    # Check host config location (preferred)
+    host_config = Path.home() / ".config" / "jib" / "repositories.yaml"
+    if host_config.exists():
+        with host_config.open() as f:
+            return yaml.safe_load(f) or {}
+
+    # Check container mount path
+    container_config = Path.home() / "khan" / "james-in-a-box" / "config" / "repositories.yaml"
+    if container_config.exists():
+        with container_config.open() as f:
+            return yaml.safe_load(f) or {}
+
+    # No config found - that's OK, just use defaults
     return {}
 
 
@@ -158,7 +177,7 @@ def main():
     print("=" * 60)
     print()
     print("This script installs common development utilities.")
-    print("Configure extra_packages in repositories.yaml for more packages.")
+    print("Configure extra_packages in ~/.config/jib/repositories.yaml for more packages.")
     print()
 
     distro = detect_distro()
@@ -205,7 +224,7 @@ def main():
                 print(f"  ✓ {pkg}")
 
         print()
-        print("To install additional packages, add to repositories.yaml:")
+        print("To install additional packages, add to ~/.config/jib/repositories.yaml:")
         print("  docker_setup:")
         print("    extra_packages:")
         print("      apt:  # For Ubuntu/Debian")

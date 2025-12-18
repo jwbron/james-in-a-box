@@ -24,11 +24,23 @@ class TestGetConfigPath:
 
         assert config_file.exists()
 
-    def test_finds_config_in_repos_directory(self, temp_dir, monkeypatch):
-        """Test finding config in ~/repos/james-in-a-box/config/."""
+    def test_finds_config_in_host_config_directory(self, temp_dir, monkeypatch):
+        """Test finding config in ~/.config/jib/ (host config location)."""
         monkeypatch.setenv("HOME", str(temp_dir))
 
-        config_path = temp_dir / "repos" / "james-in-a-box" / "config"
+        config_path = temp_dir / ".config" / "jib"
+        config_path.mkdir(parents=True, exist_ok=True)
+
+        config_file = config_path / "repositories.yaml"
+        config_file.write_text("github_username: testuser")
+
+        assert config_file.exists()
+
+    def test_finds_config_in_container_mount(self, temp_dir, monkeypatch):
+        """Test finding config in ~/khan/james-in-a-box/config/ (container mount)."""
+        monkeypatch.setenv("HOME", str(temp_dir))
+
+        config_path = temp_dir / "khan" / "james-in-a-box" / "config"
         config_path.mkdir(parents=True, exist_ok=True)
 
         config_file = config_path / "repositories.yaml"
