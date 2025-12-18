@@ -3,10 +3,18 @@
 **Driver:** James Wiesebron
 **Status:** Proposed (Awaiting Review)
 **Created:** 2025-12-18
+**Last Updated:** 2025-12-18
 
-## Overview
+## Executive Summary
 
-This ADR proposes a reworked JIRA integration for james-in-a-box (JIB) that automatically triages tickets tagged for JIB, determines fixability, and either creates a PR with the fix or creates a PR with a collaborative planning document.
+This ADR proposes an automated JIRA triage workflow for james-in-a-box (JIB) that:
+1. Detects tickets explicitly tagged for JIB automation
+2. Gathers relevant context (code, docs, similar tickets, PRs)
+3. Assesses whether the fix is trivial or requires planning
+4. For **trivial fixes**: Implements the fix and creates a code PR
+5. For **non-trivial issues**: Creates a Collaborative Planning Framework (CPF) document PR for human approval before implementation
+
+**Key Design Decision:** JIB only acts on explicitly tagged tickets (not all assigned tickets) to ensure human intent is clear and prevent unexpected automation.
 
 ## Context
 
@@ -89,20 +97,17 @@ When a JIRA ticket is tagged for "James-in-a-box" (via label, custom field, or m
 
 ### 1. JIB Tag Detection
 
-**Question for James:** How should JIB-targeted tickets be identified?
+**Decision:** Use JIRA labels (`jib`, `james-in-a-box`, or `JIB`) to identify tickets for automation.
 
-Options:
-1. **JIRA Label**: `jib` or `james-in-a-box` label on the ticket
-2. **Custom Field**: A custom JIRA field "Automation Target: JIB"
-3. **Mention in Description**: `@james-in-a-box` or similar mention
-4. **Assignee**: Assign ticket to a JIB service account
-5. **Component**: Add a "JIB" component to the ticket
+See [Design Decisions](#1-jib-tag-mechanism-jira-label) for full rationale.
 
-**Recommendation:** Use **JIRA Label** (`jib` or `james-in-a-box`) as it's:
-- Easy to add/remove
-- Visible in JIRA UI
-- Queryable via JQL
-- Doesn't require custom field setup
+**Implementation:**
+```python
+def is_jib_tagged(ticket: dict) -> bool:
+    """Check if ticket has JIB label (case-insensitive)."""
+    labels = [l.lower() for l in ticket.get("labels", [])]
+    return any(tag in labels for tag in ["jib", "james-in-a-box"])
+```
 
 ### 2. Context Gathering
 
@@ -117,7 +122,7 @@ When a JIB-tagged ticket is detected, gather context:
 | **Error Logs** | Ticket description | Parse error messages, stack traces |
 | **Repository Context** | CLAUDE.md files | Load repo-specific guidelines |
 
-**Question for James:** Should JIB have access to production logs via GCP read-only access for richer debugging context? (Currently not implemented per ADR)
+**Note:** GCP production logs access is out of scope for Phase 1. Per the parent ADR (ADR-Autonomous-Software-Engineer), GCP read-only access is planned for Phase 2-3. For now, JIB relies on error information included in ticket descriptions.
 
 ### 3. Triviality Assessment
 
@@ -162,10 +167,17 @@ if new_dependencies_needed: trivial_score -= 30
 if security_implications: trivial_score -= 40
 if data_migration: trivial_score -= 30
 
-# TRIVIAL if trivial_score >= 50
+# TRIVIAL if trivial_score >= 50 AND no auto-disqualifiers
 ```
 
-**Question for James:** What threshold feels right? Should certain factors be automatic disqualifiers (e.g., security implications always → non-trivial)?
+**Decision:** Threshold of 50 with automatic disqualifiers. See [Design Decisions](#2-triviality-threshold-score--50-with-auto-disqualifiers) for details.
+
+**Auto-Disqualifiers (bypass scoring, always non-trivial):**
+- `security_implications`: True
+- `data_migration`: True
+- `multi_service`: True
+- `public_api_change`: True
+- `infrastructure_change`: True
 
 ### 4. Trivial Fix Workflow
 
@@ -197,7 +209,13 @@ When a fix is determined trivial:
 
 ### 5. Non-Trivial Workflow (CPF Integration)
 
-When a fix is non-trivial, create a PR with a Collaborative Planning Framework document:
+When a fix is non-trivial, create a PR with a Collaborative Planning Framework (CPF) document. This document follows the CPF specification from the Collaborative Development Framework, ensuring JIB produces planning artifacts that enable structured human-LLM collaboration.
+
+**CPF Alignment:**
+- Follows CPF's "AI Drives, Human Steers" principle
+- Produces artifacts that are both human-readable and machine-consumable
+- Creates explicit checkpoint for human approval before implementation
+- Surfaces ambiguities and questions proactively (not reactively during implementation)
 
 **PR Contents:**
 
@@ -210,95 +228,176 @@ When a fix is non-trivial, create a PR with a Collaborative Planning Framework d
 **Status:** Proposed - Awaiting Human Approval
 **Complexity:** Non-trivial
 **Estimated Scope:** {small|medium|large}
+**Triviality Score:** {score}/100 (threshold: 50)
+**Disqualifier(s):** {if any, e.g., "security implications", "multi-service"}
 
-## Executive Summary
+---
 
-{2-3 sentence summary of what this ticket is about}
+## Checkpoint: Planning Complete
+
+> This document represents JIB's analysis of the JIRA ticket. Human approval is required before implementation begins.
+
+### Summary
+{2-3 sentence summary of what this ticket is about and what JIB proposes to do}
+
+### Quick Actions
+- [ ] **APPROVE** — JIB proceeds with implementation
+- [ ] **APPROVE WITH NOTES** — JIB proceeds with adjustments (add comments to PR)
+- [ ] **REVISE** — JIB needs to revisit analysis (request changes on PR)
+- [ ] **REJECT** — Do not implement (close PR without merging)
+
+---
 
 ## Requirements Analysis
 
 ### Goals
-- Primary: {main objective}
-- Secondary: {additional objectives}
+| Priority | Goal | Source |
+|----------|------|--------|
+| Primary | {main objective} | JIRA ticket |
+| Secondary | {additional objective} | {inference/comment} |
 
-### Requirements Captured
-| ID | Requirement | Source | Confidence |
+### Functional Requirements
+| ID | Requirement | Acceptance Criteria | Confidence |
+|----|-------------|---------------------|------------|
+| FR-1 | {requirement} | {testable criteria} | {high/medium/low} |
+| FR-2 | ... | ... | ... |
+
+### Non-Functional Requirements
+| ID | Requirement | Target | Confidence |
 |----|-------------|--------|------------|
-| R1 | {requirement} | {ticket/inference} | {high/medium/low} |
-| R2 | ... | ... | ... |
+| NFR-1 | {e.g., performance} | {measurable target} | {high/medium/low} |
+
+### Out of Scope (Negative Requirements)
+- {What this change will NOT do}
+- {Explicit boundaries to prevent scope creep}
+
+### Assumptions
+| Assumption | Validated? | Impact if Wrong |
+|------------|------------|-----------------|
+| {assumption} | {yes/no/needs validation} | {impact} |
 
 ### Ambiguities & Questions
 
-> **Human input needed:** The following questions require clarification before proceeding.
+> **⚠️ Human input needed:** The following questions require clarification. JIB recommends addressing these before approving.
 
 1. **{Question 1}**
-   - Context: {why this matters}
-   - Options: {A, B, C}
-   - Recommendation: {if any}
+   - **Context:** {why this matters for implementation}
+   - **Options:**
+     - A: {option description}
+     - B: {option description}
+   - **JIB Recommendation:** {recommendation with rationale}
 
 2. **{Question 2}**
    - ...
 
+---
+
 ## Technical Analysis
 
 ### Affected Areas
-- `path/to/file.py` - {reason}
-- `path/to/other.py` - {reason}
+| File/Component | Change Type | Reason |
+|---------------|-------------|--------|
+| `path/to/file.py` | Modify | {reason} |
+| `path/to/other.py` | Modify | {reason} |
+| `path/to/new.py` | Create | {reason} |
 
 ### Dependencies
-- {Dependency 1}
-- {Dependency 2}
+| Dependency | Type | Status |
+|------------|------|--------|
+| {library/service} | {internal/external} | {available/needs setup} |
 
-### Risks
+### Risk Register
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
-| {risk} | {H/M/L} | {H/M/L} | {mitigation} |
+| {risk description} | {High/Medium/Low} | {High/Medium/Low} | {mitigation strategy} |
+
+---
 
 ## Design Options
 
-### Option A: {Name}
-{Description}
+### Option A: {Name} ⭐ (Recommended)
+{Description of approach}
 
 **Pros:**
-- ...
+- {benefit 1}
+- {benefit 2}
 
 **Cons:**
-- ...
+- {drawback 1}
+
+**Trade-offs:**
+- {trade-off consideration}
 
 ### Option B: {Name}
-{Description}
+{Description of approach}
 
 **Pros:**
-- ...
+- {benefit 1}
 
 **Cons:**
-- ...
+- {drawback 1}
+- {drawback 2}
 
-### Recommendation
-{Recommended option with rationale}
+### Decision Record
+**Selected:** Option A
+**Rationale:** {Why this option best balances the trade-offs for this use case}
 
-## Proposed Implementation Plan
+---
 
-### Phase 1: {Name}
-- [ ] Task 1.1: {description}
-- [ ] Task 1.2: {description}
+## Implementation Plan
 
-### Phase 2: {Name}
-- [ ] Task 2.1: {description}
-- [ ] Task 2.2: {description}
+### Phase 1: {Name} (Estimated: {time})
+**Objective:** {what this phase accomplishes}
 
-## Next Steps
+| Task | Dependencies | Acceptance Criteria |
+|------|--------------|---------------------|
+| Task 1.1: {description} | None | {criteria} |
+| Task 1.2: {description} | Task 1.1 | {criteria} |
 
-After human approval of this plan:
-1. JIB will proceed with implementation using CPF
-2. Checkpoints will be created at each phase
-3. Final PR(s) with code will be submitted for review
+**Phase 1 Checkpoint:** {what human should see before Phase 2}
+
+### Phase 2: {Name} (Estimated: {time})
+**Objective:** {what this phase accomplishes}
+
+| Task | Dependencies | Acceptance Criteria |
+|------|--------------|---------------------|
+| Task 2.1: {description} | Phase 1 | {criteria} |
+| Task 2.2: {description} | Task 2.1 | {criteria} |
+
+---
+
+## Test Strategy
+
+| Test Type | Scope | Coverage Target |
+|-----------|-------|-----------------|
+| Unit Tests | {components} | {target} |
+| Integration Tests | {flows} | {target} |
+| Manual Testing | {scenarios} | {checklist} |
+
+---
+
+## Post-Approval Workflow
+
+After human merges this planning PR:
+1. **JIB detects merge** via GitHub sync
+2. **JIB enters CPF implementation** following the phased plan above
+3. **Implementation PR created** with code changes, tests, documentation
+4. **Human reviews implementation PR** and merges when satisfied
 
 ---
 
 **Generated by:** james-in-a-box
-**Awaiting:** Human review and approval
+**Triaged from:** {JIRA ticket link}
+**Context Sources:** {list of files/docs consulted}
+**Awaiting:** Human review and approval (merge this PR to proceed)
 ```
+
+**Template Quality Attributes (per CPF spec):**
+- Each requirement has testable acceptance criteria
+- Ambiguous language eliminated ("may", "might" → concrete decisions)
+- Priorities are explicit
+- Tasks are appropriately sized and can be started without further clarification
+- Dependencies are explicit
 
 ### 6. Implementation Components
 
@@ -343,39 +442,206 @@ After human approves a planning PR:
 3. Creates implementation PR(s) with checkpoints
 4. Follows standard review process
 
-**Question for James:** How should JIB detect that a planning doc has been approved? Options:
-1. PR merge triggers webhook
-2. Scheduled scan for merged planning docs
-3. Human sends Slack message "proceed with JIRA-XXX"
-4. Add GitHub label "jib-approved" to merged PR
+**Decision:** PR merge triggers implementation. See [Design Decisions](#3-approval-detection-pr-merge-triggers-implementation) for details.
 
-## Open Questions
+**Detection Flow:**
+1. GitHub sync runs every 15 minutes
+2. Detects merged PRs with planning docs in `docs/plans/`
+3. Parses planning doc to extract implementation plan
+4. Creates Beads task for implementation
+5. Enters CPF implementation workflow
 
-### Critical (Need answers before implementation)
+## Worked Example
 
-1. **JIB Tag Mechanism:** How should tickets be tagged for JIB? (Label recommended)
+To illustrate the workflow, here's a concrete example of how JIB would handle two different tickets:
 
-2. **Triviality Threshold:** What threshold feels right for trivial vs non-trivial? (50 proposed)
+### Example 1: Trivial Fix
 
-3. **Approval Detection:** How should JIB know a plan is approved to proceed?
+**JIRA Ticket: INFRA-1234**
+```
+Title: Fix typo in error message
+Description: The error message in slack-receiver.py line 45 says "recieved" instead of "received"
+Labels: jib, bug
+```
 
-4. **Repository Scope:** Should this work for all configured repos or start with a specific one?
+**JIB Processing:**
+1. **Detection:** JIB sees `jib` label during hourly sync
+2. **Context Gathering:** Reads `slack-receiver.py`, finds the typo
+3. **Triviality Assessment:**
+   - Files affected: 1 → +30 points
+   - Change type: Bug fix → +20 points
+   - Existing tests: Yes → +20 points
+   - Requirements clear: Yes → +20 points
+   - **Score: 90/100** → TRIVIAL
+4. **Implementation:** JIB fixes the typo, runs tests
+5. **PR Created:** `[JIB] Fix: INFRA-1234 Fix typo in error message`
+6. **Notification:** Slack message with PR link
 
-### Important (Can iterate on)
+**Human Action:** Review PR, merge if good (1 minute)
 
-5. **Context Depth:** How much context should JIB gather? (Cost vs. quality tradeoff)
+### Example 2: Non-Trivial (Planning Required)
 
-6. **Retry Logic:** What happens if JIB can't determine triviality? (Default to non-trivial?)
+**JIRA Ticket: INFRA-5678**
+```
+Title: Add rate limiting to Slack receiver
+Description: We're getting hammered by Slack retries. Need rate limiting to prevent overload.
+Labels: jib, enhancement
+```
 
-7. **Human Override:** Should there be a way to force trivial/non-trivial classification?
+**JIB Processing:**
+1. **Detection:** JIB sees `jib` label during hourly sync
+2. **Context Gathering:**
+   - Reads `slack-receiver.py`, `incoming-processor.py`
+   - Finds similar ticket INFRA-4321 (previous retry handling)
+   - Loads ADR-Message-Queue-Slack-Integration for context
+3. **Triviality Assessment:**
+   - Files affected: 3+ → -20 points
+   - Change type: Enhancement → +0 points
+   - Existing tests: Partial → +0 points
+   - Requirements: Ambiguous (what rate limit?) → -20 points
+   - New dependencies: Maybe (Redis?) → -30 points
+   - **Score: 30/100** → NON-TRIVIAL
+4. **Planning Doc Created:**
+   ```
+   Questions identified:
+   - What rate limit (requests/second)?
+   - Per-user or global?
+   - Redis-backed or in-memory?
+   - What to do when limited (queue vs reject)?
+   ```
+5. **PR Created:** `[JIB] Plan: INFRA-5678 Add rate limiting to Slack receiver`
+6. **Notification:** Slack message asking for plan review
 
-### Nice to Have
+**Human Action:**
+- Review planning doc (5-10 minutes)
+- Answer questions via PR comments
+- Merge to approve
 
-8. **Learning:** Should JIB track which tickets it got "wrong" to improve future triaging?
+**JIB Detects Merge:**
+- Reads approved plan
+- Implements based on human's answers
+- Creates implementation PR with code
 
-9. **Templates:** Should planning docs be customizable per project/team?
+## Design Decisions (Resolved Questions)
 
-10. **Metrics:** What should we track to measure success?
+The following design decisions have been made based on analysis and system alignment:
+
+### 1. JIB Tag Mechanism: JIRA Label
+
+**Decision:** Use JIRA labels `jib` or `james-in-a-box` to tag tickets for automation.
+
+**Rationale:**
+- Easy to add/remove without custom field configuration
+- Visible in JIRA UI (users can see which tickets are JIB-targeted)
+- Queryable via JQL for monitoring and debugging
+- Consistent with existing JIRA workflows
+- No JIRA admin setup required
+
+**Implementation:**
+```python
+JIB_TAG_LABELS = ["jib", "james-in-a-box", "JIB"]  # Case-insensitive matching
+```
+
+### 2. Triviality Threshold: Score >= 50 with Auto-Disqualifiers
+
+**Decision:** Use a scoring system with threshold of 50, plus automatic disqualifiers for high-risk categories.
+
+**Rationale:**
+- Scoring system allows nuanced assessment
+- Auto-disqualifiers prevent high-risk changes from bypassing planning
+- Errs on side of caution (questionable → non-trivial → planning doc)
+
+**Auto-Disqualifiers (always non-trivial regardless of score):**
+- Security implications (authentication, authorization, encryption)
+- Data migration or schema changes
+- Multi-service changes (crosses service boundaries)
+- Public API changes (breaking changes possible)
+- Infrastructure/deployment changes
+
+### 3. Approval Detection: PR Merge Triggers Implementation
+
+**Decision:** When a planning document PR is merged, JIB detects this and proceeds with CPF implementation.
+
+**Rationale:**
+- Uses existing PR review workflow (no new tools)
+- PR merge is an explicit human approval action
+- Creates audit trail via git history
+- Allows inline comments on planning doc before approval
+
+**Implementation:**
+```
+Planning PR merged → GitHub webhook → JIB detects merged planning doc
+                  → Extracts implementation plan from doc
+                  → Enters CPF implementation workflow
+                  → Creates implementation PR(s)
+```
+
+### 4. Repository Scope: Start with james-in-a-box
+
+**Decision:** Initial rollout targets only `james-in-a-box` repository, with configuration to expand later.
+
+**Rationale:**
+- Lower risk for initial testing
+- Self-referential (JIB improving itself)
+- Team is familiar with the codebase
+- Easy to expand via configuration once proven
+
+**Configuration:**
+```bash
+JIB_TRIAGE_ENABLED_REPOS="jwbron/james-in-a-box"  # Comma-separated for expansion
+```
+
+### 5. Context Depth: Progressive with Cost Controls
+
+**Decision:** Use progressive context gathering with token/cost limits.
+
+**Levels:**
+1. **Always gathered** (low cost): Ticket description, comments, linked tickets
+2. **Smart gathered** (medium cost): Related code files (keyword/path matching), recent PRs touching similar files
+3. **On-demand** (high cost): Full codebase search, historical ticket analysis
+
+**Cost Control:**
+```python
+MAX_CONTEXT_TOKENS = 50000  # ~$0.15 at Claude pricing
+CONTEXT_TIMEOUT_SECONDS = 60  # Don't spend too long gathering
+```
+
+### 6. Uncertainty Handling: Default to Non-Trivial
+
+**Decision:** When triviality cannot be confidently determined, default to non-trivial (create planning doc).
+
+**Rationale:**
+- Safer: Planning doc is reviewed before implementation
+- No wasted work: Planning doc still captures analysis
+- Human can override by approving and requesting direct implementation
+
+### 7. Human Override: Ticket Labels
+
+**Decision:** Allow human override of classification via additional labels.
+
+**Labels:**
+- `jib-trivial`: Force trivial classification (skip planning, go straight to implementation)
+- `jib-plan`: Force non-trivial classification (always create planning doc)
+
+**Use Cases:**
+- `jib-trivial`: Human knows the fix is simple despite JIB's scoring
+- `jib-plan`: Human wants planning doc even for simple-seeming tickets
+
+## Open Questions (To Be Resolved During Implementation)
+
+### Important (Iteration Candidates)
+
+1. **Learning/Feedback:** Should JIB track misclassifications to improve scoring?
+   - *Leaning:* Yes, track in Beads with outcome labels (accurate/over-planned/under-planned)
+   - *Defer to:* Phase 2 after initial rollout provides data
+
+2. **Templates:** Should planning docs be customizable per project?
+   - *Leaning:* Not initially; use standard CPF template
+   - *Defer to:* Add customization if needed based on feedback
+
+3. **Metrics:** What should we track?
+   - *Leaning:* Time-to-PR, classification accuracy, planning doc approval rate, implementation success rate
+   - *Defer to:* Implement basic metrics in Phase 1, expand in Phase 2
 
 ## Success Criteria
 
@@ -411,10 +677,27 @@ After human approves a planning PR:
 
 ## Related Documents
 
-- [ADR-Autonomous-Software-Engineer.md](ADR-Autonomous-Software-Engineer.md) - Parent ADR for JIB architecture
-- [Collaborative-Planning-Framework.md](../../../../collaborative-development-framework/docs/foundations/Collaborative-Planning-Framework.md) - CPF specification
-- [JIRA Connector README](../../../host-services/sync/context-sync/connectors/jira/README.md) - Current JIRA sync implementation
+| Document | Relationship |
+|----------|--------------|
+| [ADR-Autonomous-Software-Engineer.md](ADR-Autonomous-Software-Engineer.md) | Parent ADR for JIB architecture; this ADR extends the JIRA integration described there |
+| [Collaborative-Planning-Framework.md](../../../../collaborative-development-framework/docs/foundations/Collaborative-Planning-Framework.md) | CPF specification; planning documents follow this framework |
+| [JIRA Connector README](../../../host-services/sync/context-sync/connectors/jira/README.md) | Current JIRA sync implementation; triage builds on this infrastructure |
+| [Human-Driven-LLM-Navigated-Software-Development.md](../../../../collaborative-development-framework/docs/foundations/Human-Driven-LLM-Navigated-Software-Development.md) | Philosophy underlying the "AI Drives, Human Steers" approach |
+
+## Appendix: Configuration Reference
+
+```bash
+# Environment variables for JIRA Triage Workflow
+JIB_TRIAGE_ENABLED=true                          # Enable/disable triage workflow
+JIB_TRIAGE_ENABLED_REPOS="jwbron/james-in-a-box" # Repos to process (comma-separated)
+JIB_TAG_LABELS="jib,james-in-a-box"              # Labels that trigger JIB processing
+JIB_TRIVIALITY_THRESHOLD=50                      # Score threshold for trivial classification
+JIB_AUTO_SECURITY_NONTRIVIAL=true                # Security tickets always non-trivial
+JIB_PLAN_OUTPUT_DIR="docs/plans"                 # Where to store planning docs
+JIB_MAX_CONTEXT_TOKENS=50000                     # Token limit for context gathering
+JIB_CONTEXT_TIMEOUT_SECONDS=60                   # Timeout for context gathering
+```
 
 ---
 
-**Next Action:** Review this plan, answer open questions, approve or request changes.
+**Next Action:** Review this spec, provide any additional feedback, then approve to begin implementation.
