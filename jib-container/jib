@@ -1726,6 +1726,12 @@ def run_claude() -> bool:
     if _quiet_mode:
         status("Configuring mounts...")
     mount_args = []
+
+    # Build set of container paths that worktrees will use (to avoid duplicates)
+    worktree_container_paths = set()
+    for repo_name in worktrees:
+        worktree_container_paths.add(f"/home/{os.environ['USER']}/repos/{repo_name}")
+
     if Config.CONFIG_FILE.exists():
         mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
         for mount in mounts:
@@ -1742,6 +1748,13 @@ def run_claude() -> bool:
                 mount_path, container_path, mode = parts
             else:
                 warn(f"Invalid mount format: {mount}")
+                continue
+
+            # Skip mounts that would conflict with worktree mounts
+            # This handles migration from old direct repo mounts to worktrees
+            if container_path in worktree_container_paths:
+                if not _quiet_mode:
+                    info(f"  Skipping {container_path} (using worktree instead)")
                 continue
 
             # Ensure SELinux label is present (add if missing for backwards compatibility)
@@ -1992,6 +2005,12 @@ def exec_in_new_container(
 
     # Parse mount configuration
     mount_args = []
+
+    # Build set of container paths that worktrees will use (to avoid duplicates)
+    worktree_container_paths = set()
+    for repo_name in worktrees:
+        worktree_container_paths.add(f"/home/{os.environ['USER']}/repos/{repo_name}")
+
     if Config.CONFIG_FILE.exists():
         mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
 
@@ -2007,6 +2026,10 @@ def exec_in_new_container(
                 mount_path, container_path, mode = parts
             else:
                 warn(f"Invalid mount format: {mount}")
+                continue
+
+            # Skip mounts that would conflict with worktree mounts
+            if container_path in worktree_container_paths:
                 continue
 
             # Ensure SELinux label
