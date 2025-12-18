@@ -68,7 +68,7 @@ class SetupLogger:
 
     def info(self, msg: str):
         """Print info message."""
-        colored = f"{Colors.OKBLUE}ℹ{Colors.ENDC} {msg}"
+        colored = f"{Colors.OKBLUE}i{Colors.ENDC} {msg}"
         print(Colors.strip_if_no_tty(colored))
 
     def success(self, msg: str):

@@ -213,12 +213,11 @@ def _extract_model_info(message, current_model: str | None) -> str | None:
     msg_class = type(message).__name__
 
     # SystemMessage init contains the resolved model ID
-    if msg_class == "SystemMessage":
-        if hasattr(message, "data") and isinstance(message.data, dict):
-            model = message.data.get("model")
-            if model:
-                logger.debug(f"Model from init message: {model}")
-                return model
+    if msg_class == "SystemMessage" and hasattr(message, "data") and isinstance(message.data, dict):
+        model = message.data.get("model")
+        if model:
+            logger.debug(f"Model from init message: {model}")
+            return model
 
     # AssistantMessage has model attribute
     if msg_class == "AssistantMessage" and hasattr(message, "model"):

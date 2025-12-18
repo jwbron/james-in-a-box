@@ -584,11 +584,10 @@ def check_prs_for_review(
                 ["pr", "view", str(pr_num), "--repo", repo, "--json", "reviewRequests,assignees"],
                 repo=repo,
             )
-            if pr_details:
-                # Check if bot is requested as reviewer OR assigned
-                if is_jib_engaged(pr_details, bot_username):
-                    directly_requested_prs.append(pr)
-                    logger.debug("Bot requested/assigned for review", pr_number=pr_num)
+            # Check if bot is requested as reviewer OR assigned
+            if pr_details and is_jib_engaged(pr_details, bot_username):
+                directly_requested_prs.append(pr)
+                logger.debug("Bot requested/assigned for review", pr_number=pr_num)
 
         if not directly_requested_prs:
             return []
