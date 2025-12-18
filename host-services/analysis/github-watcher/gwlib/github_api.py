@@ -4,9 +4,9 @@
 import json
 import subprocess
 import time
-from typing import Any
 
 from jib_logging import get_logger
+
 
 logger = get_logger("github-api")
 
@@ -50,7 +50,12 @@ def gh_json(args: list[str], repo: str | None = None) -> dict | list | None:
             if "rate limit" in e.stderr.lower():
                 if attempt < RATE_LIMIT_MAX_RETRIES - 1:
                     wait_time = RATE_LIMIT_BASE_WAIT * (2**attempt)
-                    logger.warning("Rate limited, retrying", wait_seconds=wait_time, attempt=attempt + 1, **log_ctx)
+                    logger.warning(
+                        "Rate limited, retrying",
+                        wait_seconds=wait_time,
+                        attempt=attempt + 1,
+                        **log_ctx,
+                    )
                     time.sleep(wait_time)
                     continue
                 logger.error("Rate limit exceeded after max retries", **log_ctx)
@@ -97,7 +102,9 @@ def gh_text(args: list[str], repo: str | None = None) -> str | None:
             if "rate limit" in e.stderr.lower():
                 if attempt < RATE_LIMIT_MAX_RETRIES - 1:
                     wait_time = RATE_LIMIT_BASE_WAIT * (2**attempt)
-                    logger.warning("Rate limited, retrying", wait_seconds=wait_time, attempt=attempt + 1)
+                    logger.warning(
+                        "Rate limited, retrying", wait_seconds=wait_time, attempt=attempt + 1
+                    )
                     time.sleep(wait_time)
                     continue
                 logger.error("Rate limit exceeded after max retries")

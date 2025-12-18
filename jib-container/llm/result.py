@@ -1,6 +1,6 @@
 """Shared result type for all LLM providers."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 

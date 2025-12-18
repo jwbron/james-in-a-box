@@ -26,32 +26,34 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
 
 # Add config directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config.host_config import HostConfig
 
 # ANSI color codes for terminal output
 class Colors:
     """Terminal color codes for formatted output."""
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKCYAN = "\033[96m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
 
     @staticmethod
     def strip_if_no_tty(text: str) -> str:
         """Strip ANSI codes if not outputting to a TTY."""
         if not sys.stdout.isatty():
             import re
-            return re.sub(r'\033\[[0-9;]+m', '', text)
+
+            return re.sub(r"\033\[[0-9;]+m", "", text)
         return text
 
 
@@ -60,10 +62,7 @@ class SetupLogger:
 
     def __init__(self, verbose: bool = False):
         self.verbose = verbose
-        logging.basicConfig(
-            level=logging.DEBUG if verbose else logging.INFO,
-            format='%(message)s'
-        )
+        logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, format="%(message)s")
         self.logger = logging.getLogger(__name__)
 
     def info(self, msg: str):
@@ -109,12 +108,11 @@ class DependencyChecker:
         found = shutil.which(cmd) is not None
         if found:
             self.logger.success(f"{cmd} is installed")
+        elif required:
+            self.logger.error(f"{cmd} is NOT installed (required)")
+            self.missing.append(cmd)
         else:
-            if required:
-                self.logger.error(f"{cmd} is NOT installed (required)")
-                self.missing.append(cmd)
-            else:
-                self.logger.warning(f"{cmd} is NOT installed (optional)")
+            self.logger.warning(f"{cmd} is NOT installed (optional)")
         return found
 
     def check_all(self) -> bool:
@@ -133,6 +131,7 @@ class DependencyChecker:
         # Python-specific checks
         try:
             import yaml  # noqa: F401
+
             self.logger.success("PyYAML is installed")
         except ImportError:
             self.logger.warning("PyYAML is NOT installed (will use JSON fallback)")
@@ -159,9 +158,9 @@ class UserPrompter:
     def prompt(
         self,
         question: str,
-        default: Optional[str] = None,
+        default: str | None = None,
         required: bool = False,
-        validator: Optional[callable] = None
+        validator: callable | None = None,
     ) -> str:
         """Prompt user for input with validation.
 
@@ -180,7 +179,9 @@ class UserPrompter:
             else:
                 prompt_text = f"{question}: "
 
-            response = input(Colors.strip_if_no_tty(f"{Colors.OKCYAN}?{Colors.ENDC} {prompt_text}")).strip()
+            response = input(
+                Colors.strip_if_no_tty(f"{Colors.OKCYAN}?{Colors.ENDC} {prompt_text}")
+            ).strip()
 
             # Use default if no input
             if not response and default:
@@ -213,14 +214,20 @@ class UserPrompter:
             True for yes, False for no
         """
         default_str = "Y/n" if default else "y/N"
-        response = input(Colors.strip_if_no_tty(
-            f"{Colors.OKCYAN}?{Colors.ENDC} {question} [{default_str}]: "
-        )).strip().lower()
+        response = (
+            input(
+                Colors.strip_if_no_tty(
+                    f"{Colors.OKCYAN}?{Colors.ENDC} {question} [{default_str}]: "
+                )
+            )
+            .strip()
+            .lower()
+        )
 
         if not response:
             return default
 
-        return response in ['y', 'yes']
+        return response in ["y", "yes"]
 
     def prompt_list(self, question: str, delimiter: str = ",") -> list[str]:
         """Prompt for a comma-separated list.
@@ -232,9 +239,9 @@ class UserPrompter:
         Returns:
             List of stripped, non-empty strings
         """
-        response = input(Colors.strip_if_no_tty(
-            f"{Colors.OKCYAN}?{Colors.ENDC} {question}: "
-        )).strip()
+        response = input(
+            Colors.strip_if_no_tty(f"{Colors.OKCYAN}?{Colors.ENDC} {question}: ")
+        ).strip()
 
         if not response:
             return []
@@ -273,17 +280,14 @@ class ConfigMigrator:
             True if migration is needed, False otherwise
         """
         # Check for standalone API key files and other legacy files
-        for name, path in self.legacy_locations.items():
+        for _name, path in self.legacy_locations.items():
             if path.exists():
                 return True
 
         # Check for legacy service configs
         if self.legacy_notifier_config.exists():
             return True
-        if self.legacy_context_sync_env.exists():
-            return True
-
-        return False
+        return bool(self.legacy_context_sync_env.exists())
 
     def migrate_configs(self) -> bool:
         """Migrate legacy configurations to new structure.
@@ -307,18 +311,20 @@ class ConfigMigrator:
             with open(self.new_secrets_file) as f:
                 for line in f:
                     line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        secrets[key.strip()] = value.strip().strip('"\'')
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        secrets[key.strip()] = value.strip().strip("\"'")
 
         # Load existing config if any
         if self.new_config_file.exists():
             try:
                 import yaml
+
                 with open(self.new_config_file) as f:
                     config = yaml.safe_load(f) or {}
             except ImportError:
                 import json
+
                 config_json = self.new_config_dir / "config.json"
                 if config_json.exists():
                     with open(config_json) as f:
@@ -410,10 +416,12 @@ class ConfigMigrator:
             if config:
                 try:
                     import yaml
+
                     self.new_config_file.write_text(yaml.dump(config, default_flow_style=False))
                     self.logger.success(f"Config written to {self.new_config_file}")
                 except ImportError:
                     import json
+
                     config_json = self.new_config_dir / "config.json"
                     config_json.write_text(json.dumps(config, indent=2))
                     self.logger.success(f"Config written to {config_json}")
@@ -424,7 +432,9 @@ class ConfigMigrator:
             self.logger.info(f"  {self.new_secrets_file}")
             self.logger.info(f"  {self.new_config_file}")
             self.logger.info("")
-            self.logger.warning("IMPORTANT: The legacy files still exist for backward compatibility.")
+            self.logger.warning(
+                "IMPORTANT: The legacy files still exist for backward compatibility."
+            )
             self.logger.warning("You can safely delete them after verifying jib works correctly.")
             self.logger.info("")
 
@@ -515,9 +525,9 @@ class ConfigManager:
             with open(self.secrets_file) as f:
                 for line in f:
                     line = line.strip()
-                    if line and not line.startswith('#') and '=' in line:
-                        key, value = line.split('=', 1)
-                        secrets[key.strip()] = value.strip().strip('"\'')
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        secrets[key.strip()] = value.strip().strip("\"'")
         return secrets
 
     def load_config(self) -> dict[str, Any]:
@@ -529,11 +539,13 @@ class ConfigManager:
         if self.config_file.exists():
             try:
                 import yaml
+
                 with open(self.config_file) as f:
                     return yaml.safe_load(f) or {}
             except ImportError:
                 # Fallback to JSON
                 import json
+
                 config_json = self.config_dir / "config.json"
                 if config_json.exists():
                     with open(config_json) as f:
@@ -601,11 +613,13 @@ class ConfigManager:
         """
         try:
             import yaml
+
             self.config_file.write_text(yaml.dump(config, default_flow_style=False))
             self.logger.success(f"Config written to {self.config_file}")
         except ImportError:
             # Fallback to JSON
             import json
+
             config_json = self.config_dir / "config.json"
             config_json.write_text(json.dumps(config, indent=2))
             self.logger.warning(f"PyYAML not available, wrote JSON to {config_json}")
@@ -619,6 +633,7 @@ class ConfigManager:
         """
         try:
             import yaml
+
             repos_config = {
                 "writable_repos": writable,
                 "readable_repos": readable,
@@ -678,10 +693,7 @@ class ServiceManager:
 
         try:
             subprocess.run(
-                ["systemctl", "--user", "daemon-reload"],
-                check=True,
-                capture_output=True,
-                text=True
+                ["systemctl", "--user", "daemon-reload"], check=True, capture_output=True, text=True
             )
             return True
         except subprocess.CalledProcessError as e:
@@ -711,10 +723,11 @@ class ServiceManager:
             self.logger.step(f"Running setup script for {service}")
             result = subprocess.run(
                 ["bash", str(script_path)],
+                check=False,
                 cwd=self.repo_root,
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
             )
             if result.returncode != 0:
                 self.logger.warning(f"Setup script exited with code {result.returncode}")
@@ -744,9 +757,8 @@ class ServiceManager:
             return False
 
         # Run setup script if requested
-        if run_setup:
-            if not self._run_service_setup(service):
-                self.logger.warning(f"Setup script failed for {service}, continuing anyway")
+        if run_setup and not self._run_service_setup(service):
+            self.logger.warning(f"Setup script failed for {service}, continuing anyway")
 
         # Reload daemon to pick up any service file changes
         self._daemon_reload()
@@ -756,13 +768,13 @@ class ServiceManager:
                 ["systemctl", "--user", "enable", service],
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             subprocess.run(
                 ["systemctl", "--user", "start", service],
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             self.logger.success(f"Enabled and started {service}")
             return True
@@ -785,16 +797,13 @@ class ServiceManager:
 
         try:
             subprocess.run(
-                ["systemctl", "--user", "stop", service],
-                check=True,
-                capture_output=True,
-                text=True
+                ["systemctl", "--user", "stop", service], check=True, capture_output=True, text=True
             )
             subprocess.run(
                 ["systemctl", "--user", "disable", service],
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
             self.logger.success(f"Stopped and disabled {service}")
             return True
@@ -883,8 +892,9 @@ class ServiceManager:
             try:
                 active_result = subprocess.run(
                     ["systemctl", "--user", "is-active", service],
+                    check=False,
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
                 active = active_result.stdout.strip()
             except subprocess.CalledProcessError:
@@ -893,10 +903,13 @@ class ServiceManager:
             # Check if enabled
             enabled_result = subprocess.run(
                 ["systemctl", "--user", "is-enabled", service],
+                check=False,
                 capture_output=True,
-                text=True
+                text=True,
             )
-            enabled = enabled_result.stdout.strip() if enabled_result.returncode == 0 else "disabled"
+            enabled = (
+                enabled_result.stdout.strip() if enabled_result.returncode == 0 else "disabled"
+            )
 
             statuses[service] = {
                 "active": active,
@@ -927,7 +940,9 @@ class ServiceManager:
             active_color = Colors.OKGREEN if active == "active" else Colors.FAIL
             enabled_str = "enabled" if enabled == "enabled" else enabled
 
-            status_line = f"  {active_color}{active_indicator}{Colors.ENDC} {service:<40} {enabled_str:>10}"
+            status_line = (
+                f"  {active_color}{active_indicator}{Colors.ENDC} {service:<40} {enabled_str:>10}"
+            )
             print(Colors.strip_if_no_tty(status_line))
 
         # Print LLM services
@@ -941,7 +956,9 @@ class ServiceManager:
             active_color = Colors.OKGREEN if active == "active" else Colors.FAIL
             enabled_str = "enabled" if enabled == "enabled" else enabled
 
-            status_line = f"  {active_color}{active_indicator}{Colors.ENDC} {service:<40} {enabled_str:>10}"
+            status_line = (
+                f"  {active_color}{active_indicator}{Colors.ENDC} {service:<40} {enabled_str:>10}"
+            )
             print(Colors.strip_if_no_tty(status_line))
 
         self.logger.info("")
@@ -951,15 +968,13 @@ def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="jib setup script - Declarative setup architecture",
-        epilog="For more information, see docs/adr/not-implemented/ADR-Declarative-Setup-Architecture.md"
+        epilog="For more information, see docs/adr/not-implemented/ADR-Declarative-Setup-Architecture.md",
     )
 
     # Setup modes
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
-        "--update",
-        action="store_true",
-        help="Update mode: reload configs and restart services"
+        "--update", action="store_true", help="Update mode: reload configs and restart services"
     )
 
     # Service management
@@ -967,50 +982,24 @@ def parse_args() -> argparse.Namespace:
     service_group.add_argument(
         "--enable-services",
         action="store_true",
-        help="Enable all jib systemd services (core + LLM)"
+        help="Enable all jib systemd services (core + LLM)",
     )
     service_group.add_argument(
-        "--enable-core-services",
-        action="store_true",
-        help="Enable only core services (non-LLM)"
+        "--enable-core-services", action="store_true", help="Enable only core services (non-LLM)"
     )
     service_group.add_argument(
-        "--disable-services",
-        action="store_true",
-        help="Disable all jib systemd services"
+        "--disable-services", action="store_true", help="Disable all jib systemd services"
     )
-    service_group.add_argument(
-        "--enable",
-        metavar="SERVICE",
-        help="Enable a specific service"
-    )
-    service_group.add_argument(
-        "--disable",
-        metavar="SERVICE",
-        help="Disable a specific service"
-    )
-    service_group.add_argument(
-        "--status",
-        action="store_true",
-        help="Show status of all services"
-    )
+    service_group.add_argument("--enable", metavar="SERVICE", help="Enable a specific service")
+    service_group.add_argument("--disable", metavar="SERVICE", help="Disable a specific service")
+    service_group.add_argument("--status", action="store_true", help="Show status of all services")
 
     # Other options
     parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force reinstall (overwrite existing configs)"
+        "--force", action="store_true", help="Force reinstall (overwrite existing configs)"
     )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output"
-    )
-    parser.add_argument(
-        "--skip-deps",
-        action="store_true",
-        help="Skip dependency checks"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--skip-deps", action="store_true", help="Skip dependency checks")
 
     return parser.parse_args()
 
@@ -1018,7 +1007,13 @@ def parse_args() -> argparse.Namespace:
 class FullSetup:
     """Handles the full setup flow including Docker, beads, and optional components."""
 
-    def __init__(self, logger: SetupLogger, config_manager: ConfigManager, prompter: UserPrompter, verbose: bool = False):
+    def __init__(
+        self,
+        logger: SetupLogger,
+        config_manager: ConfigManager,
+        prompter: UserPrompter,
+        verbose: bool = False,
+    ):
         self.logger = logger
         self.config_manager = config_manager
         self.prompter = prompter
@@ -1068,9 +1063,7 @@ class FullSetup:
             self.logger.warning("beads (bd) not found")
             self.logger.info("Install from: https://github.com/steveyegge/beads")
 
-            if not self.prompter.prompt_yes_no("Continue without beads?", default=True):
-                return False
-            return True
+            return self.prompter.prompt_yes_no("Continue without beads?", default=True)
 
         # Check if already initialized
         beads_config = self.beads_dir / ".beads" / "issues.jsonl"
@@ -1088,10 +1081,7 @@ class FullSetup:
             # Initialize git (required by beads)
             self.logger.step("Initializing git repository...")
             result = subprocess.run(
-                ["git", "init"],
-                cwd=self.beads_dir,
-                capture_output=True,
-                text=True
+                ["git", "init"], check=False, cwd=self.beads_dir, capture_output=True, text=True
             )
             if result.returncode != 0:
                 self.logger.error(f"Failed to initialize git: {result.stderr}")
@@ -1101,10 +1091,11 @@ class FullSetup:
             self.logger.step("Initializing beads...")
             result = subprocess.run(
                 ["bd", "init"],
+                check=False,
                 cwd=self.beads_dir,
                 input="n\n",  # Say no to git hooks
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if result.returncode != 0:
@@ -1112,13 +1103,16 @@ class FullSetup:
                 return False
 
             self.logger.success(f"Beads initialized: {self.beads_dir}")
-            self.logger.info("Usage in container: bd --allow-stale create 'task description' --labels feature")
+            self.logger.info(
+                "Usage in container: bd --allow-stale create 'task description' --labels feature"
+            )
             return True
 
         except Exception as e:
             self.logger.error(f"Failed to initialize beads: {e}")
             if self.verbose:
                 import traceback
+
                 traceback.print_exc()
             return False
 
@@ -1131,10 +1125,12 @@ class FullSetup:
         self.logger.header("Context Sync Configuration")
 
         # Check for Confluence/JIRA config
-        config = self.config_manager.load_config()
+        self.config_manager.load_config()
         secrets = self.config_manager.load_secrets()
 
-        has_confluence = bool(secrets.get("CONFLUENCE_BASE_URL") and secrets.get("CONFLUENCE_API_TOKEN"))
+        has_confluence = bool(
+            secrets.get("CONFLUENCE_BASE_URL") and secrets.get("CONFLUENCE_API_TOKEN")
+        )
         has_jira = bool(secrets.get("JIRA_BASE_URL") and secrets.get("JIRA_API_TOKEN"))
 
         if has_confluence:
@@ -1145,7 +1141,9 @@ class FullSetup:
         if not has_confluence and not has_jira:
             self.logger.info("No Confluence or JIRA configuration found")
             self.logger.info("Context sync is optional and can be configured later.")
-            if self.prompter.prompt_yes_no("Would you like to configure Confluence/JIRA sync now?", default=False):
+            if self.prompter.prompt_yes_no(
+                "Would you like to configure Confluence/JIRA sync now?", default=False
+            ):
                 return self.prompt_context_sync_config()
             else:
                 self.logger.info("Skipping context sync configuration")
@@ -1166,10 +1164,14 @@ class FullSetup:
         # Confluence
         if self.prompter.prompt_yes_no("Configure Confluence sync?", default=False):
             self.logger.info("\nConfluence Configuration:")
-            base_url = self.prompter.prompt("Confluence Base URL (e.g., https://company.atlassian.net/wiki)")
+            base_url = self.prompter.prompt(
+                "Confluence Base URL (e.g., https://company.atlassian.net/wiki)"
+            )
             username = self.prompter.prompt("Confluence Username/Email")
             api_token = self.prompter.prompt("Confluence API Token", required=True)
-            space_keys = self.prompter.prompt("Space Keys (comma-separated, e.g., ENG,TEAM)", required=False)
+            space_keys = self.prompter.prompt(
+                "Space Keys (comma-separated, e.g., ENG,TEAM)", required=False
+            )
 
             if base_url:
                 secrets["CONFLUENCE_BASE_URL"] = base_url
@@ -1188,8 +1190,7 @@ class FullSetup:
             username = self.prompter.prompt("JIRA Username/Email")
             api_token = self.prompter.prompt("JIRA API Token", required=True)
             jql_query = self.prompter.prompt(
-                "JQL Query (e.g., project = ENG AND status != Done)",
-                default="status != Done"
+                "JQL Query (e.g., project = ENG AND status != Done)", default="status != Done"
             )
 
             if base_url:
@@ -1215,7 +1216,9 @@ class FullSetup:
             True if setup completed successfully, False otherwise
         """
         self.logger.header("Full Setup Mode")
-        self.logger.info("This will set up all components including Docker, beads, and optional features.")
+        self.logger.info(
+            "This will set up all components including Docker, beads, and optional features."
+        )
         self.logger.info("")
 
         try:
@@ -1248,6 +1251,7 @@ class FullSetup:
             self.logger.error(f"\n\nFull setup failed: {e}")
             if self.verbose:
                 import traceback
+
                 traceback.print_exc()
             return False
 
@@ -1255,7 +1259,13 @@ class FullSetup:
 class MinimalSetup:
     """Handles the minimal setup flow."""
 
-    def __init__(self, logger: SetupLogger, config_manager: ConfigManager, prompter: UserPrompter, verbose: bool = False):
+    def __init__(
+        self,
+        logger: SetupLogger,
+        config_manager: ConfigManager,
+        prompter: UserPrompter,
+        verbose: bool = False,
+    ):
         self.logger = logger
         self.config_manager = config_manager
         self.prompter = prompter
@@ -1288,19 +1298,17 @@ class MinimalSetup:
             return False
 
         # Check essential config values
-        if not self.existing_config.get("github_username"):
-            return False
+        return self.existing_config.get("github_username")
 
-        return True
-
-    def detect_github_username(self) -> Optional[str]:
+    def detect_github_username(self) -> str | None:
         """Try to detect GitHub username from gh CLI."""
         try:
             result = subprocess.run(
                 ["gh", "api", "user", "--jq", ".login"],
+                check=False,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -1324,10 +1332,7 @@ class MinimalSetup:
             if self.prompter.prompt_yes_no("Use this username?", default=True):
                 return detected
 
-        return self.prompter.prompt(
-            "Enter your GitHub username",
-            required=True
-        )
+        return self.prompter.prompt("Enter your GitHub username", required=True)
 
     def prompt_bot_name(self) -> str:
         """Prompt for bot name."""
@@ -1337,11 +1342,7 @@ class MinimalSetup:
             self.logger.success(f"Using existing bot name: {existing}")
             return existing
 
-        return self.prompter.prompt(
-            "Bot name",
-            default="james-in-a-box",
-            required=True
-        )
+        return self.prompter.prompt("Bot name", default="james-in-a-box", required=True)
 
     def validate_slack_token(self, token: str, prefix: str):
         """Validate Slack token has correct prefix."""
@@ -1374,7 +1375,7 @@ class MinimalSetup:
             bot_token = self.prompter.prompt(
                 "Slack Bot Token (xoxb-...)",
                 required=True,
-                validator=lambda t: self.validate_slack_token(t, "xoxb-")
+                validator=lambda t: self.validate_slack_token(t, "xoxb-"),
             )
             secrets["SLACK_TOKEN"] = bot_token
 
@@ -1385,7 +1386,7 @@ class MinimalSetup:
             app_token = self.prompter.prompt(
                 "Slack App Token (xapp-...)",
                 required=True,
-                validator=lambda t: self.validate_slack_token(t, "xapp-")
+                validator=lambda t: self.validate_slack_token(t, "xapp-"),
             )
             secrets["SLACK_APP_TOKEN"] = app_token
 
@@ -1397,10 +1398,9 @@ class MinimalSetup:
 
         # Check if GitHub auth already exists
         has_github_token = "GITHUB_TOKEN" in self.existing_secrets
-        has_github_app = (
-            (self.config_manager.config_dir / "github-app-id").exists()
-            and (self.config_manager.config_dir / "github-app-private-key.pem").exists()
-        )
+        has_github_app = (self.config_manager.config_dir / "github-app-id").exists() and (
+            self.config_manager.config_dir / "github-app-private-key.pem"
+        ).exists()
 
         if has_github_token or has_github_app:
             if has_github_app:
@@ -1417,7 +1417,9 @@ class MinimalSetup:
 
         self.logger.header("GitHub Authentication")
         self.logger.info("Choose authentication method:")
-        self.logger.info("  1. GitHub App (recommended for team usage, REQUIRED for PR check status)")
+        self.logger.info(
+            "  1. GitHub App (recommended for team usage, REQUIRED for PR check status)"
+        )
         self.logger.info("  2. Personal Access Token (simpler for personal use)")
         self.logger.info("")
         self.logger.info("Note: GitHub App is required to read PR check run status.")
@@ -1427,7 +1429,7 @@ class MinimalSetup:
         choice = self.prompter.prompt(
             "Choose authentication method [1/2]",
             default="2",
-            validator=lambda c: None if c in ["1", "2"] else ValueError("Choose 1 or 2")
+            validator=lambda c: None if c in ["1", "2"] else ValueError("Choose 1 or 2"),
         )
 
         if choice == "1":
@@ -1439,10 +1441,7 @@ class MinimalSetup:
 
             app_id = self.prompter.prompt("GitHub App ID", required=True)
             installation_id = self.prompter.prompt("GitHub App Installation ID", required=True)
-            private_key_path = self.prompter.prompt(
-                "Path to private key file",
-                required=True
-            )
+            private_key_path = self.prompter.prompt("Path to private key file", required=True)
 
             # Read and store private key
             try:
@@ -1453,7 +1452,9 @@ class MinimalSetup:
 
                 # Create GitHub App config files
                 gh_app_id_file = self.config_manager.config_dir / "github-app-id"
-                gh_app_installation_file = self.config_manager.config_dir / "github-app-installation-id"
+                gh_app_installation_file = (
+                    self.config_manager.config_dir / "github-app-installation-id"
+                )
                 gh_app_key_file = self.config_manager.config_dir / "github-app-private-key.pem"
 
                 gh_app_id_file.write_text(app_id)
@@ -1476,27 +1477,38 @@ class MinimalSetup:
             self.logger.info("\nPersonal Access Token Configuration")
             self.logger.info("Create a token at: https://github.com/settings/tokens")
             self.logger.info("")
-            self.logger.info("For writable repositories, create a token with READ/WRITE permissions:")
+            self.logger.info(
+                "For writable repositories, create a token with READ/WRITE permissions:"
+            )
             self.logger.info("  Required scopes: repo (full), workflow")
             self.logger.info("")
 
             token = self.prompter.prompt(
                 "GitHub Personal Access Token (ghp_...)",
                 required=True,
-                validator=lambda t: None if t.startswith("ghp_") else ValueError("Token must start with 'ghp_'")
+                validator=lambda t: None
+                if t.startswith("ghp_")
+                else ValueError("Token must start with 'ghp_'"),
             )
 
             secrets["GITHUB_TOKEN"] = token
 
             # Optionally prompt for read-only token
             self.logger.info("")
-            if self.prompter.prompt_yes_no("Do you have a separate read-only token for monitoring external repos?", default=False):
-                self.logger.info("\nFor read-only repositories, create a token with READ-ONLY permissions:")
+            if self.prompter.prompt_yes_no(
+                "Do you have a separate read-only token for monitoring external repos?",
+                default=False,
+            ):
+                self.logger.info(
+                    "\nFor read-only repositories, create a token with READ-ONLY permissions:"
+                )
                 self.logger.info("  Required scopes: repo (read-only)")
                 self.logger.info("")
                 readonly_token = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...)",
-                    validator=lambda t: None if t.startswith("ghp_") else ValueError("Token must start with 'ghp_'")
+                    validator=lambda t: None
+                    if t.startswith("ghp_")
+                    else ValueError("Token must start with 'ghp_'"),
                 )
                 if readonly_token:
                     secrets["GITHUB_READONLY_TOKEN"] = readonly_token
@@ -1543,7 +1555,9 @@ class MinimalSetup:
 
         channel_id = self.prompter.prompt(
             "Slack channel ID (starts with D, C, or G)",
-            validator=lambda c: None if c and c[0] in ['D', 'C', 'G'] else ValueError("Channel ID must start with D, C, or G")
+            validator=lambda c: None
+            if c and c[0] in ["D", "C", "G"]
+            else ValueError("Channel ID must start with D, C, or G"),
         )
 
         return channel_id if channel_id else ""
@@ -1556,7 +1570,9 @@ class MinimalSetup:
 
         user_id = self.prompter.prompt(
             "Your Slack user ID (starts with U)",
-            validator=lambda u: None if u and u.startswith('U') else ValueError("User ID must start with U")
+            validator=lambda u: None
+            if u and u.startswith("U")
+            else ValueError("User ID must start with U"),
         )
 
         return user_id if user_id else ""
@@ -1577,7 +1593,9 @@ class MinimalSetup:
             self.logger.info("")
             self.logger.info("All essential settings are already configured:")
             self.logger.info(f"  - GitHub username: {self.existing_config.get('github_username')}")
-            self.logger.info(f"  - Bot name: {self.existing_config.get('bot_name', 'james-in-a-box')}")
+            self.logger.info(
+                f"  - Bot name: {self.existing_config.get('bot_name', 'james-in-a-box')}"
+            )
             self.logger.info("  - Slack tokens: ✓")
             self.logger.info("  - GitHub authentication: ✓")
             self.logger.info("")
@@ -1650,6 +1668,7 @@ class MinimalSetup:
             self.logger.error(f"\n\nSetup failed: {e}")
             if self.verbose:
                 import traceback
+
                 traceback.print_exc()
             return False
 
@@ -1663,7 +1682,14 @@ def main():
     logger.header("🤖 jib Setup - Declarative Setup Architecture")
 
     # Handle service-only operations (no setup required)
-    if args.enable_services or args.enable_core_services or args.disable_services or args.enable or args.disable or args.status:
+    if (
+        args.enable_services
+        or args.enable_core_services
+        or args.disable_services
+        or args.enable
+        or args.disable
+        or args.status
+    ):
         service_manager = ServiceManager(logger)
 
         if args.enable_services:
@@ -1711,9 +1737,9 @@ def main():
     success = full_setup.run()
 
     if success:
-        logger.info("\n" + "="*60)
+        logger.info("\n" + "=" * 60)
         logger.success("Setup completed successfully!")
-        logger.info("="*60)
+        logger.info("=" * 60)
         sys.exit(0)
     else:
         sys.exit(1)

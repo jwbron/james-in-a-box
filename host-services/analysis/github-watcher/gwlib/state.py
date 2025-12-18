@@ -3,11 +3,11 @@
 
 import json
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from jib_logging import get_logger
+
 
 logger = get_logger("github-state")
 
@@ -17,7 +17,7 @@ STATE_FILE = STATE_DIR / "state.json"
 
 def utc_now_iso() -> str:
     """Get current UTC time in ISO format with Z suffix."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def load_state() -> dict:

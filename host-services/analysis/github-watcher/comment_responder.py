@@ -14,18 +14,19 @@ Runs as part of the github-watcher dispatcher.
 import sys
 from pathlib import Path
 
+
 # Add project paths
 _project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(_project_root / "shared"))
 sys.path.insert(0, str(_project_root))
-
-from jib_logging import ContextScope, get_logger
 
 from gwlib.config import load_config
 from gwlib.detection import check_pr_for_comments, check_pr_for_review_response, is_jib_engaged
 from gwlib.github_api import check_gh_auth, gh_json
 from gwlib.state import ThreadSafeState, load_state, save_state, utc_now_iso
 from gwlib.tasks import JibTask, execute_tasks_parallel
+from jib_logging import ContextScope, get_logger
+
 
 logger = get_logger("comment-responder")
 
@@ -53,8 +54,16 @@ def collect_comment_tasks(
 
     # Fetch all open PRs
     all_prs = gh_json(
-        ["pr", "list", "--repo", repo, "--state", "open", "--json",
-         "number,title,url,headRefName,baseRefName,headRefOid,author,assignees"],
+        [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,url,headRefName,baseRefName,headRefOid,author,assignees",
+        ],
         repo=repo,
     )
 
@@ -83,29 +92,37 @@ def collect_comment_tasks(
             continue
 
         # Check for comments
-        comment_ctx = check_pr_for_comments(repo, pr, state, bot_username, github_username, since_timestamp)
+        comment_ctx = check_pr_for_comments(
+            repo, pr, state, bot_username, github_username, since_timestamp
+        )
         if comment_ctx:
-            tasks.append(JibTask(
-                task_type="comment",
-                context=comment_ctx,
-                signature_key="processed_comments",
-                signature_value=comment_ctx["comment_signature"],
-                is_readonly=False,
-            ))
+            tasks.append(
+                JibTask(
+                    task_type="comment",
+                    context=comment_ctx,
+                    signature_key="processed_comments",
+                    signature_value=comment_ctx["comment_signature"],
+                    is_readonly=False,
+                )
+            )
 
         # Check for review responses (only on bot's PRs)
         author = pr.get("author", {}).get("login", "").lower()
         bot_variants = {bot_username.lower(), f"{bot_username.lower()}[bot]"}
         if author in bot_variants:
-            review_ctx = check_pr_for_review_response(repo, pr, state, bot_username, github_username, since_timestamp)
+            review_ctx = check_pr_for_review_response(
+                repo, pr, state, bot_username, github_username, since_timestamp
+            )
             if review_ctx:
-                tasks.append(JibTask(
-                    task_type="pr_review_response",
-                    context=review_ctx,
-                    signature_key="processed_review_responses",
-                    signature_value=review_ctx["review_response_signature"],
-                    is_readonly=False,
-                ))
+                tasks.append(
+                    JibTask(
+                        task_type="pr_review_response",
+                        context=review_ctx,
+                        signature_key="processed_review_responses",
+                        signature_value=review_ctx["review_response_signature"],
+                        is_readonly=False,
+                    )
+                )
 
     return tasks
 
@@ -134,7 +151,9 @@ def main() -> int:
 
     for repo in writable_repos:
         with ContextScope(repository=repo, service="comment-responder"):
-            tasks = collect_comment_tasks(repo, state, github_username, bot_username, since_timestamp)
+            tasks = collect_comment_tasks(
+                repo, state, github_username, bot_username, since_timestamp
+            )
             all_tasks.extend(tasks)
 
     if all_tasks:

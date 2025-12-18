@@ -16,6 +16,7 @@ from pathlib import Path
 from llm.claude.config import ClaudeConfig
 from llm.result import AgentResult
 
+
 logger = logging.getLogger(__name__)
 
 # Default model for jib-container agents

@@ -16,17 +16,18 @@ Runs as part of the github-watcher dispatcher.
 import sys
 from pathlib import Path
 
+
 _project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(_project_root / "shared"))
 sys.path.insert(0, str(_project_root))
-
-from jib_logging import ContextScope, get_logger
 
 from gwlib.config import load_config, should_disable_auto_fix
 from gwlib.detection import check_pr_for_failures, check_pr_for_merge_conflict
 from gwlib.github_api import check_gh_auth, gh_json
 from gwlib.state import ThreadSafeState, load_state, save_state, utc_now_iso
 from gwlib.tasks import JibTask, execute_tasks_parallel
+from jib_logging import ContextScope, get_logger
+
 
 logger = get_logger("ci-fixer")
 
@@ -59,8 +60,16 @@ def collect_fix_tasks(
 
     # Fetch all open PRs
     all_prs = gh_json(
-        ["pr", "list", "--repo", repo, "--state", "open", "--json",
-         "number,title,url,headRefName,baseRefName,headRefOid,author"],
+        [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--json",
+            "number,title,url,headRefName,baseRefName,headRefOid,author",
+        ],
         repo=repo,
     )
 
@@ -69,16 +78,21 @@ def collect_fix_tasks(
         return tasks
 
     # Filter to PRs authored by bot or configured user
-    bot_variants = {bot_username.lower(), f"{bot_username.lower()}[bot]", f"app/{bot_username.lower()}"}
+    bot_variants = {
+        bot_username.lower(),
+        f"{bot_username.lower()}[bot]",
+        f"app/{bot_username.lower()}",
+    }
     allowed_authors = bot_variants | {github_username.lower()}
 
     eligible_prs = [
-        p for p in all_prs
-        if p.get("author", {}).get("login", "").lower() in allowed_authors
+        p for p in all_prs if p.get("author", {}).get("login", "").lower() in allowed_authors
     ]
 
     if not eligible_prs:
-        logger.debug("No PRs from bot or user", bot_username=bot_username, github_username=github_username)
+        logger.debug(
+            "No PRs from bot or user", bot_username=bot_username, github_username=github_username
+        )
         return tasks
 
     logger.info("Found eligible PRs for CI/conflict monitoring", count=len(eligible_prs))
@@ -87,24 +101,28 @@ def collect_fix_tasks(
         # Check for failures
         failure_ctx = check_pr_for_failures(repo, pr, state)
         if failure_ctx:
-            tasks.append(JibTask(
-                task_type="check_failure",
-                context=failure_ctx,
-                signature_key="processed_failures",
-                signature_value=failure_ctx["failure_signature"],
-                is_readonly=False,
-            ))
+            tasks.append(
+                JibTask(
+                    task_type="check_failure",
+                    context=failure_ctx,
+                    signature_key="processed_failures",
+                    signature_value=failure_ctx["failure_signature"],
+                    is_readonly=False,
+                )
+            )
 
         # Check for merge conflicts
         conflict_ctx = check_pr_for_merge_conflict(repo, pr, state)
         if conflict_ctx:
-            tasks.append(JibTask(
-                task_type="merge_conflict",
-                context=conflict_ctx,
-                signature_key="processed_conflicts",
-                signature_value=conflict_ctx["conflict_signature"],
-                is_readonly=False,
-            ))
+            tasks.append(
+                JibTask(
+                    task_type="merge_conflict",
+                    context=conflict_ctx,
+                    signature_key="processed_conflicts",
+                    signature_value=conflict_ctx["conflict_signature"],
+                    is_readonly=False,
+                )
+            )
 
     return tasks
 

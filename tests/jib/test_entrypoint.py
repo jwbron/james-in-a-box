@@ -11,15 +11,11 @@ Note: Most setup functions require root and container environment,
 so we focus on testing logic that can be unit tested.
 """
 
-import json
 import os
-import subprocess
 import sys
-from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Load the entrypoint module
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "jib-container"))
@@ -203,7 +199,7 @@ class TestRunCmd:
         """Test command execution with output capture."""
         mock_run.return_value = MagicMock(returncode=0, stdout="output")
 
-        result = entrypoint.run_cmd(["cat", "file"], capture=True)
+        entrypoint.run_cmd(["cat", "file"], capture=True)
 
         mock_run.assert_called_once()
         call_kwargs = mock_run.call_args[1]
@@ -349,7 +345,9 @@ class TestFixRepoConfig:
         mock_run_cmd.side_effect = [
             MagicMock(returncode=0),  # set user.name
             MagicMock(returncode=0),  # set user.email
-            MagicMock(returncode=0, stdout="https://x-access-token:ghp_xxx@github.com/owner/repo.git"),  # get URL
+            MagicMock(
+                returncode=0, stdout="https://x-access-token:ghp_xxx@github.com/owner/repo.git"
+            ),  # get URL
             MagicMock(returncode=0),  # set cleaned URL
         ]
 
@@ -358,7 +356,9 @@ class TestFixRepoConfig:
 
         # Check that the URL was cleaned
         calls = mock_run_cmd.call_args_list
-        set_url_calls = [c for c in calls if "remote.origin.url" in str(c) and "https://github.com" in str(c)]
+        set_url_calls = [
+            c for c in calls if "remote.origin.url" in str(c) and "https://github.com" in str(c)
+        ]
         assert len(set_url_calls) == 1
 
     @patch.object(entrypoint, "run_cmd")
@@ -544,4 +544,3 @@ class TestSetupBeads:
         # Check symlink was created
         beads_link = user_home / "beads"
         assert beads_link.is_symlink()
-

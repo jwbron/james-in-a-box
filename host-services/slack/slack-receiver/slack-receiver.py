@@ -878,6 +878,7 @@ class SlackReceiver:
         if thread_ts:
             # Try to extract notification timestamp from the current message
             import re
+
             timestamp_pattern = r"\b\d{8}-\d{6}\b"
             match = re.search(timestamp_pattern, text)
             if match:
