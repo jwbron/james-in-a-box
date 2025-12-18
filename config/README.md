@@ -2,8 +2,8 @@
 
 Configuration for james-in-a-box (jib). There are two types of config:
 
-1. **In-repo configs** (this directory) - Version-controlled, non-secret settings
-2. **Host configs** (`~/.config/jib/`) - User-specific settings and secrets
+1. **In-repo configs** (this directory) - Version-controlled templates and non-secret settings
+2. **Host configs** (`~/.config/jib/`) - User-specific settings, secrets, and repository access
 
 ## Host Configuration (Consolidated)
 
@@ -14,7 +14,7 @@ All host-side configuration is consolidated under `~/.config/jib/`:
 ├── config.yaml        # Non-secret settings (Slack channel, sync intervals, etc.)
 ├── secrets.env        # All secrets (Slack, GitHub, Confluence, JIRA tokens)
 ├── github-token       # GitHub token (dedicated file)
-└── repositories.yaml  # Repository access configuration (copied from repo)
+└── repositories.yaml  # Repository access configuration (created by setup.py)
 ```
 
 **Migration from legacy locations:**
@@ -63,7 +63,10 @@ Using a separate read-only token provides security benefits. See [GitHub Integra
 
 **Single source of truth** for which GitHub repositories jib has read/write access to.
 
-This file is copied to `~/.config/jib/repositories.yaml` during setup.
+**Location:** `~/.config/jib/repositories.yaml` (created by `./setup.py`)
+
+This file is **not checked into the repo** because it contains user-specific configuration.
+See `config/repositories.yaml.example` for the template with all available options.
 
 This file controls:
 - Which repos jib can respond to comments on
@@ -71,13 +74,14 @@ This file controls:
 - Which repos jib can create PRs in
 - Default reviewer for PRs
 - GitHub sync configuration
+- Docker container extra packages
 
 **Usage:**
 - Python: `from config.repo_config import get_writable_repos, is_writable_repo`
 - CLI: `python config/repo_config.py --list-writable`
 
 **To add a new repo with write access:**
-1. Edit `repositories.yaml` and add to `writable_repos` list
+1. Edit `~/.config/jib/repositories.yaml` and add to `writable_repos` list
 2. Reload github-sync service: `systemctl --user daemon-reload && systemctl --user restart github-sync.timer`
 
 ## context-filters.yaml

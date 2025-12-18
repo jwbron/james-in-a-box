@@ -160,10 +160,10 @@ class Config:
     CONFIG_FILE = CONFIG_DIR / "mounts.conf"
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
     USER_CONFIG_DIR = Path.home() / ".config" / "jib"  # User config (secrets, preferences)
+    REPOS_CONFIG_FILE = USER_CONFIG_DIR / "repositories.yaml"
     GITHUB_TOKEN_FILE = USER_CONFIG_DIR / "github-token"
     IMAGE_NAME = "james-in-a-box"
     CONTAINER_NAME = "jib"
-    KHAN_SOURCE = Path.home() / "khan"
     # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
     TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
@@ -171,7 +171,7 @@ class Config:
     WORKTREE_BASE = Path.home() / ".jib-worktrees"
 
     # Note: Each container gets its own worktree to isolate changes
-    # Host repos (~/khan/) stay clean while containers work independently
+    # Host repos stay clean while containers work independently
 
     # Directories that are dangerous to mount (contain credentials)
     DANGEROUS_DIRS = [
@@ -184,6 +184,41 @@ class Config:
         Path.home() / ".gnupg",
         Path.home() / ".docker",
     ]
+
+
+def get_local_repos() -> List[Path]:
+    """Load local repository paths from configuration.
+
+    Reads from ~/.config/jib/repositories.yaml and returns the list of
+    configured local repository paths.
+
+    Returns:
+        List of Path objects for configured local repositories
+    """
+    if not Config.REPOS_CONFIG_FILE.exists():
+        return []
+
+    try:
+        import yaml
+        with open(Config.REPOS_CONFIG_FILE) as f:
+            config = yaml.safe_load(f) or {}
+
+        local_repos_config = config.get("local_repos", {})
+        paths = local_repos_config.get("paths", []) if isinstance(local_repos_config, dict) else []
+
+        # Convert to Path objects and filter existing directories
+        result = []
+        for path_str in paths:
+            path = Path(path_str).expanduser().resolve()
+            if path.exists() and path.is_dir():
+                result.append(path)
+        return result
+    except ImportError:
+        warn("PyYAML not installed, cannot load repository config")
+        return []
+    except Exception as e:
+        warn(f"Failed to load repository config: {e}")
+        return []
 
 
 def get_platform() -> str:
@@ -1235,7 +1270,7 @@ def _release_git_lock(fd: int) -> None:
 
 
 def create_worktrees(container_id: str) -> dict:
-    """Create git worktrees for all repos in ~/khan/
+    """Create git worktrees for all configured local repositories.
 
     Worktrees are always based on the default branch (main or master),
     regardless of what branch is currently checked out on the host.
@@ -1244,26 +1279,29 @@ def create_worktrees(container_id: str) -> dict:
     containers try to create worktrees simultaneously.
 
     Returns:
-        Dictionary mapping repo names to worktree paths
+        Dictionary mapping repo paths to (worktree_path, repo_name) tuples
     """
     worktree_dir = Config.WORKTREE_BASE / container_id
     worktree_dir.mkdir(parents=True, exist_ok=True)
 
     worktrees = {}
 
-    if not Config.KHAN_SOURCE.exists():
-        warn(f"Khan source directory not found: {Config.KHAN_SOURCE}")
+    # Get configured local repositories
+    local_repos = get_local_repos()
+    if not local_repos:
+        if not _quiet_mode:
+            info("No local repositories configured. Run ./setup.py to add repositories.")
         return worktrees
 
-    # Iterate through all repos in ~/khan/
-    for repo_path in Config.KHAN_SOURCE.iterdir():
+    # Iterate through configured repos
+    for repo_path in local_repos:
         if not repo_path.is_dir():
             continue
 
-        # Check if it's a git repository with a .git DIRECTORY
-        # If .git is a file, the host repo is itself a worktree, which is unsupported
+        # Check if it's a git repository with a .git DIRECTORY or file
         git_dir = repo_path / ".git"
         if not git_dir.exists():
+            warn(f"  ✗ {repo_path.name} is not a git repository, skipping")
             continue
 
         repo_name = repo_path.name
@@ -1297,7 +1335,8 @@ def create_worktrees(container_id: str) -> dict:
             )
 
             if result.returncode == 0:
-                worktrees[repo_name] = worktree_path
+                # Store both worktree path and original repo path for cleanup
+                worktrees[repo_name] = {"worktree": worktree_path, "source": repo_path}
                 if not _quiet_mode:
                     success(f"  ✓ {repo_name} -> {worktree_path}")
             else:
@@ -1327,6 +1366,10 @@ def cleanup_worktrees(container_id: str) -> None:
     if not _quiet_mode:
         info(f"Cleaning up worktrees for {container_id}...")
 
+    # Get configured local repositories for cleanup
+    local_repos = get_local_repos()
+    local_repos_by_name = {repo.name: repo for repo in local_repos}
+
     # Collect repos and their worktree admin directories
     # We need to forcibly remove admin dirs because container modified .git files
     # to point to container-only paths, which breaks git worktree prune
@@ -1334,8 +1377,8 @@ def cleanup_worktrees(container_id: str) -> None:
     for worktree_path in worktree_dir.iterdir():
         if worktree_path.is_dir():
             repo_name = worktree_path.name
-            original_repo = Config.KHAN_SOURCE / repo_name
-            if original_repo.exists():
+            original_repo = local_repos_by_name.get(repo_name)
+            if original_repo and original_repo.exists():
                 # Find the admin directory name from the worktree's .git file
                 git_file = worktree_path / ".git"
                 if git_file.is_file():
@@ -1407,7 +1450,7 @@ def setup() -> bool:
     print("  • Human: Reviews, approves, deploys")
     print()
     print("AGENT CAPABILITIES:")
-    print("  ✓ Edit code and create commits in ~/khan/")
+    print("  ✓ Edit code and create commits in ~/repos/")
     print("  ✓ Run tests, linters, development servers")
     print("  ✓ Access Confluence docs (ADRs, runbooks, best practices)")
     print("  ✓ Create pull requests with @create-pr command")
@@ -1420,9 +1463,9 @@ def setup() -> bool:
     print("  ✗ NO access to GSM secrets")
     print()
     print("HOW IT WORKS:")
-    print("  1. Your ~/khan is MOUNTED into the container as ~/khan (read-write)")
-    print("  2. Changes in container = changes on host (same files)")
-    print("  3. Agent works on code, creates commits")
+    print("  1. Your local repos are mounted into the container as ~/repos/")
+    print("  2. Git worktrees isolate container changes from your working directory")
+    print("  3. Agent works on code, creates commits in worktrees")
     print("  4. YOU review commits and push from host (with credentials)")
     print()
     print("FUTURE CAPABILITIES (Roadmap):")
@@ -1444,17 +1487,19 @@ def setup() -> bool:
     Config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     mounts = []
 
-    # Khan directory - mount READ-WRITE so agent can work directly
-    if Config.KHAN_SOURCE.exists():
-        khan_container_path = f"/home/{os.environ['USER']}/khan"
-        # Mount as read-write with SELinux relabeling
-        mounts.append(f"{Config.KHAN_SOURCE}:{khan_container_path}:rw,z")
-        info(f"Khan workspace: {Config.KHAN_SOURCE}")
-        print(f"    Mounted as: ~/khan/ (READ-WRITE, SELinux relabeled)")
-        print(f"    Purpose: Agent works directly on code, makes commits")
-        print(f"    Changes: Agent modifies files in place - you review and push")
+    # Check for configured local repositories
+    local_repos = get_local_repos()
+    if local_repos:
+        info(f"Found {len(local_repos)} configured local repository(ies):")
+        for repo in local_repos:
+            print(f"    • {repo}")
+        print()
+        print("    These will be mounted as ~/repos/<repo-name>/ with git worktrees")
+        print("    for isolated development.")
     else:
-        warn(f"{Config.KHAN_SOURCE} not found - workspace will not be available")
+        warn("No local repositories configured.")
+        print("    Run ./setup.py to configure local repositories.")
+        print("    These will be mounted as ~/repos/<repo-name>/")
 
     # Add context-sync directory (read-only) - includes Confluence, JIRA, and more
     print()
@@ -1681,52 +1726,59 @@ def run_claude() -> bool:
     if _quiet_mode:
         status("Configuring mounts...")
     mount_args = []
-    mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
-    for mount in mounts:
-        if not mount:
-            continue
-        parts = mount.rsplit(":", 2)  # Split from right, max 2 splits
 
-        if len(parts) == 2:
-            # Old format: path:mode
-            mount_path, mode = parts
-            container_path = mount_path
-        elif len(parts) == 3:
-            # New format: host_path:container_path:mode
-            mount_path, container_path, mode = parts
-        else:
-            warn(f"Invalid mount format: {mount}")
-            continue
+    # Build set of container paths that worktrees will use (to avoid duplicates)
+    worktree_container_paths = set()
+    for repo_name in worktrees:
+        worktree_container_paths.add(f"/home/{os.environ['USER']}/repos/{repo_name}")
 
-        # Check if this is a khan repo mount - replace with worktree
-        if Config.KHAN_SOURCE and mount_path.startswith(str(Config.KHAN_SOURCE)):
-            # This is a khan repo - skip it, we'll add worktrees instead
-            continue
+    if Config.CONFIG_FILE.exists():
+        mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
+        for mount in mounts:
+            if not mount:
+                continue
+            parts = mount.rsplit(":", 2)  # Split from right, max 2 splits
 
-        # Ensure SELinux label is present (add if missing for backwards compatibility)
-        if not mode.endswith(",z") and not mode.endswith(":z"):
-            mode = f"{mode},z"
+            if len(parts) == 2:
+                # Old format: path:mode
+                mount_path, mode = parts
+                container_path = mount_path
+            elif len(parts) == 3:
+                # New format: host_path:container_path:mode
+                mount_path, container_path, mode = parts
+            else:
+                warn(f"Invalid mount format: {mount}")
+                continue
 
-        mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
-        if not _quiet_mode:
-            mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
-            display_path = container_path if container_path != mount_path else mount_path
-            print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
+            # Skip mounts that would conflict with worktree mounts
+            # This handles migration from old direct repo mounts to worktrees
+            if container_path in worktree_container_paths:
+                if not _quiet_mode:
+                    info(f"  Skipping {container_path} (using worktree instead)")
+                continue
 
-    # Add worktree mounts
-    # Also track which main repos need their .git directories mounted
-    main_repos_needed = set()
-    for repo_name, worktree_path in worktrees.items():
-        container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
+            # Ensure SELinux label is present (add if missing for backwards compatibility)
+            if not mode.endswith(",z") and not mode.endswith(":z"):
+                mode = f"{mode},z"
+
+            mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
+            if not _quiet_mode:
+                mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
+                display_path = container_path if container_path != mount_path else mount_path
+                print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
+
+    # Add worktree mounts for configured local repositories
+    # worktrees dict has structure: {repo_name: {"worktree": path, "source": path}}
+    for repo_name, repo_info in worktrees.items():
+        worktree_path = repo_info["worktree"]
+        source_path = repo_info["source"]
+        container_path = f"/home/{os.environ['USER']}/repos/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         if not _quiet_mode:
-            print(f"  • ~/khan/{repo_name} (WORKTREE, isolated from host)")
-        main_repos_needed.add(repo_name)
+            print(f"  • ~/repos/{repo_name} (WORKTREE, isolated from host)")
 
-    # Mount main repo .git directories (read-write) so worktrees can commit changes
-    for repo_name in main_repos_needed:
-        main_repo = Config.KHAN_SOURCE / repo_name
-        git_path = main_repo / ".git"
+        # Mount main repo .git directories (read-write) so worktrees can commit changes
+        git_path = source_path / ".git"
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
@@ -1953,44 +2005,50 @@ def exec_in_new_container(
 
     # Parse mount configuration
     mount_args = []
-    mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
 
-    for mount in mounts:
-        if not mount:
-            continue
-        parts = mount.rsplit(":", 2)
+    # Build set of container paths that worktrees will use (to avoid duplicates)
+    worktree_container_paths = set()
+    for repo_name in worktrees:
+        worktree_container_paths.add(f"/home/{os.environ['USER']}/repos/{repo_name}")
 
-        if len(parts) == 2:
-            mount_path, mode = parts
-            container_path = mount_path
-        elif len(parts) == 3:
-            mount_path, container_path, mode = parts
-        else:
-            warn(f"Invalid mount format: {mount}")
-            continue
+    if Config.CONFIG_FILE.exists():
+        mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
 
-        # Check if this is a khan repo mount - skip it, we'll add worktrees instead
-        if Config.KHAN_SOURCE and mount_path.startswith(str(Config.KHAN_SOURCE)):
-            continue
+        for mount in mounts:
+            if not mount:
+                continue
+            parts = mount.rsplit(":", 2)
 
-        # Ensure SELinux label
-        if not mode.endswith(",z") and not mode.endswith(":z"):
-            mode = f"{mode},z"
+            if len(parts) == 2:
+                mount_path, mode = parts
+                container_path = mount_path
+            elif len(parts) == 3:
+                mount_path, container_path, mode = parts
+            else:
+                warn(f"Invalid mount format: {mount}")
+                continue
 
-        mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
+            # Skip mounts that would conflict with worktree mounts
+            if container_path in worktree_container_paths:
+                continue
 
-    # Add worktree mounts
-    main_repos_needed = set()
-    for repo_name, worktree_path in worktrees.items():
-        container_path = f"/home/{os.environ['USER']}/khan/{repo_name}"
+            # Ensure SELinux label
+            if not mode.endswith(",z") and not mode.endswith(":z"):
+                mode = f"{mode},z"
+
+            mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
+
+    # Add worktree mounts for configured local repositories
+    # worktrees dict has structure: {repo_name: {"worktree": path, "source": path}}
+    for repo_name, repo_info in worktrees.items():
+        worktree_path = repo_info["worktree"]
+        source_path = repo_info["source"]
+        container_path = f"/home/{os.environ['USER']}/repos/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
-        print(f"  • ~/khan/{repo_name} (WORKTREE, isolated)")
-        main_repos_needed.add(repo_name)
+        print(f"  • ~/repos/{repo_name} (WORKTREE, isolated)")
 
-    # Mount main repo .git directories (read-write) so worktrees can commit changes
-    for repo_name in main_repos_needed:
-        main_repo = Config.KHAN_SOURCE / repo_name
-        git_path = main_repo / ".git"
+        # Mount main repo .git directories (read-write) so worktrees can commit changes
+        git_path = source_path / ".git"
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
             git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"

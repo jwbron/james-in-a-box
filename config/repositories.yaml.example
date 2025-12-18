@@ -1,5 +1,8 @@
 # Repository Configuration for james-in-a-box (jib)
 #
+# This is a TEMPLATE file. Copy to ~/.config/jib/repositories.yaml and customize.
+# Or run ./setup.py which will create this file interactively.
+#
 # This file is the SINGLE SOURCE OF TRUTH for which repositories jib has
 # read/write access to. All components should import this config rather than
 # hardcoding repository names.
@@ -11,13 +14,10 @@
 #
 # Access Levels:
 # - writable: jib can respond to comments, push changes, create PRs
-# - readable: jib can sync and analyze but not modify (future)
-#
-# IMPORTANT: Run `setup.sh` to configure these values interactively.
-# The github_username is used to construct repo names and set the default reviewer.
+# - readable: jib can sync and analyze but not modify
 
-# Your GitHub username (set by setup.sh)
-github_username: jwbron
+# Your GitHub username (set by setup.py)
+github_username: YOUR_USERNAME
 
 # Bot username - the bot's GitHub identity for filtering out its own comments
 # Comments from this user are ignored (so the bot doesn't respond to itself)
@@ -30,11 +30,12 @@ bot_username: james-in-a-box
 # - Create PRs via gh CLI
 # - Implement fixes for failed CI checks
 writable_repos:
-  - jwbron/james-in-a-box
-  - jwbron/collaborative-development-framework
+  - YOUR_USERNAME/james-in-a-box
+  # Add more repos as needed:
+  # - YOUR_USERNAME/other-repo
 
 # Default reviewer for PRs created by jib (defaults to github_username)
-default_reviewer: james-in-a-box
+default_reviewer: YOUR_USERNAME
 
 # GitHub sync configuration
 github_sync:
@@ -56,7 +57,7 @@ github_sync:
 # - Analysis and feedback on code
 # - Comments and suggestions (sent to user, not posted to GitHub)
 #
-# Authentication: Uses GITHUB_TOKEN (PAT) - no GitHub App needed for read-only
+# Authentication: Uses GITHUB_READONLY_TOKEN (PAT) - no GitHub App needed for read-only
 readable_repos:
   # Add repos you want to monitor but not modify here
   # Example: - some-org/some-repo
@@ -67,13 +68,33 @@ readable_repos:
 #   - restrict_to_configured_users: Only auto-respond to comments/PRs from
 #     bot_username or github_username (ignores external contributors)
 #     Default: false (respond to all users)
+#   - disable_auto_fix: Don't automatically attempt to fix failing CI checks
+#     Default: false (auto-fix enabled)
 repo_settings:
-  jwbron/james-in-a-box:
-    restrict_to_configured_users: true
-    disable_auto_fix: true
-  jwbron/collaborative-development-framework:
-    restrict_to_configured_users: true
-    disable_auto_fix: true
+  # Example:
+  # YOUR_USERNAME/james-in-a-box:
+  #   restrict_to_configured_users: true
+  #   disable_auto_fix: true
+
+# Local repository configuration
+# These are local directories on your machine that will be:
+# 1. Volume-mounted into the jib container
+# 2. Set up with git worktrees for isolated development
+#
+# Each repo gets its own worktree so the agent can work without affecting
+# your working directory. Changes are committed to the worktree branch,
+# then you review and merge.
+local_repos:
+  # List of absolute paths to local git repositories
+  # Example:
+  #   - /home/username/projects/my-app
+  #   - /home/username/work/another-repo
+  #
+  # These paths will be:
+  # - Mounted read-only (the main repo stays clean)
+  # - Git metadata mounted read-write (for worktree commits)
+  # - Worktrees created at ~/.jib-worktrees/<container-id>/<repo-name>
+  paths: []
 
 # Docker container setup configuration
 # Controls what gets installed when running docker-setup.py

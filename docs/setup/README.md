@@ -7,8 +7,7 @@ Installation and configuration documentation.
 Run the main setup script to configure everything:
 
 ```bash
-cd ~/khan/james-in-a-box
-./setup.sh
+./setup.py
 ```
 
 This single command handles:
@@ -17,7 +16,7 @@ This single command handles:
 - Docker image building
 - All component setup
 
-**Note:** You can also run `jib --setup` which delegates to `./setup.sh`. If jib detects incomplete setup when you run it, it will prompt to run setup automatically.
+**Note:** You can also run `jib --setup` which delegates to `./setup.py`. If jib detects incomplete setup when you run it, it will prompt to run setup automatically.
 
 ## Setup Requirements
 
@@ -64,7 +63,7 @@ Setting up two-way Slack communication:
 ## Setup Order
 
 1. **Create Slack App** - [Slack app setup](slack-app-setup.md) (get tokens first)
-2. **Run Setup** - `./setup.sh` (interactive, validates and installs everything)
+2. **Run Setup** - `./setup.py` (interactive, validates and installs everything)
 3. **Verify** - Check services with `systemctl --user status slack-notifier slack-receiver`
 
 ## Configuration Location
@@ -77,7 +76,14 @@ All configuration is stored in `~/.config/jib/`:
 | `github-app-id` | GitHub App ID |
 | `github-app-installation-id` | GitHub App Installation ID |
 | `github-app.pem` | GitHub App private key |
-| `repositories.yaml` | Repository access configuration |
+| `repositories.yaml` | Repository access configuration (created by setup.py) |
+
+Docker container configuration is stored in `~/.jib/`:
+
+| File | Purpose |
+|------|---------|
+| `mounts.conf` | Volume mount configuration for local repositories |
+| `Dockerfile` | Generated Dockerfile for the jib image |
 
 ## Service Overview
 
@@ -93,15 +99,30 @@ All configuration is stored in `~/.config/jib/`:
 | doc-generator | Weekly documentation updates | Included (optional enable) |
 | index-generator | Codebase indexing | Included (optional enable) |
 
-## Updating jib
+## Updating Configuration
 
-To update after code changes:
+To update your configuration (secrets, repositories, etc.):
 
 ```bash
-./setup.sh --update
+./setup.py --update
 ```
 
-This reloads all service configurations and restarts services.
+This will prompt you for each setting with your current values as defaults:
+- Press Enter to keep the existing value
+- Enter a new value to update it
+
+Settings you can update:
+- GitHub username
+- Bot name
+- Slack tokens (bot and app tokens)
+- GitHub authentication token
+- Repository configuration (writable and read-only repos)
+- Slack channel and user ID
+
+After updating, restart services to apply changes:
+```bash
+systemctl --user restart slack-notifier slack-receiver
+```
 
 ## Troubleshooting
 
@@ -109,7 +130,7 @@ This reloads all service configurations and restarts services.
 1. Create a Slack app at https://api.slack.com/apps
 2. Follow [Slack App Setup](slack-app-setup.md)
 3. Add tokens to `~/.config/jib/secrets.env`
-4. Run `./setup.sh` again
+4. Run `./setup.py` again
 
 ### Services not starting
 ```bash
@@ -127,7 +148,7 @@ bin/jib --setup
 
 # Or reset and rebuild
 bin/jib --reset
-./setup.sh
+./setup.py
 ```
 
 ## See Also
