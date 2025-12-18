@@ -1,5 +1,5 @@
 [Unit]
-Description=GitHub Watcher Timer - Monitor every 5 minutes
+Description=Comment Responder Timer - Monitor every 5 minutes
 Documentation=file://%h/khan/james-in-a-box/host-services/analysis/github-watcher/README.md
 
 [Timer]
