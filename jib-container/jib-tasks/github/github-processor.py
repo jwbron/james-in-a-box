@@ -217,7 +217,7 @@ Before making ANY changes, you MUST:
 
 ### Step 1: Checkout PR branch
 ```bash
-cd ~/khan/{repo_name}
+cd ~/repos/{repo_name}
 git fetch origin {pr_branch} {base_branch}
 git checkout {pr_branch}
 git branch --show-current  # VERIFY this shows: {pr_branch}
@@ -440,7 +440,7 @@ If you need to make code changes in response to comments, you MUST checkout the 
 **Target PR Branch**: `{pr_branch}`
 
 ```bash
-cd ~/khan/{repo_name}
+cd ~/repos/{repo_name}
 git fetch origin {pr_branch}
 git checkout {pr_branch}
 git branch --show-current  # VERIFY this shows: {pr_branch}
@@ -500,7 +500,7 @@ If the comments request code changes:
 
 **a. FIRST checkout the PR branch:**
 ```bash
-cd ~/khan/{repo_name}
+cd ~/repos/{repo_name}
 git fetch origin {pr_branch}
 git checkout {pr_branch}
 git branch --show-current  # VERIFY this shows: {pr_branch}
@@ -993,7 +993,7 @@ You MUST follow these steps exactly:
 
 ### Step 1: Checkout the PR branch
 ```bash
-cd ~/khan/{repo_name}
+cd ~/repos/{repo_name}
 git fetch origin {pr_branch} {base_branch}
 git checkout {pr_branch}
 git branch --show-current  # VERIFY: must show {pr_branch}
@@ -1383,7 +1383,7 @@ Before making ANY changes, you MUST checkout the correct branch:
 **Target PR Branch**: `{pr_branch}`
 
 ```bash
-cd ~/khan/{repo_name}
+cd ~/repos/{repo_name}
 git fetch origin {pr_branch} {base_branch}
 git checkout {pr_branch}
 git pull origin {pr_branch}

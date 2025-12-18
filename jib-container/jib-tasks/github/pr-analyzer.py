@@ -270,7 +270,7 @@ You are analyzing PR {owner}/{repo}#{pr_number}. Your goal is to:
    - What's blocking it (failing checks, review feedback, etc.)
    - What needs to be fixed
 
-2. If the repo `{repo}` exists in `~/khan/`:
+2. If the repo `{repo}` exists in `~/repos/`:
    - Check out the PR branch: `gh pr checkout {pr_number} --repo {owner}/{repo}`
    - Make the necessary fixes
    - Commit with clear messages
