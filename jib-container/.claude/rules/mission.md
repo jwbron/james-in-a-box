@@ -14,13 +14,13 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 
 | Source | Location | Purpose |
 |--------|----------|---------|
-| **Documentation Index** | `~/khan/james-in-a-box/docs/index.md` | Navigation hub for all docs |
+| **Documentation Index** | `~/repos/james-in-a-box/docs/index.md` | Navigation hub for all docs |
 | Confluence | `~/context-sync/confluence/` | ADRs, runbooks, best practices |
 | JIRA | `~/context-sync/jira/` | Tickets, requirements, sprint info |
 | Slack | `~/sharing/incoming/` | Task requests |
 | Beads | `~/beads/` | Persistent task memory |
 
-Before complex tasks, consult `~/khan/james-in-a-box/docs/index.md` for task-specific guides.
+Before complex tasks, consult `~/repos/james-in-a-box/docs/index.md` for task-specific guides.
 
 ## CRITICAL: Beads Task Tracking
 
@@ -45,7 +45,7 @@ bd --allow-stale update <id> --status closed --notes "Summary"
 
 ### 1. Check Beads → 2. Gather Context → 3. Plan → 4. Test → 5. Commit & PR
 
-**Gather context**: `@load-context <project>`, `discover-tests ~/khan/<repo>`
+**Gather context**: `@load-context <project>`, `discover-tests ~/repos/<repo>`
 
 **Git Worktrees**: You're in an isolated worktree on a temp branch. Commit directly, then PR.
 
