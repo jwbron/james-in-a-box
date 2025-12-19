@@ -17,59 +17,6 @@ jib is a suite of tools designed to enable collaborative software development be
 
 **Use at your own risk in production environments.**
 
-## Platform Requirements
-
-**jib is designed for and tested on Linux systems only.**
-
-- Requires systemd for service management
-- Tested on Ubuntu 22.04+ and Fedora 39+
-- Docker required for container sandboxing
-- WSL2 may work but is not officially supported
-- macOS is not supported (no systemd)
-
-## Security Considerations
-
-**READ THIS BEFORE USING JIB WITH SENSITIVE CODEBASES**
-
-jib runs LLM agents that have access to your code and documentation. By design, these agents communicate with external services (Claude API, Slack, GitHub). This creates potential vectors for data exfiltration:
-
-### Data Exfiltration Risks
-
-| Risk | Description | Current Mitigation |
-|------|-------------|-------------------|
-| **LLM API Calls** | All code and context is sent to Anthropic's Claude API | None - inherent to LLM operation |
-| **Slack Messages** | Agent can send arbitrary content to Slack | Human review of messages |
-| **GitHub PRs/Comments** | Agent can include code/data in PR descriptions | Human review before merge |
-| **Web Fetches** | Agent can fetch URLs, potentially leaking via query params | URL restriction (partial) |
-
-### Secret Exfiltration Risks
-
-| Risk | Description | Current Mitigation |
-|------|-------------|-------------------|
-| **Environment Variables** | Agent has access to container environment | Secrets mounted read-only |
-| **API Keys in Code** | Agent can read API keys from source files | Human review |
-| **Config Files** | `.env`, credential files may be readable | Sandbox isolation (partial) |
-
-### Recommendations
-
-**DO NOT use jib with:**
-- Repositories containing customer data
-- Codebases with embedded secrets or credentials
-- Proprietary algorithms you cannot share with LLM providers
-- Compliance-sensitive code (HIPAA, PCI-DSS, SOC2)
-
-**BEFORE using jib:**
-- Audit your codebase for secrets and sensitive data
-- Review your organization's LLM usage policies
-- Understand that all code sent to agents goes to external APIs
-- Configure Confluence/JIRA sync to exclude sensitive spaces
-
-**Planned security features (not yet implemented):**
-- Content classification (Public/Internal/Confidential)
-- DLP scanning before API calls
-- Output monitoring for sensitive data
-- Allowlist-based context filtering
-
 ## What jib Does
 
 jib provides infrastructure for LLM agents to:
@@ -105,6 +52,14 @@ jib includes 53 top-level features across these categories:
 For the complete feature list with implementation status, see [docs/FEATURES.md](docs/FEATURES.md).
 
 **Note**: Features in the Self-Improvement and Documentation sections are experimental and may produce inconsistent results.
+
+## Platform Requirements
+
+jib is designed for and tested on Linux systems only. Requires systemd for service management and docker to run.
+
+## Security Considerations
+
+jib runs an unsupervised LLM with unlimited network access and the ability to run arbitrary commands in a container. Do not use with sensitive codebases.
 
 ## Quick Start
 
