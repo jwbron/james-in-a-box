@@ -1,604 +1,238 @@
 # james-in-a-box (jib)
 
-**Autonomous codebase maintainer powered by Claude**
+**Collaborative Development Tooling for LLM-Powered Software Engineering**
 
-jib is an LLM-powered software engineering agent that acts as a tireless codebase maintainer. Running in a secure Docker sandbox, jib autonomously handles everything from feature development and refactoring to documentation generation, ADR maintenance, PR reviews, and codebase analysis—all controlled via Slack.
+jib is a suite of tools designed to enable collaborative software development between humans and LLM agents. Built as the reference implementation for the [Collaborative Development Framework](https://github.com/jwbron/collaborative-development-framework), it provides the infrastructure needed to run autonomous coding agents in sandboxed environments with human oversight.
 
-## What is jib?
+> **Developed with and for the [Collaborative Development Framework](https://github.com/jwbron/collaborative-development-framework)** - a methodology for human-AI collaborative software development.
 
-jib is your **autonomous codebase maintainer** that:
+## Beta Software Warning
 
-- **Develops features**: Implements features end-to-end with tests and documentation
-- **Reviews PRs**: Automatically reviews team PRs, suggests improvements, analyzes check failures
-- **Maintains documentation**: Auto-generates docs, keeps ADRs current, syncs FEATURES.md with code
-- **Analyzes codebases**: Weekly deep analysis for quality, security, and structural issues
-- **Refactors autonomously**: Identifies and executes automated refactoring opportunities
-- **Researches externally**: Fetches latest docs, best practices, framework updates from the web
-- **Tracks work persistently**: Remembers context across sessions via git-backed task memory (Beads)
-- **Self-improves**: Detects processing inefficiencies, proposes prompt refinements, tracks impact
-- **Works asynchronously**: Fully productive workflow via Slack (notifications, reviews, approvals)
+**This project is in active beta development.**
 
-Think of jib as a **Senior Software Engineer (L3-L4)** that never sleeps, handles the routine maintenance work, and lets human engineers focus on strategic, creative problems.
+- **Expect breaking changes**: APIs, configurations, and workflows may change without notice
+- **Active bugs**: Known and unknown issues exist throughout the codebase
+- **Experimental features**: Many analyzers and automation systems are works in progress
+- **Limited documentation**: Some features may be undocumented or have outdated docs
 
-## Why We Built This
+**Use at your own risk in production environments.**
 
-**Problem**: Codebases need constant maintenance—documentation updates, refactoring, dependency updates, code reviews, ADR generation, bug fixes. Engineering time is scarce and better spent on strategic work.
+## What jib Does
 
-**Solution**: An autonomous agent that handles routine codebase maintenance tasks:
-- Works 24/7 in a secure sandbox
-- Follows team standards and architectural decisions
-- Generates production-quality code, tests, and documentation
-- Learns and improves from every interaction
-- Enables async workflow via Slack (control from anywhere)
+jib provides infrastructure for LLM agents to:
 
-**Key Principle**: The agent **prepares** artifacts (code, tests, docs, ADRs, analysis). Engineers **review and ship** (merge PRs, approve decisions). Clear separation of responsibilities ensures quality and safety.
+- **Develop features**: Implement code changes with tests and documentation
+- **Review PRs**: Automatically review team pull requests
+- **Maintain docs**: Keep documentation synchronized with code
+- **Track work**: Persistent task memory across container sessions
+- **Communicate**: Bidirectional Slack messaging for async workflows
 
-## Core Capabilities
+### Key Components
 
-### 1. Feature Development
+| Component | Purpose |
+|-----------|---------|
+| **jib container** | Sandboxed Docker environment running Claude Code |
+| **Slack services** | Bidirectional messaging for human-agent communication |
+| **GitHub watcher** | Monitors PRs for comments, failures, review requests |
+| **Context sync** | Pulls Confluence/JIRA documentation for agent context |
+| **Beads** | Git-backed persistent task tracking |
+| **Analyzers** | Experimental code analysis and self-improvement tools |
 
-**Autonomous implementation of well-defined features:**
-- End-to-end feature development with tests
-- Follows architectural decisions and team patterns
-- Generates comprehensive documentation
-- Creates production-ready PRs with detailed descriptions
-- Handles multi-step implementations with persistent task tracking
+## Feature Overview
 
-**Example**: "Implement OAuth2 authentication for JIRA-1234" → Designs schema per ADRs → Implements endpoints → Writes integration tests → Creates PR with migration guide
+jib includes 53 top-level features across these categories:
 
-### 2. Pull Request Automation
+- **Communication**: Slack notifier/receiver, container notifications
+- **Context Management**: Confluence/JIRA sync, Beads task tracking
+- **GitHub Integration**: PR reviews, comment responses, CI failure analysis
+- **Self-Improvement**: LLM trace collection, inefficiency detection (experimental)
+- **Documentation**: ADR research, feature analysis, doc generation (experimental)
+- **Container Infrastructure**: Docker sandbox, worktree isolation
 
-**Comprehensive PR workflow automation:**
+For the complete feature list with implementation status, see [docs/FEATURES.md](docs/FEATURES.md).
 
-**Creating PRs (After Task Completion):**
-- Auto-generates PR title and description from commits
-- Includes test plan, migration steps, ADR references
-- Requests review from configured reviewers
-- Links to related JIRA tickets and design docs
+**Note**: Features in the Self-Improvement and Documentation sections are experimental and may produce inconsistent results.
 
-**Reviewing PRs (Others' Work):**
-- Automatically reviews new PRs from teammates every 15 minutes
-- Analyzes code quality, security, performance, and adherence to standards
-- Creates Slack notifications with findings and suggestions
-- Skips self-authored PRs (no self-review)
+## Platform Requirements
 
-**Responding to Comments:**
-- Detects new comments on your PRs
-- Classifies type (question, change request, concern)
-- Generates contextual response suggestions
-- Creates Beads tasks for tracking responses
+jib is designed for and tested on Linux systems only. Requires systemd for service management and docker to run.
 
-**Check Failure Analysis:**
-- Monitors CI/CD check failures
-- Analyzes failure logs and identifies root causes
-- Suggests or implements automated fixes (for auto-fixable issues like linting)
-- Creates Slack notifications with analysis and recommendations
+## Security Considerations
 
-### 3. Documentation Generation & Maintenance
-
-**Keeps documentation synchronized with code:**
-- **Auto-generates documentation** from code, commits, and architectural decisions
-- **ADR generation**: Drafts Architecture Decision Records from discussions and design docs
-- **ADR updates**: Monitors code changes and updates ADRs when architecture evolves
-- **API documentation**: Auto-generates and maintains API reference docs
-- **LLM-optimized indexes**: Structures docs following [llms.txt](https://llmstxt.org/) standard for efficient navigation
-- **Documentation drift detection**: Identifies when docs are out of sync with code
-- **Multi-agent documentation pipeline**: Specialized agents for analysis, drafting, review, and validation
-
-**Example**: After implementing a new authentication system, jib automatically updates the security ADR, generates API docs, and creates migration guides.
-
-### 4. Codebase Analysis & Health Monitoring
-
-**Weekly automated analysis for continuous improvement:**
-- **Code quality scanning**: Identifies complexity, duplication, anti-patterns
-- **Security vulnerability detection**: Scans for OWASP top 10, dependency vulnerabilities
-- **Structural analysis**: Recommends architectural improvements
-- **Performance profiling**: Identifies bottlenecks and optimization opportunities
-- **Dependency health**: Tracks outdated packages, security advisories
-- **Documentation gaps**: Finds undocumented functions, missing ADRs
-- **Self-improvement tracking**: Agent behavior analyzed for alignment with team standards
-
-**Output**: Prioritized recommendations (HIGH/MEDIUM/LOW) delivered via Slack
-
-### 5. Automated Refactoring
-
-**Safe, automated code improvements:**
-- Identifies refactoring opportunities from codebase analysis
-- Executes safe, automated refactorings (rename, extract method, etc.)
-- Updates tests and documentation to match
-- Creates PRs with before/after comparisons
-- Provides rollback instructions
-
-**Example**: "Found 15 instances of duplicated authentication logic → Extract to shared utility → Update all call sites → Create PR"
-
-### 6. External Research & Context Integration
-
-**Fetches latest information to inform decisions:**
-- **Framework documentation**: Pulls latest docs for dependencies (React, Django, etc.)
-- **Best practices**: Researches current industry standards for specific problems
-- **Security advisories**: Checks for CVEs and security updates
-- **Architecture patterns**: Finds examples and recommendations for design decisions
-- **Migration guides**: Fetches official migration documentation for upgrades
-
-**Context sources integrated:**
-| Source | Sync Method | Purpose |
-|--------|-------------|---------|
-| **Confluence** | Hourly file sync | ADRs, runbooks, engineering docs |
-| **JIRA** | Hourly file sync | Open tickets, epics, sprint data |
-| **GitHub** | `gh` CLI (on-demand) | PRs, issues, commits, file contents |
-| **Web (on-demand)** | As needed | Latest docs, research, advisories |
-
-**Post-Sync Intelligence:**
-- **JIRA watcher**: Analyzes tickets, extracts action items, creates Beads tasks
-- **Confluence watcher**: Identifies architectural decisions, detects impacts on current work
-- **GitHub watcher**: Monitors check failures, auto-reviews PRs, suggests comment responses
-
-### 7. Persistent Task Memory (Beads)
-
-**Git-backed task tracking that survives container restarts:**
-- **Automatic context preservation** across Slack threads and PR sessions
-- **Dependency tracking** for complex multi-step tasks
-- **Progress notes** capture decisions, blockers, and context
-- **Multi-container coordination** via shared git repository
-- **Automatic resumption** after crashes or container restarts
-
-**Why it matters**: LLMs are stateless—Beads gives jib persistent memory, enabling true autonomous operation across sessions.
-
-### 8. Conversation Analysis & Self-Improvement
-
-**Daily automated analysis of agent behavior:**
-- Evaluates agent interactions for quality and alignment with engineering standards
-- Identifies patterns in errors and successful interactions
-- Recommends prompt refinements and workflow optimizations
-- Assesses cultural fit (communication style, problem-solving approach, collaboration quality)
-- Generates actionable improvements to agent behavior
-
-**Cultural Alignment**: Agent behavior continuously refined to match your engineering team's values (clear communication, systematic problem-solving, thorough testing, user-focused decisions)
-
-### 9. Structured Logging & Observability
-
-**Standardized logging across all jib components:**
-- **jib_logging library**: Python library providing structured JSON logging with consistent formatting
-- **Tool wrappers**: Logged wrappers for bd, git, gh, and claude commands that capture all interactions
-- **Model output capture**: Records LLM inputs/outputs following OpenTelemetry GenAI semantic conventions
-- **GCP Cloud Logging ready**: Structured output compatible with Google Cloud Logging ingestion
-- **Operation tracking**: Hierarchical operation context with correlation IDs for tracing workflows
-
-**Benefits**: Enables debugging, performance analysis, and cost tracking across all agent operations
-
-### 10. LLM Inefficiency Detection & Self-Improvement
-
-**Automated detection and reporting of agent processing inefficiencies:**
-- **Trace collection**: Captures all LLM tool calls via Claude Code hooks for analysis
-- **Pattern detection**: Identifies tool discovery failures, retry storms, redundant file reads
-- **Weekly reports**: Generates health scores (0-100) with actionable improvement recommendations
-- **Self-improvement loop**: Proposes prompt refinements and tracks improvement impact over time
-
-**Implemented detection categories:**
-- Tool Discovery (documentation misses, search failures, API confusion)
-- Tool Execution (retry storms, parameter errors)
-- Resource Efficiency (redundant reads, excessive context loading)
-
-**Benefits**: Data-driven improvements reduce token waste and task completion time
-
-### 11. ADR Research & Documentation Automation
-
-**Research-driven ADR workflow and automated documentation maintenance:**
-- **ADR Researcher**: Weekly service that researches open ADR PRs, posts findings as PR comments
-- **Feature Analyzer**: Detects ADR status changes and triggers documentation updates
-- **Weekly code analysis**: Scans merged code to discover new features for FEATURES.md
-- **PR-based updates**: All documentation changes submitted as PRs for human review
-
-**Documentation pipeline**: Context analysis → LLM draft → Review → Validation → PR creation
-
-### 12. Beads Health Monitoring
-
-**Weekly analysis of Beads task tracking effectiveness:**
-- **Health scoring**: 0-100 score measuring task lifecycle, notes coverage, label usage
-- **Issue detection**: Identifies abandoned tasks, missing context, poor discoverability
-- **Slack notifications**: Alerts for high-severity issues requiring attention
-- **Trend tracking**: Compares metrics week-over-week for continuous improvement
-
-**Metrics tracked**: Task volume, closure time, notes coverage, label usage, source tracking (Slack/GitHub/JIRA)
-
-## How It Works
-
-```
-┌─────────────────────────────────────────────────────┐
-│  You (Slack)                                        │
-│  • Send tasks: "Refactor auth module per ADR-042"   │
-│  • Receive notifications with summaries + threads   │
-│  • Review and approve PRs                           │
-└─────────────────────────────────────────────────────┘
-                      ↕
-┌─────────────────────────────────────────────────────┐
-│  Host Machine (Your Laptop)                         │
-│  • Slack notifier/receiver (systemd services)       │
-│  • Context sync (Confluence, JIRA, GitHub)          │
-│  • Automated analyzers (codebase, conversations)    │
-│  • Git worktree management and cleanup              │
-└─────────────────────────────────────────────────────┘
-                      ↕
-┌─────────────────────────────────────────────────────┐
-│  Docker Container (Sandbox)                         │
-│  • Claude Code agent with custom rules              │
-│  • No credentials (SSH keys, cloud tokens excluded) │
-│  • Network isolation (outbound HTTP only)           │
-│  • Ephemeral - spun up per task, auto-cleanup       │
-└─────────────────────────────────────────────────────┘
-```
-
-**Workflow:**
-1. Send task via Slack DM to bot
-2. Container spawns with isolated git worktree
-3. Agent implements changes, writes tests, generates docs, commits to branch
-4. Agent creates PR with comprehensive description
-5. Container shuts down and worktree is cleaned up (commits are preserved on branch)
-6. You review PR and merge when satisfied
-
-### Worktree Isolation
-
-Each container gets its own ephemeral git worktree, keeping your host repositories clean:
-
-- **Host protection**: Your local repos stay untouched while agent works
-- **True parallelism**: Multiple containers can work on same repo simultaneously
-- **Isolated branches**: Each container works on `jib-temp-{container-id}` branch
-- **Git commands work**: Full git functionality inside container
-- **Commits preserved**: All commits saved on branch even after container exits
-- **Auto-cleanup**: Worktrees removed when container exits, commits remain accessible
+jib runs an unsupervised LLM with unlimited network access and the ability to run arbitrary commands in a container. Do not use with sensitive codebases.
 
 ## Quick Start
 
 ### Prerequisites
 
+- Linux with systemd
 - Docker installed and running
-- Python 3.8+
-- Slack workspace with bot token
+- Python 3.11+
+- GitHub CLI (`gh`) authenticated
+- Slack workspace with bot configured
 
-### Setup
+### Installation
 
-1. **Clone repository**:
+1. **Clone the repository**:
    ```bash
    git clone https://github.com/jwbron/james-in-a-box.git
    cd james-in-a-box
    ```
 
-2. **Run master setup script**:
+2. **Run the setup script**:
    ```bash
    ./setup.py
    ```
 
-   This will:
-   - Install all host services (Slack notifier/receiver, analyzers, monitoring)
-   - Enable systemd services and timers
-   - Create required directories
-   - Verify dependencies
-   - Display setup status
+   The setup script will interactively guide you through:
+   - Checking dependencies (docker, git, gh)
+   - Configuring GitHub authentication (App or PAT)
+   - Setting up Slack integration tokens
+   - Specifying repositories to monitor
+   - Creating shared directories
+   - Initializing Beads task tracking
 
-   **Updating existing installation:**
+3. **Enable services** (after setup completes):
    ```bash
-   ./setup.py --update
+   ./setup.py --enable-services    # Enable all services
+   ./setup.py --enable-core-services  # Enable only non-LLM services
+   ./setup.py --status             # Check service status
    ```
 
-3. **Configure Slack tokens**:
-   ```bash
-   nano ~/.config/jib-notifier/config.json
-   # Add your bot token (xoxb-...) and app token (xapp-...)
-   ```
-
-4. **Start container**:
+4. **Start the container**:
    ```bash
    bin/jib
    ```
 
-5. **Send first task** (from Slack):
-   ```
-   DM the bot: "Analyze the authentication module and suggest improvements"
-   ```
+### Setup Script Options
 
-The agent will analyze your code and send you a detailed report with recommendations.
-
-## Example Use Cases
-
-### 1. Feature Development
-```
-You: "Implement rate limiting middleware for API endpoints (JIRA-1234)"
-jib: → Reads relevant ADRs and existing middleware patterns
-     → Implements rate limiting with Redis backend
-     → Writes unit and integration tests
-     → Generates API documentation
-     → Creates PR with migration guide
-     → Sends notification: "PR #123 ready for review"
+```bash
+./setup.py                    # Full interactive setup
+./setup.py --update           # Update existing configuration
+./setup.py --enable-services  # Enable all systemd services
+./setup.py --disable-services # Disable all systemd services
+./setup.py --enable SERVICE   # Enable specific service
+./setup.py --disable SERVICE  # Disable specific service
+./setup.py --status           # Show service status
+./setup.py --force            # Force reinstall
+./setup.py --skip-deps        # Skip dependency checks
 ```
 
-### 2. Documentation Maintenance
-```
-You: "Generate ADR for our new caching strategy"
-jib: → Analyzes recent commits and design discussions
-     → Drafts ADR following template
-     → Links to related decisions and code
-     → Creates PR with ADR-045-Caching-Strategy.md
-     → Updates documentation index
-```
+### Configuration Files
 
-### 3. Codebase Analysis
-```
-Automated (weekly): jib runs codebase analyzer
-jib: → Scans entire codebase for quality, security, structure
-     → Identifies 12 issues (3 HIGH, 5 MEDIUM, 4 LOW)
-     → Sends Slack notification with prioritized findings:
-       - HIGH: SQL injection vulnerability in UserService
-       - HIGH: Deprecated authentication method still in use
-       - MEDIUM: Duplicate code in 8 components (refactor opportunity)
-     → Creates Beads tasks for HIGH priority issues
-```
+After setup, configuration is stored in:
 
-### 4. PR Review & Feedback
-```
-Teammate opens PR #456
-jib (automated): → Reviews code quality, tests, security
-                 → Analyzes performance implications
-                 → Checks ADR compliance
-                 → Sends notification:
-                   "PR #456 looks good overall. Suggestions:
-                   - Consider adding integration test for edge case
-                   - Performance: query could benefit from index
-                   - Security: validate user input in line 42"
-```
-
-### 5. Automated Refactoring
-```
-You: "Refactor authentication logic to use new auth library"
-jib: → Analyzes all auth-related code (15 files)
-     → Creates migration plan with dependency graph
-     → Updates each file systematically
-     → Migrates tests to new patterns
-     → Updates documentation and ADRs
-     → Creates PR with comprehensive before/after comparison
-     → Includes rollback instructions
-```
-
-### 6. External Research
-```
-You: "What's the recommended approach for implementing feature flags in Django?"
-jib: → Researches Django feature flag libraries
-     → Reads latest documentation for top options
-     → Compares LaunchDarkly, django-flags, django-waffle
-     → Analyzes your team's existing infrastructure
-     → Recommends django-waffle with reasoning
-     → Provides implementation example and migration guide
-```
-
-## Documentation
-
-jib follows the [llms.txt](https://llmstxt.org/) standard for LLM-friendly documentation. Start with the navigation index:
-
-**[Documentation Index](docs/index.md)** - Central hub linking all documentation
-
-**[Features Overview](docs/FEATURES.md)** - Complete list of capabilities and feature status
-
-### Architecture Decision Records (ADRs)
-
-| ADR | Status | Description |
-|-----|--------|-------------|
-| [Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) | In Progress | Core system architecture, security model, self-improvement |
-| [Standardized Logging Interface](docs/adr/in-progress/ADR-Standardized-Logging-Interface.md) | Implemented | Structured JSON logging with tool wrappers and OpenTelemetry alignment |
-| [LLM Documentation Index Strategy](docs/adr/implemented/ADR-LLM-Documentation-Index-Strategy.md) | Implemented | How documentation is structured for efficient LLM navigation |
-| [Context Sync Strategy](docs/adr/implemented/ADR-Context-Sync-Strategy-Custom-vs-MCP.md) | Partially Implemented | GitHub via gh CLI, JIRA via file sync, Confluence custom sync retained |
-| [Feature Analyzer Documentation Sync](docs/adr/implemented/ADR-Feature-Analyzer-Documentation-Sync.md) | Implemented | Automated sync between ADRs and FEATURES.md |
-| [LLM Inefficiency Reporting](docs/adr/implemented/ADR-LLM-Inefficiency-Reporting.md) | Implemented | Detecting and reporting inefficient LLM operations |
-| [Multi-Agent Pipeline Architecture](docs/adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md) | Proposed | Multi-agent orchestration with sequential, parallel, and conditional patterns |
-| [ADR Index](docs/adr/README.md) | — | Full list of all ADRs by status |
-
-### Quick References
-
-- [Beads Task Tracking](docs/reference/beads.md) - Persistent memory: Slack thread context, PR state, multi-session work
+| File | Purpose |
+|------|---------|
+| `~/.config/jib/secrets.env` | API keys and tokens (600 permissions) |
+| `~/.config/jib/config.yaml` | Non-secret settings |
+| `~/.config/jib/repositories.yaml` | Repository access configuration |
+| `~/.jib/mounts.conf` | Local repository mount paths |
 
 ## Architecture
 
-jib separates concerns between the host machine and the sandboxed container:
-
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Host Machine (Your Laptop)                                         │
-│  ├── Slack services (bidirectional messaging)                       │
-│  ├── Context sync (Confluence, JIRA → markdown)                     │
-│  ├── Analyzers (codebase, conversations, inefficiency detection)    │
-│  ├── GitHub token refresher (45-min token renewal)                  │
-│  └── Worktree management (isolation, cleanup)                       │
-├─────────────────────────────────────────────────────────────────────┤
-│  Docker Container (Sandbox)                                         │
-│  ├── Claude Code agent with custom rules and commands               │
-│  ├── Access to synced context (read-only)                           │
-│  ├── Code workspace (read-write, isolated worktree)                 │
-│  ├── Beads task memory (persistent, git-backed, shared across runs) │
-│  └── GitHub CLI (PR/issue operations)                               │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Human (via Slack)                                          │
+│  • Send tasks and questions                                 │
+│  • Review PRs and notifications                             │
+│  • Approve and merge changes                                │
+└─────────────────────────────────────────────────────────────┘
+                          ↕
+┌─────────────────────────────────────────────────────────────┐
+│  Host Machine (Linux)                                       │
+│  ├── slack-notifier.service    (notifications → Slack)      │
+│  ├── slack-receiver.service    (Slack → container tasks)    │
+│  ├── github-watcher.timer      (PR monitoring)              │
+│  ├── context-sync.timer        (Confluence/JIRA sync)       │
+│  ├── github-token-refresher    (credential management)      │
+│  └── worktree-watcher.timer    (cleanup)                    │
+└─────────────────────────────────────────────────────────────┘
+                          ↕
+┌─────────────────────────────────────────────────────────────┐
+│  Docker Container (Sandbox)                                 │
+│  ├── Claude Code agent                                      │
+│  ├── Isolated git worktree                                  │
+│  ├── Read-only context (Confluence, JIRA)                   │
+│  ├── Beads task memory                                      │
+│  └── GitHub CLI (via token refresh)                         │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Key design principles:**
-- Host handles credentials and external API access
-- Container is credential-free and network-isolated
-- Communication via files and Slack (no direct API calls from container)
-- All changes require human review before merge
+**Key Principles:**
+- Host manages credentials and external API access
+- Container is sandboxed with limited network access
+- All code changes require human review before merge
+- Communication flows through Slack and file-based messaging
 
-For detailed component documentation, see:
-- [Architecture Overview](docs/architecture/README.md)
-- [ADR: Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md)
-- [Host services README files](host-services/)
+## Operating Model
 
-## Security Model
+jib follows the Collaborative Development Framework's operating model:
 
-**5-Layer Defense Against Data Exfiltration:**
+| Role | Responsibilities |
+|------|------------------|
+| **Agent (jib)** | Plan, implement, test, document, create PRs |
+| **Human** | Review, approve, merge, deploy |
 
-1. **Human Review** (✅ Implemented - Phase 1)
-   - All PRs require human approval before merge
-   - MEDIUM risk, acceptable for pilot
+**The agent NEVER:**
+- Merges PRs
+- Deploys to production
+- Modifies credentials
+- Accesses production systems
 
-2. **Context Source Filtering** (Planned - Phase 2)
-   - Confluence/JIRA allowlists
-   - Exclude customer data (SUPPORT, SALES, etc.)
+## Documentation
 
-3. **Content Classification** (Planned - Phase 2)
-   - Tag docs: Public/Internal/Confidential
-   - Agent skips Confidential content
+- **[Documentation Index](docs/index.md)** - Navigation hub for all docs
+- **[Features List](docs/FEATURES.md)** - Complete feature inventory
+- **[ADR Index](docs/adr/README.md)** - Architecture decisions
+- **[Beads Reference](docs/reference/beads.md)** - Task tracking system
 
-4. **DLP Scanning** (Planned - Phase 3)
-   - Cloud DLP before Claude API calls
-   - Automated redaction of PII, secrets
-
-5. **Output Monitoring** (Planned - Phase 3)
-   - Scan PRs, commits, Slack for leaks
-   - Alert on sensitive data exposure
-
-**Current State**: Layer 1 (Human Review) + Sandbox Isolation
-**Current Risk**: MEDIUM (acceptable for pilot phase)
-**Target State**: All 5 layers operational
-**Target Risk**: LOW (full DLP + monitoring operational)
-
-**Sandbox Isolation:**
-- No SSH keys (git push via GitHub App token credential helper)
-- No cloud credentials (can't deploy)
-- Network: Outbound HTTP only (Claude API, packages, GitHub API)
-- Container: No inbound ports, bridge networking
-
-## Roadmap
-
-**Phase 1** (Complete):
-- ✅ Secure Docker sandbox with Slack bidirectional messaging
-- ✅ Context connectors (Confluence, JIRA, GitHub sync)
-- ✅ Self-improvement system (conversation and codebase analyzers)
-- ✅ LLM-optimized documentation structure (llms.txt standard)
-- ✅ GitHub PR automation (create, review, comment response, check failure analysis)
-- ✅ Persistent task memory (Beads)
-- ✅ Async Slack-based workflow
-- ✅ Structured logging with OpenTelemetry GenAI alignment (jib_logging)
-- ✅ LLM inefficiency detection and self-improvement loop
-- ✅ Feature Analyzer for automated FEATURES.md maintenance
-- ✅ ADR Researcher for research-driven ADR workflow
-- ✅ Beads health monitoring and task tracking analysis
-
-**Phase 2** (In Progress):
-- ✅ GitHub CLI integration (real-time PR/issue access)
-- 🔄 Bi-directional operations (update JIRA tickets)
-- 🔄 Enhanced security filtering (content classification, allowlists)
-- 🔄 Documentation drift detection and auto-update
-
-**Proposed**:
-- **Multi-Agent Pipeline Architecture**: Orchestrated multi-agent workflows with sequential, parallel, and conditional execution patterns. Enables complex tasks to be broken down and executed by specialized agents coordinated through Beads state management. See [ADR: Multi-Agent Pipeline Architecture](docs/adr/not-implemented/ADR-Multi-Agent-Pipeline-Architecture.md).
-
-**Phase 3** (Planned):
-- Cloud Run deployment for multi-engineer support
-- Advanced security (DLP scanning, output monitoring)
-- Expanded self-improvement (automated prompt refinement)
-- Webhook-based real-time GitHub events (replace polling)
-
-See [ADR: Autonomous Software Engineer](docs/adr/in-progress/ADR-Autonomous-Software-Engineer.md) for detailed roadmap.
-
-## Management Commands
-
-### Service Control
+## Service Management
 
 ```bash
-# Check all services
-systemctl --user list-timers | grep -E 'conversation|github|worktree'
-systemctl --user status slack-notifier.service
-systemctl --user status slack-receiver.service
+# Check service status
+systemctl --user status slack-notifier slack-receiver
+systemctl --user list-timers | grep -E 'github|context|worktree'
 
 # View logs
-journalctl --user -u slack-notifier.service -f
-journalctl --user -u conversation-analyzer.service -f
+journalctl --user -u slack-notifier -f
+journalctl --user -u github-watcher -f
 
 # Restart services
-systemctl --user restart slack-notifier.service
-systemctl --user restart slack-receiver.service
+systemctl --user restart slack-notifier slack-receiver
 ```
 
-### Container Control
+## Container Management
 
 ```bash
-# Start container
-bin/jib
-
-# Rebuild container (if Docker config changes)
-bin/jib --rebuild
-
-# Stop container
-docker stop jib-claude
-
-# View container logs
-docker logs -f jib-claude
+bin/jib              # Start interactive container
+bin/jib --rebuild    # Rebuild container image
+bin/jib --exec "python script.py"  # Execute command in container
+docker logs jib-claude -f  # View container logs
 ```
 
-## Development
+## Known Limitations
 
-### Linting
-
-This project uses multiple linters to maintain code quality:
-
-| Tool | Purpose | Auto-fix |
-|------|---------|----------|
-| [ruff](https://docs.astral.sh/ruff/) | Python linting & formatting | Yes |
-| [shfmt](https://github.com/mvdan/sh) | Shell script formatting | Yes |
-| [shellcheck](https://www.shellcheck.net/) | Shell script analysis | No |
-| [yamllint](https://yamllint.readthedocs.io/) | YAML linting | Partial (trailing spaces) |
-| [hadolint](https://github.com/hadolint/hadolint) | Dockerfile linting | No |
-| [actionlint](https://github.com/rhysd/actionlint) | GitHub Actions linting | No |
-
-**Quick commands:**
-```bash
-make lint              # Run all linters
-make lint-fix          # Run all linters with auto-fix
-make install-linters   # Install linting tools
-make check-linters     # Verify installation
-```
-
-## Troubleshooting
-
-### Services Not Starting
-
-**Check dependencies**:
-```bash
-systemctl --user status slack-notifier.service
-journalctl --user -u slack-notifier.service --no-pager
-```
-
-**Common issues**:
-- Missing Slack tokens in `~/.config/jib-notifier/config.json`
-- Python dependencies not installed (run `uv sync` or re-run `setup.py`)
-- Notification directory doesn't exist (create `~/.jib-sharing/notifications/`)
-
-### Container Issues
-
-**Check container is running**:
-```bash
-docker ps | grep jib-claude
-```
-
-**View logs**:
-```bash
-docker logs jib-claude
-```
-
-**Rebuild if needed**:
-```bash
-bin/jib --rebuild
-```
-
-### Slack Not Receiving Messages
-
-1. Verify bot token is valid (check `~/.config/jib-notifier/config.json`)
-2. Check Slack app has required scopes (`chat:write`, `im:history`)
-3. Verify slack-receiver service is running (`systemctl --user status slack-receiver`)
-4. Check logs: `journalctl --user -u slack-receiver.service -f`
+- **Linux only**: No macOS or Windows native support
+- **Single user**: Designed for individual developer use
+- **Claude-focused**: Primary support for Anthropic's Claude, other providers experimental
+- **Slack-dependent**: Requires Slack for human-agent communication
+- **Manual PR merge**: Agent cannot merge its own PRs
 
 ## Contributing
 
-For questions or issues:
+This project is in active development. Before contributing:
 
-1. Check component READMEs for specific guidance
-2. Review architecture docs in `docs/`
-3. Check service logs for error details
+1. Review open issues and PRs
+2. Check the [ADR Index](docs/adr/README.md) for architectural decisions
+3. Run `make lint` before submitting changes
+4. Note that APIs may change without deprecation notices during beta
+
+## Related Projects
+
+- **[Collaborative Development Framework](https://github.com/jwbron/collaborative-development-framework)** - The methodology this project implements
+- **[Claude Code](https://docs.anthropic.com/claude-code)** - The underlying LLM coding agent
+- **[Beads](https://github.com/steveyegge/beads)** - Git-backed task tracking
 
 ## License
 
