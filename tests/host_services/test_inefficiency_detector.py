@@ -64,7 +64,8 @@ class TestToolDiscoveryDetector:
         """Test detection of multiple failing searches before success."""
         detector = ToolDiscoveryDetector()
 
-        # Pattern: 3 greeps with 0 results, then glob succeeds
+        # Pattern: 3 greps with 0 results, then glob succeeds
+        # This triggers both documentation_miss AND search_failure patterns
         events = [
             create_event("evt-1", 1, "Grep", ToolCategory.SEARCH, "success", 0, "SpecificTerm"),
             create_event("evt-2", 2, "Grep", ToolCategory.SEARCH, "success", 0, "Term"),
