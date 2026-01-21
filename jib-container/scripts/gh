@@ -13,6 +13,29 @@
 REAL_GH=/usr/bin/gh
 GATEWAY_URL="${GATEWAY_URL:-http://host.docker.internal:9847}"
 GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
+# Host worktree path - set by jib launcher to translate container paths
+# Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X
+JIB_WORKTREE_HOST_PATH="${JIB_WORKTREE_HOST_PATH:-}"
+CONTAINER_REPOS_DIR="${HOME}/repos"
+
+# Function to translate container path to host path for gateway
+translate_path_for_gateway() {
+    local container_path="$1"
+
+    # If no worktree host path is set, return the path as-is
+    if [ -z "$JIB_WORKTREE_HOST_PATH" ]; then
+        echo "$container_path"
+        return
+    fi
+
+    # Check if path is under the container's repos directory
+    if [[ "$container_path" == "$CONTAINER_REPOS_DIR"/* ]]; then
+        local relative_path="${container_path#$CONTAINER_REPOS_DIR/}"
+        echo "${JIB_WORKTREE_HOST_PATH}/${relative_path}"
+    else
+        echo "$container_path"
+    fi
+}
 
 # Function to show no gateway error message
 show_no_gateway_message() {
@@ -385,8 +408,11 @@ print(json.dumps({
 
 # Function to execute via gateway passthrough - uses proper JSON escaping
 execute_via_gateway() {
+    local container_cwd
     local cwd
-    cwd=$(pwd)
+    container_cwd=$(pwd)
+    # Translate container path to host path for gateway
+    cwd=$(translate_path_for_gateway "$container_cwd")
 
     # Build JSON payload using Python for proper escaping
     local payload
