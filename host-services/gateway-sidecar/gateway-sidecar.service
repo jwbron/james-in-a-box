@@ -1,6 +1,6 @@
 [Unit]
 Description=Gateway Sidecar - Policy enforcement for jib container git/gh operations
-Documentation=file://%h/repos/james-in-a-box/host-services/gateway-sidecar/README.md
+Documentation=file://%h/khan/james-in-a-box/host-services/gateway-sidecar/README.md
 After=network-online.target github-token-refresher.service
 Wants=network-online.target
 Requires=github-token-refresher.service
@@ -8,10 +8,10 @@ OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=simple
-WorkingDirectory=%h/repos/james-in-a-box
+WorkingDirectory=%h/khan/james-in-a-box
 
 # Use the shared virtual environment
-ExecStart=%h/repos/james-in-a-box/host-services/.venv/bin/python -m host-services.gateway-sidecar.gateway
+ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python -m host-services.gateway-sidecar.gateway
 
 # Restart on failure with exponential backoff
 Restart=on-failure

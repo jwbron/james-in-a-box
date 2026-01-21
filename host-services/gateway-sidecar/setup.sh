@@ -54,19 +54,18 @@ chmod 600 "$SHARED_SECRET_FILE"
 echo "Gateway secret copied to: $SHARED_SECRET_FILE"
 
 # Ensure host-services venv exists with required dependencies
-VENV_DIR="${COMPONENT_DIR}/../.venv"
-if [[ ! -d "$VENV_DIR" ]]; then
-    echo "Creating host-services virtual environment..."
-    python3 -m venv "$VENV_DIR"
-    "$VENV_DIR/bin/pip" install --upgrade pip
+# Uses uv for dependency management (see host-services/pyproject.toml)
+HOST_SERVICES_DIR="${COMPONENT_DIR}/.."
+VENV_DIR="${HOST_SERVICES_DIR}/.venv"
+
+if ! command -v uv &> /dev/null; then
+    echo "ERROR: uv is required but not installed."
+    echo "Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
 fi
 
-# Install dependencies if needed
-if ! "$VENV_DIR/bin/python" -c "import flask" 2>/dev/null; then
-    echo "Installing Flask..."
-    "$VENV_DIR/bin/pip" install flask waitress
-fi
-
+echo "Syncing host-services dependencies with uv..."
+(cd "$HOST_SERVICES_DIR" && uv sync)
 echo "Dependencies installed"
 
 # Make the gateway script executable
@@ -120,7 +119,7 @@ echo "  - Listens on http://localhost:9847"
 echo "  - Requires authentication (secret at $SECRET_FILE)"
 echo "  - Enforces branch/PR ownership policies"
 echo "  - Blocks merge operations (human must merge via GitHub UI)"
-echo "  - Rate limits: 30 pushes/hr, 10 PR creates/hr, 200 total/hr"
+echo "  - Rate limits: 1000 pushes/hr, 500 PR creates/hr, 4000 total/hr"
 echo ""
 echo "Container integration:"
 echo "  - Secret shared at $SHARED_SECRET_FILE"
