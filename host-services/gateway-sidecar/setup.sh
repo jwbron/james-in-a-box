@@ -140,8 +140,8 @@ setup_container() {
         --network "$NETWORK_NAME" \
         -p 9847:9847 \
         --restart unless-stopped \
-        -v "$GITHUB_TOKEN_FILE:/secrets/.github-token:ro" \
-        -v "$SECRET_FILE:/secrets/gateway-secret:ro" \
+        -v "$GITHUB_TOKEN_FILE:/secrets/.github-token:ro,z" \
+        -v "$SECRET_FILE:/secrets/gateway-secret:ro,z" \
         "$GATEWAY_IMAGE_NAME"
 
     # Wait for gateway to be ready

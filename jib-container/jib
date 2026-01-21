@@ -1063,9 +1063,9 @@ def start_gateway_container() -> bool:
         "--network", JIB_NETWORK_NAME,
         "-p", f"{GATEWAY_PORT}:{GATEWAY_PORT}",  # Expose port for health checks from host
         "--restart", "unless-stopped",
-        # Mount secrets read-only
-        "-v", f"{github_token_file}:/secrets/.github-token:ro",
-        "-v", f"{gateway_secret_file}:/secrets/gateway-secret:ro",
+        # Mount secrets read-only (with SELinux label for Fedora/RHEL)
+        "-v", f"{github_token_file}:/secrets/.github-token:ro,z",
+        "-v", f"{gateway_secret_file}:/secrets/gateway-secret:ro,z",
         GATEWAY_IMAGE_NAME
     ]
 
