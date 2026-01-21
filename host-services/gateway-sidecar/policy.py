@@ -9,6 +9,7 @@ Enforces policies for git/gh operations:
 
 import re
 import sys
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,6 +24,10 @@ from .github_client import GitHubClient, get_github_client
 
 
 logger = get_logger("gateway-sidecar.policy")
+
+# Cache size limits
+MAX_PR_CACHE_SIZE = 500
+MAX_BRANCH_PR_CACHE_SIZE = 200
 
 # Bot identity variants that count as "jib"
 JIB_IDENTITIES = frozenset(
@@ -71,19 +76,37 @@ class CachedPRInfo:
         return (datetime.now(UTC).timestamp() - self.fetched_at) > 300
 
 
+class BoundedCache(OrderedDict):
+    """An OrderedDict with a maximum size that evicts oldest entries."""
+
+    def __init__(self, max_size: int):
+        super().__init__()
+        self.max_size = max_size
+
+    def __setitem__(self, key, value):
+        if key in self:
+            # Move to end if updating existing key
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        # Evict oldest entries if over max size
+        while len(self) > self.max_size:
+            self.popitem(last=False)
+
+
 class PolicyEngine:
     """
     Policy enforcement engine for git/gh operations.
 
     Caches PR info to reduce GitHub API calls.
+    Uses bounded caches to prevent unbounded memory growth.
     """
 
     def __init__(self, github_client: GitHubClient | None = None):
         self.github = github_client or get_github_client()
-        # Cache: (repo, pr_number) -> CachedPRInfo
-        self._pr_cache: dict[tuple[str, int], CachedPRInfo] = {}
-        # Cache: (repo, branch) -> list of PR numbers
-        self._branch_pr_cache: dict[tuple[str, str], tuple[list[int], float]] = {}
+        # Cache: (repo, pr_number) -> CachedPRInfo (bounded)
+        self._pr_cache: BoundedCache = BoundedCache(MAX_PR_CACHE_SIZE)
+        # Cache: (repo, branch) -> (list of PR numbers, timestamp) (bounded)
+        self._branch_pr_cache: BoundedCache = BoundedCache(MAX_BRANCH_PR_CACHE_SIZE)
 
     def _is_jib_author(self, author: str | dict[str, Any]) -> bool:
         """Check if author is a jib identity."""

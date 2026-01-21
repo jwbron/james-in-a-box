@@ -5,6 +5,9 @@ set -e
 COMPONENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="gateway-sidecar.service"
 SYSTEMD_DIR="${HOME}/.config/systemd/user"
+CONFIG_DIR="${HOME}/.config/jib"
+SHARING_DIR="${HOME}/.jib-sharing"
+SECRET_FILE="${CONFIG_DIR}/gateway-secret"
 
 echo "Setting up Gateway Sidecar service..."
 echo ""
@@ -25,9 +28,30 @@ if ! systemctl --user is-enabled github-token-refresher.service >/dev/null 2>&1;
     fi
 fi
 
+# Ensure config directory exists
+mkdir -p "$CONFIG_DIR"
+echo "Config directory exists: $CONFIG_DIR"
+
 # Ensure sharing directory exists
-mkdir -p "${HOME}/.jib-sharing"
-echo "Sharing directory exists: ${HOME}/.jib-sharing"
+mkdir -p "$SHARING_DIR"
+echo "Sharing directory exists: $SHARING_DIR"
+
+# Generate or verify gateway secret
+if [[ ! -f "$SECRET_FILE" ]]; then
+    echo "Generating gateway secret..."
+    # Generate a secure random secret
+    python3 -c "import secrets; print(secrets.token_urlsafe(32))" > "$SECRET_FILE"
+    chmod 600 "$SECRET_FILE"
+    echo "Gateway secret generated: $SECRET_FILE"
+else
+    echo "Gateway secret exists: $SECRET_FILE"
+fi
+
+# Copy secret to sharing directory for containers
+SHARED_SECRET_FILE="${SHARING_DIR}/.gateway-secret"
+cp "$SECRET_FILE" "$SHARED_SECRET_FILE"
+chmod 600 "$SHARED_SECRET_FILE"
+echo "Gateway secret copied to: $SHARED_SECRET_FILE"
 
 # Ensure host-services venv exists with required dependencies
 VENV_DIR="${COMPONENT_DIR}/../.venv"
@@ -93,8 +117,14 @@ echo "Setup complete!"
 echo ""
 echo "The gateway sidecar:"
 echo "  - Listens on http://localhost:9847"
+echo "  - Requires authentication (secret at $SECRET_FILE)"
 echo "  - Enforces branch/PR ownership policies"
 echo "  - Blocks merge operations (human must merge via GitHub UI)"
+echo "  - Rate limits: 30 pushes/hr, 10 PR creates/hr, 200 total/hr"
+echo ""
+echo "Container integration:"
+echo "  - Secret shared at $SHARED_SECRET_FILE"
+echo "  - Containers use this to authenticate with gateway"
 echo ""
 echo "Useful commands:"
 echo "  systemctl --user status $SERVICE_NAME    # Check status"

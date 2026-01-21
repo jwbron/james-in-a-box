@@ -7,11 +7,13 @@
 # 1. Block remote URL modifications (URLs are managed by the host)
 # 2. Route git push through the gateway sidecar for policy enforcement
 #
+# Security: Requires gateway sidecar - fails closed if gateway unavailable.
 # Authentication is handled by the gateway sidecar which holds the GITHUB_TOKEN.
 #
 
 REAL_GIT=/usr/bin/git
 GATEWAY_URL="${GATEWAY_URL:-http://host.docker.internal:9847}"
+GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
 
 # Function to show remote modification blocked message
 show_remote_blocked_message() {
@@ -33,6 +35,15 @@ EOF
     return 1
 }
 
+# Function to get gateway secret for authentication
+get_gateway_secret() {
+    if [ -f "$GATEWAY_SECRET_FILE" ]; then
+        cat "$GATEWAY_SECRET_FILE"
+    else
+        echo ""
+    fi
+}
+
 # Function to check if gateway is available
 check_gateway_available() {
     if command -v curl >/dev/null 2>&1; then
@@ -50,36 +61,37 @@ push_via_gateway() {
     local repo_path
     repo_path=$(pwd)
 
-    # Build JSON payload
-    local payload
-    if [ "$force" = "true" ]; then
-        payload=$(cat <<EOF
-{
-    "repo_path": "$repo_path",
-    "remote": "$remote",
-    "refspec": "$refspec",
-    "force": true
-}
-EOF
-)
-    else
-        payload=$(cat <<EOF
-{
-    "repo_path": "$repo_path",
-    "remote": "$remote",
-    "refspec": "$refspec",
-    "force": false
-}
-EOF
-)
+    # Get authentication secret
+    local secret
+    secret=$(get_gateway_secret)
+    if [ -z "$secret" ]; then
+        echo "ERROR: Gateway secret not available at $GATEWAY_SECRET_FILE" >&2
+        echo "The gateway sidecar must be running and properly configured." >&2
+        return 1
     fi
 
-    # Call gateway
+    # Build JSON payload - escape special characters properly
+    local force_json="false"
+    [ "$force" = "true" ] && force_json="true"
+
+    local payload
+    payload=$(python3 -c "
+import json
+print(json.dumps({
+    'repo_path': '$repo_path',
+    'remote': '$remote',
+    'refspec': '$refspec',
+    'force': $force_json
+}))
+")
+
+    # Call gateway with authentication
     local response
     local http_code
     response=$(curl -s -w "\n%{http_code}" \
         -X POST \
         -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $secret" \
         -d "$payload" \
         "${GATEWAY_URL}/api/v1/git/push" 2>&1)
 
@@ -110,9 +122,27 @@ EOF
         details=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stderr', '') if d else '')" 2>/dev/null)
         [ -n "$details" ] && echo "$details" >&2
 
-        # Special handling for policy denials
-        if [ "$http_code" = "403" ]; then
-            cat >&2 << 'EOF'
+        # Special handling for different error codes
+        case "$http_code" in
+            401)
+                cat >&2 << 'EOF'
+
+================================================================================
+  AUTHENTICATION FAILED
+================================================================================
+
+The gateway sidecar rejected the authentication token.
+
+Please ensure the gateway secret is correctly configured:
+  - Host: ~/.config/jib/gateway-secret
+  - Container: ~/sharing/.gateway-secret
+
+================================================================================
+
+EOF
+                ;;
+            403)
+                cat >&2 << 'EOF'
 
 ================================================================================
   PUSH BLOCKED BY POLICY
@@ -127,7 +157,21 @@ To push, ensure one of the following:
 ================================================================================
 
 EOF
-        fi
+                ;;
+            429)
+                cat >&2 << 'EOF'
+
+================================================================================
+  RATE LIMIT EXCEEDED
+================================================================================
+
+Too many push operations. Please wait before trying again.
+
+================================================================================
+
+EOF
+                ;;
+        esac
 
         return 1
     fi
@@ -234,36 +278,34 @@ case "$cmd" in
             exit 1
         fi
 
-        # Try to push via gateway
-        if check_gateway_available; then
-            push_via_gateway "$remote" "$refspec" "$force"
-            exit $?
-        else
-            # Gateway not available - fall back to direct push with warning
-            echo "WARNING: Gateway sidecar not available, attempting direct push..." >&2
-
-            # Check GITHUB_TOKEN for fallback
-            if [ -z "$GITHUB_TOKEN" ] && [ -z "$GH_TOKEN" ]; then
-                cat >&2 << 'EOF'
+        # Gateway is REQUIRED - fail closed if not available
+        if ! check_gateway_available; then
+            cat >&2 << 'EOF'
 
 ================================================================================
-  GITHUB_TOKEN NOT SET
+  GATEWAY SIDECAR NOT AVAILABLE
 ================================================================================
 
-Cannot push: No GitHub token available and gateway sidecar is not reachable.
+Cannot push: The gateway sidecar is required but not reachable.
+
+The gateway enforces ownership policies and holds GitHub credentials.
+Without it, push operations are not allowed.
 
 Please ensure:
-  1. Gateway sidecar is running on the host: systemctl --user status gateway-sidecar
-  2. Or GITHUB_TOKEN is set in the container environment
+  1. Gateway sidecar is running on the host:
+     systemctl --user status gateway-sidecar
+
+  2. The container can reach the host:
+     curl http://host.docker.internal:9847/api/v1/health
 
 ================================================================================
 
 EOF
-                exit 1
-            fi
-
-            exec "$REAL_GIT" "$@"
+            exit 1
         fi
+
+        push_via_gateway "$remote" "$refspec" "$force"
+        exit $?
         ;;
     remote)
         # Check for subcommands that modify remotes

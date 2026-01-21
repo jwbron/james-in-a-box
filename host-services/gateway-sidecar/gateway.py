@@ -5,6 +5,11 @@ Gateway Sidecar - REST API for policy-enforced git/gh operations.
 Provides a REST API that jib containers call to perform git push and gh operations.
 The gateway holds GitHub credentials and enforces ownership policies.
 
+Security:
+    - Authentication via shared secret (JIB_GATEWAY_SECRET)
+    - Listens only on localhost (127.0.0.1)
+    - Rate limiting per operation type
+
 Endpoints:
     POST /api/v1/git/push       - Push to remote (policy: branch_ownership)
     POST /api/v1/gh/pr/create   - Create PR (policy: none)
@@ -12,16 +17,22 @@ Endpoints:
     POST /api/v1/gh/pr/edit     - Edit PR (policy: pr_ownership)
     POST /api/v1/gh/pr/close    - Close PR (policy: pr_ownership)
     POST /api/v1/gh/execute     - Generic gh command (policy: filtered)
-    GET  /api/v1/health         - Health check
+    GET  /api/v1/health         - Health check (no auth required)
 
 Usage:
     gateway.py [--host HOST] [--port PORT] [--debug]
 """
 
 import argparse
+import functools
 import os
+import secrets
 import subprocess
 import sys
+import time
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -45,9 +56,165 @@ logger = get_logger("gateway-sidecar")
 app = Flask(__name__)
 
 # Configuration
-DEFAULT_HOST = "0.0.0.0"  # Listen on all interfaces for Docker network access
+DEFAULT_HOST = "127.0.0.1"  # Listen only on localhost for security
 DEFAULT_PORT = 9847
 GIT_CLI = "/usr/bin/git"
+
+# Authentication - shared secret from environment
+GATEWAY_SECRET = os.environ.get("JIB_GATEWAY_SECRET", "")
+SECRET_FILE = Path.home() / ".config" / "jib" / "gateway-secret"
+
+# Rate limiting configuration (per hour)
+RATE_LIMITS = {
+    "git_push": 30,
+    "gh_pr_create": 10,
+    "gh_pr_comment": 60,
+    "gh_pr_edit": 30,
+    "gh_pr_close": 10,
+    "gh_execute": 100,
+    "combined": 200,
+}
+
+
+@dataclass
+class RateLimitState:
+    """Track rate limit state for an operation."""
+
+    requests: list[float] = field(default_factory=list)
+
+    def count_recent(self, window_seconds: int = 3600) -> int:
+        """Count requests within the time window."""
+        now = time.time()
+        cutoff = now - window_seconds
+        # Clean old entries
+        self.requests = [t for t in self.requests if t > cutoff]
+        return len(self.requests)
+
+    def record(self) -> None:
+        """Record a new request."""
+        self.requests.append(time.time())
+
+
+# Global rate limit tracking
+_rate_limits: dict[str, RateLimitState] = defaultdict(RateLimitState)
+
+
+def get_gateway_secret() -> str:
+    """Get the gateway secret from environment or file."""
+    global GATEWAY_SECRET
+
+    if GATEWAY_SECRET:
+        return GATEWAY_SECRET
+
+    # Try to read from file
+    if SECRET_FILE.exists():
+        GATEWAY_SECRET = SECRET_FILE.read_text().strip()
+        return GATEWAY_SECRET
+
+    # Generate a new secret and save it
+    GATEWAY_SECRET = secrets.token_urlsafe(32)
+    SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SECRET_FILE.write_text(GATEWAY_SECRET)
+    SECRET_FILE.chmod(0o600)
+    logger.info("Generated new gateway secret", secret_file=str(SECRET_FILE))
+
+    return GATEWAY_SECRET
+
+
+def check_auth() -> tuple[bool, str]:
+    """
+    Check if request has valid authentication.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    secret = get_gateway_secret()
+    if not secret:
+        # No secret configured - deny all
+        return False, "Gateway secret not configured"
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return False, "Missing or invalid Authorization header"
+
+    provided_token = auth_header[7:]  # Remove "Bearer " prefix
+
+    # Constant-time comparison to prevent timing attacks
+    if secrets.compare_digest(provided_token, secret):
+        return True, ""
+
+    return False, "Invalid authorization token"
+
+
+def check_rate_limit(operation: str) -> tuple[bool, str]:
+    """
+    Check if operation is within rate limits.
+
+    Returns:
+        Tuple of (is_allowed, error_message)
+    """
+    # Check operation-specific limit
+    op_limit = RATE_LIMITS.get(operation, 100)
+    op_state = _rate_limits[operation]
+    op_count = op_state.count_recent()
+
+    if op_count >= op_limit:
+        return False, f"Rate limit exceeded for {operation}: {op_count}/{op_limit} per hour"
+
+    # Check combined limit
+    combined_state = _rate_limits["combined"]
+    combined_count = combined_state.count_recent()
+
+    if combined_count >= RATE_LIMITS["combined"]:
+        return False, f"Combined rate limit exceeded: {combined_count}/{RATE_LIMITS['combined']} per hour"
+
+    # Record the request
+    op_state.record()
+    combined_state.record()
+
+    return True, ""
+
+
+def require_auth(f):
+    """Decorator to require authentication for an endpoint."""
+
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        is_valid, error = check_auth()
+        if not is_valid:
+            logger.warning(
+                "Authentication failed",
+                endpoint=request.path,
+                error=error,
+                source_ip=request.remote_addr,
+            )
+            return make_error(error, status_code=401)
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def require_rate_limit(operation: str):
+    """Decorator to enforce rate limiting for an endpoint."""
+
+    def decorator(f):
+        @functools.wraps(f)
+        def decorated(*args, **kwargs):
+            is_allowed, error = check_rate_limit(operation)
+            if not is_allowed:
+                logger.warning(
+                    "Rate limit exceeded",
+                    operation=operation,
+                    endpoint=request.path,
+                    source_ip=request.remote_addr,
+                )
+                return make_error(error, status_code=429)
+            return f(*args, **kwargs)
+
+        return decorated
+
+    return decorator
+
 
 # Read-only gh commands that don't require ownership checks
 READONLY_GH_COMMANDS = frozenset(
@@ -107,22 +274,49 @@ def make_success(message: str, data: dict[str, Any] | None = None):
     return make_response(True, message, data, 200)
 
 
+def audit_log(
+    event_type: str,
+    operation: str,
+    success: bool,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Log an audit event in structured format."""
+    log_data = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "event_type": "gateway_operation",
+        "operation": operation,
+        "source_ip": request.remote_addr,
+        "success": success,
+    }
+    if details:
+        log_data.update(details)
+
+    if success:
+        logger.info(f"Audit: {event_type}", **log_data)
+    else:
+        logger.warning(f"Audit: {event_type}", **log_data)
+
+
 @app.route("/api/v1/health", methods=["GET"])
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint (no auth required)."""
     github = get_github_client()
     token_valid = github.is_token_valid()
+    secret_configured = bool(get_gateway_secret())
 
     return jsonify(
         {
-            "status": "healthy" if token_valid else "degraded",
+            "status": "healthy" if (token_valid and secret_configured) else "degraded",
             "github_token_valid": token_valid,
+            "auth_configured": secret_configured,
             "service": "gateway-sidecar",
         }
     )
 
 
 @app.route("/api/v1/git/push", methods=["POST"])
+@require_auth
+@require_rate_limit("git_push")
 def git_push():
     """
     Handle git push requests.
@@ -195,11 +389,11 @@ def git_push():
     policy_result = policy.check_branch_ownership(repo, branch)
 
     if not policy_result.allowed:
-        logger.warning(
-            "Push denied by policy",
-            repo=repo,
-            branch=branch,
-            reason=policy_result.reason,
+        audit_log(
+            "push_denied",
+            "git_push",
+            success=False,
+            details={"repo": repo, "branch": branch, "reason": policy_result.reason},
         )
         return make_error(
             f"Push denied: {policy_result.reason}",
@@ -219,31 +413,39 @@ def git_push():
         cmd.append("--force")
     cmd.extend([remote, refspec] if refspec else [remote])
 
-    # Configure git credential helper to use our token
+    # Configure git to use token via GIT_ASKPASS
+    # Create a secure credential helper using a file descriptor instead of temp file
     env = os.environ.copy()
-    env["GIT_ASKPASS"] = "echo"
     env["GIT_TERMINAL_PROMPT"] = "0"
 
-    # Use credential helper via environment
-    # The remote URL format: https://x-access-token:TOKEN@github.com/owner/repo.git
-    # We'll set up a credential helper that provides the token
-    credential_helper_script = f"""#!/bin/bash
-echo "username=x-access-token"
-echo "password={token.token}"
+    # Use environment variable for credential helper to avoid temp file
+    # Git credential helper protocol: respond with username and password
+    env["GIT_USERNAME"] = "x-access-token"
+    env["GIT_PASSWORD"] = token.token
+
+    # Create inline credential helper script that reads from env
+    # This avoids writing token to disk
+    askpass_script = """#!/bin/bash
+if [[ "$1" == *"Username"* ]]; then
+    echo "$GIT_USERNAME"
+elif [[ "$1" == *"Password"* ]]; then
+    echo "$GIT_PASSWORD"
+fi
 """
 
     try:
-        # Create temporary credential helper
         import tempfile
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
-            f.write(credential_helper_script)
-            credential_helper_path = f.name
+        # Create temp file with restrictive permissions BEFORE writing
+        fd, credential_helper_path = tempfile.mkstemp(suffix=".sh", prefix="git-askpass-")
+        try:
+            os.fchmod(fd, 0o700)  # Set permissions on fd before writing
+            os.write(fd, askpass_script.encode())
+        finally:
+            os.close(fd)
 
-        os.chmod(credential_helper_path, 0o700)
         env["GIT_ASKPASS"] = credential_helper_path
 
-        # Configure credential helper
         result = subprocess.run(
             cmd,
             cwd=repo_path,
@@ -254,15 +456,15 @@ echo "password={token.token}"
             check=False,
         )
 
-        # Clean up
+        # Clean up immediately
         os.unlink(credential_helper_path)
 
         if result.returncode == 0:
-            logger.info(
-                "Push successful",
-                repo=repo,
-                branch=branch,
-                force=force,
+            audit_log(
+                "push_success",
+                "git_push",
+                success=True,
+                details={"repo": repo, "branch": branch, "force": force},
             )
             return make_success(
                 "Push successful",
@@ -274,12 +476,11 @@ echo "password={token.token}"
                 },
             )
         else:
-            logger.warning(
-                "Push failed",
-                repo=repo,
-                branch=branch,
-                returncode=result.returncode,
-                stderr=result.stderr,
+            audit_log(
+                "push_failed",
+                "git_push",
+                success=False,
+                details={"repo": repo, "branch": branch, "returncode": result.returncode},
             )
             return make_error(
                 f"Push failed: {result.stderr}",
@@ -294,6 +495,8 @@ echo "password={token.token}"
 
 
 @app.route("/api/v1/gh/pr/create", methods=["POST"])
+@require_auth
+@require_rate_limit("gh_pr_create")
 def gh_pr_create():
     """
     Create a pull request.
@@ -345,18 +548,23 @@ def gh_pr_create():
     result = github.execute(args, timeout=60)
 
     if result.success:
-        logger.info(
-            "PR created",
-            repo=repo,
-            title=title,
-            base=base,
-            head=head,
+        audit_log(
+            "pr_created",
+            "gh_pr_create",
+            success=True,
+            details={"repo": repo, "title": title, "base": base, "head": head},
         )
         return make_success(
             "PR created",
             {"stdout": result.stdout, "stderr": result.stderr},
         )
     else:
+        audit_log(
+            "pr_create_failed",
+            "gh_pr_create",
+            success=False,
+            details={"repo": repo, "error": result.stderr[:200]},
+        )
         return make_error(
             f"Failed to create PR: {result.stderr}",
             status_code=500,
@@ -365,6 +573,8 @@ def gh_pr_create():
 
 
 @app.route("/api/v1/gh/pr/comment", methods=["POST"])
+@require_auth
+@require_rate_limit("gh_pr_comment")
 def gh_pr_comment():
     """
     Add a comment to a PR.
@@ -398,11 +608,11 @@ def gh_pr_comment():
     policy_result = policy.check_pr_ownership(repo, pr_number)
 
     if not policy_result.allowed:
-        logger.warning(
-            "PR comment denied by policy",
-            repo=repo,
-            pr_number=pr_number,
-            reason=policy_result.reason,
+        audit_log(
+            "pr_comment_denied",
+            "gh_pr_comment",
+            success=False,
+            details={"repo": repo, "pr_number": pr_number, "reason": policy_result.reason},
         )
         return make_error(
             f"Comment denied: {policy_result.reason}",
@@ -424,7 +634,12 @@ def gh_pr_comment():
     result = github.execute(args, timeout=30)
 
     if result.success:
-        logger.info("PR comment added", repo=repo, pr_number=pr_number)
+        audit_log(
+            "pr_comment_added",
+            "gh_pr_comment",
+            success=True,
+            details={"repo": repo, "pr_number": pr_number},
+        )
         return make_success("Comment added", {"stdout": result.stdout})
     else:
         return make_error(
@@ -435,6 +650,8 @@ def gh_pr_comment():
 
 
 @app.route("/api/v1/gh/pr/edit", methods=["POST"])
+@require_auth
+@require_rate_limit("gh_pr_edit")
 def gh_pr_edit():
     """
     Edit a PR title or body.
@@ -470,11 +687,11 @@ def gh_pr_edit():
     policy_result = policy.check_pr_ownership(repo, pr_number)
 
     if not policy_result.allowed:
-        logger.warning(
-            "PR edit denied by policy",
-            repo=repo,
-            pr_number=pr_number,
-            reason=policy_result.reason,
+        audit_log(
+            "pr_edit_denied",
+            "gh_pr_edit",
+            success=False,
+            details={"repo": repo, "pr_number": pr_number, "reason": policy_result.reason},
         )
         return make_error(
             f"Edit denied: {policy_result.reason}",
@@ -492,7 +709,12 @@ def gh_pr_edit():
     result = github.execute(args, timeout=30)
 
     if result.success:
-        logger.info("PR edited", repo=repo, pr_number=pr_number)
+        audit_log(
+            "pr_edited",
+            "gh_pr_edit",
+            success=True,
+            details={"repo": repo, "pr_number": pr_number},
+        )
         return make_success("PR edited", {"stdout": result.stdout})
     else:
         return make_error(
@@ -503,6 +725,8 @@ def gh_pr_edit():
 
 
 @app.route("/api/v1/gh/pr/close", methods=["POST"])
+@require_auth
+@require_rate_limit("gh_pr_close")
 def gh_pr_close():
     """
     Close a PR.
@@ -532,11 +756,11 @@ def gh_pr_close():
     policy_result = policy.check_pr_ownership(repo, pr_number)
 
     if not policy_result.allowed:
-        logger.warning(
-            "PR close denied by policy",
-            repo=repo,
-            pr_number=pr_number,
-            reason=policy_result.reason,
+        audit_log(
+            "pr_close_denied",
+            "gh_pr_close",
+            success=False,
+            details={"repo": repo, "pr_number": pr_number, "reason": policy_result.reason},
         )
         return make_error(
             f"Close denied: {policy_result.reason}",
@@ -550,7 +774,12 @@ def gh_pr_close():
     result = github.execute(args, timeout=30)
 
     if result.success:
-        logger.info("PR closed", repo=repo, pr_number=pr_number)
+        audit_log(
+            "pr_closed",
+            "gh_pr_close",
+            success=True,
+            details={"repo": repo, "pr_number": pr_number},
+        )
         return make_success("PR closed", {"stdout": result.stdout})
     else:
         return make_error(
@@ -561,6 +790,8 @@ def gh_pr_close():
 
 
 @app.route("/api/v1/gh/execute", methods=["POST"])
+@require_auth
+@require_rate_limit("gh_execute")
 def gh_execute():
     """
     Execute a generic gh command.
@@ -589,15 +820,16 @@ def gh_execute():
 
     for blocked in BLOCKED_GH_COMMANDS:
         if cmd_str.startswith(blocked):
-            logger.warning(
-                "Blocked gh command attempted",
-                args=args,
-                blocked_command=blocked,
+            audit_log(
+                "blocked_command",
+                "gh_execute",
+                success=False,
+                details={"command_args": args, "blocked_command": blocked},
             )
             return make_error(
                 f"Command '{blocked}' is not allowed through the gateway",
                 status_code=403,
-                details={"blocked_command": blocked, "args": args},
+                details={"blocked_command": blocked, "command_args": args},
             )
 
     # Execute the command
@@ -636,11 +868,19 @@ def main():
 
     args = parser.parse_args()
 
+    # Ensure secret is configured
+    secret = get_gateway_secret()
+    if not secret:
+        logger.error("Failed to configure gateway secret")
+        sys.exit(1)
+
     logger.info(
         "Starting Gateway Sidecar",
         host=args.host,
         port=args.port,
         debug=args.debug,
+        auth_enabled=True,
+        rate_limiting_enabled=True,
     )
 
     # Run with production server in production, debug server in debug mode
