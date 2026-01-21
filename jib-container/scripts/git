@@ -14,6 +14,36 @@
 REAL_GIT=/usr/bin/git
 GATEWAY_URL="${GATEWAY_URL:-http://host.docker.internal:9847}"
 GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
+# Host worktree path - set by jib launcher to translate container paths
+# Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X
+JIB_WORKTREE_HOST_PATH="${JIB_WORKTREE_HOST_PATH:-}"
+CONTAINER_REPOS_DIR="${HOME}/repos"
+
+# Function to translate container path to host path for gateway
+# Container sees /home/user/repos/X but gateway needs the actual host path
+# which is JIB_WORKTREE_HOST_PATH/X (e.g., ~/.jib-worktrees/<container-id>/X)
+translate_path_for_gateway() {
+    local container_path="$1"
+
+    # If no worktree host path is set, return the path as-is
+    # (this handles running outside of jib container context)
+    if [ -z "$JIB_WORKTREE_HOST_PATH" ]; then
+        echo "$container_path"
+        return
+    fi
+
+    # Check if path is under the container's repos directory
+    # e.g., /home/jwies/repos/james-in-a-box -> james-in-a-box
+    if [[ "$container_path" == "$CONTAINER_REPOS_DIR"/* ]]; then
+        # Extract the relative path after ~/repos/
+        local relative_path="${container_path#$CONTAINER_REPOS_DIR/}"
+        # Construct the host worktree path
+        echo "${JIB_WORKTREE_HOST_PATH}/${relative_path}"
+    else
+        # Not under repos dir, return as-is
+        echo "$container_path"
+    fi
+}
 
 # Function to show remote modification blocked message
 show_remote_blocked_message() {
@@ -58,8 +88,12 @@ push_via_gateway() {
     local remote="$1"
     local refspec="$2"
     local force="$3"
+    local container_path
     local repo_path
-    repo_path=$(pwd)
+    container_path=$(pwd)
+    # Translate container path to host path for gateway
+    # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<id>/X
+    repo_path=$(translate_path_for_gateway "$container_path")
 
     # Get authentication secret
     local secret
