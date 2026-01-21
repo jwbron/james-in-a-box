@@ -47,6 +47,7 @@ if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
 
+
 # Import gateway modules - try relative import first (module mode),
 # fall back to absolute import (standalone script mode in container)
 try:
@@ -70,9 +71,7 @@ logger = get_logger("gateway-sidecar")
 app = Flask(__name__)
 
 # Configuration
-DEFAULT_HOST = os.environ.get(
-    "GATEWAY_HOST", "0.0.0.0"
-)  # Listen on all interfaces by default
+DEFAULT_HOST = os.environ.get("GATEWAY_HOST", "0.0.0.0")  # Listen on all interfaces by default
 DEFAULT_PORT = 9847
 GIT_CLI = "/usr/bin/git"
 
