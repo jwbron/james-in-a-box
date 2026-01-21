@@ -1948,6 +1948,7 @@ def exec_in_new_container(
     timeout_minutes: int = 30,
     task_id: Optional[str] = None,
     thread_ts: Optional[str] = None,
+    auth_mode: str = "host",
 ) -> bool:
     """Execute a command in a new ephemeral container with isolated worktrees.
 
@@ -1963,6 +1964,7 @@ def exec_in_new_container(
         timeout_minutes: Timeout in minutes (default: 30)
         task_id: Optional task ID for log correlation (auto-detected from command if not provided)
         thread_ts: Optional Slack thread timestamp for correlation
+        auth_mode: Authentication method - 'host' mounts ~/.claude, 'api-key' passes env var
 
     Returns:
         True if successful, False otherwise
@@ -2094,6 +2096,22 @@ def exec_in_new_container(
             except Exception as e:
                 warn(f"Error reading .git file for {repo_name}: {e}")
 
+    # Mount host Claude configuration when using host auth mode
+    if auth_mode == "host":
+        home = Path.home()
+        claude_dir = home / ".claude"
+        claude_json = home / ".claude.json"
+
+        if claude_dir.is_dir():
+            container_claude_dir = f"/home/{os.environ['USER']}/.claude"
+            mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
+            print(f"  • ~/.claude (Claude config directory)")
+
+        if claude_json.is_file():
+            container_claude_json = f"/home/{os.environ['USER']}/.claude.json"
+            mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
+            print(f"  • ~/.claude.json (Claude settings)")
+
     print()
 
     # Build docker run command with logging configuration
@@ -2138,20 +2156,23 @@ def exec_in_new_container(
     # Add LLM provider preference and API keys
     llm_provider = get_llm_provider()
     cmd.extend(["-e", f"LLM_PROVIDER={llm_provider}"])
-    
+
     # Add provider-specific API keys
-    api_key = get_anthropic_api_key()
+    # Google and OpenAI keys are always passed (may be needed for other purposes)
     google_api_key = get_google_api_key()
     openai_api_key = get_openai_api_key()
-    
+
     if google_api_key:
         cmd.extend(["-e", f"GOOGLE_API_KEY={google_api_key}"])
     if openai_api_key:
         cmd.extend(["-e", f"OPENAI_API_KEY={openai_api_key}"])
-    
-    # Set Anthropic API key if available
-    if api_key:
-        cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
+
+    # Set Anthropic API key only when using api-key auth mode
+    # When using host auth, Claude Code will use ~/.claude for authentication
+    if auth_mode == "api-key":
+        api_key = get_anthropic_api_key()
+        if api_key:
+            cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
 
     # Add mount arguments
     cmd.extend(mount_args)
@@ -2249,6 +2270,12 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         help="Timeout in minutes for --exec commands (default: 30)"
     )
     parser.add_argument(
+        "--auth",
+        choices=["host", "api-key"],
+        default="host",
+        help="Authentication method for --exec: 'host' mounts ~/.claude from host (default), 'api-key' passes ANTHROPIC_API_KEY env var"
+    )
+    parser.add_argument(
         "--exec",
         nargs=argparse.REMAINDER,
         help="Execute a command in a new ephemeral container (automatic cleanup)"
@@ -2323,7 +2350,7 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
 
     # Handle exec - execute in a new ephemeral container
     if args.exec:
-        if not exec_in_new_container(args.exec, timeout_minutes=args.timeout):
+        if not exec_in_new_container(args.exec, timeout_minutes=args.timeout, auth_mode=args.auth):
             return 1
         return 0
 
