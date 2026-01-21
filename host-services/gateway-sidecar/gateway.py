@@ -56,7 +56,9 @@ logger = get_logger("gateway-sidecar")
 app = Flask(__name__)
 
 # Configuration
-DEFAULT_HOST = "0.0.0.0"  # Listen on all interfaces (Docker containers need access via host.docker.internal)
+DEFAULT_HOST = (
+    "0.0.0.0"  # Listen on all interfaces (Docker containers need access via host.docker.internal)
+)
 DEFAULT_PORT = 9847
 GIT_CLI = "/usr/bin/git"
 
