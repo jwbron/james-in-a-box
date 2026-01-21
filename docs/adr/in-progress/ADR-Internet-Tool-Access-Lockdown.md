@@ -274,21 +274,20 @@ The jib container uses `git` and `gh` CLI wrappers that:
 
 ### Rate Limiting
 
-The gateway API implements rate limiting to prevent abuse:
+The gateway implements rate limiting to stay under GitHub API limits (5,000 requests/hour for authenticated users, 5,000-15,000 for GitHub App installations):
 
 | Endpoint | Rate Limit | Window | Rationale |
 |----------|------------|--------|-----------|
-| `/api/git/push` | 30 requests | 1 hour | Normal workflow: ~5-10 pushes/hour |
-| `/api/gh/pr/create` | 10 requests | 1 hour | Creating too many PRs is suspicious |
-| `/api/gh/pr/comment` | 60 requests | 1 hour | Allow frequent feedback |
-| `/api/gh/pr/close` | 10 requests | 1 hour | Match PR creation limit |
-| All endpoints combined | 200 requests | 1 hour | Overall circuit breaker |
+| `/api/git/push` | 1,000 requests | 1 hour | Well under GitHub limits |
+| `/api/gh/pr/create` | 500 requests | 1 hour | Well under GitHub limits |
+| `/api/gh/pr/comment` | 2,000 requests | 1 hour | Comments are frequent operations |
+| `/api/gh/pr/close` | 500 requests | 1 hour | Match PR creation limit |
+| All endpoints combined | 4,000 requests | 1 hour | Stay under GitHub's 5,000/hr limit |
 
 **Rate limit exceeded behavior:**
 - Return HTTP 429 Too Many Requests
 - Include `Retry-After` header
 - Log the rate limit event with full context
-- Alert via Slack if sustained abuse detected
 
 ### Audit Log Specification
 
