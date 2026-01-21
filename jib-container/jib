@@ -1817,6 +1817,24 @@ def run_claude() -> bool:
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
+    # Mount host Claude configuration (interactive mode only)
+    # This allows the container to use the host's Claude settings
+    home = Path.home()
+    claude_dir = home / ".claude"
+    claude_json = home / ".claude.json"
+
+    if claude_dir.exists():
+        container_claude_dir = f"/home/{os.environ['USER']}/.claude"
+        mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
+        if not _quiet_mode:
+            print(f"  • ~/.claude (Claude config directory)")
+
+    if claude_json.exists():
+        container_claude_json = f"/home/{os.environ['USER']}/.claude.json"
+        mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
+        if not _quiet_mode:
+            print(f"  • ~/.claude.json (Claude settings)")
+
     if not _quiet_mode:
         print()
 
