@@ -72,8 +72,27 @@ generate_secret() {
 
 # Container mode setup
 setup_container() {
-    echo "Building gateway container image..."
-    echo ""
+    GITHUB_TOKEN_FILE="${SHARING_DIR}/.github-token"
+    NETWORK_NAME="jib-network"
+    CONTAINER_NAME="jib-gateway"
+
+    # Check for GitHub token file
+    if [[ ! -f "$GITHUB_TOKEN_FILE" ]]; then
+        echo "WARNING: GitHub token file not found at $GITHUB_TOKEN_FILE"
+        echo "The gateway requires this file for GitHub authentication."
+        echo ""
+        echo "Please run the github-token-refresher setup first:"
+        echo "  ./host-services/utilities/github-token-refresher/setup.sh"
+        echo ""
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Setup cancelled."
+            exit 1
+        fi
+    else
+        echo "GitHub token file exists: $GITHUB_TOKEN_FILE"
+    fi
 
     # Check Docker is available
     if ! command -v docker &> /dev/null; then
@@ -89,27 +108,83 @@ setup_container() {
     fi
 
     # Build the image from repo root (required for COPY context)
-    echo "Building image from: $REPO_ROOT"
-    echo "Using Dockerfile: $DOCKERFILE"
+    echo ""
+    echo "Building gateway container image..."
+    echo "  Image: $GATEWAY_IMAGE_NAME"
+    echo "  Dockerfile: $DOCKERFILE"
+    echo "  Context: $REPO_ROOT"
+    echo ""
     docker build -t "$GATEWAY_IMAGE_NAME" -f "$DOCKERFILE" "$REPO_ROOT"
 
     echo ""
-    echo "Gateway image built: $GATEWAY_IMAGE_NAME"
+    echo "Gateway image built successfully!"
+
+    # Create Docker network if needed
+    if ! docker network inspect "$NETWORK_NAME" &>/dev/null; then
+        echo "Creating Docker network: $NETWORK_NAME"
+        docker network create "$NETWORK_NAME"
+    else
+        echo "Docker network exists: $NETWORK_NAME"
+    fi
+
+    # Stop and remove existing container if present
+    if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+        echo "Removing existing gateway container..."
+        docker rm -f "$CONTAINER_NAME" >/dev/null
+    fi
+
+    # Start the gateway container
+    echo "Starting gateway container..."
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --network "$NETWORK_NAME" \
+        -p 9847:9847 \
+        --restart unless-stopped \
+        -v "$GITHUB_TOKEN_FILE:/secrets/.github-token:ro" \
+        -v "$SECRET_FILE:/secrets/gateway-secret:ro" \
+        "$GATEWAY_IMAGE_NAME"
+
+    # Wait for gateway to be ready
+    echo ""
+    echo "Waiting for gateway to be ready..."
+    sleep 2
+
+    # Health check
+    HEALTH_URL="http://localhost:9847/api/v1/health"
+    if curl -s "$HEALTH_URL" | grep -q '"status"'; then
+        echo ""
+        echo "Gateway is running!"
+        echo ""
+        curl -s "$HEALTH_URL" | python3 -m json.tool
+    else
+        echo ""
+        echo "WARNING: Gateway health check failed."
+        echo "Check container logs: docker logs $CONTAINER_NAME"
+    fi
+
+    echo ""
+    echo "Container status:"
+    docker ps --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
     echo ""
     echo "Setup complete!"
     echo ""
     echo "The containerized gateway sidecar:"
-    echo "  - Will be started automatically by 'jib' command"
-    echo "  - Runs on Docker network: jib-network"
-    echo "  - Container name: jib-gateway"
-    echo "  - Listens on port 9847 (internal to jib-network)"
-    echo "  - Requires authentication (secret at $SECRET_FILE)"
+    echo "  - Running as container: $CONTAINER_NAME"
+    echo "  - On Docker network: $NETWORK_NAME"
+    echo "  - Listening on port 9847"
+    echo "  - Will restart automatically (unless-stopped)"
+    echo "  - Authentication secret at: $SECRET_FILE"
     echo ""
-    echo "To manually manage the gateway:"
-    echo "  docker ps | grep jib-gateway        # Check if running"
-    echo "  docker logs jib-gateway             # View logs"
-    echo "  docker stop jib-gateway             # Stop gateway"
-    echo "  docker rm jib-gateway               # Remove container"
+    echo "The 'jib' command will use this gateway automatically."
+    echo ""
+    echo "Useful commands:"
+    echo "  docker ps | grep $CONTAINER_NAME     # Check if running"
+    echo "  docker logs $CONTAINER_NAME          # View logs"
+    echo "  docker logs -f $CONTAINER_NAME       # Follow logs"
+    echo "  docker restart $CONTAINER_NAME       # Restart gateway"
+    echo "  docker stop $CONTAINER_NAME          # Stop gateway"
+    echo "  curl http://localhost:9847/api/v1/health  # Health check"
 }
 
 # Systemd mode setup (legacy)
