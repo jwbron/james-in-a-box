@@ -1823,13 +1823,13 @@ def run_claude() -> bool:
     claude_dir = home / ".claude"
     claude_json = home / ".claude.json"
 
-    if claude_dir.exists():
+    if claude_dir.is_dir():
         container_claude_dir = f"/home/{os.environ['USER']}/.claude"
         mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
         if not _quiet_mode:
             print(f"  • ~/.claude (Claude config directory)")
 
-    if claude_json.exists():
+    if claude_json.is_file():
         container_claude_json = f"/home/{os.environ['USER']}/.claude.json"
         mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
         if not _quiet_mode:
