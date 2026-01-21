@@ -13,13 +13,11 @@ Tests cover:
 
 import json
 import os
-import sys
 import time
-from dataclasses import dataclass
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 
 # conftest.py sets up the module loading and TEST_SECRET
 # Modules are loaded via importlib in conftest.py
@@ -48,7 +46,6 @@ def auth_headers():
 def reset_rate_limits():
     """Reset rate limits before each test."""
     gateway._rate_limits.clear()
-    yield
 
 
 class TestHealthCheck:
@@ -140,9 +137,7 @@ class TestAuthentication:
             response = client.post(
                 "/api/v1/gh/pr/create",
                 headers=auth_headers,
-                data=json.dumps(
-                    {"repo": "test/repo", "title": "Test PR", "head": "feature"}
-                ),
+                data=json.dumps({"repo": "test/repo", "title": "Test PR", "head": "feature"}),
                 content_type="application/json",
             )
 
@@ -173,9 +168,7 @@ class TestRateLimiting:
                     response = client.post(
                         "/api/v1/gh/pr/create",
                         headers=auth_headers,
-                        data=json.dumps(
-                            {"repo": "test/repo", "title": "Test", "head": "branch"}
-                        ),
+                        data=json.dumps({"repo": "test/repo", "title": "Test", "head": "branch"}),
                         content_type="application/json",
                     )
                     assert response.status_code == 200
@@ -184,9 +177,7 @@ class TestRateLimiting:
                 response = client.post(
                     "/api/v1/gh/pr/create",
                     headers=auth_headers,
-                    data=json.dumps(
-                        {"repo": "test/repo", "title": "Test", "head": "branch"}
-                    ),
+                    data=json.dumps({"repo": "test/repo", "title": "Test", "head": "branch"}),
                     content_type="application/json",
                 )
 
@@ -452,9 +443,7 @@ class TestGhPrComment:
             response = client.post(
                 "/api/v1/gh/pr/comment",
                 headers=auth_headers,
-                data=json.dumps(
-                    {"repo": "test/repo", "pr_number": 123, "body": "Comment"}
-                ),
+                data=json.dumps({"repo": "test/repo", "pr_number": 123, "body": "Comment"}),
                 content_type="application/json",
             )
 
@@ -486,9 +475,7 @@ class TestGhPrComment:
             response = client.post(
                 "/api/v1/gh/pr/comment",
                 headers=auth_headers,
-                data=json.dumps(
-                    {"repo": "test/repo", "pr_number": 123, "body": "Thanks!"}
-                ),
+                data=json.dumps({"repo": "test/repo", "pr_number": 123, "body": "Thanks!"}),
                 content_type="application/json",
             )
 
@@ -527,9 +514,7 @@ class TestGhPrEdit:
             response = client.post(
                 "/api/v1/gh/pr/edit",
                 headers=auth_headers,
-                data=json.dumps(
-                    {"repo": "test/repo", "pr_number": 123, "title": "New title"}
-                ),
+                data=json.dumps({"repo": "test/repo", "pr_number": 123, "title": "New title"}),
                 content_type="application/json",
             )
 

@@ -8,11 +8,11 @@ All modules with relative imports are loaded with those imports converted to
 absolute imports that resolve to our loaded modules.
 """
 
-import importlib.util
 import os
 import sys
 from pathlib import Path
 from types import ModuleType
+
 
 # Set up test secret before any gateway imports
 TEST_SECRET = "test-secret-token-12345"

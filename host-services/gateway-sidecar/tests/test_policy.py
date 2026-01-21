@@ -1,19 +1,20 @@
 """Tests for policy enforcement logic."""
 
-import pytest
-from unittest.mock import MagicMock, patch
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
+
+import pytest
 
 # conftest.py loads the modules via importlib
 # Import from the loaded policy module
 from policy import (
+    JIB_BRANCH_PREFIXES,
+    JIB_IDENTITIES,
+    CachedPRInfo,
     PolicyEngine,
     PolicyResult,
-    CachedPRInfo,
-    extract_repo_from_remote,
     extract_branch_from_refspec,
-    JIB_IDENTITIES,
-    JIB_BRANCH_PREFIXES,
+    extract_repo_from_remote,
 )
 
 

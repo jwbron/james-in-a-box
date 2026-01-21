@@ -166,7 +166,10 @@ def check_rate_limit(operation: str) -> tuple[bool, str]:
     combined_count = combined_state.count_recent()
 
     if combined_count >= RATE_LIMITS["combined"]:
-        return False, f"Combined rate limit exceeded: {combined_count}/{RATE_LIMITS['combined']} per hour"
+        return (
+            False,
+            f"Combined rate limit exceeded: {combined_count}/{RATE_LIMITS['combined']} per hour",
+        )
 
     # Record the request
     op_state.record()
