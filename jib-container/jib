@@ -186,6 +186,13 @@ class Config:
     ]
 
 
+# Gateway container constants (containerized gateway sidecar)
+GATEWAY_CONTAINER_NAME = "jib-gateway"
+GATEWAY_IMAGE_NAME = "jib-gateway"
+JIB_NETWORK_NAME = "jib-network"
+GATEWAY_PORT = 9847
+
+
 def get_local_repos() -> List[Path]:
     """Load local repository paths from configuration.
 
@@ -484,11 +491,10 @@ def run_setup_script() -> bool:
 
 def check_host_setup() -> bool:
     """Check if host setup is complete (services installed, directories exist)"""
-    # Critical systemd services that should be installed
-    critical_services = [
+    # Systemd services that should be installed (gateway can be containerized instead)
+    slack_services = [
         "slack-notifier.service",
         "slack-receiver.service",
-        "gateway-sidecar.service",
     ]
 
     # Important directories that should exist
@@ -503,8 +509,8 @@ def check_host_setup() -> bool:
 
     issues_found = []
 
-    # Check if systemd services are installed
-    for service in critical_services:
+    # Check if Slack services are installed
+    for service in slack_services:
         result = subprocess.run(
             ["systemctl", "--user", "list-unit-files", service],
             capture_output=True,
@@ -512,6 +518,20 @@ def check_host_setup() -> bool:
         )
         if result.returncode != 0 or service not in result.stdout:
             issues_found.append(f"Service not installed: {service}")
+
+    # Check gateway setup: either systemd service OR containerized gateway (secret file)
+    # The containerized gateway is started on-demand by jib, so we just need the secret
+    gateway_secret = Config.USER_CONFIG_DIR / "gateway-secret"
+    gateway_systemd_result = subprocess.run(
+        ["systemctl", "--user", "list-unit-files", "gateway-sidecar.service"],
+        capture_output=True,
+        text=True
+    )
+    gateway_systemd_ok = gateway_systemd_result.returncode == 0 and "gateway-sidecar.service" in gateway_systemd_result.stdout
+    gateway_container_ok = gateway_secret.exists()
+
+    if not gateway_systemd_ok and not gateway_container_ok:
+        issues_found.append("Gateway not configured: run host-services/gateway-sidecar/setup.sh")
 
     # Check if critical directories exist
     for dir_path in critical_dirs:
@@ -869,6 +889,210 @@ def image_exists() -> bool:
         ["docker", "image", "inspect", Config.IMAGE_NAME],
         capture_output=True
     ).returncode == 0
+
+
+def ensure_jib_network() -> bool:
+    """Create jib-network Docker network if it doesn't exist.
+
+    Returns:
+        True if network exists or was created, False on failure
+    """
+    # Check if network exists
+    result = subprocess.run(
+        ["docker", "network", "inspect", JIB_NETWORK_NAME],
+        capture_output=True
+    )
+    if result.returncode == 0:
+        return True
+
+    # Create the network
+    result = subprocess.run(
+        ["docker", "network", "create", JIB_NETWORK_NAME],
+        capture_output=True,
+        text=True
+    )
+    if result.returncode == 0:
+        info(f"Created Docker network: {JIB_NETWORK_NAME}")
+        return True
+
+    error(f"Failed to create Docker network: {result.stderr}")
+    return False
+
+
+def is_gateway_running() -> bool:
+    """Check if the gateway container is running.
+
+    Returns:
+        True if gateway container is running, False otherwise
+    """
+    result = subprocess.run(
+        ["docker", "container", "inspect", "-f", "{{.State.Running}}", GATEWAY_CONTAINER_NAME],
+        capture_output=True,
+        text=True
+    )
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def gateway_image_exists() -> bool:
+    """Check if gateway Docker image exists."""
+    return subprocess.run(
+        ["docker", "image", "inspect", GATEWAY_IMAGE_NAME],
+        capture_output=True
+    ).returncode == 0
+
+
+def build_gateway_image() -> bool:
+    """Build the gateway sidecar Docker image.
+
+    Builds from the repo root using the Dockerfile at
+    host-services/gateway-sidecar/Dockerfile.
+
+    Returns:
+        True if build succeeded, False otherwise
+    """
+    # Find repo root (parent of jib-container directory)
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+
+    dockerfile_path = repo_root / "host-services" / "gateway-sidecar" / "Dockerfile"
+    if not dockerfile_path.exists():
+        error(f"Gateway Dockerfile not found at {dockerfile_path}")
+        return False
+
+    info("Building gateway sidecar image...")
+    result = subprocess.run(
+        [
+            "docker", "build",
+            "-t", GATEWAY_IMAGE_NAME,
+            "-f", str(dockerfile_path),
+            str(repo_root)
+        ],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode == 0:
+        success("Gateway image built successfully")
+        return True
+
+    error(f"Gateway image build failed: {result.stderr}")
+    return False
+
+
+def wait_for_gateway_health(timeout: int = 30) -> bool:
+    """Wait for the gateway to become healthy.
+
+    Polls the health endpoint until it responds or timeout is reached.
+
+    Args:
+        timeout: Maximum seconds to wait for health
+
+    Returns:
+        True if gateway is healthy, False on timeout
+    """
+    import urllib.request
+    import urllib.error
+
+    # Use container name for health check since we're on the same network
+    # But during startup from host, we need to use localhost or check via docker exec
+    health_url = f"http://localhost:{GATEWAY_PORT}/api/v1/health"
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            with urllib.request.urlopen(health_url, timeout=2) as response:
+                if response.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass  # Gateway not ready yet
+        time.sleep(0.5)
+
+    return False
+
+
+def start_gateway_container() -> bool:
+    """Start the gateway container if not already running.
+
+    Creates the jib-network if needed, builds the gateway image if needed,
+    and starts the gateway container with appropriate mounts.
+
+    Returns:
+        True if gateway is running (started or already running), False on failure
+    """
+    # Check if already running
+    if is_gateway_running():
+        return True
+
+    # Ensure network exists
+    if not ensure_jib_network():
+        return False
+
+    # Build image if needed
+    if not gateway_image_exists():
+        if not build_gateway_image():
+            return False
+
+    # Check required secrets exist
+    github_token_file = Config.SHARING_DIR / ".github-token"
+    gateway_secret_file = Config.USER_CONFIG_DIR / "gateway-secret"
+
+    if not github_token_file.exists():
+        error(f"GitHub token file not found: {github_token_file}")
+        error("Run the github-token-refresher setup first")
+        return False
+
+    if not gateway_secret_file.exists():
+        error(f"Gateway secret file not found: {gateway_secret_file}")
+        error("Run: host-services/gateway-sidecar/setup.sh --container")
+        return False
+
+    # Remove any stopped container with the same name
+    subprocess.run(
+        ["docker", "rm", "-f", GATEWAY_CONTAINER_NAME],
+        capture_output=True,
+        stderr=subprocess.DEVNULL
+    )
+
+    info("Starting gateway sidecar container...")
+
+    # Start the gateway container
+    cmd = [
+        "docker", "run",
+        "-d",  # Detached mode
+        "--name", GATEWAY_CONTAINER_NAME,
+        "--network", JIB_NETWORK_NAME,
+        "-p", f"{GATEWAY_PORT}:{GATEWAY_PORT}",  # Expose port for health checks from host
+        "--restart", "unless-stopped",
+        # Mount secrets read-only
+        "-v", f"{github_token_file}:/secrets/.github-token:ro",
+        "-v", f"{gateway_secret_file}:/secrets/gateway-secret:ro",
+        GATEWAY_IMAGE_NAME
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        error(f"Failed to start gateway container: {result.stderr}")
+        return False
+
+    # Wait for gateway to be healthy
+    info("Waiting for gateway to become healthy...")
+    if wait_for_gateway_health(timeout=30):
+        success("Gateway sidecar is ready")
+        return True
+
+    error("Gateway failed to become healthy within 30 seconds")
+    # Check container logs for debugging
+    logs_result = subprocess.run(
+        ["docker", "logs", "--tail", "20", GATEWAY_CONTAINER_NAME],
+        capture_output=True,
+        text=True
+    )
+    if logs_result.stdout:
+        print(f"Gateway logs:\n{logs_result.stdout}")
+    if logs_result.stderr:
+        print(f"Gateway stderr:\n{logs_result.stderr}")
+
+    return False
 
 
 def generate_container_id() -> str:
@@ -1694,6 +1918,13 @@ def run_claude() -> bool:
         error("Docker build failed")
         return False
 
+    # Start gateway sidecar container (if not already running)
+    if _quiet_mode:
+        status("Starting gateway sidecar...")
+    if not start_gateway_container():
+        error("Failed to start gateway sidecar")
+        return False
+
     # Generate unique container ID
     if _quiet_mode:
         status("Preparing container...")
@@ -1845,22 +2076,20 @@ def run_claude() -> bool:
                   stdout=subprocess.DEVNULL,
                   stderr=subprocess.DEVNULL)
 
-    # Build docker run command with bridge networking (more secure than --net host)
-    # Bridge mode allows outbound HTTP/HTTPS (for Claude API and packages) but no inbound access
+    # Build docker run command on jib-network (shared network with gateway sidecar)
+    # jib-network allows container-to-container communication while isolating from host
     cmd = [
         "docker", "run",
         "--rm",  # Auto-remove container after exit
         "-it",   # Interactive with TTY
         "--name", container_id,
-        # Enable host.docker.internal for gateway sidecar access (Linux needs explicit flag)
-        "--add-host=host.docker.internal:host-gateway",
+        "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
-        "-e", "GATEWAY_URL=http://host.docker.internal:9847",
-        # Bridge networking: outbound HTTP allowed, no inbound ports exposed
+        "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
     ]
 
     # GitHub authentication is handled by the gateway sidecar
@@ -1966,6 +2195,11 @@ def exec_in_new_container(
     # Build/update image
     if not build_image():
         error("Docker build failed")
+        return False
+
+    # Start gateway sidecar container (if not already running)
+    if not start_gateway_container():
+        error("Failed to start gateway sidecar")
         return False
 
     # Generate unique container ID for this exec
@@ -2096,19 +2330,18 @@ def exec_in_new_container(
 
     print()
 
-    # Build docker run command with logging configuration
+    # Build docker run command on jib-network (shared network with gateway sidecar)
     # Note: We don't use --rm so we can save logs before cleanup
     cmd = [
         "docker", "run",
         "--name", container_id,
-        # Enable host.docker.internal for gateway sidecar access (Linux needs explicit flag)
-        "--add-host=host.docker.internal:host-gateway",
+        "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
-        "-e", "GATEWAY_URL=http://host.docker.internal:9847",
+        "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
     ]
 
     # Add logging configuration for log persistence
