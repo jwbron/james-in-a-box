@@ -9,15 +9,19 @@ OnFailure=service-failure-notify@%n.service
 Type=oneshot
 WorkingDirectory=%h/khan/james-in-a-box/host-services/sync/context-sync
 Environment="PATH=%h/khan/james-in-a-box/host-services/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+# LLM processing is disabled by default. Set to "true" to enable.
+# When enabled, Claude analyzes synced docs/tickets for summaries and notifications.
+Environment="CONTEXT_SYNC_LLM_PROCESSING=false"
 # Configuration is loaded from ~/.config/context-sync/.env by context-sync.py
 # Uses shared virtual environment installed by setup.sh via uv
 ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/sync/context-sync/context-sync.py
 
-# After syncing context data, run analysis in JIB container (new ephemeral containers)
+# After syncing context data, optionally run analysis in JIB container
 # Confluence and JIRA processors analyze docs and tickets for updates
+# Only runs if CONTEXT_SYNC_LLM_PROCESSING=true
 # Executables are in PATH inside the container via /opt/jib-runtime/bin
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec confluence-processor
-ExecStartPost=%h/khan/james-in-a-box/bin/jib --exec jira-processor
+ExecStartPost=/bin/sh -c '[ "$CONTEXT_SYNC_LLM_PROCESSING" = "true" ] && %h/khan/james-in-a-box/bin/jib --exec confluence-processor || true'
+ExecStartPost=/bin/sh -c '[ "$CONTEXT_SYNC_LLM_PROCESSING" = "true" ] && %h/khan/james-in-a-box/bin/jib --exec jira-processor || true'
 
 # Logging
 StandardOutput=journal

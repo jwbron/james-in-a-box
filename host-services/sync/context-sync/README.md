@@ -72,6 +72,49 @@ JIRA_API_TOKEN=your-token
 **Getting API tokens:**
 - Confluence/JIRA: https://id.atlassian.com/manage-profile/security/api-tokens
 
+## LLM Processing (Optional)
+
+After syncing, context-sync can optionally run LLM-powered processors that:
+- Analyze new/updated Confluence docs (ADRs, runbooks) for key decisions and impacts
+- Parse JIRA tickets for requirements and action items
+- Create Beads tasks for tracking
+- Send notifications via Slack
+
+**This is disabled by default** to avoid unexpected API costs and processing.
+
+### Enabling LLM Processing
+
+Edit the systemd service to enable:
+
+```bash
+# Edit the service override
+systemctl --user edit context-sync.service
+```
+
+Add:
+```ini
+[Service]
+Environment="CONTEXT_SYNC_LLM_PROCESSING=true"
+```
+
+Or modify the service file directly at `context-sync.service`:
+```ini
+Environment="CONTEXT_SYNC_LLM_PROCESSING=true"
+```
+
+Then reload:
+```bash
+systemctl --user daemon-reload
+```
+
+### How It Works
+
+When enabled, the service runs two processors after syncing:
+1. **confluence-processor**: Analyzes ADRs and runbooks for architectural decisions
+2. **jira-processor**: Extracts requirements and action items from tickets
+
+These run inside the jib container and use Claude to analyze the synced content.
+
 ## Usage
 
 ### Initial Sync
