@@ -19,7 +19,6 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -27,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, request
+
 
 # Add shared directory to path for jib_logging
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
@@ -38,6 +38,7 @@ from .policy import (
     extract_repo_from_remote,
     get_policy_engine,
 )
+
 
 logger = get_logger("gateway-sidecar")
 

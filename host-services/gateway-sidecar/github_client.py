@@ -13,9 +13,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+
 # Add shared directory to path for jib_logging
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
 from jib_logging import get_logger
+
 
 logger = get_logger("gateway-sidecar.github-client")
 

@@ -1,23 +1,24 @@
 """Tests for policy enforcement logic."""
 
-import pytest
-from unittest.mock import MagicMock, patch
-from datetime import UTC, datetime
-
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from host_services.gateway_sidecar.policy import (
+    JIB_BRANCH_PREFIXES,
+    JIB_IDENTITIES,
+    CachedPRInfo,
     PolicyEngine,
     PolicyResult,
-    CachedPRInfo,
-    extract_repo_from_remote,
     extract_branch_from_refspec,
-    JIB_IDENTITIES,
-    JIB_BRANCH_PREFIXES,
+    extract_repo_from_remote,
 )
 
 
