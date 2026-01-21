@@ -17,10 +17,20 @@ from typing import Any
 
 
 # Add shared directory to path for jib_logging
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+# Add shared directory to path for jib_logging
+# In container, jib_logging is at /app/jib_logging
+# On host, it's at ../../shared/jib_logging
+_shared_path = Path(__file__).parent.parent.parent / "shared"
+if _shared_path.exists():
+    sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
 
-from .github_client import GitHubClient, get_github_client
+# Import github_client - try relative import first (module mode),
+# fall back to absolute import (standalone script mode in container)
+try:
+    from .github_client import GitHubClient, get_github_client
+except ImportError:
+    from github_client import GitHubClient, get_github_client
 
 
 logger = get_logger("gateway-sidecar.policy")

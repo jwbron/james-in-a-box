@@ -40,15 +40,29 @@ from flask import Flask, jsonify, request
 
 
 # Add shared directory to path for jib_logging
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "shared"))
+# In container, jib_logging is at /app/jib_logging
+# On host, it's at ../../shared/jib_logging
+_shared_path = Path(__file__).parent.parent.parent / "shared"
+if _shared_path.exists():
+    sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
 
-from .github_client import get_github_client
-from .policy import (
-    extract_branch_from_refspec,
-    extract_repo_from_remote,
-    get_policy_engine,
-)
+# Import gateway modules - try relative import first (module mode),
+# fall back to absolute import (standalone script mode in container)
+try:
+    from .github_client import get_github_client
+    from .policy import (
+        extract_branch_from_refspec,
+        extract_repo_from_remote,
+        get_policy_engine,
+    )
+except ImportError:
+    from github_client import get_github_client
+    from policy import (
+        extract_branch_from_refspec,
+        extract_repo_from_remote,
+        get_policy_engine,
+    )
 
 
 logger = get_logger("gateway-sidecar")
@@ -56,7 +70,7 @@ logger = get_logger("gateway-sidecar")
 app = Flask(__name__)
 
 # Configuration
-DEFAULT_HOST = "0.0.0.0"  # Listen on all interfaces (Docker containers need access via host.docker.internal)
+DEFAULT_HOST = os.environ.get("GATEWAY_HOST", "0.0.0.0")  # Listen on all interfaces by default
 DEFAULT_PORT = 9847
 GIT_CLI = "/usr/bin/git"
 
