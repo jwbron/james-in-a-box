@@ -487,7 +487,8 @@ def check_host_setup() -> bool:
     # Critical systemd services that should be installed
     critical_services = [
         "slack-notifier.service",
-        "slack-receiver.service"
+        "slack-receiver.service",
+        "gateway-sidecar.service",
     ]
 
     # Important directories that should exist
@@ -538,6 +539,7 @@ def check_host_setup() -> bool:
 
         print("JIB requires host services to be installed for full functionality:")
         print("  • Slack integration (notifier and receiver)")
+        print("  • Gateway sidecar (git/gh policy enforcement)")
         print("  • Shared directories for notifications and task communication")
         print()
 
