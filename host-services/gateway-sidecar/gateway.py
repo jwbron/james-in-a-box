@@ -65,14 +65,17 @@ GATEWAY_SECRET = os.environ.get("JIB_GATEWAY_SECRET", "")
 SECRET_FILE = Path.home() / ".config" / "jib" / "gateway-secret"
 
 # Rate limiting configuration (per hour)
+# These limits are set high to support jib's high-velocity workflow while staying
+# below GitHub's 5,000 requests/hour limit for authenticated users. The combined
+# limit of 4,000/hr provides a safety buffer. See ADR-Internet-Tool-Access-Lockdown.
 RATE_LIMITS = {
-    "git_push": 30,
-    "gh_pr_create": 10,
-    "gh_pr_comment": 60,
-    "gh_pr_edit": 30,
-    "gh_pr_close": 10,
-    "gh_execute": 100,
-    "combined": 200,
+    "git_push": 1000,
+    "gh_pr_create": 500,
+    "gh_pr_comment": 2000,
+    "gh_pr_edit": 500,
+    "gh_pr_close": 500,
+    "gh_execute": 2000,
+    "combined": 4000,
 }
 
 
