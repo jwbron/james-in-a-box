@@ -1850,11 +1850,14 @@ def run_claude() -> bool:
         "--rm",  # Auto-remove container after exit
         "-it",   # Interactive with TTY
         "--name", container_id,
+        # Enable host.docker.internal for gateway sidecar access (Linux needs explicit flag)
+        "--add-host=host.docker.internal:host-gateway",
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
+        "-e", "GATEWAY_URL=http://host.docker.internal:9847",
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 

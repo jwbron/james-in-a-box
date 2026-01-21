@@ -1,20 +1,19 @@
 #!/bin/bash
 #
 # gh CLI wrapper for jib container
-# Ensures fresh GitHub token is used for all gh operations.
+# Routes gh commands through the gateway sidecar for policy enforcement.
 #
-# GitHub App installation tokens expire after 1 hour. This wrapper reads
-# the refreshed token from ~/sharing/.github-token (written by the
-# github-token-refresher host service) instead of relying on the stale
-# GITHUB_TOKEN environment variable set at container start.
+# The gateway sidecar holds the GitHub token and enforces policies:
+# - PR operations (create, comment, edit, close) go through gateway
+# - Merge operations are blocked (human must merge via GitHub UI)
+# - Read-only operations are passed through
 #
-# Token Sources (in priority order):
-#   1. ~/sharing/.github-token file (refreshed by github-token-refresher)
-#   2. GITHUB_TOKEN environment variable (fallback)
+# Fallback: If gateway is unavailable, uses local token file or GITHUB_TOKEN.
 #
 
 REAL_GH=/usr/bin/gh
 TOKEN_FILE="${HOME}/sharing/.github-token"
+GATEWAY_URL="${GATEWAY_URL:-http://host.docker.internal:9847}"
 
 # Function to show no token error message
 show_no_token_message() {
@@ -29,14 +28,8 @@ Cannot run gh command: No GitHub token available.
 The gh CLI requires authentication to interact with GitHub.
 
 Please check:
-  1. Container was launched via the jib launcher (provides GITHUB_TOKEN)
-  2. GitHub App is configured at ~/.config/jib/github-app-*
-  3. github-token-refresher service is running on host:
-     systemctl --user status github-token-refresher
-
-Token sources checked:
-  - ~/sharing/.github-token (not found or invalid)
-  - GITHUB_TOKEN environment variable (not set)
+  1. Gateway sidecar is running on host: systemctl --user status gateway-sidecar
+  2. Or container was launched with GITHUB_TOKEN
 
 ================================================================================
 
@@ -44,33 +37,359 @@ EOF
     return 1
 }
 
-# Function to show token file expired warning
-show_token_expired_warning() {
-    local expires_at="$1"
-    cat >&2 << EOF
+# Function to show merge blocked message
+show_merge_blocked_message() {
+    cat >&2 << 'EOF'
 
 ================================================================================
-  WARNING: Token may be expired
+  MERGE OPERATIONS NOT SUPPORTED
 ================================================================================
 
-Token from ~/sharing/.github-token may have expired.
-Expires at: $expires_at
+The gateway sidecar does not support merge operations.
 
-If you see authentication errors, try:
-  1. Check host service: systemctl --user status github-token-refresher
-  2. Force refresh: ~/.jib-sharing/.github-token-refresher/github-token-refresher.py --once
+Human must merge PRs via the GitHub web interface.
 
-Proceeding with potentially expired token...
+This is a safety measure to ensure human review before merging.
 
 ================================================================================
 
 EOF
+    return 1
 }
 
-# Get fresh token from file if available
+# Function to check if gateway is available
+check_gateway_available() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -s --connect-timeout 2 "${GATEWAY_URL}/api/v1/health" >/dev/null 2>&1
+        return $?
+    fi
+    return 1
+}
+
+# Function to extract repo from current directory or args
+get_repo() {
+    local repo=""
+
+    # Check if --repo is specified
+    for i in "${!ARGS[@]}"; do
+        if [[ "${ARGS[$i]}" == "--repo" ]] && [[ -n "${ARGS[$((i+1))]}" ]]; then
+            repo="${ARGS[$((i+1))]}"
+            break
+        elif [[ "${ARGS[$i]}" == --repo=* ]]; then
+            repo="${ARGS[$i]#--repo=}"
+            break
+        elif [[ "${ARGS[$i]}" == -R ]] && [[ -n "${ARGS[$((i+1))]}" ]]; then
+            repo="${ARGS[$((i+1))]}"
+            break
+        fi
+    done
+
+    # If no --repo, try to get from git remote
+    if [ -z "$repo" ]; then
+        local url
+        url=$(git remote get-url origin 2>/dev/null)
+        if [ -n "$url" ]; then
+            # Extract owner/repo from URL
+            repo=$(echo "$url" | sed -E 's|.*github\.com[:/]([^/]+)/([^/.]+)(\.git)?$|\1/\2|')
+        fi
+    fi
+
+    echo "$repo"
+}
+
+# Function to call gateway API
+call_gateway() {
+    local endpoint="$1"
+    local payload="$2"
+
+    local response
+    local http_code
+    response=$(curl -s -w "\n%{http_code}" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -d "$payload" \
+        "${GATEWAY_URL}${endpoint}" 2>&1)
+
+    # Split response and status code
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+
+    # Parse response
+    local success
+    success=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null)
+
+    if [ "$success" = "True" ]; then
+        # Show stdout from response
+        local stdout
+        stdout=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stdout', '') if d else '')" 2>/dev/null)
+        [ -n "$stdout" ] && echo "$stdout"
+        return 0
+    else
+        # Show error message
+        local message
+        message=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('message', 'Unknown error'))" 2>/dev/null)
+        echo "ERROR: $message" >&2
+
+        # Show stderr if available
+        local stderr
+        stderr=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stderr', '') if d else '')" 2>/dev/null)
+        [ -n "$stderr" ] && echo "$stderr" >&2
+
+        # Return appropriate exit code
+        if [ "$http_code" = "403" ]; then
+            return 1
+        elif [ "$http_code" = "404" ]; then
+            return 1
+        else
+            return 1
+        fi
+    fi
+}
+
+# Function to handle PR create
+handle_pr_create() {
+    local repo
+    repo=$(get_repo)
+
+    if [ -z "$repo" ]; then
+        echo "ERROR: Could not determine repository" >&2
+        return 1
+    fi
+
+    # Parse args for title, body, base, head
+    local title="" body="" base="main" head=""
+
+    local i=0
+    while [ $i -lt ${#ARGS[@]} ]; do
+        case "${ARGS[$i]}" in
+            --title|-t)
+                ((i++))
+                title="${ARGS[$i]}"
+                ;;
+            --body|-b)
+                ((i++))
+                body="${ARGS[$i]}"
+                ;;
+            --base|-B)
+                ((i++))
+                base="${ARGS[$i]}"
+                ;;
+            --head|-H)
+                ((i++))
+                head="${ARGS[$i]}"
+                ;;
+        esac
+        ((i++))
+    done
+
+    # Get current branch if head not specified
+    if [ -z "$head" ]; then
+        head=$(git branch --show-current 2>/dev/null)
+    fi
+
+    if [ -z "$title" ]; then
+        echo "ERROR: Missing --title for PR create" >&2
+        return 1
+    fi
+
+    # Escape strings for JSON
+    title=$(echo "$title" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))")
+    body=$(echo "$body" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))")
+    # Remove quotes added by json.dumps since we're embedding in JSON
+    title=${title:1:-1}
+    body=${body:1:-1}
+
+    local payload
+    payload=$(cat <<EOF
+{
+    "repo": "$repo",
+    "title": "$title",
+    "body": "$body",
+    "base": "$base",
+    "head": "$head"
+}
+EOF
+)
+
+    call_gateway "/api/v1/gh/pr/create" "$payload"
+}
+
+# Function to handle PR comment
+handle_pr_comment() {
+    local repo
+    repo=$(get_repo)
+
+    if [ -z "$repo" ]; then
+        echo "ERROR: Could not determine repository" >&2
+        return 1
+    fi
+
+    # Parse args for PR number and body
+    local pr_number="" body=""
+
+    local i=0
+    while [ $i -lt ${#ARGS[@]} ]; do
+        case "${ARGS[$i]}" in
+            --body|-b)
+                ((i++))
+                body="${ARGS[$i]}"
+                ;;
+            [0-9]*)
+                if [ -z "$pr_number" ]; then
+                    pr_number="${ARGS[$i]}"
+                fi
+                ;;
+        esac
+        ((i++))
+    done
+
+    if [ -z "$pr_number" ]; then
+        echo "ERROR: Missing PR number" >&2
+        return 1
+    fi
+
+    if [ -z "$body" ]; then
+        echo "ERROR: Missing --body for PR comment" >&2
+        return 1
+    fi
+
+    # Escape body for JSON
+    body=$(echo "$body" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))")
+    body=${body:1:-1}
+
+    local payload
+    payload=$(cat <<EOF
+{
+    "repo": "$repo",
+    "pr_number": $pr_number,
+    "body": "$body"
+}
+EOF
+)
+
+    call_gateway "/api/v1/gh/pr/comment" "$payload"
+}
+
+# Function to handle PR edit
+handle_pr_edit() {
+    local repo
+    repo=$(get_repo)
+
+    if [ -z "$repo" ]; then
+        echo "ERROR: Could not determine repository" >&2
+        return 1
+    fi
+
+    # Parse args for PR number, title, body
+    local pr_number="" title="" body=""
+
+    local i=0
+    while [ $i -lt ${#ARGS[@]} ]; do
+        case "${ARGS[$i]}" in
+            --title|-t)
+                ((i++))
+                title="${ARGS[$i]}"
+                ;;
+            --body|-b)
+                ((i++))
+                body="${ARGS[$i]}"
+                ;;
+            [0-9]*)
+                if [ -z "$pr_number" ]; then
+                    pr_number="${ARGS[$i]}"
+                fi
+                ;;
+        esac
+        ((i++))
+    done
+
+    if [ -z "$pr_number" ]; then
+        echo "ERROR: Missing PR number" >&2
+        return 1
+    fi
+
+    # Build payload with optional fields
+    local payload="{"
+    payload+="\"repo\": \"$repo\","
+    payload+="\"pr_number\": $pr_number"
+
+    if [ -n "$title" ]; then
+        title=$(echo "$title" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))")
+        title=${title:1:-1}
+        payload+=",\"title\": \"$title\""
+    fi
+
+    if [ -n "$body" ]; then
+        body=$(echo "$body" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))")
+        body=${body:1:-1}
+        payload+=",\"body\": \"$body\""
+    fi
+
+    payload+="}"
+
+    call_gateway "/api/v1/gh/pr/edit" "$payload"
+}
+
+# Function to handle PR close
+handle_pr_close() {
+    local repo
+    repo=$(get_repo)
+
+    if [ -z "$repo" ]; then
+        echo "ERROR: Could not determine repository" >&2
+        return 1
+    fi
+
+    # Parse args for PR number
+    local pr_number=""
+
+    for arg in "${ARGS[@]}"; do
+        if [[ "$arg" =~ ^[0-9]+$ ]]; then
+            pr_number="$arg"
+            break
+        fi
+    done
+
+    if [ -z "$pr_number" ]; then
+        echo "ERROR: Missing PR number" >&2
+        return 1
+    fi
+
+    local payload
+    payload=$(cat <<EOF
+{
+    "repo": "$repo",
+    "pr_number": $pr_number
+}
+EOF
+)
+
+    call_gateway "/api/v1/gh/pr/close" "$payload"
+}
+
+# Function to execute via gateway passthrough
+execute_via_gateway() {
+    local args_json
+    args_json=$(printf '%s\n' "${ARGS[@]}" | python3 -c "import sys, json; print(json.dumps([line.strip() for line in sys.stdin]))")
+
+    local cwd
+    cwd=$(pwd)
+
+    local payload
+    payload=$(cat <<EOF
+{
+    "args": $args_json,
+    "cwd": "$cwd"
+}
+EOF
+)
+
+    call_gateway "/api/v1/gh/execute" "$payload"
+}
+
+# Function to get fresh token from file (fallback)
 get_fresh_token() {
     if [ -f "$TOKEN_FILE" ]; then
-        # Extract token from JSON file and check expiry
         python3 -c "
 import json
 import sys
@@ -79,26 +398,86 @@ from datetime import datetime, timezone
 try:
     with open('$TOKEN_FILE') as f:
         data = json.load(f)
-    
+
     token = data.get('token', '')
     if not token:
         sys.exit(1)
-    
+
     # Check expiry
     expires_at_unix = data.get('expires_at_unix', 0)
     now = datetime.now(timezone.utc).timestamp()
-    
+
     # Output token and expiry status
-    # Format: token|expired|expires_at
     expired = '1' if now > expires_at_unix else '0'
     expires_at = data.get('expires_at', 'unknown')
-    
+
     print(f'{token}|{expired}|{expires_at}')
 except Exception:
     sys.exit(1)
 " 2>/dev/null
     fi
 }
+
+# Store original args
+ARGS=("$@")
+
+# Parse the main command
+main_cmd=""
+sub_cmd=""
+for arg in "$@"; do
+    if [[ "$arg" != -* ]]; then
+        if [ -z "$main_cmd" ]; then
+            main_cmd="$arg"
+        elif [ -z "$sub_cmd" ]; then
+            sub_cmd="$arg"
+            break
+        fi
+    fi
+done
+
+# Check for merge command - always blocked
+if [ "$main_cmd" = "pr" ] && [ "$sub_cmd" = "merge" ]; then
+    show_merge_blocked_message
+    exit 1
+fi
+
+# Try to use gateway for policy-enforced commands
+if check_gateway_available; then
+    case "$main_cmd" in
+        pr)
+            case "$sub_cmd" in
+                create)
+                    handle_pr_create
+                    exit $?
+                    ;;
+                comment)
+                    handle_pr_comment
+                    exit $?
+                    ;;
+                edit)
+                    handle_pr_edit
+                    exit $?
+                    ;;
+                close)
+                    handle_pr_close
+                    exit $?
+                    ;;
+                *)
+                    # Other PR commands - pass through via gateway execute
+                    execute_via_gateway
+                    exit $?
+                    ;;
+            esac
+            ;;
+        *)
+            # All other commands - pass through via gateway execute
+            execute_via_gateway
+            exit $?
+            ;;
+    esac
+fi
+
+# Gateway not available - fall back to direct execution with local token
 
 # Try to get fresh token from file
 TOKEN_INFO=$(get_fresh_token)
@@ -109,13 +488,14 @@ if [ $TOKEN_READ_SUCCESS -eq 0 ] && [ -n "$TOKEN_INFO" ]; then
     FRESH_TOKEN=$(echo "$TOKEN_INFO" | cut -d'|' -f1)
     TOKEN_EXPIRED=$(echo "$TOKEN_INFO" | cut -d'|' -f2)
     EXPIRES_AT=$(echo "$TOKEN_INFO" | cut -d'|' -f3)
-    
+
     if [ -n "$FRESH_TOKEN" ]; then
         # Warn if token appears expired
         if [ "$TOKEN_EXPIRED" = "1" ]; then
-            show_token_expired_warning "$EXPIRES_AT"
+            echo "WARNING: Token may be expired (expires at: $EXPIRES_AT)" >&2
+            echo "Gateway sidecar is not available for fresh tokens." >&2
         fi
-        
+
         # Use fresh token from file
         export GH_TOKEN="$FRESH_TOKEN"
     fi
@@ -131,6 +511,9 @@ if [ -z "$GH_TOKEN" ]; then
         exit 1
     fi
 fi
+
+echo "WARNING: Gateway sidecar not available, using fallback authentication" >&2
+echo "Policy enforcement is bypassed - some operations may fail" >&2
 
 # Run the real gh CLI
 exec "$REAL_GH" "$@"

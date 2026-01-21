@@ -99,25 +99,24 @@ host-services/gateway-sidecar/
 
 ### Phase 1: Gateway Service (Foundation)
 - [x] Create directory structure
-- [ ] Implement `gateway.py` - Flask app with REST endpoints
-- [ ] Implement `github_client.py` - wraps `gh` CLI, reads token from github-token-refresher
-- [ ] Create systemd service file
-- [ ] Add health check endpoint
+- [x] Implement `gateway.py` - Flask app with REST endpoints
+- [x] Implement `github_client.py` - wraps `gh` CLI, reads token from github-token-refresher
+- [x] Create systemd service file
+- [x] Add health check endpoint
 
 ### Phase 2: Policy Engine
-- [ ] Implement `policy.py` with:
+- [x] Implement `policy.py` with:
   - `check_pr_ownership(repo, pr_number)` - verify jib is author
   - `check_branch_ownership(repo, branch)` - verify branch tied to jib's PR or jib-prefixed
-- [ ] Add PR info caching to reduce GitHub API calls
-- [ ] Write tests for policy logic
+- [x] Add PR info caching to reduce GitHub API calls
+- [x] Write tests for policy logic
 
 ### Phase 3: Wrapper Modifications
-- [ ] Modify `jib-container/scripts/git` to call gateway for push
-- [ ] Modify `jib-container/scripts/gh` to route commands through gateway
-- [ ] Update `bin/jib` to:
-  - Create `jib-gateway` Docker network if not exists
-  - Connect containers to network
-  - Remove GITHUB_TOKEN from container environment
+- [x] Modify `jib-container/scripts/git` to call gateway for push
+- [x] Modify `jib-container/scripts/gh` to route commands through gateway
+- [x] Update `jib-container/jib` to:
+  - Add `--add-host=host.docker.internal:host-gateway` for Linux
+  - Set `GATEWAY_URL` environment variable
 
 ### Phase 4: Integration
 - [ ] Test full workflow: container -> gateway -> GitHub

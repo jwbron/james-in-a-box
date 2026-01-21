@@ -1,0 +1,40 @@
+[Unit]
+Description=Gateway Sidecar - Policy enforcement for jib container git/gh operations
+Documentation=file://%h/repos/james-in-a-box/host-services/gateway-sidecar/README.md
+After=network-online.target github-token-refresher.service
+Wants=network-online.target
+Requires=github-token-refresher.service
+OnFailure=service-failure-notify@%n.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/repos/james-in-a-box
+
+# Use the shared virtual environment
+ExecStart=%h/repos/james-in-a-box/host-services/.venv/bin/python -m host-services.gateway-sidecar.gateway
+
+# Restart on failure with exponential backoff
+Restart=on-failure
+RestartSec=5s
+RestartSteps=5
+RestartMaxDelaySec=60s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gateway-sidecar
+
+# Resource limits
+Nice=10
+IOSchedulingClass=2
+IOSchedulingPriority=4
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.jib-sharing
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
