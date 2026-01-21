@@ -71,8 +71,9 @@ push_via_gateway() {
     fi
 
     # Build JSON payload - escape special characters properly
-    local force_json="false"
-    [ "$force" = "true" ] && force_json="true"
+    # Use Python-style booleans (capitalized) since they're interpolated into Python code
+    local force_json="False"
+    [ "$force" = "true" ] && force_json="True"
 
     local payload
     payload=$(python3 -c "
