@@ -7,7 +7,7 @@ The gateway holds GitHub credentials and enforces ownership policies.
 
 Security:
     - Authentication via shared secret (JIB_GATEWAY_SECRET)
-    - Listens only on localhost (127.0.0.1)
+    - Listens on all interfaces (containers access via host.docker.internal)
     - Rate limiting per operation type
 
 Endpoints:
@@ -56,7 +56,7 @@ logger = get_logger("gateway-sidecar")
 app = Flask(__name__)
 
 # Configuration
-DEFAULT_HOST = "127.0.0.1"  # Listen only on localhost for security
+DEFAULT_HOST = "0.0.0.0"  # Listen on all interfaces (Docker containers need access via host.docker.internal)
 DEFAULT_PORT = 9847
 GIT_CLI = "/usr/bin/git"
 
