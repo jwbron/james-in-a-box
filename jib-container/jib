@@ -1863,42 +1863,11 @@ def run_claude() -> bool:
         # Bridge networking: outbound HTTP allowed, no inbound ports exposed
     ]
 
-    # Add GitHub token for container (prefer App token, fall back to PAT)
-    # Also write token to shared file for long-running container support
-    if _quiet_mode:
-        status("Configuring GitHub access...")
-    github_app_token = get_github_app_token()
-    if github_app_token:
-        cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
-        # Write token to shared file for auto-refresh support
-        write_github_token_file(github_app_token)
-        if not _quiet_mode:
-            info("GitHub auth: App installation token (auto-refresh enabled)")
-            print("  Token written to ~/.jib-sharing/.github-token")
-            print("  github-token-refresher service will keep it fresh")
-            print("  Full GitHub API access including Checks API")
-    else:
-        # Fall back to PAT if App not configured
-        github_token = get_github_token()
-        if github_token:
-            cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
-            # Also write PAT to shared file (won't be auto-refreshed but provides consistency)
-            write_github_token_file(github_token)
-            if not _quiet_mode:
-                info("GitHub auth: Personal Access Token (fallback)")
-                warn("  Note: PAT cannot access Checks API. Configure GitHub App for full access.")
-        else:
-            # Only warn if not in quiet mode - GitHub access is optional
-            if not _quiet_mode:
-                warn("GitHub auth: Not configured (GitHub operations disabled)")
-                print("  Configure GitHub App: ~/.config/jib/github-app-*.pem")
-
-    # Add GITHUB_READONLY_TOKEN for repos outside the App's scope (e.g., Khan/webapp)
-    github_readonly_token = get_github_readonly_token()
-    if github_readonly_token:
-        cmd.extend(["-e", f"GITHUB_READONLY_TOKEN={github_readonly_token}"])
-        if not _quiet_mode:
-            info("GitHub readonly: Token configured for external repos")
+    # GitHub authentication is handled by the gateway sidecar
+    # The container does NOT receive GITHUB_TOKEN - all git/gh operations
+    # route through the gateway which holds the credentials
+    if not _quiet_mode:
+        info("GitHub auth: Via gateway sidecar (credentials not in container)")
 
     # Add LLM provider preference and API keys
     llm_provider = get_llm_provider()
@@ -2132,11 +2101,14 @@ def exec_in_new_container(
     cmd = [
         "docker", "run",
         "--name", container_id,
+        # Enable host.docker.internal for gateway sidecar access (Linux needs explicit flag)
+        "--add-host=host.docker.internal:host-gateway",
         "-e", f"RUNTIME_USER={os.environ['USER']}",
         "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
+        "-e", "GATEWAY_URL=http://host.docker.internal:9847",
     ]
 
     # Add logging configuration for log persistence
@@ -2149,22 +2121,9 @@ def exec_in_new_container(
     if thread_ts:
         cmd.extend(["-e", f"JIB_THREAD_TS={thread_ts}"])
 
-    # Add GitHub token for container (prefer App token, fall back to PAT)
-    # Also write token to shared file for auto-refresh support
-    github_app_token = get_github_app_token()
-    if github_app_token:
-        cmd.extend(["-e", f"GITHUB_TOKEN={github_app_token}"])
-        write_github_token_file(github_app_token)
-    else:
-        github_token = get_github_token()
-        if github_token:
-            cmd.extend(["-e", f"GITHUB_TOKEN={github_token}"])
-            write_github_token_file(github_token)
-
-    # Add GITHUB_READONLY_TOKEN for repos outside the App's scope (e.g., Khan/webapp)
-    github_readonly_token = get_github_readonly_token()
-    if github_readonly_token:
-        cmd.extend(["-e", f"GITHUB_READONLY_TOKEN={github_readonly_token}"])
+    # GitHub authentication is handled by the gateway sidecar
+    # The container does NOT receive GITHUB_TOKEN - all git/gh operations
+    # route through the gateway which holds the credentials
 
     # Add LLM provider preference and API keys
     llm_provider = get_llm_provider()
