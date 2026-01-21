@@ -1055,6 +1055,11 @@ def start_gateway_container() -> bool:
 
     info("Starting gateway sidecar container...")
 
+    # Gateway needs access to repos to run git commands (remote get-url, push)
+    home = Path.home()
+    repos_dir = home / "repos"
+    worktrees_dir = home / ".jib-worktrees"
+
     # Start the gateway container
     cmd = [
         "docker", "run",
@@ -1066,6 +1071,9 @@ def start_gateway_container() -> bool:
         # Mount secrets read-only (with SELinux label for Fedora/RHEL)
         "-v", f"{github_token_file}:/secrets/.github-token:ro,z",
         "-v", f"{gateway_secret_file}:/secrets/gateway-secret:ro,z",
+        # Mount repos and worktrees for git operations
+        "-v", f"{repos_dir}:{repos_dir}:ro,z",
+        "-v", f"{worktrees_dir}:{worktrees_dir}:ro,z",
         GATEWAY_IMAGE_NAME
     ]
 

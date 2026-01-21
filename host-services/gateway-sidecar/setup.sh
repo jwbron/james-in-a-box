@@ -135,6 +135,11 @@ setup_container() {
 
     # Start the gateway container
     echo "Starting gateway container..."
+    # Gateway needs access to repos to run git commands (remote get-url, push)
+    # Mount both original repos and worktrees directories
+    REPOS_DIR="${HOME}/repos"
+    WORKTREES_DIR="${HOME}/.jib-worktrees"
+
     docker run -d \
         --name "$CONTAINER_NAME" \
         --network "$NETWORK_NAME" \
@@ -142,6 +147,8 @@ setup_container() {
         --restart unless-stopped \
         -v "$GITHUB_TOKEN_FILE:/secrets/.github-token:ro,z" \
         -v "$SECRET_FILE:/secrets/gateway-secret:ro,z" \
+        -v "$REPOS_DIR:$REPOS_DIR:ro,z" \
+        -v "$WORKTREES_DIR:$WORKTREES_DIR:ro,z" \
         "$GATEWAY_IMAGE_NAME"
 
     # Wait for gateway to be ready
