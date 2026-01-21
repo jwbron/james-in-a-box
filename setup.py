@@ -732,6 +732,7 @@ class ServiceManager:
         "github-token-refresher.service": "host-services/utilities/github-token-refresher/setup.sh",
         "worktree-watcher.timer": "host-services/utilities/worktree-watcher/setup.sh",
         "context-sync.timer": "host-services/sync/context-sync/setup.sh",
+        "context-sync.service": "host-services/sync/context-sync/setup.sh",
         "github-watcher.timer": "host-services/analysis/github-watcher/setup.sh",
         "beads-analyzer.timer": "host-services/analysis/beads-analyzer/setup.sh",
         "jib-doc-generator.timer": "host-services/analysis/doc-generator/setup.sh",
@@ -770,7 +771,10 @@ class ServiceManager:
         Returns:
             True if successful or no setup script exists, False on error
         """
+        # Normalize service name - try with .service suffix if not found
         setup_script = self.SERVICE_SETUP_SCRIPTS.get(service)
+        if not setup_script and not service.endswith((".service", ".timer")):
+            setup_script = self.SERVICE_SETUP_SCRIPTS.get(f"{service}.service")
         if not setup_script:
             # No setup script defined, that's okay
             return True
