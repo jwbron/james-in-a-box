@@ -1968,7 +1968,15 @@ def exec_in_new_container(
 
     Returns:
         True if successful, False otherwise
+
+    Raises:
+        ValueError: If auth_mode is not 'host' or 'api-key'
     """
+    # Validate auth_mode parameter
+    valid_auth_modes = ("host", "api-key")
+    if auth_mode not in valid_auth_modes:
+        raise ValueError(f"Invalid auth_mode '{auth_mode}'. Must be one of: {valid_auth_modes}")
+
     # Check if image exists
     if not image_exists():
         info("Docker image not found. Running initial setup...")
