@@ -2,8 +2,6 @@
 Tests for jib_config.validators module.
 """
 
-import pytest
-
 from jib_config.validators import (
     mask_secret,
     validate_anthropic_key,
@@ -115,12 +113,12 @@ class TestValidateEmail:
 
     def test_no_domain(self):
         """Test email without domain fails."""
-        is_valid, error = validate_email("user@")
+        is_valid, _error = validate_email("user@")
         assert not is_valid
 
     def test_no_tld(self):
         """Test email without TLD fails."""
-        is_valid, error = validate_email("user@example")
+        is_valid, _error = validate_email("user@example")
         assert not is_valid
 
 
@@ -129,19 +127,25 @@ class TestValidateSlackToken:
 
     def test_valid_bot_token(self):
         """Test valid bot token (xoxb-) passes."""
-        is_valid, error = validate_slack_token("xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx")
+        is_valid, error = validate_slack_token(
+            "xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwx"
+        )
         assert is_valid
         assert error is None
 
     def test_valid_user_token(self):
         """Test valid user token (xoxp-) passes."""
-        is_valid, error = validate_slack_token("xoxp-123456789012-1234567890123-abcdefghijklmnopqrstuvwx")
+        is_valid, error = validate_slack_token(
+            "xoxp-123456789012-1234567890123-abcdefghijklmnopqrstuvwx"
+        )
         assert is_valid
         assert error is None
 
     def test_valid_app_token(self):
         """Test valid app token (xapp-) passes."""
-        is_valid, error = validate_slack_token("xapp-1-A12345678-1234567890123-abcdefghijklmnopqrstuvwx")
+        is_valid, error = validate_slack_token(
+            "xapp-1-A12345678-1234567890123-abcdefghijklmnopqrstuvwx"
+        )
         assert is_valid
         assert error is None
 
@@ -181,7 +185,9 @@ class TestValidateGithubToken:
 
     def test_valid_new_format_pat(self):
         """Test valid new format PAT (github_pat_) passes."""
-        is_valid, error = validate_github_token("github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        is_valid, error = validate_github_token(
+            "github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        )
         assert is_valid
         assert error is None
 
@@ -227,7 +233,9 @@ class TestValidateAnthropicKey:
 
     def test_valid_key(self):
         """Test valid Anthropic key passes."""
-        is_valid, error = validate_anthropic_key("sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        is_valid, error = validate_anthropic_key(
+            "sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        )
         assert is_valid
         assert error is None
 
@@ -338,12 +346,12 @@ class TestValidatePort:
 
     def test_min_port(self):
         """Test minimum valid port (1) passes."""
-        is_valid, error = validate_port(1)
+        is_valid, _error = validate_port(1)
         assert is_valid
 
     def test_max_port(self):
         """Test maximum valid port (65535) passes."""
-        is_valid, error = validate_port(65535)
+        is_valid, _error = validate_port(65535)
         assert is_valid
 
     def test_port_zero(self):
@@ -360,7 +368,7 @@ class TestValidatePort:
 
     def test_negative_port(self):
         """Test negative port fails."""
-        is_valid, error = validate_port(-1)
+        is_valid, _error = validate_port(-1)
         assert not is_valid
 
     def test_invalid_string(self):
@@ -371,5 +379,5 @@ class TestValidatePort:
 
     def test_none_port(self):
         """Test None port fails."""
-        is_valid, error = validate_port(None)
+        is_valid, _error = validate_port(None)
         assert not is_valid

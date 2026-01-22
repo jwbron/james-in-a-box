@@ -27,8 +27,6 @@ Legacy exports (deprecated):
 """
 
 # Legacy exports for backward compatibility
-from .config import Config, get_local_repos, get_repos_config_file
-
 # New framework exports
 from .base import (
     BaseConfig,
@@ -36,6 +34,7 @@ from .base import (
     HealthCheckResult,
     ValidationResult,
 )
+from .config import Config, get_local_repos, get_repos_config_file
 from .registry import (
     AggregateHealthResult,
     AggregateValidationResult,
@@ -44,20 +43,21 @@ from .registry import (
     reset_registry,
 )
 
+
 __all__ = [
-    # Legacy (deprecated)
-    "Config",
-    "get_local_repos",
-    "get_repos_config_file",
-    # Base classes
-    "BaseConfig",
-    "ConfigStatus",
-    "ValidationResult",
-    "HealthCheckResult",
-    # Registry
-    "ConfigRegistry",
-    "get_registry",
-    "reset_registry",
     "AggregateHealthResult",
     "AggregateValidationResult",
+    # Base classes
+    "BaseConfig",
+    # Legacy (deprecated)
+    "Config",
+    # Registry
+    "ConfigRegistry",
+    "ConfigStatus",
+    "HealthCheckResult",
+    "ValidationResult",
+    "get_local_repos",
+    "get_registry",
+    "get_repos_config_file",
+    "reset_registry",
 ]

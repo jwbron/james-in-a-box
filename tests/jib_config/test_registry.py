@@ -5,10 +5,8 @@ Tests for jib_config.registry module.
 from typing import Any
 
 import pytest
-
 from jib_config.base import (
     BaseConfig,
-    ConfigStatus,
     HealthCheckResult,
     ValidationResult,
 )

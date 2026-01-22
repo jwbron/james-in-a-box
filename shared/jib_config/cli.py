@@ -145,27 +145,19 @@ def create_parser() -> argparse.ArgumentParser:
 
     # validate command
     validate_parser = subparsers.add_parser("validate", help="Validate configurations")
-    validate_parser.add_argument(
-        "--service", "-s", help="Validate specific service only"
-    )
-    validate_parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show warnings"
-    )
+    validate_parser.add_argument("--service", "-s", help="Validate specific service only")
+    validate_parser.add_argument("--verbose", "-v", action="store_true", help="Show warnings")
 
     # health command
     health_parser = subparsers.add_parser("health", help="Run health checks")
     health_parser.add_argument(
         "--timeout", "-t", type=float, default=5.0, help="Timeout per check in seconds"
     )
-    health_parser.add_argument(
-        "--json", "-j", action="store_true", help="Output full JSON result"
-    )
+    health_parser.add_argument("--json", "-j", action="store_true", help="Output full JSON result")
 
     # show command
     show_parser = subparsers.add_parser("show", help="Show current configuration")
-    show_parser.add_argument(
-        "--service", "-s", help="Show specific service only"
-    )
+    show_parser.add_argument("--service", "-s", help="Show specific service only")
 
     # watch command
     subparsers.add_parser("watch", help="Watch for configuration changes")

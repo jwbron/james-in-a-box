@@ -5,7 +5,6 @@ Tests for jib_config.cli module.
 from typing import Any
 
 import pytest
-
 from jib_config.base import (
     BaseConfig,
     HealthCheckResult,
@@ -210,9 +209,7 @@ class TestCmdValidate:
     def test_verbose_shows_warnings(self, capsys):
         """Test validate --verbose shows warnings."""
         registry = get_registry()
-        registry.register(
-            MockConfig(name="test", valid=True, warnings=["Token expires soon"])
-        )
+        registry.register(MockConfig(name="test", valid=True, warnings=["Token expires soon"]))
 
         parser = create_parser()
         args = parser.parse_args(["validate", "--verbose"])
