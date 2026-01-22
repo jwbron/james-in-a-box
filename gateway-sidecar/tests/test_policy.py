@@ -299,9 +299,7 @@ class TestTrustedBranchOwners:
         # We just verify it's a frozenset
         assert isinstance(TRUSTED_BRANCH_OWNERS, frozenset)
 
-    def test_branch_ownership_trusted_user_pr(
-        self, policy_engine, mock_github_client, monkeypatch
-    ):
+    def test_branch_ownership_trusted_user_pr(self, policy_engine, mock_github_client, monkeypatch):
         """Branch with open PR by trusted user allows push."""
         # Patch the module-level TRUSTED_BRANCH_OWNERS
         import policy

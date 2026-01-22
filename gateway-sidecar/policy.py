@@ -66,6 +66,7 @@ JIB_IDENTITIES = frozenset(
 # Branch prefixes that indicate jib ownership
 JIB_BRANCH_PREFIXES = ("jib-", "jib/")
 
+
 # Trusted GitHub users whose branches jib can push to
 # Loaded from GATEWAY_TRUSTED_USERS environment variable (comma-separated)
 # Example: GATEWAY_TRUSTED_USERS="jwbron,octocat"
@@ -299,7 +300,7 @@ class PolicyEngine:
         )
         return PolicyResult(
             allowed=True,
-            reason=f"Comments are allowed on any PR",
+            reason="Comments are allowed on any PR",
             details={"pr_number": pr_number, "author": pr_info.author},
         )
 
