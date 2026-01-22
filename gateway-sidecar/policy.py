@@ -249,9 +249,7 @@ class PolicyEngine:
 
         return pr_numbers
 
-    def check_pr_ownership(
-        self, repo: str, pr_number: int, auth_mode: str = "bot"
-    ) -> PolicyResult:
+    def check_pr_ownership(self, repo: str, pr_number: int, auth_mode: str = "bot") -> PolicyResult:
         """
         Check if the current identity owns a PR.
 
