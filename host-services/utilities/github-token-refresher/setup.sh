@@ -49,13 +49,14 @@ ln -sf "$COMPONENT_DIR/$TIMER_NAME" "$SYSTEMD_DIR/"
 echo "✓ Service file symlinked to $SYSTEMD_DIR/$SERVICE_NAME"
 echo "✓ Timer file symlinked to $SYSTEMD_DIR/$TIMER_NAME"
 
-# Reload systemd
+# Stop old daemon-style service if it was running as a daemon (migration)
+# Note: We only stop it, we don't disable it - the service file is still needed
+# for the timer to trigger. The timer will manage when the service runs.
+systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
+
+# Reload systemd to pick up new/changed unit files
 systemctl --user daemon-reload
 echo "✓ Systemd daemon reloaded"
-
-# Stop old daemon-style service if running (migration from old setup)
-systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
-systemctl --user disable "$SERVICE_NAME" 2>/dev/null || true
 
 # Enable and start timer (timer triggers the service)
 systemctl --user enable "$TIMER_NAME"
