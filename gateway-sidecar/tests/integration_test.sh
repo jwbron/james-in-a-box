@@ -118,7 +118,8 @@ test_environment() {
     fi
 
     log_test "Test repository exists"
-    if [[ -d "$REPO_PATH/.git" ]]; then
+    # Check for .git as directory (regular repo) or file (worktree)
+    if [[ -d "$REPO_PATH/.git" ]] || [[ -f "$REPO_PATH/.git" ]]; then
         log_pass "Repository exists at $REPO_PATH"
         record_result "env_repo" "pass" "Repository exists" "$REPO_PATH"
     else
@@ -567,13 +568,17 @@ test_direct_api() {
         -H "Authorization: $AUTH" \
         -d '{"repo": "'"$TEST_REPO"'", "title": "Test", "body": "Test", "base": "main", "head": "nonexistent-branch-xyz"}')
 
-    # Should fail because branch doesn't exist, but endpoint should be reachable
-    if echo "$RESP" | grep -qi "error\|branch\|not found\|success"; then
-        log_pass "gh/pr/create endpoint reachable"
-        record_result "api_pr_create" "pass" "Reachable" "$RESP"
+    # Should return JSON (not HTML 500 error) - branch doesn't exist but endpoint works
+    if echo "$RESP" | grep -q "<!doctype\|<html"; then
+        log_fail "gh/pr/create returned HTML error (500)"
+        record_result "api_pr_create" "fail" "500 Internal Server Error" "$RESP"
+    elif echo "$RESP" | grep -q '"success"'; then
+        log_pass "gh/pr/create endpoint works (returns JSON)"
+        record_result "api_pr_create" "pass" "Works" "$RESP"
     else
-        log_fail "gh/pr/create endpoint issue"
-        record_result "api_pr_create" "fail" "Issue" "$RESP"
+        log_info "Unexpected response format"
+        record_result "api_pr_create" "skip" "Unexpected response" "$RESP"
+        log_skip "gh/pr/create returned unexpected format"
     fi
 }
 

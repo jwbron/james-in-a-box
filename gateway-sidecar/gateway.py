@@ -563,47 +563,52 @@ def gh_pr_create():
     if not head:
         return make_error("Missing head branch")
 
-    github = get_github_client()
-    args = [
-        "pr",
-        "create",
-        "--repo",
-        repo,
-        "--title",
-        title,
-        "--body",
-        body,
-        "--base",
-        base,
-        "--head",
-        head,
-    ]
+    try:
+        github = get_github_client()
+        args = [
+            "pr",
+            "create",
+            "--repo",
+            repo,
+            "--title",
+            title,
+            "--body",
+            body,
+            "--base",
+            base,
+            "--head",
+            head,
+        ]
 
-    result = github.execute(args, timeout=60)
+        result = github.execute(args, timeout=60)
 
-    if result.success:
-        audit_log(
-            "pr_created",
-            "gh_pr_create",
-            success=True,
-            details={"repo": repo, "title": title, "base": base, "head": head},
-        )
-        return make_success(
-            "PR created",
-            {"stdout": result.stdout, "stderr": result.stderr},
-        )
-    else:
-        audit_log(
-            "pr_create_failed",
-            "gh_pr_create",
-            success=False,
-            details={"repo": repo, "error": result.stderr[:200]},
-        )
-        return make_error(
-            f"Failed to create PR: {result.stderr}",
-            status_code=500,
-            details=result.to_dict(),
-        )
+        if result.success:
+            audit_log(
+                "pr_created",
+                "gh_pr_create",
+                success=True,
+                details={"repo": repo, "title": title, "base": base, "head": head},
+            )
+            return make_success(
+                "PR created",
+                {"stdout": result.stdout, "stderr": result.stderr},
+            )
+        else:
+            error_msg = result.stderr or "Unknown error"
+            audit_log(
+                "pr_create_failed",
+                "gh_pr_create",
+                success=False,
+                details={"repo": repo, "error": error_msg[:200] if error_msg else ""},
+            )
+            return make_error(
+                f"Failed to create PR: {error_msg}",
+                status_code=500,
+                details=result.to_dict(),
+            )
+    except Exception as e:
+        logger.exception("Unexpected error in gh_pr_create")
+        return make_error(f"Internal error: {e}", status_code=500)
 
 
 @app.route("/api/v1/gh/pr/comment", methods=["POST"])

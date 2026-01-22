@@ -269,6 +269,7 @@ case "$cmd" in
         refspec=""
         force="false"
         skip_next=false
+        remote_seen=false  # Track if we've explicitly seen a remote arg
 
         for arg in "$@"; do
             if $skip_next; then
@@ -295,12 +296,10 @@ case "$cmd" in
                     ;;
                 *)
                     # First non-flag is remote, second is refspec
-                    if [ -z "$refspec" ] && [ "$arg" != "$remote" ]; then
-                        if [ "$remote" = "origin" ]; then
-                            remote="$arg"
-                        else
-                            refspec="$arg"
-                        fi
+                    # Use remote_seen flag to handle "git push origin branch" correctly
+                    if [ "$remote_seen" = "false" ]; then
+                        remote="$arg"
+                        remote_seen=true
                     elif [ -z "$refspec" ]; then
                         refspec="$arg"
                     fi
