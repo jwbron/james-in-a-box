@@ -495,19 +495,17 @@ def git_push():
     env["GIT_USERNAME"] = "x-access-token"
     env["GIT_PASSWORD"] = token_str
 
-    # For incognito mode, set author/committer to the configured user
-    if auth_mode == "incognito" and incognito_cfg:
-        if incognito_cfg.get("git_name"):
-            env["GIT_AUTHOR_NAME"] = incognito_cfg["git_name"]
-            env["GIT_COMMITTER_NAME"] = incognito_cfg["git_name"]
-        if incognito_cfg.get("git_email"):
-            env["GIT_AUTHOR_EMAIL"] = incognito_cfg["git_email"]
-            env["GIT_COMMITTER_EMAIL"] = incognito_cfg["git_email"]
+    # NOTE: Git author/committer info is set at COMMIT time, not push time.
+    # For incognito mode, the user must configure their local git:
+    #   git config user.name "Your Name"
+    #   git config user.email "your@email.com"
+    # The incognito.git_name and incognito.git_email in repositories.yaml
+    # are for documentation purposes only - they don't affect commits.
+    if auth_mode == "incognito":
         logger.debug(
-            "Incognito mode enabled for push",
+            "Incognito mode push",
             repo=repo,
-            git_name=incognito_cfg.get("git_name"),
-            git_email=incognito_cfg.get("git_email"),
+            incognito_user=incognito_cfg.get("github_user") if incognito_cfg else None,
         )
 
     # Create inline credential helper script that reads from env

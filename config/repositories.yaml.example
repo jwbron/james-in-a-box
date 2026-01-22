@@ -89,12 +89,19 @@ repo_settings:
 #
 # To use incognito mode:
 # 1. Set GITHUB_INCOGNITO_TOKEN in secrets.env (a PAT for your personal account)
-# 2. Configure the incognito section below
+# 2. Configure the incognito section below with your GitHub username
 # 3. Set auth_mode: incognito for repos that should use it
+# 4. Configure your LOCAL git with your name/email:
+#      git config user.name "Your Name"
+#      git config user.email "your@email.com"
+#    (Git author info is set at commit time, not push time)
+#
+# IMPORTANT: You must create a PR on GitHub before you can push to a branch.
+# Direct pushes to main/master are always blocked.
 incognito:
   # GitHub username for attribution (must match the PAT owner)
   # github_user: jwbron
-  # Git author info for commits
+  # Git author info (for documentation - configure locally with git config)
   # git_name: "James Wies"
   # git_email: "jwbron@example.com"
 

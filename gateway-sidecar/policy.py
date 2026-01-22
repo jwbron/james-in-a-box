@@ -366,15 +366,37 @@ class PolicyEngine:
         2. Branch has an open PR authored by jib, OR
         3. Branch has an open PR authored by a trusted user (from GATEWAY_TRUSTED_USERS)
 
-        In incognito mode, the incognito user can push to any branch they own
-        (branch has an open PR authored by the incognito user).
+        In incognito mode, the incognito user can push to a branch if:
+        1. Branch has an open PR authored by the incognito user
+
+        Protected branches (main, master) are always blocked regardless of mode.
 
         Args:
             repo: Repository in "owner/repo" format
             branch: Branch name
             auth_mode: "bot" (default) or "incognito"
         """
-        # In incognito mode, check for incognito user ownership
+        # SAFETY: Always block pushes to protected branches
+        protected_branches = ("main", "master")
+        if branch in protected_branches:
+            logger.warning(
+                "Push to protected branch blocked",
+                repo=repo,
+                branch=branch,
+                auth_mode=auth_mode,
+            )
+            return PolicyResult(
+                allowed=False,
+                reason=f"Branch '{branch}' is protected. Direct pushes to {', '.join(protected_branches)} are not allowed.",
+                details={
+                    "branch": branch,
+                    "protected_branches": list(protected_branches),
+                    "auth_mode": auth_mode,
+                    "hint": "Create a feature branch and open a PR instead.",
+                },
+            )
+
+        # In incognito mode, check for incognito user ownership via PR
         if auth_mode == "incognito":
             incognito_user = self._get_incognito_user()
             if incognito_user:
@@ -403,22 +425,24 @@ class PolicyEngine:
                             },
                         )
 
-                # In incognito mode, also allow pushing to any branch without PR
-                # (user is authenticated as themselves, so they own their pushes)
-                logger.debug(
-                    "Branch push allowed (incognito mode - user authenticated)",
+                # No PR found by incognito user - deny push
+                logger.info(
+                    "Branch push denied in incognito mode - no PR by incognito user",
                     repo=repo,
                     branch=branch,
                     incognito_user=incognito_user,
+                    open_prs=pr_numbers,
                 )
                 return PolicyResult(
-                    allowed=True,
-                    reason=f"Incognito mode: push allowed as user '{incognito_user}'",
+                    allowed=False,
+                    reason=f"Branch '{branch}' has no open PR owned by incognito user '{incognito_user}'. "
+                    "Create a PR from this branch first.",
                     details={
                         "branch": branch,
-                        "reason": "incognito_auth",
-                        "auth_mode": "incognito",
+                        "open_prs": pr_numbers,
                         "incognito_user": incognito_user,
+                        "auth_mode": "incognito",
+                        "hint": "Create a PR from this branch on GitHub, then push.",
                     },
                 )
 
