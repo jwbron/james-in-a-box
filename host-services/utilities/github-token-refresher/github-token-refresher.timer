@@ -1,0 +1,21 @@
+[Unit]
+Description=GitHub Token Refresher Timer - Refresh tokens every 30 minutes
+Documentation=file://%h/khan/james-in-a-box/host-services/utilities/github-token-refresher/README.md
+
+[Timer]
+# Run every 30 minutes
+# GitHub App tokens expire after 1 hour, so 30-minute refresh gives good margin
+OnCalendar=*:0/30
+
+# Run immediately on boot to ensure token is fresh
+OnBootSec=10s
+
+# CRITICAL: Run missed executions after system resume from suspend/hibernate
+# This ensures tokens are refreshed immediately after waking from sleep
+Persistent=true
+
+# Small random delay to avoid thundering herd on multi-machine setups
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

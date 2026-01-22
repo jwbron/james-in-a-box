@@ -9,14 +9,15 @@ the token passed at startup will fail GitHub operations after the token expires.
 
 ## Solution
 
-This service runs on the **host** and:
-1. Generates a fresh token every 45 minutes (before the 1-hour expiry)
-2. Writes the token to `~/.jib-sharing/.github-token` (a shared file accessible to containers)
-3. Containers read from this file instead of relying on the initial env var
+This timer-triggered service runs on the **host** and:
+1. Generates a fresh token every 30 minutes (before the 1-hour expiry)
+2. Writes the token to `~/.jib-gateway/.github-token` (accessible only to the gateway sidecar)
+3. The gateway sidecar provides tokens to containers on-demand via authenticated API
+4. Uses systemd timer with `Persistent=true` to handle system suspend/hibernate correctly
 
 ## Token File Format
 
-The token file (`~/.jib-sharing/.github-token`) is JSON:
+The token file (`~/.jib-gateway/.github-token`) is JSON:
 
 ```json
 {
@@ -76,17 +77,20 @@ which is on the PATH before `/usr/bin/`, so they intercept the real commands.
 ## Manual Operations
 
 ```bash
-# Check service status
-systemctl --user status github-token-refresher
+# Check timer status
+systemctl --user status github-token-refresher.timer
+
+# See when next run is scheduled
+systemctl --user list-timers github-token-refresher.timer
 
 # View logs
 journalctl --user -u github-token-refresher -f
 
 # Force immediate refresh
-~/.jib-sharing/.github-token-refresher/github-token-refresher.py --once
+systemctl --user start github-token-refresher.service
 
 # View current token info (without exposing the token)
-cat ~/.jib-sharing/.github-token | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'Expires: {d[\"expires_at\"]}')"
+cat ~/.jib-gateway/.github-token | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'Expires: {d[\"expires_at\"]}')"
 ```
 
 ## Architecture
@@ -95,12 +99,24 @@ cat ~/.jib-sharing/.github-token | python3 -c "import json,sys; d=json.load(sys.
 Host                                 Container
 ┌─────────────────────────┐         ┌─────────────────────────┐
 │ github-token-refresher  │         │                         │
-│                         │         │  git credential helper  │
-│ Every 45 min:           │         │  + gh CLI read from:    │
-│ 1. Generate token       │         │  1. ~/sharing/.github-  │
-│ 2. Write to shared file │─────────│     token (preferred)   │
-│                         │         │  2. $GITHUB_TOKEN       │
-│ ~/.jib-sharing/         │         │     (fallback)          │
+│ (systemd timer)         │         │  git/gh wrappers call   │
+│                         │         │  gateway sidecar API    │
+│ Every 30 min:           │         │                         │
+│ 1. Generate token       │         │                         │
+│ 2. Write to gateway dir │         │                         │
+│                         │         │                         │
+│ ~/.jib-gateway/         │         │                         │
 │   .github-token         │         │                         │
-└─────────────────────────┘         └─────────────────────────┘
+└──────────┬──────────────┘         └───────────┬─────────────┘
+           │                                    │
+           │    ┌─────────────────────────┐     │
+           └────│    gateway-sidecar      │─────┘
+                │                         │
+                │ Reads token from file   │
+                │ Serves to containers    │
+                │ via authenticated API   │
+                └─────────────────────────┘
 ```
+
+The timer uses `Persistent=true` to ensure missed runs (e.g., during suspend)
+are executed immediately on resume.

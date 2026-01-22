@@ -4,6 +4,7 @@ set -e
 
 COMPONENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="github-token-refresher.service"
+TIMER_NAME="github-token-refresher.timer"
 SYSTEMD_DIR="${HOME}/.config/systemd/user"
 
 echo "Setting up GitHub Token Refresher service..."
@@ -33,36 +34,45 @@ if [[ ! -f "$APP_ID_FILE" ]] || [[ ! -f "$INSTALLATION_ID_FILE" ]] || [[ ! -f "$
     fi
 fi
 
-# Ensure sharing directory exists
-mkdir -p "${HOME}/.jib-sharing"
-echo "✓ Sharing directory exists: ${HOME}/.jib-sharing"
+# Ensure gateway secrets directory exists
+mkdir -p "${HOME}/.jib-gateway"
+echo "✓ Gateway secrets directory exists: ${HOME}/.jib-gateway"
 
 # Make the script executable
 chmod +x "$COMPONENT_DIR/github-token-refresher.py"
 echo "✓ Script made executable"
 
-# Symlink service file
+# Symlink service and timer files
 mkdir -p "$SYSTEMD_DIR"
 ln -sf "$COMPONENT_DIR/$SERVICE_NAME" "$SYSTEMD_DIR/"
+ln -sf "$COMPONENT_DIR/$TIMER_NAME" "$SYSTEMD_DIR/"
 echo "✓ Service file symlinked to $SYSTEMD_DIR/$SERVICE_NAME"
+echo "✓ Timer file symlinked to $SYSTEMD_DIR/$TIMER_NAME"
 
 # Reload systemd
 systemctl --user daemon-reload
 echo "✓ Systemd daemon reloaded"
 
-# Enable service
-systemctl --user enable "$SERVICE_NAME"
-echo "✓ Service enabled"
+# Stop old daemon-style service if running (migration from old setup)
+systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
+systemctl --user disable "$SERVICE_NAME" 2>/dev/null || true
 
-# Start service
+# Enable and start timer (timer triggers the service)
+systemctl --user enable "$TIMER_NAME"
+echo "✓ Timer enabled"
+
+systemctl --user start "$TIMER_NAME"
+echo "✓ Timer started"
+
+# Run service once immediately to generate initial token
 systemctl --user start "$SERVICE_NAME"
-echo "✓ Service started"
+echo "✓ Initial token refresh triggered"
 
 # Wait a moment for initial token generation
 sleep 2
 
 # Check if token file was created
-TOKEN_FILE="${HOME}/.jib-sharing/.github-token"
+TOKEN_FILE="${HOME}/.jib-gateway/.github-token"
 if [[ -f "$TOKEN_FILE" ]]; then
     echo ""
     echo "✓ Initial token generated successfully!"
@@ -77,21 +87,23 @@ else
 fi
 
 echo ""
-echo "Service status:"
-systemctl --user status "$SERVICE_NAME" --no-pager || true
+echo "Timer status:"
+systemctl --user status "$TIMER_NAME" --no-pager || true
 
 echo ""
 echo "Setup complete!"
 echo ""
-echo "The service will:"
-echo "  - Generate a fresh GitHub token every 45 minutes"
-echo "  - Write tokens to ~/.jib-sharing/.github-token"
+echo "The timer will:"
+echo "  - Trigger token refresh every 30 minutes"
+echo "  - Run immediately on boot"
+echo "  - Catch up on missed runs after suspend/hibernate (Persistent=true)"
+echo "  - Write tokens to ~/.jib-gateway/.github-token"
 echo "  - Running containers will automatically use refreshed tokens"
 echo ""
 echo "Useful commands:"
-echo "  systemctl --user status $SERVICE_NAME    # Check status"
-echo "  systemctl --user restart $SERVICE_NAME   # Restart service"
-echo "  systemctl --user stop $SERVICE_NAME      # Stop service"
+echo "  systemctl --user status $TIMER_NAME      # Check timer status"
+echo "  systemctl --user list-timers             # See next scheduled run"
+echo "  systemctl --user start $SERVICE_NAME     # Force immediate refresh"
 echo "  journalctl --user -u $SERVICE_NAME -f    # View logs"
-echo "  cat ~/.jib-sharing/.github-token         # View current token info"
+echo "  cat ~/.jib-gateway/.github-token         # View current token info"
 

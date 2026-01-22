@@ -6,17 +6,12 @@ Wants=network-online.target
 OnFailure=service-failure-notify@%n.service
 
 [Service]
-Type=simple
+Type=oneshot
 WorkingDirectory=%h/khan/james-in-a-box
 
 # Use the shared virtual environment
-ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/utilities/github-token-refresher/github-token-refresher.py
-
-# Restart on failure with exponential backoff
-Restart=on-failure
-RestartSec=30s
-RestartSteps=5
-RestartMaxDelaySec=300s
+# --once flag runs a single refresh cycle and exits (for timer-based execution)
+ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/utilities/github-token-refresher/github-token-refresher.py --once
 
 # Logging
 StandardOutput=journal
