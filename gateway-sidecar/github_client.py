@@ -34,6 +34,9 @@ if not TOKEN_FILE.exists():
     TOKEN_FILE = Path.home() / ".jib-gateway" / ".github-token"
 GH_CLI = "/usr/bin/gh"
 
+# Incognito token from environment variable
+INCOGNITO_TOKEN_VAR = "GITHUB_INCOGNITO_TOKEN"
+
 
 @dataclass
 class GitHubToken:
@@ -79,9 +82,18 @@ class GitHubResult:
 class GitHubClient:
     """Client for executing gh CLI commands with token management."""
 
-    def __init__(self, token_file: Path = TOKEN_FILE):
+    def __init__(self, token_file: Path = TOKEN_FILE, mode: str = "bot"):
+        """
+        Initialize the GitHub client.
+
+        Args:
+            token_file: Path to the bot token file (for mode="bot")
+            mode: Authentication mode - "bot" (default) or "incognito"
+        """
         self.token_file = token_file
+        self.mode = mode
         self._cached_token: GitHubToken | None = None
+        self._cached_incognito_token: str | None = None
 
     def get_token(self) -> GitHubToken | None:
         """
@@ -133,11 +145,60 @@ class GitHubClient:
         token = self.get_token()
         return token is not None and not token.is_expired
 
+    def get_incognito_token(self) -> str | None:
+        """
+        Get the incognito mode token from environment.
+
+        The incognito token is a Personal Access Token (PAT) that attributes
+        git/gh operations to a personal GitHub account instead of the bot.
+
+        Returns:
+            PAT string or None if not configured
+        """
+        if self._cached_incognito_token:
+            return self._cached_incognito_token
+
+        import os
+
+        token = os.environ.get(INCOGNITO_TOKEN_VAR, "").strip()
+        if not token:
+            logger.warning(
+                "Incognito token not configured",
+                env_var=INCOGNITO_TOKEN_VAR,
+            )
+            return None
+
+        self._cached_incognito_token = token
+        return token
+
+    def is_incognito_token_valid(self) -> bool:
+        """Check if incognito token is configured."""
+        return bool(self.get_incognito_token())
+
+    def get_token_for_mode(self, mode: str | None = None) -> str | None:
+        """
+        Get the appropriate token string for the specified mode.
+
+        Args:
+            mode: "bot" or "incognito" (defaults to self.mode)
+
+        Returns:
+            Token string or None if not available
+        """
+        mode = mode or self.mode
+
+        if mode == "incognito":
+            return self.get_incognito_token()
+        else:
+            token = self.get_token()
+            return token.token if token else None
+
     def execute(
         self,
         args: list[str],
         timeout: int = 60,
         cwd: str | Path | None = None,
+        mode: str | None = None,
     ) -> GitHubResult:
         """
         Execute a gh CLI command with authentication.
@@ -146,24 +207,35 @@ class GitHubClient:
             args: Command arguments (without 'gh' prefix)
             timeout: Command timeout in seconds
             cwd: Working directory for the command
+            mode: Auth mode override ("bot" or "incognito"), defaults to self.mode
 
         Returns:
             GitHubResult with command output
         """
-        token = self.get_token()
-        if not token:
-            return GitHubResult(
-                success=False,
-                stdout="",
-                stderr="GitHub token not available. Check github-token-refresher service.",
-                returncode=1,
-            )
+        effective_mode = mode or self.mode
+        token_str = self.get_token_for_mode(effective_mode)
+
+        if not token_str:
+            if effective_mode == "incognito":
+                return GitHubResult(
+                    success=False,
+                    stdout="",
+                    stderr=f"Incognito token not available. Set {INCOGNITO_TOKEN_VAR} environment variable.",
+                    returncode=1,
+                )
+            else:
+                return GitHubResult(
+                    success=False,
+                    stdout="",
+                    stderr="GitHub token not available. Check github-token-refresher service.",
+                    returncode=1,
+                )
 
         # Build environment with token
         # Include git safe.directory config for worktree paths - gh uses git internally
         # and would otherwise fail with "dubious ownership" on container worktree paths
         env = {
-            "GH_TOKEN": token.token,
+            "GH_TOKEN": token_str,
             "PATH": "/usr/bin:/bin",
             # Pass git config via environment to allow any directory
             "GIT_CONFIG_COUNT": "1",
@@ -288,13 +360,33 @@ class GitHubClient:
             return []
 
 
-# Global client instance
-_client: GitHubClient | None = None
+# Global client instances (one per mode)
+_clients: dict[str, GitHubClient] = {}
 
 
-def get_github_client() -> GitHubClient:
-    """Get the global GitHub client instance."""
-    global _client
-    if _client is None:
-        _client = GitHubClient()
-    return _client
+def get_github_client(mode: str = "bot") -> GitHubClient:
+    """
+    Get a GitHub client instance for the specified mode.
+
+    Args:
+        mode: Authentication mode - "bot" (default) or "incognito"
+
+    Returns:
+        GitHubClient configured for the specified mode
+    """
+    global _clients
+    if mode not in _clients:
+        _clients[mode] = GitHubClient(mode=mode)
+    return _clients[mode]
+
+
+def get_incognito_client() -> GitHubClient:
+    """
+    Get a GitHub client configured for incognito mode.
+
+    Convenience function equivalent to get_github_client(mode="incognito").
+
+    Returns:
+        GitHubClient configured for incognito mode
+    """
+    return get_github_client(mode="incognito")

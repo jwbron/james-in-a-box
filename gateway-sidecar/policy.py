@@ -170,6 +170,28 @@ class PolicyEngine:
             login = author
         return login.lower() in TRUSTED_BRANCH_OWNERS
 
+    def _get_incognito_user(self) -> str | None:
+        """Get the configured incognito GitHub username."""
+        try:
+            # Import here to avoid circular imports and handle missing config
+            _config_path = Path(__file__).parent.parent / "config"
+            if _config_path.exists() and str(_config_path) not in sys.path:
+                sys.path.insert(0, str(_config_path))
+            from repo_config import get_incognito_config
+
+            config = get_incognito_config()
+            return config.get("github_user", "").lower() or None
+        except ImportError:
+            return None
+
+    def _is_incognito_author(self, author: str | dict[str, Any], incognito_user: str) -> bool:
+        """Check if author matches the incognito user."""
+        if isinstance(author, dict):
+            login = author.get("login", "")
+        else:
+            login = author
+        return login.lower() == incognito_user.lower()
+
     def _get_pr_info(self, repo: str, pr_number: int) -> CachedPRInfo | None:
         """Get PR info, using cache if available and fresh."""
         cache_key = (repo, pr_number)
@@ -227,11 +249,19 @@ class PolicyEngine:
 
         return pr_numbers
 
-    def check_pr_ownership(self, repo: str, pr_number: int) -> PolicyResult:
+    def check_pr_ownership(
+        self, repo: str, pr_number: int, auth_mode: str = "bot"
+    ) -> PolicyResult:
         """
-        Check if jib owns a PR.
+        Check if the current identity owns a PR.
 
-        A PR is owned by jib if the author is a jib identity.
+        In bot mode: A PR is owned if the author is a jib identity.
+        In incognito mode: A PR is owned if the author is the incognito user.
+
+        Args:
+            repo: Repository in "owner/repo" format
+            pr_number: PR number
+            auth_mode: "bot" (default) or "incognito"
         """
         pr_info = self._get_pr_info(repo, pr_number)
 
@@ -247,6 +277,23 @@ class PolicyEngine:
                 details={"repo": repo, "pr_number": pr_number},
             )
 
+        # In incognito mode, check if PR is owned by the incognito user
+        if auth_mode == "incognito":
+            incognito_user = self._get_incognito_user()
+            if incognito_user and self._is_incognito_author(pr_info.author, incognito_user):
+                logger.debug(
+                    "PR ownership verified (incognito mode)",
+                    repo=repo,
+                    pr_number=pr_number,
+                    author=pr_info.author,
+                    incognito_user=incognito_user,
+                )
+                return PolicyResult(
+                    allowed=True,
+                    reason=f"PR is owned by incognito user ({incognito_user})",
+                    details={"author": pr_info.author, "auth_mode": "incognito"},
+                )
+
         if self._is_jib_author(pr_info.author):
             logger.debug(
                 "PR ownership verified",
@@ -261,15 +308,21 @@ class PolicyEngine:
             )
 
         logger.info(
-            "PR ownership denied - not owned by jib",
+            "PR ownership denied - not owned by jib or incognito user",
             repo=repo,
             pr_number=pr_number,
             author=pr_info.author,
+            auth_mode=auth_mode,
         )
+        expected = list(JIB_IDENTITIES)
+        if auth_mode == "incognito":
+            incognito_user = self._get_incognito_user()
+            if incognito_user:
+                expected.append(incognito_user)
         return PolicyResult(
             allowed=False,
-            reason=f"PR #{pr_number} is not owned by jib (author: {pr_info.author})",
-            details={"author": pr_info.author, "expected": list(JIB_IDENTITIES)},
+            reason=f"PR #{pr_number} is not owned by the authorized identity (author: {pr_info.author})",
+            details={"author": pr_info.author, "expected": expected, "auth_mode": auth_mode},
         )
 
     def check_pr_comment_allowed(self, repo: str, pr_number: int) -> PolicyResult:
@@ -304,16 +357,74 @@ class PolicyEngine:
             details={"pr_number": pr_number, "author": pr_info.author},
         )
 
-    def check_branch_ownership(self, repo: str, branch: str) -> PolicyResult:
+    def check_branch_ownership(
+        self, repo: str, branch: str, auth_mode: str = "bot"
+    ) -> PolicyResult:
         """
-        Check if jib can push to a branch.
+        Check if the current identity can push to a branch.
 
-        Jib can push to a branch if:
+        In bot mode, jib can push to a branch if:
         1. Branch name starts with jib- or jib/ (allows pushing before PR exists), OR
         2. Branch has an open PR authored by jib, OR
         3. Branch has an open PR authored by a trusted user (from GATEWAY_TRUSTED_USERS)
+
+        In incognito mode, the incognito user can push to any branch they own
+        (branch has an open PR authored by the incognito user).
+
+        Args:
+            repo: Repository in "owner/repo" format
+            branch: Branch name
+            auth_mode: "bot" (default) or "incognito"
         """
-        # Check 1: Branch prefix
+        # In incognito mode, check for incognito user ownership
+        if auth_mode == "incognito":
+            incognito_user = self._get_incognito_user()
+            if incognito_user:
+                # Check if branch has an open PR by the incognito user
+                pr_numbers = self._get_prs_for_branch(repo, branch)
+                for pr_number in pr_numbers:
+                    pr_info = self._get_pr_info(repo, pr_number)
+                    if pr_info and self._is_incognito_author(pr_info.author, incognito_user):
+                        logger.debug(
+                            "Branch push allowed (incognito mode)",
+                            repo=repo,
+                            branch=branch,
+                            pr_number=pr_number,
+                            author=pr_info.author,
+                            incognito_user=incognito_user,
+                        )
+                        return PolicyResult(
+                            allowed=True,
+                            reason=f"Branch '{branch}' has open PR #{pr_number} owned by incognito user '{incognito_user}'",
+                            details={
+                                "branch": branch,
+                                "pr_number": pr_number,
+                                "author": pr_info.author,
+                                "reason": "incognito_pr",
+                                "auth_mode": "incognito",
+                            },
+                        )
+
+                # In incognito mode, also allow pushing to any branch without PR
+                # (user is authenticated as themselves, so they own their pushes)
+                logger.debug(
+                    "Branch push allowed (incognito mode - user authenticated)",
+                    repo=repo,
+                    branch=branch,
+                    incognito_user=incognito_user,
+                )
+                return PolicyResult(
+                    allowed=True,
+                    reason=f"Incognito mode: push allowed as user '{incognito_user}'",
+                    details={
+                        "branch": branch,
+                        "reason": "incognito_auth",
+                        "auth_mode": "incognito",
+                        "incognito_user": incognito_user,
+                    },
+                )
+
+        # Bot mode: Check 1: Branch prefix
         if self._is_jib_branch(branch):
             logger.debug(
                 "Branch ownership verified by prefix",
@@ -381,6 +492,7 @@ class PolicyEngine:
             branch=branch,
             open_prs=pr_numbers,
             trusted_users=list(TRUSTED_BRANCH_OWNERS) if TRUSTED_BRANCH_OWNERS else [],
+            auth_mode=auth_mode,
         )
         hint = "Use 'jib-' or 'jib/' prefix, or create a PR from this branch first"
         if TRUSTED_BRANCH_OWNERS:
@@ -393,6 +505,7 @@ class PolicyEngine:
                 "branch": branch,
                 "open_prs": pr_numbers,
                 "hint": hint,
+                "auth_mode": auth_mode,
             },
         )
 

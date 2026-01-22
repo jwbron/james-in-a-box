@@ -65,6 +65,24 @@ except ImportError:
         get_policy_engine,
     )
 
+# Import repo_config for incognito mode support
+# Path setup needed because config is in a sibling directory
+_config_path = Path(__file__).parent.parent / "config"
+if _config_path.exists() and str(_config_path) not in sys.path:
+    sys.path.insert(0, str(_config_path))
+try:
+    from repo_config import get_auth_mode, get_incognito_config, is_incognito_repo
+except ImportError:
+    # Fallback: incognito mode disabled if config not available
+    def get_auth_mode(repo: str) -> str:
+        return "bot"
+
+    def get_incognito_config() -> dict[str, str]:
+        return {"github_user": "", "git_name": "", "git_email": ""}
+
+    def is_incognito_repo(repo: str) -> bool:
+        return False
+
 
 logger = get_logger("gateway-sidecar")
 
@@ -417,16 +435,25 @@ def git_push():
     if not branch:
         return make_error("Could not determine branch to push")
 
-    # Check branch ownership policy
+    # Determine auth mode for this repo
+    auth_mode = get_auth_mode(repo)
+    incognito_cfg = get_incognito_config() if auth_mode == "incognito" else {}
+
+    # Check branch ownership policy (pass auth mode for relaxed policy in incognito)
     policy = get_policy_engine()
-    policy_result = policy.check_branch_ownership(repo, branch)
+    policy_result = policy.check_branch_ownership(repo, branch, auth_mode=auth_mode)
 
     if not policy_result.allowed:
         audit_log(
             "push_denied",
             "git_push",
             success=False,
-            details={"repo": repo, "branch": branch, "reason": policy_result.reason},
+            details={
+                "repo": repo,
+                "branch": branch,
+                "reason": policy_result.reason,
+                "auth_mode": auth_mode,
+            },
         )
         return make_error(
             f"Push denied: {policy_result.reason}",
@@ -435,10 +462,21 @@ def git_push():
         )
 
     # Execute git push with authentication
-    github = get_github_client()
-    token = github.get_token()
-    if not token:
-        return make_error("GitHub token not available", status_code=503)
+    github = get_github_client(mode=auth_mode)
+
+    # Get token based on auth mode
+    if auth_mode == "incognito":
+        token_str = github.get_incognito_token()
+        if not token_str:
+            return make_error(
+                "Incognito token not available. Set GITHUB_INCOGNITO_TOKEN environment variable.",
+                status_code=503,
+            )
+    else:
+        token = github.get_token()
+        if not token:
+            return make_error("GitHub token not available", status_code=503)
+        token_str = token.token
 
     # Build push command with safe.directory for worktree paths
     push_args = ["push"]
@@ -455,7 +493,22 @@ def git_push():
     # Use environment variable for credential helper to avoid temp file
     # Git credential helper protocol: respond with username and password
     env["GIT_USERNAME"] = "x-access-token"
-    env["GIT_PASSWORD"] = token.token
+    env["GIT_PASSWORD"] = token_str
+
+    # For incognito mode, set author/committer to the configured user
+    if auth_mode == "incognito" and incognito_cfg:
+        if incognito_cfg.get("git_name"):
+            env["GIT_AUTHOR_NAME"] = incognito_cfg["git_name"]
+            env["GIT_COMMITTER_NAME"] = incognito_cfg["git_name"]
+        if incognito_cfg.get("git_email"):
+            env["GIT_AUTHOR_EMAIL"] = incognito_cfg["git_email"]
+            env["GIT_COMMITTER_EMAIL"] = incognito_cfg["git_email"]
+        logger.debug(
+            "Incognito mode enabled for push",
+            repo=repo,
+            git_name=incognito_cfg.get("git_name"),
+            git_email=incognito_cfg.get("git_email"),
+        )
 
     # Create inline credential helper script that reads from env
     # This avoids writing token to disk
@@ -498,7 +551,12 @@ fi
                 "push_success",
                 "git_push",
                 success=True,
-                details={"repo": repo, "branch": branch, "force": force},
+                details={
+                    "repo": repo,
+                    "branch": branch,
+                    "force": force,
+                    "auth_mode": auth_mode,
+                },
             )
             return make_success(
                 "Push successful",
@@ -507,6 +565,7 @@ fi
                     "branch": branch,
                     "stdout": result.stdout,
                     "stderr": result.stderr,
+                    "auth_mode": auth_mode,
                 },
             )
         else:
@@ -514,7 +573,12 @@ fi
                 "push_failed",
                 "git_push",
                 success=False,
-                details={"repo": repo, "branch": branch, "returncode": result.returncode},
+                details={
+                    "repo": repo,
+                    "branch": branch,
+                    "returncode": result.returncode,
+                    "auth_mode": auth_mode,
+                },
             )
             return make_error(
                 f"Push failed: {result.stderr}",
@@ -563,8 +627,11 @@ def gh_pr_create():
     if not head:
         return make_error("Missing head branch")
 
+    # Determine auth mode for this repo
+    auth_mode = get_auth_mode(repo)
+
     try:
-        github = get_github_client()
+        github = get_github_client(mode=auth_mode)
         args = [
             "pr",
             "create",
@@ -580,18 +647,24 @@ def gh_pr_create():
             head,
         ]
 
-        result = github.execute(args, timeout=60)
+        result = github.execute(args, timeout=60, mode=auth_mode)
 
         if result.success:
             audit_log(
                 "pr_created",
                 "gh_pr_create",
                 success=True,
-                details={"repo": repo, "title": title, "base": base, "head": head},
+                details={
+                    "repo": repo,
+                    "title": title,
+                    "base": base,
+                    "head": head,
+                    "auth_mode": auth_mode,
+                },
             )
             return make_success(
                 "PR created",
-                {"stdout": result.stdout, "stderr": result.stderr},
+                {"stdout": result.stdout, "stderr": result.stderr, "auth_mode": auth_mode},
             )
         else:
             error_msg = result.stderr or "Unknown error"
@@ -599,7 +672,11 @@ def gh_pr_create():
                 "pr_create_failed",
                 "gh_pr_create",
                 success=False,
-                details={"repo": repo, "error": error_msg[:200] if error_msg else ""},
+                details={
+                    "repo": repo,
+                    "error": error_msg[:200] if error_msg else "",
+                    "auth_mode": auth_mode,
+                },
             )
             return make_error(
                 f"Failed to create PR: {error_msg}",
@@ -642,6 +719,9 @@ def gh_pr_comment():
     if not body:
         return make_error("Missing body")
 
+    # Determine auth mode for this repo
+    auth_mode = get_auth_mode(repo)
+
     # Check if commenting is allowed (allowed on any PR)
     policy = get_policy_engine()
     policy_result = policy.check_pr_comment_allowed(repo, pr_number)
@@ -651,7 +731,12 @@ def gh_pr_comment():
             "pr_comment_denied",
             "gh_pr_comment",
             success=False,
-            details={"repo": repo, "pr_number": pr_number, "reason": policy_result.reason},
+            details={
+                "repo": repo,
+                "pr_number": pr_number,
+                "reason": policy_result.reason,
+                "auth_mode": auth_mode,
+            },
         )
         return make_error(
             f"Comment denied: {policy_result.reason}",
@@ -659,7 +744,7 @@ def gh_pr_comment():
             details=policy_result.details,
         )
 
-    github = get_github_client()
+    github = get_github_client(mode=auth_mode)
     args = [
         "pr",
         "comment",
@@ -670,16 +755,16 @@ def gh_pr_comment():
         body,
     ]
 
-    result = github.execute(args, timeout=30)
+    result = github.execute(args, timeout=30, mode=auth_mode)
 
     if result.success:
         audit_log(
             "pr_comment_added",
             "gh_pr_comment",
             success=True,
-            details={"repo": repo, "pr_number": pr_number},
+            details={"repo": repo, "pr_number": pr_number, "auth_mode": auth_mode},
         )
-        return make_success("Comment added", {"stdout": result.stdout})
+        return make_success("Comment added", {"stdout": result.stdout, "auth_mode": auth_mode})
     else:
         return make_error(
             f"Failed to add comment: {result.stderr}",
@@ -721,16 +806,24 @@ def gh_pr_edit():
     if not title and not body:
         return make_error("Must provide title or body to edit")
 
-    # Check PR ownership
+    # Determine auth mode for this repo
+    auth_mode = get_auth_mode(repo)
+
+    # Check PR ownership (pass auth mode for relaxed policy in incognito)
     policy = get_policy_engine()
-    policy_result = policy.check_pr_ownership(repo, pr_number)
+    policy_result = policy.check_pr_ownership(repo, pr_number, auth_mode=auth_mode)
 
     if not policy_result.allowed:
         audit_log(
             "pr_edit_denied",
             "gh_pr_edit",
             success=False,
-            details={"repo": repo, "pr_number": pr_number, "reason": policy_result.reason},
+            details={
+                "repo": repo,
+                "pr_number": pr_number,
+                "reason": policy_result.reason,
+                "auth_mode": auth_mode,
+            },
         )
         return make_error(
             f"Edit denied: {policy_result.reason}",
@@ -738,23 +831,23 @@ def gh_pr_edit():
             details=policy_result.details,
         )
 
-    github = get_github_client()
+    github = get_github_client(mode=auth_mode)
     args = ["pr", "edit", str(pr_number), "--repo", repo]
     if title:
         args.extend(["--title", title])
     if body:
         args.extend(["--body", body])
 
-    result = github.execute(args, timeout=30)
+    result = github.execute(args, timeout=30, mode=auth_mode)
 
     if result.success:
         audit_log(
             "pr_edited",
             "gh_pr_edit",
             success=True,
-            details={"repo": repo, "pr_number": pr_number},
+            details={"repo": repo, "pr_number": pr_number, "auth_mode": auth_mode},
         )
-        return make_success("PR edited", {"stdout": result.stdout})
+        return make_success("PR edited", {"stdout": result.stdout, "auth_mode": auth_mode})
     else:
         return make_error(
             f"Failed to edit PR: {result.stderr}",
@@ -790,16 +883,24 @@ def gh_pr_close():
     if not pr_number:
         return make_error("Missing pr_number")
 
-    # Check PR ownership
+    # Determine auth mode for this repo
+    auth_mode = get_auth_mode(repo)
+
+    # Check PR ownership (pass auth mode for relaxed policy in incognito)
     policy = get_policy_engine()
-    policy_result = policy.check_pr_ownership(repo, pr_number)
+    policy_result = policy.check_pr_ownership(repo, pr_number, auth_mode=auth_mode)
 
     if not policy_result.allowed:
         audit_log(
             "pr_close_denied",
             "gh_pr_close",
             success=False,
-            details={"repo": repo, "pr_number": pr_number, "reason": policy_result.reason},
+            details={
+                "repo": repo,
+                "pr_number": pr_number,
+                "reason": policy_result.reason,
+                "auth_mode": auth_mode,
+            },
         )
         return make_error(
             f"Close denied: {policy_result.reason}",
@@ -807,19 +908,19 @@ def gh_pr_close():
             details=policy_result.details,
         )
 
-    github = get_github_client()
+    github = get_github_client(mode=auth_mode)
     args = ["pr", "close", str(pr_number), "--repo", repo]
 
-    result = github.execute(args, timeout=30)
+    result = github.execute(args, timeout=30, mode=auth_mode)
 
     if result.success:
         audit_log(
             "pr_closed",
             "gh_pr_close",
             success=True,
-            details={"repo": repo, "pr_number": pr_number},
+            details={"repo": repo, "pr_number": pr_number, "auth_mode": auth_mode},
         )
-        return make_success("PR closed", {"stdout": result.stdout})
+        return make_success("PR closed", {"stdout": result.stdout, "auth_mode": auth_mode})
     else:
         return make_error(
             f"Failed to close PR: {result.stderr}",
@@ -871,12 +972,25 @@ def gh_execute():
                 details={"blocked_command": blocked, "command_args": args},
             )
 
+    # Extract repo from args to determine auth mode
+    # Look for --repo flag or -R shorthand
+    repo = None
+    for i, arg in enumerate(args):
+        if arg in ("--repo", "-R") and i + 1 < len(args):
+            repo = args[i + 1]
+            break
+
+    # Determine auth mode (default to bot if repo not specified)
+    auth_mode = get_auth_mode(repo) if repo else "bot"
+
     # Execute the command
-    github = get_github_client()
-    result = github.execute(args, timeout=60, cwd=cwd)
+    github = get_github_client(mode=auth_mode)
+    result = github.execute(args, timeout=60, cwd=cwd, mode=auth_mode)
 
     if result.success:
-        return make_success("Command executed", result.to_dict())
+        response_data = result.to_dict()
+        response_data["auth_mode"] = auth_mode
+        return make_success("Command executed", response_data)
     else:
         return make_error(
             f"Command failed: {result.stderr}",
