@@ -40,8 +40,10 @@ shared/jib_config/
 ├── base.py               # BaseConfig protocol, ValidationResult, HealthCheckResult
 ├── registry.py           # ConfigRegistry singleton
 ├── validators.py         # Reusable validators (URL, email, token format)
-├── watcher.py            # Hot-reload file watcher
+├── watcher.py            # Hot-reload file watcher (500ms debounce)
+├── health.py             # Periodic health check scheduler
 ├── audit.py              # Configuration change audit logging
+├── cli.py                # CLI tool entry point
 └── configs/
     ├── slack.py          # SlackConfig
     ├── github.py         # GitHubConfig (consolidates token handling)
@@ -91,6 +93,26 @@ class BaseConfig(ABC):
 | `shared/jib_config/base.py` | `BaseConfig`, `ValidationResult`, `HealthCheckResult`, `ConfigProtocol` |
 | `shared/jib_config/registry.py` | `ConfigRegistry` singleton with `validate_all()`, `health_check_all()` |
 | `shared/jib_config/validators.py` | `validate_url()`, `validate_email()`, `validate_slack_token()`, `validate_github_token()`, `mask_secret()` |
+| `shared/jib_config/cli.py` | CLI entry point for `jib-config` command |
+
+**CLI tool (`jib-config`):**
+
+```bash
+# Validate all configurations
+jib-config validate
+
+# Validate specific service
+jib-config validate --service slack
+
+# Run health checks
+jib-config health
+
+# Show current config (secrets masked)
+jib-config show
+
+# Watch for changes (useful for debugging)
+jib-config watch
+```
 
 ### Phase 2: Service Configurations
 
@@ -151,17 +173,43 @@ self.slack_token = slack_config.bot_token
 
 | File | Purpose |
 |------|---------|
-| `shared/jib_config/watcher.py` | Poll-based file watcher for hot-reload |
+| `shared/jib_config/watcher.py` | Poll-based file watcher with 500ms debounce |
+| `shared/jib_config/health.py` | Periodic health check scheduler |
 | `shared/jib_config/audit.py` | Structured audit logging for config changes |
 
-**Hot-reload usage:**
+**Hot-reload with debounce:**
+
+The watcher uses a 500ms debounce to handle:
+- Editors that save in multiple steps (write temp → delete original → rename)
+- Rapid successive edits while tuning values
+- Partial writes if a save is interrupted
 
 ```python
 from jib_config.watcher import ConfigWatcher
 
-watcher = ConfigWatcher(poll_interval=5.0)
+watcher = ConfigWatcher(
+    poll_interval=5.0,
+    debounce_ms=500  # Wait 500ms after last change before triggering
+)
 watcher.watch(Path("~/.config/jib/config.yaml"), on_config_change)
 watcher.start()
+```
+
+**Periodic health checks:**
+
+Health checks run:
+1. **On startup** - fail fast if services are misconfigured
+2. **On config change** - verify new config is valid before applying
+3. **Periodically** - detect service degradation (token expiry, API issues)
+
+```python
+from jib_config.health import HealthScheduler
+
+scheduler = HealthScheduler(
+    interval_seconds=300,  # Every 5 minutes
+    on_degraded=notify_slack
+)
+scheduler.start()
 ```
 
 **Dry-run mode:**
@@ -235,11 +283,13 @@ registry.set_dry_run(True)  # Validation runs, writes are logged but not execute
 - **Cons**: Doesn't support structured config, no validation
 - **Decision**: Support both files and env vars with env override
 
-## Open Questions
+## Design Decisions
 
-1. Should we add a CLI tool for config validation? (e.g., `jib-config validate`)
-2. Should health checks run periodically or only on-demand?
-3. How aggressive should hot-reload be? (immediate vs debounced)
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| CLI tool? | **Yes** - `jib-config` command | Enables validation in CI, debugging, and pre-flight checks |
+| Health check timing? | **Periodic + on-change** | Periodic (5min) catches token expiry; on-change validates before applying |
+| Hot-reload timing? | **500ms debounce** | Handles editor save quirks, rapid edits, partial writes |
 
 ---
 
