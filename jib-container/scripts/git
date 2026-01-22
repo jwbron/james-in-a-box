@@ -84,13 +84,27 @@ check_gateway_available() {
 }
 
 # Function to push via gateway
+# Args: remote refspec force [work_dir]
 push_via_gateway() {
     local remote="$1"
     local refspec="$2"
     local force="$3"
+    local work_dir="${4:-}"
     local container_path
     local repo_path
-    container_path=$(pwd)
+
+    # Use provided work_dir or current directory
+    if [ -n "$work_dir" ]; then
+        # Convert to absolute path if relative
+        if [[ "$work_dir" != /* ]]; then
+            container_path="$(pwd)/$work_dir"
+        else
+            container_path="$work_dir"
+        fi
+    else
+        container_path=$(pwd)
+    fi
+
     # Translate container path to host path for gateway
     # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<id>/X
     repo_path=$(translate_path_for_gateway "$container_path")
@@ -213,12 +227,20 @@ EOF
 }
 
 # Function to check if push target is HTTPS (we don't have SSH keys)
+# Args: remote [work_dir]
 check_push_remote() {
     local remote="${1:-origin}"
+    local work_dir="${2:-}"
+
+    # Build git command with optional -C flag
+    local git_cmd=("$REAL_GIT")
+    if [ -n "$work_dir" ]; then
+        git_cmd+=("-C" "$work_dir")
+    fi
 
     # Get the remote URL
     local url
-    url=$("$REAL_GIT" remote get-url "$remote" 2>/dev/null)
+    url=$("${git_cmd[@]}" remote get-url "$remote" 2>/dev/null)
 
     if [ -z "$url" ]; then
         echo "ERROR: Remote '$remote' not found" >&2
@@ -251,13 +273,67 @@ EOF
     return 0
 }
 
-# Parse the git command
+# Parse global git options and extract the actual command
+# Global options like -C, -c, --git-dir, --work-tree take arguments
+# We need to skip both the flag and its argument to find the real command
 cmd=""
+git_work_dir=""  # Track -C option for push operations
+args_after_globals=()  # Arguments after global options (command + its args)
+skip_next=false
+capture_work_dir=false  # Flag to capture next arg as -C value
+found_command=false
+
 for arg in "$@"; do
-    # Skip flags (start with -)
-    if [[ "$arg" != -* ]]; then
-        cmd="$arg"
-        break
+    # Handle deferred captures from previous iteration
+    if $capture_work_dir; then
+        git_work_dir="$arg"
+        capture_work_dir=false
+        continue
+    fi
+
+    if $skip_next; then
+        skip_next=false
+        continue
+    fi
+
+    if ! $found_command; then
+        case "$arg" in
+            # -C <path> - run as if started in <path>
+            # We need to capture this for push operations
+            -C)
+                capture_work_dir=true
+                ;;
+            # Other global options that take an argument (next arg)
+            -c|--git-dir|--work-tree|--namespace|--super-prefix|--config-env)
+                skip_next=true
+                ;;
+            # Global options with = syntax (value attached)
+            -C=*|--git-dir=*|--work-tree=*|-c=*|--namespace=*|--super-prefix=*|--config-env=*)
+                # Extract value for -C if present
+                if [[ "$arg" == -C=* ]]; then
+                    git_work_dir="${arg#-C=}"
+                fi
+                ;;
+            # Global flags (no argument)
+            --version|--help|--html-path|--man-path|--info-path|-p|--paginate|-P|--no-pager|--no-replace-objects|--bare|--literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs|--no-optional-locks|--list-cmds=*)
+                ;;
+            # Unknown flag before command
+            -*)
+                # Pass through unknown flags. Note: if git adds a new global option
+                # that takes an argument, we'd incorrectly treat its value as the
+                # command. Low risk since we cover all documented global options.
+                args_after_globals+=("$arg")
+                ;;
+            *)
+                # Found the command
+                cmd="$arg"
+                found_command=true
+                args_after_globals+=("$arg")
+                ;;
+        esac
+    else
+        # Already found command, collect remaining args
+        args_after_globals+=("$arg")
     fi
 done
 
@@ -271,7 +347,7 @@ case "$cmd" in
         skip_next=false
         remote_seen=false  # Track if we've explicitly seen a remote arg
 
-        for arg in "$@"; do
+        for arg in "${args_after_globals[@]}"; do
             if $skip_next; then
                 skip_next=false
                 continue
@@ -307,8 +383,8 @@ case "$cmd" in
             esac
         done
 
-        # Verify remote is HTTPS
-        if ! check_push_remote "$remote"; then
+        # Verify remote is HTTPS (pass work_dir if -C was used)
+        if ! check_push_remote "$remote" "$git_work_dir"; then
             exit 1
         fi
 
@@ -338,14 +414,19 @@ EOF
             exit 1
         fi
 
-        push_via_gateway "$remote" "$refspec" "$force"
+        push_via_gateway "$remote" "$refspec" "$force" "$git_work_dir"
         exit $?
         ;;
     remote)
         # Check for subcommands that modify remotes
-        shift  # Remove 'remote' from args
+        # Find subcmd in args_after_globals (skip 'remote' itself)
         subcmd=""
-        for arg in "$@"; do
+        for arg in "${args_after_globals[@]}"; do
+            # Skip 'remote' command itself
+            if [ "$arg" = "remote" ]; then
+                continue
+            fi
+            # Skip flags
             if [[ "$arg" != -* ]]; then
                 subcmd="$arg"
                 break
@@ -358,7 +439,7 @@ EOF
                 ;;
             *)
                 # Allow read-only remote commands: show, get-url, -v
-                exec "$REAL_GIT" remote "$@"
+                exec "$REAL_GIT" "$@"
                 ;;
         esac
         ;;
