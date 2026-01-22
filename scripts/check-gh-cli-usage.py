@@ -367,7 +367,8 @@ def main():
 
     # Find all Python files in host-services (excluding authorized directories)
     python_files = [
-        f for f in host_services_dir.rglob("*.py")
+        f
+        for f in host_services_dir.rglob("*.py")
         if not any(excluded in f.parts for excluded in excluded_dirs)
     ]
 
