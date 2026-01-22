@@ -136,24 +136,50 @@ setup_container() {
     # Start the gateway container
     echo "Starting gateway container..."
     # Gateway needs access to repos to run git commands (remote get-url, push)
-    # Mount both original repos and worktrees directories
-    REPOS_DIR="${HOME}/repos"
     WORKTREES_DIR="${HOME}/.jib-worktrees"
+    REPOS_CONFIG="${HOME}/.config/jib/repositories.yaml"
 
-    # Build .git-main mounts for each repo
-    # Worktree .git files point to ~/.git-main/<repo>/worktrees/<name>
-    # so gateway needs the same mounts that jib containers use
+    # Read configured repos from jib config (same source as jib launcher)
+    # This ensures gateway mounts the same repos that jib uses
+    REPO_MOUNTS=()
     GIT_MOUNTS=()
-    for repo in "$REPOS_DIR"/*/; do
-        if [ -d "$repo" ]; then
-            repo_name=$(basename "$repo")
-            git_dir="${repo}.git"
-            if [ -d "$git_dir" ]; then
-                GIT_MOUNTS+=("-v" "${git_dir}:${HOME}/.git-main/${repo_name}:ro,z")
-                echo "  Mounting .git for: $repo_name"
+
+    if [ -f "$REPOS_CONFIG" ]; then
+        echo "Reading repos from: $REPOS_CONFIG"
+        # Parse YAML to get repo paths (handles both ~/path and /absolute/path)
+        while IFS= read -r repo_path; do
+            # Expand ~ to $HOME
+            repo_path="${repo_path/#\~/$HOME}"
+            if [ -d "$repo_path" ]; then
+                repo_name=$(basename "$repo_path")
+                git_dir="${repo_path}/.git"
+
+                # Mount the repo directory itself
+                REPO_MOUNTS+=("-v" "${repo_path}:${repo_path}:ro,z")
+                echo "  Mounting repo: $repo_name"
+
+                # Mount .git directory at ~/.git-main/<repo> for worktree resolution
+                if [ -d "$git_dir" ]; then
+                    GIT_MOUNTS+=("-v" "${git_dir}:${HOME}/.git-main/${repo_name}:ro,z")
+                    echo "  Mounting .git for: $repo_name"
+                fi
             fi
-        fi
-    done
+        done < <(python3 -c "
+import yaml
+import sys
+try:
+    with open('$REPOS_CONFIG') as f:
+        config = yaml.safe_load(f) or {}
+    paths = config.get('local_repos', {}).get('paths', [])
+    for p in paths:
+        print(p)
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+")
+    else
+        echo "WARNING: No repos config found at $REPOS_CONFIG"
+        echo "Gateway may not be able to access repos for git operations."
+    fi
 
     docker run -d \
         --name "$CONTAINER_NAME" \
@@ -162,8 +188,8 @@ setup_container() {
         --restart unless-stopped \
         -v "$GITHUB_TOKEN_FILE:/secrets/.github-token:ro,z" \
         -v "$SECRET_FILE:/secrets/gateway-secret:ro,z" \
-        -v "$REPOS_DIR:$REPOS_DIR:ro,z" \
         -v "$WORKTREES_DIR:$WORKTREES_DIR:ro,z" \
+        "${REPO_MOUNTS[@]}" \
         "${GIT_MOUNTS[@]}" \
         "$GATEWAY_IMAGE_NAME"
 
