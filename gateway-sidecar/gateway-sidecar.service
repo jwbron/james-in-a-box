@@ -2,7 +2,7 @@
 Description=Gateway Sidecar - Git/GitHub policy enforcement for jib containers
 Documentation=file://%h/khan/james-in-a-box/gateway-sidecar/README.md
 After=network-online.target github-token-refresher.service
-Wants=network-online.target
+Wants=network-online.target github-token-refresher.service
 OnFailure=service-failure-notify@%n.service
 
 [Service]
