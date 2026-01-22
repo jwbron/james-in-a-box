@@ -73,16 +73,10 @@ class TestJibIdentities:
     """Tests for jib identity checking."""
 
     def test_jib_identities_include_expected(self):
-        # Short name variants
         assert "jib" in JIB_IDENTITIES
         assert "jib[bot]" in JIB_IDENTITIES
         assert "app/jib" in JIB_IDENTITIES
         assert "apps/jib" in JIB_IDENTITIES
-        # Actual GitHub App name variants
-        assert "james-in-a-box" in JIB_IDENTITIES
-        assert "james-in-a-box[bot]" in JIB_IDENTITIES
-        assert "app/james-in-a-box" in JIB_IDENTITIES
-        assert "apps/james-in-a-box" in JIB_IDENTITIES
 
     def test_jib_branch_prefixes(self):
         assert "jib-" in JIB_BRANCH_PREFIXES

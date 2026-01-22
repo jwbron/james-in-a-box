@@ -823,10 +823,6 @@ class ServiceManager:
         Returns:
             True if successful, False otherwise
         """
-        # Normalize service name - add .service suffix if not present
-        if not service.endswith((".service", ".timer")):
-            service = f"{service}.service"
-
         # Gateway sidecar runs as Docker container, not systemd service
         # Its setup script handles everything (build image, start container)
         if service == "gateway-sidecar.service":
