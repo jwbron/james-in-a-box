@@ -144,7 +144,7 @@ setup_container() {
     # Worktree .git files point to ~/.git-main/<repo>/worktrees/<name>
     # so gateway needs the same mounts that jib containers use
     GIT_MOUNTS=()
-<<<<<<< Updated upstream:gateway-sidecar/setup.sh
+    REPO_MOUNTS=()
 
     # Use shared jib_config module to get repo paths (same code as jib launcher)
     # This ensures gateway mounts the exact same repos that jib uses
@@ -161,18 +161,11 @@ setup_container() {
             echo "  Mounting repo: $repo_name"
 
             # Mount .git directory at ~/.git-main/<repo> for worktree resolution
-=======
-    for repo in "$REPOS_DIR"/*/; do
-        if [ -d "$repo" ]; then
-            repo_name=$(basename "$repo")
-            git_dir="${repo}.git"
->>>>>>> Stashed changes:host-services/gateway-sidecar/setup.sh
             if [ -d "$git_dir" ]; then
                 GIT_MOUNTS+=("-v" "${git_dir}:${HOME}/.git-main/${repo_name}:ro,z")
                 echo "  Mounting .git for: $repo_name"
             fi
         fi
-<<<<<<< Updated upstream:gateway-sidecar/setup.sh
     done < <(PYTHONPATH="${SHARED_DIR}:${PYTHONPATH}" python3 -m jib_config.config 2>/dev/null)
 
     if [ ${#REPO_MOUNTS[@]} -eq 0 ]; then
@@ -185,9 +178,6 @@ setup_container() {
         echo "    paths:"
         echo "      - /path/to/your/repos"
     fi
-=======
-    done
->>>>>>> Stashed changes:host-services/gateway-sidecar/setup.sh
 
     docker run -d \
         --name "$CONTAINER_NAME" \
