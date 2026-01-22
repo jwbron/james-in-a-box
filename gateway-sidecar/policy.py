@@ -41,13 +41,19 @@ MAX_PR_CACHE_SIZE = 500
 MAX_BRANCH_PR_CACHE_SIZE = 200
 
 # Bot identity variants that count as "jib"
+# Includes both short name (jib) and full GitHub App name (james-in-a-box)
 JIB_IDENTITIES = frozenset(
     {
+        # Short name variants
         "jib",
         "jib[bot]",
         "app/jib",
-        # GitHub App format: apps/app-name
         "apps/jib",
+        # Full GitHub App name variants
+        "james-in-a-box",
+        "james-in-a-box[bot]",
+        "app/james-in-a-box",
+        "apps/james-in-a-box",
     }
 )
 

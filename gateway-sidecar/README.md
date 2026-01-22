@@ -43,7 +43,7 @@ The gateway sidecar holds GitHub credentials and validates all GitHub operations
 | `gh pr edit` | PR ownership | PR must be authored by jib |
 | `gh pr close` | PR ownership | PR must be authored by jib |
 
-**Bot variants for ownership check**: `jib`, `jib[bot]`, `app/jib`
+**Bot variants for ownership check**: `jib`, `jib[bot]`, `app/jib`, `apps/jib`, `james-in-a-box`, `james-in-a-box[bot]`, `app/james-in-a-box`, `apps/james-in-a-box`
 
 **Branch ownership definition**:
 - Branch has an open PR where author is a jib variant, OR
@@ -119,9 +119,9 @@ host-services/gateway-sidecar/
   - Set `GATEWAY_URL` environment variable
 
 ### Phase 4: Integration
-- [ ] Test full workflow: container -> gateway -> GitHub
-- [ ] Add audit logging for all policy decisions
-- [ ] Update CLAUDE.md rules about merge capability
+- [x] Test full workflow: container -> gateway -> GitHub
+- [x] Add audit logging for all policy decisions
+- [x] Update CLAUDE.md rules about merge capability
 
 ## Design Decisions
 

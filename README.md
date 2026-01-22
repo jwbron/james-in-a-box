@@ -32,6 +32,7 @@ jib provides infrastructure for LLM agents to:
 | Component | Purpose |
 |-----------|---------|
 | **jib container** | Sandboxed Docker environment running Claude Code |
+| **Gateway sidecar** | Policy enforcement for git/gh operations (credential isolation) |
 | **Slack services** | Bidirectional messaging for human-agent communication |
 | **GitHub watcher** | Monitors PRs for comments, failures, review requests |
 | **Context sync** | Pulls Confluence/JIRA documentation for agent context |
@@ -141,6 +142,7 @@ After setup, configuration is stored in:
                           ↕
 ┌─────────────────────────────────────────────────────────────┐
 │  Host Machine (Linux)                                       │
+│  ├── gateway-sidecar           (git/gh policy enforcement)  │
 │  ├── slack-notifier.service    (notifications → Slack)      │
 │  ├── slack-receiver.service    (Slack → container tasks)    │
 │  ├── github-watcher.timer      (PR monitoring)              │
@@ -155,15 +157,36 @@ After setup, configuration is stored in:
 │  ├── Isolated git worktree                                  │
 │  ├── Read-only context (Confluence, JIRA)                   │
 │  ├── Beads task memory                                      │
-│  └── GitHub CLI (via token refresh)                         │
+│  └── git/gh wrappers (route to gateway sidecar)             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **Key Principles:**
-- Host manages credentials and external API access
+- **Credential isolation**: GitHub tokens held by gateway sidecar, not in container
+- **Policy enforcement**: git push/gh operations validated by gateway before execution
+- **Merge blocked**: Agent cannot merge PRs - human must merge via GitHub UI
 - Container is sandboxed with limited network access
 - All code changes require human review before merge
 - Communication flows through Slack and file-based messaging
+
+### Gateway Sidecar
+
+The gateway sidecar enforces policies on all git/gh operations:
+
+| Operation | Policy |
+|-----------|--------|
+| `git push` | Only to jib-owned branches (jib-prefixed or has jib's open PR) |
+| `gh pr create` | Always allowed |
+| `gh pr comment/edit/close` | Only on PRs authored by jib |
+| `gh pr merge` | **Blocked** - human must merge via GitHub UI |
+
+**Setup:**
+```bash
+bin/setup-gateway-sidecar  # Install and configure gateway
+systemctl --user enable --now gateway-sidecar  # Start service
+```
+
+See [gateway-sidecar/README.md](gateway-sidecar/README.md) for detailed documentation.
 
 ## Operating Model
 

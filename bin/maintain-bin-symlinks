@@ -96,7 +96,7 @@ declare -a SYMLINKS=(
     "setup-beads-analyzer:../host-services/analysis/beads-analyzer/setup.sh"
     "setup-doc-generator:../host-services/analysis/doc-generator/setup.sh"
     "setup-feature-analyzer:../host-services/analysis/feature-analyzer/setup.sh"
-    "setup-gateway-sidecar:../host-services/gateway-sidecar/setup.sh"
+    "setup-gateway-sidecar:../gateway-sidecar/setup.sh"
     "setup-inefficiency-detector:../host-services/analysis/inefficiency-detector/setup.sh"
     "setup-slack-notifier:../host-services/slack/slack-notifier/setup.sh"
     "setup-slack-receiver:../host-services/slack/slack-receiver/setup.sh"

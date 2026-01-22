@@ -72,11 +72,19 @@ class TestExtractBranchFromRefspec:
 class TestJibIdentities:
     """Tests for jib identity checking."""
 
-    def test_jib_identities_include_expected(self):
+    def test_jib_identities_include_short_names(self):
+        """Test that short name variants are included."""
         assert "jib" in JIB_IDENTITIES
         assert "jib[bot]" in JIB_IDENTITIES
         assert "app/jib" in JIB_IDENTITIES
         assert "apps/jib" in JIB_IDENTITIES
+
+    def test_jib_identities_include_full_github_app_names(self):
+        """Test that full GitHub App name variants are included."""
+        assert "james-in-a-box" in JIB_IDENTITIES
+        assert "james-in-a-box[bot]" in JIB_IDENTITIES
+        assert "app/james-in-a-box" in JIB_IDENTITIES
+        assert "apps/james-in-a-box" in JIB_IDENTITIES
 
     def test_jib_branch_prefixes(self):
         assert "jib-" in JIB_BRANCH_PREFIXES
