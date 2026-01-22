@@ -280,9 +280,17 @@ cmd=""
 git_work_dir=""  # Track -C option for push operations
 args_after_globals=()  # Arguments after global options (command + its args)
 skip_next=false
+capture_work_dir=false  # Flag to capture next arg as -C value
 found_command=false
 
 for arg in "$@"; do
+    # Handle deferred captures from previous iteration
+    if $capture_work_dir; then
+        git_work_dir="$arg"
+        capture_work_dir=false
+        continue
+    fi
+
     if $skip_next; then
         skip_next=false
         continue
@@ -290,24 +298,13 @@ for arg in "$@"; do
 
     if ! $found_command; then
         case "$arg" in
-            # Global options that take an argument (next arg)
+            # -C <path> - run as if started in <path>
+            # We need to capture this for push operations
             -C)
-                # -C <path> - run as if started in <path>
-                # We need to capture this for push operations
-                skip_next=true
-                # Peek at next arg to get the path
-                shift_count=0
-                for peek_arg in "$@"; do
-                    shift_count=$((shift_count + 1))
-                    if [ "$peek_arg" = "$arg" ]; then
-                        continue
-                    fi
-                    git_work_dir="$peek_arg"
-                    break
-                done
+                capture_work_dir=true
                 ;;
+            # Other global options that take an argument (next arg)
             -c|--git-dir|--work-tree|--namespace|--super-prefix|--config-env)
-                # These global options take an argument
                 skip_next=true
                 ;;
             # Global options with = syntax (value attached)
@@ -320,10 +317,11 @@ for arg in "$@"; do
             # Global flags (no argument)
             --version|--help|--html-path|--man-path|--info-path|-p|--paginate|-P|--no-pager|--no-replace-objects|--bare|--literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs|--no-optional-locks|--list-cmds=*)
                 ;;
-            # Not a global option - this is the command
+            # Unknown flag before command
             -*)
-                # Unknown flag before command - pass through
-                # This shouldn't happen with valid git invocations
+                # Pass through unknown flags. Note: if git adds a new global option
+                # that takes an argument, we'd incorrectly treat its value as the
+                # command. Low risk since we cover all documented global options.
                 args_after_globals+=("$arg")
                 ;;
             *)
