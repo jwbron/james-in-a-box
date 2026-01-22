@@ -96,8 +96,10 @@ repo_settings:
 #      git config user.email "your@email.com"
 #    (Git author info is set at commit time, not push time)
 #
-# IMPORTANT: You must create a PR on GitHub before you can push to a branch.
-# Direct pushes to main/master are always blocked.
+# Incognito mode permissions:
+# - CAN push to any branch (except main/master)
+# - CANNOT create PRs (you must create PRs manually via GitHub UI)
+# This ensures the human maintains control over what PRs are opened in their name.
 incognito:
   # GitHub username for attribution (must match the PAT owner)
   # github_user: jwbron

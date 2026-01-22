@@ -12,7 +12,7 @@ Security:
 
 Endpoints:
     POST /api/v1/git/push       - Push to remote (policy: branch_ownership or trusted_user)
-    POST /api/v1/gh/pr/create   - Create PR (policy: none)
+    POST /api/v1/gh/pr/create   - Create PR (policy: blocked in incognito mode)
     POST /api/v1/gh/pr/comment  - Comment on PR (policy: none - allowed on any PR)
     POST /api/v1/gh/pr/edit     - Edit PR (policy: pr_ownership)
     POST /api/v1/gh/pr/close    - Close PR (policy: pr_ownership)
@@ -606,7 +606,9 @@ def gh_pr_create():
             "head": "feature-branch"
         }
 
-    Policy: none (always allowed - jib can create PRs)
+    Policy:
+        - Bot mode: allowed (jib can create PRs)
+        - Incognito mode: blocked (user must create PRs manually via GitHub UI)
     """
     data = request.get_json()
     if not data:
@@ -627,6 +629,26 @@ def gh_pr_create():
 
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
+
+    # Policy check: PR creation may be blocked in incognito mode
+    policy = get_policy_engine()
+    policy_result = policy.check_pr_create_allowed(repo, auth_mode=auth_mode)
+    if not policy_result.allowed:
+        audit_log(
+            "pr_create_blocked",
+            "gh_pr_create",
+            success=False,
+            details={
+                "repo": repo,
+                "reason": policy_result.reason,
+                "auth_mode": auth_mode,
+            },
+        )
+        return make_error(
+            policy_result.reason,
+            status_code=403,
+            details=policy_result.details,
+        )
 
     try:
         github = get_github_client(mode=auth_mode)
