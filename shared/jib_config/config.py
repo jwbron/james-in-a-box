@@ -5,10 +5,8 @@ Provides configuration loading from ~/.config/jib/ for both the jib launcher
 and the gateway sidecar setup script.
 """
 
-import os
 import sys
 from pathlib import Path
-from typing import List, Optional
 
 
 class Config:
@@ -26,7 +24,7 @@ def get_repos_config_file() -> Path:
     return Config.REPOS_CONFIG_FILE
 
 
-def get_local_repos(config_file: Optional[Path] = None) -> List[Path]:
+def get_local_repos(config_file: Path | None = None) -> list[Path]:
     """Load local repository paths from configuration.
 
     Reads from ~/.config/jib/repositories.yaml and returns the list of
@@ -46,6 +44,7 @@ def get_local_repos(config_file: Optional[Path] = None) -> List[Path]:
 
     try:
         import yaml
+
         with open(config_path) as f:
             config = yaml.safe_load(f) or {}
 

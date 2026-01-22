@@ -7,6 +7,7 @@ between the jib launcher and the gateway sidecar.
 
 from .config import Config, get_local_repos, get_repos_config_file
 
+
 __all__ = [
     "Config",
     "get_local_repos",
