@@ -196,10 +196,12 @@ def token_needs_refresh(token_data: dict | None) -> bool:
     if not expires_at:
         return True
 
-    # Refresh if token expires within the next 20 minutes
-    # This gives us a safety margin
+    # Refresh if token expires within the next 35 minutes
+    # With 30-minute timer intervals, this ensures we refresh before expiry:
+    # - At T=30, token has 30 min left, 30 < 35, so we refresh
+    # - Without this margin, we'd skip at T=30 and the token would expire at T=60
     now = datetime.now(UTC).timestamp()
-    return now > (expires_at - 20 * 60)
+    return now > (expires_at - 35 * 60)
 
 
 def refresh_token() -> bool:
