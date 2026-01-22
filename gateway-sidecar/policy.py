@@ -2,11 +2,17 @@
 Policy Engine - Ownership and access control checks.
 
 Enforces policies for git/gh operations:
-- Branch ownership: jib can only push to branches it owns
-- PR ownership: jib can only modify PRs it created
+- Branch ownership: jib can push to branches it owns OR branches owned by trusted users
+- PR comments: jib can comment on any PR
+- PR edit/close: jib can only modify PRs it created
 - Merge blocked: No merge operations allowed (human must merge)
+
+Configuration:
+- GATEWAY_TRUSTED_USERS: Comma-separated list of GitHub usernames whose branches
+  jib is allowed to push to (e.g., "jwbron,octocat")
 """
 
+import os
 import re
 import sys
 from collections import OrderedDict
@@ -59,6 +65,20 @@ JIB_IDENTITIES = frozenset(
 
 # Branch prefixes that indicate jib ownership
 JIB_BRANCH_PREFIXES = ("jib-", "jib/")
+
+# Trusted GitHub users whose branches jib can push to
+# Loaded from GATEWAY_TRUSTED_USERS environment variable (comma-separated)
+# Example: GATEWAY_TRUSTED_USERS="jwbron,octocat"
+def _load_trusted_users() -> frozenset[str]:
+    """Load trusted users from environment variable."""
+    env_value = os.environ.get("GATEWAY_TRUSTED_USERS", "")
+    if not env_value.strip():
+        return frozenset()
+    users = [u.strip().lower() for u in env_value.split(",") if u.strip()]
+    return frozenset(users)
+
+
+TRUSTED_BRANCH_OWNERS: frozenset[str] = _load_trusted_users()
 
 
 @dataclass
@@ -138,6 +158,16 @@ class PolicyEngine:
     def _is_jib_branch(self, branch: str) -> bool:
         """Check if branch name indicates jib ownership."""
         return branch.startswith(JIB_BRANCH_PREFIXES)
+
+    def _is_trusted_author(self, author: str | dict[str, Any]) -> bool:
+        """Check if author is a trusted user (whose branches jib can push to)."""
+        if not TRUSTED_BRANCH_OWNERS:
+            return False
+        if isinstance(author, dict):
+            login = author.get("login", "")
+        else:
+            login = author
+        return login.lower() in TRUSTED_BRANCH_OWNERS
 
     def _get_pr_info(self, repo: str, pr_number: int) -> CachedPRInfo | None:
         """Get PR info, using cache if available and fresh."""
@@ -241,13 +271,46 @@ class PolicyEngine:
             details={"author": pr_info.author, "expected": list(JIB_IDENTITIES)},
         )
 
+    def check_pr_comment_allowed(self, repo: str, pr_number: int) -> PolicyResult:
+        """
+        Check if jib can comment on a PR.
+
+        Jib can comment on ANY PR - this enables collaboration on PRs owned by others.
+        """
+        pr_info = self._get_pr_info(repo, pr_number)
+
+        if not pr_info:
+            logger.warning(
+                "PR not found or inaccessible for comment",
+                repo=repo,
+                pr_number=pr_number,
+            )
+            return PolicyResult(
+                allowed=False,
+                reason=f"PR #{pr_number} not found or inaccessible",
+                details={"repo": repo, "pr_number": pr_number},
+            )
+
+        logger.debug(
+            "PR comment allowed",
+            repo=repo,
+            pr_number=pr_number,
+            author=pr_info.author,
+        )
+        return PolicyResult(
+            allowed=True,
+            reason=f"Comments are allowed on any PR",
+            details={"pr_number": pr_number, "author": pr_info.author},
+        )
+
     def check_branch_ownership(self, repo: str, branch: str) -> PolicyResult:
         """
-        Check if jib owns a branch.
+        Check if jib can push to a branch.
 
-        A branch is owned by jib if:
+        Jib can push to a branch if:
         1. Branch name starts with jib- or jib/ (allows pushing before PR exists), OR
-        2. Branch has an open PR authored by jib
+        2. Branch has an open PR authored by jib, OR
+        3. Branch has an open PR authored by a trusted user (from GATEWAY_TRUSTED_USERS)
         """
         # Check 1: Branch prefix
         if self._is_jib_branch(branch):
@@ -262,12 +325,16 @@ class PolicyEngine:
                 details={"branch": branch, "reason": "jib_prefix"},
             )
 
-        # Check 2: Open PR by jib
+        # Check 2 & 3: Open PR by jib or trusted user
         pr_numbers = self._get_prs_for_branch(repo, branch)
 
         for pr_number in pr_numbers:
             pr_info = self._get_pr_info(repo, pr_number)
-            if pr_info and self._is_jib_author(pr_info.author):
+            if not pr_info:
+                continue
+
+            # Check if PR is owned by jib
+            if self._is_jib_author(pr_info.author):
                 logger.debug(
                     "Branch ownership verified by PR",
                     repo=repo,
@@ -286,21 +353,45 @@ class PolicyEngine:
                     },
                 )
 
-        # Not owned by jib
+            # Check if PR is owned by a trusted user
+            if self._is_trusted_author(pr_info.author):
+                logger.debug(
+                    "Branch push allowed - PR owned by trusted user",
+                    repo=repo,
+                    branch=branch,
+                    pr_number=pr_number,
+                    author=pr_info.author,
+                )
+                return PolicyResult(
+                    allowed=True,
+                    reason=f"Branch '{branch}' has open PR #{pr_number} owned by trusted user '{pr_info.author}'",
+                    details={
+                        "branch": branch,
+                        "pr_number": pr_number,
+                        "author": pr_info.author,
+                        "reason": "trusted_user_pr",
+                    },
+                )
+
+        # Not allowed
         logger.info(
-            "Branch ownership denied - not owned by jib",
+            "Branch push denied - not owned by jib or trusted user",
             repo=repo,
             branch=branch,
             open_prs=pr_numbers,
+            trusted_users=list(TRUSTED_BRANCH_OWNERS) if TRUSTED_BRANCH_OWNERS else [],
         )
+        hint = "Use 'jib-' or 'jib/' prefix, or create a PR from this branch first"
+        if TRUSTED_BRANCH_OWNERS:
+            hint += f". Trusted users: {', '.join(sorted(TRUSTED_BRANCH_OWNERS))}"
         return PolicyResult(
             allowed=False,
-            reason=f"Branch '{branch}' is not owned by jib. "
+            reason=f"Branch '{branch}' is not owned by jib or a trusted user. "
             "Either use a jib-prefixed branch (jib-* or jib/*) or create a PR first.",
             details={
                 "branch": branch,
                 "open_prs": pr_numbers,
-                "hint": "Use 'jib-' or 'jib/' prefix, or create a PR from this branch first",
+                "hint": hint,
             },
         )
 

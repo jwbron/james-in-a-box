@@ -10,6 +10,7 @@ import pytest
 from policy import (
     JIB_BRANCH_PREFIXES,
     JIB_IDENTITIES,
+    TRUSTED_BRANCH_OWNERS,
     CachedPRInfo,
     PolicyEngine,
     PolicyResult,
@@ -240,6 +241,169 @@ class TestPolicyEngine:
         assert not result.allowed
         assert "not supported" in result.reason
         assert "Human must merge" in result.reason
+
+    # PR comment tests
+
+    def test_pr_comment_allowed_on_jib_pr(self, policy_engine, mock_github_client):
+        """Comments are allowed on PRs owned by jib."""
+        mock_github_client.get_pr_info.return_value = {
+            "number": 123,
+            "author": {"login": "jib"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_pr_comment_allowed("owner/repo", 123)
+        assert result.allowed
+        assert "allowed" in result.reason.lower()
+
+    def test_pr_comment_allowed_on_other_pr(self, policy_engine, mock_github_client):
+        """Comments are allowed on PRs owned by others."""
+        mock_github_client.get_pr_info.return_value = {
+            "number": 123,
+            "author": {"login": "human"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_pr_comment_allowed("owner/repo", 123)
+        assert result.allowed
+        assert "allowed" in result.reason.lower()
+
+    def test_pr_comment_not_found(self, policy_engine, mock_github_client):
+        """Comments not allowed if PR doesn't exist."""
+        mock_github_client.get_pr_info.return_value = None
+
+        result = policy_engine.check_pr_comment_allowed("owner/repo", 999)
+        assert not result.allowed
+        assert "not found" in result.reason
+
+
+class TestTrustedBranchOwners:
+    """Tests for trusted branch owners functionality."""
+
+    @pytest.fixture
+    def mock_github_client(self):
+        """Create a mock GitHub client."""
+        return MagicMock()
+
+    @pytest.fixture
+    def policy_engine(self, mock_github_client):
+        """Create a policy engine with mocked GitHub client."""
+        return PolicyEngine(github_client=mock_github_client)
+
+    def test_trusted_users_loaded_from_env(self, monkeypatch):
+        """TRUSTED_BRANCH_OWNERS is loaded from environment."""
+        # This tests the module-level loading which happens at import time
+        # The actual value depends on whether GATEWAY_TRUSTED_USERS was set
+        # We just verify it's a frozenset
+        assert isinstance(TRUSTED_BRANCH_OWNERS, frozenset)
+
+    def test_branch_ownership_trusted_user_pr(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Branch with open PR by trusted user allows push."""
+        # Patch the module-level TRUSTED_BRANCH_OWNERS
+        import policy
+
+        monkeypatch.setattr(policy, "TRUSTED_BRANCH_OWNERS", frozenset({"trusteduser"}))
+
+        mock_github_client.list_prs_for_branch.return_value = [
+            {
+                "number": 456,
+                "author": {"login": "trusteduser"},
+                "state": "open",
+                "headRefName": "feature",
+            }
+        ]
+        mock_github_client.get_pr_info.return_value = {
+            "number": 456,
+            "author": {"login": "trusteduser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_branch_ownership("owner/repo", "feature")
+        assert result.allowed
+        assert "trusted user" in result.reason.lower()
+
+    def test_branch_ownership_trusted_user_case_insensitive(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Trusted user check is case insensitive."""
+        import policy
+
+        monkeypatch.setattr(policy, "TRUSTED_BRANCH_OWNERS", frozenset({"trusteduser"}))
+
+        mock_github_client.list_prs_for_branch.return_value = [
+            {
+                "number": 456,
+                "author": {"login": "TrustedUser"},  # Different case
+                "state": "open",
+                "headRefName": "feature",
+            }
+        ]
+        mock_github_client.get_pr_info.return_value = {
+            "number": 456,
+            "author": {"login": "TrustedUser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_branch_ownership("owner/repo", "feature")
+        assert result.allowed
+
+    def test_branch_ownership_untrusted_user_pr(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Branch with open PR by non-trusted user denies push."""
+        import policy
+
+        monkeypatch.setattr(policy, "TRUSTED_BRANCH_OWNERS", frozenset({"trusteduser"}))
+
+        mock_github_client.list_prs_for_branch.return_value = [
+            {
+                "number": 456,
+                "author": {"login": "randomuser"},
+                "state": "open",
+                "headRefName": "feature",
+            }
+        ]
+        mock_github_client.get_pr_info.return_value = {
+            "number": 456,
+            "author": {"login": "randomuser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_branch_ownership("owner/repo", "feature")
+        assert not result.allowed
+
+    def test_branch_ownership_no_trusted_users_configured(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """With no trusted users configured, only jib can push."""
+        import policy
+
+        monkeypatch.setattr(policy, "TRUSTED_BRANCH_OWNERS", frozenset())
+
+        mock_github_client.list_prs_for_branch.return_value = [
+            {
+                "number": 456,
+                "author": {"login": "anyuser"},
+                "state": "open",
+                "headRefName": "feature",
+            }
+        ]
+        mock_github_client.get_pr_info.return_value = {
+            "number": 456,
+            "author": {"login": "anyuser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_branch_ownership("owner/repo", "feature")
+        assert not result.allowed
 
 
 class TestPolicyResult:
