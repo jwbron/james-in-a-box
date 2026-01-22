@@ -11,9 +11,9 @@ Security:
     - Rate limiting per operation type
 
 Endpoints:
-    POST /api/v1/git/push       - Push to remote (policy: branch_ownership)
+    POST /api/v1/git/push       - Push to remote (policy: branch_ownership or trusted_user)
     POST /api/v1/gh/pr/create   - Create PR (policy: none)
-    POST /api/v1/gh/pr/comment  - Comment on PR (policy: pr_ownership)
+    POST /api/v1/gh/pr/comment  - Comment on PR (policy: none - allowed on any PR)
     POST /api/v1/gh/pr/edit     - Edit PR (policy: pr_ownership)
     POST /api/v1/gh/pr/close    - Close PR (policy: pr_ownership)
     POST /api/v1/gh/execute     - Generic gh command (policy: filtered)
@@ -625,7 +625,7 @@ def gh_pr_comment():
             "body": "Comment text"
         }
 
-    Policy: pr_ownership
+    Policy: pr_comment (allowed on any PR)
     """
     data = request.get_json()
     if not data:
@@ -642,9 +642,9 @@ def gh_pr_comment():
     if not body:
         return make_error("Missing body")
 
-    # Check PR ownership
+    # Check if commenting is allowed (allowed on any PR)
     policy = get_policy_engine()
-    policy_result = policy.check_pr_ownership(repo, pr_number)
+    policy_result = policy.check_pr_comment_allowed(repo, pr_number)
 
     if not policy_result.allowed:
         audit_log(
