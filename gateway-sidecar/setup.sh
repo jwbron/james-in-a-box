@@ -173,6 +173,14 @@ generate_mounts_env() {
 
 # Install and start systemd service
 install_service() {
+    # Verify mounts env file exists (required by systemd service)
+    if [[ ! -f "$MOUNTS_ENV_FILE" ]]; then
+        echo "ERROR: Mounts environment file not found at $MOUNTS_ENV_FILE"
+        echo "This file is required by the systemd service for git worktree resolution."
+        echo "Run generate_mounts_env or re-run this setup script."
+        exit 1
+    fi
+
     # Stop existing service if running
     if systemctl --user is-active "$SERVICE_NAME" &>/dev/null; then
         echo "Stopping existing gateway service..."
