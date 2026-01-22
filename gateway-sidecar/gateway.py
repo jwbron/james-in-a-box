@@ -75,6 +75,17 @@ DEFAULT_HOST = os.environ.get("GATEWAY_HOST", "0.0.0.0")  # Listen on all interf
 DEFAULT_PORT = 9847
 GIT_CLI = "/usr/bin/git"
 
+
+def git_cmd(*args: str) -> list[str]:
+    """
+    Build a git command with safe.directory=* to allow operating on worktree paths.
+
+    The gateway runs on the host but operates on paths inside jib container worktrees
+    (e.g., ~/.jib-worktrees/<container-id>/repo). Git's ownership check would reject
+    these as "dubious ownership" without safe.directory=*.
+    """
+    return [GIT_CLI, "-c", "safe.directory=*", *args]
+
 # Authentication - shared secret from environment
 GATEWAY_SECRET = os.environ.get("JIB_GATEWAY_SECRET", "")
 SECRET_FILE = Path.home() / ".config" / "jib" / "gateway-secret"
@@ -367,7 +378,7 @@ def git_push():
     # Get remote URL to determine repo
     try:
         result = subprocess.run(
-            [GIT_CLI, "remote", "get-url", remote],
+            git_cmd("remote", "get-url", remote),
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -391,7 +402,7 @@ def git_push():
         # Try to get current branch
         try:
             result = subprocess.run(
-                [GIT_CLI, "branch", "--show-current"],
+                git_cmd("branch", "--show-current"),
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
@@ -428,11 +439,12 @@ def git_push():
     if not token:
         return make_error("GitHub token not available", status_code=503)
 
-    # Build push command
-    cmd = [GIT_CLI, "push"]
+    # Build push command with safe.directory for worktree paths
+    push_args = ["push"]
     if force:
-        cmd.append("--force")
-    cmd.extend([remote, refspec] if refspec else [remote])
+        push_args.append("--force")
+    push_args.extend([remote, refspec] if refspec else [remote])
+    cmd = git_cmd(*push_args)
 
     # Configure git to use token via GIT_ASKPASS
     # Create a secure credential helper using a file descriptor instead of temp file

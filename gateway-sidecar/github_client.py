@@ -155,7 +155,16 @@ class GitHubClient:
             )
 
         # Build environment with token
-        env = {"GH_TOKEN": token.token, "PATH": "/usr/bin:/bin"}
+        # Include git safe.directory config for worktree paths - gh uses git internally
+        # and would otherwise fail with "dubious ownership" on container worktree paths
+        env = {
+            "GH_TOKEN": token.token,
+            "PATH": "/usr/bin:/bin",
+            # Pass git config via environment to allow any directory
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": "*",
+        }
 
         cmd = [GH_CLI, *args]
         logger.debug("Executing gh command", args=args, cwd=str(cwd) if cwd else None)
