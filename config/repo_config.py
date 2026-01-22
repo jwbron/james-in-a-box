@@ -296,6 +296,66 @@ def should_disable_auto_fix(repo: str) -> bool:
     return get_repo_setting(repo, "disable_auto_fix", False)
 
 
+def get_auth_mode(repo: str) -> str:
+    """
+    Get the authentication mode for a repository.
+
+    Auth modes:
+    - "bot": Use the GitHub App bot identity (default)
+    - "incognito": Use a personal access token with user identity
+
+    Incognito mode allows operations to be attributed to a personal GitHub
+    account instead of the jib bot, useful for contributing to external repos
+    where bot accounts may not be appropriate.
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        "bot" (default) or "incognito"
+    """
+    auth_mode = get_repo_setting(repo, "auth_mode", "bot")
+    if auth_mode not in ("bot", "incognito"):
+        return "bot"
+    return auth_mode
+
+
+def is_incognito_repo(repo: str) -> bool:
+    """
+    Check if a repository is configured to use incognito mode.
+
+    Convenience wrapper around get_auth_mode().
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        True if the repo uses incognito authentication
+    """
+    return get_auth_mode(repo) == "incognito"
+
+
+def get_incognito_config() -> dict[str, str]:
+    """
+    Get the global incognito mode configuration.
+
+    Returns configuration for incognito mode authentication including:
+    - github_user: The GitHub username for attribution
+    - git_name: Git author/committer name
+    - git_email: Git author/committer email
+
+    Returns:
+        Dictionary with incognito settings, or empty dict if not configured
+    """
+    config = _load_config()
+    incognito = config.get("incognito", {})
+    return {
+        "github_user": incognito.get("github_user", ""),
+        "git_name": incognito.get("git_name", ""),
+        "git_email": incognito.get("git_email", ""),
+    }
+
+
 def get_bot_username() -> str:
     """
     Get the configured bot username.

@@ -2,7 +2,9 @@
 Policy Engine - Ownership and access control checks.
 
 Enforces policies for git/gh operations:
-- Branch ownership: jib can push to branches it owns OR branches owned by trusted users
+- Branch ownership (bot): jib can push to jib-prefixed branches OR branches with jib/trusted-user PRs
+- Branch ownership (incognito): user can push to new branches OR branches with jib/incognito-user PRs
+- PR creation: allowed in bot mode, blocked in incognito mode (user creates PRs manually)
 - PR comments: jib can comment on any PR
 - PR edit/close: jib can only modify PRs it created
 - Merge blocked: No merge operations allowed (human must merge)
@@ -170,6 +172,28 @@ class PolicyEngine:
             login = author
         return login.lower() in TRUSTED_BRANCH_OWNERS
 
+    def _get_incognito_user(self) -> str | None:
+        """Get the configured incognito GitHub username."""
+        try:
+            # Import here to avoid circular imports and handle missing config
+            _config_path = Path(__file__).parent.parent / "config"
+            if _config_path.exists() and str(_config_path) not in sys.path:
+                sys.path.insert(0, str(_config_path))
+            from repo_config import get_incognito_config
+
+            config = get_incognito_config()
+            return config.get("github_user", "").lower() or None
+        except ImportError:
+            return None
+
+    def _is_incognito_author(self, author: str | dict[str, Any], incognito_user: str) -> bool:
+        """Check if author matches the incognito user."""
+        if isinstance(author, dict):
+            login = author.get("login", "")
+        else:
+            login = author
+        return login.lower() == incognito_user.lower()
+
     def _get_pr_info(self, repo: str, pr_number: int) -> CachedPRInfo | None:
         """Get PR info, using cache if available and fresh."""
         cache_key = (repo, pr_number)
@@ -227,11 +251,17 @@ class PolicyEngine:
 
         return pr_numbers
 
-    def check_pr_ownership(self, repo: str, pr_number: int) -> PolicyResult:
+    def check_pr_ownership(self, repo: str, pr_number: int, auth_mode: str = "bot") -> PolicyResult:
         """
-        Check if jib owns a PR.
+        Check if the current identity owns a PR.
 
-        A PR is owned by jib if the author is a jib identity.
+        In bot mode: A PR is owned if the author is a jib identity.
+        In incognito mode: A PR is owned if the author is the incognito user.
+
+        Args:
+            repo: Repository in "owner/repo" format
+            pr_number: PR number
+            auth_mode: "bot" (default) or "incognito"
         """
         pr_info = self._get_pr_info(repo, pr_number)
 
@@ -247,6 +277,23 @@ class PolicyEngine:
                 details={"repo": repo, "pr_number": pr_number},
             )
 
+        # In incognito mode, check if PR is owned by the incognito user
+        if auth_mode == "incognito":
+            incognito_user = self._get_incognito_user()
+            if incognito_user and self._is_incognito_author(pr_info.author, incognito_user):
+                logger.debug(
+                    "PR ownership verified (incognito mode)",
+                    repo=repo,
+                    pr_number=pr_number,
+                    author=pr_info.author,
+                    incognito_user=incognito_user,
+                )
+                return PolicyResult(
+                    allowed=True,
+                    reason=f"PR is owned by incognito user ({incognito_user})",
+                    details={"author": pr_info.author, "auth_mode": "incognito"},
+                )
+
         if self._is_jib_author(pr_info.author):
             logger.debug(
                 "PR ownership verified",
@@ -261,15 +308,21 @@ class PolicyEngine:
             )
 
         logger.info(
-            "PR ownership denied - not owned by jib",
+            "PR ownership denied - not owned by jib or incognito user",
             repo=repo,
             pr_number=pr_number,
             author=pr_info.author,
+            auth_mode=auth_mode,
         )
+        expected = list(JIB_IDENTITIES)
+        if auth_mode == "incognito":
+            incognito_user = self._get_incognito_user()
+            if incognito_user:
+                expected.append(incognito_user)
         return PolicyResult(
             allowed=False,
-            reason=f"PR #{pr_number} is not owned by jib (author: {pr_info.author})",
-            details={"author": pr_info.author, "expected": list(JIB_IDENTITIES)},
+            reason=f"PR #{pr_number} is not owned by the authorized identity (author: {pr_info.author})",
+            details={"author": pr_info.author, "expected": expected, "auth_mode": auth_mode},
         )
 
     def check_pr_comment_allowed(self, repo: str, pr_number: int) -> PolicyResult:
@@ -304,16 +357,168 @@ class PolicyEngine:
             details={"pr_number": pr_number, "author": pr_info.author},
         )
 
-    def check_branch_ownership(self, repo: str, branch: str) -> PolicyResult:
+    def check_branch_ownership(
+        self, repo: str, branch: str, auth_mode: str = "bot"
+    ) -> PolicyResult:
         """
-        Check if jib can push to a branch.
+        Check if the current identity can push to a branch.
 
-        Jib can push to a branch if:
+        In bot mode, jib can push to a branch if:
         1. Branch name starts with jib- or jib/ (allows pushing before PR exists), OR
         2. Branch has an open PR authored by jib, OR
         3. Branch has an open PR authored by a trusted user (from GATEWAY_TRUSTED_USERS)
+
+        In incognito mode, the user can push to a branch if:
+        1. Branch does not exist upstream yet (new branch), OR
+        2. Branch has an open PR authored by jib, OR
+        3. Branch has an open PR authored by the incognito user
+
+        Protected branches (main, master) are always blocked regardless of mode.
+
+        Args:
+            repo: Repository in "owner/repo" format
+            branch: Branch name
+            auth_mode: "bot" (default) or "incognito"
         """
-        # Check 1: Branch prefix
+        # SAFETY: Always block pushes to protected branches
+        protected_branches = ("main", "master")
+        if branch in protected_branches:
+            logger.warning(
+                "Push to protected branch blocked",
+                repo=repo,
+                branch=branch,
+                auth_mode=auth_mode,
+            )
+            return PolicyResult(
+                allowed=False,
+                reason=f"Branch '{branch}' is protected. Direct pushes to {', '.join(protected_branches)} are not allowed.",
+                details={
+                    "branch": branch,
+                    "protected_branches": list(protected_branches),
+                    "auth_mode": auth_mode,
+                    "hint": "Create a feature branch and open a PR instead.",
+                },
+            )
+
+        # In incognito mode:
+        # 1. Allow pushing to NEW branches (don't exist upstream yet)
+        # 2. Allow pushing to branches with open PR by jib OR incognito user
+        if auth_mode == "incognito":
+            incognito_user = self._get_incognito_user()
+
+            # Check if branch exists upstream (use incognito token for private repos)
+            branch_exists = self.github.branch_exists(repo, branch, mode=auth_mode)
+
+            # If we couldn't determine branch existence (API error), fail closed
+            if branch_exists is None:
+                logger.warning(
+                    "Branch push denied - could not verify branch existence",
+                    repo=repo,
+                    branch=branch,
+                    auth_mode=auth_mode,
+                )
+                return PolicyResult(
+                    allowed=False,
+                    reason=f"Could not verify if branch '{branch}' exists (API error). Try again later.",
+                    details={
+                        "branch": branch,
+                        "incognito_user": incognito_user,
+                        "auth_mode": "incognito",
+                        "hint": "Check network connectivity and token permissions.",
+                    },
+                )
+
+            # Branch doesn't exist - allow push to new branch
+            if not branch_exists:
+                logger.debug(
+                    "Branch push allowed (incognito mode) - new branch",
+                    repo=repo,
+                    branch=branch,
+                    incognito_user=incognito_user,
+                )
+                return PolicyResult(
+                    allowed=True,
+                    reason=f"Incognito mode: push allowed to new branch '{branch}'",
+                    details={
+                        "branch": branch,
+                        "incognito_user": incognito_user,
+                        "auth_mode": "incognito",
+                        "reason": "new_branch",
+                    },
+                )
+
+            # Branch exists - check for open PR by jib or incognito user
+            pr_numbers = self._get_prs_for_branch(repo, branch)
+            for pr_number in pr_numbers:
+                pr_info = self._get_pr_info(repo, pr_number)
+                if not pr_info:
+                    continue
+
+                # Check if PR is owned by jib
+                if self._is_jib_author(pr_info.author):
+                    logger.debug(
+                        "Branch push allowed (incognito mode) - jib PR",
+                        repo=repo,
+                        branch=branch,
+                        pr_number=pr_number,
+                        author=pr_info.author,
+                    )
+                    return PolicyResult(
+                        allowed=True,
+                        reason=f"Branch '{branch}' has open PR #{pr_number} owned by jib",
+                        details={
+                            "branch": branch,
+                            "pr_number": pr_number,
+                            "author": pr_info.author,
+                            "auth_mode": "incognito",
+                            "reason": "jib_pr",
+                        },
+                    )
+
+                # Check if PR is owned by incognito user
+                if incognito_user and self._is_incognito_author(pr_info.author, incognito_user):
+                    logger.debug(
+                        "Branch push allowed (incognito mode) - incognito user PR",
+                        repo=repo,
+                        branch=branch,
+                        pr_number=pr_number,
+                        author=pr_info.author,
+                        incognito_user=incognito_user,
+                    )
+                    return PolicyResult(
+                        allowed=True,
+                        reason=f"Branch '{branch}' has open PR #{pr_number} owned by '{incognito_user}'",
+                        details={
+                            "branch": branch,
+                            "pr_number": pr_number,
+                            "author": pr_info.author,
+                            "incognito_user": incognito_user,
+                            "auth_mode": "incognito",
+                            "reason": "incognito_pr",
+                        },
+                    )
+
+            # Branch exists but no PR by jib or incognito user
+            logger.info(
+                "Branch push denied (incognito mode) - no owned PR",
+                repo=repo,
+                branch=branch,
+                incognito_user=incognito_user,
+                open_prs=pr_numbers,
+            )
+            return PolicyResult(
+                allowed=False,
+                reason=f"Branch '{branch}' exists but has no open PR owned by jib or '{incognito_user}'",
+                details={
+                    "branch": branch,
+                    "open_prs": pr_numbers,
+                    "incognito_user": incognito_user,
+                    "auth_mode": "incognito",
+                    "hint": "Create a PR from this branch on GitHub first, or push to a new branch name.",
+                },
+            )
+
+        # Bot mode: Check 1: Branch prefix
         if self._is_jib_branch(branch):
             logger.debug(
                 "Branch ownership verified by prefix",
@@ -381,6 +586,7 @@ class PolicyEngine:
             branch=branch,
             open_prs=pr_numbers,
             trusted_users=list(TRUSTED_BRANCH_OWNERS) if TRUSTED_BRANCH_OWNERS else [],
+            auth_mode=auth_mode,
         )
         hint = "Use 'jib-' or 'jib/' prefix, or create a PR from this branch first"
         if TRUSTED_BRANCH_OWNERS:
@@ -393,7 +599,52 @@ class PolicyEngine:
                 "branch": branch,
                 "open_prs": pr_numbers,
                 "hint": hint,
+                "auth_mode": auth_mode,
             },
+        )
+
+    def check_pr_create_allowed(self, repo: str, auth_mode: str = "bot") -> PolicyResult:
+        """
+        Check if PR creation is allowed.
+
+        In bot mode: Always allowed - jib can create PRs.
+        In incognito mode: Blocked - user must create PRs manually via GitHub UI.
+
+        This ensures the human maintains control over what PRs are opened in their name.
+        jib can push branches in incognito mode, but the human decides which become PRs.
+
+        Args:
+            repo: Repository in "owner/repo" format
+            auth_mode: "bot" (default) or "incognito"
+        """
+        if auth_mode == "incognito":
+            incognito_user = self._get_incognito_user()
+            logger.info(
+                "PR creation blocked in incognito mode",
+                repo=repo,
+                incognito_user=incognito_user,
+            )
+            return PolicyResult(
+                allowed=False,
+                reason="PR creation is not allowed in incognito mode. "
+                "Create the PR manually via GitHub UI.",
+                details={
+                    "repo": repo,
+                    "auth_mode": "incognito",
+                    "incognito_user": incognito_user,
+                    "hint": "Push your branch, then create the PR at github.com",
+                },
+            )
+
+        # Bot mode: always allowed
+        logger.debug(
+            "PR creation allowed (bot mode)",
+            repo=repo,
+        )
+        return PolicyResult(
+            allowed=True,
+            reason="PR creation allowed in bot mode",
+            details={"repo": repo, "auth_mode": "bot"},
         )
 
     def check_merge_allowed(self, repo: str, pr_number: int) -> PolicyResult:
