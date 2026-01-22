@@ -1047,6 +1047,14 @@ def main():
         logger.error("Failed to configure gateway secret")
         sys.exit(1)
 
+    # Validate incognito config if configured
+    github = get_github_client()
+    is_valid, message = github.validate_incognito_config()
+    if not is_valid:
+        logger.warning("Incognito config validation failed", message=message)
+    else:
+        logger.info("Incognito config", status=message)
+
     logger.info(
         "Starting Gateway Sidecar",
         host=args.host,

@@ -175,6 +175,75 @@ class GitHubClient:
         """Check if incognito token is configured."""
         return bool(self.get_incognito_token())
 
+    def get_authenticated_user(self, mode: str = "bot") -> str | None:
+        """
+        Get the GitHub username for the authenticated token.
+
+        Args:
+            mode: "bot" or "incognito"
+
+        Returns:
+            GitHub username or None if request fails
+        """
+        result = self.execute(["api", "/user", "--jq", ".login"], mode=mode)
+        if result.success and result.stdout:
+            return result.stdout.strip()
+        return None
+
+    def validate_incognito_config(self) -> tuple[bool, str]:
+        """
+        Validate that the incognito token matches the configured github_user.
+
+        Returns:
+            Tuple of (is_valid, message)
+        """
+        # Get configured incognito user
+        try:
+            import sys
+            from pathlib import Path
+
+            _config_path = Path(__file__).parent.parent / "config"
+            if _config_path.exists() and str(_config_path) not in sys.path:
+                sys.path.insert(0, str(_config_path))
+            from repo_config import get_incognito_config
+
+            config = get_incognito_config()
+            configured_user = config.get("github_user", "").strip()
+        except ImportError:
+            return False, "Could not load incognito config from repo_config"
+
+        if not configured_user:
+            # No incognito user configured - that's fine, incognito mode just won't be used
+            return True, "No incognito user configured (incognito mode disabled)"
+
+        # Check if token is configured
+        token = self.get_incognito_token()
+        if not token:
+            return False, f"Incognito user '{configured_user}' configured but {INCOGNITO_TOKEN_VAR} not set"
+
+        # Get the actual user from the token
+        actual_user = self.get_authenticated_user(mode="incognito")
+        if not actual_user:
+            return False, f"Could not authenticate with {INCOGNITO_TOKEN_VAR} - token may be invalid"
+
+        # Compare users (case-insensitive)
+        if actual_user.lower() != configured_user.lower():
+            logger.error(
+                "Incognito token/user mismatch",
+                configured_user=configured_user,
+                actual_user=actual_user,
+            )
+            return False, (
+                f"Token/user mismatch: {INCOGNITO_TOKEN_VAR} belongs to '{actual_user}' "
+                f"but incognito.github_user is '{configured_user}'"
+            )
+
+        logger.info(
+            "Incognito config validated",
+            github_user=actual_user,
+        )
+        return True, f"Incognito mode configured for user '{actual_user}'"
+
     def get_token_for_mode(self, mode: str | None = None) -> str | None:
         """
         Get the appropriate token string for the specified mode.
