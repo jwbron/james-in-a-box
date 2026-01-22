@@ -79,6 +79,10 @@ RUN mkdir -p /usr/share/keyrings && \
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
+# Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
+# The bundled arm64-linux binary crashes; system ripgrep from apt works correctly
+RUN ln -sf /usr/bin/rg /usr/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-linux/rg
+
 # Install claude-code-router for multi-provider support
 # Allows routing to OpenAI, Gemini, DeepSeek, etc. while using Claude Code tooling
 RUN npm install -g @musistudio/claude-code-router
