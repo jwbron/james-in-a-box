@@ -11,7 +11,8 @@ REPO_ROOT="$(cd "${COMPONENT_DIR}/.." && pwd)"
 SERVICE_NAME="gateway-sidecar.service"
 SYSTEMD_DIR="${HOME}/.config/systemd/user"
 CONFIG_DIR="${HOME}/.config/jib"
-SHARING_DIR="${HOME}/.jib-sharing"
+# Gateway-only secrets directory - NOT shared with jib containers
+GATEWAY_SECRETS_DIR="${HOME}/.jib-gateway"
 SECRET_FILE="${CONFIG_DIR}/gateway-secret"
 GATEWAY_IMAGE_NAME="jib-gateway"
 
@@ -51,8 +52,8 @@ ensure_directories() {
     mkdir -p "$CONFIG_DIR"
     echo "Config directory exists: $CONFIG_DIR"
 
-    mkdir -p "$SHARING_DIR"
-    echo "Sharing directory exists: $SHARING_DIR"
+    mkdir -p "$GATEWAY_SECRETS_DIR"
+    echo "Gateway secrets directory exists: $GATEWAY_SECRETS_DIR"
 }
 
 generate_secret() {
@@ -72,7 +73,7 @@ generate_secret() {
 
 # Container mode setup
 setup_container() {
-    GITHUB_TOKEN_FILE="${SHARING_DIR}/.github-token"
+    GITHUB_TOKEN_FILE="${GATEWAY_SECRETS_DIR}/.github-token"
     NETWORK_NAME="jib-network"
     CONTAINER_NAME="jib-gateway"
 
@@ -83,6 +84,9 @@ setup_container() {
         echo ""
         echo "Please run the github-token-refresher setup first:"
         echo "  ./host-services/utilities/github-token-refresher/setup.sh"
+        echo ""
+        echo "Or start the github-token-refresher service:"
+        echo "  systemctl --user start github-token-refresher"
         echo ""
         read -p "Continue anyway? (y/N) " -n 1 -r
         echo
@@ -179,12 +183,14 @@ setup_container() {
         echo "      - /path/to/your/repos"
     fi
 
+    # Mount the DIRECTORY (not file) so atomic file writes are visible
+    # When token refresher does temp-file + rename, container sees the new file
     docker run -d \
         --name "$CONTAINER_NAME" \
         --network "$NETWORK_NAME" \
         -p 9847:9847 \
         --restart unless-stopped \
-        -v "$GITHUB_TOKEN_FILE:/secrets/.github-token:ro,z" \
+        -v "$GATEWAY_SECRETS_DIR:/secrets:ro,z" \
         -v "$SECRET_FILE:/secrets/gateway-secret:ro,z" \
         -v "$REPOS_DIR:$REPOS_DIR:ro,z" \
         -v "$WORKTREES_DIR:$WORKTREES_DIR:ro,z" \
@@ -270,7 +276,10 @@ setup_systemd() {
     chmod +x "$COMPONENT_DIR/gateway.py"
     echo "Gateway script made executable"
 
-    # Copy secret to sharing directory for containers (legacy path)
+    # Copy secret to jib-sharing directory for containers
+    # Note: Containers need access to the gateway secret to authenticate
+    SHARING_DIR="${HOME}/.jib-sharing"
+    mkdir -p "$SHARING_DIR"
     SHARED_SECRET_FILE="${SHARING_DIR}/.gateway-secret"
     cp "$SECRET_FILE" "$SHARED_SECRET_FILE"
     chmod 600 "$SHARED_SECRET_FILE"

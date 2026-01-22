@@ -26,7 +26,12 @@ from jib_logging import get_logger
 logger = get_logger("gateway-sidecar.github-client")
 
 # Token file written by github-token-refresher
-TOKEN_FILE = Path.home() / ".jib-sharing" / ".github-token"
+# In container: mounted at /secrets/.github-token
+# On host (systemd mode): at ~/.jib-gateway/.github-token
+TOKEN_FILE = Path("/secrets/.github-token")
+if not TOKEN_FILE.exists():
+    # Fallback for host/systemd mode
+    TOKEN_FILE = Path.home() / ".jib-gateway" / ".github-token"
 GH_CLI = "/usr/bin/gh"
 
 
