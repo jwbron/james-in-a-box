@@ -20,6 +20,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+# Add shared modules to path (relative to jib-container directory)
+_SCRIPT_DIR = Path(__file__).parent.resolve()
+_SHARED_DIR = _SCRIPT_DIR.parent / "shared"
+if _SHARED_DIR.exists():
+    sys.path.insert(0, str(_SHARED_DIR))
+
 from statusbar import StatusBar, init_statusbar, status, status_success, status_error, status_warn, status_finish
 
 
@@ -193,39 +199,30 @@ JIB_NETWORK_NAME = "jib-network"
 GATEWAY_PORT = 9847
 
 
-def get_local_repos() -> List[Path]:
-    """Load local repository paths from configuration.
-
-    Reads from ~/.config/jib/repositories.yaml and returns the list of
-    configured local repository paths.
-
-    Returns:
-        List of Path objects for configured local repositories
-    """
-    if not Config.REPOS_CONFIG_FILE.exists():
-        return []
-
-    try:
-        import yaml
-        with open(Config.REPOS_CONFIG_FILE) as f:
-            config = yaml.safe_load(f) or {}
-
-        local_repos_config = config.get("local_repos", {})
-        paths = local_repos_config.get("paths", []) if isinstance(local_repos_config, dict) else []
-
-        # Convert to Path objects and filter existing directories
-        result = []
-        for path_str in paths:
-            path = Path(path_str).expanduser().resolve()
-            if path.exists() and path.is_dir():
-                result.append(path)
-        return result
-    except ImportError:
-        warn("PyYAML not installed, cannot load repository config")
-        return []
-    except Exception as e:
-        warn(f"Failed to load repository config: {e}")
-        return []
+# Import shared config module for get_local_repos
+# This ensures jib and gateway-sidecar use identical config parsing
+try:
+    from jib_config import get_local_repos
+except ImportError:
+    # Fallback if shared module not available (shouldn't happen in normal use)
+    def get_local_repos() -> List[Path]:
+        """Fallback: Load local repository paths from configuration."""
+        if not Config.REPOS_CONFIG_FILE.exists():
+            return []
+        try:
+            import yaml
+            with open(Config.REPOS_CONFIG_FILE) as f:
+                config = yaml.safe_load(f) or {}
+            local_repos_config = config.get("local_repos", {})
+            paths = local_repos_config.get("paths", []) if isinstance(local_repos_config, dict) else []
+            result = []
+            for path_str in paths:
+                path = Path(path_str).expanduser().resolve()
+                if path.exists() and path.is_dir():
+                    result.append(path)
+            return result
+        except Exception:
+            return []
 
 
 def get_platform() -> str:

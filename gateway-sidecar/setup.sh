@@ -7,7 +7,7 @@
 set -e
 
 COMPONENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${COMPONENT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${COMPONENT_DIR}/.." && pwd)"
 SERVICE_NAME="gateway-sidecar.service"
 SYSTEMD_DIR="${HOME}/.config/systemd/user"
 CONFIG_DIR="${HOME}/.config/jib"
@@ -137,50 +137,43 @@ setup_container() {
     echo "Starting gateway container..."
     # Gateway needs access to repos to run git commands (remote get-url, push)
     WORKTREES_DIR="${HOME}/.jib-worktrees"
-    REPOS_CONFIG="${HOME}/.config/jib/repositories.yaml"
 
     # Read configured repos from jib config (same source as jib launcher)
     # This ensures gateway mounts the same repos that jib uses
     REPO_MOUNTS=()
     GIT_MOUNTS=()
 
-    if [ -f "$REPOS_CONFIG" ]; then
-        echo "Reading repos from: $REPOS_CONFIG"
-        # Parse YAML to get repo paths - matches jib's get_local_repos() implementation
-        while IFS= read -r repo_path; do
-            if [ -n "$repo_path" ] && [ -d "$repo_path" ]; then
-                repo_name=$(basename "$repo_path")
-                git_dir="${repo_path}/.git"
+    # Use shared jib_config module to get repo paths (same code as jib launcher)
+    # This ensures gateway mounts the exact same repos that jib uses
+    SHARED_DIR="${REPO_ROOT}/shared"
 
-                # Mount the repo directory itself
-                REPO_MOUNTS+=("-v" "${repo_path}:${repo_path}:ro,z")
-                echo "  Mounting repo: $repo_name"
+    echo "Reading repos using shared jib_config module..."
+    while IFS= read -r repo_path; do
+        if [ -n "$repo_path" ] && [ -d "$repo_path" ]; then
+            repo_name=$(basename "$repo_path")
+            git_dir="${repo_path}/.git"
 
-                # Mount .git directory at ~/.git-main/<repo> for worktree resolution
-                if [ -d "$git_dir" ]; then
-                    GIT_MOUNTS+=("-v" "${git_dir}:${HOME}/.git-main/${repo_name}:ro,z")
-                    echo "  Mounting .git for: $repo_name"
-                fi
+            # Mount the repo directory itself
+            REPO_MOUNTS+=("-v" "${repo_path}:${repo_path}:ro,z")
+            echo "  Mounting repo: $repo_name"
+
+            # Mount .git directory at ~/.git-main/<repo> for worktree resolution
+            if [ -d "$git_dir" ]; then
+                GIT_MOUNTS+=("-v" "${git_dir}:${HOME}/.git-main/${repo_name}:ro,z")
+                echo "  Mounting .git for: $repo_name"
             fi
-        done < <(python3 -c "
-import yaml
-from pathlib import Path
-import sys
-try:
-    with open('$REPOS_CONFIG') as f:
-        config = yaml.safe_load(f) or {}
-    local_repos_config = config.get('local_repos', {})
-    paths = local_repos_config.get('paths', []) if isinstance(local_repos_config, dict) else []
-    for p in paths:
-        path = Path(p).expanduser().resolve()
-        if path.exists() and path.is_dir():
-            print(path)
-except Exception as e:
-    print(f'Error: {e}', file=sys.stderr)
-")
-    else
-        echo "WARNING: No repos config found at $REPOS_CONFIG"
+        fi
+    done < <(PYTHONPATH="${SHARED_DIR}:${PYTHONPATH}" python3 -m jib_config.config 2>/dev/null)
+
+    if [ ${#REPO_MOUNTS[@]} -eq 0 ]; then
+        echo "WARNING: No repos configured at ~/.config/jib/repositories.yaml"
         echo "Gateway may not be able to access repos for git operations."
+        echo ""
+        echo "To configure repos, run: ./setup.py"
+        echo "Or create ~/.config/jib/repositories.yaml with:"
+        echo "  local_repos:"
+        echo "    paths:"
+        echo "      - /path/to/your/repos"
     fi
 
     docker run -d \

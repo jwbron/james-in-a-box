@@ -12,10 +12,11 @@ RUN apt-get update && apt-get install -y git curl gnupg && \
 WORKDIR /app
 
 # Copy gateway code
-COPY host-services/gateway-sidecar/*.py ./
+COPY gateway-sidecar/*.py ./
 
-# Copy shared jib_logging module
+# Copy shared modules (jib_logging for logging, jib_config for config parsing)
 COPY shared/jib_logging/ ./jib_logging/
+COPY shared/jib_config/ ./jib_config/
 
 # Install dependencies
 RUN pip install --no-cache-dir flask waitress pyyaml requests
@@ -23,7 +24,7 @@ RUN pip install --no-cache-dir flask waitress pyyaml requests
 ENV PYTHONPATH="/app"
 EXPOSE 9847
 
-COPY host-services/gateway-sidecar/entrypoint.sh /entrypoint.sh
+COPY gateway-sidecar/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
