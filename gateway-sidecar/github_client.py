@@ -219,12 +219,18 @@ class GitHubClient:
         # Check if token is configured
         token = self.get_incognito_token()
         if not token:
-            return False, f"Incognito user '{configured_user}' configured but {INCOGNITO_TOKEN_VAR} not set"
+            return (
+                False,
+                f"Incognito user '{configured_user}' configured but {INCOGNITO_TOKEN_VAR} not set",
+            )
 
         # Get the actual user from the token
         actual_user = self.get_authenticated_user(mode="incognito")
         if not actual_user:
-            return False, f"Could not authenticate with {INCOGNITO_TOKEN_VAR} - token may be invalid"
+            return (
+                False,
+                f"Could not authenticate with {INCOGNITO_TOKEN_VAR} - token may be invalid",
+            )
 
         # Compare users (case-insensitive)
         if actual_user.lower() != configured_user.lower():
