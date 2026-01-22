@@ -146,11 +146,9 @@ setup_container() {
 
     if [ -f "$REPOS_CONFIG" ]; then
         echo "Reading repos from: $REPOS_CONFIG"
-        # Parse YAML to get repo paths (handles both ~/path and /absolute/path)
+        # Parse YAML to get repo paths - matches jib's get_local_repos() implementation
         while IFS= read -r repo_path; do
-            # Expand ~ to $HOME
-            repo_path="${repo_path/#\~/$HOME}"
-            if [ -d "$repo_path" ]; then
+            if [ -n "$repo_path" ] && [ -d "$repo_path" ]; then
                 repo_name=$(basename "$repo_path")
                 git_dir="${repo_path}/.git"
 
@@ -166,13 +164,17 @@ setup_container() {
             fi
         done < <(python3 -c "
 import yaml
+from pathlib import Path
 import sys
 try:
     with open('$REPOS_CONFIG') as f:
         config = yaml.safe_load(f) or {}
-    paths = config.get('local_repos', {}).get('paths', [])
+    local_repos_config = config.get('local_repos', {})
+    paths = local_repos_config.get('paths', []) if isinstance(local_repos_config, dict) else []
     for p in paths:
-        print(p)
+        path = Path(p).expanduser().resolve()
+        if path.exists() and path.is_dir():
+            print(path)
 except Exception as e:
     print(f'Error: {e}', file=sys.stderr)
 ")
