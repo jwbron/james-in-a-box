@@ -1,9 +1,7 @@
 #!/bin/bash
 # Setup script for Gateway Sidecar
 #
-# Supports two modes:
-#   --container (default): Builds Docker image for containerized gateway
-#   --systemd: Installs as systemd service (backward compatibility)
+# Builds the gateway Docker image and installs a systemd service to manage it.
 set -e
 
 COMPONENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,25 +13,20 @@ CONFIG_DIR="${HOME}/.config/jib"
 GATEWAY_SECRETS_DIR="${HOME}/.jib-gateway"
 SECRET_FILE="${CONFIG_DIR}/gateway-secret"
 GATEWAY_IMAGE_NAME="jib-gateway"
+NETWORK_NAME="jib-network"
+MOUNTS_ENV_FILE="${CONFIG_DIR}/gateway-mounts.env"
 
 # Parse arguments
-MODE="container"  # Default to container mode
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --container)
-            MODE="container"
-            shift
-            ;;
-        --systemd)
-            MODE="systemd"
-            shift
-            ;;
         -h|--help)
-            echo "Usage: $0 [--container|--systemd]"
+            echo "Usage: $0"
             echo ""
-            echo "Options:"
-            echo "  --container  Build Docker image for containerized gateway (default)"
-            echo "  --systemd    Install as systemd user service (legacy)"
+            echo "Builds the gateway Docker image and installs a systemd service to manage it."
+            echo ""
+            echo "Prerequisites:"
+            echo "  - Docker must be installed and running"
+            echo "  - github-token-refresher service should be running"
             exit 0
             ;;
         *)
@@ -44,7 +37,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "Setting up Gateway Sidecar (${MODE} mode)..."
+echo "Setting up Gateway Sidecar..."
 echo ""
 
 # Common setup: directories and secrets
@@ -66,16 +59,27 @@ generate_secret() {
         echo "Gateway secret exists: $SECRET_FILE"
     fi
 
-    # Copy secret to sharing directory for container access
-    # Note: Containers mount this file directly
-    echo "Gateway secret available at: $SECRET_FILE"
+    # Copy secret to gateway secrets directory for gateway container
+    # The gateway container mounts ~/.jib-gateway as /secrets
+    GATEWAY_SECRET_COPY="${GATEWAY_SECRETS_DIR}/gateway-secret"
+    cp "$SECRET_FILE" "$GATEWAY_SECRET_COPY"
+    chmod 600 "$GATEWAY_SECRET_COPY"
+    echo "Gateway secret copied to: $GATEWAY_SECRET_COPY"
+
+    # Also copy to jib-sharing for jib containers
+    # jib containers mount ~/.jib-sharing as ~/sharing, and the gh wrapper
+    # looks for the gateway secret at ~/sharing/.gateway-secret
+    JIB_SHARING_DIR="${HOME}/.jib-sharing"
+    mkdir -p "$JIB_SHARING_DIR"
+    JIB_SECRET_COPY="${JIB_SHARING_DIR}/.gateway-secret"
+    cp "$SECRET_FILE" "$JIB_SECRET_COPY"
+    chmod 600 "$JIB_SECRET_COPY"
+    echo "Gateway secret copied to: $JIB_SECRET_COPY (for jib containers)"
 }
 
-# Container mode setup
-setup_container() {
+# Check prerequisites
+check_prerequisites() {
     GITHUB_TOKEN_FILE="${GATEWAY_SECRETS_DIR}/.github-token"
-    NETWORK_NAME="jib-network"
-    CONTAINER_NAME="jib-gateway"
 
     # Check for GitHub token file
     if [[ ! -f "$GITHUB_TOKEN_FILE" ]]; then
@@ -110,8 +114,12 @@ setup_container() {
         echo "ERROR: Dockerfile not found at $DOCKERFILE"
         exit 1
     fi
+}
 
-    # Build the image from repo root (required for COPY context)
+# Build Docker image
+build_image() {
+    DOCKERFILE="${COMPONENT_DIR}/Dockerfile"
+
     echo ""
     echo "Building gateway container image..."
     echo "  Image: $GATEWAY_IMAGE_NAME"
@@ -122,168 +130,68 @@ setup_container() {
 
     echo ""
     echo "Gateway image built successfully!"
+}
 
-    # Create Docker network if needed
+# Create Docker network
+create_network() {
     if ! docker network inspect "$NETWORK_NAME" &>/dev/null; then
         echo "Creating Docker network: $NETWORK_NAME"
         docker network create "$NETWORK_NAME"
     else
         echo "Docker network exists: $NETWORK_NAME"
     fi
+}
 
-    # Stop and remove existing container if present
-    if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-        echo "Removing existing gateway container..."
-        docker rm -f "$CONTAINER_NAME" >/dev/null
-    fi
-
-    # Start the gateway container
-    echo "Starting gateway container..."
-    # Gateway needs access to repos to run git commands (remote get-url, push)
-    # Mount both original repos and worktrees directories
-    REPOS_DIR="${HOME}/repos"
-    WORKTREES_DIR="${HOME}/.jib-worktrees"
+# Generate environment file with dynamic mounts
+generate_mounts_env() {
+    echo "Generating dynamic mount configuration..."
 
     # Build .git-main mounts for each repo
     # Worktree .git files point to ~/.git-main/<repo>/worktrees/<name>
     # so gateway needs the same mounts that jib containers use
-    GIT_MOUNTS=()
-    REPO_MOUNTS=()
-
-    # Use shared jib_config module to get repo paths (same code as jib launcher)
-    # This ensures gateway mounts the exact same repos that jib uses
+    GIT_MOUNTS=""
     SHARED_DIR="${REPO_ROOT}/shared"
 
-    echo "Reading repos using shared jib_config module..."
     while IFS= read -r repo_path; do
         if [ -n "$repo_path" ] && [ -d "$repo_path" ]; then
             repo_name=$(basename "$repo_path")
             git_dir="${repo_path}/.git"
 
-            # Mount the repo directory itself
-            REPO_MOUNTS+=("-v" "${repo_path}:${repo_path}:ro,z")
-            echo "  Mounting repo: $repo_name"
-
             # Mount .git directory at ~/.git-main/<repo> for worktree resolution
             if [ -d "$git_dir" ]; then
-                GIT_MOUNTS+=("-v" "${git_dir}:${HOME}/.git-main/${repo_name}:ro,z")
-                echo "  Mounting .git for: $repo_name"
+                GIT_MOUNTS="${GIT_MOUNTS} -v ${git_dir}:${HOME}/.git-main/${repo_name}:ro,z"
+                echo "  Will mount .git for: $repo_name"
             fi
         fi
     done < <(PYTHONPATH="${SHARED_DIR}:${PYTHONPATH}" python3 -m jib_config.config 2>/dev/null)
 
-    if [ ${#REPO_MOUNTS[@]} -eq 0 ]; then
-        echo "WARNING: No repos configured at ~/.config/jib/repositories.yaml"
-        echo "Gateway may not be able to access repos for git operations."
-        echo ""
-        echo "To configure repos, run: ./setup.py"
-        echo "Or create ~/.config/jib/repositories.yaml with:"
-        echo "  local_repos:"
-        echo "    paths:"
-        echo "      - /path/to/your/repos"
-    fi
-
-    # Mount the DIRECTORY (not file) so atomic file writes are visible
-    # When token refresher does temp-file + rename, container sees the new file
-    docker run -d \
-        --name "$CONTAINER_NAME" \
-        --network "$NETWORK_NAME" \
-        -p 9847:9847 \
-        --restart unless-stopped \
-        -v "$GATEWAY_SECRETS_DIR:/secrets:ro,z" \
-        -v "$SECRET_FILE:/secrets/gateway-secret:ro,z" \
-        -v "$REPOS_DIR:$REPOS_DIR:ro,z" \
-        -v "$WORKTREES_DIR:$WORKTREES_DIR:ro,z" \
-        "${GIT_MOUNTS[@]}" \
-        "$GATEWAY_IMAGE_NAME"
-
-    # Wait for gateway to be ready
-    echo ""
-    echo "Waiting for gateway to be ready..."
-    sleep 2
-
-    # Health check
-    HEALTH_URL="http://localhost:9847/api/v1/health"
-    if curl -s "$HEALTH_URL" | grep -q '"status"'; then
-        echo ""
-        echo "Gateway is running!"
-        echo ""
-        curl -s "$HEALTH_URL" | python3 -m json.tool
-    else
-        echo ""
-        echo "WARNING: Gateway health check failed."
-        echo "Check container logs: docker logs $CONTAINER_NAME"
-    fi
-
-    echo ""
-    echo "Container status:"
-    docker ps --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
-    echo ""
-    echo "Setup complete!"
-    echo ""
-    echo "The containerized gateway sidecar:"
-    echo "  - Running as container: $CONTAINER_NAME"
-    echo "  - On Docker network: $NETWORK_NAME"
-    echo "  - Listening on port 9847"
-    echo "  - Will restart automatically (unless-stopped)"
-    echo "  - Authentication secret at: $SECRET_FILE"
-    echo ""
-    echo "The 'jib' command will use this gateway automatically."
-    echo ""
-    echo "Useful commands:"
-    echo "  docker ps | grep $CONTAINER_NAME     # Check if running"
-    echo "  docker logs $CONTAINER_NAME          # View logs"
-    echo "  docker logs -f $CONTAINER_NAME       # Follow logs"
-    echo "  docker restart $CONTAINER_NAME       # Restart gateway"
-    echo "  docker stop $CONTAINER_NAME          # Stop gateway"
-    echo "  curl http://localhost:9847/api/v1/health  # Health check"
+    # Write environment file for systemd
+    echo "GIT_MOUNTS=${GIT_MOUNTS}" > "$MOUNTS_ENV_FILE"
+    chmod 600 "$MOUNTS_ENV_FILE"
+    echo "Mount configuration written to: $MOUNTS_ENV_FILE"
 }
 
-# Systemd mode setup (legacy)
-setup_systemd() {
-    # Check for github-token-refresher service
-    if ! systemctl --user is-enabled github-token-refresher.service >/dev/null 2>&1; then
-        echo "WARNING: github-token-refresher.service is not enabled."
-        echo "The gateway requires this service for GitHub authentication."
-        echo ""
-        echo "Please run first:"
-        echo "  ./host-services/utilities/github-token-refresher/setup.sh"
-        echo ""
-        read -p "Continue anyway? (y/N) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo "Setup cancelled."
-            exit 1
-        fi
-    fi
-
-    # Ensure host-services venv exists with required dependencies
-    HOST_SERVICES_DIR="${COMPONENT_DIR}/.."
-    VENV_DIR="${HOST_SERVICES_DIR}/.venv"
-
-    if ! command -v uv &> /dev/null; then
-        echo "ERROR: uv is required but not installed."
-        echo "Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+# Install and start systemd service
+install_service() {
+    # Verify mounts env file exists (required by systemd service)
+    if [[ ! -f "$MOUNTS_ENV_FILE" ]]; then
+        echo "ERROR: Mounts environment file not found at $MOUNTS_ENV_FILE"
+        echo "This file is required by the systemd service for git worktree resolution."
+        echo "Run generate_mounts_env or re-run this setup script."
         exit 1
     fi
 
-    echo "Syncing host-services dependencies with uv..."
-    (cd "$HOST_SERVICES_DIR" && uv sync)
-    echo "Dependencies installed"
+    # Stop existing service if running
+    if systemctl --user is-active "$SERVICE_NAME" &>/dev/null; then
+        echo "Stopping existing gateway service..."
+        systemctl --user stop "$SERVICE_NAME"
+    fi
 
-    # Make the gateway script executable
-    chmod +x "$COMPONENT_DIR/gateway.py"
-    echo "Gateway script made executable"
-
-    # Copy secret to jib-sharing directory for containers
-    # Note: Containers need access to the gateway secret to authenticate
-    SHARING_DIR="${HOME}/.jib-sharing"
-    mkdir -p "$SHARING_DIR"
-    SHARED_SECRET_FILE="${SHARING_DIR}/.gateway-secret"
-    cp "$SECRET_FILE" "$SHARED_SECRET_FILE"
-    chmod 600 "$SHARED_SECRET_FILE"
-    echo "Gateway secret copied to: $SHARED_SECRET_FILE"
+    # Remove any existing container
+    if docker container inspect jib-gateway &>/dev/null; then
+        echo "Removing existing gateway container..."
+        docker rm -f jib-gateway >/dev/null
+    fi
 
     # Symlink service file
     mkdir -p "$SYSTEMD_DIR"
@@ -305,7 +213,7 @@ setup_systemd() {
     # Wait for service to be ready
     echo ""
     echo "Waiting for gateway to be ready..."
-    sleep 2
+    sleep 3
 
     # Health check
     HEALTH_URL="http://localhost:9847/api/v1/health"
@@ -323,35 +231,37 @@ setup_systemd() {
     echo ""
     echo "Service status:"
     systemctl --user status "$SERVICE_NAME" --no-pager || true
+}
 
+print_summary() {
     echo ""
     echo "Setup complete!"
     echo ""
     echo "The gateway sidecar:"
+    echo "  - Runs as Docker container managed by systemd"
     echo "  - Listens on http://localhost:9847"
+    echo "  - On Docker network: $NETWORK_NAME"
     echo "  - Requires authentication (secret at $SECRET_FILE)"
     echo "  - Enforces branch/PR ownership policies"
     echo "  - Blocks merge operations (human must merge via GitHub UI)"
-    echo "  - Rate limits: 1000 pushes/hr, 500 PR creates/hr, 4000 total/hr"
     echo ""
-    echo "Container integration:"
-    echo "  - Secret shared at $SHARED_SECRET_FILE"
-    echo "  - Containers use this to authenticate with gateway"
+    echo "The 'jib' command will use this gateway automatically."
     echo ""
     echo "Useful commands:"
     echo "  systemctl --user status $SERVICE_NAME    # Check status"
     echo "  systemctl --user restart $SERVICE_NAME   # Restart service"
     echo "  systemctl --user stop $SERVICE_NAME      # Stop service"
     echo "  journalctl --user -u $SERVICE_NAME -f    # View logs"
+    echo "  docker logs jib-gateway                  # View container logs"
     echo "  curl http://localhost:9847/api/v1/health # Health check"
 }
 
 # Main execution
 ensure_directories
 generate_secret
-
-if [[ "$MODE" == "container" ]]; then
-    setup_container
-else
-    setup_systemd
-fi
+check_prerequisites
+build_image
+create_network
+generate_mounts_env
+install_service
+print_summary

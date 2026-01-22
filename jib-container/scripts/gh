@@ -11,7 +11,8 @@
 #
 
 REAL_GH=/usr/bin/gh
-GATEWAY_URL="${GATEWAY_URL:-http://host.docker.internal:9847}"
+# Gateway runs as container on jib-network, reachable by container name
+GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
 GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
 # Host worktree path - set by jib launcher to translate container paths
 # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X

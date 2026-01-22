@@ -1008,94 +1008,43 @@ def wait_for_gateway_health(timeout: int = 30) -> bool:
 
 
 def start_gateway_container() -> bool:
-    """Start the gateway container if not already running.
+    """Ensure the gateway sidecar is available.
 
-    Creates the jib-network if needed, builds the gateway image if needed,
-    and starts the gateway container with appropriate mounts.
+    The gateway is managed by systemd (gateway-sidecar.service). This function
+    checks if it's running and healthy. If not, it tells the user how to start it.
 
     Returns:
-        True if gateway is running (started or already running), False on failure
+        True if gateway is healthy, False otherwise
     """
-    # Check if already running
-    if is_gateway_running():
+    # Check if gateway is healthy
+    if wait_for_gateway_health(timeout=5):
         return True
 
-    # Ensure network exists
-    if not ensure_jib_network():
-        return False
-
-    # Build image if needed
-    if not gateway_image_exists():
-        if not build_gateway_image():
-            return False
-
-    # Check required secrets exist
-    github_token_file = Config.SHARING_DIR / ".github-token"
-    gateway_secret_file = Config.USER_CONFIG_DIR / "gateway-secret"
-
-    if not github_token_file.exists():
-        error(f"GitHub token file not found: {github_token_file}")
-        error("Run the github-token-refresher setup first")
-        return False
-
-    if not gateway_secret_file.exists():
-        error(f"Gateway secret file not found: {gateway_secret_file}")
-        error("Run: host-services/gateway-sidecar/setup.sh --container")
-        return False
-
-    # Remove any stopped container with the same name
-    subprocess.run(
-        ["docker", "rm", "-f", GATEWAY_CONTAINER_NAME],
-        capture_output=True,
-        stderr=subprocess.DEVNULL
-    )
-
-    info("Starting gateway sidecar container...")
-
-    # Gateway needs access to repos to run git commands (remote get-url, push)
-    home = Path.home()
-    repos_dir = home / "repos"
-    worktrees_dir = home / ".jib-worktrees"
-
-    # Start the gateway container
-    cmd = [
-        "docker", "run",
-        "-d",  # Detached mode
-        "--name", GATEWAY_CONTAINER_NAME,
-        "--network", JIB_NETWORK_NAME,
-        "-p", f"{GATEWAY_PORT}:{GATEWAY_PORT}",  # Expose port for health checks from host
-        "--restart", "unless-stopped",
-        # Mount secrets read-only (with SELinux label for Fedora/RHEL)
-        "-v", f"{github_token_file}:/secrets/.github-token:ro,z",
-        "-v", f"{gateway_secret_file}:/secrets/gateway-secret:ro,z",
-        # Mount repos and worktrees for git operations
-        "-v", f"{repos_dir}:{repos_dir}:ro,z",
-        "-v", f"{worktrees_dir}:{worktrees_dir}:ro,z",
-        GATEWAY_IMAGE_NAME
-    ]
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        error(f"Failed to start gateway container: {result.stderr}")
-        return False
-
-    # Wait for gateway to be healthy
-    info("Waiting for gateway to become healthy...")
-    if wait_for_gateway_health(timeout=30):
-        success("Gateway sidecar is ready")
-        return True
-
-    error("Gateway failed to become healthy within 30 seconds")
-    # Check container logs for debugging
-    logs_result = subprocess.run(
-        ["docker", "logs", "--tail", "20", GATEWAY_CONTAINER_NAME],
+    # Gateway not available - check systemd service status
+    service_result = subprocess.run(
+        ["systemctl", "--user", "is-active", "gateway-sidecar.service"],
         capture_output=True,
         text=True
     )
-    if logs_result.stdout:
-        print(f"Gateway logs:\n{logs_result.stdout}")
-    if logs_result.stderr:
-        print(f"Gateway stderr:\n{logs_result.stderr}")
+
+    if service_result.returncode != 0:
+        error("Gateway sidecar service is not running")
+        error("")
+        error("To start the gateway:")
+        error("  systemctl --user start gateway-sidecar.service")
+        error("")
+        error("To set up the gateway (if not installed):")
+        error("  ./gateway-sidecar/setup.sh")
+        return False
+
+    # Service is active but not healthy - check logs
+    error("Gateway sidecar service is running but not healthy")
+    error("")
+    error("Check service logs:")
+    error("  journalctl --user -u gateway-sidecar.service -f")
+    error("")
+    error("Try restarting the service:")
+    error("  systemctl --user restart gateway-sidecar.service")
 
     return False
 

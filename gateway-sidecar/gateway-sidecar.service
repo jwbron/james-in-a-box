@@ -1,40 +1,46 @@
 [Unit]
-Description=Gateway Sidecar - Policy enforcement for jib container git/gh operations
-Documentation=file://%h/khan/james-in-a-box/host-services/gateway-sidecar/README.md
+Description=Gateway Sidecar - Git/GitHub policy enforcement for jib containers
+Documentation=file://%h/khan/james-in-a-box/gateway-sidecar/README.md
 After=network-online.target github-token-refresher.service
-Wants=network-online.target
-Requires=github-token-refresher.service
+Wants=network-online.target github-token-refresher.service
 OnFailure=service-failure-notify@%n.service
 
 [Service]
-Type=simple
-WorkingDirectory=%h/khan/james-in-a-box
+Type=exec
+Environment=CONTAINER_NAME=jib-gateway
+Environment=NETWORK_NAME=jib-network
+Environment=IMAGE_NAME=jib-gateway
 
-# Use the shared virtual environment
-ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python -m host-services.gateway-sidecar.gateway
+# Load dynamic mounts (repo paths configured by setup.sh)
+EnvironmentFile=-%h/.config/jib/gateway-mounts.env
+
+# Remove any stopped container before starting
+ExecStartPre=-/usr/bin/docker rm -f jib-gateway
+
+# Run container in foreground (systemd tracks the process)
+# Mounts: secrets dir (contains .github-token and gateway-secret), repos dir, worktrees dir, plus dynamic GIT_MOUNTS
+ExecStart=/bin/bash -c '/usr/bin/docker run --rm \
+    --name jib-gateway \
+    --network jib-network \
+    -p 9847:9847 \
+    -v "%h/.jib-gateway:/secrets:ro,z" \
+    -v "%h/repos:%h/repos:ro,z" \
+    -v "%h/.jib-worktrees:%h/.jib-worktrees:ro,z" \
+    ${GIT_MOUNTS} \
+    jib-gateway'
+
+ExecStop=/usr/bin/docker stop jib-gateway
 
 # Restart on failure with exponential backoff
 Restart=on-failure
-RestartSec=5s
+RestartSec=10s
 RestartSteps=5
-RestartMaxDelaySec=60s
+RestartMaxDelaySec=300s
 
 # Logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=gateway-sidecar
-
-# Resource limits
-Nice=10
-IOSchedulingClass=2
-IOSchedulingPriority=4
-
-# Security hardening
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=%h/.jib-sharing
-PrivateTmp=yes
 
 [Install]
 WantedBy=default.target
