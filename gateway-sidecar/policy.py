@@ -406,8 +406,30 @@ class PolicyEngine:
         if auth_mode == "incognito":
             incognito_user = self._get_incognito_user()
 
-            # Check if branch exists upstream
-            if not self.github.branch_exists(repo, branch):
+            # Check if branch exists upstream (use incognito token for private repos)
+            branch_exists = self.github.branch_exists(repo, branch, mode=auth_mode)
+
+            # If we couldn't determine branch existence (API error), fail closed
+            if branch_exists is None:
+                logger.warning(
+                    "Branch push denied - could not verify branch existence",
+                    repo=repo,
+                    branch=branch,
+                    auth_mode=auth_mode,
+                )
+                return PolicyResult(
+                    allowed=False,
+                    reason=f"Could not verify if branch '{branch}' exists (API error). Try again later.",
+                    details={
+                        "branch": branch,
+                        "incognito_user": incognito_user,
+                        "auth_mode": "incognito",
+                        "hint": "Check network connectivity and token permissions.",
+                    },
+                )
+
+            # Branch doesn't exist - allow push to new branch
+            if not branch_exists:
                 logger.debug(
                     "Branch push allowed (incognito mode) - new branch",
                     repo=repo,

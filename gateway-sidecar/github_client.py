@@ -434,16 +434,17 @@ class GitHubClient:
         except json.JSONDecodeError:
             return []
 
-    def branch_exists(self, repo: str, branch: str) -> bool:
+    def branch_exists(self, repo: str, branch: str, mode: str = "bot") -> bool | None:
         """
         Check if a branch exists in the remote repository.
 
         Args:
             repo: Repository in "owner/repo" format
             branch: Branch name
+            mode: Auth mode - "bot" or "incognito" (use incognito for private repos)
 
         Returns:
-            True if the branch exists, False otherwise
+            True if the branch exists, False if it doesn't, None if unknown (error)
         """
         # Use gh api to check if branch exists
         # GET /repos/{owner}/{repo}/branches/{branch} returns 200 if exists, 404 if not
@@ -452,9 +453,28 @@ class GitHubClient:
                 "api",
                 f"repos/{repo}/branches/{branch}",
                 "--silent",
-            ]
+            ],
+            mode=mode,
         )
-        return result.success
+
+        if result.success:
+            return True
+
+        # Check if it's a 404 (branch doesn't exist) vs other error
+        stderr = result.stderr or ""
+        if "404" in stderr or "Not Found" in stderr:
+            return False
+
+        # Other error (network, rate limit, auth failure, etc.)
+        # Return None to indicate we couldn't determine branch existence
+        logger.warning(
+            "Could not determine branch existence",
+            repo=repo,
+            branch=branch,
+            mode=mode,
+            error=stderr[:200] if stderr else "unknown error",
+        )
+        return None
 
 
 # Global client instances (one per mode)
