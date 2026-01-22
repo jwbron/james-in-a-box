@@ -32,7 +32,7 @@ IOSchedulingPriority=7
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/.jib-sharing
+ReadWritePaths=%h/.jib-gateway
 PrivateTmp=yes
 
 [Install]
