@@ -172,7 +172,7 @@ class GitHubClient:
         }
 
         cmd = [GH_CLI, *args]
-        logger.debug("Executing gh command", args=args, cwd=str(cwd) if cwd else None)
+        logger.debug("Executing gh command", command_args=args, cwd=str(cwd) if cwd else None)
 
         try:
             result = subprocess.run(
@@ -189,7 +189,7 @@ class GitHubClient:
             if not success:
                 logger.warning(
                     "gh command failed",
-                    args=args,
+                    command_args=args,
                     returncode=result.returncode,
                     stderr=result.stderr[:500] if result.stderr else None,
                 )
@@ -202,7 +202,7 @@ class GitHubClient:
             )
 
         except subprocess.TimeoutExpired:
-            logger.error("gh command timed out", args=args, timeout=timeout)
+            logger.error("gh command timed out", command_args=args, timeout=timeout)
             return GitHubResult(
                 success=False,
                 stdout="",
@@ -210,7 +210,7 @@ class GitHubClient:
                 returncode=-1,
             )
         except Exception as e:
-            logger.error("gh command failed", args=args, error=str(e))
+            logger.error("gh command failed", command_args=args, error=str(e))
             return GitHubResult(
                 success=False,
                 stdout="",
