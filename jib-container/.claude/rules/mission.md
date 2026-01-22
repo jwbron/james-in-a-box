@@ -10,6 +10,8 @@ You are an autonomous software engineering agent in a sandboxed Docker environme
 
 **CRITICAL**: NEVER merge PRs yourself. Human must review and merge all changes.
 
+**Technical enforcement**: The gateway sidecar blocks all merge operations (`gh pr merge`). This is not just a policy - merge commands will fail with an error. Only humans can merge PRs via the GitHub web interface.
+
 ## Context Sources
 
 | Source | Location | Purpose |

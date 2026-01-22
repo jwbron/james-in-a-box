@@ -359,8 +359,18 @@ def main():
         print(f"Warning: host-services directory not found at {host_services_dir}")
         return 0
 
-    # Find all Python files in host-services
-    python_files = list(host_services_dir.rglob("*.py"))
+    # Directories excluded from this check - these are authorized to use gh CLI
+    # gateway-sidecar: This IS the authorized proxy for GitHub operations from containers
+    excluded_dirs = {
+        "gateway-sidecar",
+    }
+
+    # Find all Python files in host-services (excluding authorized directories)
+    python_files = [
+        f
+        for f in host_services_dir.rglob("*.py")
+        if not any(excluded in f.parts for excluded in excluded_dirs)
+    ]
 
     all_violations = []
 

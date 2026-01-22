@@ -5,12 +5,45 @@
 #
 # This wrapper is placed in PATH before /usr/bin/git to:
 # 1. Block remote URL modifications (URLs are managed by the host)
-# 2. Allow git push with proper GitHub App token authentication
+# 2. Route git push through the gateway sidecar for policy enforcement
 #
-# Authentication is handled via git credential helper that reads GITHUB_TOKEN.
+# Security: Requires gateway sidecar - fails closed if gateway unavailable.
+# Authentication is handled by the gateway sidecar which holds the GITHUB_TOKEN.
 #
 
 REAL_GIT=/usr/bin/git
+GATEWAY_URL="${GATEWAY_URL:-http://host.docker.internal:9847}"
+GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
+# Host worktree path - set by jib launcher to translate container paths
+# Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X
+JIB_WORKTREE_HOST_PATH="${JIB_WORKTREE_HOST_PATH:-}"
+CONTAINER_REPOS_DIR="${HOME}/repos"
+
+# Function to translate container path to host path for gateway
+# Container sees /home/user/repos/X but gateway needs the actual host path
+# which is JIB_WORKTREE_HOST_PATH/X (e.g., ~/.jib-worktrees/<container-id>/X)
+translate_path_for_gateway() {
+    local container_path="$1"
+
+    # If no worktree host path is set, return the path as-is
+    # (this handles running outside of jib container context)
+    if [ -z "$JIB_WORKTREE_HOST_PATH" ]; then
+        echo "$container_path"
+        return
+    fi
+
+    # Check if path is under the container's repos directory
+    # e.g., /home/jwies/repos/james-in-a-box -> james-in-a-box
+    if [[ "$container_path" == "$CONTAINER_REPOS_DIR"/* ]]; then
+        # Extract the relative path after ~/repos/
+        local relative_path="${container_path#$CONTAINER_REPOS_DIR/}"
+        # Construct the host worktree path
+        echo "${JIB_WORKTREE_HOST_PATH}/${relative_path}"
+    else
+        # Not under repos dir, return as-is
+        echo "$container_path"
+    fi
+}
 
 # Function to show remote modification blocked message
 show_remote_blocked_message() {
@@ -30,6 +63,153 @@ If you need to interact with a different repository:
 
 EOF
     return 1
+}
+
+# Function to get gateway secret for authentication
+get_gateway_secret() {
+    if [ -f "$GATEWAY_SECRET_FILE" ]; then
+        cat "$GATEWAY_SECRET_FILE"
+    else
+        echo ""
+    fi
+}
+
+# Function to check if gateway is available
+check_gateway_available() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -s --connect-timeout 2 "${GATEWAY_URL}/api/v1/health" >/dev/null 2>&1
+        return $?
+    fi
+    return 1
+}
+
+# Function to push via gateway
+push_via_gateway() {
+    local remote="$1"
+    local refspec="$2"
+    local force="$3"
+    local container_path
+    local repo_path
+    container_path=$(pwd)
+    # Translate container path to host path for gateway
+    # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<id>/X
+    repo_path=$(translate_path_for_gateway "$container_path")
+
+    # Get authentication secret
+    local secret
+    secret=$(get_gateway_secret)
+    if [ -z "$secret" ]; then
+        echo "ERROR: Gateway secret not available at $GATEWAY_SECRET_FILE" >&2
+        echo "The gateway sidecar must be running and properly configured." >&2
+        return 1
+    fi
+
+    # Build JSON payload - escape special characters properly
+    # Use Python-style booleans (capitalized) since they're interpolated into Python code
+    local force_json="False"
+    [ "$force" = "true" ] && force_json="True"
+
+    local payload
+    payload=$(python3 -c "
+import json
+print(json.dumps({
+    'repo_path': '$repo_path',
+    'remote': '$remote',
+    'refspec': '$refspec',
+    'force': $force_json
+}))
+")
+
+    # Call gateway with authentication
+    local response
+    local http_code
+    response=$(curl -s -w "\n%{http_code}" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $secret" \
+        -d "$payload" \
+        "${GATEWAY_URL}/api/v1/git/push" 2>&1)
+
+    # Split response and status code
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+
+    # Parse response
+    local success
+    local message
+    success=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null)
+    message=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('message', 'Unknown error'))" 2>/dev/null)
+
+    if [ "$success" = "True" ]; then
+        # Show stdout/stderr from the push
+        local stdout stderr
+        stdout=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', {}).get('stdout', ''))" 2>/dev/null)
+        stderr=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', {}).get('stderr', ''))" 2>/dev/null)
+        [ -n "$stdout" ] && echo "$stdout"
+        [ -n "$stderr" ] && echo "$stderr" >&2
+        return 0
+    else
+        # Show error message
+        echo "ERROR: $message" >&2
+
+        # Show details if available
+        local details
+        details=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stderr', '') if d else '')" 2>/dev/null)
+        [ -n "$details" ] && echo "$details" >&2
+
+        # Special handling for different error codes
+        case "$http_code" in
+            401)
+                cat >&2 << 'EOF'
+
+================================================================================
+  AUTHENTICATION FAILED
+================================================================================
+
+The gateway sidecar rejected the authentication token.
+
+Please ensure the gateway secret is correctly configured:
+  - Host: ~/.config/jib/gateway-secret
+  - Container: ~/sharing/.gateway-secret
+
+================================================================================
+
+EOF
+                ;;
+            403)
+                cat >&2 << 'EOF'
+
+================================================================================
+  PUSH BLOCKED BY POLICY
+================================================================================
+
+The gateway sidecar blocked this push operation.
+
+To push, ensure one of the following:
+  1. Use a jib-prefixed branch name: jib-* or jib/*
+  2. Create a PR from this branch first (the branch will then be owned by jib)
+
+================================================================================
+
+EOF
+                ;;
+            429)
+                cat >&2 << 'EOF'
+
+================================================================================
+  RATE LIMIT EXCEEDED
+================================================================================
+
+Too many push operations. Please wait before trying again.
+
+================================================================================
+
+EOF
+                ;;
+        esac
+
+        return 1
+    fi
 }
 
 # Function to check if push target is HTTPS (we don't have SSH keys)
@@ -68,29 +248,6 @@ EOF
         return 1
     fi
 
-    # Check GITHUB_TOKEN is set for HTTPS push
-    if [[ "$url" == https://* ]] && [ -z "$GITHUB_TOKEN" ]; then
-        cat >&2 << 'EOF'
-
-================================================================================
-  GITHUB_TOKEN NOT SET
-================================================================================
-
-Cannot push: GITHUB_TOKEN environment variable is not set.
-
-The container should have received a GitHub App token from the jib launcher.
-This token is required for pushing to GitHub via HTTPS.
-
-Please check:
-  1. GitHub App is configured at ~/.config/jib/github-app-*
-  2. Container was launched via the jib launcher
-
-================================================================================
-
-EOF
-        return 1
-    fi
-
     return 0
 }
 
@@ -106,25 +263,83 @@ done
 
 case "$cmd" in
     push)
-        # Extract remote from push command (git push [remote] [refspec])
+        # Extract remote and refspec from push command
+        # git push [options] [remote] [refspec...]
         remote="origin"
+        refspec=""
+        force="false"
+        skip_next=false
+        remote_seen=false  # Track if we've explicitly seen a remote arg
+
         for arg in "$@"; do
-            if [[ "$arg" == "push" ]]; then
+            if $skip_next; then
+                skip_next=false
                 continue
-            elif [[ "$arg" != -* ]] && [[ "$arg" != *:* ]]; then
-                # First non-flag, non-refspec arg after "push" is the remote
-                remote="$arg"
-                break
             fi
+
+            case "$arg" in
+                push)
+                    continue
+                    ;;
+                -f|--force|--force-with-lease*)
+                    force="true"
+                    ;;
+                -u|--set-upstream)
+                    # -u takes no extra argument
+                    ;;
+                --repo|--receive-pack|--exec|-o|--push-option)
+                    # These flags take an argument
+                    skip_next=true
+                    ;;
+                -*)
+                    # Other flags, ignore
+                    ;;
+                *)
+                    # First non-flag is remote, second is refspec
+                    # Use remote_seen flag to handle "git push origin branch" correctly
+                    if [ "$remote_seen" = "false" ]; then
+                        remote="$arg"
+                        remote_seen=true
+                    elif [ -z "$refspec" ]; then
+                        refspec="$arg"
+                    fi
+                    ;;
+            esac
         done
 
-        # Verify we can push to this remote
+        # Verify remote is HTTPS
         if ! check_push_remote "$remote"; then
             exit 1
         fi
 
-        # Push is allowed - pass through to real git
-        exec "$REAL_GIT" "$@"
+        # Gateway is REQUIRED - fail closed if not available
+        if ! check_gateway_available; then
+            cat >&2 << 'EOF'
+
+================================================================================
+  GATEWAY SIDECAR NOT AVAILABLE
+================================================================================
+
+Cannot push: The gateway sidecar is required but not reachable.
+
+The gateway enforces ownership policies and holds GitHub credentials.
+Without it, push operations are not allowed.
+
+Please ensure:
+  1. Gateway sidecar is running on the host:
+     systemctl --user status gateway-sidecar
+
+  2. The container can reach the host:
+     curl http://host.docker.internal:9847/api/v1/health
+
+================================================================================
+
+EOF
+            exit 1
+        fi
+
+        push_via_gateway "$remote" "$refspec" "$force"
+        exit $?
         ;;
     remote)
         # Check for subcommands that modify remotes

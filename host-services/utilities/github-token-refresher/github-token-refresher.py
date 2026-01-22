@@ -36,8 +36,10 @@ from jib_logging import get_logger
 
 # Configuration
 CONFIG_DIR = Path.home() / ".config" / "jib"
-SHARING_DIR = Path.home() / ".jib-sharing"
-TOKEN_FILE = SHARING_DIR / ".github-token"
+# Gateway-only directory - NOT mounted in jib containers for security
+# Only the gateway sidecar has access to this token
+GATEWAY_SECRETS_DIR = Path.home() / ".jib-gateway"
+TOKEN_FILE = GATEWAY_SECRETS_DIR / ".github-token"
 REFRESH_INTERVAL_SECONDS = 45 * 60  # 45 minutes
 TOKEN_VALIDITY_SECONDS = 60 * 60  # 1 hour (GitHub's limit)
 
@@ -137,8 +139,8 @@ def write_token_file(token: str) -> bool:
     - expires_at: ISO timestamp when token expires (1 hour from generation)
     - generated_by: Service identifier
     """
-    # Ensure sharing directory exists
-    SHARING_DIR.mkdir(parents=True, exist_ok=True)
+    # Ensure gateway secrets directory exists
+    GATEWAY_SECRETS_DIR.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(UTC)
     expires_at = now.timestamp() + TOKEN_VALIDITY_SECONDS

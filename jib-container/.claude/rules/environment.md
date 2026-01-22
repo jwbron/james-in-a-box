@@ -6,13 +6,25 @@ You run in a sandboxed Docker container. Network: outbound HTTP/HTTPS only. No S
 
 **CAN**: Read/edit `~/repos/`, run tests, `git push` (HTTPS), `gh` CLI (PRs, issues), PostgreSQL, Redis, Python, Node.js, Go, Java
 
-**CANNOT**: Merge PRs, SSH push, deploy to GCP/AWS, access production
+**CANNOT**: Merge PRs, SSH push, deploy to GCP/AWS, access production, access GitHub tokens directly
+
+## Gateway Sidecar
+
+All git/gh operations are routed through the gateway sidecar on the host. The container does NOT have direct access to GitHub tokens - credentials are held by the gateway.
+
+**Policy enforcement:**
+- `git push`: Only to branches you own (jib-prefixed or has your open PR)
+- `gh pr merge`: **Blocked** - human must merge via GitHub UI
+- `gh pr comment/edit/close`: Only on PRs you authored
 
 ## Git Push
 
-Use `git push origin <branch>` (HTTPS, GitHub App token). NEVER modify remote URLs or embed tokens.
+Use `git push origin <branch>` (HTTPS). Operations are authenticated by the gateway sidecar.
 
-If push fails: Check `git remote -v` is HTTPS, check `GITHUB_TOKEN` is set.
+If push fails:
+- Check `git remote -v` is HTTPS
+- Check gateway sidecar is running: `curl http://host.docker.internal:9847/api/v1/health`
+- Ensure branch is jib-owned (jib-prefixed or has your open PR)
 
 ## File System
 

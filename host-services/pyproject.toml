@@ -26,6 +26,10 @@ dependencies = [
 
     # GitHub App JWT signing (github-app-token.py)
     "cryptography>=41.0.0",
+
+    # Gateway sidecar REST API
+    "flask>=3.0.0",
+    "waitress>=3.0.0",
 ]
 
 [project.optional-dependencies]

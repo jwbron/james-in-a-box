@@ -714,6 +714,7 @@ class ServiceManager:
         "slack-receiver.service",
         "github-token-refresher.service",
         "worktree-watcher.timer",
+        "gateway-sidecar.service",
     ]
 
     # LLM-based services that use tokens (opt-in)
@@ -731,6 +732,7 @@ class ServiceManager:
         "slack-receiver.service": "host-services/slack/slack-receiver/setup.sh",
         "github-token-refresher.service": "host-services/utilities/github-token-refresher/setup.sh",
         "worktree-watcher.timer": "host-services/utilities/worktree-watcher/setup.sh",
+        "gateway-sidecar.service": "gateway-sidecar/setup.sh",
         "context-sync.timer": "host-services/sync/context-sync/setup.sh",
         "context-sync.service": "host-services/sync/context-sync/setup.sh",
         "github-watcher.timer": "host-services/analysis/github-watcher/setup.sh",
@@ -786,13 +788,17 @@ class ServiceManager:
 
         try:
             self.logger.step(f"Running setup script for {service}")
+            # Gateway sidecar runs as container, not systemd service
+            cmd = ["bash", str(script_path)]
+            if service == "gateway-sidecar.service":
+                cmd.append("--container")
             result = subprocess.run(
-                ["bash", str(script_path)],
+                cmd,
                 check=False,
                 cwd=self.repo_root,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=120,  # Container build may take longer
             )
             if result.returncode != 0:
                 self.logger.warning(f"Setup script exited with code {result.returncode}")
@@ -817,6 +823,18 @@ class ServiceManager:
         Returns:
             True if successful, False otherwise
         """
+        # Gateway sidecar runs as Docker container, not systemd service
+        # Its setup script handles everything (build image, start container)
+        if service == "gateway-sidecar.service":
+            if run_setup:
+                if self._run_service_setup(service):
+                    self.logger.success("Gateway sidecar container configured")
+                    return True
+                else:
+                    self.logger.error("Gateway sidecar setup failed")
+                    return False
+            return True
+
         if not self.has_systemctl:
             self.logger.warning("systemctl not available, skipping service management")
             return False
@@ -856,6 +874,21 @@ class ServiceManager:
         Returns:
             True if successful, False otherwise
         """
+        # Gateway sidecar runs as Docker container
+        if service == "gateway-sidecar.service":
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", "jib-gateway"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.logger.success("Stopped gateway sidecar container")
+                return True
+            except Exception as e:
+                self.logger.error(f"Failed to stop gateway container: {e}")
+                return False
+
         if not self.has_systemctl:
             self.logger.warning("systemctl not available, skipping service management")
             return False
