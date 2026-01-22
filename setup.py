@@ -732,7 +732,7 @@ class ServiceManager:
         "slack-receiver.service": "host-services/slack/slack-receiver/setup.sh",
         "github-token-refresher.service": "host-services/utilities/github-token-refresher/setup.sh",
         "worktree-watcher.timer": "host-services/utilities/worktree-watcher/setup.sh",
-        "gateway-sidecar.service": "host-services/gateway-sidecar/setup.sh",
+        "gateway-sidecar.service": "gateway-sidecar/setup.sh",
         "context-sync.timer": "host-services/sync/context-sync/setup.sh",
         "context-sync.service": "host-services/sync/context-sync/setup.sh",
         "github-watcher.timer": "host-services/analysis/github-watcher/setup.sh",
