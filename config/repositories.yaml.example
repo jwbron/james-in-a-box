@@ -97,7 +97,9 @@ repo_settings:
 #    (Git author info is set at commit time, not push time)
 #
 # Incognito mode permissions:
-# - CAN push to any branch (except main/master)
+# - CAN push to new branches (that don't exist upstream yet)
+# - CAN push to branches with an open PR owned by jib or the incognito user
+# - CANNOT push to main/master (protected branches)
 # - CANNOT create PRs (you must create PRs manually via GitHub UI)
 # This ensures the human maintains control over what PRs are opened in their name.
 incognito:

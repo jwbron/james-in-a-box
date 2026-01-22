@@ -359,6 +359,28 @@ class GitHubClient:
         except json.JSONDecodeError:
             return []
 
+    def branch_exists(self, repo: str, branch: str) -> bool:
+        """
+        Check if a branch exists in the remote repository.
+
+        Args:
+            repo: Repository in "owner/repo" format
+            branch: Branch name
+
+        Returns:
+            True if the branch exists, False otherwise
+        """
+        # Use gh api to check if branch exists
+        # GET /repos/{owner}/{repo}/branches/{branch} returns 200 if exists, 404 if not
+        result = self.execute(
+            [
+                "api",
+                f"repos/{repo}/branches/{branch}",
+                "--silent",
+            ]
+        )
+        return result.success
+
 
 # Global client instances (one per mode)
 _clients: dict[str, GitHubClient] = {}

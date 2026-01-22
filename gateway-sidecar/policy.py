@@ -2,9 +2,9 @@
 Policy Engine - Ownership and access control checks.
 
 Enforces policies for git/gh operations:
-- Branch ownership: jib can push to branches it owns OR branches owned by trusted users
-- Branch ownership (incognito): user can push to any branch (except main/master)
-- PR creation: allowed in bot mode, blocked in incognito mode
+- Branch ownership (bot): jib can push to jib-prefixed branches OR branches with jib/trusted-user PRs
+- Branch ownership (incognito): user can push to new branches OR branches with jib/incognito-user PRs
+- PR creation: allowed in bot mode, blocked in incognito mode (user creates PRs manually)
 - PR comments: jib can comment on any PR
 - PR edit/close: jib can only modify PRs it created
 - Merge blocked: No merge operations allowed (human must merge)
@@ -368,8 +368,10 @@ class PolicyEngine:
         2. Branch has an open PR authored by jib, OR
         3. Branch has an open PR authored by a trusted user (from GATEWAY_TRUSTED_USERS)
 
-        In incognito mode, the incognito user can push to a branch if:
-        1. Branch has an open PR authored by the incognito user
+        In incognito mode, the user can push to a branch if:
+        1. Branch does not exist upstream yet (new branch), OR
+        2. Branch has an open PR authored by jib, OR
+        3. Branch has an open PR authored by the incognito user
 
         Protected branches (main, master) are always blocked regardless of mode.
 
@@ -398,24 +400,99 @@ class PolicyEngine:
                 },
             )
 
-        # In incognito mode, allow pushing to any non-protected branch
-        # The user is authenticated as themselves, so they own their pushes.
-        # PR creation is blocked separately in check_pr_create_allowed.
+        # In incognito mode:
+        # 1. Allow pushing to NEW branches (don't exist upstream yet)
+        # 2. Allow pushing to branches with open PR by jib OR incognito user
         if auth_mode == "incognito":
             incognito_user = self._get_incognito_user()
-            logger.debug(
-                "Branch push allowed (incognito mode)",
+
+            # Check if branch exists upstream
+            if not self.github.branch_exists(repo, branch):
+                logger.debug(
+                    "Branch push allowed (incognito mode) - new branch",
+                    repo=repo,
+                    branch=branch,
+                    incognito_user=incognito_user,
+                )
+                return PolicyResult(
+                    allowed=True,
+                    reason=f"Incognito mode: push allowed to new branch '{branch}'",
+                    details={
+                        "branch": branch,
+                        "incognito_user": incognito_user,
+                        "auth_mode": "incognito",
+                        "reason": "new_branch",
+                    },
+                )
+
+            # Branch exists - check for open PR by jib or incognito user
+            pr_numbers = self._get_prs_for_branch(repo, branch)
+            for pr_number in pr_numbers:
+                pr_info = self._get_pr_info(repo, pr_number)
+                if not pr_info:
+                    continue
+
+                # Check if PR is owned by jib
+                if self._is_jib_author(pr_info.author):
+                    logger.debug(
+                        "Branch push allowed (incognito mode) - jib PR",
+                        repo=repo,
+                        branch=branch,
+                        pr_number=pr_number,
+                        author=pr_info.author,
+                    )
+                    return PolicyResult(
+                        allowed=True,
+                        reason=f"Branch '{branch}' has open PR #{pr_number} owned by jib",
+                        details={
+                            "branch": branch,
+                            "pr_number": pr_number,
+                            "author": pr_info.author,
+                            "auth_mode": "incognito",
+                            "reason": "jib_pr",
+                        },
+                    )
+
+                # Check if PR is owned by incognito user
+                if incognito_user and self._is_incognito_author(pr_info.author, incognito_user):
+                    logger.debug(
+                        "Branch push allowed (incognito mode) - incognito user PR",
+                        repo=repo,
+                        branch=branch,
+                        pr_number=pr_number,
+                        author=pr_info.author,
+                        incognito_user=incognito_user,
+                    )
+                    return PolicyResult(
+                        allowed=True,
+                        reason=f"Branch '{branch}' has open PR #{pr_number} owned by '{incognito_user}'",
+                        details={
+                            "branch": branch,
+                            "pr_number": pr_number,
+                            "author": pr_info.author,
+                            "incognito_user": incognito_user,
+                            "auth_mode": "incognito",
+                            "reason": "incognito_pr",
+                        },
+                    )
+
+            # Branch exists but no PR by jib or incognito user
+            logger.info(
+                "Branch push denied (incognito mode) - no owned PR",
                 repo=repo,
                 branch=branch,
                 incognito_user=incognito_user,
+                open_prs=pr_numbers,
             )
             return PolicyResult(
-                allowed=True,
-                reason=f"Incognito mode: push allowed to branch '{branch}' as user '{incognito_user}'",
+                allowed=False,
+                reason=f"Branch '{branch}' exists but has no open PR owned by jib or '{incognito_user}'",
                 details={
                     "branch": branch,
+                    "open_prs": pr_numbers,
                     "incognito_user": incognito_user,
                     "auth_mode": "incognito",
+                    "hint": "Create a PR from this branch on GitHub first, or push to a new branch name.",
                 },
             )
 
