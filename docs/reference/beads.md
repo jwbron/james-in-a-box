@@ -2,29 +2,44 @@
 
 > Persistent task memory system for autonomous agents. Git-backed, multi-container safe.
 
-**Binary:** `/usr/local/bin/bd` (v0.25.1+)
+**Binary:** `/usr/local/bin/bd`
 **Location:** `~/beads/` (symlink to `~/.jib-sharing/beads/`)
-**Documentation:** [github.com/cristoslc/llm-beads](https://github.com/cristoslc/llm-beads)
+**Documentation:** [github.com/steveyegge/beads](https://github.com/steveyegge/beads)
 
 ## Quick Reference
 
 ```bash
 # ALWAYS START HERE - check for existing work
-bd --allow-stale list --status in_progress
+bd --allow-stale list -s in_progress
 bd --allow-stale search "keywords"
 
-# Create task (use searchable title - see "Task Title Best Practices" below)
-bd --allow-stale create "Feature Name (PR #XXX) - repo" --labels feature,repo-name,pr-XXX
-
-# Update status
-bd --allow-stale update <id> --status in_progress
-bd --allow-stale update <id> --status closed --notes "Summary"
-
-# Find ready work
+# Show ready work (no blockers)
 bd --allow-stale ready
+
+# Create task (use searchable title - see "Task Title Best Practices" below)
+bd --allow-stale create "Feature Name (PR #XXX) - repo" -l feature,repo-name,pr-XXX
+
+# Claim task atomically (sets assignee + status in one operation)
+bd --allow-stale update <id> --claim
+
+# Complete task
+bd --allow-stale close <id> -r "Summary. PR #XXX created."
 ```
 
 > **Note:** The `BEADS_DIR` environment variable is set automatically, so `bd` can be run from any directory.
+
+## Short Flags Reference
+
+| Short | Long | Used With |
+|-------|------|-----------|
+| `-s` | `--status` | list, update, search |
+| `-l` | `--labels` / `--label` | create, list, search |
+| `-p` | `--priority` | create, update, list, ready |
+| `-t` | `--type` | create, update, list, search |
+| `-r` | `--reason` | close |
+| `-n` | `--limit` | list, search, ready |
+| `-a` | `--assignee` | create, update, list, search |
+| `-d` | `--description` | create, update |
 
 ## Why `--allow-stale` is Required
 
@@ -37,6 +52,7 @@ In ephemeral containers, the database may be newer than git sync state. The `--a
 | `open` | Not started | Task created, waiting for work to begin |
 | `in_progress` | Actively working | You've started working on the task |
 | `blocked` | Cannot proceed | Waiting on external dependency |
+| `deferred` | Postponed | Hidden from `bd ready` until defer date |
 | `closed` | Complete | Work is done, PR created, or abandoned |
 
 **Status Flow:**
@@ -44,6 +60,8 @@ In ephemeral containers, the database may be newer than git sync state. The `--a
 open → in_progress → closed
            ↓
         blocked → in_progress → closed
+           ↓
+        deferred → open → in_progress → closed
 ```
 
 ## Command Reference
@@ -55,36 +73,50 @@ open → in_progress → closed
 bd --allow-stale create "Task title"
 
 # With labels (comma-separated)
-bd --allow-stale create "Task title" --labels feature,jira-1234,slack
+bd --allow-stale create "Task title" -l feature,jira-1234,slack
 
 # With priority (0=highest, 4=lowest)
-bd --allow-stale create "Task title" --priority 1
+bd --allow-stale create "Task title" -p 1
 
 # With type
-bd --allow-stale create "Task title" --type bug  # bug|feature|task|epic|chore
+bd --allow-stale create "Task title" -t bug  # bug|feature|task|epic|chore
 
 # With parent (for subtasks)
 bd --allow-stale create "Subtask" --parent bd-a3f8
 
 # With description
-bd --allow-stale create "Task title" --description "Detailed description here"
+bd --allow-stale create "Task title" -d "Detailed description here"
 
 # With dependencies
 bd --allow-stale create "Task" --deps blocks:bd-b1,discovered-from:bd-a3f8
+
+# Quick capture (outputs only the ID)
+bd --allow-stale q "Quick task title"
+```
+
+### Claiming and Starting Work
+
+```bash
+# Atomic claim (sets assignee to you + status to in_progress)
+# Fails if already claimed by someone else
+bd --allow-stale update <id> --claim
+
+# Manual status update
+bd --allow-stale update <id> -s in_progress
 ```
 
 ### Updating Tasks
 
 ```bash
 # Change status
-bd --allow-stale update <id> --status in_progress
-bd --allow-stale update <id> --status closed
+bd --allow-stale update <id> -s in_progress
+bd --allow-stale update <id> -s blocked
 
 # Add notes (appended to existing)
 bd --allow-stale update <id> --notes "Progress: completed step 1"
 
 # Change priority
-bd --allow-stale update <id> --priority 1
+bd --allow-stale update <id> -p 1
 
 # Add labels
 bd --allow-stale update <id> --add-label urgent
@@ -92,8 +124,21 @@ bd --allow-stale update <id> --add-label urgent
 # Remove labels
 bd --allow-stale update <id> --remove-label urgent
 
-# Update multiple fields
-bd --allow-stale update <id> --status closed --notes "Done. PR #123 created."
+# Update title
+bd --allow-stale update <id> --title "New title (PR #123)"
+```
+
+### Completing Tasks
+
+```bash
+# Close with reason (preferred)
+bd --allow-stale close <id> -r "Done. PR #123 created. Tests passing."
+
+# Close and show suggested next work
+bd --allow-stale close <id> -r "Complete" --suggest-next
+
+# Close multiple tasks
+bd --allow-stale close bd-a1 bd-a2 bd-a3 -r "Batch complete"
 ```
 
 ### Viewing Tasks
@@ -102,38 +147,53 @@ bd --allow-stale update <id> --status closed --notes "Done. PR #123 created."
 # Show task details
 bd --allow-stale show <id>
 
-# List all tasks
+# List all open tasks
 bd --allow-stale list
 
 # Filter by status
-bd --allow-stale list --status in_progress
-bd --allow-stale list --status open
+bd --allow-stale list -s in_progress
+bd --allow-stale list -s open
 
 # Filter by label
-bd --allow-stale list --label jira-1234
+bd --allow-stale list -l jira-1234
+
+# Filter by multiple labels (AND)
+bd --allow-stale list -l feature -l webapp
+
+# Filter by any of multiple labels (OR)
+bd --allow-stale list --label-any feature,bug
 
 # Limit results
-bd --allow-stale list --limit 10
+bd --allow-stale list -n 10
 
-# Search by text
+# Search by text (title, description, ID)
 bd --allow-stale search "authentication"
 bd --allow-stale search "PR-123"
+
+# Search with filters
+bd --allow-stale search "bug" -s open -l backend
 ```
 
 ### Finding Work
 
 ```bash
-# Show tasks ready to work on (no blockers)
+# Show tasks ready to work on (no blockers, open or in_progress)
 bd --allow-stale ready
 
 # Limit ready work
-bd --allow-stale ready --limit 5
+bd --allow-stale ready -n 5
 
 # Filter ready work by priority
-bd --allow-stale ready --priority 1
+bd --allow-stale ready -p 1
+
+# Show only unassigned ready work
+bd --allow-stale ready -u
 
 # Show blocked tasks
 bd --allow-stale blocked
+
+# Show stale tasks (not updated recently)
+bd --allow-stale stale
 ```
 
 ### Managing Dependencies
@@ -148,11 +208,8 @@ bd --allow-stale dep add <task2> <task1> --type blocks
 # Remove dependency
 bd --allow-stale dep remove <task2> <task1>
 
-# Show dependency tree
-bd --allow-stale dep tree <id>
-
-# Check for circular dependencies
-bd --allow-stale dep cycles
+# Show dependency graph
+bd --allow-stale graph <id>
 ```
 
 **Dependency Types:**
@@ -175,14 +232,14 @@ bd --allow-stale show <id> --json
 ### Sync Operations
 
 ```bash
-# Import from JSONL (after git pull)
-bd sync --import-only
-
-# Export to JSONL (before git push)
-bd sync --flush-only
-
-# Full sync (git pull + import + export + git push)
+# Full sync (recommended)
 bd sync
+
+# Check database health
+bd doctor
+
+# Fix database issues
+bd doctor --fix
 ```
 
 ## Agent Workflow Patterns
@@ -193,7 +250,7 @@ bd sync
 
 ```bash
 # 1. Check for in-progress work to resume
-bd --allow-stale list --status in_progress
+bd --allow-stale list -s in_progress
 
 # 2. Search for related tasks
 bd --allow-stale search "keywords from current task"
@@ -210,10 +267,10 @@ bd --allow-stale update <id> --notes "Resuming work..."
 bd --allow-stale search "task description keywords"
 
 # 2. If not found, create it
-bd --allow-stale create "Task description" --labels source,type
+bd --allow-stale create "Task description" -l source,type
 
-# 3. Mark as in progress
-bd --allow-stale update <id> --status in_progress
+# 3. Claim it atomically
+bd --allow-stale update <id> --claim
 ```
 
 ### Pattern 3: Work Discovery (Finding Issues During Work)
@@ -223,20 +280,19 @@ When you discover additional work while implementing something:
 ```bash
 # Create task linked to parent work
 bd --allow-stale create "Found: <issue description>" \
-    --type bug \
+    -t bug \
     --deps discovered-from:$CURRENT_TASK_ID \
-    --labels discovered,needs-triage
+    -l discovered,needs-triage
 ```
 
 ### Pattern 4: Completing Work
 
 ```bash
-# 1. Mark complete with summary
-bd --allow-stale update <id> --status closed \
-    --notes "Done: <summary>. PR #XX created. Tests passing."
+# 1. Close with summary
+bd --allow-stale close <id> -r "Done: <summary>. PR #XX created. Tests passing."
 
 # 2. Check for child tasks
-bd --allow-stale list --label "parent:$id"
+bd --allow-stale list -l "parent:$id"
 ```
 
 ### Pattern 5: Slack Thread Context
@@ -251,7 +307,7 @@ bd --allow-stale search "$TASK_ID"
 bd --allow-stale show <bead-id>
 
 # If not found, create with task_id as label
-bd --allow-stale create "Slack: <summary>" --labels slack-thread,$TASK_ID
+bd --allow-stale create "Slack: <summary>" -l slack-thread,$TASK_ID
 ```
 
 ### Pattern 6: PR Work Context
@@ -262,8 +318,7 @@ bd --allow-stale search "PR-$NUMBER"
 bd --allow-stale search "$BRANCH_NAME"
 
 # Create task for PR work
-bd --allow-stale create "PR #$NUMBER: <description>" \
-    --labels pr,PR-$NUMBER,$BRANCH_NAME
+bd --allow-stale create "PR #$NUMBER: <description>" -l pr,PR-$NUMBER,$BRANCH_NAME
 ```
 
 ## Task Title Best Practices
@@ -317,11 +372,11 @@ bd --allow-stale search "jira-1234"
 bd --allow-stale search "JIRA-1234"
 
 # List recent in-progress work
-bd --allow-stale list --status in_progress
+bd --allow-stale list -s in_progress
 
 # List by label
-bd --allow-stale list --label pr-141
-bd --allow-stale list --label james-in-a-box
+bd --allow-stale list -l pr-141
+bd --allow-stale list -l james-in-a-box
 ```
 
 **If search finds nothing but you expect a task:**
@@ -329,7 +384,7 @@ bd --allow-stale list --label james-in-a-box
 - Search for partial terms: `bd --allow-stale search "index"` instead of `index-generator`
 - Check for typos in search terms
 - Use `bd --allow-stale list` to browse all tasks
-- Check `bd --allow-stale list --status closed` for completed work
+- Check `bd --allow-stale list -s closed` for completed work
 
 ## Labeling Conventions
 
@@ -353,6 +408,8 @@ bd --allow-stale list --label james-in-a-box
 ### DO:
 - ✅ Check for existing tasks before creating new ones
 - ✅ Always use `--allow-stale` in containers
+- ✅ **Use `--claim` to atomically start work**
+- ✅ **Use `bd close` to complete tasks** (not `update --status closed`)
 - ✅ **Use searchable titles** with feature name, PR#, and repo name
 - ✅ **Add labels** for repository, PR number, and feature area
 - ✅ **Update title** when PR is created to include PR number
@@ -360,7 +417,6 @@ bd --allow-stale list --label james-in-a-box
 - ✅ Add notes with progress, decisions, and context
 - ✅ Include Beads ID in PR descriptions and Slack notifications
 - ✅ Create discovered-from tasks for issues found during work
-- ✅ Mark tasks closed with summary when done
 
 ### DON'T:
 - ❌ Skip checking for existing tasks
@@ -379,7 +435,8 @@ bd --allow-stale list --label james-in-a-box
 | "No beads database found" | Verify `BEADS_DIR` env var is set |
 | Can't find task | Try `bd --allow-stale search "partial text"` |
 | Duplicate tasks created | Search before creating: `bd --allow-stale search "keywords"` |
-| Task shows blocked incorrectly | Check `bd --allow-stale dep tree <id>` for hidden blockers |
+| Task shows blocked incorrectly | Check `bd --allow-stale graph <id>` for hidden blockers |
+| Database corruption | Run `bd doctor --fix` |
 
 ## Integration with Other Systems
 
