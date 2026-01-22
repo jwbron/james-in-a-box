@@ -86,6 +86,7 @@ def git_cmd(*args: str) -> list[str]:
     """
     return [GIT_CLI, "-c", "safe.directory=*", *args]
 
+
 # Authentication - shared secret from environment
 GATEWAY_SECRET = os.environ.get("JIB_GATEWAY_SECRET", "")
 SECRET_FILE = Path.home() / ".config" / "jib" / "gateway-secret"
