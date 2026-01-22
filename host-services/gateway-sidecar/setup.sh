@@ -140,6 +140,21 @@ setup_container() {
     REPOS_DIR="${HOME}/repos"
     WORKTREES_DIR="${HOME}/.jib-worktrees"
 
+    # Build .git-main mounts for each repo
+    # Worktree .git files point to ~/.git-main/<repo>/worktrees/<name>
+    # so gateway needs the same mounts that jib containers use
+    GIT_MOUNTS=()
+    for repo in "$REPOS_DIR"/*/; do
+        if [ -d "$repo" ]; then
+            repo_name=$(basename "$repo")
+            git_dir="${repo}.git"
+            if [ -d "$git_dir" ]; then
+                GIT_MOUNTS+=("-v" "${git_dir}:${HOME}/.git-main/${repo_name}:ro,z")
+                echo "  Mounting .git for: $repo_name"
+            fi
+        fi
+    done
+
     docker run -d \
         --name "$CONTAINER_NAME" \
         --network "$NETWORK_NAME" \
@@ -149,6 +164,7 @@ setup_container() {
         -v "$SECRET_FILE:/secrets/gateway-secret:ro,z" \
         -v "$REPOS_DIR:$REPOS_DIR:ro,z" \
         -v "$WORKTREES_DIR:$WORKTREES_DIR:ro,z" \
+        "${GIT_MOUNTS[@]}" \
         "$GATEWAY_IMAGE_NAME"
 
     # Wait for gateway to be ready
