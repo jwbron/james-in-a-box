@@ -168,16 +168,32 @@ class ConfluenceConfig(BaseConfig):
 
     @classmethod
     def from_env(cls) -> "ConfluenceConfig":
-        """Load Confluence configuration from environment variables.
+        """Load Confluence configuration from environment and config files.
 
-        All settings use the CONFLUENCE_ prefix.
+        Priority:
+        1. Environment variables
+        2. ~/.config/jib/secrets.env
         """
+        from ..utils import load_env_file
+
         config = cls()
 
-        config.base_url = os.environ.get("CONFLUENCE_BASE_URL", "")
-        config.username = os.environ.get("CONFLUENCE_USERNAME", "")
-        config.api_token = os.environ.get("CONFLUENCE_API_TOKEN", "")
-        config.space_keys = os.environ.get("CONFLUENCE_SPACE_KEYS", "")
+        # Load secrets.env
+        secrets_file = Path.home() / ".config" / "jib" / "secrets.env"
+        secrets = load_env_file(secrets_file)
+
+        config.base_url = os.environ.get(
+            "CONFLUENCE_BASE_URL", secrets.get("CONFLUENCE_BASE_URL", "")
+        )
+        config.username = os.environ.get(
+            "CONFLUENCE_USERNAME", secrets.get("CONFLUENCE_USERNAME", "")
+        )
+        config.api_token = os.environ.get(
+            "CONFLUENCE_API_TOKEN", secrets.get("CONFLUENCE_API_TOKEN", "")
+        )
+        config.space_keys = os.environ.get(
+            "CONFLUENCE_SPACE_KEYS", secrets.get("CONFLUENCE_SPACE_KEYS", "")
+        )
 
         output_dir = os.environ.get("CONFLUENCE_OUTPUT_DIR", "")
         if output_dir:

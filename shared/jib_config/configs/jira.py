@@ -167,15 +167,29 @@ class JiraConfig(BaseConfig):
 
     @classmethod
     def from_env(cls) -> "JiraConfig":
-        """Load JIRA configuration from environment variables.
+        """Load JIRA configuration from environment and config files.
 
-        All settings use the JIRA_ prefix.
+        Priority:
+        1. Environment variables
+        2. ~/.config/jib/secrets.env
         """
+        from ..utils import load_env_file
+
         config = cls()
 
-        config.base_url = os.environ.get("JIRA_BASE_URL", "")
-        config.username = os.environ.get("JIRA_USERNAME", "")
-        config.api_token = os.environ.get("JIRA_API_TOKEN", "")
+        # Load secrets.env
+        secrets_file = Path.home() / ".config" / "jib" / "secrets.env"
+        secrets = load_env_file(secrets_file)
+
+        config.base_url = os.environ.get(
+            "JIRA_BASE_URL", secrets.get("JIRA_BASE_URL", "")
+        )
+        config.username = os.environ.get(
+            "JIRA_USERNAME", secrets.get("JIRA_USERNAME", "")
+        )
+        config.api_token = os.environ.get(
+            "JIRA_API_TOKEN", secrets.get("JIRA_API_TOKEN", "")
+        )
         config.jql_query = os.environ.get(
             "JIRA_JQL_QUERY",
             "project = INFRA AND resolution = Unresolved ORDER BY updated DESC",

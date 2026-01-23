@@ -405,57 +405,172 @@ class ConfigMigrator:
 
     def _run_health_checks(self, slack, github, jira, confluence):
         """Run actual API connectivity tests."""
+        import json
+        import time
+        import urllib.request
+
         print("\n" + "=" * 60)
         print(" HEALTH CHECKS (API Connectivity)")
         print("=" * 60)
 
-        # Slack health check
+        # =====================================================================
+        # Slack Health Checks
+        # =====================================================================
+        print("\n--- Slack ---")
+
+        # Test bot token (xoxb-)
         if slack.bot_token:
-            print("\nTesting Slack API...")
             result = slack.health_check(timeout=10.0)
             if result.healthy:
                 latency = f" ({result.latency_ms:.0f}ms)" if result.latency_ms else ""
-                print(f"  ✓ Slack: {result.message}{latency}")
+                print(f"  ✓ Bot token (xoxb-): {result.message}{latency}")
             else:
-                print(f"  ✗ Slack: {result.message}")
+                print(f"  ✗ Bot token (xoxb-): {result.message}")
         else:
-            print("\n⚠ Slack: Skipped (no token configured)")
+            print("  ⚠ Bot token: Not configured")
 
-        # GitHub health check
-        if github.token:
-            print("\nTesting GitHub API...")
-            result = github.health_check(timeout=10.0)
-            if result.healthy:
-                latency = f" ({result.latency_ms:.0f}ms)" if result.latency_ms else ""
-                print(f"  ✓ GitHub: {result.message}{latency}")
+        # Test app token (xapp-) for Socket Mode
+        if slack.app_token:
+            result = self._test_slack_app_token(slack.app_token)
+            if result["healthy"]:
+                print(f"  ✓ App token (xapp-): Valid for Socket Mode")
             else:
-                print(f"  ✗ GitHub: {result.message}")
+                print(f"  ✗ App token (xapp-): {result['message']}")
         else:
-            print("\n⚠ GitHub: Skipped (no token configured)")
+            print("  ⚠ App token: Not configured (needed for Socket Mode)")
 
-        # JIRA health check
+        # =====================================================================
+        # GitHub Health Checks
+        # =====================================================================
+        print("\n--- GitHub ---")
+
+        def test_github_token(token, name, timeout=10.0):
+            """Test a GitHub token and return result."""
+            if not token:
+                return {"healthy": False, "message": "Not configured", "skipped": True}
+
+            try:
+                start = time.time()
+                req = urllib.request.Request(
+                    "https://api.github.com/user",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                        "User-Agent": "jib-config/1.0",
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    data = json.loads(response.read().decode())
+                    latency = (time.time() - start) * 1000
+                    login = data.get("login", "unknown")
+                    return {
+                        "healthy": True,
+                        "message": f"Authenticated as {login}",
+                        "latency_ms": latency,
+                        "login": login,
+                    }
+            except urllib.error.HTTPError as e:
+                if e.code == 401:
+                    return {"healthy": False, "message": "Invalid or expired"}
+                return {"healthy": False, "message": f"HTTP {e.code}"}
+            except Exception as e:
+                return {"healthy": False, "message": str(e)}
+
+        # Test primary token
+        result = test_github_token(github.token, "Primary")
+        if result.get("skipped"):
+            print("  ⚠ Primary token: Not configured")
+        elif result["healthy"]:
+            latency = f" ({result['latency_ms']:.0f}ms)" if result.get("latency_ms") else ""
+            print(f"  ✓ Primary token: {result['message']}{latency}")
+        else:
+            print(f"  ✗ Primary token: {result['message']}")
+
+        # Test readonly token
+        result = test_github_token(github.readonly_token, "Readonly")
+        if result.get("skipped"):
+            print("  ⚠ Readonly token: Not configured")
+        elif result["healthy"]:
+            latency = f" ({result['latency_ms']:.0f}ms)" if result.get("latency_ms") else ""
+            print(f"  ✓ Readonly token: {result['message']}{latency}")
+        else:
+            print(f"  ✗ Readonly token: {result['message']}")
+
+        # Test incognito token
+        result = test_github_token(github.incognito_token, "Incognito")
+        if result.get("skipped"):
+            print("  ⚠ Incognito token: Not configured")
+        elif result["healthy"]:
+            latency = f" ({result['latency_ms']:.0f}ms)" if result.get("latency_ms") else ""
+            print(f"  ✓ Incognito token: {result['message']}{latency}")
+        else:
+            print(f"  ✗ Incognito token: {result['message']}")
+
+        # =====================================================================
+        # JIRA Health Check
+        # =====================================================================
+        print("\n--- JIRA ---")
+
         if jira.base_url and jira.api_token:
-            print("\nTesting JIRA API...")
             result = jira.health_check(timeout=10.0)
             if result.healthy:
                 latency = f" ({result.latency_ms:.0f}ms)" if result.latency_ms else ""
-                print(f"  ✓ JIRA: {result.message}{latency}")
+                print(f"  ✓ API: {result.message}{latency}")
             else:
-                print(f"  ✗ JIRA: {result.message}")
+                print(f"  ✗ API: {result.message}")
         else:
-            print("\n⚠ JIRA: Skipped (not configured)")
+            missing = []
+            if not jira.base_url:
+                missing.append("JIRA_BASE_URL")
+            if not jira.api_token:
+                missing.append("JIRA_API_TOKEN")
+            print(f"  ⚠ Not configured (missing: {', '.join(missing)})")
 
-        # Confluence health check
+        # =====================================================================
+        # Confluence Health Check
+        # =====================================================================
+        print("\n--- Confluence ---")
+
         if confluence.base_url and confluence.api_token:
-            print("\nTesting Confluence API...")
             result = confluence.health_check(timeout=10.0)
             if result.healthy:
                 latency = f" ({result.latency_ms:.0f}ms)" if result.latency_ms else ""
-                print(f"  ✓ Confluence: {result.message}{latency}")
+                print(f"  ✓ API: {result.message}{latency}")
             else:
-                print(f"  ✗ Confluence: {result.message}")
+                print(f"  ✗ API: {result.message}")
         else:
-            print("\n⚠ Confluence: Skipped (not configured)")
+            missing = []
+            if not confluence.base_url:
+                missing.append("CONFLUENCE_BASE_URL")
+            if not confluence.api_token:
+                missing.append("CONFLUENCE_API_TOKEN")
+            print(f"  ⚠ Not configured (missing: {', '.join(missing)})")
+
+    def _test_slack_app_token(self, app_token: str, timeout: float = 10.0) -> dict:
+        """Test Slack app token for Socket Mode connectivity."""
+        import json
+        import urllib.request
+
+        try:
+            # Use apps.connections.open to verify app token
+            req = urllib.request.Request(
+                "https://slack.com/api/apps.connections.open",
+                headers={
+                    "Authorization": f"Bearer {app_token}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                data = json.loads(response.read().decode())
+                if data.get("ok"):
+                    return {"healthy": True, "message": "Valid"}
+                else:
+                    error = data.get("error", "unknown error")
+                    return {"healthy": False, "message": error}
+        except Exception as e:
+            return {"healthy": False, "message": str(e)}
 
 
 def main():
