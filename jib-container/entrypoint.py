@@ -602,7 +602,9 @@ def setup_claude(config: Config, logger: Logger) -> None:
     # Create settings.json
     # Use baked-in trace-collector from /opt/jib-runtime (not mounted repo)
     # This ensures container uses the version that matches the image
-    trace_collector = Path("/opt/jib-runtime/host-services/analysis/trace-collector/hook_handler.py")
+    trace_collector = Path(
+        "/opt/jib-runtime/host-services/analysis/trace-collector/hook_handler.py"
+    )
     beads_hook = config.claude_dir / "hooks/session-end.sh"
 
     settings = {
