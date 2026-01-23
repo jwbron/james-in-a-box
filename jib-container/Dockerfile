@@ -68,7 +68,7 @@ RUN pip3 install --no-cache-dir \
 RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
     which bd
 
-# Install Node.js 20.x (required for npm packages: claude-code, claude-code-router, gemini-cli)
+# Install Node.js 20.x (required for npm packages: claude-code-router, gemini-cli)
 RUN mkdir -p /usr/share/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
@@ -76,12 +76,24 @@ RUN mkdir -p /usr/share/keyrings && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI globally
-RUN npm install -g @anthropic-ai/claude-code
+# Install Claude Code CLI (native installer - npm method is deprecated)
+# Install to /root first, then the entrypoint handles per-user setup
+# Pin version for reproducible builds; update periodically
+ENV CLAUDE_CODE_VERSION=stable
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION && \
+    # Make claude available system-wide (native installer puts it in ~/.local/bin)
+    ln -sf /root/.local/bin/claude /usr/local/bin/claude
 
 # Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
 # The bundled arm64-linux binary crashes; system ripgrep from apt works correctly
-RUN ln -sf /usr/bin/rg /usr/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-linux/rg
+# Native installer location differs from npm; find and patch dynamically
+RUN CLAUDE_RG=$(find /root/.claude -name "rg" -path "*/ripgrep/*" 2>/dev/null | head -1) && \
+    if [ -n "$CLAUDE_RG" ]; then \
+        ln -sf /usr/bin/rg "$CLAUDE_RG"; \
+        echo "Patched ripgrep at: $CLAUDE_RG"; \
+    else \
+        echo "Warning: Could not find bundled ripgrep to patch"; \
+    fi
 
 # Install claude-code-router for multi-provider support
 # Allows routing to OpenAI, Gemini, DeepSeek, etc. while using Claude Code tooling
@@ -90,7 +102,7 @@ RUN npm install -g @musistudio/claude-code-router
 # Install Gemini CLI for native Google Gemini support
 # Bypasses claude-code-router for direct Gemini access (avoids thought_signature issues)
 # https://github.com/google-gemini/gemini-cli
-RUN npm install -g @anthropic-ai/claude-code @google/gemini-cli || \
+RUN npm install -g @google/gemini-cli || \
     echo "Gemini CLI install may have failed - will be retried at runtime if needed"
 
 # Note: Claude authentication is mounted at runtime from ~/.jib/claude/ on host
