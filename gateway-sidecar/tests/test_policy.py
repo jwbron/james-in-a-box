@@ -518,6 +518,36 @@ class TestConfiguredUser:
         assert result.allowed
         assert "owned by jib" in result.reason.lower()
 
+    def test_incognito_denial_does_not_mention_trusted_users(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Incognito mode denial message should not mention trusted users."""
+        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+
+        # Branch exists with PR by unrelated user
+        mock_github_client.branch_exists.return_value = True
+        mock_github_client.list_prs_for_branch.return_value = [
+            {
+                "number": 999,
+                "author": {"login": "randomuser"},
+                "state": "open",
+                "headRefName": "feature",
+            }
+        ]
+        mock_github_client.get_pr_info.return_value = {
+            "number": 999,
+            "author": {"login": "randomuser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_branch_ownership("owner/repo", "feature", auth_mode="incognito")
+        assert not result.allowed
+        # Incognito mode should only mention jib and incognito user, not trusted users
+        assert "trusted" not in result.reason.lower()
+        assert "jib" in result.reason.lower()
+        assert "configureduser" in result.reason.lower()
+
 
 class TestPolicyResult:
     """Tests for PolicyResult class."""
