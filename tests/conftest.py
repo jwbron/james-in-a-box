@@ -21,7 +21,6 @@ sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "sync" / "context-sync")
 sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis" / "github-watcher"))
 sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis" / "index-generator"))
 sys.path.insert(0, str(PROJECT_ROOT / "jib-container" / "jib-tasks" / "analysis" / "utilities"))
-sys.path.insert(0, str(PROJECT_ROOT / "host-services" / "analysis" / "spec-enricher"))
 sys.path.insert(0, str(PROJECT_ROOT / "shared"))
 sys.path.insert(0, str(PROJECT_ROOT / "config"))
 

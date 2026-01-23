@@ -363,6 +363,17 @@ Check that:
 
 ## Phase 4: Feature Removal
 
+> **Status: COMPLETED** (2026-01-23)
+>
+> The following features were removed:
+> - GitHub Command Handler (#18) - removed `jib-container/jib-tasks/github/command-handler.py`
+> - Spec Enricher CLI (#29) - removed `host-services/analysis/spec-enricher/`
+> - Gemini CLI Integration (#35) - removed `jib-container/llm/gemini/`
+> - Claude Code Router Support (#36) - removed `jib-container/llm/claude/router.py`
+> - Master Setup System (#50) - file did not exist
+>
+> The LLM module was simplified to be Claude-only. FEATURES.md was updated accordingly.
+
 ### 4.0 Testing Strategy
 
 Before any removal:

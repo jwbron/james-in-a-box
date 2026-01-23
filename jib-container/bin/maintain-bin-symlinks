@@ -90,7 +90,6 @@ declare -a SYMLINKS=(
     "docs_index_updater:../jib-tasks/analysis/utilities/docs_index_updater.py"
     "index_generator:../jib-tasks/analysis/utilities/index_generator.py"
     "confluence-processor:../jib-tasks/confluence/confluence-processor.py"
-    "github-command-handler:../jib-tasks/github/command-handler.py"
     "github-comment-responder:../jib-tasks/github/comment-responder.py"
     "github-processor:../jib-tasks/github/github-processor.py"
     "pr-analyzer:../jib-tasks/github/pr-analyzer.py"

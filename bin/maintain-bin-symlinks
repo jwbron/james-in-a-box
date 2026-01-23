@@ -86,7 +86,6 @@ declare -a SYMLINKS=(
     "generate-docs:../host-services/analysis/doc-generator/doc-generator.py"
     "inefficiency-report:../host-services/analysis/inefficiency-detector/weekly_report_generator.py"
     "query-index:../host-services/analysis/index-generator/query-index.py"
-    "spec-enricher:../host-services/analysis/spec-enricher/spec-enricher.py"
 
     # Repository onboarding tools
     "jib-internal-devtools-setup:../host-services/analysis/repo-onboarding/jib-internal-devtools-setup"
@@ -100,7 +99,6 @@ declare -a SYMLINKS=(
     "setup-inefficiency-detector:../host-services/analysis/inefficiency-detector/setup.sh"
     "setup-slack-notifier:../host-services/slack/slack-notifier/setup.sh"
     "setup-slack-receiver:../host-services/slack/slack-receiver/setup.sh"
-    "setup-spec-enricher:../host-services/analysis/spec-enricher/setup.sh"
     "setup-trace-collector:../host-services/analysis/trace-collector/setup.sh"
     "setup-repo-onboarding:../host-services/analysis/repo-onboarding/setup.sh"
     "setup-github-token-refresher:../host-services/utilities/github-token-refresher/setup.sh"

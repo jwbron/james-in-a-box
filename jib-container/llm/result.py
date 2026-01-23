@@ -8,7 +8,7 @@ from typing import Any
 class AgentResult:
     """Result of an agent invocation.
 
-    This is the common return type for all LLM providers (Claude, Gemini, etc.)
+    This is the common return type for Claude agent operations.
 
     Attributes:
         success: True if agent completed successfully

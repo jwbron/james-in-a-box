@@ -1,8 +1,7 @@
 """
 Unified LLM runner for both interactive and programmatic modes.
 
-This module provides a single interface for running LLM agents,
-automatically selecting the appropriate provider based on configuration.
+This module provides a single interface for running LLM agents using Claude.
 
 Usage:
     from llm import run_agent, run_interactive, LLMConfig
@@ -18,7 +17,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from llm.config import LLMConfig, Provider
+from llm.config import LLMConfig
 from llm.result import AgentResult
 
 
@@ -28,29 +27,22 @@ from llm.result import AgentResult
 
 
 def run_interactive(config: LLMConfig | None = None) -> None:
-    """Launch the appropriate LLM CLI in interactive mode.
+    """Launch Claude CLI in interactive mode.
 
     This function does not return - it replaces the current process
-    with the LLM CLI (claude or gemini).
+    with the Claude CLI.
 
     Args:
         config: LLM configuration. If None, uses defaults from environment.
 
     Example:
-        from llm import run_interactive, LLMConfig, Provider
+        from llm import run_interactive
 
         # Use environment defaults
         run_interactive()
-
-        # Force Gemini with specific model
-        run_interactive(LLMConfig(provider=Provider.GOOGLE, model="gemini-2.5-pro"))
     """
     config = config or LLMConfig()
-
-    if config.provider == Provider.GOOGLE:
-        _launch_gemini_interactive(config)
-    else:
-        _launch_claude_interactive(config)
+    _launch_claude_interactive(config)
 
 
 def _launch_claude_interactive(config: LLMConfig) -> None:
@@ -60,51 +52,11 @@ def _launch_claude_interactive(config: LLMConfig) -> None:
     # Set up environment for Claude
     env = os.environ.copy()
 
-    # Ensure router environment is set if using router
-    if os.environ.get("ANTHROPIC_BASE_URL"):
-        env["ANTHROPIC_BASE_URL"] = os.environ["ANTHROPIC_BASE_URL"]
-    if os.environ.get("ANTHROPIC_AUTH_TOKEN"):
-        env["ANTHROPIC_AUTH_TOKEN"] = os.environ["ANTHROPIC_AUTH_TOKEN"]
-
     env.setdefault("DISABLE_TELEMETRY", "1")
     env.setdefault("DISABLE_COST_WARNINGS", "1")
     env.setdefault("NO_PROXY", "127.0.0.1")
 
     print("[llm] Launching Claude Code with Opus 4.5...")
-    os.execvpe(cmd[0], cmd, env)
-
-
-def _launch_gemini_interactive(config: LLMConfig) -> None:
-    """Launch Gemini CLI in interactive mode."""
-    model = config.get_model()
-
-    cmd = ["gemini"]
-
-    # Add model flag
-    if model:
-        cmd.extend(["--model", model])
-
-    # Add sandbox flag (we're already in a container)
-    if not config.sandbox:
-        cmd.append("--sandbox=false")
-
-    # Auto-accept all tool calls (like Claude's --dangerously-skip-permissions)
-    cmd.append("--yolo")
-
-    # Set up environment for Gemini
-    env = os.environ.copy()
-
-    # Ensure API key is set - Gemini CLI will auto-use GEMINI_API_KEY
-    google_key = os.environ.get("GOOGLE_API_KEY", "")
-    if google_key:
-        env["GOOGLE_API_KEY"] = google_key
-        env["GEMINI_API_KEY"] = google_key
-
-    # Disable telemetry in container
-    env["GEMINI_DISABLE_TELEMETRY"] = "1"
-
-    print(f"[llm] Launching Gemini CLI with model: {model}...")
-    print("[llm] Note: If prompted for auth, select 'Use Gemini API Key'")
     os.execvpe(cmd[0], cmd, env)
 
 
@@ -121,9 +73,7 @@ async def run_agent_async(
     timeout: int | None = None,
     on_output: Callable[[str], None] | None = None,
 ) -> AgentResult:
-    """Run agent with the configured LLM provider.
-
-    Automatically selects Claude or Gemini based on config.provider.
+    """Run agent with Claude via the Claude Agent SDK.
 
     Args:
         prompt: The prompt to send to the agent
@@ -148,10 +98,7 @@ async def run_agent_async(
     if timeout is not None:
         config.timeout = timeout
 
-    if config.provider == Provider.GOOGLE:
-        return await _run_gemini_async(prompt, config, on_output)
-    else:
-        return await _run_claude_async(prompt, config, on_output)
+    return await _run_claude_async(prompt, config, on_output)
 
 
 async def _run_claude_async(
@@ -170,26 +117,6 @@ async def _run_claude_async(
     )
 
     return await claude_run(prompt, config=claude_config, on_output=on_output)
-
-
-async def _run_gemini_async(
-    prompt: str,
-    config: LLMConfig,
-    on_output: Callable[[str], None] | None = None,
-) -> AgentResult:
-    """Run Gemini CLI via subprocess."""
-    # Convert to Gemini-specific config
-    from llm.gemini.config import GeminiConfig
-    from llm.gemini.runner import run_agent_async as gemini_run
-
-    gemini_config = GeminiConfig(
-        cwd=config.cwd,
-        timeout=config.timeout,
-        model=config.get_model(),
-        sandbox=config.sandbox,
-    )
-
-    return await gemini_run(prompt, config=gemini_config, on_output=on_output)
 
 
 def run_agent(

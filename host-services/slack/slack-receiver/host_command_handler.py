@@ -637,35 +637,6 @@ Timers:
         self.notify(message, title="📈 Inefficiency Report")
         return CommandResult(success=code == 0, message=message)
 
-    def run_spec_enricher(self, spec_path: str) -> CommandResult:
-        """Run the spec enricher to add documentation links.
-
-        Args:
-            spec_path: Path to the spec file to enrich
-        """
-        self.log(f"Running spec enricher (spec={spec_path})")
-
-        script = self._get_bin_dir() / "spec-enricher"
-        if not script.exists():
-            message = f"❌ Spec enricher not found: {script}"
-            self.notify(message)
-            return CommandResult(success=False, message=message)
-
-        if not spec_path:
-            message = "❌ spec_path is required for spec enricher"
-            self.notify(message)
-            return CommandResult(success=False, message=message)
-
-        code, stdout, stderr = self._run_command([str(script), spec_path], timeout=300)
-
-        if code == 0:
-            message = f"✅ Spec enricher completed\n\n{stdout}"
-        else:
-            message = f"❌ Spec enricher failed\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
-
-        self.notify(message, title="🔗 Spec Enricher")
-        return CommandResult(success=code == 0, message=message)
-
     def _validate_parameters(self, function_name: str, parameters: dict) -> tuple[bool, str, dict]:
         """Validate and sanitize parameters for a function.
 
@@ -707,9 +678,6 @@ Timers:
             "run_feature_analyzer": {
                 "adr_path": {"type": str, "pattern": r"^[\w\-\./]+$", "default": None},
                 "dry_run": {"type": bool, "default": False},
-            },
-            "run_spec_enricher": {
-                "spec_path": {"type": str, "required": True, "pattern": r"^[\w\-\./]+$"},
             },
         }
 
@@ -819,7 +787,6 @@ Timers:
             "run_index_generator": lambda: self.run_index_generator(),
             "run_doc_generator": lambda: self.run_doc_generator(),
             "run_inefficiency_report": lambda: self.run_inefficiency_report(),
-            "run_spec_enricher": lambda: self.run_spec_enricher(parameters.get("spec_path", "")),
             # Help
             "show_help": lambda: self.show_help(),
         }
