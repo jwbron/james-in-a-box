@@ -10,7 +10,7 @@ You run in a sandboxed Docker container. Network: outbound HTTP/HTTPS only. No S
 
 ## Gateway Sidecar
 
-All git/gh operations are routed through the gateway sidecar on the host. The container does NOT have direct access to GitHub tokens - credentials are held by the gateway.
+All git/gh operations are routed through the gateway sidecar (runs as `jib-gateway` container on the jib-network). The container does NOT have direct access to GitHub tokens - credentials are held by the gateway.
 
 **Policy enforcement:**
 - `git push`: Only to branches you own (jib-prefixed or has your open PR)
@@ -23,7 +23,7 @@ Use `git push origin <branch>` (HTTPS). Operations are authenticated by the gate
 
 If push fails:
 - Check `git remote -v` is HTTPS
-- Check gateway sidecar is running: `curl http://host.docker.internal:9847/api/v1/health`
+- Check gateway sidecar is running: `curl http://jib-gateway:9847/api/v1/health`
 - Ensure branch is jib-owned (jib-prefixed or has your open PR)
 
 ## File System
