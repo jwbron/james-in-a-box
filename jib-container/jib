@@ -845,10 +845,82 @@ def create_dockerfile() -> None:
         error("Cannot build without Dockerfile")
 
 
+def get_installed_claude_version() -> str | None:
+    """Get the Claude Code version installed in the current image.
+
+    Returns:
+        Version string (e.g., "2.1.7") or None if not available
+    """
+    if not image_exists():
+        return None
+
+    try:
+        result = subprocess.run(
+            ["docker", "run", "--rm", "--entrypoint", "cat",
+             Config.IMAGE_NAME, "/opt/claude/VERSION"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Version output is like "claude 2.1.7" - extract just the number
+            version_line = result.stdout.strip()
+            parts = version_line.split()
+            return parts[-1] if parts else None
+        return None
+    except Exception:
+        return None
+
+
+def get_latest_claude_version() -> str | None:
+    """Get the latest Claude Code version from npm registry.
+
+    Returns:
+        Version string (e.g., "2.1.17") or None if check fails
+    """
+    import json
+    import urllib.request
+
+    try:
+        url = "https://registry.npmjs.org/@anthropic-ai/claude-code/latest"
+        with urllib.request.urlopen(url, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return data.get("version")
+    except Exception:
+        return None
+
+
+def check_claude_update() -> str | None:
+    """Check if a Claude Code update is available.
+
+    Returns:
+        The new version string if update available, None otherwise
+    """
+    installed = get_installed_claude_version()
+    latest = get_latest_claude_version()
+
+    if not latest:
+        # Can't check, don't force update
+        return None
+
+    if not installed:
+        # No version installed, use latest
+        return latest
+
+    # Compare versions
+    if installed != latest:
+        if not _quiet_mode:
+            info(f"Claude Code update available: {installed} → {latest}")
+        return latest
+
+    return None
+
+
 def build_image() -> bool:
     """Build the Docker image (Docker's cache makes this fast when nothing changed)"""
     # Always sync files to build context - Docker detects changes and rebuilds only what's needed
     create_dockerfile()
+
+    # Check for Claude Code updates
+    claude_version = check_claude_update()
 
     try:
         cmd = [
@@ -860,6 +932,11 @@ def build_image() -> bool:
             "-f", str(Config.DOCKERFILE),
             str(Config.CONFIG_DIR)
         ]
+
+        # Pass Claude version to bust cache if update available
+        if claude_version:
+            cmd.insert(2, f"--build-arg")
+            cmd.insert(3, f"CLAUDE_CODE_VERSION={claude_version}")
 
         # In quiet mode, suppress Docker build output
         if _quiet_mode:

@@ -442,7 +442,8 @@ class TestBuildImage:
 
     @patch("subprocess.run")
     @patch.object(jib, "create_dockerfile")
-    def test_build_image_success(self, mock_create, mock_run, monkeypatch):
+    @patch.object(jib, "check_claude_update", return_value=None)
+    def test_build_image_success(self, mock_update, mock_create, mock_run, monkeypatch):
         """Test successful Docker build."""
         mock_run.return_value = MagicMock(returncode=0)
 
@@ -455,7 +456,8 @@ class TestBuildImage:
 
     @patch("subprocess.run")
     @patch.object(jib, "create_dockerfile")
-    def test_build_image_failure(self, mock_create, mock_run, capsys, monkeypatch):
+    @patch.object(jib, "check_claude_update", return_value=None)
+    def test_build_image_failure(self, mock_update, mock_create, mock_run, capsys, monkeypatch):
         """Test Docker build failure."""
         mock_run.side_effect = subprocess.CalledProcessError(1, "docker build")
         monkeypatch.setenv("USER", "testuser")
