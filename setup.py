@@ -623,6 +623,7 @@ class ConfigManager:
         self.repos_file.write_text(yaml.dump(repos_config, default_flow_style=False))
         self.logger.success(f"Repository config written to {self.repos_file}")
 
+
 class ServiceManager:
     """Manages systemd services."""
 
