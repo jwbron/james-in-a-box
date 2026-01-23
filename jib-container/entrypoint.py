@@ -535,6 +535,36 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
     return True
 
 
+def setup_jib_symlink(config: Config, logger: Logger) -> None:
+    """Create ~/jib symlink to runtime scripts.
+
+    This provides a consistent, short path to jib runtime scripts that:
+    - Points to /opt/jib-runtime/jib-container (baked into Docker image)
+    - Is independent of the mounted ~/repos/james-in-a-box
+    - Matches the container image version
+    """
+    jib_link = config.user_home / "jib"
+    target = Path("/opt/jib-runtime/jib-container")
+
+    # Validate target exists (should always be true if Docker image built correctly)
+    if not target.is_dir():
+        logger.error(f"Runtime directory not found: {target}")
+        logger.error("  This indicates a problem with the Docker image build")
+        return
+
+    if jib_link.is_symlink():
+        jib_link.unlink()
+    elif jib_link.exists():
+        logger.warn("~/jib exists but is not a symlink, skipping")
+        return
+
+    jib_link.symlink_to(target)
+    os.lchown(jib_link, config.runtime_uid, config.runtime_gid)
+
+    logger.success("Runtime symlink created: ~/jib -> /opt/jib-runtime/jib-container")
+    logger.info("  Use ~/jib/ for runtime scripts instead of ~/repos/james-in-a-box/jib-container/")
+
+
 def setup_sharing(config: Config, logger: Logger) -> None:
     """Set up shared directories and symlinks."""
     if not config.sharing_dir.exists():
@@ -659,8 +689,10 @@ def setup_claude(config: Config, logger: Logger) -> None:
                 print(f"    {hook.name}")
 
     # Create settings.json
-    trace_collector = (
-        config.repos_dir / "james-in-a-box/host-services/analysis/trace-collector/hook_handler.py"
+    # Use baked-in trace-collector from /opt/jib-runtime (not mounted repo)
+    # This ensures container uses the version that matches the image
+    trace_collector = Path(
+        "/opt/jib-runtime/host-services/analysis/trace-collector/hook_handler.py"
     )
     beads_hook = config.claude_dir / "hooks/session-end.sh"
 
@@ -985,9 +1017,10 @@ def setup_beads(config: Config, logger: Logger) -> bool:
 
 def generate_docs_indexes(config: Config, logger: Logger) -> None:
     """Generate documentation indexes."""
-    index_generator = (
-        config.repos_dir
-        / "james-in-a-box/host-services/analysis/index-generator/index-generator.py"
+    # Use baked-in index-generator from /opt/jib-runtime (not mounted repo)
+    # This ensures container uses the version that matches the image
+    index_generator = Path(
+        "/opt/jib-runtime/host-services/analysis/index-generator/index-generator.py"
     )
     jib_dir = config.repos_dir / "james-in-a-box"
 
@@ -1164,6 +1197,9 @@ def main() -> None:
 
     with _startup_timer.phase("setup_environment"):
         setup_environment(config)
+
+    with _startup_timer.phase("setup_jib_symlink"):
+        setup_jib_symlink(config, logger)
 
     with _startup_timer.phase("setup_git"):
         setup_git(config, logger)
