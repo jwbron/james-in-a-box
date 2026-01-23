@@ -18,6 +18,9 @@ COPY gateway-sidecar/*.py ./
 COPY shared/jib_logging/ ./jib_logging/
 COPY shared/jib_config/ ./jib_config/
 
+# Copy config module (repo_config needed by github_client for incognito mode)
+COPY config/repo_config.py /config/
+
 # Install dependencies
 RUN pip install --no-cache-dir flask waitress pyyaml requests
 
