@@ -39,6 +39,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+
 # Try to import yaml
 try:
     import yaml
@@ -50,7 +51,7 @@ except ImportError:
 class ConfigMigrator:
     """Handles migration of jib configuration files."""
 
-    def __init__(self, config_dir: Path = None):
+    def __init__(self, config_dir: Path | None = None):
         self.config_dir = config_dir or Path.home() / ".config" / "jib"
         self.config_yaml = self.config_dir / "config.yaml"
         self.secrets_env = self.config_dir / "secrets.env"
@@ -253,7 +254,7 @@ class ConfigMigrator:
         sys.path.insert(0, str(repo_root / "shared"))
 
         try:
-            from jib_config import SlackConfig, GitHubConfig, GatewayConfig
+            from jib_config import GatewayConfig, GitHubConfig, SlackConfig
 
             errors = []
 
@@ -261,7 +262,7 @@ class ConfigMigrator:
             slack = SlackConfig.from_env()
             validation = slack.validate()
             if validation.is_valid:
-                print(f"✓ SlackConfig loads successfully")
+                print("✓ SlackConfig loads successfully")
                 print(f"    channel: {slack.channel or '(not set)'}")
                 print(f"    bot_token: {'set' if slack.bot_token else 'NOT SET'}")
             else:
@@ -272,31 +273,35 @@ class ConfigMigrator:
             github = GitHubConfig.from_env()
             validation = github.validate()
             if validation.is_valid:
-                print(f"✓ GitHubConfig loads successfully")
-                print(f"    token: {'set' if github.token else 'NOT SET'} (source: {github._token_source or 'none'})")
+                print("✓ GitHubConfig loads successfully")
+                print(
+                    f"    token: {'set' if github.token else 'NOT SET'} (source: {github._token_source or 'none'})"
+                )
+            # GitHub might not be configured, that's OK
+            elif github.token:
+                errors.extend(validation.errors)
+                print(f"✗ GitHubConfig validation errors: {validation.errors}")
             else:
-                # GitHub might not be configured, that's OK
-                if github.token:
-                    errors.extend(validation.errors)
-                    print(f"✗ GitHubConfig validation errors: {validation.errors}")
-                else:
-                    print(f"⚠ GitHubConfig: No token configured")
+                print("⚠ GitHubConfig: No token configured")
 
             # Test GatewayConfig
             gateway = GatewayConfig.from_env()
-            print(f"✓ GatewayConfig loads successfully")
-            print(f"    secret: {'set' if gateway.secret else 'NOT SET'} (source: {gateway._secret_source or 'none'})")
+            print("✓ GatewayConfig loads successfully")
+            print(
+                f"    secret: {'set' if gateway.secret else 'NOT SET'} (source: {gateway._secret_source or 'none'})"
+            )
 
             if errors:
-                print(f"\n⚠ Some validation errors occurred. Check your configuration.")
+                print("\n⚠ Some validation errors occurred. Check your configuration.")
                 return False
             else:
-                print(f"\n✓ All configurations loaded and validated successfully!")
+                print("\n✓ All configurations loaded and validated successfully!")
                 return True
 
         except Exception as e:
             print(f"\n✗ Verification failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
