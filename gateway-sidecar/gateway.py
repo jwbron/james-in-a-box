@@ -71,7 +71,7 @@ except ImportError:
 _config_path = Path(__file__).parent.parent / "config"
 if _config_path.exists() and str(_config_path) not in sys.path:
     sys.path.insert(0, str(_config_path))
-from repo_config import get_auth_mode, get_incognito_config, is_incognito_repo
+from repo_config import get_auth_mode, get_incognito_config
 
 
 logger = get_logger("gateway-sidecar")
