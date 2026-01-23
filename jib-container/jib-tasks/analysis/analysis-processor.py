@@ -625,7 +625,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
     # This module is in the same directory as this file
     try:
         from feature_analyzer import RepoAnalyzer, WeeklyAnalyzer
-    except ImportError as e:
+    except ModuleNotFoundError as e:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
     try:
@@ -1038,7 +1038,7 @@ def handle_full_repo_analysis(context: dict) -> int:
     # This module is in the same directory as this file
     try:
         from feature_analyzer import RepoAnalyzer
-    except ImportError as e:
+    except ModuleNotFoundError as e:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
     try:
@@ -1572,7 +1572,7 @@ def handle_repo_onboarding(context: dict) -> int:
                 discoverer.save_results()
                 print(f"  ✓ Found {len(discoverer.discovered_docs)} relevant docs")
                 result_data["phases_completed"].append("confluence_discovery")
-            except ImportError as e:
+            except ModuleNotFoundError as e:
                 print(f"  ⚠ Confluence discoverer not available: {e}")
             except Exception as e:
                 print(f"  ⚠ Confluence discovery failed: {e}")
@@ -1602,7 +1602,7 @@ def handle_repo_onboarding(context: dict) -> int:
                 result_data["features_detected"] = len(analysis_result.features_detected)
                 print(f"  ✓ Detected {len(analysis_result.features_detected)} features")
                 result_data["phases_completed"].append("feature_analysis")
-            except ImportError as e:
+            except ModuleNotFoundError as e:
                 print(f"  ⚠ Feature analyzer not available: {e}")
             except Exception as e:
                 print(f"  ⚠ Feature analysis failed: {e}")
@@ -1627,7 +1627,7 @@ def handle_repo_onboarding(context: dict) -> int:
             result_data["indexes_generated"] = indexes_generated
             print(f"  ✓ Generated {len(indexes_generated)} indexes: {', '.join(indexes_generated)}")
             result_data["phases_completed"].append("index_generation")
-        except ImportError as e:
+        except ModuleNotFoundError as e:
             print(f"  ⚠ Index generator not available: {e}")
         except Exception as e:
             print(f"  ⚠ Index generation failed: {e}")
@@ -1651,7 +1651,7 @@ def handle_repo_onboarding(context: dict) -> int:
             updater.run()
             print("  ✓ Updated docs/index.md")
             result_data["phases_completed"].append("docs_index_update")
-        except ImportError as e:
+        except ModuleNotFoundError as e:
             print(f"  ⚠ Docs index updater not available: {e}")
         except Exception as e:
             print(f"  ⚠ Docs index update failed: {e}")

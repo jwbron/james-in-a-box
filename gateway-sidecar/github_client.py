@@ -22,6 +22,12 @@ if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
 
+# Import repo_config for incognito mode support
+_config_path = Path(__file__).parent.parent / "config"
+if _config_path.exists() and str(_config_path) not in sys.path:
+    sys.path.insert(0, str(_config_path))
+from repo_config import get_incognito_config
+
 
 logger = get_logger("gateway-sidecar.github-client")
 
@@ -198,19 +204,8 @@ class GitHubClient:
             Tuple of (is_valid, message)
         """
         # Get configured incognito user
-        try:
-            import sys
-            from pathlib import Path
-
-            _config_path = Path(__file__).parent.parent / "config"
-            if _config_path.exists() and str(_config_path) not in sys.path:
-                sys.path.insert(0, str(_config_path))
-            from repo_config import get_incognito_config
-
-            config = get_incognito_config()
-            configured_user = config.get("github_user", "").strip()
-        except ImportError:
-            return False, "Could not load incognito config from repo_config"
+        config = get_incognito_config()
+        configured_user = config.get("github_user", "").strip()
 
         if not configured_user:
             # No incognito user configured - that's fine, incognito mode just won't be used

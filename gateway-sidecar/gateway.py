@@ -70,18 +70,8 @@ except ImportError:
 _config_path = Path(__file__).parent.parent / "config"
 if _config_path.exists() and str(_config_path) not in sys.path:
     sys.path.insert(0, str(_config_path))
-try:
-    from repo_config import get_auth_mode, get_incognito_config, is_incognito_repo
-except ImportError:
-    # Fallback: incognito mode disabled if config not available
-    def get_auth_mode(repo: str) -> str:
-        return "bot"
 
-    def get_incognito_config() -> dict[str, str]:
-        return {"github_user": "", "git_name": "", "git_email": ""}
-
-    def is_incognito_repo(repo: str) -> bool:
-        return False
+from repo_config import get_auth_mode, get_incognito_config, is_incognito_repo
 
 
 logger = get_logger("gateway-sidecar")
