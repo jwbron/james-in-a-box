@@ -541,7 +541,9 @@ class TestConfiguredUser:
             "headRefName": "feature",
         }
 
-        result = policy_engine.check_branch_ownership("owner/repo", "feature", auth_mode="incognito")
+        result = policy_engine.check_branch_ownership(
+            "owner/repo", "feature", auth_mode="incognito"
+        )
         assert not result.allowed
         # Incognito mode should only mention jib and incognito user, not trusted users
         assert "trusted" not in result.reason.lower()
