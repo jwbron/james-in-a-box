@@ -5,6 +5,7 @@ List all available Confluence spaces.
 
 import argparse
 import base64
+from urllib.parse import parse_qs, urlparse
 
 import requests
 from connectors.confluence.config import ConfluenceConfig
@@ -40,9 +41,12 @@ def list_all_spaces(space_type: str | None = None, show_personal: bool = True):
     all_spaces = []
     cursor = None
     limit = 100  # Max per page
+    max_pages = 100  # Safety limit to prevent infinite loops
+    page_count = 0
 
     try:
-        while True:
+        while page_count < max_pages:
+            page_count += 1
             url = f"{config.BASE_URL}/api/v2/spaces"
             params = {"limit": limit}
 
@@ -63,12 +67,15 @@ def list_all_spaces(space_type: str | None = None, show_personal: bool = True):
             # Check for next page using cursor-based pagination
             if "_links" in data and "next" in data["_links"]:
                 next_url = data["_links"]["next"]
-                if "cursor=" in next_url:
-                    cursor = next_url.split("cursor=")[1].split("&")[0]
-                else:
+                parsed = urlparse(next_url)
+                cursor = parse_qs(parsed.query).get("cursor", [None])[0]
+                if not cursor:
                     break
             else:
                 break
+
+        if page_count >= max_pages:
+            print(f"Warning: Hit pagination limit of {max_pages} pages")
 
         # Filter out personal spaces if requested
         if not show_personal and not space_type:
@@ -117,7 +124,7 @@ def list_all_spaces(space_type: str | None = None, show_personal: bool = True):
             if len(global_spaces) > 5:
                 print(f"  (showing first 5 of {len(global_spaces)} global spaces)")
 
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"Error fetching spaces: {e}")
 
 
