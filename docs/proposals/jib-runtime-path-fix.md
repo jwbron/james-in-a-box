@@ -1,6 +1,6 @@
 # Proposal: Fix jib Runtime Path References
 
-**Status**: Proposed
+**Status**: Implemented
 **Author**: jib
 **Date**: 2026-01-23
 
