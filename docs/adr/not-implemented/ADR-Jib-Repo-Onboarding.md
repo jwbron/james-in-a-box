@@ -137,10 +137,10 @@ The `jib-internal-devtools-setup` script implements this workflow:
 
 ```bash
 # Full onboarding (includes Confluence discovery)
-jib-internal-devtools-setup --repo ~/khan/webapp
+jib-internal-devtools-setup --repo ~/repos/webapp
 
 # Skip Confluence discovery for external/public repos
-jib-internal-devtools-setup --repo ~/khan/public-repo --skip-confluence
+jib-internal-devtools-setup --repo ~/repos/public-repo --skip-confluence
 ```
 
 The script orchestrates:
@@ -251,8 +251,8 @@ The `jib-internal-devtools-setup` script orchestrates the complete workflow:
 # jib-internal-devtools-setup - Full repository onboarding
 #
 # Usage:
-#   jib-internal-devtools-setup --repo ~/khan/webapp
-#   jib-internal-devtools-setup --repo ~/khan/public-repo --skip-confluence
+#   jib-internal-devtools-setup --repo ~/repos/webapp
+#   jib-internal-devtools-setup --repo ~/repos/public-repo --skip-confluence
 
 REPO_PATH="$1"
 SKIP_CONFLUENCE="${2:-false}"
@@ -329,8 +329,8 @@ The index generator (`index-generator.py`) from james-in-a-box will be:
 ```bash
 # Generate indexes for a target repo
 python3 ~/tools/index-generator/index-generator.py \
-    --project ~/khan/webapp \
-    --output ~/khan/webapp/docs/generated
+    --project ~/repos/webapp \
+    --output ~/repos/webapp/docs/generated
 ```
 
 ### 3. Generated Artifacts
@@ -557,7 +557,7 @@ Scans the entire codebase to discover and catalog features:
 ```bash
 # Analyze repository and generate FEATURES.md
 feature-analyzer full-repo \
-    --repo-root ~/khan/target-repo \
+    --repo-root ~/repos/target-repo \
     --workers 5 \
     --no-pr
 ```
@@ -583,7 +583,7 @@ Generates detailed documentation for each feature category:
 ```bash
 # Generate docs/features/*.md from FEATURES.md
 feature-analyzer generate-feature-docs \
-    --repo-root ~/khan/target-repo
+    --repo-root ~/repos/target-repo
 ```
 
 **Output:** `docs/features/` directory with:
@@ -600,7 +600,7 @@ For ongoing maintenance, analyzes recent commits to detect new features:
 # Detect new features from past 7 days
 feature-analyzer weekly-analyze \
     --days 7 \
-    --repo-root ~/khan/target-repo
+    --repo-root ~/repos/target-repo
 ```
 
 ### Why Feature Discovery Matters for LLM Onboarding
@@ -729,8 +729,8 @@ For jib containers, index regeneration is integrated into the startup flow:
 ```bash
 # On container start, jib auto-regenerates indexes for the target repo
 python3 ~/tools/index-generator/index-generator.py \
-    --project ~/khan/target-repo \
-    --output ~/khan/target-repo/docs/generated
+    --project ~/repos/target-repo \
+    --output ~/repos/target-repo/docs/generated
 ```
 
 This ensures jib always has fresh indexes without relying on git-tracked files.

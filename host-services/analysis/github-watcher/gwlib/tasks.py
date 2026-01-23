@@ -55,7 +55,7 @@ def invoke_jib(task_type: str, context: dict) -> bool:
     context_json = json.dumps(context)
 
     processor_path = (
-        "/home/jwies/khan/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
+        "/home/jwies/repos/james-in-a-box/jib-container/jib-tasks/github/github-processor.py"
     )
     cmd = [
         "jib",

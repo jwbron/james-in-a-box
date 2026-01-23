@@ -59,7 +59,7 @@ Two-way Slack communication with Claude.
 ### 1. Run Main Setup
 
 ```bash
-cd ~/khan/james-in-a-box
+cd ~/repos/james-in-a-box
 ./setup.sh
 ```
 

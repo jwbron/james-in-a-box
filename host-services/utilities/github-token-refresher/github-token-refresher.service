@@ -1,17 +1,17 @@
 [Unit]
 Description=GitHub Token Refresher - Keep GitHub App tokens fresh for jib containers
-Documentation=file://%h/khan/james-in-a-box/host-services/utilities/github-token-refresher/README.md
+Documentation=file://%h/repos/james-in-a-box/host-services/utilities/github-token-refresher/README.md
 After=network-online.target
 Wants=network-online.target
 OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=%h/khan/james-in-a-box
+WorkingDirectory=%h/repos/james-in-a-box
 
 # Use the shared virtual environment
 # --once flag runs a single refresh cycle and exits (for timer-based execution)
-ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/utilities/github-token-refresher/github-token-refresher.py --once
+ExecStart=%h/repos/james-in-a-box/host-services/.venv/bin/python %h/repos/james-in-a-box/host-services/utilities/github-token-refresher/github-token-refresher.py --once
 
 # Logging
 StandardOutput=journal

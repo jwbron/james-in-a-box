@@ -1073,7 +1073,7 @@ Only 3 actual command files exist (beads-status.md, beads-sync.md, show-metrics.
 
 **Files:**
 - `jib-container/README.md` (documentation)
-- Directory structure: `~/sharing/`, `~/context-sync/`, `~/khan/`
+- Directory structure: `~/sharing/`, `~/context-sync/`, `~/repos/`
 
 ### Findings
 

@@ -92,7 +92,7 @@ Claude provides:
 
 ### Fix Mode (`--fix`)
 
-If the repo is available in `~/khan/`:
+If the repo is available in `~/repos/`:
 1. Checks out the PR branch
 2. Makes necessary changes using Claude's tools
 3. Commits with descriptive message
@@ -154,6 +154,6 @@ Install GitHub CLI: https://cli.github.com/
 - Check the context JSON manually
 
 ### Changes not pushed
-- Verify the repo exists in `~/khan/`
+- Verify the repo exists in `~/repos/`
 - Check write access in `config/repositories.yaml`
 - Ensure the PR is still open

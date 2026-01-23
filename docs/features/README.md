@@ -33,7 +33,7 @@ These documents are maintained by the Feature Analyzer:
 feature-analyzer generate-feature-docs
 
 # Update after changes
-feature-analyzer full-repo --repo-root ~/khan/james-in-a-box
+feature-analyzer full-repo --repo-root ~/repos/james-in-a-box
 ```
 
 ## Related Documentation

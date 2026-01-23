@@ -14,7 +14,7 @@ See the main [README.md](../../README.md) for:
 
 **Start a Session:**
 ```bash
-cd ~/khan/james-in-a-box
+cd ~/repos/james-in-a-box
 bin/jib
 ```
 
@@ -52,7 +52,7 @@ bd --allow-stale list                         # All tasks
 
 | Inside Container | Purpose |
 |-----------------|---------|
-| `~/khan/` | Code workspace (git worktree) |
+| `~/repos/` | Code workspace (git worktree) |
 | `~/context-sync/` | Confluence/JIRA docs (read-only) |
 | `~/sharing/incoming/` | Tasks from Slack |
 | `~/sharing/notifications/` | Outgoing notifications |

@@ -86,7 +86,7 @@ def get_jib_path() -> Path:
     """Get the path to the jib executable.
 
     First checks if 'jib' is available in PATH (consistent with other host services),
-    then falls back to the standard location in ~/khan/james-in-a-box/bin/jib.
+    then falls back to the standard location in ~/repos/james-in-a-box/bin/jib.
     """
     # Check PATH first for consistency with other host services
     jib_in_path = shutil.which("jib")
@@ -101,7 +101,7 @@ def host_to_container_path(host_path: str | Path) -> str:
     """Convert a host path to the equivalent container path.
 
     Host paths like ~/.jib-sharing/... become ~/sharing/... in the container.
-    Host paths like ~/khan/... remain the same (mounted at same location).
+    Host paths like ~/repos/... remain the same (mounted at same location).
 
     Args:
         host_path: Path on the host system
@@ -180,8 +180,8 @@ def jib_exec(
         # Absolute path inside container
         container_processor = processor
     else:
-        # Legacy: relative path from ~/khan/james-in-a-box/
-        container_processor = f"/home/{username}/khan/james-in-a-box/{processor}"
+        # Legacy: relative path from ~/repos/james-in-a-box/
+        container_processor = f"/home/{username}/repos/james-in-a-box/{processor}"
 
     # Serialize context to JSON
     context_json = json.dumps(context)

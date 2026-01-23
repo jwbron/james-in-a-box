@@ -9,7 +9,7 @@ Monitors `~/.jib-sharing/notifications/` and sends Slack DMs when files are crea
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/slack/slack-notifier
+cd ~/repos/james-in-a-box/host-services/slack/slack-notifier
 ./setup.sh
 ```
 

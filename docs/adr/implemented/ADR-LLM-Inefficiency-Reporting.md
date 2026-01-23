@@ -248,7 +248,7 @@ All LLM interactions are captured in a structured trace format:
     "tool": "Grep",
     "parameters": {
       "pattern": "AuthHandler",
-      "path": "/home/jwies/khan/webapp"
+      "path": "/home/jwies/repos/webapp"
     },
     "result": {
       "status": "success",

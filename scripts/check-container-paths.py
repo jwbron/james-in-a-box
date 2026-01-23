@@ -67,7 +67,7 @@ class PathPatternVisitor(ast.NodeVisitor):
         return f"noqa: {code}" in line or "noqa" in line
 
     def _is_safe_khan_subdir(self, node: ast.expr) -> bool:
-        """Check if the node represents a safe subdirectory under ~/khan/."""
+        """Check if the node represents a safe subdirectory under ~/repos/."""
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value in SAFE_SUBDIRECTORIES
         return False

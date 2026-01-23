@@ -40,7 +40,7 @@ Each container gets a unique ID based on timestamp and process ID.
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/utilities/worktree-watcher
+cd ~/repos/james-in-a-box/host-services/utilities/worktree-watcher
 ./setup.sh
 ```
 
@@ -107,7 +107,7 @@ docker stop $(docker ps -q --filter "name=jib-")
 systemctl --user start worktree-watcher.service
 
 # Or run script directly
-~/khan/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
+~/repos/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
 ```
 
 ## Troubleshooting
@@ -129,7 +129,7 @@ systemctl --user start worktree-watcher.timer
 
 Ensure script is executable:
 ```bash
-chmod +x ~/khan/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
+chmod +x ~/repos/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
 ```
 
 ### View cleanup history
@@ -145,4 +145,4 @@ This component works with:
 - **Worktree Watcher**: Handles cleanup for crashed/killed containers
 - **Docker containers**: Each container gets isolated workspace
 
-Together, they ensure your host repositories (`~/khan/webapp`, etc.) stay clean while containers can work independently.
+Together, they ensure your host repositories (`~/repos/webapp`, etc.) stay clean while containers can work independently.

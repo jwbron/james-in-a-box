@@ -9,7 +9,7 @@ Use the jib monitoring infrastructure to show:
 Steps:
 1. Run the monitoring report generator:
    ```bash
-   python3 ~/khan/james-in-a-box/lib/python/jib_monitor.py --days 7
+   python3 ~/repos/james-in-a-box/lib/python/jib_monitor.py --days 7
    ```
 
 2. Present the report in a clean, readable format

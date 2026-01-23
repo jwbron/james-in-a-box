@@ -14,7 +14,7 @@ Usage in ~/.claude/settings.json:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
+            "command": "python3 ~/repos/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py post-tool-use"
           }
         ]
       }
@@ -24,7 +24,7 @@ Usage in ~/.claude/settings.json:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/khan/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
+            "command": "python3 ~/repos/james-in-a-box/host-services/analysis/trace-collector/hook_handler.py session-end"
           }
         ]
       }

@@ -171,13 +171,13 @@ Use `jib-internal-devtools-setup` for complete onboarding:
 
 ```bash
 # Full onboarding (all phases)
-jib-internal-devtools-setup --repo ~/khan/webapp
+jib-internal-devtools-setup --repo ~/repos/webapp
 
 # Skip Confluence for public repos
-jib-internal-devtools-setup --repo ~/khan/public-lib --skip-confluence --public-repo
+jib-internal-devtools-setup --repo ~/repos/public-lib --skip-confluence --public-repo
 
 # Preview without making changes
-jib-internal-devtools-setup --repo ~/khan/webapp --dry-run
+jib-internal-devtools-setup --repo ~/repos/webapp --dry-run
 ```
 
 **Phases executed:**
@@ -195,7 +195,7 @@ For refreshing local indexes after pulling changes:
 jib-regenerate-indexes
 
 # Specific repo
-jib-regenerate-indexes ~/khan/webapp
+jib-regenerate-indexes ~/repos/webapp
 ```
 
 ### 3. Generated Artifacts
@@ -225,8 +225,8 @@ jib-regenerate-indexes ~/khan/webapp
 Copy the template to enable drift detection:
 
 ```bash
-cp ~/khan/james-in-a-box/host-services/analysis/repo-onboarding/templates/check-feature-docs.yml \
-   ~/khan/target-repo/.github/workflows/
+cp ~/repos/james-in-a-box/host-services/analysis/repo-onboarding/templates/check-feature-docs.yml \
+   ~/repos/target-repo/.github/workflows/
 ```
 
 ## Onboarding Workflow
@@ -235,13 +235,13 @@ cp ~/khan/james-in-a-box/host-services/analysis/repo-onboarding/templates/check-
 
 ```bash
 # 1. Install tools (one-time)
-~/khan/james-in-a-box/host-services/analysis/repo-onboarding/setup.sh
+~/repos/james-in-a-box/host-services/analysis/repo-onboarding/setup.sh
 
 # 2. Onboard a repository
-jib-internal-devtools-setup --repo ~/khan/target-repo
+jib-internal-devtools-setup --repo ~/repos/target-repo
 
 # 3. After pulling changes, refresh indexes
-jib-regenerate-indexes ~/khan/target-repo
+jib-regenerate-indexes ~/repos/target-repo
 ```
 
 ### Human Review Checklist

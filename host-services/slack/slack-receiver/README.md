@@ -9,7 +9,7 @@ Receives incoming Slack messages (DMs) and writes them to `~/.jib-sharing/incomi
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/slack/slack-receiver
+cd ~/repos/james-in-a-box/host-services/slack/slack-receiver
 ./setup.sh
 ```
 

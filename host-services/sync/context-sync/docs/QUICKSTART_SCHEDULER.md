@@ -5,7 +5,7 @@
 ### 1. Enable the Scheduler
 
 ```bash
-cd ~/khan/confluence-cursor-sync
+cd ~/repos/confluence-cursor-sync
 ./manage_scheduler.sh enable
 ```
 

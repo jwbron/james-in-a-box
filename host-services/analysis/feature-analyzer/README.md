@@ -103,7 +103,7 @@ Phase 7 adds the ability to generate detailed feature category documentation in 
 
 ```bash
 # From host machine
-cd ~/khan/james-in-a-box/host-services/analysis/feature-analyzer
+cd ~/repos/james-in-a-box/host-services/analysis/feature-analyzer
 ./setup.sh
 ```
 
@@ -333,7 +333,7 @@ Current implemented ADRs: 3
 $ adr-watcher watch
 
 ADR Watcher starting at 2025-12-01T00:15:00+00:00
-Checking: /home/user/khan/james-in-a-box/docs/adr/implemented
+Checking: /home/user/repos/james-in-a-box/docs/adr/implemented
 Last check: 2025-12-01T00:10:00+00:00
 
 Found 1 new implemented ADR(s):

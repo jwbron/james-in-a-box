@@ -1,16 +1,16 @@
 [Unit]
 Description=Slack Notifier - Monitor Claude sandbox and send Slack notifications
-Documentation=file://%h/khan/james-in-a-box/host-services/slack/slack-notifier/README.md
+Documentation=file://%h/repos/james-in-a-box/host-services/slack/slack-notifier/README.md
 After=network-online.target
 Wants=network-online.target
 OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=simple
-WorkingDirectory=%h/khan/james-in-a-box
+WorkingDirectory=%h/repos/james-in-a-box
 # Configuration loaded from ~/.config/jib-notifier/config.json
 # Uses shared virtual environment installed by setup.sh via uv
-ExecStart=%h/khan/james-in-a-box/host-services/.venv/bin/python %h/khan/james-in-a-box/host-services/slack/slack-notifier/slack-notifier.py
+ExecStart=%h/repos/james-in-a-box/host-services/.venv/bin/python %h/repos/james-in-a-box/host-services/slack/slack-notifier/slack-notifier.py
 
 # Restart on failure
 Restart=on-failure

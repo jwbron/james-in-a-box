@@ -41,7 +41,7 @@ def _get_config_path() -> Path:
     Search order:
     1. Environment variable JIB_REPO_CONFIG (explicit override)
     2. Host config: ~/.config/jib/repositories.yaml (preferred location)
-    3. Container mount: ~/khan/james-in-a-box/config/repositories.yaml
+    3. Container mount: ~/repos/james-in-a-box/config/repositories.yaml
     """
     # Try environment variable first (allows explicit override)
     env_path = os.environ.get("JIB_REPO_CONFIG")

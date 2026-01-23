@@ -43,7 +43,7 @@ jib Container (read-only mount)
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/sync/context-sync
+cd ~/repos/james-in-a-box/host-services/sync/context-sync
 ./setup.sh
 ```
 

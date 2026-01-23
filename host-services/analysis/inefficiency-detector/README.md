@@ -20,7 +20,7 @@ The inefficiency detector analyzes structured traces (from Phase 1b) to identify
 ### Analyze a Single Session
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/analysis/inefficiency-detector
+cd ~/repos/james-in-a-box/host-services/analysis/inefficiency-detector
 python inefficiency_detector.py analyze <session_id>
 ```
 

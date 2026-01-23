@@ -15,10 +15,10 @@ When Jib works on a repository, it needs to understand that repository's structu
 ./setup.sh
 
 # Onboard a repository
-jib-internal-devtools-setup --repo ~/khan/webapp
+jib-internal-devtools-setup --repo ~/repos/webapp
 
 # Or just regenerate indexes (quick)
-jib-regenerate-indexes ~/khan/webapp
+jib-regenerate-indexes ~/repos/webapp
 ```
 
 ## Tools
@@ -34,13 +34,13 @@ Full repository onboarding orchestration script. Runs all phases:
 
 ```bash
 # Full onboarding
-jib-internal-devtools-setup --repo ~/khan/webapp
+jib-internal-devtools-setup --repo ~/repos/webapp
 
 # Skip Confluence for public repos
-jib-internal-devtools-setup --repo ~/khan/public-lib --skip-confluence --public-repo
+jib-internal-devtools-setup --repo ~/repos/public-lib --skip-confluence --public-repo
 
 # Preview changes
-jib-internal-devtools-setup --repo ~/khan/webapp --dry-run
+jib-internal-devtools-setup --repo ~/repos/webapp --dry-run
 ```
 
 ### jib-regenerate-indexes
@@ -52,7 +52,7 @@ Quick regeneration of local codebase indexes. Run after pulling changes to keep 
 jib-regenerate-indexes
 
 # Regenerate for specific repo
-jib-regenerate-indexes ~/khan/webapp
+jib-regenerate-indexes ~/repos/webapp
 ```
 
 ## Generated Artifacts
@@ -71,7 +71,7 @@ jib-regenerate-indexes ~/khan/webapp
 Copy `templates/check-feature-docs.yml` to `.github/workflows/` to enable feature documentation drift detection:
 
 ```bash
-cp templates/check-feature-docs.yml ~/khan/webapp/.github/workflows/
+cp templates/check-feature-docs.yml ~/repos/webapp/.github/workflows/
 ```
 
 ## Architecture

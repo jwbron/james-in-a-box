@@ -51,7 +51,7 @@ cleanup_orphaned_worktrees() {
             fi
 
             repo_name=$(basename "$worktree")
-            original_repo="$HOME/khan/$repo_name"
+            original_repo="$HOME/repos/$repo_name"
 
             if [ -d "$original_repo/.git" ]; then
                 log "  Removing worktree: $repo_name"
@@ -117,7 +117,7 @@ cleanup_orphaned_branches() {
     local total_branches_deleted=0
     local total_branches_skipped=0
 
-    # Iterate through all repos in ~/khan/
+    # Iterate through all repos in ~/repos/
     for repo in "$HOME/khan"/*; do
         if [ ! -d "$repo/.git" ]; then
             continue

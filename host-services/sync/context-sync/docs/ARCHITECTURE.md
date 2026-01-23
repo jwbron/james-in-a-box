@@ -60,7 +60,7 @@ Each connector is a self-contained module that:
 
 ### 2. Separation of Code and Data
 
-- **Code location**: `/home/jwies/khan/confluence-cursor-sync/`
+- **Code location**: `/home/jwies/repos/confluence-cursor-sync/`
   - All connector implementations
   - Configuration management
   - Orchestration scripts
