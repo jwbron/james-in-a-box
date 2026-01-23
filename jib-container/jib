@@ -235,7 +235,6 @@ def get_llm_provider() -> str:
 class Config:
     """Configuration paths and constants"""
     CONFIG_DIR = Path.home() / ".jib"  # Docker staging directory
-    CONFIG_FILE = CONFIG_DIR / "mounts.conf"
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
     USER_CONFIG_DIR = Path.home() / ".config" / "jib"  # User config (secrets, preferences)
     REPOS_CONFIG_FILE = USER_CONFIG_DIR / "repositories.yaml"
@@ -1947,9 +1946,6 @@ def setup() -> bool:
         mounts.append(f"{mount_path}:{mode},z")
         print(f"Added: {mount_path} ({mode}, SELinux relabeled)")
 
-    # Save configuration
-    Config.CONFIG_FILE.write_text("\n".join(mounts))
-
     print()
     info("Summary of mounted directories:")
     for mount in mounts:
@@ -1976,6 +1972,28 @@ def setup() -> bool:
     return True
 
 
+def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
+    """Add standard mounts (sharing, context-sync) to mount_args list.
+
+    These mounts are always added dynamically rather than relying on config files,
+    ensuring they're always available even if setup hasn't been run recently.
+    """
+    # Mount sharing directory (beads, notifications, incoming tasks, etc.)
+    if Config.SHARING_DIR.exists():
+        sharing_container_path = f"/home/{os.environ['USER']}/sharing"
+        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
+        if not quiet:
+            print(f"  • ~/sharing/ (beads, notifications, tasks)")
+
+    # Mount context-sync directory if it exists (Confluence, JIRA docs)
+    context_sync_dir = Path.home() / "context-sync"
+    if context_sync_dir.exists():
+        context_sync_container = f"/home/{os.environ['USER']}/context-sync"
+        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
+        if not quiet:
+            print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
+
+
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     # Check if image exists
@@ -1987,10 +2005,10 @@ def run_claude() -> bool:
             if not setup():
                 return False
 
-    # Load mount configuration
+    # Check repository configuration exists
     with _host_timer.phase("check_config"):
-        if not Config.CONFIG_FILE.exists():
-            info("Configuration not found. Running initial setup...")
+        if not Config.REPOS_CONFIG_FILE.exists():
+            info("Repository configuration not found. Running initial setup...")
             if not setup():
                 return False
 
@@ -2065,51 +2083,11 @@ def run_claude() -> bool:
 
     atexit.register(cleanup_on_exit)
 
-    # Parse mount configuration (manual timing due to complex conditional logic)
+    # Build mount configuration dynamically (no mounts.conf file needed)
     _host_timer.start_phase("configure_mounts")
     if _quiet_mode:
         status("Configuring mounts...")
     mount_args = []
-
-    # Build set of container paths that worktrees will use (to avoid duplicates)
-    worktree_container_paths = set()
-    for repo_name in worktrees:
-        worktree_container_paths.add(f"/home/{os.environ['USER']}/repos/{repo_name}")
-
-    if Config.CONFIG_FILE.exists():
-        mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
-        for mount in mounts:
-            if not mount:
-                continue
-            parts = mount.rsplit(":", 2)  # Split from right, max 2 splits
-
-            if len(parts) == 2:
-                # Old format: path:mode
-                mount_path, mode = parts
-                container_path = mount_path
-            elif len(parts) == 3:
-                # New format: host_path:container_path:mode
-                mount_path, container_path, mode = parts
-            else:
-                warn(f"Invalid mount format: {mount}")
-                continue
-
-            # Skip mounts that would conflict with worktree mounts
-            # This handles migration from old direct repo mounts to worktrees
-            if container_path in worktree_container_paths:
-                if not _quiet_mode:
-                    info(f"  Skipping {container_path} (using worktree instead)")
-                continue
-
-            # Ensure SELinux label is present (add if missing for backwards compatibility)
-            if not mode.endswith(",z") and not mode.endswith(":z"):
-                mode = f"{mode},z"
-
-            mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
-            if not _quiet_mode:
-                mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
-                display_path = container_path if container_path != mount_path else mount_path
-                print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
 
     # Add worktree mounts for configured local repositories
     # worktrees dict has structure: {repo_name: {"worktree": path, "source": path}}
@@ -2161,21 +2139,8 @@ def run_claude() -> bool:
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
-    # Always mount sharing directory (beads, notifications, incoming tasks, etc.)
-    # This is mounted dynamically to avoid stale mounts.conf issues
-    if Config.SHARING_DIR.exists():
-        sharing_container_path = f"/home/{os.environ['USER']}/sharing"
-        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
-        if not _quiet_mode:
-            print(f"  • ~/sharing/ (beads, notifications, tasks)")
-
-    # Always mount context-sync directory if it exists (Confluence, JIRA docs)
-    context_sync_dir = Path.home() / "context-sync"
-    if context_sync_dir.exists():
-        context_sync_container = f"/home/{os.environ['USER']}/context-sync"
-        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
-        if not _quiet_mode:
-            print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
+    # Add standard mounts (sharing, context-sync)
+    add_standard_mounts(mount_args, quiet=_quiet_mode)
 
     # Mount host Claude configuration (interactive mode only)
     # This allows the container to use the host's Claude settings
@@ -2327,9 +2292,9 @@ def exec_in_new_container(
         if not setup():
             return False
 
-    # Load mount configuration
-    if not Config.CONFIG_FILE.exists():
-        info("Configuration not found. Running initial setup...")
+    # Check repository configuration exists
+    if not Config.REPOS_CONFIG_FILE.exists():
+        info("Repository configuration not found. Running initial setup...")
         if not setup():
             return False
 
@@ -2380,40 +2345,8 @@ def exec_in_new_container(
 
     atexit.register(cleanup_on_exit)
 
-    # Parse mount configuration
+    # Build mount configuration dynamically (no mounts.conf file needed)
     mount_args = []
-
-    # Build set of container paths that worktrees will use (to avoid duplicates)
-    worktree_container_paths = set()
-    for repo_name in worktrees:
-        worktree_container_paths.add(f"/home/{os.environ['USER']}/repos/{repo_name}")
-
-    if Config.CONFIG_FILE.exists():
-        mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
-
-        for mount in mounts:
-            if not mount:
-                continue
-            parts = mount.rsplit(":", 2)
-
-            if len(parts) == 2:
-                mount_path, mode = parts
-                container_path = mount_path
-            elif len(parts) == 3:
-                mount_path, container_path, mode = parts
-            else:
-                warn(f"Invalid mount format: {mount}")
-                continue
-
-            # Skip mounts that would conflict with worktree mounts
-            if container_path in worktree_container_paths:
-                continue
-
-            # Ensure SELinux label
-            if not mode.endswith(",z") and not mode.endswith(":z"):
-                mode = f"{mode},z"
-
-            mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
 
     # Add worktree mounts for configured local repositories
     # worktrees dict has structure: {repo_name: {"worktree": path, "source": path}}
@@ -2453,19 +2386,8 @@ def exec_in_new_container(
             except Exception as e:
                 warn(f"Error reading .git file for {repo_name}: {e}")
 
-    # Always mount sharing directory (beads, notifications, incoming tasks, etc.)
-    # This is mounted dynamically to avoid stale mounts.conf issues
-    if Config.SHARING_DIR.exists():
-        sharing_container_path = f"/home/{os.environ['USER']}/sharing"
-        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
-        print(f"  • ~/sharing/ (beads, notifications, tasks)")
-
-    # Always mount context-sync directory if it exists (Confluence, JIRA docs)
-    context_sync_dir = Path.home() / "context-sync"
-    if context_sync_dir.exists():
-        context_sync_container = f"/home/{os.environ['USER']}/context-sync"
-        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
-        print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
+    # Add standard mounts (sharing, context-sync)
+    add_standard_mounts(mount_args, quiet=False)
 
     # Mount host Claude configuration when using host auth mode
     if auth_mode == "host":
