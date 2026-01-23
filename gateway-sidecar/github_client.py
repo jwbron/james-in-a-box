@@ -491,7 +491,6 @@ def get_github_client(mode: str = "bot") -> GitHubClient:
     Returns:
         GitHubClient configured for the specified mode
     """
-    global _clients
     if mode not in _clients:
         _clients[mode] = GitHubClient(mode=mode)
     return _clients[mode]
