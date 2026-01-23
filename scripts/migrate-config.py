@@ -433,7 +433,7 @@ class ConfigMigrator:
         if slack.app_token:
             result = self._test_slack_app_token(slack.app_token)
             if result["healthy"]:
-                print(f"  ✓ App token (xapp-): Valid for Socket Mode")
+                print("  ✓ App token (xapp-): Valid for Socket Mode")
             else:
                 print(f"  ✗ App token (xapp-): {result['message']}")
         else:

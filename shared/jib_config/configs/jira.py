@@ -181,15 +181,9 @@ class JiraConfig(BaseConfig):
         secrets_file = Path.home() / ".config" / "jib" / "secrets.env"
         secrets = load_env_file(secrets_file)
 
-        config.base_url = os.environ.get(
-            "JIRA_BASE_URL", secrets.get("JIRA_BASE_URL", "")
-        )
-        config.username = os.environ.get(
-            "JIRA_USERNAME", secrets.get("JIRA_USERNAME", "")
-        )
-        config.api_token = os.environ.get(
-            "JIRA_API_TOKEN", secrets.get("JIRA_API_TOKEN", "")
-        )
+        config.base_url = os.environ.get("JIRA_BASE_URL", secrets.get("JIRA_BASE_URL", ""))
+        config.username = os.environ.get("JIRA_USERNAME", secrets.get("JIRA_USERNAME", ""))
+        config.api_token = os.environ.get("JIRA_API_TOKEN", secrets.get("JIRA_API_TOKEN", ""))
         config.jql_query = os.environ.get(
             "JIRA_JQL_QUERY",
             "project = INFRA AND resolution = Unresolved ORDER BY updated DESC",
