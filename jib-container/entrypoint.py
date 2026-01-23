@@ -232,8 +232,8 @@ def chown_recursive(path: Path, uid: int, gid: int) -> None:
 
 def setup_user(config: Config, logger: Logger) -> None:
     """Adjust jib user's UID/GID to match host user for proper file permissions."""
-    import pwd
     import grp
+    import pwd
 
     logger.info(
         f"Setting up sandboxed environment for user: {config.container_user} "
@@ -250,12 +250,16 @@ def setup_user(config: Config, logger: Logger) -> None:
 
     # Adjust GID if needed
     if current_gid != config.runtime_gid:
-        logger.info(f"Adjusting {config.container_user} group GID: {current_gid} -> {config.runtime_gid}")
+        logger.info(
+            f"Adjusting {config.container_user} group GID: {current_gid} -> {config.runtime_gid}"
+        )
         run_cmd(["groupmod", "-g", str(config.runtime_gid), config.container_user])
 
     # Adjust UID if needed
     if current_uid != config.runtime_uid:
-        logger.info(f"Adjusting {config.container_user} user UID: {current_uid} -> {config.runtime_uid}")
+        logger.info(
+            f"Adjusting {config.container_user} user UID: {current_uid} -> {config.runtime_uid}"
+        )
         run_cmd(["usermod", "-u", str(config.runtime_uid), config.container_user])
 
     # Fix ownership of home directory after UID/GID change
@@ -283,7 +287,9 @@ def setup_environment(config: Config) -> None:
     # Add user's local bin (Claude Code native install) and jib runtime scripts to PATH
     current_path = os.environ.get("PATH", "")
     local_bin = config.user_home / ".local" / "bin"
-    os.environ["PATH"] = f"{local_bin}:/opt/jib-runtime/jib-container/bin:/usr/local/bin:{current_path}"
+    os.environ["PATH"] = (
+        f"{local_bin}:/opt/jib-runtime/jib-container/bin:/usr/local/bin:{current_path}"
+    )
 
     # Python settings
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
