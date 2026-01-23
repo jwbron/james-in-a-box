@@ -22,6 +22,7 @@ if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
 
+
 # Import repo_config for incognito mode support
 _config_path = Path(__file__).parent.parent / "config"
 if _config_path.exists() and str(_config_path) not in sys.path:
