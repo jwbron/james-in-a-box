@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ..base import BaseConfig, HealthCheckResult, ValidationResult
+from ..utils import load_env_file, load_yaml_file
 from ..validators import mask_secret, validate_non_empty, validate_slack_token
 
 
@@ -147,11 +148,11 @@ class SlackConfig(BaseConfig):
 
         # Load from secrets.env file
         secrets_file = Path.home() / ".config" / "jib" / "secrets.env"
-        secrets = _load_env_file(secrets_file)
+        secrets = load_env_file(secrets_file)
 
         # Load from config.yaml
         config_file = Path.home() / ".config" / "jib" / "config.yaml"
-        yaml_config = _load_yaml_file(config_file)
+        yaml_config = load_yaml_file(config_file)
         slack_config = yaml_config.get("slack", {})
 
         # Bot token: env > secrets.env
@@ -178,40 +179,3 @@ class SlackConfig(BaseConfig):
         config.batch_window_seconds = slack_config.get("batch_window_seconds", 15)
 
         return config
-
-
-def _load_env_file(path: Path) -> dict[str, str]:
-    """Load a .env style file into a dictionary."""
-    result: dict[str, str] = {}
-    if not path.exists():
-        return result
-
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, _, value = line.partition("=")
-                    key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    result[key] = value
-    except Exception:
-        pass
-
-    return result
-
-
-def _load_yaml_file(path: Path) -> dict[str, Any]:
-    """Load a YAML file into a dictionary."""
-    if not path.exists():
-        return {}
-
-    try:
-        import yaml
-
-        with open(path) as f:
-            return yaml.safe_load(f) or {}
-    except Exception:
-        return {}

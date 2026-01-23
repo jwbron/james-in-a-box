@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..base import BaseConfig, HealthCheckResult, ValidationResult
+from ..utils import safe_bool, safe_int
 from ..validators import mask_secret, validate_email, validate_non_empty, validate_url
 
 
@@ -184,14 +185,12 @@ class JiraConfig(BaseConfig):
         if output_dir:
             config.output_dir = Path(output_dir).expanduser()
 
-        config.max_tickets = int(os.environ.get("JIRA_MAX_TICKETS", "0"))
-        config.include_comments = os.environ.get("JIRA_INCLUDE_COMMENTS", "true").lower() == "true"
-        config.include_attachments = (
-            os.environ.get("JIRA_INCLUDE_ATTACHMENTS", "true").lower() == "true"
-        )
-        config.include_worklogs = os.environ.get("JIRA_INCLUDE_WORKLOGS", "false").lower() == "true"
-        config.incremental_sync = os.environ.get("JIRA_INCREMENTAL_SYNC", "true").lower() == "true"
-        config.request_timeout = int(os.environ.get("JIRA_REQUEST_TIMEOUT", "30"))
-        config.max_retries = int(os.environ.get("JIRA_MAX_RETRIES", "3"))
+        config.max_tickets = safe_int(os.environ.get("JIRA_MAX_TICKETS"), 0)
+        config.include_comments = safe_bool(os.environ.get("JIRA_INCLUDE_COMMENTS"), True)
+        config.include_attachments = safe_bool(os.environ.get("JIRA_INCLUDE_ATTACHMENTS"), True)
+        config.include_worklogs = safe_bool(os.environ.get("JIRA_INCLUDE_WORKLOGS"), False)
+        config.incremental_sync = safe_bool(os.environ.get("JIRA_INCREMENTAL_SYNC"), True)
+        config.request_timeout = safe_int(os.environ.get("JIRA_REQUEST_TIMEOUT"), 30)
+        config.max_retries = safe_int(os.environ.get("JIRA_MAX_RETRIES"), 3)
 
         return config

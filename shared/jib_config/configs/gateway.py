@@ -89,9 +89,12 @@ class GatewayConfig(BaseConfig):
             import json
             import urllib.request
 
+            # Use localhost for health checks when bound to all interfaces
+            health_host = "127.0.0.1" if self.host == "0.0.0.0" else self.host
+
             start = time.time()
             req = urllib.request.Request(
-                f"http://{self.host}:{self.port}/api/v1/health",
+                f"http://{health_host}:{self.port}/api/v1/health",
                 headers={
                     "Authorization": f"Bearer {self.secret}",
                 },

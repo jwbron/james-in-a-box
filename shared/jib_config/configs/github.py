@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ..base import BaseConfig, HealthCheckResult, ValidationResult
+from ..utils import load_env_file, load_yaml_file
 from ..validators import mask_secret, validate_github_token, validate_non_empty
 
 
@@ -186,7 +187,7 @@ class GitHubConfig(BaseConfig):
         else:
             # Try secrets.env
             secrets_file = Path.home() / ".config" / "jib" / "secrets.env"
-            secrets = _load_env_file(secrets_file)
+            secrets = load_env_file(secrets_file)
             if secrets.get("GITHUB_TOKEN"):
                 config.token = secrets["GITHUB_TOKEN"]
                 config._token_source = "secrets.env"
@@ -218,7 +219,7 @@ class GitHubConfig(BaseConfig):
 
         # Load optional tokens
         secrets_file = Path.home() / ".config" / "jib" / "secrets.env"
-        secrets = _load_env_file(secrets_file)
+        secrets = load_env_file(secrets_file)
 
         config.readonly_token = os.environ.get(
             "GITHUB_READONLY_TOKEN",
@@ -236,40 +237,8 @@ class GitHubConfig(BaseConfig):
         return config
 
 
-def _load_env_file(path: Path) -> dict[str, str]:
-    """Load a .env style file into a dictionary."""
-    result: dict[str, str] = {}
-    if not path.exists():
-        return result
-
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, _, value = line.partition("=")
-                    key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    result[key] = value
-    except Exception:
-        pass
-
-    return result
-
-
 def _get_github_username() -> str:
     """Get GitHub username from repositories.yaml."""
     config_file = Path.home() / ".config" / "jib" / "repositories.yaml"
-    if not config_file.exists():
-        return "jib"
-
-    try:
-        import yaml
-
-        with open(config_file) as f:
-            config = yaml.safe_load(f) or {}
-            return config.get("github_username", "jib")
-    except Exception:
-        return "jib"
+    config = load_yaml_file(config_file)
+    return config.get("github_username", "jib")

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..base import BaseConfig, HealthCheckResult, ValidationResult
+from ..utils import safe_bool, safe_int
 from ..validators import mask_secret, validate_email, validate_non_empty, validate_url
 
 
@@ -182,16 +183,16 @@ class ConfluenceConfig(BaseConfig):
         if output_dir:
             config.output_dir = Path(output_dir).expanduser()
 
-        config.max_pages = int(os.environ.get("CONFLUENCE_MAX_PAGES", "0"))
-        config.include_attachments = (
-            os.environ.get("CONFLUENCE_INCLUDE_ATTACHMENTS", "false").lower() == "true"
+        config.max_pages = safe_int(os.environ.get("CONFLUENCE_MAX_PAGES"), 0)
+        config.include_attachments = safe_bool(
+            os.environ.get("CONFLUENCE_INCLUDE_ATTACHMENTS"), False
         )
-        config.incremental_sync = (
-            os.environ.get("CONFLUENCE_INCREMENTAL_SYNC", "true").lower() == "true"
+        config.incremental_sync = safe_bool(
+            os.environ.get("CONFLUENCE_INCREMENTAL_SYNC"), True
         )
-        config.sync_interval = int(os.environ.get("CONFLUENCE_SYNC_INTERVAL", "3600"))
-        config.request_timeout = int(os.environ.get("CONFLUENCE_REQUEST_TIMEOUT", "30"))
-        config.max_retries = int(os.environ.get("CONFLUENCE_MAX_RETRIES", "3"))
+        config.sync_interval = safe_int(os.environ.get("CONFLUENCE_SYNC_INTERVAL"), 3600)
+        config.request_timeout = safe_int(os.environ.get("CONFLUENCE_REQUEST_TIMEOUT"), 30)
+        config.max_retries = safe_int(os.environ.get("CONFLUENCE_MAX_RETRIES"), 3)
         config.output_format = os.environ.get("CONFLUENCE_OUTPUT_FORMAT", "html")
 
         return config

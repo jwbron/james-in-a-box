@@ -26,6 +26,11 @@ class LLMProvider(Enum):
     OPENAI = "openai"
 
 
+# Model used for health checks - uses cheapest/fastest model
+# Note: Health checks make minimal API calls (max_tokens=1) but are billable
+ANTHROPIC_HEALTH_CHECK_MODEL = "claude-3-haiku-20240307"
+
+
 @dataclass
 class LLMConfig(BaseConfig):
     """Configuration for LLM providers.
@@ -118,16 +123,15 @@ class LLMConfig(BaseConfig):
             start = time.time()
 
             # Use a minimal messages request to verify API key
-            # The models endpoint requires different auth
+            # Note: This is a billable API call (minimal cost with max_tokens=1)
+            # The /v1/models endpoint requires different auth
             req = urllib.request.Request(
                 f"{base_url}/v1/messages",
-                data=json.dumps(
-                    {
-                        "model": "claude-3-haiku-20240307",
-                        "max_tokens": 1,
-                        "messages": [{"role": "user", "content": "hi"}],
-                    }
-                ).encode(),
+                data=json.dumps({
+                    "model": ANTHROPIC_HEALTH_CHECK_MODEL,
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "hi"}],
+                }).encode(),
                 headers={
                     "x-api-key": self.anthropic_api_key,
                     "anthropic-version": "2023-06-01",
