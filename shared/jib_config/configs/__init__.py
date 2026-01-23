@@ -23,6 +23,7 @@ from .jira import JiraConfig
 from .llm import LLMConfig
 from .slack import SlackConfig
 
+
 __all__ = [
     "ConfluenceConfig",
     "GatewayConfig",

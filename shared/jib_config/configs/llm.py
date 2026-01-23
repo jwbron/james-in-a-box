@@ -111,8 +111,8 @@ class LLMConfig(BaseConfig):
             )
 
         try:
-            import urllib.request
             import json
+            import urllib.request
 
             base_url = self.anthropic_base_url or "https://api.anthropic.com"
             start = time.time()
@@ -121,11 +121,13 @@ class LLMConfig(BaseConfig):
             # The models endpoint requires different auth
             req = urllib.request.Request(
                 f"{base_url}/v1/messages",
-                data=json.dumps({
-                    "model": "claude-3-haiku-20240307",
-                    "max_tokens": 1,
-                    "messages": [{"role": "user", "content": "hi"}],
-                }).encode(),
+                data=json.dumps(
+                    {
+                        "model": "claude-3-haiku-20240307",
+                        "max_tokens": 1,
+                        "messages": [{"role": "user", "content": "hi"}],
+                    }
+                ).encode(),
                 headers={
                     "x-api-key": self.anthropic_api_key,
                     "anthropic-version": "2023-06-01",
@@ -134,7 +136,7 @@ class LLMConfig(BaseConfig):
                 method="POST",
             )
 
-            with urllib.request.urlopen(req, timeout=timeout) as response:
+            with urllib.request.urlopen(req, timeout=timeout):
                 latency = (time.time() - start) * 1000
                 return HealthCheckResult(
                     healthy=True,
@@ -189,7 +191,7 @@ class LLMConfig(BaseConfig):
                 f"https://generativelanguage.googleapis.com/v1/models?key={self.google_api_key}",
             )
 
-            with urllib.request.urlopen(req, timeout=timeout) as response:
+            with urllib.request.urlopen(req, timeout=timeout):
                 latency = (time.time() - start) * 1000
                 return HealthCheckResult(
                     healthy=True,
@@ -199,7 +201,7 @@ class LLMConfig(BaseConfig):
                 )
 
         except urllib.error.HTTPError as e:
-            if e.code == 401 or e.code == 403:
+            if e.code in {401, 403}:
                 return HealthCheckResult(
                     healthy=False,
                     service_name="llm",
@@ -237,7 +239,7 @@ class LLMConfig(BaseConfig):
                 },
             )
 
-            with urllib.request.urlopen(req, timeout=timeout) as response:
+            with urllib.request.urlopen(req, timeout=timeout):
                 latency = (time.time() - start) * 1000
                 return HealthCheckResult(
                     healthy=True,

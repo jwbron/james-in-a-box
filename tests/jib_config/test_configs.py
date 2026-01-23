@@ -2,13 +2,6 @@
 Tests for service-specific configuration classes.
 """
 
-import json
-import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
-
 from jib_config.configs.confluence import ConfluenceConfig
 from jib_config.configs.gateway import GatewayConfig, RateLimitConfig
 from jib_config.configs.github import GitHubConfig

@@ -97,9 +97,9 @@ class JiraConfig(BaseConfig):
             )
 
         try:
-            import urllib.request
             import base64
             import json
+            import urllib.request
 
             start = time.time()
 
@@ -185,18 +185,12 @@ class JiraConfig(BaseConfig):
             config.output_dir = Path(output_dir).expanduser()
 
         config.max_tickets = int(os.environ.get("JIRA_MAX_TICKETS", "0"))
-        config.include_comments = os.environ.get(
-            "JIRA_INCLUDE_COMMENTS", "true"
-        ).lower() == "true"
-        config.include_attachments = os.environ.get(
-            "JIRA_INCLUDE_ATTACHMENTS", "true"
-        ).lower() == "true"
-        config.include_worklogs = os.environ.get(
-            "JIRA_INCLUDE_WORKLOGS", "false"
-        ).lower() == "true"
-        config.incremental_sync = os.environ.get(
-            "JIRA_INCREMENTAL_SYNC", "true"
-        ).lower() == "true"
+        config.include_comments = os.environ.get("JIRA_INCLUDE_COMMENTS", "true").lower() == "true"
+        config.include_attachments = (
+            os.environ.get("JIRA_INCLUDE_ATTACHMENTS", "true").lower() == "true"
+        )
+        config.include_worklogs = os.environ.get("JIRA_INCLUDE_WORKLOGS", "false").lower() == "true"
+        config.incremental_sync = os.environ.get("JIRA_INCREMENTAL_SYNC", "true").lower() == "true"
         config.request_timeout = int(os.environ.get("JIRA_REQUEST_TIMEOUT", "30"))
         config.max_retries = int(os.environ.get("JIRA_MAX_RETRIES", "3"))
 

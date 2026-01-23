@@ -102,8 +102,8 @@ class ConfluenceConfig(BaseConfig):
             )
 
         try:
-            import urllib.request
             import base64
+            import urllib.request
 
             start = time.time()
 
@@ -120,7 +120,7 @@ class ConfluenceConfig(BaseConfig):
                 },
             )
 
-            with urllib.request.urlopen(req, timeout=timeout) as response:
+            with urllib.request.urlopen(req, timeout=timeout):
                 latency = (time.time() - start) * 1000
                 return HealthCheckResult(
                     healthy=True,
@@ -183,12 +183,12 @@ class ConfluenceConfig(BaseConfig):
             config.output_dir = Path(output_dir).expanduser()
 
         config.max_pages = int(os.environ.get("CONFLUENCE_MAX_PAGES", "0"))
-        config.include_attachments = os.environ.get(
-            "CONFLUENCE_INCLUDE_ATTACHMENTS", "false"
-        ).lower() == "true"
-        config.incremental_sync = os.environ.get(
-            "CONFLUENCE_INCREMENTAL_SYNC", "true"
-        ).lower() == "true"
+        config.include_attachments = (
+            os.environ.get("CONFLUENCE_INCLUDE_ATTACHMENTS", "false").lower() == "true"
+        )
+        config.incremental_sync = (
+            os.environ.get("CONFLUENCE_INCREMENTAL_SYNC", "true").lower() == "true"
+        )
         config.sync_interval = int(os.environ.get("CONFLUENCE_SYNC_INTERVAL", "3600"))
         config.request_timeout = int(os.environ.get("CONFLUENCE_REQUEST_TIMEOUT", "30"))
         config.max_retries = int(os.environ.get("CONFLUENCE_MAX_RETRIES", "3"))

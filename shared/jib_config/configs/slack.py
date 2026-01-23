@@ -81,8 +81,8 @@ class SlackConfig(BaseConfig):
             )
 
         try:
-            import urllib.request
             import json
+            import urllib.request
 
             start = time.time()
             req = urllib.request.Request(
