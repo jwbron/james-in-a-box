@@ -164,14 +164,15 @@ This phase implements the migration:
 ## Files to Update
 
 ### Priority 1 (Core)
-- [ ] `jib-container/jib` - Change `CONFIG_DIR` from `~/.jib` to `~/.cache/jib`
+- [x] `jib-container/jib` - Change `CONFIG_DIR` from `~/.jib` to `~/.cache/jib`
+- [x] `tests/jib/test_jib.py` - Update tests for new path structure
 - [ ] `config/host_config.py` - Remove legacy fallbacks, add deprecation warnings
 - [ ] `setup.py` - Ensure only consolidated structure is created
 
 ### Priority 2 (Documentation)
 - [ ] `config/README.md` - Document final structure
-- [ ] `docs/setup/README.md` - Update setup instructions
-- [ ] `README.md` - Update if it references config locations
+- [x] `docs/setup/README.md` - Update setup instructions
+- [x] `README.md` - Update config locations table
 
 ### Priority 3 (Services)
 - [ ] `host-services/slack/slack-notifier/` - Verify uses consolidated config

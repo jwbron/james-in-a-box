@@ -81,8 +81,17 @@ class TestConfig:
     """Tests for Config class paths."""
 
     def test_config_dir(self):
-        """Test config directory path ends with .jib."""
-        assert Config.CONFIG_DIR.name == ".jib"
+        """Test cache directory path structure (~/.cache/jib)."""
+        # CONFIG_DIR is now ~/.cache/jib (XDG-compliant cache location)
+        assert Config.CONFIG_DIR.name == "jib"
+        assert Config.CONFIG_DIR.parent.name == ".cache"
+        # CACHE_DIR should be the same as CONFIG_DIR
+        assert Config.CACHE_DIR == Config.CONFIG_DIR
+
+    def test_legacy_config_dir(self):
+        """Test legacy config directory path exists for migration."""
+        # Legacy path ~/.jib is preserved for migration
+        assert Config.LEGACY_CONFIG_DIR.name == ".jib"
 
     def test_user_config_dir(self):
         """Test user config directory path structure."""

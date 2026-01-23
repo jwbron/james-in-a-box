@@ -128,7 +128,7 @@ After setup, configuration is stored in:
 | `~/.config/jib/secrets.env` | API keys and tokens (600 permissions) |
 | `~/.config/jib/config.yaml` | Non-secret settings |
 | `~/.config/jib/repositories.yaml` | Repository access configuration |
-| `~/.jib/mounts.conf` | Local repository mount paths |
+| `~/.cache/jib/` | Docker staging and build cache (auto-managed) |
 
 ## Architecture
 
