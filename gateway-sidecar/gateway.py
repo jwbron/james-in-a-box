@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, request
+from waitress import serve
 
 
 # Add shared directory to path for jib_logging
@@ -70,18 +71,7 @@ except ImportError:
 _config_path = Path(__file__).parent.parent / "config"
 if _config_path.exists() and str(_config_path) not in sys.path:
     sys.path.insert(0, str(_config_path))
-try:
-    from repo_config import get_auth_mode, get_incognito_config, is_incognito_repo
-except ImportError:
-    # Fallback: incognito mode disabled if config not available
-    def get_auth_mode(repo: str) -> str:
-        return "bot"
-
-    def get_incognito_config() -> dict[str, str]:
-        return {"github_user": "", "git_name": "", "git_email": ""}
-
-    def is_incognito_repo(repo: str) -> bool:
-        return False
+from repo_config import get_auth_mode, get_incognito_config
 
 
 logger = get_logger("gateway-sidecar")
@@ -1069,13 +1059,7 @@ def main():
         app.run(host=args.host, port=args.port, debug=True)
     else:
         # Use waitress for production
-        try:
-            from waitress import serve
-
-            serve(app, host=args.host, port=args.port)
-        except ImportError:
-            logger.warning("waitress not installed, using Flask development server")
-            app.run(host=args.host, port=args.port, debug=False)
+        serve(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

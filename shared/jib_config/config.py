@@ -9,6 +9,13 @@ import sys
 from pathlib import Path
 
 
+try:
+    import yaml
+except ImportError:
+    print("Error: PyYAML is required. Install with: pip install pyyaml", file=sys.stderr)
+    sys.exit(1)
+
+
 class Config:
     """Configuration paths for jib."""
 
@@ -43,8 +50,6 @@ def get_local_repos(config_file: Path | None = None) -> list[Path]:
         return []
 
     try:
-        import yaml
-
         with open(config_path) as f:
             config = yaml.safe_load(f) or {}
 
@@ -58,9 +63,6 @@ def get_local_repos(config_file: Path | None = None) -> list[Path]:
             if path.exists() and path.is_dir():
                 result.append(path)
         return result
-    except ImportError:
-        print("PyYAML not installed, cannot load repository config", file=sys.stderr)
-        return []
     except Exception as e:
         print(f"Failed to load repository config: {e}", file=sys.stderr)
         return []
