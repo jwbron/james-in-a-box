@@ -36,6 +36,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+
 try:
     import yaml
 except ImportError:

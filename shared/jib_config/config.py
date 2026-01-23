@@ -8,6 +8,7 @@ and the gateway sidecar setup script.
 import sys
 from pathlib import Path
 
+
 try:
     import yaml
 except ImportError:
