@@ -124,15 +124,27 @@ RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
 
 # Note: User will be created dynamically at runtime to match host UID/GID
 
-# Install Claude Code CLI (native installer - npm method is deprecated)
-# Placed late in Dockerfile so updates are picked up without rebuilding earlier layers
-# Pin version for reproducible builds; update periodically
-ENV CLAUDE_CODE_VERSION=stable
+# Install Claude Code CLI (native installer)
+# ARG is used (not ENV) so that changing the version busts Docker's cache
+# The jib script checks for new versions and passes the latest version here
+ARG CLAUDE_CODE_VERSION=stable
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION && \
     # Move installation from /root/.local to /opt/claude for world-accessible location
     # The installer puts files in /root/.local/ which is inaccessible to non-root users
     mv /root/.local /opt/claude && \
+    # Save installed version for update checks (after move)
+    /opt/claude/bin/claude --version 2>/dev/null | head -1 > /opt/claude/VERSION || true && \
+    # Fix any absolute symlinks that pointed to /root/.local
+    find /opt/claude -type l | while read link; do \
+        target=$(readlink "$link"); \
+        if echo "$target" | grep -q "^/root/.local"; then \
+            new_target=$(echo "$target" | sed 's|^/root/.local|/opt/claude|'); \
+            ln -sf "$new_target" "$link"; \
+        fi; \
+    done && \
+    # Make readable by all, directories traversable, and executables executable
     chmod -R a+rX /opt/claude && \
+    find /opt/claude -type f -executable -exec chmod a+x {} \; && \
     # Make claude available system-wide
     ln -sf /opt/claude/bin/claude /usr/local/bin/claude && \
     # Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
