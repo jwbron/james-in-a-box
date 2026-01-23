@@ -457,6 +457,12 @@ def setup_jib_symlink(config: Config, logger: Logger) -> None:
     jib_link = config.user_home / "jib"
     target = Path("/opt/jib-runtime/jib-container")
 
+    # Validate target exists (should always be true if Docker image built correctly)
+    if not target.is_dir():
+        logger.error(f"Runtime directory not found: {target}")
+        logger.error("  This indicates a problem with the Docker image build")
+        return
+
     if jib_link.is_symlink():
         jib_link.unlink()
     elif jib_link.exists():
