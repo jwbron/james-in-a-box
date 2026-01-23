@@ -12,6 +12,7 @@ Converted from entrypoint.sh for better maintainability.
 import contextlib
 import json
 import os
+import random
 import signal
 import subprocess
 import sys
@@ -220,6 +221,73 @@ def run_cmd(
     )
 
 
+def run_cmd_with_retry(
+    cmd: list[str],
+    max_retries: int = 5,
+    base_delay: float = 0.1,
+    max_delay: float = 2.0,
+    check: bool = True,
+    capture: bool = False,
+    timeout: int = 30,
+    as_user: tuple[int, int] | None = None,
+) -> subprocess.CompletedProcess:
+    """Run a command with exponential backoff retry for transient failures.
+
+    This is useful for git config commands that may fail due to lock contention
+    when multiple containers start simultaneously.
+
+    Args:
+        cmd: Command to run
+        max_retries: Maximum number of retry attempts
+        base_delay: Initial delay between retries (seconds)
+        max_delay: Maximum delay between retries (seconds)
+        check: Whether to raise on non-zero exit code (after all retries exhausted)
+        capture: Whether to capture stdout/stderr in returned result
+        timeout: Command timeout in seconds
+        as_user: Optional (uid, gid) tuple to run command as different user
+    """
+    last_exception = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            # Always capture internally so we can detect lock errors in stderr
+            result = run_cmd(
+                cmd,
+                check=check,
+                capture=True,
+                timeout=timeout,
+                as_user=as_user,
+            )
+            # If caller didn't want capture, clear the output
+            if not capture:
+                result.stdout = ""
+                result.stderr = ""
+            return result
+        except subprocess.CalledProcessError as e:
+            last_exception = e
+            # Check if this looks like a lock contention error
+            stderr = e.stderr or ""
+            if "could not lock" not in stderr:
+                # Not a lock error, don't retry
+                raise
+
+            if attempt < max_retries:
+                # Exponential backoff with jitter
+                delay = min(base_delay * (2**attempt), max_delay)
+                delay *= 0.5 + random.random()  # Add jitter
+                # Log retry for debugging
+                print(
+                    f"⚠ Git config lock contention, retrying ({attempt + 1}/{max_retries})...",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+
+    # All retries exhausted
+    if last_exception:
+        raise last_exception
+    raise RuntimeError(f"Command failed after {max_retries} retries: {cmd}")
+
+
 def chown_recursive(path: Path, uid: int, gid: int) -> None:
     """Recursively change ownership of a path."""
     run_cmd(["chown", "-R", f"{uid}:{gid}", str(path)])
@@ -345,10 +413,27 @@ def setup_git(config: Config, logger: Logger) -> None:
 
 
 def _fix_repo_config(repo_config: Path, logger: Logger) -> None:
-    """Fix a single repo config file (identity, token cleanup, SSH->HTTPS)."""
-    # Set identity
-    run_cmd(["git", "config", "-f", str(repo_config), "user.name", "jib"])
-    run_cmd(["git", "config", "-f", str(repo_config), "user.email", "jib@localhost"])
+    """Fix a single repo config file (identity, token cleanup, SSH->HTTPS).
+
+    Uses retry logic with exponential backoff to handle lock contention
+    when multiple containers start simultaneously.
+    """
+    # Clean up stale lock files from crashed containers (older than 60 seconds).
+    # We don't delete fresh locks as they may be legitimately held by another process.
+    # The retry logic handles genuine concurrent access.
+    lock_file = repo_config.with_suffix(".lock")
+    if lock_file.exists():
+        try:
+            lock_age = time.time() - lock_file.stat().st_mtime
+            if lock_age > 60:
+                lock_file.unlink()
+                logger.warn(f"Removed stale git lock file: {lock_file} (age: {lock_age:.0f}s)")
+        except OSError:
+            pass  # Another process may have removed it, or stat failed
+
+    # Set identity with retry for lock contention
+    run_cmd_with_retry(["git", "config", "-f", str(repo_config), "user.name", "jib"])
+    run_cmd_with_retry(["git", "config", "-f", str(repo_config), "user.email", "jib@localhost"])
 
     # Get remote URL
     try:
@@ -372,13 +457,17 @@ def _fix_repo_config(repo_config: Path, logger: Logger) -> None:
         import re
 
         clean_url = re.sub(r"https://[^@]*@github\.com/", "https://github.com/", remote_url)
-        run_cmd(["git", "config", "-f", str(repo_config), "remote.origin.url", clean_url])
+        run_cmd_with_retry(
+            ["git", "config", "-f", str(repo_config), "remote.origin.url", clean_url]
+        )
         logger.info(f"  Cleaned: {remote_url} -> {clean_url}")
 
     # Convert SSH to HTTPS
     if remote_url.startswith("git@github.com:"):
         https_url = remote_url.replace("git@github.com:", "https://github.com/")
-        run_cmd(["git", "config", "-f", str(repo_config), "remote.origin.url", https_url])
+        run_cmd_with_retry(
+            ["git", "config", "-f", str(repo_config), "remote.origin.url", https_url]
+        )
         logger.info(f"  Converted SSH to HTTPS: {https_url}")
 
 
