@@ -441,7 +441,7 @@ class ConfigMigrator:
         groups = {
             "LLM API Keys": ["ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"],
             "Slack Integration": ["SLACK_TOKEN", "SLACK_APP_TOKEN"],
-            "GitHub": ["GITHUB_TOKEN", "GITHUB_READONLY_TOKEN"],
+            "GitHub": ["GITHUB_TOKEN", "GITHUB_READONLY_TOKEN", "GITHUB_INCOGNITO_TOKEN"],
             "Confluence": [
                 "CONFLUENCE_BASE_URL",
                 "CONFLUENCE_USERNAME",
@@ -592,12 +592,18 @@ class ConfigManager:
         """Load repository configuration.
 
         Returns:
-            Dictionary with writable_repos and readable_repos lists
+            Dictionary with writable_repos, readable_repos, incognito, and repo_settings
         """
         if self.repos_file.exists():
             with open(self.repos_file) as f:
-                return yaml.safe_load(f) or {}
-        return {"writable_repos": [], "readable_repos": []}
+                config = yaml.safe_load(f) or {}
+                # Ensure all expected keys exist
+                config.setdefault("writable_repos", [])
+                config.setdefault("readable_repos", [])
+                config.setdefault("incognito", None)
+                config.setdefault("repo_settings", {})
+                return config
+        return {"writable_repos": [], "readable_repos": [], "incognito": None, "repo_settings": {}}
 
     def write_repositories(
         self,
@@ -605,6 +611,8 @@ class ConfigManager:
         readable: list[str],
         github_username: str = "",
         local_repos: list[str] | None = None,
+        incognito: dict[str, str | None] | None = None,
+        repo_settings: dict[str, dict] | None = None,
     ):
         """Write repository configuration.
 
@@ -613,13 +621,26 @@ class ConfigManager:
             readable: List of repositories with read-only access
             github_username: GitHub username for config file
             local_repos: List of local repository paths to mount
+            incognito: Incognito mode config (github_user, git_name, git_email)
+            repo_settings: Per-repo settings (e.g., auth_mode)
         """
-        repos_config = {
+        repos_config: dict[str, Any] = {
             "github_username": github_username,
             "writable_repos": writable,
             "readable_repos": readable,
             "local_repos": {"paths": local_repos or []},
         }
+
+        # Add incognito config if provided (filter out None values)
+        if incognito:
+            filtered_incognito = {k: v for k, v in incognito.items() if v is not None}
+            if filtered_incognito:
+                repos_config["incognito"] = filtered_incognito
+
+        # Add repo_settings if provided
+        if repo_settings:
+            repos_config["repo_settings"] = repo_settings
+
         self.repos_file.write_text(yaml.dump(repos_config, default_flow_style=False))
         self.logger.success(f"Repository config written to {self.repos_file}")
 
@@ -1296,6 +1317,9 @@ class MinimalSetup:
         self.existing_config = self.config_manager.load_config()
         self.existing_repos = self.config_manager.load_repositories()
 
+        # Flag to track if user wants to remove incognito mode (set by _prompt_incognito_token)
+        self._remove_incognito = False
+
     def is_already_configured(self) -> bool:
         """Check if essential configuration already exists.
 
@@ -1637,7 +1661,215 @@ class MinimalSetup:
                 if readonly_token:
                     secrets["GITHUB_READONLY_TOKEN"] = readonly_token
 
+        # Optionally prompt for incognito token
+        self._prompt_incognito_token(secrets)
+
         return secrets
+
+    def _validate_github_pat(self, token: str) -> None:
+        """Validate that a token is a valid GitHub PAT format.
+
+        Raises:
+            ValueError: If token doesn't start with ghp_ or github_pat_
+        """
+        if not token.startswith(("ghp_", "github_pat_")):
+            raise ValueError("Token must be a GitHub PAT (ghp_... or github_pat_...)")
+
+    def _prompt_incognito_token(self, secrets: dict[str, str]) -> None:
+        """Prompt for incognito token configuration.
+
+        Args:
+            secrets: Dictionary to update with GITHUB_INCOGNITO_TOKEN if provided
+        """
+        # Check for existing incognito token
+        existing_incognito_token = self.existing_secrets.get("GITHUB_INCOGNITO_TOKEN", "")
+
+        # In update mode with existing config, ask whether to keep it
+        if self.update_mode and existing_incognito_token:
+            self.logger.info("")
+            self.logger.info(f"Current incognito token: {self._mask_secret(existing_incognito_token)}")
+            if self.prompter.prompt_yes_no("Keep incognito mode configuration?", default=True):
+                # Keep existing, but allow updating the token
+                new_token = self.prompter.prompt(
+                    "New incognito token (Enter to keep existing)",
+                    validator=lambda t: self._validate_github_pat(t) if t else None,
+                )
+                secrets["GITHUB_INCOGNITO_TOKEN"] = new_token if new_token else existing_incognito_token
+            else:
+                # User wants to remove incognito mode - don't add token to secrets
+                self.logger.info("Incognito mode will be removed.")
+                self._remove_incognito = True
+            return
+
+        # Fresh setup or update mode without existing config
+        self.logger.info("")
+        if self.prompter.prompt_yes_no(
+            "Configure incognito mode for contributing to external repos?",
+            default=False,
+        ):
+            self.logger.info("\nIncognito Mode Configuration")
+            self.logger.info("Use a Personal Access Token (PAT) from your personal GitHub account.")
+            self.logger.info("Operations on incognito repos will be attributed to your personal identity.")
+            self.logger.info("Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta")
+            self.logger.info("  Required permissions: Contents (R/W), Pull requests (R/W)")
+            self.logger.info("")
+
+            incognito_token = self.prompter.prompt(
+                "GitHub Incognito Token (ghp_... or github_pat_...)",
+                required=True,
+                validator=lambda t: self._validate_github_pat(t),
+            )
+            secrets["GITHUB_INCOGNITO_TOKEN"] = incognito_token
+
+    def prompt_incognito_config(
+        self, has_incognito_token: bool
+    ) -> dict[str, str | None] | None:
+        """Prompt for incognito user identity configuration.
+
+        Args:
+            has_incognito_token: Whether an incognito token was configured
+
+        Returns:
+            Dict with github_user, git_name, git_email keys (None for unconfigured fields),
+            or None if incognito is not configured or being removed.
+        """
+        # If no token or user is removing incognito, return None
+        if not has_incognito_token or self._remove_incognito:
+            return None
+
+        # Load existing incognito config
+        existing_incognito = self.existing_repos.get("incognito") or {}
+
+        # In update mode with existing config
+        if self.update_mode and existing_incognito:
+            self.logger.header("Incognito User Identity")
+            self.logger.info("Current incognito identity:")
+            if existing_incognito.get("github_user"):
+                self.logger.info(f"  GitHub user: {existing_incognito['github_user']}")
+            if existing_incognito.get("git_name"):
+                self.logger.info(f"  Git name: {existing_incognito['git_name']}")
+            if existing_incognito.get("git_email"):
+                self.logger.info(f"  Git email: {existing_incognito['git_email']}")
+            self.logger.info("")
+
+            if not self.prompter.prompt_yes_no("Modify incognito identity?", default=False):
+                return existing_incognito
+
+        # Fresh setup or user wants to modify
+        self.logger.header("Incognito User Identity")
+        self.logger.info("Configure the identity to use for incognito mode operations.")
+        self.logger.info("")
+
+        github_user = self.prompter.prompt(
+            "GitHub username (for attribution)",
+            default=existing_incognito.get("github_user", ""),
+            required=True,
+        )
+
+        git_name = self.prompter.prompt(
+            "Git author name (for commits)",
+            default=existing_incognito.get("git_name", github_user),
+        )
+
+        git_email = self.prompter.prompt(
+            "Git author email",
+            default=existing_incognito.get("git_email", ""),
+        )
+
+        return {
+            "github_user": github_user,
+            "git_name": git_name if git_name else None,
+            "git_email": git_email if git_email else None,
+        }
+
+    def prompt_incognito_repos(
+        self, writable_repos: list[str], has_incognito_token: bool
+    ) -> dict[str, dict]:
+        """Prompt for which repos should use incognito mode.
+
+        Args:
+            writable_repos: List of writable repository names
+            has_incognito_token: Whether an incognito token was configured
+
+        Returns:
+            Dict mapping repo names to their settings (e.g., auth_mode: incognito)
+        """
+        # If no token or removing incognito, return empty settings
+        if not has_incognito_token or self._remove_incognito:
+            return {}
+
+        # Load existing repo settings
+        existing_settings = self.existing_repos.get("repo_settings") or {}
+
+        # Get list of repos currently set to incognito
+        existing_incognito_repos = [
+            repo for repo, settings in existing_settings.items()
+            if settings.get("auth_mode") == "incognito"
+        ]
+
+        # In update mode with existing config
+        if self.update_mode and existing_incognito_repos:
+            self.logger.header("Incognito Repositories")
+            self.logger.info("Current repos using incognito mode:")
+            for repo in existing_incognito_repos:
+                self.logger.info(f"  - {repo}")
+            self.logger.info("")
+
+            if not self.prompter.prompt_yes_no("Modify incognito repo selection?", default=False):
+                return existing_settings
+
+        # Show available repos and prompt for selection
+        self.logger.header("Incognito Repositories")
+        self.logger.info("Select which writable repos should use incognito mode.")
+        self.logger.info("These repos will use your personal identity instead of the bot.")
+        self.logger.info("")
+
+        if not writable_repos:
+            self.logger.info("No writable repositories configured.")
+            return {}
+
+        self.logger.info("Available writable repositories:")
+        for i, repo in enumerate(writable_repos, 1):
+            marker = "[*]" if repo in existing_incognito_repos else "[ ]"
+            self.logger.info(f"  {i}. {marker} {repo}")
+        self.logger.info("")
+        self.logger.info("Enter repo numbers to toggle incognito (comma-separated), or Enter to skip:")
+        self.logger.info("Example: 1,3 to select repos 1 and 3")
+
+        selection = self.prompter.prompt("Selection")
+        if not selection:
+            # Keep existing if in update mode, empty otherwise
+            return existing_settings if self.update_mode else {}
+
+        # Parse selection
+        selected_repos = set()
+        try:
+            for part in selection.split(","):
+                idx = int(part.strip()) - 1
+                if 0 <= idx < len(writable_repos):
+                    selected_repos.add(writable_repos[idx])
+        except ValueError:
+            self.logger.warning("Invalid selection, keeping existing configuration")
+            return existing_settings if self.update_mode else {}
+
+        # Build repo_settings
+        repo_settings = {}
+        for repo in selected_repos:
+            repo_settings[repo] = {"auth_mode": "incognito"}
+
+        # Preserve other settings from existing repos (non-auth_mode settings)
+        for repo, settings in existing_settings.items():
+            if repo not in repo_settings:
+                # Check if there are non-auth_mode settings to preserve
+                other_settings = {k: v for k, v in settings.items() if k != "auth_mode"}
+                if other_settings:
+                    repo_settings[repo] = other_settings
+            else:
+                # Merge other settings with incognito
+                other_settings = {k: v for k, v in settings.items() if k != "auth_mode"}
+                repo_settings[repo].update(other_settings)
+
+        return repo_settings
 
     def prompt_repositories(self, github_username: str) -> tuple[list[str], list[str]]:
         """Prompt for repository configuration."""
@@ -1909,13 +2141,20 @@ class MinimalSetup:
             slack_channel = self.get_slack_channel_id()
             slack_user = self.get_slack_user_id()
 
-            # 5. GitHub authentication
+            # 5. GitHub authentication (includes incognito token prompt)
             github_secrets = self.prompt_github_auth()
 
-            # 6. Repositories
+            # 6. Incognito user identity (if token was configured)
+            has_incognito_token = "GITHUB_INCOGNITO_TOKEN" in github_secrets
+            incognito_config = self.prompt_incognito_config(has_incognito_token)
+
+            # 7. Repositories
             writable_repos, readable_repos = self.prompt_repositories(github_username)
 
-            # 7. Local repositories (for volume mounts)
+            # 8. Incognito repo selection (if token was configured)
+            repo_settings = self.prompt_incognito_repos(writable_repos, has_incognito_token)
+
+            # 9. Local repositories (for volume mounts)
             local_repos = self.prompt_local_repos()
 
             # Save configuration
@@ -1924,6 +2163,11 @@ class MinimalSetup:
             # Combine all secrets, preserving existing ones not prompted for
             # (e.g., Confluence, JIRA, LLM API keys)
             all_secrets = {**self.existing_secrets, **slack_secrets, **github_secrets}
+
+            # If removing incognito, ensure token is removed from secrets
+            if self._remove_incognito and "GITHUB_INCOGNITO_TOKEN" in all_secrets:
+                del all_secrets["GITHUB_INCOGNITO_TOKEN"]
+
             self.config_manager.write_secrets(all_secrets)
 
             # Write main config using new nested structure
@@ -1944,9 +2188,14 @@ class MinimalSetup:
             }
             self.config_manager.write_config(config)
 
-            # Write repository config
+            # Write repository config (with incognito settings if configured)
             self.config_manager.write_repositories(
-                writable_repos, readable_repos, github_username, local_repos
+                writable_repos,
+                readable_repos,
+                github_username,
+                local_repos,
+                incognito=incognito_config,
+                repo_settings=repo_settings if repo_settings else None,
             )
 
             if self.update_mode:
