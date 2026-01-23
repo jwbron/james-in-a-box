@@ -12,7 +12,6 @@ Usage:
 import argparse
 import json
 import sys
-from typing import NoReturn
 
 from .base import ConfigStatus
 from .registry import get_registry
@@ -165,14 +164,21 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> NoReturn:
-    """Main entry point for the CLI."""
+def main(argv: list[str] | None = None) -> int:
+    """Main entry point for the CLI.
+
+    Args:
+        argv: Command line arguments (defaults to sys.argv[1:])
+
+    Returns:
+        Exit code (0 for success, non-zero for errors)
+    """
     parser = create_parser()
     args = parser.parse_args(argv)
 
     if args.command is None:
         parser.print_help()
-        sys.exit(0)
+        return 0
 
     commands = {
         "validate": cmd_validate,
@@ -184,11 +190,10 @@ def main(argv: list[str] | None = None) -> NoReturn:
     handler = commands.get(args.command)
     if handler is None:
         parser.print_help()
-        sys.exit(1)
+        return 1
 
-    exit_code = handler(args)
-    sys.exit(exit_code)
+    return handler(args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

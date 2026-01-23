@@ -6,11 +6,15 @@ The registry provides:
 - Bulk validation (validate_all)
 - Bulk health checks (health_check_all)
 - Dry-run mode for testing
+
+Thread Safety:
+    All public methods that access the config dictionary are thread-safe.
+    The registry uses a lock to protect concurrent access.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from threading import Lock
+from threading import RLock
 from typing import Any
 
 from .base import BaseConfig, HealthCheckResult, ValidationResult
@@ -70,7 +74,7 @@ class ConfigRegistry:
     """Central registry for all service configurations.
 
     This is a singleton that holds all registered configs and provides
-    methods for bulk operations.
+    methods for bulk operations. All methods are thread-safe.
 
     Usage:
         registry = get_registry()
@@ -90,17 +94,18 @@ class ConfigRegistry:
     """
 
     _instance: "ConfigRegistry | None" = None
-    _lock: Lock = Lock()
+    _instance_lock: RLock = RLock()
 
     def __new__(cls) -> "ConfigRegistry":
         """Ensure only one instance exists (singleton pattern)."""
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._configs = {}
-                    cls._instance._dry_run = False
-        return cls._instance
+        with cls._instance_lock:
+            if cls._instance is None:
+                instance = super().__new__(cls)
+                instance._configs: dict[str, BaseConfig] = {}
+                instance._dry_run: bool = False
+                instance._lock: RLock = RLock()
+                cls._instance = instance
+            return cls._instance
 
     def __init__(self) -> None:
         # Initialization happens in __new__ to avoid re-init on each call
@@ -108,41 +113,46 @@ class ConfigRegistry:
 
     @property
     def configs(self) -> dict[str, BaseConfig]:
-        """Return all registered configs."""
-        return dict(self._configs)
+        """Return a copy of all registered configs (thread-safe)."""
+        with self._lock:
+            return dict(self._configs)
 
     @property
     def dry_run(self) -> bool:
         """Return whether dry-run mode is enabled."""
-        return self._dry_run
+        with self._lock:
+            return self._dry_run
 
     def set_dry_run(self, enabled: bool) -> None:
         """Enable or disable dry-run mode.
 
         In dry-run mode, validation runs but writes are logged instead of executed.
         """
-        self._dry_run = enabled
+        with self._lock:
+            self._dry_run = enabled
 
     def register(self, config: BaseConfig, name: str | None = None) -> None:
-        """Register a configuration.
+        """Register a configuration (thread-safe).
 
         Args:
             config: The config instance to register
             name: Optional name override (defaults to config.service_name)
         """
         service_name = name or config.service_name
-        self._configs[service_name] = config
+        with self._lock:
+            self._configs[service_name] = config
 
     def unregister(self, name: str) -> None:
-        """Unregister a configuration by name.
+        """Unregister a configuration by name (thread-safe).
 
         Args:
             name: The service name to unregister
         """
-        self._configs.pop(name, None)
+        with self._lock:
+            self._configs.pop(name, None)
 
     def get(self, name: str) -> BaseConfig | None:
-        """Get a registered config by name.
+        """Get a registered config by name (thread-safe).
 
         Args:
             name: The service name
@@ -150,18 +160,24 @@ class ConfigRegistry:
         Returns:
             The config instance or None if not found
         """
-        return self._configs.get(name)
+        with self._lock:
+            return self._configs.get(name)
 
     def validate_all(self) -> AggregateValidationResult:
-        """Validate all registered configurations.
+        """Validate all registered configurations (thread-safe).
 
         Returns:
             AggregateValidationResult with individual results
         """
+        # Take a snapshot of configs under lock
+        with self._lock:
+            configs_snapshot = dict(self._configs)
+
+        # Run validation outside lock (validation may be slow)
         results: dict[str, ValidationResult] = {}
         all_valid = True
 
-        for name, config in self._configs.items():
+        for name, config in configs_snapshot.items():
             result = config.validate()
             results[name] = result
             if not result.is_valid:
@@ -170,7 +186,7 @@ class ConfigRegistry:
         return AggregateValidationResult(all_valid=all_valid, results=results)
 
     def health_check_all(self, timeout: float = 5.0) -> AggregateHealthResult:
-        """Run health checks on all registered configurations.
+        """Run health checks on all registered configurations (thread-safe).
 
         Args:
             timeout: Maximum time per health check in seconds
@@ -178,11 +194,16 @@ class ConfigRegistry:
         Returns:
             AggregateHealthResult with individual results
         """
+        # Take a snapshot of configs under lock
+        with self._lock:
+            configs_snapshot = dict(self._configs)
+
+        # Run health checks outside lock (may be slow due to network)
         results: dict[str, HealthCheckResult] = {}
         unhealthy_count = 0
-        total_count = len(self._configs)
+        total_count = len(configs_snapshot)
 
-        for name, config in self._configs.items():
+        for name, config in configs_snapshot.items():
             result = config.health_check(timeout=timeout)
             results[name] = result
             if not result.healthy:
@@ -199,23 +220,23 @@ class ConfigRegistry:
         return AggregateHealthResult(status=status, services=results)
 
     def clear(self) -> None:
-        """Clear all registered configurations.
+        """Clear all registered configurations (thread-safe).
 
         Primarily useful for testing.
         """
-        self._configs.clear()
+        with self._lock:
+            self._configs.clear()
 
     def to_dict(self) -> dict[str, Any]:
-        """Return all configs as a dictionary with secrets masked.
+        """Return all configs as a dictionary with secrets masked (thread-safe).
 
         Returns:
             Dictionary of service names to masked config dictionaries
         """
-        return {name: config.to_dict() for name, config in self._configs.items()}
+        with self._lock:
+            configs_snapshot = dict(self._configs)
 
-
-# Module-level singleton accessor
-_registry: ConfigRegistry | None = None
+        return {name: config.to_dict() for name, config in configs_snapshot.items()}
 
 
 def get_registry() -> ConfigRegistry:
@@ -224,10 +245,7 @@ def get_registry() -> ConfigRegistry:
     Returns:
         The singleton ConfigRegistry instance
     """
-    global _registry
-    if _registry is None:
-        _registry = ConfigRegistry()
-    return _registry
+    return ConfigRegistry()
 
 
 def reset_registry() -> None:
@@ -235,8 +253,7 @@ def reset_registry() -> None:
 
     Primarily useful for testing to ensure clean state between tests.
     """
-    global _registry
-    if _registry is not None:
-        _registry.clear()
-    _registry = None
-    ConfigRegistry._instance = None
+    with ConfigRegistry._instance_lock:
+        if ConfigRegistry._instance is not None:
+            ConfigRegistry._instance.clear()
+        ConfigRegistry._instance = None

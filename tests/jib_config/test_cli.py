@@ -362,46 +362,37 @@ class TestMain:
 
     def test_no_command_shows_help(self, capsys):
         """Test running with no command shows help."""
-        with pytest.raises(SystemExit) as exc_info:
-            main([])
-
-        assert exc_info.value.code == 0
+        exit_code = main([])
+        assert exit_code == 0
 
     def test_validate_command(self):
         """Test running validate command."""
         registry = get_registry()
         registry.register(MockConfig(name="test", valid=True))
 
-        with pytest.raises(SystemExit) as exc_info:
-            main(["validate"])
-
-        assert exc_info.value.code == 0
+        exit_code = main(["validate"])
+        assert exit_code == 0
 
     def test_health_command(self):
         """Test running health command."""
         registry = get_registry()
         registry.register(MockConfig(name="test", healthy=True))
 
-        with pytest.raises(SystemExit) as exc_info:
-            main(["health"])
-
-        assert exc_info.value.code == 0
+        exit_code = main(["health"])
+        assert exit_code == 0
 
     def test_show_command(self):
         """Test running show command."""
         registry = get_registry()
         registry.register(MockConfig(name="test"))
 
-        with pytest.raises(SystemExit) as exc_info:
-            main(["show"])
-
-        assert exc_info.value.code == 0
+        exit_code = main(["show"])
+        assert exit_code == 0
 
     def test_watch_command(self, capsys):
         """Test running watch command (placeholder)."""
-        with pytest.raises(SystemExit) as exc_info:
-            main(["watch"])
+        exit_code = main(["watch"])
 
-        assert exc_info.value.code == 0
+        assert exit_code == 0
         captured = capsys.readouterr()
         assert "not yet implemented" in captured.out

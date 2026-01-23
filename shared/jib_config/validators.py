@@ -149,19 +149,19 @@ def validate_anthropic_key(key: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def mask_secret(value: str, *, visible_chars: int = 4) -> str:
+def mask_secret(value: str | None, *, visible_chars: int = 4) -> str:
     """Mask a secret value for safe display.
 
     Shows the first few characters followed by asterisks.
 
     Args:
-        value: The secret value to mask
+        value: The secret value to mask (can be None)
         visible_chars: Number of characters to show at the start (default: 4)
 
     Returns:
-        Masked string like "xoxb-****" or "[EMPTY]" if value is empty
+        Masked string like "xoxb-****" or "[EMPTY]" if value is empty/None
     """
-    if not value:
+    if value is None or not value:
         return "[EMPTY]"
 
     if len(value) <= visible_chars:
