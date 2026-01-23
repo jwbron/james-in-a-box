@@ -708,10 +708,7 @@ class ServiceManager:
 
         try:
             self.logger.step(f"Running setup script for {service}")
-            # Gateway sidecar runs as container, not systemd service
             cmd = ["bash", str(script_path)]
-            if service == "gateway-sidecar.service":
-                cmd.append("--container")
             result = subprocess.run(
                 cmd,
                 check=False,
