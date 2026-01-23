@@ -129,14 +129,14 @@ RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
 # Pin version for reproducible builds; update periodically
 ENV CLAUDE_CODE_VERSION=stable
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION && \
-    # Make claude installation accessible to all users
+    # Move installation from /root/.local to /opt/claude for world-accessible location
     # The installer puts files in /root/.local/ which is inaccessible to non-root users
-    chmod -R a+rX /root/.local && \
-    # Make claude available system-wide (installer puts it in ~/.local/bin)
-    ln -sf /root/.local/bin/claude /usr/local/bin/claude && \
+    mv /root/.local /opt/claude && \
+    chmod -R a+rX /opt/claude && \
+    # Make claude available system-wide
+    ln -sf /opt/claude/bin/claude /usr/local/bin/claude && \
     # Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
-    # Find the bundled rg binary and replace it with system ripgrep
-    CLAUDE_RG=$(find /root/.local -name "rg" -type f 2>/dev/null | grep -E "ripgrep.*linux" | head -1) && \
+    CLAUDE_RG=$(find /opt/claude -name "rg" -type f 2>/dev/null | grep -E "ripgrep.*linux" | head -1) && \
     if [ -n "$CLAUDE_RG" ]; then \
         ln -sf /usr/bin/rg "$CLAUDE_RG" && \
         echo "Patched ripgrep: $CLAUDE_RG -> /usr/bin/rg"; \
