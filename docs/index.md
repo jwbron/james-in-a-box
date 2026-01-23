@@ -44,6 +44,7 @@ For task-specific guidance, see [Task-Specific Guides](#task-specific-guides) be
 |----------|-------------|
 | [Reference Overview](reference/README.md) | Quick reference guides and troubleshooting |
 | [Beads Task Tracking](reference/beads.md) | Persistent task memory system - commands, workflows, best practices |
+| [jib_config Framework](../shared/jib_config/README.md) | Unified configuration loading, validation, and health checks |
 | [Features - Source Mapping](FEATURES.md) | Map of all features to their implementation locations |
 | [Slack Quick Reference](reference/slack-quick-reference.md) | Common Slack operations and commands |
 | [Engineering Culture](reference/engineering-culture.md) | L3-L4 engineering behavioral standards |
