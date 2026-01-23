@@ -91,6 +91,50 @@ Categories to analyze:
 | `tests/jib_config/` | Config framework tests |
 | `tests/shared/` | Shared module tests |
 
+### 1.5 Large File Decomposition Analysis
+
+Identify files that should be decomposed into smaller, more focused modules.
+
+**Criteria for decomposition candidates:**
+- Files > 500 lines of code
+- Files with multiple unrelated responsibilities
+- Files that are difficult to test in isolation
+- Files with high cyclomatic complexity
+
+**Known candidates:**
+
+| File | Lines | Reason | Decomposition Proposal |
+|------|-------|--------|------------------------|
+| `jib-container/jib` | ~7,400 | Container launcher with many responsibilities | Split into: CLI parsing, container lifecycle, worktree management, config loading |
+| `jib-container/entrypoint.py` | ~800 | Container startup with mixed concerns | Split into: environment setup, tool installation, service initialization |
+| (discover more during analysis) | | | |
+
+**Analysis command:**
+```bash
+# Find Python files > 500 lines
+find . -name "*.py" -exec wc -l {} + | awk '$1 > 500 {print}' | sort -rn
+
+# Find shell scripts > 300 lines
+find . -name "*.sh" -exec wc -l {} + | awk '$1 > 300 {print}' | sort -rn
+```
+
+**Decomposition template:**
+```
+File: [path]
+Current Lines: [count]
+Responsibilities:
+  1. [responsibility 1]
+  2. [responsibility 2]
+  3. [responsibility 3]
+Proposed Split:
+  - [new_module_1.py]: [responsibility 1]
+  - [new_module_2.py]: [responsibility 2]
+  - [new_module_3.py]: [responsibility 3]
+Dependencies to Update: [list files that import this]
+Risk: [Low | Medium | High]
+Priority: [1-5, 1 being highest]
+```
+
 ---
 
 ## Phase 2: Feature-by-Feature Analysis
@@ -478,9 +522,10 @@ bin/fix-doc-links --dry-run
 
 ## Success Criteria
 
-- [ ] All 53 features analyzed with status documented
+- [ ] All 52 features analyzed with status documented
 - [ ] All documentation files audited
 - [ ] All ADR statuses verified
+- [ ] Large files identified and decomposition proposals documented
 - [ ] Claude router code removed
 - [ ] Gemini CLI code removed
 - [ ] LLM module simplified
