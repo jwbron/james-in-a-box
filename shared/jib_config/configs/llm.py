@@ -127,11 +127,13 @@ class LLMConfig(BaseConfig):
             # The /v1/models endpoint requires different auth
             req = urllib.request.Request(
                 f"{base_url}/v1/messages",
-                data=json.dumps({
-                    "model": ANTHROPIC_HEALTH_CHECK_MODEL,
-                    "max_tokens": 1,
-                    "messages": [{"role": "user", "content": "hi"}],
-                }).encode(),
+                data=json.dumps(
+                    {
+                        "model": ANTHROPIC_HEALTH_CHECK_MODEL,
+                        "max_tokens": 1,
+                        "messages": [{"role": "user", "content": "hi"}],
+                    }
+                ).encode(),
                 headers={
                     "x-api-key": self.anthropic_api_key,
                     "anthropic-version": "2023-06-01",

@@ -187,9 +187,7 @@ class ConfluenceConfig(BaseConfig):
         config.include_attachments = safe_bool(
             os.environ.get("CONFLUENCE_INCLUDE_ATTACHMENTS"), False
         )
-        config.incremental_sync = safe_bool(
-            os.environ.get("CONFLUENCE_INCREMENTAL_SYNC"), True
-        )
+        config.incremental_sync = safe_bool(os.environ.get("CONFLUENCE_INCREMENTAL_SYNC"), True)
         config.sync_interval = safe_int(os.environ.get("CONFLUENCE_SYNC_INTERVAL"), 3600)
         config.request_timeout = safe_int(os.environ.get("CONFLUENCE_REQUEST_TIMEOUT"), 30)
         config.max_retries = safe_int(os.environ.get("CONFLUENCE_MAX_RETRIES"), 3)
