@@ -416,16 +416,16 @@ def humanize(text: str) -> str:
 
 ### Cost/Latency Considerations
 
-Using Sonnet for higher quality output:
+Using Sonnet for higher quality output (pricing: $3/1M input, $15/1M output):
 
 | Content Type | Typical Size | Sonnet Cost | Latency |
 |--------------|--------------|-------------|---------|
-| PR title | ~50 chars | $0.0006 | ~1s |
-| PR body | ~500 chars | $0.006 | ~2s |
-| Comment | ~200 chars | $0.002 | ~1s |
-| Commit msg | ~100 chars | $0.001 | ~1s |
+| PR title | ~50 chars | ~$0.0003 | ~1s |
+| PR body | ~500 chars | ~$0.003 | ~2s |
+| Comment | ~200 chars | ~$0.001 | ~1s |
+| Commit msg | ~100 chars | ~$0.0006 | ~1s |
 
-**Total per PR**: ~$0.01, ~3s latency. Worth it for interaction quality.
+**Total per PR**: ~$0.005, ~3s latency. Worth it for interaction quality.
 
 ### Error Handling
 
@@ -573,10 +573,11 @@ def get_commits_in_push(repo_path: str, refspec: str) -> list[Commit]:
     )
 
     if result.returncode != 0:
-        # Fallback: get last N commits if no tracking branch
+        # Fallback: get commits since diverging from origin/main
+        # Using --ancestry-path to only include commits on this branch
         result = subprocess.run(
             ["git", "-C", repo_path, "log", "--format=%H%n%B%n---COMMIT---",
-             "-10", local_ref],
+             "--ancestry-path", "origin/main..HEAD"],
             capture_output=True, text=True
         )
 
@@ -660,10 +661,14 @@ def test_humanization_removes_ai_patterns():
 - Periodically review samples to assess quality
 - Track user feedback on PR readability
 
-**3. Meaning preservation check:**
+**3. Meaning preservation check (nightly batch, not per-commit):**
 ```python
 def test_meaning_preserved():
-    """Use a separate LLM call to verify meaning is preserved."""
+    """Use a separate LLM call to verify meaning is preserved.
+
+    Note: This test uses LLM calls, adding cost and latency.
+    Run as part of nightly batch tests, not on every commit.
+    """
     original = "Fix the authentication bug in the login flow"
     humanized = humanize(original)
 
