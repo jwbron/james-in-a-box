@@ -28,6 +28,7 @@ class SlackConfig(BaseConfig):
         channel: Default channel for notifications
         allowed_users: List of allowed Slack user IDs (empty = all allowed)
         owner_user_id: Owner's Slack user ID for DMs
+        self_dm_channel: User's self-DM channel ID
         batch_window_seconds: Seconds to batch notifications
     """
 
@@ -36,6 +37,7 @@ class SlackConfig(BaseConfig):
     channel: str = ""
     allowed_users: list[str] = field(default_factory=list)
     owner_user_id: str = ""
+    self_dm_channel: str = ""
     batch_window_seconds: int = 15
 
     def validate(self) -> ValidationResult:
@@ -132,6 +134,7 @@ class SlackConfig(BaseConfig):
             "channel": self.channel,
             "allowed_users": self.allowed_users,
             "owner_user_id": self.owner_user_id,
+            "self_dm_channel": self.self_dm_channel,
             "batch_window_seconds": self.batch_window_seconds,
         }
 
@@ -176,6 +179,7 @@ class SlackConfig(BaseConfig):
         # Other settings from config.yaml
         config.allowed_users = slack_config.get("allowed_users", [])
         config.owner_user_id = slack_config.get("owner_user_id", "")
+        config.self_dm_channel = slack_config.get("self_dm_channel", "")
         config.batch_window_seconds = slack_config.get("batch_window_seconds", 15)
 
         return config

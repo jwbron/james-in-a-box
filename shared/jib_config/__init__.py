@@ -35,6 +35,14 @@ from .base import (
     ValidationResult,
 )
 from .config import Config, get_local_repos, get_repos_config_file
+
+# Service configurations
+from .configs.confluence import ConfluenceConfig
+from .configs.gateway import GatewayConfig
+from .configs.github import GitHubConfig
+from .configs.jira import JiraConfig
+from .configs.llm import LLMConfig
+from .configs.slack import SlackConfig
 from .registry import (
     AggregateHealthResult,
     AggregateValidationResult,
@@ -54,7 +62,14 @@ __all__ = [
     # Registry
     "ConfigRegistry",
     "ConfigStatus",
+    # Service configurations
+    "ConfluenceConfig",
+    "GatewayConfig",
+    "GitHubConfig",
     "HealthCheckResult",
+    "JiraConfig",
+    "LLMConfig",
+    "SlackConfig",
     "ValidationResult",
     "get_local_repos",
     "get_registry",
