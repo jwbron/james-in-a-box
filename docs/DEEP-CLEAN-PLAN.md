@@ -19,10 +19,12 @@ This plan organizes the deep clean into 5 phases:
 | Phase | Focus | Scope |
 |-------|-------|-------|
 | 1 | Codebase Inventory | Crawl and catalog all code, features, and documentation |
-| 2 | Feature-by-Feature Analysis | Deep analysis of each of the 53 features |
+| 2 | Feature-by-Feature Analysis | Deep analysis of each of the 52 features |
 | 3 | Documentation Analysis | Audit all documentation for accuracy and completeness |
 | 4 | Feature Removal | Remove confirmed incomplete/unused features |
 | 5 | Documentation Update | Sync all docs with current state |
+
+> **Note**: Phases 2 and 3 are largely independent and can run concurrently.
 
 ---
 
@@ -49,7 +51,7 @@ Create a comprehensive map of the repository:
 ### 1.2 Feature Inventory
 
 Current feature count from FEATURES.md:
-- **53 top-level features**
+- **52 top-level features** (after removing 2 confirmed for deletion)
 - **127 including sub-features**
 - **11 categories**
 
@@ -60,8 +62,8 @@ Categories to analyze:
 4. Self-Improvement System (3 features)
 5. Documentation System (10 features)
 6. Custom Commands (1 feature)
-7. LLM Providers (3 features) - *includes features marked for removal*
-8. Container Infrastructure (3 features)
+7. LLM Providers (1 feature after removal) - *2 features confirmed for removal*
+8. Container Infrastructure (5 features)
 9. Utilities (7 features)
 10. Security Features (1 feature)
 11. Configuration (3 features)
@@ -92,6 +94,18 @@ Categories to analyze:
 ---
 
 ## Phase 2: Feature-by-Feature Analysis
+
+### 2.0 Prioritization Criteria
+
+With 52 features to analyze, prioritize in this order:
+
+1. **Experimental features** (marked in FEATURES.md) - highest risk of being incomplete
+2. **Features with no tests** - may have undiscovered issues
+3. **Features with known issues** - referenced in beads or PRs
+4. **Rarely used features** - candidates for removal
+5. **Core features** - analyze last since they're most stable
+
+### 2.0.1 Analysis Template
 
 Analyze each feature using this template:
 
@@ -184,7 +198,7 @@ Notes: [Any issues found]
 | 35 | Gemini CLI Integration | **REMOVE** - confirmed |
 | 36 | Claude Code Router Support | **REMOVE** - confirmed |
 
-### 2.8 Container Infrastructure Features (3+)
+### 2.8 Container Infrastructure Features (5)
 
 | # | Feature | Analysis Status |
 |---|---------|-----------------|
@@ -212,7 +226,7 @@ Notes: [Any issues found]
 |---|---------|-----------------|
 | 49 | GitHub Token Refresher Service | Pending |
 
-### 2.11 Configuration Features (3+)
+### 2.11 Configuration Features (3)
 
 | # | Feature | Analysis Status |
 |---|---------|-----------------|
@@ -273,7 +287,28 @@ Check that:
 
 ## Phase 4: Feature Removal
 
+### 4.0 Testing Strategy
+
+Before any removal:
+1. **Establish baseline**: Run full test suite, record results
+2. **Incremental removal**: Remove one feature at a time
+3. **Test after each removal**: Run tests immediately after each change
+4. **Rollback plan**: If tests fail, revert and investigate before proceeding
+
+```bash
+# Baseline before removal
+make test > baseline-results.txt 2>&1
+
+# After each removal
+make test
+
+# If failure, revert
+git checkout -- <files>
+```
+
 ### 4.1 Confirmed Removals
+
+> **Note**: File lists below are preliminary and may change after Phase 2 analysis reveals additional dependencies.
 
 #### Remove Claude Code Router Support
 
@@ -312,11 +347,30 @@ Check that:
 
 #### Simplify LLM Module
 
-After removals:
+After removals, the LLM module should have this simplified API:
+
+**Target Public API** (`jib-container/llm/__init__.py`):
+```python
+# Functions to keep
+run_agent(prompt: str, cwd: Path = None, timeout: int = 7200) -> AgentResult
+run_agent_async(prompt: str, cwd: Path = None, timeout: int = 7200) -> AgentResult
+run_interactive(cwd: Path = None) -> None
+
+# Classes to keep
+AgentResult  # dataclass with success, stdout, stderr, return_code
+
+# Remove
+Provider enum (no longer needed)
+LLMConfig class (simplify or remove)
+get_provider() function
+```
+
+**Changes**:
 - Remove multi-provider abstraction layer
 - Remove `LLM_PROVIDER` env var support
-- Keep `run_agent`, `run_agent_async`, `run_interactive`
-- Simplify to Claude-only
+- Remove `Provider` enum entirely
+- Simplify `LLMConfig` to just `cwd` and `timeout` (or remove entirely)
+- Keep core functions with simplified signatures
 
 ### 4.2 Features Pending Removal Decision
 
@@ -487,7 +541,3 @@ grep -r "pattern" . --include="*.py"
 # Count lines by directory
 find host-services -name "*.py" -exec wc -l {} + | tail -1
 ```
-
----
-
-Authored-by: jib
