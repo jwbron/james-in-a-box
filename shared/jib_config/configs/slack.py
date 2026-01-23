@@ -145,11 +145,15 @@ class SlackConfig(BaseConfig):
         Priority:
         1. Environment variables
         2. ~/.config/jib/secrets.env
-        3. ~/.config/jib/config.yaml (supports both nested 'slack:' and top-level keys)
+        3. ~/.config/jib/config.yaml (under 'slack:' section)
 
-        For backwards compatibility, supports both config structures:
-        - Nested: slack: { channel: "C123" }
-        - Top-level: slack_channel: "C123"
+        Expected config.yaml structure:
+            slack:
+              channel: "C12345"
+              allowed_users: ["U123", "U456"]
+              owner_user_id: "U123"
+              self_dm_channel: "D123"
+              batch_window_seconds: 15
         """
         config = cls()
 
@@ -161,11 +165,6 @@ class SlackConfig(BaseConfig):
         config_file = Path.home() / ".config" / "jib" / "config.yaml"
         yaml_config = load_yaml_file(config_file)
         slack_config = yaml_config.get("slack", {})
-
-        # Helper to get value from nested or top-level config
-        def get_config(nested_key: str, top_level_key: str, default: any = "") -> any:
-            """Get value from nested slack config, falling back to top-level."""
-            return slack_config.get(nested_key) or yaml_config.get(top_level_key, default)
 
         # Bot token: env > secrets.env
         config.bot_token = os.environ.get(
@@ -179,16 +178,16 @@ class SlackConfig(BaseConfig):
             secrets.get("SLACK_APP_TOKEN", ""),
         )
 
-        # Channel: env > config.yaml (nested or top-level)
+        # Channel: env > config.yaml
         config.channel = os.environ.get(
             "SLACK_CHANNEL",
-            get_config("channel", "slack_channel", ""),
+            slack_config.get("channel", ""),
         )
 
-        # Other settings from config.yaml (nested or top-level)
-        config.allowed_users = get_config("allowed_users", "allowed_users", [])
-        config.owner_user_id = get_config("owner_user_id", "owner_user_id", "")
-        config.self_dm_channel = get_config("self_dm_channel", "self_dm_channel", "")
-        config.batch_window_seconds = get_config("batch_window_seconds", "batch_window_seconds", 15)
+        # Other settings from config.yaml slack section
+        config.allowed_users = slack_config.get("allowed_users", [])
+        config.owner_user_id = slack_config.get("owner_user_id", "")
+        config.self_dm_channel = slack_config.get("self_dm_channel", "")
+        config.batch_window_seconds = slack_config.get("batch_window_seconds", 15)
 
         return config
