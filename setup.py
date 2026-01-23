@@ -623,48 +623,6 @@ class ConfigManager:
         self.repos_file.write_text(yaml.dump(repos_config, default_flow_style=False))
         self.logger.success(f"Repository config written to {self.repos_file}")
 
-    def write_mounts_conf(self, local_repos: list[str]):
-        """Write mounts.conf for jib container.
-
-        Args:
-            local_repos: List of local repository paths to mount
-        """
-        jib_dir = Path.home() / ".jib"
-        jib_dir.mkdir(parents=True, exist_ok=True)
-        mounts_file = jib_dir / "mounts.conf"
-
-        # Build mount entries
-        mounts = []
-        user = os.environ.get("USER", "user")
-
-        for repo_path in local_repos:
-            path = Path(repo_path).expanduser().resolve()
-            if path.exists():
-                # Mount format: host_path:container_path:mode,z
-                # Container path mirrors host path structure under ~/repos/
-                repo_name = path.name
-                container_path = f"/home/{user}/repos/{repo_name}"
-                mounts.append(f"{path}:{container_path}:rw,z")
-
-        # Always add the sharing directory mount (standard for all jib setups)
-        # This is critical - beads, notifications, etc. all live here
-        sharing_dir = Path.home() / ".jib-sharing"
-        if sharing_dir.exists():
-            mounts.append(f"{sharing_dir}:/home/{user}/sharing:rw,z")
-
-        # Always add context-sync mount if it exists
-        context_sync_dir = Path.home() / "context-sync"
-        if context_sync_dir.exists():
-            mounts.append(f"{context_sync_dir}:/home/{user}/context-sync:ro,z")
-
-        # Write mounts.conf even if only standard mounts (sharing/context-sync)
-        if mounts:
-            mounts_file.write_text("\n".join(mounts) + "\n")
-            self.logger.success(f"Mounts config written to {mounts_file}")
-        else:
-            self.logger.warning("No local repos configured, mounts.conf not written")
-
-
 class ServiceManager:
     """Manages systemd services."""
 
@@ -1990,9 +1948,6 @@ class MinimalSetup:
                 writable_repos, readable_repos, github_username, local_repos
             )
 
-            # Write mounts.conf for jib container
-            self.config_manager.write_mounts_conf(local_repos)
-
             if self.update_mode:
                 self.logger.success("\n✓ Configuration updated!")
             else:
@@ -2002,8 +1957,6 @@ class MinimalSetup:
             self.logger.info(f"  - {self.config_manager.secrets_file}")
             self.logger.info(f"  - {self.config_manager.config_file}")
             self.logger.info(f"  - {self.config_manager.repos_file}")
-            if local_repos:
-                self.logger.info(f"  - {Path.home() / '.jib' / 'mounts.conf'}")
             self.logger.info("")
             self.logger.info("Next steps:")
             self.logger.info("  1. Review the configuration files")
