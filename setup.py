@@ -20,7 +20,6 @@ For more information, see docs/adr/not-implemented/ADR-Declarative-Setup-Archite
 """
 
 import argparse
-import json
 import logging
 import os
 import shutil
