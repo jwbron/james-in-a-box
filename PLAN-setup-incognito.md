@@ -20,13 +20,20 @@ PR #520 added incognito mode to the gateway-sidecar with manual YAML configurati
 **Changes**:
 - After prompting for GITHUB_TOKEN and GITHUB_READONLY_TOKEN, add optional prompt for GITHUB_INCOGNITO_TOKEN
 - Only prompt if user indicates they want incognito mode
-- Validate token starts with `ghp_`
+- Validate token starts with `ghp_` (classic PAT) or `github_pat_` (fine-grained PAT)
 
 **Flow**:
 ```
 "Do you want to configure incognito mode for contributing to external repos?" [y/N]
 If yes:
-  "GitHub Incognito Token (ghp_...)"
+  "GitHub Incognito Token (ghp_... or github_pat_...)"
+```
+
+**Validation**:
+```python
+validator=lambda t: None
+    if not t or t.startswith(("ghp_", "github_pat_"))
+    else ValueError("Token must be a GitHub PAT (ghp_... or github_pat_...)")
 ```
 
 ### 2. Add Incognito User Configuration Prompt
@@ -38,7 +45,7 @@ If yes:
 - Git author name (for commits) - optional, defaults to GitHub username
 - Git author email - optional
 
-**Returns**: Dict with `github_user`, `git_name`, `git_email` (empty strings if not configured)
+**Returns**: Dict with `github_user`, `git_name`, `git_email` keys. Values are `None` for unconfigured fields (to distinguish "not set" from "intentionally empty"), matching how other config sections handle optional values. Returns `None` entirely if incognito mode is not configured.
 
 ### 3. Add Per-Repo Auth Mode Configuration
 
@@ -92,12 +99,18 @@ def write_repositories(
 - Allow modification or keeping existing values
 - Mask existing token when displaying
 
+**Removal behavior**: If user has existing incognito config, prompt:
+```
+"Incognito mode is currently configured. Keep it?" [Y/n]
+```
+If user answers no, prompt to confirm removal and clear all incognito settings (token, user config, and repo auth_mode settings). This explicit confirmation prevents accidental removal.
+
 ### 7. Update Secrets Groups
 
-**Location**: `ConfigManager.write_secrets()` (line 529-580) and `ConfigMigrator._write_secrets()` (line 428-478)
+**Location**: `ConfigManager.write_secrets()` (line 529-580, groups dict at 541-558) and `ConfigMigrator._write_secrets()` (line 428-478, groups dict at 441-457)
 
 **Changes**:
-- Add `GITHUB_INCOGNITO_TOKEN` to the "GitHub" secrets group
+- Add `GITHUB_INCOGNITO_TOKEN` to the "GitHub" secrets group in both locations
 
 ## Files Modified
 
@@ -109,6 +122,8 @@ def write_repositories(
 2. Update mode: Run `./setup.py --update`, verify existing incognito config shown and modifiable
 3. Skip incognito: Run setup, decline incognito, verify no incognito sections written
 4. Partial config: Configure token but no repos, verify incognito section present but no repo_settings
+5. Remove incognito: Run `./setup.py --update` with existing config, decline to keep, verify incognito sections removed
+6. Fine-grained PAT: Test with `github_pat_` prefix token, verify validation accepts it
 
 ## Example Output
 
@@ -122,8 +137,8 @@ writable_repos:
 
 incognito:
   github_user: jwbron
-  git_name: "James Wies"
-  git_email: "jwbron@example.com"
+  git_name: James Wies
+  git_email: jwbron@example.com
 
 repo_settings:
   Khan/webapp:
@@ -135,7 +150,7 @@ And `~/.config/jib/secrets.env` should contain:
 ```bash
 # GitHub
 GITHUB_TOKEN="ghp_..."
-GITHUB_INCOGNITO_TOKEN="ghp_..."
+GITHUB_INCOGNITO_TOKEN="ghp_..."  # or "github_pat_..." for fine-grained PAT
 ```
 
 ## Notes
