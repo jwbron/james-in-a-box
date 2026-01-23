@@ -4,8 +4,10 @@
 Outputs one mount spec per line in format: source:destination:options
 This allows the calling bash script to safely handle paths with spaces.
 """
+
 import sys
 from pathlib import Path
+
 
 try:
     import yaml
@@ -26,8 +28,8 @@ def main():
         with open(config_path) as f:
             config = yaml.safe_load(f) or {}
 
-        local_repos = config.get('local_repos', {})
-        paths = local_repos.get('paths', [])
+        local_repos = config.get("local_repos", {})
+        paths = local_repos.get("paths", [])
 
         for repo_path in paths:
             repo_path = Path(repo_path).expanduser()
@@ -35,24 +37,24 @@ def main():
                 continue
 
             repo_name = repo_path.name
-            git_dir = repo_path / '.git'
+            git_dir = repo_path / ".git"
 
             if git_dir.is_file():
                 # Worktree - read the actual git dir location
                 with open(git_dir) as f:
                     content = f.read().strip()
-                    if content.startswith('gitdir:'):
+                    if content.startswith("gitdir:"):
                         actual_git = content[7:].strip()
                         git_dir = Path(actual_git)
 
             if git_dir.exists():
                 # Mount git directory to a known location
-                container_git_path = f'{home}/.git-main/{repo_name}'
-                print(f'{git_dir}:{container_git_path}:ro,z')
+                container_git_path = f"{home}/.git-main/{repo_name}"
+                print(f"{git_dir}:{container_git_path}:ro,z")
 
     except Exception as e:
-        print(f'Warning: Failed to parse git mounts: {e}', file=sys.stderr)
+        print(f"Warning: Failed to parse git mounts: {e}", file=sys.stderr)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
