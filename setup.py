@@ -1687,14 +1687,18 @@ class MinimalSetup:
         # In update mode with existing config, ask whether to keep it
         if self.update_mode and existing_incognito_token:
             self.logger.info("")
-            self.logger.info(f"Current incognito token: {self._mask_secret(existing_incognito_token)}")
+            self.logger.info(
+                f"Current incognito token: {self._mask_secret(existing_incognito_token)}"
+            )
             if self.prompter.prompt_yes_no("Keep incognito mode configuration?", default=True):
                 # Keep existing, but allow updating the token
                 new_token = self.prompter.prompt(
                     "New incognito token (Enter to keep existing)",
                     validator=lambda t: self._validate_github_pat(t) if t else None,
                 )
-                secrets["GITHUB_INCOGNITO_TOKEN"] = new_token if new_token else existing_incognito_token
+                secrets["GITHUB_INCOGNITO_TOKEN"] = (
+                    new_token if new_token else existing_incognito_token
+                )
             else:
                 # User wants to remove incognito mode - don't add token to secrets
                 self.logger.info("Incognito mode will be removed.")
@@ -1709,8 +1713,12 @@ class MinimalSetup:
         ):
             self.logger.info("\nIncognito Mode Configuration")
             self.logger.info("Use a Personal Access Token (PAT) from your personal GitHub account.")
-            self.logger.info("Operations on incognito repos will be attributed to your personal identity.")
-            self.logger.info("Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta")
+            self.logger.info(
+                "Operations on incognito repos will be attributed to your personal identity."
+            )
+            self.logger.info(
+                "Create a fine-grained PAT at: https://github.com/settings/tokens?type=beta"
+            )
             self.logger.info("  Required permissions: Contents (R/W), Pull requests (R/W)")
             self.logger.info("")
 
@@ -1721,9 +1729,7 @@ class MinimalSetup:
             )
             secrets["GITHUB_INCOGNITO_TOKEN"] = incognito_token
 
-    def prompt_incognito_config(
-        self, has_incognito_token: bool
-    ) -> dict[str, str | None] | None:
+    def prompt_incognito_config(self, has_incognito_token: bool) -> dict[str, str | None] | None:
         """Prompt for incognito user identity configuration.
 
         Args:
@@ -1803,7 +1809,8 @@ class MinimalSetup:
 
         # Get list of repos currently set to incognito
         existing_incognito_repos = [
-            repo for repo, settings in existing_settings.items()
+            repo
+            for repo, settings in existing_settings.items()
             if settings.get("auth_mode") == "incognito"
         ]
 
@@ -1833,7 +1840,9 @@ class MinimalSetup:
             marker = "[*]" if repo in existing_incognito_repos else "[ ]"
             self.logger.info(f"  {i}. {marker} {repo}")
         self.logger.info("")
-        self.logger.info("Enter repo numbers to toggle incognito (comma-separated), or Enter to skip:")
+        self.logger.info(
+            "Enter repo numbers to toggle incognito (comma-separated), or Enter to skip:"
+        )
         self.logger.info("Example: 1,3 to select repos 1 and 3")
 
         selection = self.prompter.prompt("Selection")
