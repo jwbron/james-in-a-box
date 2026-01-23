@@ -2,8 +2,8 @@
 
 **Status**: Draft
 **Author**: jib
-**Date**: 2025-01-23
-**Related**: Incognito mode (implemented), [blader/humanizer](https://github.com/blader/humanizer)
+**Date**: 2026-01-23
+**Related**: Incognito mode (implemented), [blader/humanizer](https://github.com/blader/humanizer) (real repo, MIT licensed)
 
 ## Problem Statement
 
@@ -18,8 +18,34 @@ Currently, identity protection is policy only (CLAUDE.md) with no enforcement. P
 
 1. **Remove identity markers**: Block/strip references to AI/bot identity
 2. **Humanize prose style**: Rewrite content to sound naturally human-written
-3. **Automatic for incognito**: All outbound content humanized by default
-4. **Configurable**: Enable/disable per-repo, adjust aggressiveness
+3. **Improve interaction quality**: Make jib's output more natural and readable
+4. **Automatic by default**: Enabled for both bot and incognito modes
+5. **Configurable**: Enable/disable per-repo, adjust aggressiveness
+
+## Ethical Considerations
+
+This feature raises important questions about transparency and attribution.
+
+### Appropriate Use Cases
+
+- **Internal tooling**: When jib is a known team member and the goal is readable output
+- **Bot-attributed contributions**: When the bot identity is preserved but prose quality matters
+- **Personal incognito mode**: When the human takes responsibility for reviewing and approving all output
+- **Interaction quality**: Making technical communication clearer and more natural
+
+### Inappropriate Use Cases
+
+- **Misrepresenting authorship** in contexts where it matters (employment verification, academic work, legal contracts)
+- **Evading AI detection** in contexts that prohibit AI assistance
+- **Hiding AI involvement** from collaborators who should know
+
+### Responsibility Model
+
+- **Incognito mode**: The human whose identity is used bears full responsibility for all output. They must review and approve PRs before they're created in their name.
+- **Bot mode**: The bot identity is preserved; humanization improves readability, not attribution.
+- **Disclosure**: Organizations using jib should establish clear policies about AI assistance disclosure.
+
+This feature is a tool. Like any tool, it can be used appropriately or inappropriately. The technical implementation doesn't change the user's ethical obligations.
 
 ## Scope
 
@@ -50,11 +76,15 @@ CRITICAL_PATTERNS = [
     r'\bClaude\b',                    # AI name
     r'\bAnthropic\b',                 # Company name
     r'\bjames-in-a-box\b',            # Infrastructure name
-    r'\bjib\b',                       # Short name (case-sensitive)
+    r'\bjib\b',                       # Short name (word boundary, case-sensitive)
     r'Co-Authored-By:\s*Claude',      # Git trailer
     r'claude\.ai',                    # URLs
     r'anthropic\.com',                # URLs
 ]
+# Note: \b is a word boundary that matches between word and non-word chars.
+# "jib" will match in "jib container" but not in "jibing" or "ad-lib".
+# However, it WILL match in "main-jib-branch" (hyphen is non-word char).
+# This is acceptable - branch names shouldn't contain "jib" in incognito mode.
 ```
 
 ### Warning (Log but don't block)
@@ -155,7 +185,7 @@ CRITICAL_PATTERNS = [
     (r'\bClaude\b', 'AI assistant name'),
     (r'\bAnthropic\b', 'AI company name'),
     (r'\bjames-in-a-box\b', 'Infrastructure name'),
-    (r'(?<![a-zA-Z])jib(?![a-zA-Z])', 'Bot identity'),  # Word boundary
+    (r'\bjib\b', 'Bot identity'),  # Word boundary
     (r'Co-Authored-By:\s*Claude', 'AI attribution trailer'),
     (r'claude\.ai', 'AI service URL'),
     (r'anthropic\.com', 'AI company URL'),
@@ -376,7 +406,7 @@ Keep the same meaning. Keep it concise. This is for a GitHub PR/comment."""
 
 def humanize(text: str) -> str:
     response = anthropic.messages.create(
-        model="claude-3-5-haiku-20241022",  # Fast and cheap
+        model="claude-sonnet-4-20250514",  # Higher quality for better interaction
         max_tokens=len(text) * 2,
         system=HUMANIZER_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": text}]
@@ -386,20 +416,106 @@ def humanize(text: str) -> str:
 
 ### Cost/Latency Considerations
 
-| Content Type | Typical Size | Haiku Cost | Latency |
-|--------------|--------------|------------|---------|
-| PR title | ~50 chars | $0.0001 | <500ms |
-| PR body | ~500 chars | $0.001 | ~1s |
-| Comment | ~200 chars | $0.0004 | <500ms |
-| Commit msg | ~100 chars | $0.0002 | <500ms |
+Using Sonnet for higher quality output:
 
-**Total per PR**: ~$0.002, ~2s latency. Acceptable for incognito mode.
+| Content Type | Typical Size | Sonnet Cost | Latency |
+|--------------|--------------|-------------|---------|
+| PR title | ~50 chars | $0.0006 | ~1s |
+| PR body | ~500 chars | $0.006 | ~2s |
+| Comment | ~200 chars | $0.002 | ~1s |
+| Commit msg | ~100 chars | $0.001 | ~1s |
+
+**Total per PR**: ~$0.01, ~3s latency. Worth it for interaction quality.
+
+### Error Handling
+
+When the Anthropic API is unavailable:
+
+```python
+def humanize(text: str, fail_open: bool = False) -> HumanizeResult:
+    """Humanize text with configurable failure mode.
+
+    Args:
+        text: Text to humanize
+        fail_open: If True, return original text on API failure.
+                   If False, raise exception (blocking the operation).
+
+    Default behavior depends on mode:
+    - Bot mode: fail_open=True (allow unhuman content)
+    - Incognito mode: fail_open=False (block operation)
+    """
+    try:
+        response = anthropic.messages.create(...)
+        return HumanizeResult(
+            success=True,
+            text=response.content[0].text,
+            original=text,
+        )
+    except anthropic.APIError as e:
+        logger.error(f"Humanizer API error: {e}")
+        if fail_open:
+            return HumanizeResult(success=False, text=text, original=text, error=str(e))
+        raise HumanizationError(f"Cannot humanize content: {e}")
+```
+
+Configuration:
+```yaml
+humanize:
+  fail_open: true   # Bot mode default: allow on failure
+  # fail_open: false  # Incognito mode default: block on failure
+```
+
+### Diff Logging
+
+Humanization diffs are logged for debugging but NOT shown to users or included in final output:
+
+```python
+def humanize_and_log(text: str, context: str) -> str:
+    result = humanize(text)
+    if result.success and result.text != result.original:
+        # Log diff for debugging/auditing, not user-visible
+        logger.info(f"Humanized {context}", extra={
+            "original_length": len(result.original),
+            "humanized_length": len(result.text),
+            "context": context,
+        })
+        # Full diff logged at DEBUG level only
+        logger.debug(f"Humanization diff for {context}",
+                     extra={"original": result.original, "humanized": result.text})
+    return result.text
+```
 
 ## Implementation Plan
 
-### Phase 1: Identity Pattern Blocking
+### Phase 1: Bot Mode Humanization (Test First)
 
-Fast regex-based blocking of identity markers. No LLM.
+Start with bot mode to test humanization quality before applying to incognito.
+
+1. Create `gateway-sidecar/humanizer.py` with LLM integration
+2. Add Anthropic API client to gateway
+3. Wire humanization into PR/comment flow for bot mode
+4. Add bypass for short content (< 50 chars) to reduce latency
+5. Log diffs at DEBUG level for quality monitoring
+
+**Files:**
+- `gateway-sidecar/humanizer.py` (new)
+- `gateway-sidecar/gateway.py` (integration)
+- `gateway-sidecar/requirements.txt` (anthropic SDK)
+- `config/repositories.yaml.example` (humanize config)
+- `tests/gateway/test_humanizer.py` (new)
+
+**Configuration:**
+```yaml
+humanize:
+  enabled: true
+  model: claude-sonnet-4-20250514  # Higher quality
+  min_length: 50  # Skip humanization for short text
+  fail_open: true  # Allow content on API failure in bot mode
+```
+
+### Phase 2: Identity Pattern Blocking
+
+Add regex-based blocking of identity markers for incognito mode.
 
 1. Create `gateway-sidecar/sanitizer.py` with identity pattern checking
 2. Integrate into `gh_pr_create`, `gh_pr_edit`, `gh_pr_comment`
@@ -412,33 +528,15 @@ Fast regex-based blocking of identity markers. No LLM.
 - `config/repo_config.py` (configuration)
 - `tests/gateway/test_sanitizer.py` (new)
 
-### Phase 2: LLM Humanization
+### Phase 3: Incognito Mode Integration
 
-Add LLM-based content rewriting using humanizer patterns.
+Apply both humanization and identity blocking to incognito mode.
 
-1. Create `gateway-sidecar/humanizer.py` with LLM integration
-2. Add Anthropic API client to gateway (or use existing)
-3. Wire humanization into PR/comment flow for incognito mode
-4. Add bypass for short content (< 50 chars) to reduce latency
+1. Enable humanization for incognito repos (already implemented in Phase 1)
+2. Set `fail_open: false` for incognito (block on humanizer failure)
+3. Ensure identity patterns are caught after humanization
 
-**Files:**
-- `gateway-sidecar/humanizer.py` (new)
-- `gateway-sidecar/requirements.txt` (anthropic SDK if not present)
-- `config/repositories.yaml.example` (humanize config)
-- `tests/gateway/test_humanizer.py` (new)
-
-**Configuration:**
-```yaml
-incognito:
-  humanize:
-    enabled: true
-    model: claude-3-5-haiku-20241022
-    min_length: 50  # Skip humanization for short text
-```
-
-### Phase 3: Commit Message Handling
-
-Two options:
+### Phase 4: Commit Message Handling
 
 **Option A: Pre-commit hook in container**
 - Install hook that checks/rewrites commit messages
@@ -450,14 +548,50 @@ Two options:
 - Block if patterns found, user must amend
 - No rewriting, just validation
 
-**Recommendation:** Option B for Phase 3 (validation only), consider Option A later.
+**Recommendation:** Option B (validation only). Implementation:
 
-### Phase 4: Bot Mode Integration (Optional)
+```python
+def get_commits_in_push(repo_path: str, refspec: str) -> list[Commit]:
+    """Extract commit messages from a git push operation.
 
-Apply humanization to bot mode as well, making all jib output sound more human.
+    Args:
+        repo_path: Path to the git repository
+        refspec: Git refspec (e.g., "HEAD:refs/heads/feature-branch")
 
-- Make humanization opt-in for bot mode
-- Useful for external-facing repos even with bot identity
+    Returns:
+        List of Commit objects with sha and message fields
+    """
+    # Parse refspec to get local ref
+    local_ref = refspec.split(":")[0] if ":" in refspec else refspec
+
+    # Get commits not yet on remote
+    # Using @{push} to compare against upstream tracking branch
+    result = subprocess.run(
+        ["git", "-C", repo_path, "log", "--format=%H%n%B%n---COMMIT---",
+         f"{local_ref}@{{push}}..{local_ref}"],
+        capture_output=True, text=True
+    )
+
+    if result.returncode != 0:
+        # Fallback: get last N commits if no tracking branch
+        result = subprocess.run(
+            ["git", "-C", repo_path, "log", "--format=%H%n%B%n---COMMIT---",
+             "-10", local_ref],
+            capture_output=True, text=True
+        )
+
+    commits = []
+    for block in result.stdout.split("---COMMIT---"):
+        block = block.strip()
+        if not block:
+            continue
+        lines = block.split("\n", 1)
+        sha = lines[0]
+        message = lines[1] if len(lines) > 1 else ""
+        commits.append(Commit(sha=sha, message=message.strip()))
+
+    return commits
+```
 
 ## Testing Strategy
 
@@ -476,6 +610,14 @@ def test_critical_patterns_warn_in_bot_mode():
 def test_clean_text_allowed():
     result = check_text("Fix bug in login flow", auth_mode="incognito")
     assert result.action == SanitizeAction.ALLOW
+
+def test_jib_word_boundary():
+    # Should match standalone "jib"
+    assert check_text("jib container", auth_mode="incognito").action == SanitizeAction.BLOCK
+    # Should NOT match in compound words
+    assert check_text("jibing along", auth_mode="incognito").action == SanitizeAction.ALLOW
+    # Note: WILL match in hyphenated contexts (acceptable)
+    assert check_text("main-jib-branch", auth_mode="incognito").action == SanitizeAction.BLOCK
 ```
 
 ### Integration Tests
@@ -485,29 +627,78 @@ def test_clean_text_allowed():
 - Warning patterns logged but allowed
 - Configuration override respected
 
+### Humanization Quality Testing
+
+Testing that humanized output sounds human is inherently subjective. Our approach:
+
+**1. Regression tests with golden examples:**
+```python
+GOLDEN_EXAMPLES = [
+    {
+        "input": "Additionally, this PR implements a crucial feature that serves as a testament to our commitment.",
+        "should_not_contain": ["Additionally", "crucial", "serves as", "testament"],
+        "should_preserve": ["feature", "commitment"],  # Core meaning
+    },
+    {
+        "input": "Great question! I'd be happy to help with that.",
+        "should_not_contain": ["Great question", "happy to help"],
+    },
+]
+
+def test_humanization_removes_ai_patterns():
+    for example in GOLDEN_EXAMPLES:
+        result = humanize(example["input"])
+        for pattern in example["should_not_contain"]:
+            assert pattern.lower() not in result.lower(), f"Found '{pattern}' in: {result}"
+        for term in example.get("should_preserve", []):
+            # Allow synonyms - just check meaning is preserved
+            pass  # Manual review for meaning preservation
+```
+
+**2. A/B quality monitoring in production:**
+- Log original and humanized text at DEBUG level
+- Periodically review samples to assess quality
+- Track user feedback on PR readability
+
+**3. Meaning preservation check:**
+```python
+def test_meaning_preserved():
+    """Use a separate LLM call to verify meaning is preserved."""
+    original = "Fix the authentication bug in the login flow"
+    humanized = humanize(original)
+
+    verification = anthropic.messages.create(
+        model="claude-3-5-haiku-20241022",  # Cheap model for verification
+        messages=[{
+            "role": "user",
+            "content": f"Do these two texts mean the same thing? Answer YES or NO.\n\nText 1: {original}\nText 2: {humanized}"
+        }]
+    )
+    assert "YES" in verification.content[0].text.upper()
+```
+
 ## Security Considerations
 
 1. **False positives**: "jib" appears in legitimate words (e.g., "jibing"). Use word boundaries.
 2. **Evasion**: Intentional obfuscation (Cl@ude) not covered. Acceptable - policy is for accidents.
 3. **Logging**: Don't log full text content, only pattern matches.
 
-## Open Questions
+## Decisions Made
 
-1. **LLM choice**: Haiku is fast/cheap but less capable. Should we use Sonnet for better quality?
-2. **Caching**: Should we cache humanized text to avoid re-processing on retries?
-3. **Diff visibility**: Should we show the user what was changed? (original vs humanized)
-4. **Bot mode**: Should humanization be available (opt-in) for bot mode too?
-5. **Commit messages**: LLM rewrite on every commit adds latency. Worth it?
+Based on review feedback:
 
-## Decision Requested
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| **Model choice** | Sonnet | Interaction quality is important; worth the extra cost |
+| **Diff visibility** | Log only, not user-visible | Diffs logged at DEBUG for debugging, not shown in final output |
+| **Bot mode** | Enabled by default, test first | Test humanization quality in bot mode before applying to incognito |
+| **Phasing** | Bot mode first (Phase 1) | Allows quality validation before higher-stakes incognito mode |
 
-Please review and provide feedback on:
+## Remaining Open Questions
 
-1. **Architecture**: Two-tier (regex blocking + LLM humanization) vs LLM-only?
-2. **Scope**: Start with Phase 1+2 together, or Phase 1 first?
-3. **Model**: Haiku (fast/cheap) or Sonnet (better quality)?
-4. **Transparency**: Show diff of humanization to user, or silent?
-5. **Commit handling**: Validation-only (Phase 3 Option B) acceptable?
+1. **Caching**: Should we cache humanized text to avoid re-processing on retries?
+2. **Commit messages**: LLM rewrite on every commit adds latency. Worth it, or validation-only?
+3. **Rollout**: Gradual enablement per-repo, or all at once?
 
 ## Alternatives Considered
 
