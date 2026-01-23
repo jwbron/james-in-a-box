@@ -20,6 +20,7 @@ For more information, see docs/adr/not-implemented/ADR-Declarative-Setup-Archite
 """
 
 import argparse
+import json  # noqa: F401 - used in ConfigMigrator and SetupWizard classes
 import logging
 import os
 import shutil
