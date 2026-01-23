@@ -236,7 +236,9 @@ class Config:
     """Configuration paths and constants"""
     # Cache directory for Docker staging (XDG-compliant)
     # Previously ~/.jib, now ~/.cache/jib per ADR-Config-Directory-Consolidation
-    CACHE_DIR = Path.home() / ".cache" / "jib"
+    # Respects XDG_CACHE_HOME if set
+    _xdg_cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    CACHE_DIR = _xdg_cache / "jib"
     CONFIG_DIR = CACHE_DIR  # Alias for backward compatibility
     LEGACY_CONFIG_DIR = Path.home() / ".jib"  # Old location, for migration
     DOCKERFILE = CONFIG_DIR / "Dockerfile"

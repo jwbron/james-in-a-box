@@ -42,7 +42,7 @@ The current jib setup system has several issues:
 | `~/.config/jib/repositories.yaml` | Repo access configuration | Used by repo_config.py |
 | `~/.config/jib/github-app-*` | GitHub App credentials | Set by setup.sh |
 | `~/.config/jib/anthropic-api-key` | Anthropic API key | Read by jib script |
-| `~/.jib/mounts.conf` | Docker mount configuration | Written by jib --setup |
+| `~/.cache/jib/` | Docker staging (cache) | Auto-managed by jib |
 
 **Desired State:**
 

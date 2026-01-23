@@ -81,10 +81,15 @@ class TestConfig:
     """Tests for Config class paths."""
 
     def test_config_dir(self):
-        """Test cache directory path structure (~/.cache/jib)."""
-        # CONFIG_DIR is now ~/.cache/jib (XDG-compliant cache location)
+        """Test cache directory path structure (XDG-compliant)."""
+        # CONFIG_DIR is now $XDG_CACHE_HOME/jib or ~/.cache/jib
         assert Config.CONFIG_DIR.name == "jib"
-        assert Config.CONFIG_DIR.parent.name == ".cache"
+        # Parent is either .cache or custom XDG_CACHE_HOME
+        xdg_cache = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache:
+            assert str(Config.CONFIG_DIR.parent) == xdg_cache
+        else:
+            assert Config.CONFIG_DIR.parent.name == ".cache"
         # CACHE_DIR should be the same as CONFIG_DIR
         assert Config.CACHE_DIR == Config.CONFIG_DIR
 
