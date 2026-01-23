@@ -24,7 +24,7 @@ from pathlib import Path
 # Startup Timing (Debug)
 # =============================================================================
 
-# Set to True to enable startup timing diagnostics
+# Enabled via JIB_TIMING=1 env var (set by `jib --time` on host)
 ENABLE_STARTUP_TIMING = os.environ.get("JIB_TIMING", "0") == "1"
 
 
@@ -55,20 +55,18 @@ class StartupTimer:
 
     def phase(self, name: str):
         """Context manager for timing a phase."""
+        timer = self
+        phase_name = name
 
         class PhaseContext:
-            def __init__(ctx, timer: "StartupTimer", name: str):
-                ctx.timer = timer
-                ctx.name = name
+            def __enter__(self):
+                timer.start_phase(phase_name)
+                return self
 
-            def __enter__(ctx):
-                ctx.timer.start_phase(ctx.name)
-                return ctx
+            def __exit__(self, *args):
+                timer.end_phase()
 
-            def __exit__(ctx, *args):
-                ctx.timer.end_phase()
-
-        return PhaseContext(self, name)
+        return PhaseContext()
 
     def print_summary(self) -> None:
         """Print timing summary."""
@@ -78,7 +76,7 @@ class StartupTimer:
         total_time = (time.perf_counter() - self.start_time) * 1000
 
         print("\n" + "=" * 60)
-        print("STARTUP TIMING SUMMARY")
+        print("CONTAINER STARTUP TIMING SUMMARY")
         print("=" * 60)
         print(f"{'Phase':<35} {'Time (ms)':>10} {'%':>6}")
         print("-" * 60)

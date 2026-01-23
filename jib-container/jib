@@ -36,29 +36,27 @@ _quiet_mode = False
 # Startup Timing (Debug)
 # =============================================================================
 
-# Set via JIB_TIMING=1 environment variable
-ENABLE_STARTUP_TIMING = os.environ.get("JIB_TIMING", "0") == "1"
-
 
 class StartupTimer:
     """Collects timing data for startup phases (host-side)."""
 
-    def __init__(self):
-        self.timings: List[tuple] = []
+    def __init__(self, enabled: bool = False):
+        self.enabled = enabled
+        self.timings: list[tuple[str, float]] = []
         self.start_time: float = time.perf_counter()
-        self._phase_start: Optional[float] = None
-        self._phase_name: Optional[str] = None
+        self._phase_start: float | None = None
+        self._phase_name: str | None = None
 
     def start_phase(self, name: str) -> None:
         """Start timing a phase."""
-        if not ENABLE_STARTUP_TIMING:
+        if not self.enabled:
             return
         self._phase_name = name
         self._phase_start = time.perf_counter()
 
     def end_phase(self) -> None:
         """End timing the current phase."""
-        if not ENABLE_STARTUP_TIMING or self._phase_start is None:
+        if not self.enabled or self._phase_start is None:
             return
         elapsed = (time.perf_counter() - self._phase_start) * 1000  # ms
         self.timings.append((self._phase_name, elapsed))
@@ -82,7 +80,7 @@ class StartupTimer:
 
     def print_summary(self) -> None:
         """Print timing summary."""
-        if not ENABLE_STARTUP_TIMING or not self.timings:
+        if not self.enabled or not self.timings:
             return
 
         total_time = (time.perf_counter() - self.start_time) * 1000
@@ -103,8 +101,8 @@ class StartupTimer:
         print("=" * 60 + "\n")
 
 
-# Global timer instance
-_host_timer = StartupTimer()
+# Global timer instance (disabled by default, enabled via --time flag)
+_host_timer = StartupTimer(enabled=False)
 
 
 # Default log directory for container logs
@@ -2036,7 +2034,7 @@ def run_claude() -> bool:
             return False
 
     # Generate unique container ID
-    with _host_timer.phase("generate_container_id"):
+    with _host_timer.phase("prepare_container"):
         if _quiet_mode:
             status("Preparing container...")
         container_id = generate_container_id()
@@ -2067,7 +2065,7 @@ def run_claude() -> bool:
 
     atexit.register(cleanup_on_exit)
 
-    # Parse mount configuration
+    # Parse mount configuration (manual timing due to complex conditional logic)
     _host_timer.start_phase("configure_mounts")
     if _quiet_mode:
         status("Configuring mounts...")
@@ -2206,7 +2204,7 @@ def run_claude() -> bool:
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
-        "-e", f"JIB_TIMING={'1' if ENABLE_STARTUP_TIMING else '0'}",
+        "-e", f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
         "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
         # Host worktree path - needed by git wrapper to translate container paths
         # Container sees /home/user/repos/X, but gateway needs ~/.jib-worktrees/<id>/X
@@ -2577,6 +2575,7 @@ def main():
 Examples:
   jib                                      # Run Claude Code (progress bar by default, auto-setup if needed)
   jib -v                                   # Run in verbose mode (detailed output)
+  jib --time                               # Show startup timing breakdown for debugging
   jib --setup                              # Run full setup (delegates to setup.py)
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
@@ -2621,8 +2620,17 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         action="store_true",
         help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)"
     )
+    parser.add_argument(
+        "--time",
+        action="store_true",
+        help="Show startup timing breakdown for debugging slow startup"
+    )
 
     args = parser.parse_args()
+
+    # Enable timing if --time flag is set
+    if args.time:
+        _host_timer.enabled = True
 
     # Initialize quiet mode globally
     # Quiet is the default; verbose (-v) overrides it
