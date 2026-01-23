@@ -28,7 +28,6 @@ class TestConfig:
     def test_default_values(self, monkeypatch):
         """Test default configuration values."""
         # Clear environment variables to test defaults
-        monkeypatch.delenv("RUNTIME_USER", raising=False)
         monkeypatch.delenv("RUNTIME_UID", raising=False)
         monkeypatch.delenv("RUNTIME_GID", raising=False)
         monkeypatch.delenv("JIB_QUIET", raising=False)
@@ -36,7 +35,7 @@ class TestConfig:
 
         config = entrypoint.Config()
 
-        assert config.runtime_user == "sandboxed"
+        assert config.container_user == "jib"  # Fixed user, not configurable
         assert config.runtime_uid == 1000
         assert config.runtime_gid == 1000
         assert config.quiet is False
@@ -44,7 +43,7 @@ class TestConfig:
 
     def test_environment_overrides(self, monkeypatch):
         """Test that environment variables override defaults."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
+        # Note: container_user is fixed as "jib", only UID/GID can be overridden
         monkeypatch.setenv("RUNTIME_UID", "2000")
         monkeypatch.setenv("RUNTIME_GID", "2000")
         monkeypatch.setenv("JIB_QUIET", "1")
@@ -52,7 +51,7 @@ class TestConfig:
 
         config = entrypoint.Config()
 
-        assert config.runtime_user == "testuser"
+        assert config.container_user == "jib"  # Always fixed
         assert config.runtime_uid == 2000
         assert config.runtime_gid == 2000
         assert config.quiet is True
@@ -73,41 +72,33 @@ class TestConfig:
         assert config.github_token == "test-github-token"
 
     def test_user_home_property(self, monkeypatch):
-        """Test the user_home property."""
-        monkeypatch.setenv("RUNTIME_USER", "myuser")
-
+        """Test the user_home property - always /home/jib with fixed user."""
         config = entrypoint.Config()
 
-        assert config.user_home == Path("/home/myuser")
+        assert config.user_home == Path("/home/jib")
 
     def test_repos_dir_property(self, monkeypatch):
-        """Test the repos_dir property."""
-        monkeypatch.setenv("RUNTIME_USER", "myuser")
-
+        """Test the repos_dir property - always under /home/jib."""
         config = entrypoint.Config()
 
-        assert config.repos_dir == Path("/home/myuser/repos")
+        assert config.repos_dir == Path("/home/jib/repos")
 
     def test_sharing_dir_property(self, monkeypatch):
-        """Test the sharing_dir property."""
-        monkeypatch.setenv("RUNTIME_USER", "myuser")
-
+        """Test the sharing_dir property - always under /home/jib."""
         config = entrypoint.Config()
 
-        assert config.sharing_dir == Path("/home/myuser/sharing")
+        assert config.sharing_dir == Path("/home/jib/sharing")
 
     def test_derived_paths(self, monkeypatch):
-        """Test all derived path properties."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
-
+        """Test all derived path properties - all under /home/jib."""
         config = entrypoint.Config()
 
-        assert config.git_main_dir == Path("/home/testuser/.git-main")
-        assert config.claude_dir == Path("/home/testuser/.claude")
-        assert config.gemini_dir == Path("/home/testuser/.gemini")
-        assert config.beads_dir == Path("/home/testuser/sharing/beads")
-        assert config.router_dir == Path("/home/testuser/.claude-code-router")
-        assert config.router_config == Path("/home/testuser/.claude-code-router/config.json")
+        assert config.git_main_dir == Path("/home/jib/.git-main")
+        assert config.claude_dir == Path("/home/jib/.claude")
+        assert config.gemini_dir == Path("/home/jib/.gemini")
+        assert config.beads_dir == Path("/home/jib/sharing/beads")
+        assert config.router_dir == Path("/home/jib/.claude-code-router")
+        assert config.router_config == Path("/home/jib/.claude-code-router/config.json")
 
 
 class TestLogger:
@@ -234,18 +225,16 @@ class TestSetupEnvironment:
     """Tests for the setup_environment function."""
 
     def test_sets_home_and_user(self, monkeypatch):
-        """Test that HOME and USER are set correctly."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
+        """Test that HOME and USER are set correctly - always jib."""
         config = entrypoint.Config()
 
         entrypoint.setup_environment(config)
 
-        assert os.environ["HOME"] == "/home/testuser"
-        assert os.environ["USER"] == "testuser"
+        assert os.environ["HOME"] == "/home/jib"
+        assert os.environ["USER"] == "jib"
 
     def test_sets_python_flags(self, monkeypatch):
         """Test that Python environment flags are set."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
         config = entrypoint.Config()
 
         entrypoint.setup_environment(config)
@@ -255,7 +244,6 @@ class TestSetupEnvironment:
 
     def test_sets_disable_autoupdater(self, monkeypatch):
         """Test that Claude autoupdater is disabled."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
         config = entrypoint.Config()
 
         entrypoint.setup_environment(config)
@@ -263,23 +251,22 @@ class TestSetupEnvironment:
         assert os.environ["DISABLE_AUTOUPDATER"] == "1"
 
     def test_sets_beads_dir(self, monkeypatch):
-        """Test that BEADS_DIR is set correctly."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
+        """Test that BEADS_DIR is set correctly - always under /home/jib."""
         config = entrypoint.Config()
 
         entrypoint.setup_environment(config)
 
-        assert os.environ["BEADS_DIR"] == "/home/testuser/sharing/beads/.beads"
+        assert os.environ["BEADS_DIR"] == "/home/jib/sharing/beads/.beads"
 
     def test_updates_path(self, monkeypatch):
-        """Test that PATH is updated with jib runtime scripts."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
+        """Test that PATH is updated with jib runtime scripts and local bin."""
         monkeypatch.setenv("PATH", "/usr/bin")
         config = entrypoint.Config()
 
         entrypoint.setup_environment(config)
 
         assert "/opt/jib-runtime/jib-container/bin" in os.environ["PATH"]
+        assert "/home/jib/.local/bin" in os.environ["PATH"]
 
 
 class TestSetupRouter:

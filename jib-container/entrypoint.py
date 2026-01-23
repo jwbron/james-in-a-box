@@ -104,8 +104,8 @@ _startup_timer = StartupTimer()
 class Config:
     """Container configuration from environment variables."""
 
-    # Runtime identity (from docker run)
-    runtime_user: str = field(default_factory=lambda: os.environ.get("RUNTIME_USER", "sandboxed"))
+    # Fixed container user - UID/GID adjusted at runtime to match host
+    container_user: str = "jib"
     runtime_uid: int = field(default_factory=lambda: int(os.environ.get("RUNTIME_UID", "1000")))
     runtime_gid: int = field(default_factory=lambda: int(os.environ.get("RUNTIME_GID", "1000")))
     quiet: bool = field(default_factory=lambda: os.environ.get("JIB_QUIET", "0") == "1")
@@ -125,10 +125,10 @@ class Config:
         default_factory=lambda: os.environ.get("GITHUB_READONLY_TOKEN")
     )
 
-    # Derived paths
+    # Derived paths - fixed home directory for jib user
     @property
     def user_home(self) -> Path:
-        return Path(f"/home/{self.runtime_user}")
+        return Path("/home/jib")
 
     @property
     def repos_dir(self) -> Path:
@@ -231,41 +231,45 @@ def chown_recursive(path: Path, uid: int, gid: int) -> None:
 
 
 def setup_user(config: Config, logger: Logger) -> None:
-    """Create user's home directory and add to /etc/passwd if needed."""
+    """Adjust jib user's UID/GID to match host user for proper file permissions."""
+    import grp
+    import pwd
+
     logger.info(
-        f"Setting up sandboxed environment for user: {config.runtime_user} "
+        f"Setting up sandboxed environment for user: {config.container_user} "
         f"(uid={config.runtime_uid}, gid={config.runtime_gid})"
     )
 
-    # Create home directory
-    config.user_home.mkdir(parents=True, exist_ok=True)
-    os.chown(config.user_home, config.runtime_uid, config.runtime_gid)
-
-    # Add group if not exists
+    # Get current jib user's UID/GID
     try:
-        import grp
-
-        grp.getgrgid(config.runtime_gid)
+        current_uid = pwd.getpwnam(config.container_user).pw_uid
+        current_gid = grp.getgrnam(config.container_user).gr_gid
     except KeyError:
-        with open("/etc/group", "a") as f:
-            f.write(f"{config.runtime_user}:x:{config.runtime_gid}:\n")
+        logger.error(f"User {config.container_user} not found - container image may be corrupt")
+        raise
 
-    # Add user if not exists
-    try:
-        import pwd
+    # Adjust GID if needed
+    if current_gid != config.runtime_gid:
+        logger.info(
+            f"Adjusting {config.container_user} group GID: {current_gid} -> {config.runtime_gid}"
+        )
+        run_cmd(["groupmod", "-g", str(config.runtime_gid), config.container_user])
 
-        pwd.getpwuid(config.runtime_uid)
-    except KeyError:
-        with open("/etc/passwd", "a") as f:
-            f.write(
-                f"{config.runtime_user}:x:{config.runtime_uid}:{config.runtime_gid}:"
-                f"Sandboxed User:{config.user_home}:/bin/bash\n"
-            )
+    # Adjust UID if needed
+    if current_uid != config.runtime_uid:
+        logger.info(
+            f"Adjusting {config.container_user} user UID: {current_uid} -> {config.runtime_uid}"
+        )
+        run_cmd(["usermod", "-u", str(config.runtime_uid), config.container_user])
 
-        # Passwordless sudo
-        sudoers_file = Path(f"/etc/sudoers.d/010-{config.runtime_user}-nopasswd")
-        sudoers_file.write_text(f"{config.runtime_user} ALL=(ALL) NOPASSWD:ALL\n")
-        sudoers_file.chmod(0o440)
+    # Fix ownership of home directory after UID/GID change
+    if current_uid != config.runtime_uid or current_gid != config.runtime_gid:
+        logger.info("Fixing home directory ownership...")
+        start_time = time.time()
+        chown_recursive(config.user_home, config.runtime_uid, config.runtime_gid)
+        elapsed = time.time() - start_time
+        if elapsed > 1.0:
+            logger.info(f"  chown completed in {elapsed:.1f}s")
 
 
 # NOTE: PostgreSQL and Redis service startup removed for now.
@@ -278,11 +282,14 @@ def setup_user(config: Config, logger: Logger) -> None:
 def setup_environment(config: Config) -> None:
     """Set up environment variables."""
     os.environ["HOME"] = str(config.user_home)
-    os.environ["USER"] = config.runtime_user
+    os.environ["USER"] = config.container_user
 
-    # Add jib runtime scripts to PATH
+    # Add user's local bin (Claude Code native install) and jib runtime scripts to PATH
     current_path = os.environ.get("PATH", "")
-    os.environ["PATH"] = f"/opt/jib-runtime/jib-container/bin:/usr/local/bin:{current_path}"
+    local_bin = config.user_home / ".local" / "bin"
+    os.environ["PATH"] = (
+        f"{local_bin}:/opt/jib-runtime/jib-container/bin:/usr/local/bin:{current_path}"
+    )
 
     # Python settings
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
