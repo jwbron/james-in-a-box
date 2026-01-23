@@ -19,8 +19,10 @@ import time
 from pathlib import Path
 
 
-# Add shared directory to path for jib_logging module
+# Add shared directory to path for jib_logging and jib_config modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "shared"))
+from jib_config import SlackConfig
+from jib_config.utils import load_yaml_file
 from jib_logging import get_logger
 
 
@@ -60,27 +62,35 @@ class SlackNotifier:
         # Initialize jib_logging logger
         self.logger = get_logger("slack-notifier")
 
-        # Load configuration
-        self.config = self._load_config()
+        # Load and validate Slack configuration using unified config framework
+        self.slack_config = SlackConfig.from_env()
+        validation = self.slack_config.validate()
+        if not validation.is_valid:
+            for error in validation.errors:
+                self.logger.error("Configuration error", error=error)
+            raise ValueError(f"Invalid Slack configuration: {validation.errors}")
+        for warning in validation.warnings:
+            self.logger.warning("Configuration warning", warning=warning)
 
-        # Validate Slack token
-        self.slack_token = self.config.get("slack_token")
-        if not self.slack_token:
-            self.logger.error("SLACK_TOKEN not configured")
-            raise ValueError("SLACK_TOKEN not found in config")
-
-        # Configuration
-        # SECURITY FIX: Do not hardcode channel ID - require it to be configured
-        self.slack_channel = self.config.get("slack_channel")
+        # Extract config values
+        self.slack_token = self.slack_config.bot_token
+        self.slack_channel = self.slack_config.channel
         if not self.slack_channel:
             self.logger.error("SLACK_CHANNEL not configured")
             raise ValueError(
-                "SLACK_CHANNEL not found in config. Set it in config.json or environment."
+                "SLACK_CHANNEL not found in config. Set it in config.yaml or environment."
             )
+
         # How long to wait before sending batched notifications (seconds)
         # Lower = faster notifications, Higher = fewer Slack messages
-        self.batch_window = self.config.get("batch_window_seconds", 15)
-        self.watch_dirs = [Path(d).expanduser() for d in self.config.get("watch_directories", [])]
+        self.batch_window = self.slack_config.batch_window_seconds
+
+        # Load service-specific settings from config.yaml
+        service_config = self._load_service_config()
+        self.watch_dirs = [
+            Path(d).expanduser()
+            for d in service_config.get("watch_directories", ["~/.jib-sharing"])
+        ]
 
         # State
         self.pending_changes: set[str] = set()
@@ -92,63 +102,15 @@ class SlackNotifier:
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
-    def _load_config(self) -> dict:
-        """Load configuration from ~/.config/jib/.
+    def _load_service_config(self) -> dict:
+        """Load service-specific configuration from ~/.config/jib/config.yaml.
 
-        Config location: ~/.config/jib/
-        - config.yaml: Non-secret settings
-        - secrets.env: Secrets (tokens)
-
-        Environment variables override file settings.
+        Returns settings specific to slack-notifier that aren't part of SlackConfig:
+        - watch_directories: Directories to monitor for notification files
         """
-        config = {}
-
-        jib_config_dir = Path.home() / ".config" / "jib"
-        jib_secrets = jib_config_dir / "secrets.env"
-        jib_config = jib_config_dir / "config.yaml"
-
-        # Load secrets from .env file
-        if jib_secrets.exists():
-            with open(jib_secrets) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, value = line.split("=", 1)
-                        key = key.strip()
-                        value = value.strip().strip("\"'")
-                        if key == "SLACK_TOKEN" and value:
-                            config["slack_token"] = value
-                        elif key == "SLACK_APP_TOKEN" and value:
-                            config["slack_app_token"] = value
-
-        # Load non-secret config from YAML
-        if jib_config.exists():
-            try:
-                import yaml
-
-                with open(jib_config) as f:
-                    yaml_config = yaml.safe_load(f) or {}
-                config.update(yaml_config)
-            except ImportError:
-                self.logger.warning("PyYAML not available, config.yaml not loaded")
-
-        # Set defaults for missing values
-        if "slack_token" not in config:
-            config["slack_token"] = ""
-        if "slack_channel" not in config:
-            config["slack_channel"] = ""
-        if "batch_window_seconds" not in config:
-            config["batch_window_seconds"] = 15
-        if "watch_directories" not in config:
-            config["watch_directories"] = ["~/.jib-sharing"]
-
-        # Environment variables override everything
-        if os.environ.get("SLACK_TOKEN"):
-            config["slack_token"] = os.environ["SLACK_TOKEN"]
-        if os.environ.get("SLACK_CHANNEL"):
-            config["slack_channel"] = os.environ["SLACK_CHANNEL"]
-
-        return config
+        config_file = Path.home() / ".config" / "jib" / "config.yaml"
+        yaml_config = load_yaml_file(config_file)
+        return yaml_config
 
     def _save_config(self, config: dict):
         """Save configuration to file with secure permissions."""

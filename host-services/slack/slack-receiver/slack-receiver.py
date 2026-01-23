@@ -23,11 +23,13 @@ from typing import Any
 
 # Add shared directories to path:
 # - host-services/shared for jib_exec (used by message_categorizer)
-# - repo root shared for jib_logging (common utilities)
+# - repo root shared for jib_logging and jib_config (common utilities)
 _host_services = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_host_services / "shared"))
 sys.path.insert(0, str(_host_services.parent / "shared"))
 from host_command_handler import HostCommandHandler
+from jib_config import SlackConfig
+from jib_config.utils import load_yaml_file
 from jib_logging import get_logger
 
 # Import message categorizer and host command handler
@@ -63,34 +65,40 @@ class SlackReceiver:
         # Initialize jib_logging logger
         self.logger = get_logger("slack-receiver")
 
-        # Load configuration
-        self.config = self._load_config()
+        # Load and validate Slack configuration using unified config framework
+        self.slack_config = SlackConfig.from_env()
+        validation = self.slack_config.validate()
+        if not validation.is_valid:
+            for error in validation.errors:
+                self.logger.error("Configuration error", error=error)
+            raise ValueError(f"Invalid Slack configuration: {validation.errors}")
+        for warning in validation.warnings:
+            self.logger.warning("Configuration warning", warning=warning)
 
         # Load thread state
         self.threads = self._load_threads()
 
-        # Validate tokens
-        self.bot_token = self.config.get("slack_token")
-        self.app_token = self.config.get("slack_app_token")
-
-        if not self.bot_token:
-            self.logger.error("SLACK_TOKEN not configured")
-            raise ValueError("SLACK_TOKEN not found in config")
+        # Extract config values
+        self.bot_token = self.slack_config.bot_token
+        self.app_token = self.slack_config.app_token
 
         if not self.app_token:
             self.logger.error("SLACK_APP_TOKEN not configured")
             raise ValueError("SLACK_APP_TOKEN not found in config (required for Socket Mode)")
 
-        # Configuration
-        self.allowed_users = self.config.get("allowed_users", [])
-        self.self_dm_channel = self.config.get("self_dm_channel")  # User's self-DM channel ID
-        self.owner_user_id = self.config.get("owner_user_id")  # User's Slack user ID
+        # Configuration from SlackConfig
+        self.allowed_users = self.slack_config.allowed_users
+        self.self_dm_channel = self.slack_config.self_dm_channel
+        self.owner_user_id = self.slack_config.owner_user_id
         self.bot_user_id = None
+
+        # Load service-specific settings from config.yaml
+        service_config = self._load_service_config()
         self.incoming_dir = Path(
-            self.config.get("incoming_directory", "~/.jib-sharing/incoming")
+            service_config.get("incoming_directory", "~/.jib-sharing/incoming")
         ).expanduser()
         self.responses_dir = Path(
-            self.config.get("responses_directory", "~/.jib-sharing/responses")
+            service_config.get("responses_directory", "~/.jib-sharing/responses")
         ).expanduser()
 
         # Ensure incoming directories exist
@@ -113,69 +121,16 @@ class SlackReceiver:
         # Initialize host command handler for executing host functions
         self.command_handler = HostCommandHandler()
 
-    def _load_config(self) -> dict:
-        """Load configuration from ~/.config/jib/.
+    def _load_service_config(self) -> dict:
+        """Load service-specific configuration from ~/.config/jib/config.yaml.
 
-        Config location: ~/.config/jib/
-        - config.yaml: Non-secret settings
-        - secrets.env: Secrets (tokens)
-
-        Environment variables override file settings.
+        Returns settings specific to slack-receiver that aren't part of SlackConfig:
+        - incoming_directory: Directory for incoming task files
+        - responses_directory: Directory for response files
         """
-        config = {}
-
-        jib_config_dir = Path.home() / ".config" / "jib"
-        jib_secrets = jib_config_dir / "secrets.env"
-        jib_config = jib_config_dir / "config.yaml"
-
-        # Load secrets from .env file
-        if jib_secrets.exists():
-            with open(jib_secrets) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, value = line.split("=", 1)
-                        key = key.strip()
-                        value = value.strip().strip("\"'")
-                        if key == "SLACK_TOKEN" and value:
-                            config["slack_token"] = value
-                        elif key == "SLACK_APP_TOKEN" and value:
-                            config["slack_app_token"] = value
-
-        # Load non-secret config from YAML
-        if jib_config.exists():
-            try:
-                import yaml
-
-                with open(jib_config) as f:
-                    yaml_config = yaml.safe_load(f) or {}
-                config.update(yaml_config)
-            except ImportError:
-                self.logger.warning("PyYAML not available, config.yaml not loaded")
-
-        # Set defaults for missing values
-        if "slack_token" not in config:
-            config["slack_token"] = ""
-        if "slack_app_token" not in config:
-            config["slack_app_token"] = ""
-        if "allowed_users" not in config:
-            config["allowed_users"] = []
-        if "self_dm_channel" not in config:
-            config["self_dm_channel"] = ""
-        if "owner_user_id" not in config:
-            config["owner_user_id"] = ""
-        if "incoming_directory" not in config:
-            config["incoming_directory"] = "~/.jib-sharing/incoming"
-        if "responses_directory" not in config:
-            config["responses_directory"] = "~/.jib-sharing/responses"
-
-        # Environment variables override everything
-        if os.environ.get("SLACK_TOKEN"):
-            config["slack_token"] = os.environ["SLACK_TOKEN"]
-        if os.environ.get("SLACK_APP_TOKEN"):
-            config["slack_app_token"] = os.environ["SLACK_APP_TOKEN"]
-
-        return config
+        config_file = Path.home() / ".config" / "jib" / "config.yaml"
+        yaml_config = load_yaml_file(config_file)
+        return yaml_config
 
     def _save_config(self, config: dict):
         """Save configuration to file with secure permissions."""
