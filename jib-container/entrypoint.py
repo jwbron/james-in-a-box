@@ -460,7 +460,7 @@ def setup_jib_symlink(config: Config, logger: Logger) -> None:
     if jib_link.is_symlink():
         jib_link.unlink()
     elif jib_link.exists():
-        logger.warn(f"~/jib exists but is not a symlink, skipping")
+        logger.warn("~/jib exists but is not a symlink, skipping")
         return
 
     jib_link.symlink_to(target)
