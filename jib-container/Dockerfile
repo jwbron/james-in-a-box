@@ -77,23 +77,13 @@ RUN mkdir -p /usr/share/keyrings && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI (native installer - npm method is deprecated)
-# Install to /root first, then the entrypoint handles per-user setup
 # Pin version for reproducible builds; update periodically
 ENV CLAUDE_CODE_VERSION=stable
-RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION && \
-    # Make claude available system-wide (native installer puts it in ~/.local/bin)
-    ln -sf /root/.local/bin/claude /usr/local/bin/claude
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION
 
 # Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
 # The bundled arm64-linux binary crashes; system ripgrep from apt works correctly
-# Native installer location differs from npm; find and patch dynamically
-RUN CLAUDE_RG=$(find /root/.claude -name "rg" -path "*/ripgrep/*" 2>/dev/null | head -1) && \
-    if [ -n "$CLAUDE_RG" ]; then \
-        ln -sf /usr/bin/rg "$CLAUDE_RG"; \
-        echo "Patched ripgrep at: $CLAUDE_RG"; \
-    else \
-        echo "Warning: Could not find bundled ripgrep to patch"; \
-    fi
+RUN ln -sf /usr/bin/rg /usr/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-linux/rg
 
 # Install claude-code-router for multi-provider support
 # Allows routing to OpenAI, Gemini, DeepSeek, etc. while using Claude Code tooling
