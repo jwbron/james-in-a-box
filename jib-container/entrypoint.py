@@ -242,7 +242,7 @@ def run_cmd_with_retry(
         base_delay: Initial delay between retries (seconds)
         max_delay: Maximum delay between retries (seconds)
         check: Whether to raise on non-zero exit code (after all retries exhausted)
-        capture: Whether to capture stdout/stderr
+        capture: Whether to capture stdout/stderr in returned result
         timeout: Command timeout in seconds
         as_user: Optional (uid, gid) tuple to run command as different user
     """
@@ -250,18 +250,24 @@ def run_cmd_with_retry(
 
     for attempt in range(max_retries + 1):
         try:
-            return run_cmd(
+            # Always capture internally so we can detect lock errors in stderr
+            result = run_cmd(
                 cmd,
                 check=check,
-                capture=capture,
+                capture=True,
                 timeout=timeout,
                 as_user=as_user,
             )
+            # If caller didn't want capture, clear the output
+            if not capture:
+                result.stdout = ""
+                result.stderr = ""
+            return result
         except subprocess.CalledProcessError as e:
             last_exception = e
             # Check if this looks like a lock contention error
-            stderr = e.stderr or "" if hasattr(e, "stderr") else ""
-            if "could not lock" not in stderr and "File exists" not in str(e):
+            stderr = e.stderr or ""
+            if "could not lock" not in stderr:
                 # Not a lock error, don't retry
                 raise
 
@@ -269,6 +275,11 @@ def run_cmd_with_retry(
                 # Exponential backoff with jitter
                 delay = min(base_delay * (2**attempt), max_delay)
                 delay *= 0.5 + random.random()  # Add jitter
+                # Log retry for debugging
+                print(
+                    f"⚠ Git config lock contention, retrying ({attempt + 1}/{max_retries})...",
+                    file=sys.stderr,
+                )
                 time.sleep(delay)
 
     # All retries exhausted
@@ -407,13 +418,18 @@ def _fix_repo_config(repo_config: Path, logger: Logger) -> None:
     Uses retry logic with exponential backoff to handle lock contention
     when multiple containers start simultaneously.
     """
-    # Clean up any stale lock files from crashed containers or concurrent access
+    # Clean up stale lock files from crashed containers (older than 60 seconds).
+    # We don't delete fresh locks as they may be legitimately held by another process.
+    # The retry logic handles genuine concurrent access.
     lock_file = repo_config.with_suffix(".lock")
     if lock_file.exists():
         try:
-            lock_file.unlink()
+            lock_age = time.time() - lock_file.stat().st_mtime
+            if lock_age > 60:
+                lock_file.unlink()
+                logger.warn(f"Removed stale git lock file: {lock_file} (age: {lock_age:.0f}s)")
         except OSError:
-            pass  # Another process may have removed it
+            pass  # Another process may have removed it, or stat failed
 
     # Set identity with retry for lock contention
     run_cmd_with_retry(["git", "config", "-f", str(repo_config), "user.name", "jib"])
