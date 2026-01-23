@@ -18,7 +18,6 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 # =============================================================================
@@ -35,8 +34,8 @@ class StartupTimer:
     def __init__(self):
         self.timings: list[tuple[str, float]] = []
         self.start_time: float = time.perf_counter()
-        self._phase_start: Optional[float] = None
-        self._phase_name: Optional[str] = None
+        self._phase_start: float | None = None
+        self._phase_name: str | None = None
 
     def start_phase(self, name: str) -> None:
         """Start timing a phase."""
