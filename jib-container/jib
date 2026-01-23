@@ -845,10 +845,55 @@ def create_dockerfile() -> None:
         error("Cannot build without Dockerfile")
 
 
+def _dockerfile_changed() -> bool:
+    """Check if Dockerfile has changed since last build.
+
+    Compares the current Dockerfile hash against the stored hash from the last
+    successful build. This detects when we need to force a rebuild with --no-cache
+    because Docker's layer cache doesn't always invalidate properly when RUN
+    instructions change.
+
+    Returns:
+        True if Dockerfile changed or no previous hash exists, False otherwise
+    """
+    import hashlib
+
+    hash_file = Config.CONFIG_DIR / ".dockerfile-hash"
+
+    # Calculate current Dockerfile hash
+    if not Config.DOCKERFILE.exists():
+        return True
+
+    current_hash = hashlib.sha256(Config.DOCKERFILE.read_bytes()).hexdigest()
+
+    # Compare with stored hash
+    if hash_file.exists():
+        stored_hash = hash_file.read_text().strip()
+        return current_hash != stored_hash
+
+    return True  # No stored hash means first build or hash file deleted
+
+
+def _save_dockerfile_hash() -> None:
+    """Save current Dockerfile hash after successful build."""
+    import hashlib
+
+    hash_file = Config.CONFIG_DIR / ".dockerfile-hash"
+
+    if Config.DOCKERFILE.exists():
+        current_hash = hashlib.sha256(Config.DOCKERFILE.read_bytes()).hexdigest()
+        hash_file.write_text(current_hash)
+
+
 def build_image() -> bool:
     """Build the Docker image (Docker's cache makes this fast when nothing changed)"""
     # Always sync files to build context - Docker detects changes and rebuilds only what's needed
     create_dockerfile()
+
+    # Check if Dockerfile changed - if so, force rebuild to avoid stale cache
+    force_rebuild = _dockerfile_changed()
+    if force_rebuild and not _quiet_mode:
+        info("Dockerfile changed, forcing full rebuild...")
 
     try:
         cmd = [
@@ -860,6 +905,10 @@ def build_image() -> bool:
             "-f", str(Config.DOCKERFILE),
             str(Config.CONFIG_DIR)
         ]
+
+        # Force rebuild if Dockerfile changed
+        if force_rebuild:
+            cmd.insert(2, "--no-cache")
 
         # In quiet mode, suppress Docker build output
         if _quiet_mode:
@@ -874,6 +923,9 @@ def build_image() -> bool:
         else:
             # Docker automatically uses cache for unchanged layers
             subprocess.run(cmd, check=True)
+
+        # Save Dockerfile hash after successful build
+        _save_dockerfile_hash()
         return True
     except subprocess.CalledProcessError:
         error("Docker build failed")
