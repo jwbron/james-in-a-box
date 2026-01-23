@@ -13,6 +13,7 @@ import argparse
 import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -311,7 +312,6 @@ def migrate_legacy_config_dir() -> None:
             # If rename fails (cross-device), fall back to copy+delete
             if not _quiet_mode:
                 print(f"{Colors.YELLOW}[WARNING]{Colors.NC} Cannot move {legacy}, copying instead: {e}")
-            import shutil
             shutil.copytree(legacy, new, dirs_exist_ok=True)
             shutil.rmtree(legacy)
             if not _quiet_mode:

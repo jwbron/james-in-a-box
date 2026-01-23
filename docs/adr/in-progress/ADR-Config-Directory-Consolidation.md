@@ -1,6 +1,6 @@
 # ADR: Configuration Directory Consolidation
 
-**Status**: In Progress
+**Status**: In Progress (Phase 1 Complete)
 **Date**: 2026-01-23
 **Author**: jib
 
