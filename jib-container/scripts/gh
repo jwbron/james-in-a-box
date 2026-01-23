@@ -55,8 +55,8 @@ Please ensure:
   1. Gateway sidecar is running on the host:
      systemctl --user status gateway-sidecar
 
-  2. The container can reach the host:
-     curl http://host.docker.internal:9847/api/v1/health
+  2. The container can reach the gateway:
+     curl http://jib-gateway:9847/api/v1/health
 
 ================================================================================
 
