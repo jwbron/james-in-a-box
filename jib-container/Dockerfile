@@ -76,15 +76,6 @@ RUN mkdir -p /usr/share/keyrings && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI (native installer - npm method is deprecated)
-# Pin version for reproducible builds; update periodically
-ENV CLAUDE_CODE_VERSION=stable
-RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION
-
-# Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
-# The bundled arm64-linux binary crashes; system ripgrep from apt works correctly
-RUN ln -sf /usr/bin/rg /usr/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-linux/rg
-
 # Install claude-code-router for multi-provider support
 # Allows routing to OpenAI, Gemini, DeepSeek, etc. while using Claude Code tooling
 RUN npm install -g @musistudio/claude-code-router
@@ -132,6 +123,14 @@ ENV PYTHONPATH="/opt/jib-runtime/jib-container:/opt/jib-runtime/shared"
 RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
 
 # Note: User will be created dynamically at runtime to match host UID/GID
+
+# Install Claude Code CLI (native installer - npm method is deprecated)
+# Placed late in Dockerfile so updates are picked up without rebuilding earlier layers
+# Pin version for reproducible builds; update periodically
+ENV CLAUDE_CODE_VERSION=stable
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION && \
+    # Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
+    ln -sf /usr/bin/rg /usr/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-linux/rg
 
 # Copy entrypoint script (Python for maintainability)
 COPY entrypoint.py /usr/local/bin/entrypoint.py
