@@ -87,7 +87,10 @@ class SlackNotifier:
 
         # Load service-specific settings from config.yaml
         service_config = self._load_service_config()
-        self.watch_dirs = [Path(d).expanduser() for d in service_config.get("watch_directories", ["~/.jib-sharing"])]
+        self.watch_dirs = [
+            Path(d).expanduser()
+            for d in service_config.get("watch_directories", ["~/.jib-sharing"])
+        ]
 
         # State
         self.pending_changes: set[str] = set()
