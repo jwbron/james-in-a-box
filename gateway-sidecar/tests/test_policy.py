@@ -213,7 +213,7 @@ class TestPolicyEngine:
         assert result.allowed
 
     def test_pr_ownership_other_author(self, policy_engine, mock_github_client):
-        """PR authored by non-jib is not owned by jib."""
+        """PR authored by non-jib, non-configured user is not owned."""
         mock_github_client.get_pr_info.return_value = {
             "number": 123,
             "author": {"login": "human"},
@@ -223,7 +223,7 @@ class TestPolicyEngine:
 
         result = policy_engine.check_pr_ownership("owner/repo", 123)
         assert not result.allowed
-        assert "not owned by jib" in result.reason
+        assert "not owned by jib or configured user" in result.reason
 
     def test_pr_ownership_not_found(self, policy_engine, mock_github_client):
         """PR that doesn't exist returns not allowed."""
@@ -402,6 +402,121 @@ class TestTrustedBranchOwners:
 
         result = policy_engine.check_branch_ownership("owner/repo", "feature")
         assert not result.allowed
+
+
+class TestConfiguredUser:
+    """Tests for configured user (incognito user) functionality in both modes."""
+
+    @pytest.fixture
+    def mock_github_client(self):
+        """Create a mock GitHub client."""
+        return MagicMock()
+
+    @pytest.fixture
+    def policy_engine(self, mock_github_client):
+        """Create a policy engine with mocked GitHub client."""
+        return PolicyEngine(github_client=mock_github_client)
+
+    def test_branch_ownership_configured_user_pr_bot_mode(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Bot mode allows push to branch with PR by configured user."""
+        # Mock _get_incognito_user to return a configured user
+        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+
+        mock_github_client.list_prs_for_branch.return_value = [
+            {
+                "number": 789,
+                "author": {"login": "configureduser"},
+                "state": "open",
+                "headRefName": "feature",
+            }
+        ]
+        mock_github_client.get_pr_info.return_value = {
+            "number": 789,
+            "author": {"login": "configureduser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_branch_ownership("owner/repo", "feature", auth_mode="bot")
+        assert result.allowed
+        assert "configured user" in result.reason.lower()
+
+    def test_branch_ownership_configured_user_case_insensitive(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Configured user check is case insensitive."""
+        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+
+        mock_github_client.list_prs_for_branch.return_value = [
+            {
+                "number": 789,
+                "author": {"login": "ConfiguredUser"},  # Different case
+                "state": "open",
+                "headRefName": "feature",
+            }
+        ]
+        mock_github_client.get_pr_info.return_value = {
+            "number": 789,
+            "author": {"login": "ConfiguredUser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_branch_ownership("owner/repo", "feature", auth_mode="bot")
+        assert result.allowed
+
+    def test_pr_ownership_configured_user_bot_mode(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Bot mode allows PR ownership by configured user."""
+        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+
+        mock_github_client.get_pr_info.return_value = {
+            "number": 123,
+            "author": {"login": "configureduser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_pr_ownership("owner/repo", 123, auth_mode="bot")
+        assert result.allowed
+        assert "configured user" in result.reason.lower()
+
+    def test_pr_ownership_configured_user_incognito_mode(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Incognito mode allows PR ownership by configured user."""
+        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+
+        mock_github_client.get_pr_info.return_value = {
+            "number": 123,
+            "author": {"login": "configureduser"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_pr_ownership("owner/repo", 123, auth_mode="incognito")
+        assert result.allowed
+        assert "configured user" in result.reason.lower()
+
+    def test_pr_ownership_jib_with_configured_user_set(
+        self, policy_engine, mock_github_client, monkeypatch
+    ):
+        """Jib PRs are still allowed when configured user is set."""
+        monkeypatch.setattr(policy_engine, "_get_incognito_user", lambda: "configureduser")
+
+        mock_github_client.get_pr_info.return_value = {
+            "number": 123,
+            "author": {"login": "jib"},
+            "state": "open",
+            "headRefName": "feature",
+        }
+
+        result = policy_engine.check_pr_ownership("owner/repo", 123, auth_mode="bot")
+        assert result.allowed
+        assert "owned by jib" in result.reason.lower()
 
 
 class TestPolicyResult:
