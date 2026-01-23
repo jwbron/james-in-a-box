@@ -55,18 +55,24 @@ Shared volume between host and container. Contains:
 - `incoming/` - Incoming tasks from Slack
 - `responses/` - Task responses
 - `context/` - Context data
-- `beads/` - Task memory
+- `beads/` - Task memory (mapped to `~/beads/` inside container via symlink)
 - `logs/` - Application logs
 - `container-logs/` - Container log persistence
 - `.github-token` - JSON from github-token-refresher
 
-**Recommendation**: Keep. This is runtime data, not configuration.
+**Recommendation**: Keep at `~/` rather than moving to `~/.local/share/jib/`.
+
+**Rationale for `~/` location**: While XDG spec suggests `$XDG_DATA_HOME` (`~/.local/share/`) for runtime data, we deliberately keep these at `~/` for:
+1. **Visibility**: Users frequently inspect `~/sharing/incoming/` and `~/sharing/notifications/` for debugging
+2. **Docker volume simplicity**: Shorter paths are easier to mount and reference in container configs
+3. **Consistency**: The `jib-` prefix already namespaces these directories clearly
+4. **Discoverability**: New users can `ls ~` and immediately see jib-related directories
 
 ### 4. `~/.jib-worktrees/` (Keep - Runtime Data)
 
 Git worktree base directory for isolated development.
 
-**Recommendation**: Keep. This is runtime data, not configuration.
+**Recommendation**: Keep at `~/` for the same visibility/simplicity rationale as `~/.jib-sharing/`.
 
 ### 5. `~/.config/jib-notifier/` (Migrate)
 
@@ -92,12 +98,15 @@ Legacy directory. May contain:
 
 ### Consolidation Plan
 
-#### Phase 1: Clarify `~/.jib/` Purpose
+#### Phase 1: Migrate `~/.jib/` to `~/.cache/jib/`
 
-1. Audit all usages of `~/.jib/` in codebase
-2. Determine if it's truly needed separate from `~/.config/jib/`
-3. If Docker staging is needed, rename to `~/.cache/jib/` (XDG-compliant)
-4. Update references in `jib-container/jib`
+Based on the audit above, `~/.jib/` is used for Docker staging (not configuration).
+This phase implements the migration:
+
+1. Update `jib-container/jib` to use `~/.cache/jib/` instead of `~/.jib/`
+2. Add migration logic to move existing `~/.jib/` contents to `~/.cache/jib/`
+3. Update any other references in the codebase
+4. Add backward compatibility: check old location if new doesn't exist (with deprecation warning)
 
 #### Phase 2: Update Documentation
 
@@ -138,10 +147,15 @@ Legacy directory. May contain:
 ├── incoming/                     # Incoming tasks
 ├── responses/                    # Task responses
 ├── context/                      # Saved context
-├── beads/                        # Task memory
+├── beads/                        # Task memory (→ ~/beads/ in container)
 ├── logs/                         # Application logs
 ├── container-logs/               # Container log persistence
 └── .github-token                 # Auto-refreshed token (JSON)
+
+# Container path mappings:
+#   Host ~/.jib-sharing/       → Container ~/sharing/
+#   Host ~/.jib-sharing/beads/ → Container ~/beads/ (symlink)
+#   Host ~/.jib-worktrees/X/   → Container ~/repos/
 
 ~/.jib-worktrees/                 # Git worktrees (runtime)
 └── jib-<timestamp>-<pid>/        # Isolated worktree per session
@@ -169,7 +183,7 @@ Legacy directory. May contain:
 For existing installations:
 
 ```bash
-# 1. Run migration script (already exists)
+# 1. Run config migration script (already exists for legacy configs)
 python3 config/host_config.py --migrate
 
 # 2. Verify new config location
@@ -181,6 +195,11 @@ ls -la ~/.config/jib/
 # 4. (Optional) Remove legacy configs after verification
 rm -rf ~/.config/jib-notifier ~/.config/context-sync
 ```
+
+**Note on migration script scope:**
+- `config/host_config.py --migrate` currently handles legacy directories (`~/.config/jib-notifier/`, `~/.config/context-sync/`)
+- The `~/.jib/` → `~/.cache/jib/` migration will be added to the `jib` script itself (Phase 1), since it's the component that uses this directory
+- The `jib` script will auto-migrate on first run after the update
 
 ## Backward Compatibility
 
