@@ -129,6 +129,9 @@ RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
 # Pin version for reproducible builds; update periodically
 ENV CLAUDE_CODE_VERSION=stable
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION && \
+    # Make claude installation accessible to all users
+    # The installer puts files in /root/.local/ which is inaccessible to non-root users
+    chmod -R a+rX /root/.local && \
     # Make claude available system-wide (installer puts it in ~/.local/bin)
     ln -sf /root/.local/bin/claude /usr/local/bin/claude && \
     # Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
