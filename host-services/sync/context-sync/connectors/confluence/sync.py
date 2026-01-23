@@ -12,6 +12,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import html2text
 import requests
 
 
@@ -451,12 +452,6 @@ class ConfluenceSync:
 
     def convert_html_to_markdown(self, html_content: str) -> str:
         """Convert HTML content to Markdown format."""
-        try:
-            import html2text
-        except ImportError:
-            print("Warning: html2text not installed. Run 'uv sync' from host-services/")
-            return html_content
-
         # Configure html2text for Confluence content
         h = html2text.HTML2Text()
         h.body_width = 0  # Don't wrap lines

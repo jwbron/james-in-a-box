@@ -61,7 +61,9 @@ RUN chmod +x /tmp/docker-setup.py && \
 RUN pip3 install --no-cache-dir \
     pyyaml \
     requests \
-    claude-agent-sdk
+    claude-agent-sdk \
+    cryptography \
+    PyJWT
 
 # Install beads llm issue tracker
 # When running as root, the install script puts bd directly in /usr/local/bin

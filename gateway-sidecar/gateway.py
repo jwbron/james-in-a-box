@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, request
+from waitress import serve
 
 
 # Add shared directory to path for jib_logging
@@ -1069,13 +1070,7 @@ def main():
         app.run(host=args.host, port=args.port, debug=True)
     else:
         # Use waitress for production
-        try:
-            from waitress import serve
-
-            serve(app, host=args.host, port=args.port)
-        except ImportError:
-            logger.warning("waitress not installed, using Flask development server")
-            app.run(host=args.host, port=args.port, debug=False)
+        serve(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

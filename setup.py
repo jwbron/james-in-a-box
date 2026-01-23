@@ -20,6 +20,7 @@ For more information, see docs/adr/not-implemented/ADR-Declarative-Setup-Archite
 """
 
 import argparse
+import json
 import logging
 import os
 import shutil
@@ -28,6 +29,12 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+try:
+    import yaml
+except ImportError:
+    print("Error: PyYAML is required. Install with: pip install pyyaml", file=sys.stderr)
+    sys.exit(1)
 
 
 # Add config directory to path for imports
@@ -129,13 +136,8 @@ class DependencyChecker:
         self.check_command("git")
         self.check_command("gh")  # GitHub CLI
 
-        # Python-specific checks
-        try:
-            import yaml  # noqa: F401
-
-            self.logger.success("PyYAML is installed")
-        except ImportError:
-            self.logger.warning("PyYAML is NOT installed (will use JSON fallback)")
+        # PyYAML is required (checked at module load)
+        self.logger.success("PyYAML is installed")
 
         # Optional dependencies
         self.check_command("uv", required=False)
@@ -318,18 +320,8 @@ class ConfigMigrator:
 
         # Load existing config if any
         if self.new_config_file.exists():
-            try:
-                import yaml
-
-                with open(self.new_config_file) as f:
-                    config = yaml.safe_load(f) or {}
-            except ImportError:
-                import json
-
-                config_json = self.new_config_dir / "config.json"
-                if config_json.exists():
-                    with open(config_json) as f:
-                        config = json.load(f)
+            with open(self.new_config_file) as f:
+                config = yaml.safe_load(f) or {}
 
         # Migrate from jib-notifier config.json
         if self.legacy_notifier_config.exists():
@@ -415,17 +407,8 @@ class ConfigMigrator:
             if secrets:
                 self._write_secrets(secrets)
             if config:
-                try:
-                    import yaml
-
-                    self.new_config_file.write_text(yaml.dump(config, default_flow_style=False))
-                    self.logger.success(f"Config written to {self.new_config_file}")
-                except ImportError:
-                    import json
-
-                    config_json = self.new_config_dir / "config.json"
-                    config_json.write_text(json.dumps(config, indent=2))
-                    self.logger.success(f"Config written to {config_json}")
+                self.new_config_file.write_text(yaml.dump(config, default_flow_style=False))
+                self.logger.success(f"Config written to {self.new_config_file}")
 
             self.logger.success("\n✓ Configuration migration complete")
             self.logger.info("")
@@ -538,19 +521,8 @@ class ConfigManager:
             Dictionary of configuration values
         """
         if self.config_file.exists():
-            try:
-                import yaml
-
-                with open(self.config_file) as f:
-                    return yaml.safe_load(f) or {}
-            except ImportError:
-                # Fallback to JSON
-                import json
-
-                config_json = self.config_dir / "config.json"
-                if config_json.exists():
-                    with open(config_json) as f:
-                        return json.load(f)
+            with open(self.config_file) as f:
+                return yaml.safe_load(f) or {}
         return {}
 
     def write_secrets(self, secrets: dict[str, str]):
@@ -612,18 +584,8 @@ class ConfigManager:
         Args:
             config: Dictionary of configuration values
         """
-        try:
-            import yaml
-
-            self.config_file.write_text(yaml.dump(config, default_flow_style=False))
-            self.logger.success(f"Config written to {self.config_file}")
-        except ImportError:
-            # Fallback to JSON
-            import json
-
-            config_json = self.config_dir / "config.json"
-            config_json.write_text(json.dumps(config, indent=2))
-            self.logger.warning(f"PyYAML not available, wrote JSON to {config_json}")
+        self.config_file.write_text(yaml.dump(config, default_flow_style=False))
+        self.logger.success(f"Config written to {self.config_file}")
 
     def load_repositories(self) -> dict[str, Any]:
         """Load repository configuration.
@@ -632,13 +594,8 @@ class ConfigManager:
             Dictionary with writable_repos and readable_repos lists
         """
         if self.repos_file.exists():
-            try:
-                import yaml
-
-                with open(self.repos_file) as f:
-                    return yaml.safe_load(f) or {}
-            except ImportError:
-                pass
+            with open(self.repos_file) as f:
+                return yaml.safe_load(f) or {}
         return {"writable_repos": [], "readable_repos": []}
 
     def write_repositories(
@@ -656,19 +613,14 @@ class ConfigManager:
             github_username: GitHub username for config file
             local_repos: List of local repository paths to mount
         """
-        try:
-            import yaml
-
-            repos_config = {
-                "github_username": github_username,
-                "writable_repos": writable,
-                "readable_repos": readable,
-                "local_repos": {"paths": local_repos or []},
-            }
-            self.repos_file.write_text(yaml.dump(repos_config, default_flow_style=False))
-            self.logger.success(f"Repository config written to {self.repos_file}")
-        except ImportError:
-            self.logger.warning("PyYAML not available, skipping repositories.yaml")
+        repos_config = {
+            "github_username": github_username,
+            "writable_repos": writable,
+            "readable_repos": readable,
+            "local_repos": {"paths": local_repos or []},
+        }
+        self.repos_file.write_text(yaml.dump(repos_config, default_flow_style=False))
+        self.logger.success(f"Repository config written to {self.repos_file}")
 
     def write_mounts_conf(self, local_repos: list[str]):
         """Write mounts.conf for jib container.

@@ -5,6 +5,9 @@ name = "james-in-a-box"
 version = "0.1.0"
 description = "Autonomous software engineering agent"
 requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",  # Required for all config files
+]
 
 [tool.ruff]
 # Target Python version

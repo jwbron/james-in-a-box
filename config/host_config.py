@@ -32,8 +32,15 @@ Usage:
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any
+
+try:
+    import yaml
+except ImportError:
+    print("Error: PyYAML is required. Install with: pip install pyyaml", file=sys.stderr)
+    sys.exit(1)
 
 
 logger = logging.getLogger(__name__)
@@ -190,36 +197,14 @@ class HostConfig:
 
     def _write_config_file(self, config: dict[str, Any]):
         """Write non-secret config to YAML file."""
-        try:
-            import yaml
-
-            with open(self.CONFIG_FILE, "w") as f:
-                yaml.dump(config, f, default_flow_style=False)
-        except ImportError:
-            # Fallback to JSON if PyYAML not available
-            config_json = self.JIB_CONFIG_DIR / "config.json"
-            with open(config_json, "w") as f:
-                json.dump(config, f, indent=2)
-            logger.warning(f"PyYAML not available, wrote {config_json} instead")
+        with open(self.CONFIG_FILE, "w") as f:
+            yaml.dump(config, f, default_flow_style=False)
 
     def _load_config(self):
         """Load non-secret configuration from ~/.config/jib/."""
-        # Try YAML first
         if self.CONFIG_FILE.exists():
-            try:
-                import yaml
-
-                with open(self.CONFIG_FILE) as f:
-                    self._config = yaml.safe_load(f) or {}
-                return
-            except ImportError:
-                pass
-
-        # Fall back to JSON
-        config_json = self.JIB_CONFIG_DIR / "config.json"
-        if config_json.exists():
-            with open(config_json) as f:
-                self._config = json.load(f)
+            with open(self.CONFIG_FILE) as f:
+                self._config = yaml.safe_load(f) or {}
 
     def _load_secrets(self):
         """Load secrets from ~/.config/jib/secrets.env and environment."""
