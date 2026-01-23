@@ -21,6 +21,81 @@ from pathlib import Path
 
 
 # =============================================================================
+# Startup Timing (Debug)
+# =============================================================================
+
+# Enabled via JIB_TIMING=1 env var (set by `jib --time` on host)
+ENABLE_STARTUP_TIMING = os.environ.get("JIB_TIMING", "0") == "1"
+
+
+class StartupTimer:
+    """Collects timing data for startup phases."""
+
+    def __init__(self):
+        self.timings: list[tuple[str, float]] = []
+        self.start_time: float = time.perf_counter()
+        self._phase_start: float | None = None
+        self._phase_name: str | None = None
+
+    def start_phase(self, name: str) -> None:
+        """Start timing a phase."""
+        if not ENABLE_STARTUP_TIMING:
+            return
+        self._phase_name = name
+        self._phase_start = time.perf_counter()
+
+    def end_phase(self) -> None:
+        """End timing the current phase."""
+        if not ENABLE_STARTUP_TIMING or self._phase_start is None:
+            return
+        elapsed = (time.perf_counter() - self._phase_start) * 1000  # ms
+        self.timings.append((self._phase_name, elapsed))
+        self._phase_name = None
+        self._phase_start = None
+
+    def phase(self, name: str):
+        """Context manager for timing a phase."""
+        timer = self
+        phase_name = name
+
+        class PhaseContext:
+            def __enter__(self):
+                timer.start_phase(phase_name)
+                return self
+
+            def __exit__(self, *args):
+                timer.end_phase()
+
+        return PhaseContext()
+
+    def print_summary(self) -> None:
+        """Print timing summary."""
+        if not ENABLE_STARTUP_TIMING or not self.timings:
+            return
+
+        total_time = (time.perf_counter() - self.start_time) * 1000
+
+        print("\n" + "=" * 60)
+        print("CONTAINER STARTUP TIMING SUMMARY")
+        print("=" * 60)
+        print(f"{'Phase':<35} {'Time (ms)':>10} {'%':>6}")
+        print("-" * 60)
+
+        for name, elapsed in self.timings:
+            pct = (elapsed / total_time) * 100 if total_time > 0 else 0
+            bar = "█" * int(pct / 5)  # Simple bar graph
+            print(f"{name:<35} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
+
+        print("-" * 60)
+        print(f"{'TOTAL':<35} {total_time:>10.1f}")
+        print("=" * 60 + "\n")
+
+
+# Global timer instance
+_startup_timer = StartupTimer()
+
+
+# =============================================================================
 # Configuration
 # =============================================================================
 
@@ -29,8 +104,8 @@ from pathlib import Path
 class Config:
     """Container configuration from environment variables."""
 
-    # Runtime identity (from docker run)
-    runtime_user: str = field(default_factory=lambda: os.environ.get("RUNTIME_USER", "sandboxed"))
+    # Fixed container user - UID/GID adjusted at runtime to match host
+    container_user: str = "jib"
     runtime_uid: int = field(default_factory=lambda: int(os.environ.get("RUNTIME_UID", "1000")))
     runtime_gid: int = field(default_factory=lambda: int(os.environ.get("RUNTIME_GID", "1000")))
     quiet: bool = field(default_factory=lambda: os.environ.get("JIB_QUIET", "0") == "1")
@@ -50,10 +125,10 @@ class Config:
         default_factory=lambda: os.environ.get("GITHUB_READONLY_TOKEN")
     )
 
-    # Derived paths
+    # Derived paths - fixed home directory for jib user
     @property
     def user_home(self) -> Path:
-        return Path(f"/home/{self.runtime_user}")
+        return Path("/home/jib")
 
     @property
     def repos_dir(self) -> Path:
@@ -156,41 +231,45 @@ def chown_recursive(path: Path, uid: int, gid: int) -> None:
 
 
 def setup_user(config: Config, logger: Logger) -> None:
-    """Create user's home directory and add to /etc/passwd if needed."""
+    """Adjust jib user's UID/GID to match host user for proper file permissions."""
+    import grp
+    import pwd
+
     logger.info(
-        f"Setting up sandboxed environment for user: {config.runtime_user} "
+        f"Setting up sandboxed environment for user: {config.container_user} "
         f"(uid={config.runtime_uid}, gid={config.runtime_gid})"
     )
 
-    # Create home directory
-    config.user_home.mkdir(parents=True, exist_ok=True)
-    os.chown(config.user_home, config.runtime_uid, config.runtime_gid)
-
-    # Add group if not exists
+    # Get current jib user's UID/GID
     try:
-        import grp
-
-        grp.getgrgid(config.runtime_gid)
+        current_uid = pwd.getpwnam(config.container_user).pw_uid
+        current_gid = grp.getgrnam(config.container_user).gr_gid
     except KeyError:
-        with open("/etc/group", "a") as f:
-            f.write(f"{config.runtime_user}:x:{config.runtime_gid}:\n")
+        logger.error(f"User {config.container_user} not found - container image may be corrupt")
+        raise
 
-    # Add user if not exists
-    try:
-        import pwd
+    # Adjust GID if needed
+    if current_gid != config.runtime_gid:
+        logger.info(
+            f"Adjusting {config.container_user} group GID: {current_gid} -> {config.runtime_gid}"
+        )
+        run_cmd(["groupmod", "-g", str(config.runtime_gid), config.container_user])
 
-        pwd.getpwuid(config.runtime_uid)
-    except KeyError:
-        with open("/etc/passwd", "a") as f:
-            f.write(
-                f"{config.runtime_user}:x:{config.runtime_uid}:{config.runtime_gid}:"
-                f"Sandboxed User:{config.user_home}:/bin/bash\n"
-            )
+    # Adjust UID if needed
+    if current_uid != config.runtime_uid:
+        logger.info(
+            f"Adjusting {config.container_user} user UID: {current_uid} -> {config.runtime_uid}"
+        )
+        run_cmd(["usermod", "-u", str(config.runtime_uid), config.container_user])
 
-        # Passwordless sudo
-        sudoers_file = Path(f"/etc/sudoers.d/010-{config.runtime_user}-nopasswd")
-        sudoers_file.write_text(f"{config.runtime_user} ALL=(ALL) NOPASSWD:ALL\n")
-        sudoers_file.chmod(0o440)
+    # Fix ownership of home directory after UID/GID change
+    if current_uid != config.runtime_uid or current_gid != config.runtime_gid:
+        logger.info("Fixing home directory ownership...")
+        start_time = time.time()
+        chown_recursive(config.user_home, config.runtime_uid, config.runtime_gid)
+        elapsed = time.time() - start_time
+        if elapsed > 1.0:
+            logger.info(f"  chown completed in {elapsed:.1f}s")
 
 
 # NOTE: PostgreSQL and Redis service startup removed for now.
@@ -203,11 +282,14 @@ def setup_user(config: Config, logger: Logger) -> None:
 def setup_environment(config: Config) -> None:
     """Set up environment variables."""
     os.environ["HOME"] = str(config.user_home)
-    os.environ["USER"] = config.runtime_user
+    os.environ["USER"] = config.container_user
 
-    # Add jib runtime scripts to PATH
+    # Add user's local bin (Claude Code native install) and jib runtime scripts to PATH
     current_path = os.environ.get("PATH", "")
-    os.environ["PATH"] = f"/opt/jib-runtime/jib-container/bin:/usr/local/bin:{current_path}"
+    local_bin = config.user_home / ".local" / "bin"
+    os.environ["PATH"] = (
+        f"{local_bin}:/opt/jib-runtime/jib-container/bin:/usr/local/bin:{current_path}"
+    )
 
     # Python settings
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -987,34 +1069,57 @@ def main() -> None:
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
-    # Run setup
-    setup_user(config, logger)
-    setup_environment(config)
-    setup_git(config, logger)
+    # Run setup with timing instrumentation
+    with _startup_timer.phase("setup_user"):
+        setup_user(config, logger)
 
-    if not setup_worktrees(config, logger):
-        logger.error("")
-        logger.error("Container startup aborted due to worktree configuration failure.")
-        logger.error("Please check your jib setup and try again.")
-        sys.exit(1)
+    with _startup_timer.phase("setup_environment"):
+        setup_environment(config)
 
-    setup_sharing(config, logger)
-    setup_agent_rules(config, logger)
-    setup_claude(config, logger)
-    setup_gemini(config, logger)
-    setup_router(config, logger)
-    setup_bashrc(config, logger)
+    with _startup_timer.phase("setup_git"):
+        setup_git(config, logger)
+
+    with _startup_timer.phase("setup_worktrees"):
+        if not setup_worktrees(config, logger):
+            logger.error("")
+            logger.error("Container startup aborted due to worktree configuration failure.")
+            logger.error("Please check your jib setup and try again.")
+            sys.exit(1)
+
+    with _startup_timer.phase("setup_sharing"):
+        setup_sharing(config, logger)
+
+    with _startup_timer.phase("setup_agent_rules"):
+        setup_agent_rules(config, logger)
+
+    with _startup_timer.phase("setup_claude"):
+        setup_claude(config, logger)
+
+    with _startup_timer.phase("setup_gemini"):
+        setup_gemini(config, logger)
+
+    with _startup_timer.phase("setup_router"):
+        setup_router(config, logger)
+
+    with _startup_timer.phase("setup_bashrc"):
+        setup_bashrc(config, logger)
 
     # Ensure tracking directory
-    tracking_dir = config.sharing_dir / "tracking"
-    if config.sharing_dir.exists():
-        tracking_dir.mkdir(exist_ok=True)
-        os.chown(tracking_dir, config.runtime_uid, config.runtime_gid)
+    with _startup_timer.phase("setup_tracking_dir"):
+        tracking_dir = config.sharing_dir / "tracking"
+        if config.sharing_dir.exists():
+            tracking_dir.mkdir(exist_ok=True)
+            os.chown(tracking_dir, config.runtime_uid, config.runtime_gid)
 
-    if not setup_beads(config, logger):
-        sys.exit(1)
+    with _startup_timer.phase("setup_beads"):
+        if not setup_beads(config, logger):
+            sys.exit(1)
 
-    generate_docs_indexes(config, logger)
+    with _startup_timer.phase("generate_docs_indexes"):
+        generate_docs_indexes(config, logger)
+
+    # Print timing summary before launching LLM
+    _startup_timer.print_summary()
 
     # Run appropriate mode
     if len(sys.argv) == 1:

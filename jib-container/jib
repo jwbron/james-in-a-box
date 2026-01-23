@@ -32,6 +32,78 @@ from statusbar import StatusBar, init_statusbar, status, status_success, status_
 # Global quiet mode flag
 _quiet_mode = False
 
+# =============================================================================
+# Startup Timing (Debug)
+# =============================================================================
+
+
+class StartupTimer:
+    """Collects timing data for startup phases (host-side)."""
+
+    def __init__(self, enabled: bool = False):
+        self.enabled = enabled
+        self.timings: list[tuple[str, float]] = []
+        self.start_time: float = time.perf_counter()
+        self._phase_start: float | None = None
+        self._phase_name: str | None = None
+
+    def start_phase(self, name: str) -> None:
+        """Start timing a phase."""
+        if not self.enabled:
+            return
+        self._phase_name = name
+        self._phase_start = time.perf_counter()
+
+    def end_phase(self) -> None:
+        """End timing the current phase."""
+        if not self.enabled or self._phase_start is None:
+            return
+        elapsed = (time.perf_counter() - self._phase_start) * 1000  # ms
+        self.timings.append((self._phase_name, elapsed))
+        self._phase_name = None
+        self._phase_start = None
+
+    def phase(self, name: str):
+        """Context manager for timing a phase."""
+        timer = self
+        phase_name = name
+
+        class PhaseContext:
+            def __enter__(self):
+                timer.start_phase(phase_name)
+                return self
+
+            def __exit__(self, *args):
+                timer.end_phase()
+
+        return PhaseContext()
+
+    def print_summary(self) -> None:
+        """Print timing summary."""
+        if not self.enabled or not self.timings:
+            return
+
+        total_time = (time.perf_counter() - self.start_time) * 1000
+
+        print("\n" + "=" * 60)
+        print("HOST-SIDE STARTUP TIMING SUMMARY")
+        print("=" * 60)
+        print(f"{'Phase':<35} {'Time (ms)':>10} {'%':>6}")
+        print("-" * 60)
+
+        for name, elapsed in self.timings:
+            pct = (elapsed / total_time) * 100 if total_time > 0 else 0
+            bar = "█" * int(pct / 5)  # Simple bar graph
+            print(f"{name:<35} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
+
+        print("-" * 60)
+        print(f"{'TOTAL':<35} {total_time:>10.1f}")
+        print("=" * 60 + "\n")
+
+
+# Global timer instance (disabled by default, enabled via --time flag)
+_host_timer = StartupTimer(enabled=False)
+
 
 # Default log directory for container logs
 CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
@@ -163,7 +235,6 @@ def get_llm_provider() -> str:
 class Config:
     """Configuration paths and constants"""
     CONFIG_DIR = Path.home() / ".jib"  # Docker staging directory
-    CONFIG_FILE = CONFIG_DIR / "mounts.conf"
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
     USER_CONFIG_DIR = Path.home() / ".config" / "jib"  # User config (secrets, preferences)
     REPOS_CONFIG_FILE = USER_CONFIG_DIR / "repositories.yaml"
@@ -1762,7 +1833,7 @@ def setup() -> bool:
     print()
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
-        context_container_path = f"/home/{os.environ['USER']}/context-sync"
+        context_container_path = f"/home/jib/context-sync"
         # Add :z flag for SELinux systems
         mounts.append(f"{context_sync_dir}:{context_container_path}:ro,z")
         print(f"  ✓ Context sources: {context_sync_dir}")
@@ -1795,7 +1866,7 @@ def setup() -> bool:
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
 
-    sharing_container_path = f"/home/{os.environ['USER']}/sharing"
+    sharing_container_path = f"/home/jib/sharing"
     # Add :z flag for SELinux systems
     mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
@@ -1875,9 +1946,6 @@ def setup() -> bool:
         mounts.append(f"{mount_path}:{mode},z")
         print(f"Added: {mount_path} ({mode}, SELinux relabeled)")
 
-    # Save configuration
-    Config.CONFIG_FILE.write_text("\n".join(mounts))
-
     print()
     info("Summary of mounted directories:")
     for mount in mounts:
@@ -1904,76 +1972,105 @@ def setup() -> bool:
     return True
 
 
+def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
+    """Add standard mounts (sharing, context-sync) to mount_args list.
+
+    These mounts are always added dynamically rather than relying on config files,
+    ensuring they're always available even if setup hasn't been run recently.
+    """
+    # Mount sharing directory (beads, notifications, incoming tasks, etc.)
+    if Config.SHARING_DIR.exists():
+        sharing_container_path = "/home/jib/sharing"
+        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
+        if not quiet:
+            print(f"  • ~/sharing/ (beads, notifications, tasks)")
+
+    # Mount context-sync directory if it exists (Confluence, JIRA docs)
+    context_sync_dir = Path.home() / "context-sync"
+    if context_sync_dir.exists():
+        context_sync_container = "/home/jib/context-sync"
+        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
+        if not quiet:
+            print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
+
+
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     # Check if image exists
-    if _quiet_mode:
-        status("Checking Docker image...")
-    if not image_exists():
-        info("Docker image not found. Running initial setup...")
-        if not setup():
-            return False
+    with _host_timer.phase("check_image"):
+        if _quiet_mode:
+            status("Checking Docker image...")
+        if not image_exists():
+            info("Docker image not found. Running initial setup...")
+            if not setup():
+                return False
 
-    # Load mount configuration
-    if not Config.CONFIG_FILE.exists():
-        info("Configuration not found. Running initial setup...")
-        if not setup():
-            return False
+    # Check repository configuration exists
+    with _host_timer.phase("check_config"):
+        if not Config.REPOS_CONFIG_FILE.exists():
+            info("Repository configuration not found. Running initial setup...")
+            if not setup():
+                return False
 
     # Check Anthropic API key authentication
-    if _quiet_mode:
-        status("Checking authentication...")
-    
-    api_key = get_anthropic_api_key()
-    
-    if not _quiet_mode:
-        print()
-        print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
+    with _host_timer.phase("check_api_key"):
+        if _quiet_mode:
+            status("Checking authentication...")
 
-        if api_key:
-            success("Anthropic API key configured")
-            print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
-        else:
-            warn("Anthropic API key not configured")
-            print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
-            print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
+        api_key = get_anthropic_api_key()
+
+        if not _quiet_mode:
             print()
-            warn("Container will not be able to use Claude without an API key.")
+            print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
-        print()
+            if api_key:
+                success("Anthropic API key configured")
+                print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
+            else:
+                warn("Anthropic API key not configured")
+                print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+                print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
+                print()
+                warn("Container will not be able to use Claude without an API key.")
+
+            print()
 
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
-    if _quiet_mode:
-        status("Building Docker image...")
-    if not build_image():
-        error("Docker build failed")
-        return False
+    with _host_timer.phase("build_image"):
+        if _quiet_mode:
+            status("Building Docker image...")
+        if not build_image():
+            error("Docker build failed")
+            return False
 
     # Start gateway sidecar container (if not already running)
-    if _quiet_mode:
-        status("Starting gateway sidecar...")
-    if not start_gateway_container():
-        error("Failed to start gateway sidecar")
-        return False
+    with _host_timer.phase("start_gateway"):
+        if _quiet_mode:
+            status("Starting gateway sidecar...")
+        if not start_gateway_container():
+            error("Failed to start gateway sidecar")
+            return False
 
     # Generate unique container ID
-    if _quiet_mode:
-        status("Preparing container...")
-    container_id = generate_container_id()
+    with _host_timer.phase("prepare_container"):
+        if _quiet_mode:
+            status("Preparing container...")
+        container_id = generate_container_id()
 
-    if not _quiet_mode:
-        info("Launching sandboxed Claude Code environment...")
-        print()
-        info(f"Container ID: {container_id}")
-        print()
+        if not _quiet_mode:
+            info("Launching sandboxed Claude Code environment...")
+            print()
+            info(f"Container ID: {container_id}")
+            print()
 
     # Create worktrees for repos (isolates container from host repos)
-    if _quiet_mode:
-        status("Creating isolated worktrees...")
-    else:
-        info("Creating isolated worktrees...")
-        print()
-    worktrees = create_worktrees(container_id)
+    with _host_timer.phase("create_worktrees"):
+        if _quiet_mode:
+            status("Creating isolated worktrees...")
+        else:
+            info("Creating isolated worktrees...")
+            print()
+        worktrees = create_worktrees(container_id)
 
     if worktrees and not _quiet_mode:
         print()
@@ -1986,57 +2083,18 @@ def run_claude() -> bool:
 
     atexit.register(cleanup_on_exit)
 
-    # Parse mount configuration
+    # Build mount configuration dynamically (no mounts.conf file needed)
+    _host_timer.start_phase("configure_mounts")
     if _quiet_mode:
         status("Configuring mounts...")
     mount_args = []
-
-    # Build set of container paths that worktrees will use (to avoid duplicates)
-    worktree_container_paths = set()
-    for repo_name in worktrees:
-        worktree_container_paths.add(f"/home/{os.environ['USER']}/repos/{repo_name}")
-
-    if Config.CONFIG_FILE.exists():
-        mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
-        for mount in mounts:
-            if not mount:
-                continue
-            parts = mount.rsplit(":", 2)  # Split from right, max 2 splits
-
-            if len(parts) == 2:
-                # Old format: path:mode
-                mount_path, mode = parts
-                container_path = mount_path
-            elif len(parts) == 3:
-                # New format: host_path:container_path:mode
-                mount_path, container_path, mode = parts
-            else:
-                warn(f"Invalid mount format: {mount}")
-                continue
-
-            # Skip mounts that would conflict with worktree mounts
-            # This handles migration from old direct repo mounts to worktrees
-            if container_path in worktree_container_paths:
-                if not _quiet_mode:
-                    info(f"  Skipping {container_path} (using worktree instead)")
-                continue
-
-            # Ensure SELinux label is present (add if missing for backwards compatibility)
-            if not mode.endswith(",z") and not mode.endswith(":z"):
-                mode = f"{mode},z"
-
-            mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
-            if not _quiet_mode:
-                mode_str = "READ-ONLY" if "ro" in mode else "READ-WRITE"
-                display_path = container_path if container_path != mount_path else mount_path
-                print(f"  • {display_path} ({mode_str}, SELinux relabeled)")
 
     # Add worktree mounts for configured local repositories
     # worktrees dict has structure: {repo_name: {"worktree": path, "source": path}}
     for repo_name, repo_info in worktrees.items():
         worktree_path = repo_info["worktree"]
         source_path = repo_info["source"]
-        container_path = f"/home/{os.environ['USER']}/repos/{repo_name}"
+        container_path = f"/home/jib/repos/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         if not _quiet_mode:
             print(f"  • ~/repos/{repo_name} (WORKTREE, isolated from host)")
@@ -2045,7 +2103,7 @@ def run_claude() -> bool:
         git_path = source_path / ".git"
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
-            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+            git_container_path = f"/home/jib/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             if not _quiet_mode:
                 print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
@@ -2062,7 +2120,7 @@ def run_claude() -> bool:
                         worktrees_idx = gitdir_path.parts.index("worktrees")
                         main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
                         if main_git_path.is_dir():
-                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+                            git_container_path = f"/home/jib/.git-main/{repo_name}"
                             mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
                             if not _quiet_mode:
                                 print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
@@ -2076,10 +2134,13 @@ def run_claude() -> bool:
                 warn(f"Error reading .git file for {repo_name}: {e}")
 
     # Mount worktree base directory (used by both interactive and --exec modes)
-    worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
+    worktree_base_container = f"/home/jib/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
+
+    # Add standard mounts (sharing, context-sync)
+    add_standard_mounts(mount_args, quiet=_quiet_mode)
 
     # Mount host Claude configuration (interactive mode only)
     # This allows the container to use the host's Claude settings
@@ -2088,26 +2149,29 @@ def run_claude() -> bool:
     claude_json = home / ".claude.json"
 
     if claude_dir.is_dir():
-        container_claude_dir = f"/home/{os.environ['USER']}/.claude"
+        container_claude_dir = f"/home/jib/.claude"
         mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
         if not _quiet_mode:
             print(f"  • ~/.claude (Claude config directory)")
 
     if claude_json.is_file():
-        container_claude_json = f"/home/{os.environ['USER']}/.claude.json"
+        container_claude_json = f"/home/jib/.claude.json"
         mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
         if not _quiet_mode:
             print(f"  • ~/.claude.json (Claude settings)")
 
     if not _quiet_mode:
         print()
+    _host_timer.end_phase()  # configure_mounts
 
     # Remove old container if exists (cleanup any previous runs)
-    subprocess.run(["docker", "rm", "-f", container_id],
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL)
+    with _host_timer.phase("cleanup_old_container"):
+        subprocess.run(["docker", "rm", "-f", container_id],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL)
 
     # Build docker run command on jib-network (shared network with gateway sidecar)
+    _host_timer.start_phase("build_docker_cmd")
     # jib-network allows container-to-container communication while isolating from host
     worktree_host_path = Config.WORKTREE_BASE / container_id
     cmd = [
@@ -2116,11 +2180,11 @@ def run_claude() -> bool:
         "-it",   # Interactive with TTY
         "--name", container_id,
         "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
-        "-e", f"RUNTIME_USER={os.environ['USER']}",
-        "-e", f"RUNTIME_UID={os.getuid()}",
+                "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
+        "-e", f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
         "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
         # Host worktree path - needed by git wrapper to translate container paths
         # Container sees /home/user/repos/X, but gateway needs ~/.jib-worktrees/<id>/X
@@ -2163,6 +2227,12 @@ def run_claude() -> bool:
 
     # Add image name
     cmd.append(Config.IMAGE_NAME)
+
+    # End timing for command build
+    _host_timer.end_phase()  # build_docker_cmd
+
+    # Print timing summary before launching container
+    _host_timer.print_summary()
 
     # Final status update before launching
     if _quiet_mode:
@@ -2221,9 +2291,9 @@ def exec_in_new_container(
         if not setup():
             return False
 
-    # Load mount configuration
-    if not Config.CONFIG_FILE.exists():
-        info("Configuration not found. Running initial setup...")
+    # Check repository configuration exists
+    if not Config.REPOS_CONFIG_FILE.exists():
+        info("Repository configuration not found. Running initial setup...")
         if not setup():
             return False
 
@@ -2274,47 +2344,15 @@ def exec_in_new_container(
 
     atexit.register(cleanup_on_exit)
 
-    # Parse mount configuration
+    # Build mount configuration dynamically (no mounts.conf file needed)
     mount_args = []
-
-    # Build set of container paths that worktrees will use (to avoid duplicates)
-    worktree_container_paths = set()
-    for repo_name in worktrees:
-        worktree_container_paths.add(f"/home/{os.environ['USER']}/repos/{repo_name}")
-
-    if Config.CONFIG_FILE.exists():
-        mounts = Config.CONFIG_FILE.read_text().strip().split("\n")
-
-        for mount in mounts:
-            if not mount:
-                continue
-            parts = mount.rsplit(":", 2)
-
-            if len(parts) == 2:
-                mount_path, mode = parts
-                container_path = mount_path
-            elif len(parts) == 3:
-                mount_path, container_path, mode = parts
-            else:
-                warn(f"Invalid mount format: {mount}")
-                continue
-
-            # Skip mounts that would conflict with worktree mounts
-            if container_path in worktree_container_paths:
-                continue
-
-            # Ensure SELinux label
-            if not mode.endswith(",z") and not mode.endswith(":z"):
-                mode = f"{mode},z"
-
-            mount_args.extend(["-v", f"{mount_path}:{container_path}:{mode}"])
 
     # Add worktree mounts for configured local repositories
     # worktrees dict has structure: {repo_name: {"worktree": path, "source": path}}
     for repo_name, repo_info in worktrees.items():
         worktree_path = repo_info["worktree"]
         source_path = repo_info["source"]
-        container_path = f"/home/{os.environ['USER']}/repos/{repo_name}"
+        container_path = f"/home/jib/repos/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         print(f"  • ~/repos/{repo_name} (WORKTREE, isolated)")
 
@@ -2322,7 +2360,7 @@ def exec_in_new_container(
         git_path = source_path / ".git"
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
-            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+            git_container_path = f"/home/jib/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
         elif git_path.is_file():
@@ -2335,7 +2373,7 @@ def exec_in_new_container(
                         worktrees_idx = gitdir_path.parts.index("worktrees")
                         main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
                         if main_git_path.is_dir():
-                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+                            git_container_path = f"/home/jib/.git-main/{repo_name}"
                             mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
                             print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
                         else:
@@ -2347,6 +2385,9 @@ def exec_in_new_container(
             except Exception as e:
                 warn(f"Error reading .git file for {repo_name}: {e}")
 
+    # Add standard mounts (sharing, context-sync)
+    add_standard_mounts(mount_args, quiet=False)
+
     # Mount host Claude configuration when using host auth mode
     if auth_mode == "host":
         home = Path.home()
@@ -2354,12 +2395,12 @@ def exec_in_new_container(
         claude_json = home / ".claude.json"
 
         if claude_dir.is_dir():
-            container_claude_dir = f"/home/{os.environ['USER']}/.claude"
+            container_claude_dir = f"/home/jib/.claude"
             mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
             print(f"  • ~/.claude (Claude config directory)")
 
         if claude_json.is_file():
-            container_claude_json = f"/home/{os.environ['USER']}/.claude.json"
+            container_claude_json = f"/home/jib/.claude.json"
             mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
             print(f"  • ~/.claude.json (Claude settings)")
 
@@ -2372,8 +2413,7 @@ def exec_in_new_container(
         "docker", "run",
         "--name", container_id,
         "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
-        "-e", f"RUNTIME_USER={os.environ['USER']}",
-        "-e", f"RUNTIME_UID={os.getuid()}",
+                "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
@@ -2485,6 +2525,7 @@ def main():
 Examples:
   jib                                      # Run Claude Code (progress bar by default, auto-setup if needed)
   jib -v                                   # Run in verbose mode (detailed output)
+  jib --time                               # Show startup timing breakdown for debugging
   jib --setup                              # Run full setup (delegates to setup.py)
   jib --reset                              # Reset configuration and remove Docker image
   jib --exec <command> [args...]          # Execute command in new ephemeral container
@@ -2529,8 +2570,17 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         action="store_true",
         help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)"
     )
+    parser.add_argument(
+        "--time",
+        action="store_true",
+        help="Show startup timing breakdown for debugging slow startup"
+    )
 
     args = parser.parse_args()
+
+    # Enable timing if --time flag is set
+    if args.time:
+        _host_timer.enabled = True
 
     # Initialize quiet mode globally
     # Quiet is the default; verbose (-v) overrides it
