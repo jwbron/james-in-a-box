@@ -2161,6 +2161,22 @@ def run_claude() -> bool:
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
+    # Always mount sharing directory (beads, notifications, incoming tasks, etc.)
+    # This is mounted dynamically to avoid stale mounts.conf issues
+    if Config.SHARING_DIR.exists():
+        sharing_container_path = f"/home/{os.environ['USER']}/sharing"
+        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
+        if not _quiet_mode:
+            print(f"  • ~/sharing/ (beads, notifications, tasks)")
+
+    # Always mount context-sync directory if it exists (Confluence, JIRA docs)
+    context_sync_dir = Path.home() / "context-sync"
+    if context_sync_dir.exists():
+        context_sync_container = f"/home/{os.environ['USER']}/context-sync"
+        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
+        if not _quiet_mode:
+            print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
+
     # Mount host Claude configuration (interactive mode only)
     # This allows the container to use the host's Claude settings
     home = Path.home()
@@ -2436,6 +2452,20 @@ def exec_in_new_container(
                     warn(f"Invalid .git file format for {repo_name}")
             except Exception as e:
                 warn(f"Error reading .git file for {repo_name}: {e}")
+
+    # Always mount sharing directory (beads, notifications, incoming tasks, etc.)
+    # This is mounted dynamically to avoid stale mounts.conf issues
+    if Config.SHARING_DIR.exists():
+        sharing_container_path = f"/home/{os.environ['USER']}/sharing"
+        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
+        print(f"  • ~/sharing/ (beads, notifications, tasks)")
+
+    # Always mount context-sync directory if it exists (Confluence, JIRA docs)
+    context_sync_dir = Path.home() / "context-sync"
+    if context_sync_dir.exists():
+        context_sync_container = f"/home/{os.environ['USER']}/context-sync"
+        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
+        print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
 
     # Mount host Claude configuration when using host auth mode
     if auth_mode == "host":

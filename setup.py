@@ -646,11 +646,18 @@ class ConfigManager:
                 container_path = f"/home/{user}/repos/{repo_name}"
                 mounts.append(f"{path}:{container_path}:rw,z")
 
-        # Also add the sharing directory mount (standard for all jib setups)
+        # Always add the sharing directory mount (standard for all jib setups)
+        # This is critical - beads, notifications, etc. all live here
         sharing_dir = Path.home() / ".jib-sharing"
         if sharing_dir.exists():
             mounts.append(f"{sharing_dir}:/home/{user}/sharing:rw,z")
 
+        # Always add context-sync mount if it exists
+        context_sync_dir = Path.home() / "context-sync"
+        if context_sync_dir.exists():
+            mounts.append(f"{context_sync_dir}:/home/{user}/context-sync:ro,z")
+
+        # Write mounts.conf even if only standard mounts (sharing/context-sync)
         if mounts:
             mounts_file.write_text("\n".join(mounts) + "\n")
             self.logger.success(f"Mounts config written to {mounts_file}")
@@ -1955,14 +1962,22 @@ class MinimalSetup:
             # Save configuration
             self.logger.header("Saving Configuration")
 
-            # Combine all secrets
-            all_secrets = {**slack_secrets, **github_secrets}
+            # Combine all secrets, preserving existing ones not prompted for
+            # (e.g., Confluence, JIRA, LLM API keys)
+            all_secrets = {**self.existing_secrets, **slack_secrets, **github_secrets}
             self.config_manager.write_secrets(all_secrets)
 
-            # Write main config
+            # Write main config using new nested structure
+            # (compatible with jib_config classes from PR #523)
             config = {
                 "bot_name": bot_name,
                 "github_username": github_username,
+                # New nested slack section for SlackConfig.from_env()
+                "slack": {
+                    "channel": slack_channel,
+                    "allowed_users": [slack_user] if slack_user else [],
+                },
+                # Legacy top-level keys for backward compatibility
                 "slack_channel": slack_channel,
                 "allowed_users": [slack_user] if slack_user else [],
                 "context_sync_interval": 30,
