@@ -1833,7 +1833,7 @@ def setup() -> bool:
     print()
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
-        context_container_path = f"/home/{os.environ['USER']}/context-sync"
+        context_container_path = f"/home/jib/context-sync"
         # Add :z flag for SELinux systems
         mounts.append(f"{context_sync_dir}:{context_container_path}:ro,z")
         print(f"  ✓ Context sources: {context_sync_dir}")
@@ -1866,7 +1866,7 @@ def setup() -> bool:
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
 
-    sharing_container_path = f"/home/{os.environ['USER']}/sharing"
+    sharing_container_path = f"/home/jib/sharing"
     # Add :z flag for SELinux systems
     mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
@@ -1980,7 +1980,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
     """
     # Mount sharing directory (beads, notifications, incoming tasks, etc.)
     if Config.SHARING_DIR.exists():
-        sharing_container_path = f"/home/{os.environ['USER']}/sharing"
+        sharing_container_path = "/home/jib/sharing"
         mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
         if not quiet:
             print(f"  • ~/sharing/ (beads, notifications, tasks)")
@@ -1988,7 +1988,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
     # Mount context-sync directory if it exists (Confluence, JIRA docs)
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
-        context_sync_container = f"/home/{os.environ['USER']}/context-sync"
+        context_sync_container = "/home/jib/context-sync"
         mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
         if not quiet:
             print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
@@ -2094,7 +2094,7 @@ def run_claude() -> bool:
     for repo_name, repo_info in worktrees.items():
         worktree_path = repo_info["worktree"]
         source_path = repo_info["source"]
-        container_path = f"/home/{os.environ['USER']}/repos/{repo_name}"
+        container_path = f"/home/jib/repos/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         if not _quiet_mode:
             print(f"  • ~/repos/{repo_name} (WORKTREE, isolated from host)")
@@ -2103,7 +2103,7 @@ def run_claude() -> bool:
         git_path = source_path / ".git"
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
-            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+            git_container_path = f"/home/jib/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             if not _quiet_mode:
                 print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
@@ -2120,7 +2120,7 @@ def run_claude() -> bool:
                         worktrees_idx = gitdir_path.parts.index("worktrees")
                         main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
                         if main_git_path.is_dir():
-                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+                            git_container_path = f"/home/jib/.git-main/{repo_name}"
                             mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
                             if not _quiet_mode:
                                 print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
@@ -2134,7 +2134,7 @@ def run_claude() -> bool:
                 warn(f"Error reading .git file for {repo_name}: {e}")
 
     # Mount worktree base directory (used by both interactive and --exec modes)
-    worktree_base_container = f"/home/{os.environ['USER']}/.jib-worktrees"
+    worktree_base_container = f"/home/jib/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
@@ -2149,13 +2149,13 @@ def run_claude() -> bool:
     claude_json = home / ".claude.json"
 
     if claude_dir.is_dir():
-        container_claude_dir = f"/home/{os.environ['USER']}/.claude"
+        container_claude_dir = f"/home/jib/.claude"
         mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
         if not _quiet_mode:
             print(f"  • ~/.claude (Claude config directory)")
 
     if claude_json.is_file():
-        container_claude_json = f"/home/{os.environ['USER']}/.claude.json"
+        container_claude_json = f"/home/jib/.claude.json"
         mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
         if not _quiet_mode:
             print(f"  • ~/.claude.json (Claude settings)")
@@ -2180,8 +2180,7 @@ def run_claude() -> bool:
         "-it",   # Interactive with TTY
         "--name", container_id,
         "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
-        "-e", f"RUNTIME_USER={os.environ['USER']}",
-        "-e", f"RUNTIME_UID={os.getuid()}",
+                "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
@@ -2353,7 +2352,7 @@ def exec_in_new_container(
     for repo_name, repo_info in worktrees.items():
         worktree_path = repo_info["worktree"]
         source_path = repo_info["source"]
-        container_path = f"/home/{os.environ['USER']}/repos/{repo_name}"
+        container_path = f"/home/jib/repos/{repo_name}"
         mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
         print(f"  • ~/repos/{repo_name} (WORKTREE, isolated)")
 
@@ -2361,7 +2360,7 @@ def exec_in_new_container(
         git_path = source_path / ".git"
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
-            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+            git_container_path = f"/home/jib/.git-main/{repo_name}"
             mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
         elif git_path.is_file():
@@ -2374,7 +2373,7 @@ def exec_in_new_container(
                         worktrees_idx = gitdir_path.parts.index("worktrees")
                         main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
                         if main_git_path.is_dir():
-                            git_container_path = f"/home/{os.environ['USER']}/.git-main/{repo_name}"
+                            git_container_path = f"/home/jib/.git-main/{repo_name}"
                             mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
                             print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
                         else:
@@ -2396,12 +2395,12 @@ def exec_in_new_container(
         claude_json = home / ".claude.json"
 
         if claude_dir.is_dir():
-            container_claude_dir = f"/home/{os.environ['USER']}/.claude"
+            container_claude_dir = f"/home/jib/.claude"
             mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
             print(f"  • ~/.claude (Claude config directory)")
 
         if claude_json.is_file():
-            container_claude_json = f"/home/{os.environ['USER']}/.claude.json"
+            container_claude_json = f"/home/jib/.claude.json"
             mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
             print(f"  • ~/.claude.json (Claude settings)")
 
@@ -2414,8 +2413,7 @@ def exec_in_new_container(
         "docker", "run",
         "--name", container_id,
         "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
-        "-e", f"RUNTIME_USER={os.environ['USER']}",
-        "-e", f"RUNTIME_UID={os.getuid()}",
+                "-e", f"RUNTIME_UID={os.getuid()}",
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
