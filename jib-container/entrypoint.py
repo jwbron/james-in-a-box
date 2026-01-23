@@ -446,6 +446,30 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
     return True
 
 
+def setup_jib_symlink(config: Config, logger: Logger) -> None:
+    """Create ~/jib symlink to runtime scripts.
+
+    This provides a consistent, short path to jib runtime scripts that:
+    - Points to /opt/jib-runtime/jib-container (baked into Docker image)
+    - Is independent of the mounted ~/repos/james-in-a-box
+    - Matches the container image version
+    """
+    jib_link = config.user_home / "jib"
+    target = Path("/opt/jib-runtime/jib-container")
+
+    if jib_link.is_symlink():
+        jib_link.unlink()
+    elif jib_link.exists():
+        logger.warn(f"~/jib exists but is not a symlink, skipping")
+        return
+
+    jib_link.symlink_to(target)
+    os.lchown(jib_link, config.runtime_uid, config.runtime_gid)
+
+    logger.success("Runtime symlink created: ~/jib -> /opt/jib-runtime/jib-container")
+    logger.info("  Use ~/jib/ for runtime scripts instead of ~/repos/james-in-a-box/jib-container/")
+
+
 def setup_sharing(config: Config, logger: Logger) -> None:
     """Set up shared directories and symlinks."""
     if not config.sharing_dir.exists():
@@ -1075,6 +1099,9 @@ def main() -> None:
 
     with _startup_timer.phase("setup_environment"):
         setup_environment(config)
+
+    with _startup_timer.phase("setup_jib_symlink"):
+        setup_jib_symlink(config, logger)
 
     with _startup_timer.phase("setup_git"):
         setup_git(config, logger)
