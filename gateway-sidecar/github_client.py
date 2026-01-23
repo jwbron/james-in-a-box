@@ -491,7 +491,7 @@ def get_github_client(mode: str = "bot") -> GitHubClient:
     Returns:
         GitHubClient configured for the specified mode
     """
-    global _clients
+    # _clients is module-level; no global needed since we're mutating, not reassigning
     if mode not in _clients:
         _clients[mode] = GitHubClient(mode=mode)
     return _clients[mode]
