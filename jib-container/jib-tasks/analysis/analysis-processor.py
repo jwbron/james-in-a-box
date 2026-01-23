@@ -28,8 +28,17 @@ importing container modules.
 """
 
 import argparse
+import contextlib
 import json
+import os
+import re
+import subprocess
 import sys
+import tempfile
+import threading
+import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -52,7 +61,6 @@ def _find_claude_module_path() -> Path:
 
 
 sys.path.insert(0, str(_find_claude_module_path()))
-import contextlib
 
 from git_utils import get_default_branch
 from llm import run_agent
@@ -134,8 +142,6 @@ def handle_llm_prompt_to_file(context: dict) -> int:
         - result.stdout: Claude's stdout (for debugging)
         - result.stderr: Any stderr
     """
-    import tempfile
-
     prompt = context.get("prompt")
     output_file = context.get("output_file")
     if not prompt:
@@ -145,8 +151,6 @@ def handle_llm_prompt_to_file(context: dict) -> int:
     if not output_file:
         # Create a temp file in /tmp (accessible both inside and outside container)
         fd, output_file = tempfile.mkstemp(suffix=".json", prefix="llm_output_")
-        import os
-
         os.close(fd)
 
     output_path = Path(output_file)
@@ -329,9 +333,6 @@ def handle_create_pr(context: dict) -> int:
         - result.pr_url: str (URL of created PR)
         - result.branch: str (branch name)
     """
-    import os
-    import subprocess
-
     repo_name = context.get("repo_name", "james-in-a-box")
     branch_name = context.get("branch_name")
     files = context.get("files", [])
@@ -555,8 +556,6 @@ Output ONLY the JSON array, no other text.
                 )
             except json.JSONDecodeError:
                 # Try to extract JSON from markdown code block
-                import re
-
                 json_match = re.search(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", result.stdout)
                 if json_match:
                     features = json.loads(json_match.group(1))
@@ -607,9 +606,6 @@ def handle_weekly_feature_analysis(context: dict) -> int:
         - result.pr_url: str (URL of created PR, if not dry_run)
         - result.branch: str (branch name)
     """
-    import subprocess
-    from datetime import UTC, datetime
-
     repo_name = context.get("repo_name", "james-in-a-box")
     days = context.get("days", 7)
     dry_run = context.get("dry_run", False)
@@ -625,7 +621,7 @@ def handle_weekly_feature_analysis(context: dict) -> int:
     # This module is in the same directory as this file
     try:
         from feature_analyzer import RepoAnalyzer, WeeklyAnalyzer
-    except ImportError as e:
+    except ModuleNotFoundError as e:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
     try:
@@ -745,9 +741,6 @@ def handle_weekly_feature_analysis(context: dict) -> int:
         print(
             f"\nPhase 3: Analyzing {len(filtered_dirs)} directories (parallel, {max_workers} workers)..."
         )
-        import threading
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         all_features = []
         print_lock = threading.Lock()
 
@@ -990,8 +983,6 @@ This analysis uses the same high-quality pipeline as `feature-analyzer full-repo
             error=f"Git/GH operation failed: {e.stderr or e.stdout or str(e)}",
         )
     except Exception as e:
-        import traceback
-
         return output_result(
             False,
             error=f"Error in weekly analysis: {e}\n{traceback.format_exc()}",
@@ -1019,9 +1010,6 @@ def handle_full_repo_analysis(context: dict) -> int:
         - result.pr_url: str (URL of created PR, if not dry_run)
         - result.branch: str (branch name)
     """
-    import subprocess
-    from datetime import UTC, datetime
-
     repo_name = context.get("repo_name", "james-in-a-box")
     dry_run = context.get("dry_run", False)
     max_workers = context.get("max_workers", 20)
@@ -1038,7 +1026,7 @@ def handle_full_repo_analysis(context: dict) -> int:
     # This module is in the same directory as this file
     try:
         from feature_analyzer import RepoAnalyzer
-    except ImportError as e:
+    except ModuleNotFoundError as e:
         return output_result(False, error=f"Failed to import analyzers: {e}")
 
     try:
@@ -1239,8 +1227,6 @@ This analysis uses the high-quality multi-agent pipeline:
             error=f"Git/GH operation failed: {e.stderr or e.stdout or str(e)}",
         )
     except Exception as e:
-        import traceback
-
         return output_result(
             False,
             error=f"Error in full repo analysis: {e}\n{traceback.format_exc()}",
@@ -1267,8 +1253,6 @@ def handle_github_pr_create(context: dict) -> int:
         - result.pr_url: URL of the created PR
         - result.pr_number: PR number
     """
-    import subprocess
-
     repo = context.get("repo")
     title = context.get("title")
     body = context.get("body", "")
@@ -1344,8 +1328,6 @@ def handle_github_pr_comment(context: dict) -> int:
     Returns JSON with:
         - result.success: bool
     """
-    import subprocess
-
     repo = context.get("repo")
     pr_number = context.get("pr_number")
     body = context.get("body")
@@ -1402,8 +1384,6 @@ def handle_github_pr_close(context: dict) -> int:
     Returns JSON with:
         - result.closed: bool
     """
-    import subprocess
-
     repo = context.get("repo")
     pr_number = context.get("pr_number")
 
@@ -1474,9 +1454,6 @@ def handle_repo_onboarding(context: dict) -> int:
         - result.pr_url: str (URL of created PR, if not dry_run)
         - result.branch: str (branch name)
     """
-    import subprocess
-    from datetime import UTC, datetime
-
     repo_name = context.get("repo_name", "james-in-a-box")
     skip_confluence = context.get("skip_confluence", False)
     skip_features = context.get("skip_features", False)
@@ -1572,7 +1549,7 @@ def handle_repo_onboarding(context: dict) -> int:
                 discoverer.save_results()
                 print(f"  ✓ Found {len(discoverer.discovered_docs)} relevant docs")
                 result_data["phases_completed"].append("confluence_discovery")
-            except ImportError as e:
+            except ModuleNotFoundError as e:
                 print(f"  ⚠ Confluence discoverer not available: {e}")
             except Exception as e:
                 print(f"  ⚠ Confluence discovery failed: {e}")
@@ -1602,7 +1579,7 @@ def handle_repo_onboarding(context: dict) -> int:
                 result_data["features_detected"] = len(analysis_result.features_detected)
                 print(f"  ✓ Detected {len(analysis_result.features_detected)} features")
                 result_data["phases_completed"].append("feature_analysis")
-            except ImportError as e:
+            except ModuleNotFoundError as e:
                 print(f"  ⚠ Feature analyzer not available: {e}")
             except Exception as e:
                 print(f"  ⚠ Feature analysis failed: {e}")
@@ -1627,7 +1604,7 @@ def handle_repo_onboarding(context: dict) -> int:
             result_data["indexes_generated"] = indexes_generated
             print(f"  ✓ Generated {len(indexes_generated)} indexes: {', '.join(indexes_generated)}")
             result_data["phases_completed"].append("index_generation")
-        except ImportError as e:
+        except ModuleNotFoundError as e:
             print(f"  ⚠ Index generator not available: {e}")
         except Exception as e:
             print(f"  ⚠ Index generation failed: {e}")
@@ -1651,7 +1628,7 @@ def handle_repo_onboarding(context: dict) -> int:
             updater.run()
             print("  ✓ Updated docs/index.md")
             result_data["phases_completed"].append("docs_index_update")
-        except ImportError as e:
+        except ModuleNotFoundError as e:
             print(f"  ⚠ Docs index updater not available: {e}")
         except Exception as e:
             print(f"  ⚠ Docs index update failed: {e}")
@@ -1850,8 +1827,6 @@ The changes are committed locally and ready for review."""
             error=f"Git/GH operation failed: {e.stderr or e.stdout or str(e)}",
         )
     except Exception as e:
-        import traceback
-
         return output_result(
             False,
             error=f"Error in repo onboarding: {e}\n{traceback.format_exc()}",

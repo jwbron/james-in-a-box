@@ -20,6 +20,7 @@ Output:
 Token expires in 1 hour. Generate fresh token for each container launch.
 """
 
+import base64
 import json
 import sys
 import time
@@ -27,46 +28,19 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+
 
 def create_jwt(app_id: str, private_key: str) -> str:
     """
     Create a JSON Web Token (JWT) for GitHub App authentication.
 
-    Uses pure Python implementation to avoid external dependencies.
+    Uses cryptography library for RS256 signing.
     The JWT is valid for 10 minutes (GitHub's maximum).
     """
-    import base64
 
-    # For RS256, we need proper RSA signing. Check if cryptography is available.
-    try:
-        from cryptography.hazmat.backends import default_backend
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding
-
-        HAS_CRYPTOGRAPHY = True
-    except ImportError:
-        HAS_CRYPTOGRAPHY = False
-
-    if not HAS_CRYPTOGRAPHY:
-        # Try PyJWT as fallback
-        try:
-            import jwt
-
-            now = int(time.time())
-            payload = {
-                "iat": now - 60,  # Issued 60 seconds ago (clock skew)
-                "exp": now + 600,  # Expires in 10 minutes
-                "iss": app_id,
-            }
-            return jwt.encode(payload, private_key, algorithm="RS256")
-        except ImportError:
-            print(
-                "ERROR: Neither 'cryptography' nor 'PyJWT' package is installed.", file=sys.stderr
-            )
-            print("Install with: pip install cryptography", file=sys.stderr)
-            sys.exit(1)
-
-    # Use cryptography library for RS256 signing
     def b64url_encode(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
