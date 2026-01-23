@@ -129,8 +129,17 @@ RUN mkdir -p /tmp/agent-tmp && chmod 1777 /tmp/agent-tmp
 # Pin version for reproducible builds; update periodically
 ENV CLAUDE_CODE_VERSION=stable
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION && \
+    # Make claude available system-wide (installer puts it in ~/.local/bin)
+    ln -sf /root/.local/bin/claude /usr/local/bin/claude && \
     # Replace bundled ripgrep with system ripgrep to avoid ARM64 crashes on Asahi Linux
-    ln -sf /usr/bin/rg /usr/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-linux/rg
+    # Find the bundled rg binary and replace it with system ripgrep
+    CLAUDE_RG=$(find /root/.local -name "rg" -type f 2>/dev/null | grep -E "ripgrep.*linux" | head -1) && \
+    if [ -n "$CLAUDE_RG" ]; then \
+        ln -sf /usr/bin/rg "$CLAUDE_RG" && \
+        echo "Patched ripgrep: $CLAUDE_RG -> /usr/bin/rg"; \
+    else \
+        echo "Note: No bundled ripgrep found to patch (may not be needed)"; \
+    fi
 
 # Copy entrypoint script (Python for maintainability)
 COPY entrypoint.py /usr/local/bin/entrypoint.py
