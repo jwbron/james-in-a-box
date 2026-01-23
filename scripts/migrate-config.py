@@ -305,7 +305,7 @@ class ConfigMigrator:
         print(f"  Config written to {self.config_yaml}")
         return True
 
-    def verify_migration(self):
+    def verify_migration(self, run_health_checks: bool = False):
         """Verify the migration was successful by testing config loading."""
         print("\n" + "=" * 60)
         print(" VERIFICATION")
@@ -317,7 +317,13 @@ class ConfigMigrator:
         sys.path.insert(0, str(repo_root / "shared"))
 
         try:
-            from jib_config import GatewayConfig, GitHubConfig, SlackConfig
+            from jib_config import (
+                ConfluenceConfig,
+                GatewayConfig,
+                GitHubConfig,
+                JiraConfig,
+                SlackConfig,
+            )
 
             errors = []
 
@@ -354,12 +360,41 @@ class ConfigMigrator:
                 f"    secret: {'set' if gateway.secret else 'NOT SET'} (source: {gateway._secret_source or 'none'})"
             )
 
+            # Test JiraConfig
+            jira = JiraConfig.from_env()
+            validation = jira.validate()
+            if validation.is_valid:
+                print("✓ JiraConfig loads successfully")
+                print(f"    base_url: {jira.base_url or '(not set)'}")
+            elif jira.base_url:
+                errors.extend(validation.errors)
+                print(f"✗ JiraConfig validation errors: {validation.errors}")
+            else:
+                print("⚠ JiraConfig: Not configured")
+
+            # Test ConfluenceConfig
+            confluence = ConfluenceConfig.from_env()
+            validation = confluence.validate()
+            if validation.is_valid:
+                print("✓ ConfluenceConfig loads successfully")
+                print(f"    base_url: {confluence.base_url or '(not set)'}")
+            elif confluence.base_url:
+                errors.extend(validation.errors)
+                print(f"✗ ConfluenceConfig validation errors: {validation.errors}")
+            else:
+                print("⚠ ConfluenceConfig: Not configured")
+
             if errors:
                 print("\n⚠ Some validation errors occurred. Check your configuration.")
                 return False
             else:
                 print("\n✓ All configurations loaded and validated successfully!")
-                return True
+
+            # Run health checks if requested
+            if run_health_checks:
+                self._run_health_checks(slack, github, jira, confluence)
+
+            return True
 
         except Exception as e:
             print(f"\n✗ Verification failed: {e}")
@@ -367,6 +402,60 @@ class ConfigMigrator:
 
             traceback.print_exc()
             return False
+
+    def _run_health_checks(self, slack, github, jira, confluence):
+        """Run actual API connectivity tests."""
+        print("\n" + "=" * 60)
+        print(" HEALTH CHECKS (API Connectivity)")
+        print("=" * 60)
+
+        # Slack health check
+        if slack.bot_token:
+            print("\nTesting Slack API...")
+            result = slack.health_check(timeout=10.0)
+            if result.healthy:
+                latency = f" ({result.latency_ms:.0f}ms)" if result.latency_ms else ""
+                print(f"  ✓ Slack: {result.message}{latency}")
+            else:
+                print(f"  ✗ Slack: {result.message}")
+        else:
+            print("\n⚠ Slack: Skipped (no token configured)")
+
+        # GitHub health check
+        if github.token:
+            print("\nTesting GitHub API...")
+            result = github.health_check(timeout=10.0)
+            if result.healthy:
+                latency = f" ({result.latency_ms:.0f}ms)" if result.latency_ms else ""
+                print(f"  ✓ GitHub: {result.message}{latency}")
+            else:
+                print(f"  ✗ GitHub: {result.message}")
+        else:
+            print("\n⚠ GitHub: Skipped (no token configured)")
+
+        # JIRA health check
+        if jira.base_url and jira.api_token:
+            print("\nTesting JIRA API...")
+            result = jira.health_check(timeout=10.0)
+            if result.healthy:
+                latency = f" ({result.latency_ms:.0f}ms)" if result.latency_ms else ""
+                print(f"  ✓ JIRA: {result.message}{latency}")
+            else:
+                print(f"  ✗ JIRA: {result.message}")
+        else:
+            print("\n⚠ JIRA: Skipped (not configured)")
+
+        # Confluence health check
+        if confluence.base_url and confluence.api_token:
+            print("\nTesting Confluence API...")
+            result = confluence.health_check(timeout=10.0)
+            if result.healthy:
+                latency = f" ({result.latency_ms:.0f}ms)" if result.latency_ms else ""
+                print(f"  ✓ Confluence: {result.message}{latency}")
+            else:
+                print(f"  ✗ Confluence: {result.message}")
+        else:
+            print("\n⚠ Confluence: Skipped (not configured)")
 
 
 def main():
@@ -379,12 +468,13 @@ Examples:
   %(prog)s --apply         Add new nested sections (preserves old keys)
   %(prog)s --cleanup       Remove legacy top-level keys
   %(prog)s --verify        Verify current config loads correctly
+  %(prog)s --health        Test API connectivity (Slack, GitHub, JIRA, Confluence)
   %(prog)s --backup        Create backup only
 
 Recommended workflow:
   1. %(prog)s              # Review what will change
   2. %(prog)s --apply      # Add new nested sections
-  3. %(prog)s --verify     # Verify config loads correctly
+  3. %(prog)s --health     # Test API connectivity
   4. %(prog)s --cleanup    # Remove old top-level keys
         """,
     )
@@ -409,6 +499,11 @@ Recommended workflow:
         help="Verify current configuration loads correctly",
     )
     parser.add_argument(
+        "--health",
+        action="store_true",
+        help="Test API connectivity (Slack, GitHub, JIRA, Confluence)",
+    )
+    parser.add_argument(
         "--config-dir",
         type=Path,
         help="Config directory (default: ~/.config/jib)",
@@ -425,6 +520,11 @@ Recommended workflow:
     if args.verify:
         # Just verify current config
         migrator.verify_migration()
+        return
+
+    if args.health:
+        # Run health checks (API connectivity tests)
+        migrator.verify_migration(run_health_checks=True)
         return
 
     if args.cleanup:
