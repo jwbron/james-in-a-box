@@ -112,9 +112,16 @@ class ConfluenceConfig(BaseConfig):
             credentials = f"{self.username}:{self.api_token}"
             auth = base64.b64encode(credentials.encode()).decode()
 
+            # Build API URL - handle base_url with or without /wiki suffix
+            base = self.base_url.rstrip("/")
+            if base.endswith("/wiki"):
+                api_url = f"{base}/rest/api/space?limit=1"
+            else:
+                api_url = f"{base}/wiki/rest/api/space?limit=1"
+
             # Test with a simple API call
             req = urllib.request.Request(
-                f"{self.base_url.rstrip('/')}/wiki/rest/api/space?limit=1",
+                api_url,
                 headers={
                     "Authorization": f"Basic {auth}",
                     "Accept": "application/json",
