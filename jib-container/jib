@@ -32,6 +32,80 @@ from statusbar import StatusBar, init_statusbar, status, status_success, status_
 # Global quiet mode flag
 _quiet_mode = False
 
+# =============================================================================
+# Startup Timing (Debug)
+# =============================================================================
+
+# Set via JIB_TIMING=1 environment variable
+ENABLE_STARTUP_TIMING = os.environ.get("JIB_TIMING", "0") == "1"
+
+
+class StartupTimer:
+    """Collects timing data for startup phases (host-side)."""
+
+    def __init__(self):
+        self.timings: List[tuple] = []
+        self.start_time: float = time.perf_counter()
+        self._phase_start: Optional[float] = None
+        self._phase_name: Optional[str] = None
+
+    def start_phase(self, name: str) -> None:
+        """Start timing a phase."""
+        if not ENABLE_STARTUP_TIMING:
+            return
+        self._phase_name = name
+        self._phase_start = time.perf_counter()
+
+    def end_phase(self) -> None:
+        """End timing the current phase."""
+        if not ENABLE_STARTUP_TIMING or self._phase_start is None:
+            return
+        elapsed = (time.perf_counter() - self._phase_start) * 1000  # ms
+        self.timings.append((self._phase_name, elapsed))
+        self._phase_name = None
+        self._phase_start = None
+
+    def phase(self, name: str):
+        """Context manager for timing a phase."""
+        timer = self
+        phase_name = name
+
+        class PhaseContext:
+            def __enter__(self):
+                timer.start_phase(phase_name)
+                return self
+
+            def __exit__(self, *args):
+                timer.end_phase()
+
+        return PhaseContext()
+
+    def print_summary(self) -> None:
+        """Print timing summary."""
+        if not ENABLE_STARTUP_TIMING or not self.timings:
+            return
+
+        total_time = (time.perf_counter() - self.start_time) * 1000
+
+        print("\n" + "=" * 60)
+        print("HOST-SIDE STARTUP TIMING SUMMARY")
+        print("=" * 60)
+        print(f"{'Phase':<35} {'Time (ms)':>10} {'%':>6}")
+        print("-" * 60)
+
+        for name, elapsed in self.timings:
+            pct = (elapsed / total_time) * 100 if total_time > 0 else 0
+            bar = "█" * int(pct / 5)  # Simple bar graph
+            print(f"{name:<35} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
+
+        print("-" * 60)
+        print(f"{'TOTAL':<35} {total_time:>10.1f}")
+        print("=" * 60 + "\n")
+
+
+# Global timer instance
+_host_timer = StartupTimer()
+
 
 # Default log directory for container logs
 CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
@@ -1907,73 +1981,80 @@ def setup() -> bool:
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     # Check if image exists
-    if _quiet_mode:
-        status("Checking Docker image...")
-    if not image_exists():
-        info("Docker image not found. Running initial setup...")
-        if not setup():
-            return False
+    with _host_timer.phase("check_image"):
+        if _quiet_mode:
+            status("Checking Docker image...")
+        if not image_exists():
+            info("Docker image not found. Running initial setup...")
+            if not setup():
+                return False
 
     # Load mount configuration
-    if not Config.CONFIG_FILE.exists():
-        info("Configuration not found. Running initial setup...")
-        if not setup():
-            return False
+    with _host_timer.phase("check_config"):
+        if not Config.CONFIG_FILE.exists():
+            info("Configuration not found. Running initial setup...")
+            if not setup():
+                return False
 
     # Check Anthropic API key authentication
-    if _quiet_mode:
-        status("Checking authentication...")
-    
-    api_key = get_anthropic_api_key()
-    
-    if not _quiet_mode:
-        print()
-        print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
+    with _host_timer.phase("check_api_key"):
+        if _quiet_mode:
+            status("Checking authentication...")
 
-        if api_key:
-            success("Anthropic API key configured")
-            print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
-        else:
-            warn("Anthropic API key not configured")
-            print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
-            print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
+        api_key = get_anthropic_api_key()
+
+        if not _quiet_mode:
             print()
-            warn("Container will not be able to use Claude without an API key.")
+            print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
-        print()
+            if api_key:
+                success("Anthropic API key configured")
+                print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
+            else:
+                warn("Anthropic API key not configured")
+                print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+                print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
+                print()
+                warn("Container will not be able to use Claude without an API key.")
+
+            print()
 
     # Build/update image (Docker uses cache for unchanged layers - usually instant)
-    if _quiet_mode:
-        status("Building Docker image...")
-    if not build_image():
-        error("Docker build failed")
-        return False
+    with _host_timer.phase("build_image"):
+        if _quiet_mode:
+            status("Building Docker image...")
+        if not build_image():
+            error("Docker build failed")
+            return False
 
     # Start gateway sidecar container (if not already running)
-    if _quiet_mode:
-        status("Starting gateway sidecar...")
-    if not start_gateway_container():
-        error("Failed to start gateway sidecar")
-        return False
+    with _host_timer.phase("start_gateway"):
+        if _quiet_mode:
+            status("Starting gateway sidecar...")
+        if not start_gateway_container():
+            error("Failed to start gateway sidecar")
+            return False
 
     # Generate unique container ID
-    if _quiet_mode:
-        status("Preparing container...")
-    container_id = generate_container_id()
+    with _host_timer.phase("generate_container_id"):
+        if _quiet_mode:
+            status("Preparing container...")
+        container_id = generate_container_id()
 
-    if not _quiet_mode:
-        info("Launching sandboxed Claude Code environment...")
-        print()
-        info(f"Container ID: {container_id}")
-        print()
+        if not _quiet_mode:
+            info("Launching sandboxed Claude Code environment...")
+            print()
+            info(f"Container ID: {container_id}")
+            print()
 
     # Create worktrees for repos (isolates container from host repos)
-    if _quiet_mode:
-        status("Creating isolated worktrees...")
-    else:
-        info("Creating isolated worktrees...")
-        print()
-    worktrees = create_worktrees(container_id)
+    with _host_timer.phase("create_worktrees"):
+        if _quiet_mode:
+            status("Creating isolated worktrees...")
+        else:
+            info("Creating isolated worktrees...")
+            print()
+        worktrees = create_worktrees(container_id)
 
     if worktrees and not _quiet_mode:
         print()
@@ -1987,6 +2068,7 @@ def run_claude() -> bool:
     atexit.register(cleanup_on_exit)
 
     # Parse mount configuration
+    _host_timer.start_phase("configure_mounts")
     if _quiet_mode:
         status("Configuring mounts...")
     mount_args = []
@@ -2101,13 +2183,16 @@ def run_claude() -> bool:
 
     if not _quiet_mode:
         print()
+    _host_timer.end_phase()  # configure_mounts
 
     # Remove old container if exists (cleanup any previous runs)
-    subprocess.run(["docker", "rm", "-f", container_id],
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL)
+    with _host_timer.phase("cleanup_old_container"):
+        subprocess.run(["docker", "rm", "-f", container_id],
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL)
 
     # Build docker run command on jib-network (shared network with gateway sidecar)
+    _host_timer.start_phase("build_docker_cmd")
     # jib-network allows container-to-container communication while isolating from host
     worktree_host_path = Config.WORKTREE_BASE / container_id
     cmd = [
@@ -2121,6 +2206,7 @@ def run_claude() -> bool:
         "-e", f"RUNTIME_GID={os.getgid()}",
         "-e", f"CONTAINER_ID={container_id}",
         "-e", f"JIB_QUIET={'1' if _quiet_mode else '0'}",
+        "-e", f"JIB_TIMING={'1' if ENABLE_STARTUP_TIMING else '0'}",
         "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
         # Host worktree path - needed by git wrapper to translate container paths
         # Container sees /home/user/repos/X, but gateway needs ~/.jib-worktrees/<id>/X
@@ -2163,6 +2249,12 @@ def run_claude() -> bool:
 
     # Add image name
     cmd.append(Config.IMAGE_NAME)
+
+    # End timing for command build
+    _host_timer.end_phase()  # build_docker_cmd
+
+    # Print timing summary before launching container
+    _host_timer.print_summary()
 
     # Final status update before launching
     if _quiet_mode:

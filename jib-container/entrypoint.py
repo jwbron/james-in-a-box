@@ -18,6 +18,84 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
+
+
+# =============================================================================
+# Startup Timing (Debug)
+# =============================================================================
+
+# Set to True to enable startup timing diagnostics
+ENABLE_STARTUP_TIMING = os.environ.get("JIB_TIMING", "0") == "1"
+
+
+class StartupTimer:
+    """Collects timing data for startup phases."""
+
+    def __init__(self):
+        self.timings: list[tuple[str, float]] = []
+        self.start_time: float = time.perf_counter()
+        self._phase_start: Optional[float] = None
+        self._phase_name: Optional[str] = None
+
+    def start_phase(self, name: str) -> None:
+        """Start timing a phase."""
+        if not ENABLE_STARTUP_TIMING:
+            return
+        self._phase_name = name
+        self._phase_start = time.perf_counter()
+
+    def end_phase(self) -> None:
+        """End timing the current phase."""
+        if not ENABLE_STARTUP_TIMING or self._phase_start is None:
+            return
+        elapsed = (time.perf_counter() - self._phase_start) * 1000  # ms
+        self.timings.append((self._phase_name, elapsed))
+        self._phase_name = None
+        self._phase_start = None
+
+    def phase(self, name: str):
+        """Context manager for timing a phase."""
+
+        class PhaseContext:
+            def __init__(ctx, timer: "StartupTimer", name: str):
+                ctx.timer = timer
+                ctx.name = name
+
+            def __enter__(ctx):
+                ctx.timer.start_phase(ctx.name)
+                return ctx
+
+            def __exit__(ctx, *args):
+                ctx.timer.end_phase()
+
+        return PhaseContext(self, name)
+
+    def print_summary(self) -> None:
+        """Print timing summary."""
+        if not ENABLE_STARTUP_TIMING or not self.timings:
+            return
+
+        total_time = (time.perf_counter() - self.start_time) * 1000
+
+        print("\n" + "=" * 60)
+        print("STARTUP TIMING SUMMARY")
+        print("=" * 60)
+        print(f"{'Phase':<35} {'Time (ms)':>10} {'%':>6}")
+        print("-" * 60)
+
+        for name, elapsed in self.timings:
+            pct = (elapsed / total_time) * 100 if total_time > 0 else 0
+            bar = "█" * int(pct / 5)  # Simple bar graph
+            print(f"{name:<35} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
+
+        print("-" * 60)
+        print(f"{'TOTAL':<35} {total_time:>10.1f}")
+        print("=" * 60 + "\n")
+
+
+# Global timer instance
+_startup_timer = StartupTimer()
 
 
 # =============================================================================
@@ -987,34 +1065,57 @@ def main() -> None:
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
-    # Run setup
-    setup_user(config, logger)
-    setup_environment(config)
-    setup_git(config, logger)
+    # Run setup with timing instrumentation
+    with _startup_timer.phase("setup_user"):
+        setup_user(config, logger)
 
-    if not setup_worktrees(config, logger):
-        logger.error("")
-        logger.error("Container startup aborted due to worktree configuration failure.")
-        logger.error("Please check your jib setup and try again.")
-        sys.exit(1)
+    with _startup_timer.phase("setup_environment"):
+        setup_environment(config)
 
-    setup_sharing(config, logger)
-    setup_agent_rules(config, logger)
-    setup_claude(config, logger)
-    setup_gemini(config, logger)
-    setup_router(config, logger)
-    setup_bashrc(config, logger)
+    with _startup_timer.phase("setup_git"):
+        setup_git(config, logger)
+
+    with _startup_timer.phase("setup_worktrees"):
+        if not setup_worktrees(config, logger):
+            logger.error("")
+            logger.error("Container startup aborted due to worktree configuration failure.")
+            logger.error("Please check your jib setup and try again.")
+            sys.exit(1)
+
+    with _startup_timer.phase("setup_sharing"):
+        setup_sharing(config, logger)
+
+    with _startup_timer.phase("setup_agent_rules"):
+        setup_agent_rules(config, logger)
+
+    with _startup_timer.phase("setup_claude"):
+        setup_claude(config, logger)
+
+    with _startup_timer.phase("setup_gemini"):
+        setup_gemini(config, logger)
+
+    with _startup_timer.phase("setup_router"):
+        setup_router(config, logger)
+
+    with _startup_timer.phase("setup_bashrc"):
+        setup_bashrc(config, logger)
 
     # Ensure tracking directory
-    tracking_dir = config.sharing_dir / "tracking"
-    if config.sharing_dir.exists():
-        tracking_dir.mkdir(exist_ok=True)
-        os.chown(tracking_dir, config.runtime_uid, config.runtime_gid)
+    with _startup_timer.phase("setup_tracking_dir"):
+        tracking_dir = config.sharing_dir / "tracking"
+        if config.sharing_dir.exists():
+            tracking_dir.mkdir(exist_ok=True)
+            os.chown(tracking_dir, config.runtime_uid, config.runtime_gid)
 
-    if not setup_beads(config, logger):
-        sys.exit(1)
+    with _startup_timer.phase("setup_beads"):
+        if not setup_beads(config, logger):
+            sys.exit(1)
 
-    generate_docs_indexes(config, logger)
+    with _startup_timer.phase("generate_docs_indexes"):
+        generate_docs_indexes(config, logger)
+
+    # Print timing summary before launching LLM
+    _startup_timer.print_summary()
 
     # Run appropriate mode
     if len(sys.argv) == 1:
