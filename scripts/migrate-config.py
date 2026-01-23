@@ -6,14 +6,15 @@ Migrates existing jib configuration files to the new unified format.
 
 This script:
 1. Reads existing ~/.config/jib/config.yaml and secrets.env
-2. Reorganizes settings into the new structure with proper sections
-3. Creates a backup of existing files
-4. Writes the migrated configuration
+2. Adds new nested sections (slack:, github:, services:)
+3. Preserves old top-level keys until you verify the new config works
+4. Removes legacy keys with --cleanup after verification
 
-Usage:
+Recommended workflow:
     ./scripts/migrate-config.py              # Show what would change (dry run)
-    ./scripts/migrate-config.py --apply      # Apply the migration
-    ./scripts/migrate-config.py --backup     # Create backup only
+    ./scripts/migrate-config.py --apply      # Add new nested sections
+    ./scripts/migrate-config.py --verify     # Verify config loads correctly
+    ./scripts/migrate-config.py --cleanup    # Remove old top-level keys
 
 New config.yaml structure:
     slack:
@@ -226,21 +227,83 @@ class ConfigMigrator:
         return backed_up
 
     def apply_migration(self):
-        """Apply the migration by writing new config files."""
-        if not self.new_config:
-            print("\n⚠ No new configuration to write")
+        """Apply the migration by adding new nested sections.
+
+        This preserves existing top-level keys so you can verify the new
+        structure works before running --cleanup to remove them.
+        """
+        if not self.changes:
+            print("\n✓ No changes needed - configuration is already in new format")
             return
 
-        # Write new config.yaml
+        # Merge new config with old config (preserving old keys)
+        merged_config = dict(self.old_config)
+        for key, value in self.new_config.items():
+            if key in ["slack", "github", "services"]:
+                # Add new nested sections
+                merged_config[key] = value
+            elif key not in merged_config:
+                # Preserve other keys from new_config
+                merged_config[key] = value
+
+        # Write merged config.yaml
         with open(self.config_yaml, "w") as f:
             f.write("# jib configuration\n")
             f.write("# Migrated to new format: " + datetime.now().isoformat() + "\n")
             f.write("#\n")
             f.write("# Secrets (tokens, API keys) should be in secrets.env, not here.\n")
+            f.write("# Run with --cleanup to remove legacy top-level keys after verification.\n")
             f.write("#\n\n")
-            yaml.dump(self.new_config, f, default_flow_style=False, sort_keys=False)
+            yaml.dump(merged_config, f, default_flow_style=False, sort_keys=False)
 
         print(f"\n✓ Wrote new configuration to {self.config_yaml}")
+        print("  Legacy keys preserved. Run --cleanup after verification to remove them.")
+
+    def cleanup_legacy_keys(self):
+        """Remove legacy top-level keys that have been migrated to nested sections."""
+        # Reload current config
+        if not self.config_yaml.exists():
+            print("\n⚠ No config.yaml found")
+            return False
+
+        with open(self.config_yaml) as f:
+            current_config = yaml.safe_load(f) or {}
+
+        # Keys that should be removed (migrated to nested sections)
+        legacy_keys = [
+            "slack_channel",
+            "allowed_users",
+            "owner_user_id",
+            "self_dm_channel",
+            "batch_window_seconds",
+            "github_username",
+            "watch_directories",
+            "incoming_directory",
+            "responses_directory",
+        ]
+
+        removed = []
+        for key in legacy_keys:
+            if key in current_config:
+                del current_config[key]
+                removed.append(key)
+
+        if not removed:
+            print("\n✓ No legacy keys to remove - config is clean")
+            return True
+
+        # Write cleaned config
+        with open(self.config_yaml, "w") as f:
+            f.write("# jib configuration\n")
+            f.write("# Cleaned: " + datetime.now().isoformat() + "\n")
+            f.write("#\n")
+            f.write("# Secrets (tokens, API keys) should be in secrets.env, not here.\n")
+            f.write("#\n\n")
+            yaml.dump(current_config, f, default_flow_style=False, sort_keys=False)
+
+        print(f"\n✓ Removed legacy keys: {', '.join(removed)}")
+        print(f"  Config written to {self.config_yaml}")
+        return True
 
     def verify_migration(self):
         """Verify the migration was successful by testing config loading."""
@@ -313,15 +376,27 @@ def main():
         epilog="""
 Examples:
   %(prog)s                 Show migration plan (dry run)
-  %(prog)s --apply         Apply the migration
-  %(prog)s --backup        Create backup only
+  %(prog)s --apply         Add new nested sections (preserves old keys)
+  %(prog)s --cleanup       Remove legacy top-level keys
   %(prog)s --verify        Verify current config loads correctly
+  %(prog)s --backup        Create backup only
+
+Recommended workflow:
+  1. %(prog)s              # Review what will change
+  2. %(prog)s --apply      # Add new nested sections
+  3. %(prog)s --verify     # Verify config loads correctly
+  4. %(prog)s --cleanup    # Remove old top-level keys
         """,
     )
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Apply the migration (default is dry run)",
+        help="Add new nested sections (preserves legacy keys for verification)",
+    )
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Remove legacy top-level keys after migration",
     )
     parser.add_argument(
         "--backup",
@@ -352,6 +427,13 @@ Examples:
         migrator.verify_migration()
         return
 
+    if args.cleanup:
+        # Remove legacy keys
+        print("\nRemoving legacy top-level keys...")
+        migrator.cleanup_legacy_keys()
+        migrator.verify_migration()
+        return
+
     # Load existing config
     print("\nLoading existing configuration...")
     migrator.load_existing_config()
@@ -371,15 +453,16 @@ Examples:
         return
 
     if args.apply:
-        # Create backup first
-        migrator.create_backup()
-
-        # Apply migration
+        # Apply migration (preserves old keys)
         print("\nApplying migration...")
         migrator.apply_migration()
 
         # Verify
         migrator.verify_migration()
+
+        print("\n" + "-" * 60)
+        print(" Next step: Run --cleanup to remove legacy keys")
+        print("-" * 60)
     else:
         print("\n" + "-" * 60)
         print(" DRY RUN - No changes made")
