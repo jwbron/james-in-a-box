@@ -51,16 +51,22 @@ cd ~/repos/james-in-a-box/host-services/slack/slack-receiver
 
 ## Configuration
 
-Tokens are stored in `~/.config/jib-notifier/config.json`:
+Slack configuration is stored in `~/.config/jib/`:
 
-```json
-{
-  "slack_token": "xoxb-your-bot-token",
-  "slack_app_token": "xapp-your-app-token",
-  "slack_channel": "D07S8SAB5FE",
-  "owner_user_id": "U07SK26JPJ5"
-}
+**secrets.env** (tokens):
+```bash
+SLACK_BOT_TOKEN="xoxb-your-bot-token"
+SLACK_APP_TOKEN="xapp-your-app-token"
 ```
+
+**config.yaml** (settings):
+```yaml
+slack:
+  channel: "D07S8SAB5FE"
+  owner_user_id: "U07SK26JPJ5"
+```
+
+See [Configuration](../../config/README.md) for the complete directory structure.
 
 ## Verify It's Working
 

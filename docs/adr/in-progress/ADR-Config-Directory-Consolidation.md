@@ -1,6 +1,6 @@
 # ADR: Configuration Directory Consolidation
 
-**Status**: In Progress (Phase 1 Complete)
+**Status**: In Progress (Phase 1 & 2 Complete)
 **Date**: 2026-01-23
 **Author**: jib
 
@@ -170,9 +170,14 @@ This phase implements the migration:
 - [ ] `setup.py` - Ensure only consolidated structure is created
 
 ### Priority 2 (Documentation)
-- [ ] `config/README.md` - Document final structure
+- [x] `config/README.md` - Document final structure
 - [x] `docs/setup/README.md` - Update setup instructions
 - [x] `README.md` - Update config locations table
+- [x] `docs/setup/slack-quickstart.md` - Update config references
+- [x] `docs/setup/slack-bidirectional.md` - Update config references
+- [x] `docs/setup/slack-app-setup.md` - Update config references
+- [x] `docs/reference/slack-quick-reference.md` - Update config references
+- [x] `docs/architecture/slack-integration.md` - Update config references
 
 ### Priority 3 (Services)
 - [ ] `host-services/slack/slack-notifier/` - Verify uses consolidated config

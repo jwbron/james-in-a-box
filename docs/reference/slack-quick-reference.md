@@ -64,10 +64,10 @@ systemctl --user restart
 ./jib
 ```
 
-## Token Locations
+## Configuration Locations
 
-- **Config**: `~/.config/jib-notifier/config.json`
-- **Logs**: `~/.config/jib-notifier/receiver.log`
+- **Secrets**: `~/.config/jib/secrets.env` (tokens)
+- **Settings**: `~/.config/jib/config.yaml` (channel, users)
 - **Tasks**: `~/.jib-sharing/incoming/`
 - **Responses**: `~/.jib-sharing/responses/`
 - **Notifications**: `~/.jib-sharing/notifications/`
@@ -93,17 +93,16 @@ systemctl --user restart
 
 ```
 Host:
-  ~/.config/jib-notifier/config.json          Bot config
-  ~/.config/jib-notifier/receiver.log         Receiver logs
+  ~/.config/jib/secrets.env          Tokens (SLACK_BOT_TOKEN, etc.)
+  ~/.config/jib/config.yaml          Settings (channel, users)
   ~/.jib-sharing/incoming/           Tasks from you
   ~/.jib-sharing/responses/          Your responses
   ~/.jib-sharing/notifications/      From Claude
 
 Container:
-  ~/sharing/incoming/                           Tasks from you
-  ~/sharing/responses/                          Your responses
-  ~/sharing/notifications/                      To you
-  ~/sharing/tracking/incoming-watcher.log       Watcher logs
+  ~/sharing/incoming/                Tasks from you
+  ~/sharing/responses/               Your responses
+  ~/sharing/notifications/           To you
 ```
 
 ## Full Documentation

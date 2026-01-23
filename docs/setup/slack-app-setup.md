@@ -104,22 +104,30 @@ You need **TWO tokens**:
 
 ## Configuration
 
-Create or edit `~/.config/jib-notifier/config.json`:
+Slack configuration is stored in `~/.config/jib/`:
 
-```json
-{
-  "slack_token": "xoxb-your-bot-token",
-  "slack_app_token": "xapp-your-app-token",
-  "slack_channel": "D07S8SAB5FE",
-  "owner_user_id": "U07SK26JPJ5",
-  "allowed_users": ["U07SK26JPJ5"]
-}
+**secrets.env** (tokens):
+```bash
+SLACK_BOT_TOKEN="xoxb-your-bot-token"
+SLACK_APP_TOKEN="xapp-your-app-token"
+```
+
+**config.yaml** (settings):
+```yaml
+slack:
+  channel: "D07S8SAB5FE"
+  owner_user_id: "U07SK26JPJ5"
+  allowed_users:
+    - "U07SK26JPJ5"
 ```
 
 Set permissions:
 ```bash
-chmod 600 ~/.config/jib-notifier/config.json
+chmod 700 ~/.config/jib
+chmod 600 ~/.config/jib/secrets.env
 ```
+
+See [Configuration](../../config/README.md) for the complete directory structure.
 
 ## Start Services
 
@@ -187,9 +195,9 @@ echo "Test" > ~/.jib-sharing/notifications/test.md
 
 ## Security Notes
 
-- Store tokens in `~/.config/jib-notifier/config.json` (permissions 600)
+- Store tokens in `~/.config/jib/secrets.env` (permissions 600)
 - Never commit tokens to git
-- Use `allowed_users` to restrict who can send commands
+- Use `allowed_users` in config.yaml to restrict who can send commands
 - Only grant required scopes
 
 ## References
