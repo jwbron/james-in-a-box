@@ -14,14 +14,18 @@
 REAL_GIT=/usr/bin/git
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
 GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
-# Host worktree path - set by jib launcher to translate container paths
+# Worktree container ID - set by jib launcher to translate container paths
 # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X
+# After PR #545, gateway mounts at container paths (/home/jib/...) not host paths
 JIB_WORKTREE_HOST_PATH="${JIB_WORKTREE_HOST_PATH:-}"
 CONTAINER_REPOS_DIR="${HOME}/repos"
+# Fixed container home path (must match gateway's CONTAINER_HOME)
+GATEWAY_CONTAINER_HOME="/home/jib"
 
-# Function to translate container path to host path for gateway
-# Container sees /home/user/repos/X but gateway needs the actual host path
-# which is JIB_WORKTREE_HOST_PATH/X (e.g., ~/.jib-worktrees/<container-id>/X)
+# Function to translate container path to gateway-accessible path
+# Container sees /home/jib/repos/X but gateway needs /home/jib/.jib-worktrees/<id>/X
+# Note: Gateway mounts host paths at container paths (PR #545), so we output
+# container-style paths, not host paths.
 translate_path_for_gateway() {
     local container_path="$1"
 
@@ -33,12 +37,16 @@ translate_path_for_gateway() {
     fi
 
     # Check if path is under the container's repos directory
-    # e.g., /home/jwies/repos/james-in-a-box -> james-in-a-box
+    # e.g., /home/jib/repos/james-in-a-box -> james-in-a-box
     if [[ "$container_path" == "$CONTAINER_REPOS_DIR"/* ]]; then
         # Extract the relative path after ~/repos/
         local relative_path="${container_path#$CONTAINER_REPOS_DIR/}"
-        # Construct the host worktree path
-        echo "${JIB_WORKTREE_HOST_PATH}/${relative_path}"
+        # Extract container ID from JIB_WORKTREE_HOST_PATH
+        # e.g., /home/jwies/.jib-worktrees/jib-20260123-000359-244376 -> jib-20260123-000359-244376
+        local container_id="${JIB_WORKTREE_HOST_PATH##*/}"
+        # Construct the gateway container path (not host path!)
+        # Gateway mounts ~/.jib-worktrees at /home/jib/.jib-worktrees
+        echo "${GATEWAY_CONTAINER_HOME}/.jib-worktrees/${container_id}/${relative_path}"
     else
         # Not under repos dir, return as-is
         echo "$container_path"
