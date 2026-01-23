@@ -600,9 +600,9 @@ def setup_claude(config: Config, logger: Logger) -> None:
                 print(f"    {hook.name}")
 
     # Create settings.json
-    trace_collector = (
-        config.repos_dir / "james-in-a-box/host-services/analysis/trace-collector/hook_handler.py"
-    )
+    # Use baked-in trace-collector from /opt/jib-runtime (not mounted repo)
+    # This ensures container uses the version that matches the image
+    trace_collector = Path("/opt/jib-runtime/host-services/analysis/trace-collector/hook_handler.py")
     beads_hook = config.claude_dir / "hooks/session-end.sh"
 
     settings = {
@@ -926,9 +926,10 @@ def setup_beads(config: Config, logger: Logger) -> bool:
 
 def generate_docs_indexes(config: Config, logger: Logger) -> None:
     """Generate documentation indexes."""
-    index_generator = (
-        config.repos_dir
-        / "james-in-a-box/host-services/analysis/index-generator/index-generator.py"
+    # Use baked-in index-generator from /opt/jib-runtime (not mounted repo)
+    # This ensures container uses the version that matches the image
+    index_generator = Path(
+        "/opt/jib-runtime/host-services/analysis/index-generator/index-generator.py"
     )
     jib_dir = config.repos_dir / "james-in-a-box"
 

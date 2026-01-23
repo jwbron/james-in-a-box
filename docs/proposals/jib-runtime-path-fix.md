@@ -163,26 +163,36 @@ Documentation paths like `~/repos/james-in-a-box/docs/` should remain unchanged 
 4. **Update claude-commands** (follow-up PR)
    - Change `show-metrics.md` to use correct path
 
-## Implementation Phases
+## Implementation (This PR)
 
-### Immediate (This PR)
-1. Add `~/jib` symlink in `entrypoint.py`
-2. Document the issue and plan
+### Changes Made
 
-### Follow-up PR: Move Trace-Collector
-1. Move `host-services/analysis/trace-collector/` to `jib-container/trace-collector/`
-2. Update `entrypoint.py` to reference `/opt/jib-runtime/jib-container/trace-collector/`
-3. Update any other references
+1. **Copy container-runtime host-services to build context** (`jib-container/jib`)
+   - Added `trace-collector` and `index-generator` to the files copied during `create_dockerfile()`
+   - These are now baked into the image at `/opt/jib-runtime/host-services/analysis/`
+
+2. **Update Dockerfile** (`jib-container/Dockerfile`)
+   - Added comments documenting the new structure
+   - Added chmod for the new host-services scripts
+
+3. **Update entrypoint.py to use baked-in paths**
+   - `trace_collector`: Now uses `/opt/jib-runtime/host-services/analysis/trace-collector/hook_handler.py`
+   - `index_generator`: Now uses `/opt/jib-runtime/host-services/analysis/index-generator/index-generator.py`
+
+4. **Add `~/jib` convenience symlink** (`jib-container/entrypoint.py`)
+   - Creates `~/jib -> /opt/jib-runtime/jib-container` during container startup
 
 ### Follow-up PR: Documentation Updates
 1. Update `jib-container/jib-tasks/github/README.md` paths to `~/jib/`
 2. Update `jib-container/.claude/commands/show-metrics.md` script path
 
-## Files to Modify (This PR)
+## Files Modified (This PR)
 
 | File | Change |
 |------|--------|
-| `jib-container/entrypoint.py` | Add `setup_jib_symlink()` function |
+| `jib-container/jib` | Copy trace-collector and index-generator to build context |
+| `jib-container/Dockerfile` | Document structure, chmod new scripts |
+| `jib-container/entrypoint.py` | Use `/opt/jib-runtime/` paths, add `~/jib` symlink |
 | `docs/proposals/jib-runtime-path-fix.md` | This proposal document |
 
 ## Testing
