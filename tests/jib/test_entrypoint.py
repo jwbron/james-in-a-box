@@ -31,7 +31,6 @@ class TestConfig:
         monkeypatch.delenv("RUNTIME_UID", raising=False)
         monkeypatch.delenv("RUNTIME_GID", raising=False)
         monkeypatch.delenv("JIB_QUIET", raising=False)
-        monkeypatch.delenv("LLM_PROVIDER", raising=False)
 
         config = entrypoint.Config()
 
@@ -39,7 +38,6 @@ class TestConfig:
         assert config.runtime_uid == 1000
         assert config.runtime_gid == 1000
         assert config.quiet is False
-        assert config.llm_provider == "anthropic"
 
     def test_environment_overrides(self, monkeypatch):
         """Test that environment variables override defaults."""
@@ -47,7 +45,6 @@ class TestConfig:
         monkeypatch.setenv("RUNTIME_UID", "2000")
         monkeypatch.setenv("RUNTIME_GID", "2000")
         monkeypatch.setenv("JIB_QUIET", "1")
-        monkeypatch.setenv("LLM_PROVIDER", "google")
 
         config = entrypoint.Config()
 
@@ -55,20 +52,15 @@ class TestConfig:
         assert config.runtime_uid == 2000
         assert config.runtime_gid == 2000
         assert config.quiet is True
-        assert config.llm_provider == "google"
 
     def test_api_keys_from_environment(self, monkeypatch):
         """Test that API keys are read from environment."""
-        monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
-        monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
         monkeypatch.setenv("GITHUB_TOKEN", "test-github-token")
 
         config = entrypoint.Config()
 
-        assert config.google_api_key == "test-google-key"
         assert config.anthropic_api_key == "test-anthropic-key"
-        assert config.openai_api_key == "test-openai-key"
         assert config.github_token == "test-github-token"
 
     def test_user_home_property(self, monkeypatch):
@@ -95,10 +87,7 @@ class TestConfig:
 
         assert config.git_main_dir == Path("/home/jib/.git-main")
         assert config.claude_dir == Path("/home/jib/.claude")
-        assert config.gemini_dir == Path("/home/jib/.gemini")
         assert config.beads_dir == Path("/home/jib/sharing/beads")
-        assert config.router_dir == Path("/home/jib/.claude-code-router")
-        assert config.router_config == Path("/home/jib/.claude-code-router/config.json")
 
 
 class TestLogger:
@@ -267,44 +256,6 @@ class TestSetupEnvironment:
 
         assert "/opt/jib-runtime/jib-container/bin" in os.environ["PATH"]
         assert "/home/jib/.local/bin" in os.environ["PATH"]
-
-
-class TestSetupRouter:
-    """Tests for the setup_router function."""
-
-    def test_gemini_router_config_structure(self, monkeypatch):
-        """Test router config structure for Gemini provider."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
-        monkeypatch.setenv("LLM_PROVIDER", "google")
-        monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-
-        config = entrypoint.Config()
-
-        # Just verify the config would be correct by checking provider
-        assert config.llm_provider == "google"
-        assert config.google_api_key == "test-key"
-
-    def test_anthropic_router_config_structure(self, monkeypatch):
-        """Test router config structure for Anthropic provider (default)."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
-        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-
-        config = entrypoint.Config()
-
-        assert config.llm_provider == "anthropic"
-        assert config.anthropic_api_key == "test-key"
-
-    def test_openai_router_config_structure(self, monkeypatch):
-        """Test router config structure for OpenAI provider."""
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
-        monkeypatch.setenv("LLM_PROVIDER", "openai")
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-
-        config = entrypoint.Config()
-
-        assert config.llm_provider == "openai"
-        assert config.openai_api_key == "test-key"
 
 
 class TestFixRepoConfig:

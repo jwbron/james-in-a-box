@@ -265,8 +265,6 @@ class ConfigMigrator:
         # Legacy config locations in ~/.config/jib (standalone files)
         self.legacy_locations = {
             "anthropic_api_key": self.new_config_dir / "anthropic-api-key",
-            "google_api_key": self.new_config_dir / "google-api-key",
-            "openai_api_key": self.new_config_dir / "openai-api-key",
             "github_app_id": self.new_config_dir / "github-app-id",
             "github_app_installation": self.new_config_dir / "github-app-installation-id",
             "github_app_key": self.new_config_dir / "github-app-private-key.pem",
@@ -375,8 +373,6 @@ class ConfigMigrator:
         # Migrate standalone API key files
         api_key_mapping = {
             "anthropic_api_key": "ANTHROPIC_API_KEY",
-            "google_api_key": "GOOGLE_API_KEY",
-            "openai_api_key": "OPENAI_API_KEY",
         }
 
         for legacy_name, secret_name in api_key_mapping.items():
@@ -439,7 +435,7 @@ class ConfigMigrator:
 
         # Group secrets by service
         groups = {
-            "LLM API Keys": ["ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"],
+            "LLM API Keys": ["ANTHROPIC_API_KEY"],
             "Slack Integration": ["SLACK_TOKEN", "SLACK_APP_TOKEN"],
             "GitHub": ["GITHUB_TOKEN", "GITHUB_READONLY_TOKEN"],
             "Confluence": [
