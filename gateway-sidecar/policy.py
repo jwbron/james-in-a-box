@@ -306,7 +306,11 @@ class PolicyEngine:
             return PolicyResult(
                 allowed=True,
                 reason=f"PR is owned by configured user ({incognito_user})",
-                details={"author": pr_info.author, "auth_mode": auth_mode, "configured_user": incognito_user},
+                details={
+                    "author": pr_info.author,
+                    "auth_mode": auth_mode,
+                    "configured_user": incognito_user,
+                },
             )
 
         logger.info(
