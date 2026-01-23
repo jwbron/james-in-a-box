@@ -13,7 +13,7 @@ Get Slack notifications working in 10 minutes.
 The main setup script handles everything:
 
 ```bash
-cd ~/khan/james-in-a-box
+cd ~/repos/james-in-a-box
 ./setup.sh
 ```
 
@@ -27,7 +27,7 @@ This will:
 ### 1. Install Dependencies
 
 ```bash
-cd ~/khan/james-in-a-box/host-services
+cd ~/repos/james-in-a-box/host-services
 uv sync
 ```
 
@@ -41,11 +41,11 @@ See [Slack App Setup](slack-app-setup.md) for detailed instructions. You'll need
 
 ```bash
 # Slack notifier (Claude → You)
-cd ~/khan/james-in-a-box/host-services/slack/slack-notifier
+cd ~/repos/james-in-a-box/host-services/slack/slack-notifier
 ./setup.sh
 
 # Slack receiver (You → Claude)
-cd ~/khan/james-in-a-box/host-services/slack/slack-receiver
+cd ~/repos/james-in-a-box/host-services/slack/slack-receiver
 ./setup.sh
 ```
 

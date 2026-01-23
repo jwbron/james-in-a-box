@@ -21,7 +21,7 @@ fi
 
 if ! command -v jib &> /dev/null; then
     echo "WARNING: jib command not found in PATH"
-    echo "Make sure ~/khan/james-in-a-box/bin is in your PATH"
+    echo "Make sure ~/repos/james-in-a-box/bin is in your PATH"
 fi
 
 # Create state directory

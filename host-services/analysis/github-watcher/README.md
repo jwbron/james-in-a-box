@@ -72,7 +72,7 @@ No watching/polling logic lives in the container.
 ## Setup
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/analysis/github-watcher
+cd ~/repos/james-in-a-box/host-services/analysis/github-watcher
 ./setup.sh
 ```
 
@@ -194,7 +194,7 @@ gh auth login  # Re-authenticate if needed
 # Ensure jib is in PATH
 which jib
 # Or use full path
-~/khan/james-in-a-box/bin/jib --help
+~/repos/james-in-a-box/bin/jib --help
 ```
 
 **Service analysis fails**:
@@ -210,7 +210,7 @@ jib --exec python3 -c "print('hello')"
 
 **Run single service for debugging**:
 ```bash
-cd ~/khan/james-in-a-box/host-services/analysis/github-watcher
+cd ~/repos/james-in-a-box/host-services/analysis/github-watcher
 python3 ci_fixer.py
 python3 comment_responder.py
 python3 pr_reviewer.py

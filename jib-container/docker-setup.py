@@ -46,7 +46,7 @@ def load_config() -> dict:
     Search order:
     1. JIB_REPO_CONFIG env var (explicit override)
     2. Host config: ~/.config/jib/repositories.yaml
-    3. Container mount: ~/khan/james-in-a-box/config/repositories.yaml
+    3. Container mount: ~/repos/james-in-a-box/config/repositories.yaml
 
     Returns empty dict if no config found (uses defaults only).
     """

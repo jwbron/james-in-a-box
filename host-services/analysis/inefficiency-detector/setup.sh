@@ -30,7 +30,7 @@ systemctl --user start "$TIMER_NAME"
 echo "✓ Timer started"
 
 # Create analysis output directory
-mkdir -p "${HOME}/khan/james-in-a-box/docs/analysis/inefficiency"
+mkdir -p "${HOME}/repos/james-in-a-box/docs/analysis/inefficiency"
 echo "✓ Analysis output directory created"
 
 # Check status

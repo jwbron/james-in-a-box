@@ -16,7 +16,7 @@ Drop-in replacements for common CLI tools that add automatic logging.
 Add this directory to your PATH:
 
 ```bash
-export PATH="$HOME/khan/james-in-a-box/shared/jib_logging/bin:$PATH"
+export PATH="$HOME/repos/james-in-a-box/shared/jib_logging/bin:$PATH"
 ```
 
 Then use the prefixed commands:
@@ -44,7 +44,7 @@ alias claude='jib-claude'
 Or use the provided setup script:
 
 ```bash
-source ~/khan/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
+source ~/repos/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
 ```
 
 ### Option 3: PATH override
@@ -53,10 +53,10 @@ Create a bin directory earlier in PATH with symlinks:
 
 ```bash
 mkdir -p ~/.local/bin
-ln -sf ~/khan/james-in-a-box/shared/jib_logging/bin/jib-bd ~/.local/bin/bd
-ln -sf ~/khan/james-in-a-box/shared/jib_logging/bin/jib-git ~/.local/bin/git
-ln -sf ~/khan/james-in-a-box/shared/jib_logging/bin/jib-gh ~/.local/bin/gh
-ln -sf ~/khan/james-in-a-box/shared/jib_logging/bin/jib-claude ~/.local/bin/claude
+ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-bd ~/.local/bin/bd
+ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-git ~/.local/bin/git
+ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-gh ~/.local/bin/gh
+ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-claude ~/.local/bin/claude
 ```
 
 ## Environment Variables

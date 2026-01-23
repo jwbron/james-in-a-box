@@ -770,7 +770,7 @@ def setup_beads(config: Config, logger: Logger) -> bool:
         logger.error("Beads must be initialized before starting the container.")
         logger.error("Please run setup.sh on the host:")
         logger.error("")
-        logger.error("  cd ~/khan/james-in-a-box")
+        logger.error("  cd ~/repos/james-in-a-box")
         logger.error("  ./setup.sh")
         logger.error("")
         return False
@@ -782,7 +782,7 @@ def setup_beads(config: Config, logger: Logger) -> bool:
         logger.error("Beads repository exists but is not properly initialized.")
         logger.error("Please run setup.sh on the host:")
         logger.error("")
-        logger.error("  cd ~/khan/james-in-a-box")
+        logger.error("  cd ~/repos/james-in-a-box")
         logger.error("  ./setup.sh")
         logger.error("")
         return False

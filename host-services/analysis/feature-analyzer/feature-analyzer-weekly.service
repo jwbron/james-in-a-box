@@ -20,10 +20,10 @@ Type=oneshot
 # - Consolidates and deduplicates with LLM (handles symlinks, merges related)
 # - Only adds NEW features not already in FEATURES.md
 # Executables are in PATH inside the container via /opt/jib-runtime/bin
-ExecStart=%h/khan/james-in-a-box/bin/jib --exec analysis-processor \
+ExecStart=%h/repos/james-in-a-box/bin/jib --exec analysis-processor \
     --task weekly_feature_analysis \
     --context '{"repo_name": "james-in-a-box", "days": 7, "max_workers": 5}'
-WorkingDirectory=%h/khan/james-in-a-box
+WorkingDirectory=%h/repos/james-in-a-box
 Environment=HOME=%h
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 

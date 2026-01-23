@@ -9,7 +9,7 @@ OnFailure=service-failure-notify@%n.service
 Type=oneshot
 
 # Execute the weekly report generator directly from the repo
-ExecStart=/usr/bin/python3 %h/khan/james-in-a-box/host-services/analysis/inefficiency-detector/weekly_report_generator.py --days 7
+ExecStart=/usr/bin/python3 %h/repos/james-in-a-box/host-services/analysis/inefficiency-detector/weekly_report_generator.py --days 7
 
 # Logging
 StandardOutput=journal

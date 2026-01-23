@@ -40,7 +40,7 @@ confluence-cursor-sync/  # Code only, no output files
 
 Pull the latest changes:
 ```bash
-cd ~/khan/confluence-cursor-sync
+cd ~/repos/confluence-cursor-sync
 git pull
 ```
 
@@ -96,7 +96,7 @@ If you created symlinks to `confluence-docs/` in other projects, update them:
 **Option 1: Update existing symlinks**
 ```bash
 # For each project with a symlink
-cd ~/khan/some-project
+cd ~/repos/some-project
 rm confluence-docs
 ln -s ~/context-sync/confluence confluence-docs
 ```

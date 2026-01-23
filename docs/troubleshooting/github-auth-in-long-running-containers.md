@@ -100,7 +100,7 @@ gh auth status
 
 2. **Re-run setup.sh** if the service isn't installed:
    ```bash
-   cd ~/khan/james-in-a-box
+   cd ~/repos/james-in-a-box
    ./setup.sh --update
    ```
 

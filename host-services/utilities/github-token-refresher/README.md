@@ -33,7 +33,7 @@ The token file (`~/.jib-gateway/.github-token`) is JSON:
 ## Installation
 
 ```bash
-cd ~/khan/james-in-a-box/host-services/utilities/github-token-refresher
+cd ~/repos/james-in-a-box/host-services/utilities/github-token-refresher
 ./setup.sh
 ```
 

@@ -24,9 +24,9 @@
 ```ini
 [Service]
 Type=oneshot
-WorkingDirectory=/home/jwies/khan/confluence-cursor-sync
-EnvironmentFile=/home/jwies/khan/confluence-cursor-sync/.env
-ExecStart=/home/jwies/khan/confluence-cursor-sync/.venv/bin/python sync_all.py
+WorkingDirectory=/home/jwies/repos/confluence-cursor-sync
+EnvironmentFile=/home/jwies/repos/confluence-cursor-sync/.env
+ExecStart=/home/jwies/repos/confluence-cursor-sync/.venv/bin/python sync_all.py
 ```
 
 ### 3. Manual Sync Test ✅
@@ -84,7 +84,7 @@ if 'completed_at' in results:
 
 **Fix:** Added `EnvironmentFile=` directive to service file:
 ```ini
-EnvironmentFile=/home/jwies/khan/confluence-cursor-sync/.env
+EnvironmentFile=/home/jwies/repos/confluence-cursor-sync/.env
 ```
 
 ## Performance Metrics
