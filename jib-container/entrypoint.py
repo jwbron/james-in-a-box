@@ -9,6 +9,14 @@ the appropriate LLM interface.
 Converted from entrypoint.sh for better maintainability.
 """
 
+# Capture container start time FIRST - before any other imports
+# This measures from the moment Python starts executing this file
+import time
+
+
+_CONTAINER_START_TIME = time.time()
+
+# Now import everything else
 import contextlib
 import json
 import os
@@ -16,7 +24,6 @@ import random
 import signal
 import subprocess
 import sys
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +46,10 @@ class StartupTimer:
         self._phase_name: str | None = None
         self.host_timings: list[tuple[str, float]] = []
         self.host_total_time: float = 0.0
+        self.docker_startup_time: float = 0.0  # Gap between host launch and container start
+        # Capture time spent in Python init (imports) before this point
+        # Uses wall clock since _CONTAINER_START_TIME is wall clock
+        self.python_init_time: float = (time.time() - _CONTAINER_START_TIME) * 1000
         self._load_host_timing()
 
     def _load_host_timing(self) -> None:
@@ -52,6 +63,16 @@ class StartupTimer:
                 self.host_timings = data.get("timings", [])
                 self.host_total_time = data.get("total_time", 0.0)
             except (json.JSONDecodeError, KeyError):
+                pass
+
+        # Calculate docker startup gap (time between host launching container and Python starting)
+        host_launch_time_str = os.environ.get("JIB_HOST_LAUNCH_TIME", "")
+        if host_launch_time_str:
+            try:
+                host_launch_time = float(host_launch_time_str)
+                # Gap = container start time - host launch time (in milliseconds)
+                self.docker_startup_time = (_CONTAINER_START_TIME - host_launch_time) * 1000
+            except (ValueError, TypeError):
                 pass
 
     def start_phase(self, name: str) -> None:
@@ -92,8 +113,10 @@ class StartupTimer:
         if not self.timings and not self.host_timings:
             return
 
-        container_total = (time.perf_counter() - self.start_time) * 1000
-        grand_total = self.host_total_time + container_total
+        # Container total includes python_init (imports) + all phases
+        phases_total = (time.perf_counter() - self.start_time) * 1000
+        container_total = self.python_init_time + phases_total
+        grand_total = self.host_total_time + self.docker_startup_time + container_total
 
         print("\n" + "=" * 60)
         print("STARTUP TIMING SUMMARY")
@@ -101,7 +124,7 @@ class StartupTimer:
         print(f"{'Phase':<40} {'Time (ms)':>10} {'%':>6}")
         print("-" * 60)
 
-        # Print host phases
+        # Print host phases (% of grand total)
         if self.host_timings:
             print("HOST:")
             for name, elapsed in self.host_timings:
@@ -111,11 +134,26 @@ class StartupTimer:
             print(f"  {'(host total)':<38} {self.host_total_time:>10.1f}")
             print()
 
-        # Print container phases
-        if self.timings:
+        # Print docker startup gap (time from host launch to container Python starting)
+        if self.docker_startup_time > 0:
+            print("DOCKER:")
+            pct = (self.docker_startup_time / grand_total) * 100 if grand_total > 0 else 0
+            bar = "█" * int(pct / 5)
+            print(
+                f"  {'container_startup':<38} {self.docker_startup_time:>10.1f} {pct:>5.1f}% {bar}"
+            )
+            print()
+
+        # Print container phases (% of container total for meaningful breakdown)
+        if self.timings or self.python_init_time > 0:
             print("CONTAINER:")
+            # Show python_init first (time for imports before StartupTimer was created)
+            if self.python_init_time > 0:
+                pct = (self.python_init_time / container_total) * 100 if container_total > 0 else 0
+                bar = "█" * int(pct / 5)
+                print(f"  {'python_init':<38} {self.python_init_time:>10.1f} {pct:>5.1f}% {bar}")
             for name, elapsed in self.timings:
-                pct = (elapsed / grand_total) * 100 if grand_total > 0 else 0
+                pct = (elapsed / container_total) * 100 if container_total > 0 else 0
                 bar = "█" * int(pct / 5)
                 print(f"  {name:<38} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
             print(f"  {'(container total)':<38} {container_total:>10.1f}")
