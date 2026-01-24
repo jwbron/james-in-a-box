@@ -20,6 +20,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Capture container start time as early as possible (wall clock for cross-process comparison)
+_CONTAINER_START_TIME = time.time()
 
 # =============================================================================
 # Startup Timing (Debug)
@@ -39,6 +41,7 @@ class StartupTimer:
         self._phase_name: str | None = None
         self.host_timings: list[tuple[str, float]] = []
         self.host_total_time: float = 0.0
+        self.docker_startup_time: float = 0.0  # Gap between host launch and container start
         self._load_host_timing()
 
     def _load_host_timing(self) -> None:
@@ -52,6 +55,16 @@ class StartupTimer:
                 self.host_timings = data.get("timings", [])
                 self.host_total_time = data.get("total_time", 0.0)
             except (json.JSONDecodeError, KeyError):
+                pass
+
+        # Calculate docker startup gap (time between host launching container and Python starting)
+        host_launch_time_str = os.environ.get("JIB_HOST_LAUNCH_TIME", "")
+        if host_launch_time_str:
+            try:
+                host_launch_time = float(host_launch_time_str)
+                # Gap = container start time - host launch time (in milliseconds)
+                self.docker_startup_time = (_CONTAINER_START_TIME - host_launch_time) * 1000
+            except (ValueError, TypeError):
                 pass
 
     def start_phase(self, name: str) -> None:
@@ -93,7 +106,7 @@ class StartupTimer:
             return
 
         container_total = (time.perf_counter() - self.start_time) * 1000
-        grand_total = self.host_total_time + container_total
+        grand_total = self.host_total_time + self.docker_startup_time + container_total
 
         print("\n" + "=" * 60)
         print("STARTUP TIMING SUMMARY")
@@ -101,7 +114,7 @@ class StartupTimer:
         print(f"{'Phase':<40} {'Time (ms)':>10} {'%':>6}")
         print("-" * 60)
 
-        # Print host phases
+        # Print host phases (% of grand total)
         if self.host_timings:
             print("HOST:")
             for name, elapsed in self.host_timings:
@@ -111,11 +124,19 @@ class StartupTimer:
             print(f"  {'(host total)':<38} {self.host_total_time:>10.1f}")
             print()
 
-        # Print container phases
+        # Print docker startup gap (time from host launch to container Python starting)
+        if self.docker_startup_time > 0:
+            print("DOCKER:")
+            pct = (self.docker_startup_time / grand_total) * 100 if grand_total > 0 else 0
+            bar = "█" * int(pct / 5)
+            print(f"  {'container_startup':<38} {self.docker_startup_time:>10.1f} {pct:>5.1f}% {bar}")
+            print()
+
+        # Print container phases (% of container total for meaningful breakdown)
         if self.timings:
             print("CONTAINER:")
             for name, elapsed in self.timings:
-                pct = (elapsed / grand_total) * 100 if grand_total > 0 else 0
+                pct = (elapsed / container_total) * 100 if container_total > 0 else 0
                 bar = "█" * int(pct / 5)
                 print(f"  {name:<38} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
             print(f"  {'(container total)':<38} {container_total:>10.1f}")

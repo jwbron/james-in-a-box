@@ -2276,6 +2276,13 @@ def run_claude() -> bool:
     if _quiet_mode:
         status("Launching Claude...")
 
+    # Record launch timestamp for measuring docker startup time
+    # This captures the gap between host finishing and container Python starting
+    if _host_timer.enabled:
+        launch_time = time.time()
+        cmd.insert(-1, "-e")
+        cmd.insert(-1, f"JIB_HOST_LAUNCH_TIME={launch_time}")
+
     # Run container
     try:
         subprocess.run(cmd)
