@@ -197,22 +197,28 @@ This is a test commit message describing the changes. It demonstrates our commit
 Implement comprehensive documentation updates and crucial testing infrastructure enhancements
 ```
 
-**Humanized (will be captured from PR creation):**
-[TBD - see PR title after creation]
+**Actual Result (PR #562):**
+```
+Implement comprehensive documentation updates and crucial testing infrastructure enhancements
+```
+
+**Status:** NOT HUMANIZED - The humanizer skill asks for more context when given short text like titles.
 
 ### Test 3: PR Description
 
 **Original:** (see section 2 above - "PR Description (Original)")
 
-**Humanized (will be captured from PR creation):**
-[TBD - see PR body after creation]
+**Actual Result (PR #562):** Unchanged - full AI-style body was preserved
+
+**Status:** NOT HUMANIZED - Subprocess timeout (60s) in gh wrapper
 
 ### Test 4: PR Comment
 
 **Original:** (see section 4 above - "PR Comment (Original)")
 
-**Humanized (will be captured after comment is added):**
-[TBD - see PR comment after addition]
+**Actual Result (PR #562 comment):** Unchanged - full AI-style comment was preserved
+
+**Status:** NOT HUMANIZED - Subprocess timeout (60s) in gh wrapper
 
 ---
 
@@ -242,10 +248,54 @@ This PR updates the authentication system with improved security measures. The c
 
 ---
 
+## Test Results Summary
+
+### What Worked
+
+1. **Multi-line commit messages** - Successfully humanized when committed from interactive shell
+   - Original: "This commit introduces a series of crucial improvements..."
+   - Humanized: "This commit introduces testing utilities and documentation improvements..."
+
+2. **Single-line commit messages** - Humanized when above 50 chars
+   - Original: "Additionally, this is a crucial test commit message that delves into..."
+   - Humanized: "This is a test commit message describing the changes..."
+
+3. **Direct Python module calls** - Work reliably for substantive content
+
+### What Didn't Work
+
+1. **PR Title** - Not humanized (skill asks for more context on short text)
+   - Original: "Implement comprehensive documentation updates and crucial testing infrastructure enhancements"
+   - Result: Unchanged
+
+2. **PR Body** - Not humanized (timeout from subprocess)
+   - 60-second timeout when called from gh wrapper subprocess
+
+3. **PR Comments** - Not humanized (same timeout issue)
+
+### Root Cause Analysis
+
+**Timeout Issue**: The humanizer works in interactive shells but times out (60s) when
+called from subprocesses (gh/git wrappers). This is likely because:
+- Claude Code needs to initialize a new session for each subprocess
+- The 60-second timeout is insufficient for cold starts
+- Resource contention when multiple Claude Code instances are active
+
+**Short Text Issue**: The humanizer skill sometimes asks for more context instead of
+processing short text like titles. The skill prompt may need tuning.
+
 ## Notes
 
 1. The humanizer requires PYTHONPATH to be set to include the jib_lib module
 2. Text shorter than 50 characters is skipped
 3. Humanization is fail-open - if it fails, original text is returned
 4. The humanizer uses the blader/humanizer Claude Code skill
+5. **Known issue**: Subprocess timeouts prevent humanization of PR content
+
+## Recommendations
+
+1. **Increase timeout** - Consider 120s or longer for subprocess calls
+2. **Pre-warm Claude Code** - Keep a session active for faster responses
+3. **Tune skill prompt** - Ensure short text like titles are handled gracefully
+4. **Add retry logic** - Retry on timeout with exponential backoff
 
