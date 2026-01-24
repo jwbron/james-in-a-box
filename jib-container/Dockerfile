@@ -152,6 +152,12 @@ RUN su - jib -c "curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CO
         echo "Note: No bundled ripgrep found to patch (may not be needed)"; \
     fi
 
+# Install humanizer skill for natural language quality improvement
+# https://github.com/blader/humanizer - removes AI prose patterns from output
+RUN su - jib -c "mkdir -p ~/.claude/skills && \
+    git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer" || \
+    echo "Note: Humanizer skill install failed - humanization will be skipped"
+
 # Copy entrypoint script (Python for maintainability)
 COPY entrypoint.py /usr/local/bin/entrypoint.py
 RUN chmod +x /usr/local/bin/entrypoint.py

@@ -2,6 +2,7 @@
 GitHub CLI (gh) wrapper for jib_logging.
 
 Wraps gh commands to capture GitHub API interactions with structured logging.
+Includes automatic humanization of PR/issue content to improve readability.
 """
 
 import json
@@ -9,6 +10,17 @@ import re
 from typing import Any
 
 from .base import ToolResult, ToolWrapper
+
+# Import humanizer - fails gracefully if not available
+try:
+    from jib_humanizer import humanize_and_log
+    HUMANIZER_AVAILABLE = True
+except ImportError:
+    HUMANIZER_AVAILABLE = False
+
+    def humanize_and_log(text: str, context: str) -> str:
+        """Fallback when humanizer not available."""
+        return text
 
 
 class GhWrapper(ToolWrapper):
@@ -48,6 +60,7 @@ class GhWrapper(ToolWrapper):
         head: str | None = None,
         draft: bool = False,
         repo: str | None = None,
+        skip_humanize: bool = False,
     ) -> ToolResult:
         """Create a pull request.
 
@@ -58,10 +71,16 @@ class GhWrapper(ToolWrapper):
             head: Head branch (default: current branch)
             draft: Create as draft PR
             repo: Repository (owner/name) if not in repo dir
+            skip_humanize: Skip humanization of title/body
 
         Returns:
             ToolResult with PR URL in extra["pr_url"]
         """
+        # Humanize title and body for natural readability
+        if not skip_humanize:
+            title = humanize_and_log(title, "PR title")
+            body = humanize_and_log(body, "PR body")
+
         args: list[str] = ["pr", "create", "--title", title, "--body", body]
 
         if base:
@@ -251,6 +270,144 @@ class GhWrapper(ToolWrapper):
 
         return self.run(*args)
 
+    def pr_edit(
+        self,
+        pr_number: int | str | None = None,
+        *,
+        title: str | None = None,
+        body: str | None = None,
+        add_label: list[str] | None = None,
+        remove_label: list[str] | None = None,
+        repo: str | None = None,
+        skip_humanize: bool = False,
+    ) -> ToolResult:
+        """Edit a pull request.
+
+        Args:
+            pr_number: PR number (default: current branch's PR)
+            title: New PR title
+            body: New PR body
+            add_label: Labels to add
+            remove_label: Labels to remove
+            repo: Repository (owner/name)
+            skip_humanize: Skip humanization of title/body
+
+        Returns:
+            ToolResult
+        """
+        args: list[str] = ["pr", "edit"]
+
+        if pr_number is not None:
+            args.append(str(pr_number))
+
+        if title:
+            # Humanize title for natural readability
+            if not skip_humanize:
+                title = humanize_and_log(title, "PR title")
+            args.extend(["--title", title])
+
+        if body:
+            # Humanize body for natural readability
+            if not skip_humanize:
+                body = humanize_and_log(body, "PR body")
+            args.extend(["--body", body])
+
+        if add_label:
+            for label in add_label:
+                args.extend(["--add-label", label])
+
+        if remove_label:
+            for label in remove_label:
+                args.extend(["--remove-label", label])
+
+        if repo:
+            args.extend(["--repo", repo])
+
+        return self.run(*args)
+
+    def pr_comment(
+        self,
+        pr_number: int | str | None = None,
+        *,
+        body: str,
+        repo: str | None = None,
+        skip_humanize: bool = False,
+    ) -> ToolResult:
+        """Add a comment to a pull request.
+
+        Args:
+            pr_number: PR number (default: current branch's PR)
+            body: Comment body
+            repo: Repository (owner/name)
+            skip_humanize: Skip humanization of body
+
+        Returns:
+            ToolResult
+        """
+        # Humanize comment body for natural readability
+        if not skip_humanize:
+            body = humanize_and_log(body, "PR comment")
+
+        args: list[str] = ["pr", "comment"]
+
+        if pr_number is not None:
+            args.append(str(pr_number))
+
+        args.extend(["--body", body])
+
+        if repo:
+            args.extend(["--repo", repo])
+
+        return self.run(*args)
+
+    def pr_review(
+        self,
+        pr_number: int | str | None = None,
+        *,
+        body: str | None = None,
+        approve: bool = False,
+        request_changes: bool = False,
+        comment: bool = False,
+        repo: str | None = None,
+        skip_humanize: bool = False,
+    ) -> ToolResult:
+        """Review a pull request.
+
+        Args:
+            pr_number: PR number (default: current branch's PR)
+            body: Review body
+            approve: Approve the PR
+            request_changes: Request changes
+            comment: Leave a comment review (not approval or request changes)
+            repo: Repository (owner/name)
+            skip_humanize: Skip humanization of body
+
+        Returns:
+            ToolResult
+        """
+        args: list[str] = ["pr", "review"]
+
+        if pr_number is not None:
+            args.append(str(pr_number))
+
+        if body:
+            # Humanize review body for natural readability
+            if not skip_humanize:
+                body = humanize_and_log(body, "PR review")
+            args.extend(["--body", body])
+
+        if approve:
+            args.append("--approve")
+        elif request_changes:
+            args.append("--request-changes")
+        elif comment:
+            args.append("--comment")
+
+        if repo:
+            args.extend(["--repo", repo])
+
+        return self.run(*args)
+
     # --- Issue Operations ---
 
     def issue_create(
@@ -261,6 +418,7 @@ class GhWrapper(ToolWrapper):
         labels: list[str] | None = None,
         assignees: list[str] | None = None,
         repo: str | None = None,
+        skip_humanize: bool = False,
     ) -> ToolResult:
         """Create an issue.
 
@@ -270,10 +428,16 @@ class GhWrapper(ToolWrapper):
             labels: Labels to apply
             assignees: Users to assign
             repo: Repository (owner/name)
+            skip_humanize: Skip humanization of title/body
 
         Returns:
             ToolResult with issue URL in extra["issue_url"]
         """
+        # Humanize title and body for natural readability
+        if not skip_humanize:
+            title = humanize_and_log(title, "issue title")
+            body = humanize_and_log(body, "issue body")
+
         args: list[str] = ["issue", "create", "--title", title, "--body", body]
 
         if labels:
@@ -392,6 +556,36 @@ class GhWrapper(ToolWrapper):
 
         if reason:
             args.extend(["--reason", reason])
+
+        if repo:
+            args.extend(["--repo", repo])
+
+        return self.run(*args)
+
+    def issue_comment(
+        self,
+        issue_number: int | str,
+        *,
+        body: str,
+        repo: str | None = None,
+        skip_humanize: bool = False,
+    ) -> ToolResult:
+        """Add a comment to an issue.
+
+        Args:
+            issue_number: Issue number
+            body: Comment body
+            repo: Repository (owner/name)
+            skip_humanize: Skip humanization of body
+
+        Returns:
+            ToolResult
+        """
+        # Humanize comment body for natural readability
+        if not skip_humanize:
+            body = humanize_and_log(body, "issue comment")
+
+        args: list[str] = ["issue", "comment", str(issue_number), "--body", body]
 
         if repo:
             args.extend(["--repo", repo])
