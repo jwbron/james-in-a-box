@@ -5,7 +5,6 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from jib_humanizer import (
     HumanizationError,
     HumanizeResult,
@@ -14,7 +13,6 @@ from jib_humanizer import (
     humanize_and_log,
     humanize_text,
 )
-from jib_humanizer.humanizer import HumanizeConfig
 
 
 class TestHumanizeConfig:
@@ -195,6 +193,7 @@ class TestHumanizeAndLog:
         )
 
         import logging
+
         with caplog.at_level(logging.INFO):
             text = humanize_and_log("Original text that is long", "test context")
 
@@ -214,6 +213,7 @@ class TestHumanizeAndLog:
         )
 
         import logging
+
         with caplog.at_level(logging.WARNING):
             text = humanize_and_log("Original text that is long", "test context")
 
