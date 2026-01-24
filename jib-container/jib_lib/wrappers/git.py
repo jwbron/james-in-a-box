@@ -2,29 +2,15 @@
 Git wrapper for jib-container.
 
 Wraps git commands to capture repository operations with structured logging.
-Includes automatic humanization of commit messages to improve readability.
 
-IMPORTANT: This wrapper calls Claude Code for humanization and must only be
-used from jib-container, not from host-services or shared code.
+Note: Humanization is handled by the shell wrapper (scripts/git), not here.
+This allows the wrapper to be used without triggering LLM calls.
 """
 
 import re
 from typing import Any
 
 from .base import ToolResult, ToolWrapper
-
-
-# Import humanizer from jib-container lib
-try:
-    from jib_lib.humanizer import humanize_and_log
-
-    HUMANIZER_AVAILABLE = True
-except ImportError:
-    HUMANIZER_AVAILABLE = False
-
-    def humanize_and_log(text: str, context: str) -> str:
-        """Fallback when humanizer not available."""
-        return text
 
 
 class GitWrapper(ToolWrapper):
@@ -97,7 +83,6 @@ class GitWrapper(ToolWrapper):
         all: bool = False,
         amend: bool = False,
         cwd: str | None = None,
-        skip_humanize: bool = False,
     ) -> ToolResult:
         """Create a commit.
 
@@ -106,15 +91,10 @@ class GitWrapper(ToolWrapper):
             all: Commit all tracked changes (git commit -a)
             amend: Amend the previous commit
             cwd: Working directory
-            skip_humanize: Skip humanization of commit message
 
         Returns:
             ToolResult with commit SHA in extra["commit_sha"]
         """
-        # Humanize commit message for natural readability
-        if not skip_humanize:
-            message = humanize_and_log(message, "commit message")
-
         args: list[str] = ["commit"]
 
         if all:
