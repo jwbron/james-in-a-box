@@ -150,6 +150,18 @@ humanize:
   # If false, operations fail when humanization fails
   fail_open: true
 
+  # Timeout in seconds for Claude Code invocation (default: 120)
+  # Increased from 60s to handle subprocess cold starts
+  timeout: 120
+
+  # Maximum retry attempts on timeout (default: 2)
+  # Uses exponential backoff between retries
+  max_retries: 2
+
+  # Initial retry delay in seconds, doubles each retry (default: 2.0)
+  # With max_retries=2: waits 2s, then 4s before giving up
+  retry_delay: 2.0
+
 # Docker container setup configuration
 # Controls what gets installed when running docker-setup.py
 docker_setup:

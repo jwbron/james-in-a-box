@@ -29,10 +29,14 @@ Configuration:
     JIB_HUMANIZE_MODEL: model name (default: sonnet)
     JIB_HUMANIZE_MIN_LENGTH: minimum text length (default: 50)
     JIB_HUMANIZE_FAIL_OPEN: true/false (default: true)
+    JIB_HUMANIZE_TIMEOUT: timeout in seconds (default: 120)
+    JIB_HUMANIZE_MAX_RETRIES: max retry attempts on timeout (default: 2)
+    JIB_HUMANIZE_RETRY_DELAY: initial retry delay in seconds (default: 2.0)
 """
 
 from .humanizer import (
     HumanizationError,
+    HumanizeConfig,
     HumanizeResult,
     get_config,
     humanize,
@@ -43,6 +47,7 @@ from .humanizer import (
 
 __all__ = [
     "HumanizationError",
+    "HumanizeConfig",
     "HumanizeResult",
     "get_config",
     "humanize",

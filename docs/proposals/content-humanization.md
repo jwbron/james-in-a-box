@@ -171,7 +171,7 @@ def humanize(text: str) -> str:
         ],
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=120,  # Increased for subprocess cold starts
     )
 
     if result.returncode != 0:
@@ -179,6 +179,14 @@ def humanize(text: str) -> str:
 
     return result.stdout.strip()
 ```
+
+### Retry Logic
+
+The humanizer includes retry logic with exponential backoff for timeout errors, which can occur when Claude Code needs to initialize a new session in subprocess contexts:
+
+- **Default timeout**: 120 seconds (increased from 60s)
+- **Max retries**: 2 attempts
+- **Retry delay**: 2s initial, doubles each retry (2s, 4s)
 
 ### Why Use the Humanizer Skill
 
@@ -188,6 +196,7 @@ def humanize(text: str) -> str:
 - **Consistent**: Same patterns used across all humanization
 - **No API key needed**: Uses existing Claude Code OAuth authentication
 - **Security**: Runs in jib-container, not in the security-critical gateway
+- **Fault-tolerant**: Retry logic handles subprocess cold starts
 
 ### Cost/Latency
 
@@ -195,37 +204,35 @@ Using Sonnet for quality output:
 
 | Content Type | Typical Size | Latency |
 |--------------|--------------|---------|
-| PR title | ~50 chars | ~1-2s |
-| PR body | ~500 chars | ~2-3s |
-| Comment | ~200 chars | ~1-2s |
-| Commit msg | ~100 chars | ~1-2s |
+| PR title | ~50 chars | ~2-5s |
+| PR body | ~500 chars | ~3-8s |
+| Comment | ~200 chars | ~2-5s |
+| Commit msg | ~100 chars | ~2-5s |
 
-**Total per PR**: ~3-5s latency. Cost handled through existing Claude Code billing.
+**Total per PR**: ~5-10s latency (higher on first call due to session init). Cost handled through existing Claude Code billing.
 
 ### Error Handling
 
-```python
-def humanize(text: str, fail_open: bool = True) -> HumanizeResult:
-    """Humanize text with configurable failure mode.
+The humanizer is designed to be fail-open by default:
 
-    Args:
-        text: Text to humanize
-        fail_open: If True, return original text on failure (default).
-                   If False, raise exception blocking the operation.
-    """
+- **Timeout handling**: Retries with exponential backoff (2s, 4s delay)
+- **Invalid response detection**: Catches when model asks for clarification instead of humanizing
+- **Fail-open**: Returns original text on any error, ensuring operations aren't blocked
+
+```python
+# Retry loop with exponential backoff
+for attempt in range(config.max_retries + 1):
     try:
-        result = subprocess.run(
-            ["claude", "--print", "--model", "sonnet", "--max-turns", "5", "-p", prompt],
-            capture_output=True, text=True, timeout=60,
-        )
-        if result.returncode != 0:
-            raise HumanizationError(result.stderr)
-        return HumanizeResult(success=True, text=result.stdout.strip(), original=text)
-    except (subprocess.TimeoutExpired, HumanizationError) as e:
-        logger.error(f"Humanizer error: {e}")
-        if fail_open:
-            return HumanizeResult(success=False, text=text, original=text, error=str(e))
-        raise
+        humanized = _invoke_claude(prompt, config)
+        return HumanizeResult(success=True, text=humanized, original=text)
+    except subprocess.TimeoutExpired:
+        if attempt < config.max_retries:
+            delay = config.retry_delay * (2 ** attempt)
+            time.sleep(delay)
+        else:
+            if fail_open:
+                return HumanizeResult(success=False, text=text, original=text, error="Timeout")
+            raise
 ```
 
 Default is `fail_open=True` - if Claude Code is unavailable, original content is used rather than blocking operations.
@@ -354,7 +361,7 @@ def test_meaning_preserved():
     result = subprocess.run(
         ["claude", "--print", "--model", "haiku", "--max-turns", "1", "-p",
          f"Do these mean the same thing? Answer only YES or NO.\n\n1: {original}\n2: {humanized}"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=120,
     )
     assert "YES" in result.stdout.upper()
 ```
