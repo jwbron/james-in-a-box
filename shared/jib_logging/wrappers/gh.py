@@ -1,10 +1,7 @@
 """
-GitHub CLI (gh) wrapper.
+GitHub CLI (gh) wrapper for jib_logging.
 
 Wraps gh commands to capture GitHub API interactions with structured logging.
-
-Note: Humanization is handled by the shell wrapper (scripts/gh), not here.
-This allows the wrapper to be used without triggering LLM calls.
 """
 
 import json
@@ -254,125 +251,6 @@ class GhWrapper(ToolWrapper):
 
         return self.run(*args)
 
-    def pr_edit(
-        self,
-        pr_number: int | str | None = None,
-        *,
-        title: str | None = None,
-        body: str | None = None,
-        add_label: list[str] | None = None,
-        remove_label: list[str] | None = None,
-        repo: str | None = None,
-    ) -> ToolResult:
-        """Edit a pull request.
-
-        Args:
-            pr_number: PR number (default: current branch's PR)
-            title: New PR title
-            body: New PR body
-            add_label: Labels to add
-            remove_label: Labels to remove
-            repo: Repository (owner/name)
-
-        Returns:
-            ToolResult
-        """
-        args: list[str] = ["pr", "edit"]
-
-        if pr_number is not None:
-            args.append(str(pr_number))
-
-        if title:
-            args.extend(["--title", title])
-
-        if body:
-            args.extend(["--body", body])
-
-        if add_label:
-            for label in add_label:
-                args.extend(["--add-label", label])
-
-        if remove_label:
-            for label in remove_label:
-                args.extend(["--remove-label", label])
-
-        if repo:
-            args.extend(["--repo", repo])
-
-        return self.run(*args)
-
-    def pr_comment(
-        self,
-        pr_number: int | str | None = None,
-        *,
-        body: str,
-        repo: str | None = None,
-    ) -> ToolResult:
-        """Add a comment to a pull request.
-
-        Args:
-            pr_number: PR number (default: current branch's PR)
-            body: Comment body
-            repo: Repository (owner/name)
-
-        Returns:
-            ToolResult
-        """
-        args: list[str] = ["pr", "comment"]
-
-        if pr_number is not None:
-            args.append(str(pr_number))
-
-        args.extend(["--body", body])
-
-        if repo:
-            args.extend(["--repo", repo])
-
-        return self.run(*args)
-
-    def pr_review(
-        self,
-        pr_number: int | str | None = None,
-        *,
-        body: str | None = None,
-        approve: bool = False,
-        request_changes: bool = False,
-        comment: bool = False,
-        repo: str | None = None,
-    ) -> ToolResult:
-        """Review a pull request.
-
-        Args:
-            pr_number: PR number (default: current branch's PR)
-            body: Review body
-            approve: Approve the PR
-            request_changes: Request changes
-            comment: Leave a comment review (not approval or request changes)
-            repo: Repository (owner/name)
-
-        Returns:
-            ToolResult
-        """
-        args: list[str] = ["pr", "review"]
-
-        if pr_number is not None:
-            args.append(str(pr_number))
-
-        if body:
-            args.extend(["--body", body])
-
-        if approve:
-            args.append("--approve")
-        elif request_changes:
-            args.append("--request-changes")
-        elif comment:
-            args.append("--comment")
-
-        if repo:
-            args.extend(["--repo", repo])
-
-        return self.run(*args)
-
     # --- Issue Operations ---
 
     def issue_create(
@@ -514,30 +392,6 @@ class GhWrapper(ToolWrapper):
 
         if reason:
             args.extend(["--reason", reason])
-
-        if repo:
-            args.extend(["--repo", repo])
-
-        return self.run(*args)
-
-    def issue_comment(
-        self,
-        issue_number: int | str,
-        *,
-        body: str,
-        repo: str | None = None,
-    ) -> ToolResult:
-        """Add a comment to an issue.
-
-        Args:
-            issue_number: Issue number
-            body: Comment body
-            repo: Repository (owner/name)
-
-        Returns:
-            ToolResult
-        """
-        args: list[str] = ["issue", "comment", str(issue_number), "--body", body]
 
         if repo:
             args.extend(["--repo", repo])
