@@ -37,6 +37,21 @@ class StartupTimer:
         self.start_time: float = time.perf_counter()
         self._phase_start: float | None = None
         self._phase_name: str | None = None
+        self.host_timings: list[tuple[str, float]] = []
+        self.host_total_time: float = 0.0
+        self._load_host_timing()
+
+    def _load_host_timing(self) -> None:
+        """Load host timing data from environment variable."""
+        import json
+        host_timing_json = os.environ.get("JIB_HOST_TIMING", "")
+        if host_timing_json:
+            try:
+                data = json.loads(host_timing_json)
+                self.host_timings = [(name, elapsed) for name, elapsed in data.get("timings", [])]
+                self.host_total_time = data.get("total_time", 0.0)
+            except (json.JSONDecodeError, KeyError):
+                pass
 
     def start_phase(self, name: str) -> None:
         """Start timing a phase."""
@@ -70,25 +85,42 @@ class StartupTimer:
         return PhaseContext()
 
     def print_summary(self) -> None:
-        """Print timing summary."""
-        if not ENABLE_STARTUP_TIMING or not self.timings:
+        """Print combined timing summary (host + container phases)."""
+        if not ENABLE_STARTUP_TIMING:
+            return
+        if not self.timings and not self.host_timings:
             return
 
-        total_time = (time.perf_counter() - self.start_time) * 1000
+        container_total = (time.perf_counter() - self.start_time) * 1000
+        grand_total = self.host_total_time + container_total
 
         print("\n" + "=" * 60)
-        print("CONTAINER STARTUP TIMING SUMMARY")
+        print("STARTUP TIMING SUMMARY")
         print("=" * 60)
-        print(f"{'Phase':<35} {'Time (ms)':>10} {'%':>6}")
+        print(f"{'Phase':<40} {'Time (ms)':>10} {'%':>6}")
         print("-" * 60)
 
-        for name, elapsed in self.timings:
-            pct = (elapsed / total_time) * 100 if total_time > 0 else 0
-            bar = "█" * int(pct / 5)  # Simple bar graph
-            print(f"{name:<35} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
+        # Print host phases
+        if self.host_timings:
+            print("HOST:")
+            for name, elapsed in self.host_timings:
+                pct = (elapsed / grand_total) * 100 if grand_total > 0 else 0
+                bar = "█" * int(pct / 5)
+                print(f"  {name:<38} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
+            print(f"  {'(host total)':<38} {self.host_total_time:>10.1f}")
+            print()
+
+        # Print container phases
+        if self.timings:
+            print("CONTAINER:")
+            for name, elapsed in self.timings:
+                pct = (elapsed / grand_total) * 100 if grand_total > 0 else 0
+                bar = "█" * int(pct / 5)
+                print(f"  {name:<38} {elapsed:>10.1f} {pct:>5.1f}% {bar}")
+            print(f"  {'(container total)':<38} {container_total:>10.1f}")
 
         print("-" * 60)
-        print(f"{'TOTAL':<35} {total_time:>10.1f}")
+        print(f"{'GRAND TOTAL':<40} {grand_total:>10.1f}")
         print("=" * 60 + "\n")
 
 
@@ -1098,8 +1130,9 @@ def cleanup_on_exit(config: Config, logger: Logger) -> None:
 
 def run_interactive(config: Config, logger: Logger) -> None:
     """Launch interactive LLM session."""
-    # Start the router
-    start_router(config, logger)
+    # Start the router (timed phase)
+    with _startup_timer.phase("start_router"):
+        start_router(config, logger)
 
     logger.info("")
     logger.info("Analysis Pattern: Exec-based (triggered by host services)")
@@ -1134,6 +1167,9 @@ def run_interactive(config: Config, logger: Logger) -> None:
 
     logger.info(f"Launching LLM interactive mode (provider: {config.llm_provider})...")
 
+    # Print timing summary right before launching LLM
+    _startup_timer.print_summary()
+
     # Launch via gosu
     os.execvpe(
         "gosu",
@@ -1160,11 +1196,15 @@ def run_exec(config: Config, logger: Logger, args: list[str]) -> None:
     # Claude/OpenAI - start router for claude-agent-sdk compatibility
     elif config.router_config.exists():
         logger.info("Starting claude-code-router for exec mode...")
-        start_router(config, logger)
+        with _startup_timer.phase("start_router"):
+            start_router(config, logger)
 
         # Pass through router environment
         env["ANTHROPIC_BASE_URL"] = os.environ.get("ANTHROPIC_BASE_URL", "")
         env["ANTHROPIC_AUTH_TOKEN"] = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+
+    # Print timing summary before exec
+    _startup_timer.print_summary()
 
     os.execvpe(
         "gosu",
@@ -1243,10 +1283,7 @@ def main() -> None:
     with _startup_timer.phase("generate_docs_indexes"):
         generate_docs_indexes(config, logger)
 
-    # Print timing summary before launching LLM
-    _startup_timer.print_summary()
-
-    # Run appropriate mode
+    # Run appropriate mode (timing summary is printed inside each mode)
     if len(sys.argv) == 1:
         run_interactive(config, logger)
     else:
