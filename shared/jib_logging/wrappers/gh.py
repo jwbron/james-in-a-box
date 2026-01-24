@@ -11,9 +11,11 @@ from typing import Any
 
 from .base import ToolResult, ToolWrapper
 
+
 # Import humanizer - fails gracefully if not available
 try:
     from jib_humanizer import humanize_and_log
+
     HUMANIZER_AVAILABLE = True
 except ImportError:
     HUMANIZER_AVAILABLE = False
