@@ -129,6 +129,27 @@ local_repos:
   # - Worktrees created at ~/.jib-worktrees/<container-id>/<repo-name>
   paths: []
 
+# Content humanization configuration
+# Improves natural readability of LLM-generated output (PR descriptions,
+# comments, commit messages) by removing recognizable AI prose patterns.
+# Uses the blader/humanizer Claude Code skill.
+#
+# This is NOT about hiding AI identity - it's about quality writing.
+# A PR from james-in-a-box[bot] is still clearly bot-authored.
+humanize:
+  # Whether humanization is enabled globally (default: true)
+  enabled: true
+
+  # Model to use for rewriting (default: sonnet for quality)
+  model: sonnet
+
+  # Minimum text length to humanize - skip very short text (default: 50)
+  min_length: 50
+
+  # Failure mode: if true, use original text on errors (default: true)
+  # If false, operations fail when humanization fails
+  fail_open: true
+
 # Docker container setup configuration
 # Controls what gets installed when running docker-setup.py
 docker_setup:
