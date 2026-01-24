@@ -49,7 +49,7 @@ class StartupTimer:
         if host_timing_json:
             try:
                 data = json.loads(host_timing_json)
-                self.host_timings = [(name, elapsed) for name, elapsed in data.get("timings", [])]
+                self.host_timings = data.get("timings", [])
                 self.host_total_time = data.get("total_time", 0.0)
             except (json.JSONDecodeError, KeyError):
                 pass
