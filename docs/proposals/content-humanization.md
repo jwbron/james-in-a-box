@@ -272,21 +272,26 @@ repos:
 
 ### Phase 1: Core Humanization Module
 
-Create the shared humanizer module in jib-container and wire it into the gh wrapper for PR/issue operations.
+Create the humanizer module in jib-container (not shared - it calls Claude Code) and wire it into the gh wrapper for PR/issue operations.
+
+**Architecture Note**: Code that calls Claude Code must be in `jib-container/`, not `shared/`. This maintains the security boundary where only jib-container runs LLM operations.
 
 1. Install [blader/humanizer](https://github.com/blader/humanizer) skill in jib-container
-2. Create `shared/jib_humanizer/` module to invoke the skill via headless Claude Code
-3. Wire humanization into gh wrapper: `pr_create`, `pr_edit`, `pr_comment`, `issue_create`, `issue_comment`
-4. Skip short content (< 50 chars) to reduce latency
-5. Log diffs at DEBUG level for quality monitoring
+2. Create `jib-container/jib_lib/humanizer/` module to invoke the skill via Claude Code
+3. Move git/gh wrappers to `jib-container/jib_lib/wrappers/` with humanization integration
+4. Wire humanization into wrappers: `pr_create`, `pr_edit`, `pr_comment`, `issue_create`, `issue_comment`
+5. Skip short content (< 50 chars) to reduce latency
+6. Log diffs at DEBUG level for quality monitoring
 
 **Files:**
-- `shared/jib_humanizer/__init__.py` (new - core module)
-- `shared/jib_humanizer/humanizer.py` (new - implementation)
-- `shared/jib_logging/wrappers/gh.py` (integration)
+- `jib-container/jib_lib/humanizer/__init__.py` (new - core module)
+- `jib-container/jib_lib/humanizer/humanizer.py` (new - implementation)
+- `jib-container/jib_lib/wrappers/gh.py` (moved from shared, with humanization)
+- `jib-container/jib_lib/wrappers/git.py` (moved from shared, with humanization)
+- `jib-container/jib_lib/wrappers/claude.py` (moved from shared)
 - `jib-container/Dockerfile` (install humanizer skill)
 - `config/repositories.yaml.example` (config docs)
-- `tests/shared/jib_humanizer/test_humanizer.py` (new)
+- `jib-container/tests/lib/humanizer/test_humanizer.py` (new)
 
 **Setup**: Install the humanizer skill in the jib-container:
 ```dockerfile
@@ -299,10 +304,10 @@ RUN mkdir -p ~/.claude/skills && \
 
 Extend humanization to git commit messages in the git wrapper.
 
-**In git wrapper** (`shared/jib_logging/wrappers/git.py`):
+**In git wrapper** (`jib-container/jib_lib/wrappers/git.py`):
 
 ```python
-from jib_humanizer import humanize_and_log
+from jib_lib.humanizer import humanize_and_log
 
 def commit(self, message: str, *args, skip_humanize: bool = False, **kwargs):
     """Commit with humanized message."""
