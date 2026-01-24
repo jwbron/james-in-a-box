@@ -302,15 +302,16 @@ Extend humanization to git commit messages in the git wrapper.
 **In git wrapper** (`shared/jib_logging/wrappers/git.py`):
 
 ```python
-from jib_humanizer import humanize_text
+from jib_humanizer import humanize_and_log
 
-def commit(self, message: str, *args, **kwargs):
+def commit(self, message: str, *args, skip_humanize: bool = False, **kwargs):
     """Commit with humanized message."""
-    humanized_message = humanize_text(message)
-    return self._run(["commit", "-m", humanized_message, *args], **kwargs)
+    if not skip_humanize:
+        message = humanize_and_log(message, "commit message")
+    return self._run(["commit", "-m", message, *args], **kwargs)
 ```
 
-**Note**: Both phases use the same `jib_humanizer` module. Phase 1 wires it into gh operations, Phase 2 extends to git operations.
+**Note**: Both phases use the same `jib_humanizer` module. Phase 1 wires it into gh operations, Phase 2 extends to git operations. The `humanize_and_log` function is used instead of `humanize_text` to provide DEBUG-level logging of humanization diffs.
 
 ### Phase 3: Quality Monitoring
 
