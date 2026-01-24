@@ -13,6 +13,11 @@
 REAL_GH=/usr/bin/gh
 # Gateway runs as container on jib-network, reachable by container name
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
+# Humanizer script location
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+HUMANIZE_SCRIPT="${SCRIPT_DIR}/humanize-text"
+# Skip humanization if disabled
+JIB_HUMANIZE_ENABLED="${JIB_HUMANIZE_ENABLED:-true}"
 GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
 # Worktree container ID - set by jib launcher to translate container paths
 # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X
@@ -111,6 +116,40 @@ check_gateway_available() {
         return $?
     fi
     return 1
+}
+
+# Function to humanize text for natural readability
+# Returns humanized text on stdout, or original text if humanization fails/disabled
+humanize_text() {
+    local text="$1"
+    local context="$2"  # For logging (e.g., "PR title", "PR body")
+
+    # Skip if disabled
+    if [ "$JIB_HUMANIZE_ENABLED" != "true" ]; then
+        echo "$text"
+        return
+    fi
+
+    # Skip if humanizer script not available
+    if [ ! -x "$HUMANIZE_SCRIPT" ]; then
+        echo "$text"
+        return
+    fi
+
+    # Skip short text (< 50 chars)
+    if [ ${#text} -lt 50 ]; then
+        echo "$text"
+        return
+    fi
+
+    # Humanize text (fail-open: returns original on error)
+    local result
+    result=$("$HUMANIZE_SCRIPT" "$text" 2>/dev/null)
+    if [ $? -eq 0 ] && [ -n "$result" ]; then
+        echo "$result"
+    else
+        echo "$text"
+    fi
 }
 
 # Function to extract repo from current directory or args
@@ -251,6 +290,10 @@ handle_pr_create() {
         return 1
     fi
 
+    # Humanize title and body for natural readability
+    title=$(humanize_text "$title" "PR title")
+    body=$(humanize_text "$body" "PR body")
+
     # Build JSON payload using Python for proper escaping
     local payload
     payload=$(python3 -c "
@@ -307,6 +350,9 @@ handle_pr_comment() {
         return 1
     fi
 
+    # Humanize body for natural readability
+    body=$(humanize_text "$body" "PR comment")
+
     # Build JSON payload using Python for proper escaping
     local payload
     payload=$(python3 -c "
@@ -358,6 +404,14 @@ handle_pr_edit() {
     if [ -z "$pr_number" ]; then
         echo "ERROR: Missing PR number" >&2
         return 1
+    fi
+
+    # Humanize title and body for natural readability
+    if [ -n "$title" ]; then
+        title=$(humanize_text "$title" "PR title")
+    fi
+    if [ -n "$body" ]; then
+        body=$(humanize_text "$body" "PR body")
     fi
 
     # Build JSON payload using Python for proper escaping

@@ -14,6 +14,11 @@
 REAL_GIT=/usr/bin/git
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
 GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
+# Humanizer script location
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+HUMANIZE_SCRIPT="${SCRIPT_DIR}/humanize-text"
+# Skip humanization if disabled
+JIB_HUMANIZE_ENABLED="${JIB_HUMANIZE_ENABLED:-true}"
 # Worktree container ID - set by jib launcher to translate container paths
 # Container sees ~/repos/X but gateway needs ~/.jib-worktrees/<container-id>/X
 # After PR #545, gateway mounts at container paths (/home/jib/...) not host paths
@@ -89,6 +94,39 @@ check_gateway_available() {
         return $?
     fi
     return 1
+}
+
+# Function to humanize text for natural readability
+# Returns humanized text on stdout, or original text if humanization fails/disabled
+humanize_text() {
+    local text="$1"
+
+    # Skip if disabled
+    if [ "$JIB_HUMANIZE_ENABLED" != "true" ]; then
+        echo "$text"
+        return
+    fi
+
+    # Skip if humanizer script not available
+    if [ ! -x "$HUMANIZE_SCRIPT" ]; then
+        echo "$text"
+        return
+    fi
+
+    # Skip short text (< 50 chars)
+    if [ ${#text} -lt 50 ]; then
+        echo "$text"
+        return
+    fi
+
+    # Humanize text (fail-open: returns original on error)
+    local result
+    result=$("$HUMANIZE_SCRIPT" "$text" 2>/dev/null)
+    if [ $? -eq 0 ] && [ -n "$result" ]; then
+        echo "$result"
+    else
+        echo "$text"
+    fi
 }
 
 # Function to push via gateway
@@ -346,6 +384,53 @@ for arg in "$@"; do
 done
 
 case "$cmd" in
+    commit)
+        # Humanize commit messages for natural readability
+        # We need to find and transform the -m message argument
+        new_args=()
+        skip_next=false
+        message_next=false
+
+        for arg in "$@"; do
+            if $skip_next; then
+                skip_next=false
+                new_args+=("$arg")
+                continue
+            fi
+
+            if $message_next; then
+                # This is the message - humanize it
+                humanized_msg=$(humanize_text "$arg")
+                new_args+=("$humanized_msg")
+                message_next=false
+                continue
+            fi
+
+            case "$arg" in
+                -m|--message)
+                    new_args+=("$arg")
+                    message_next=true
+                    ;;
+                -m=*|--message=*)
+                    # Message is attached to flag
+                    prefix="${arg%%=*}="
+                    msg="${arg#*=}"
+                    humanized_msg=$(humanize_text "$msg")
+                    new_args+=("${prefix}${humanized_msg}")
+                    ;;
+                -C|-c|--reuse-message|--reedit-message|--fixup|--squash)
+                    # These flags take a commit ref argument, skip humanization
+                    new_args+=("$arg")
+                    skip_next=true
+                    ;;
+                *)
+                    new_args+=("$arg")
+                    ;;
+            esac
+        done
+
+        exec "$REAL_GIT" "${new_args[@]}"
+        ;;
     push)
         # Extract remote and refspec from push command
         # git push [options] [remote] [refspec...]
