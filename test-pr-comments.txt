@@ -1,0 +1,11 @@
+# Test file for PR #551 testing
+
+This file was created to test the PR comment functionality.
+
+## Test scenarios:
+1. Create PR
+2. Add general comment
+3. Add inline review comment
+4. Reply to comment
+
+Created: 2026-01-24
