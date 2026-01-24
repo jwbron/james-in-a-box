@@ -87,34 +87,40 @@ This means we need **LLM-based rewriting**, not just regex replacement.
 
 ## Architecture
 
-### Gateway-Based Humanization
+### Wrapper-Based Humanization (jib-container)
 
-All humanization happens in the gateway sidecar, which already handles all git/gh operations.
+Humanization happens in the jib-container's tool wrappers BEFORE content reaches the gateway sidecar. This keeps the gateway as a simple, deterministic policy enforcement layer with no LLM calls.
+
+**Security principle**: The gateway-sidecar is security-critical infrastructure that enforces authentication and authorization policies. It must remain deterministic and auditable. LLM-based transformations belong in the jib-container where Claude Code is already installed and authenticated.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  jib-container                                                  │
-│                                                                 │
-│  gh pr create --title "..." --body "..."                        │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  Tool Wrappers (git.py, gh.py)                              ││
+│  │                                                             ││
+│  │  git.commit("Additionally, this is crucial...")             ││
+│  │         │                                                   ││
+│  │         ▼                                                   ││
+│  │  ┌─────────────────────────────────────────────────────────┐││
+│  │  │  jib_humanizer module                                   │││
+│  │  │  - Invoke Claude Code with /humanizer skill             │││
+│  │  │  - Return natural-sounding text                         │││
+│  │  │  - Log diff at DEBUG level                              │││
+│  │  └─────────────────────────────────────────────────────────┘││
+│  │         │                                                   ││
+│  │         ▼                                                   ││
+│  │  git.commit("Also, this is important...")  [humanized]      ││
+│  └─────────────────────────────────────────────────────────────┘│
 │         │                                                       │
 └─────────┼───────────────────────────────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  gateway-sidecar                                                │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │  humanizer.py                                               ││
-│  │                                                             ││
-│  │  - Receive original content                                 ││
-│  │  - Call Claude API for rewrite                              ││
-│  │  - Return natural-sounding text                             ││
-│  │  - Log diff at DEBUG level                                  ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                              │                                  │
-│                              ▼                                  │
-│                     ┌─────────────────┐                         │
-│                     │  GitHub API     │                         │
-│                     └─────────────────┘                         │
+│  gateway-sidecar (unchanged - policy enforcement only)          │
+│  - Authenticate request                                         │
+│  - Check branch/PR ownership policies                           │
+│  - Forward to GitHub API                                        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -124,26 +130,35 @@ Uses the [blader/humanizer](https://github.com/blader/humanizer) Claude Code ski
 
 #### Skill Installation
 
-The humanizer skill must be installed in the gateway-sidecar's Claude Code environment:
+The humanizer skill is installed in the jib-container where Claude Code already runs:
 
 ```bash
-# Install the skill
+# Install the skill (in jib-container setup)
 mkdir -p ~/.claude/skills
 git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer
 ```
 
 #### Implementation
 
+Located in `shared/jib_humanizer/` so it can be used by all wrappers:
+
 ```python
 """Natural language quality improvement using humanizer skill."""
 
 import subprocess
+from dataclasses import dataclass
+
+@dataclass
+class HumanizeResult:
+    success: bool
+    text: str
+    original: str
+    error: str | None = None
 
 def humanize(text: str) -> str:
     """Rewrite text for natural readability using the humanizer skill."""
 
     # Invoke Claude Code with the humanizer skill
-    # The skill is triggered by /humanizer or by asking to humanize
     prompt = f"/humanizer\n\n{text}"
 
     result = subprocess.run(
@@ -156,7 +171,7 @@ def humanize(text: str) -> str:
         ],
         capture_output=True,
         text=True,
-        timeout=60,  # Skill may take longer
+        timeout=60,
     )
 
     if result.returncode != 0:
@@ -171,7 +186,8 @@ def humanize(text: str) -> str:
 - **Well-maintained**: Based on Wikipedia's AI cleanup guidelines
 - **No custom prompts**: Skill handles the complexity
 - **Consistent**: Same patterns used across all humanization
-- **No API key needed**: Uses existing OAuth authentication
+- **No API key needed**: Uses existing Claude Code OAuth authentication
+- **Security**: Runs in jib-container, not in the security-critical gateway
 
 ### Cost/Latency
 
@@ -254,44 +270,47 @@ repos:
 
 ## Implementation Plan
 
-### Phase 1: Core Humanization
+### Phase 1: Core Humanization Module
 
-1. Install [blader/humanizer](https://github.com/blader/humanizer) skill in gateway-sidecar environment
-2. Create `gateway-sidecar/humanizer.py` to invoke the skill via headless Claude Code
-3. Wire humanization into `gh_pr_create`, `gh_pr_edit`, `gh_pr_comment`
+Create the shared humanizer module in jib-container and wire it into the gh wrapper for PR/issue operations.
+
+1. Install [blader/humanizer](https://github.com/blader/humanizer) skill in jib-container
+2. Create `shared/jib_humanizer/` module to invoke the skill via headless Claude Code
+3. Wire humanization into gh wrapper: `pr_create`, `pr_edit`, `pr_comment`, `issue_create`, `issue_comment`
 4. Skip short content (< 50 chars) to reduce latency
 5. Log diffs at DEBUG level for quality monitoring
 
 **Files:**
-- `gateway-sidecar/humanizer.py` (new)
-- `gateway-sidecar/gateway.py` (integration)
-- `gateway-sidecar/Dockerfile` (install humanizer skill)
+- `shared/jib_humanizer/__init__.py` (new - core module)
+- `shared/jib_humanizer/humanizer.py` (new - implementation)
+- `shared/jib_logging/wrappers/gh.py` (integration)
+- `jib-container/Dockerfile` (install humanizer skill)
 - `config/repositories.yaml.example` (config docs)
-- `tests/gateway/test_humanizer.py` (new)
+- `tests/shared/jib_humanizer/test_humanizer.py` (new)
 
-**Setup**: Install the humanizer skill in the gateway-sidecar container:
+**Setup**: Install the humanizer skill in the jib-container:
 ```dockerfile
-# In gateway-sidecar/Dockerfile
+# In jib-container/Dockerfile
 RUN mkdir -p ~/.claude/skills && \
     git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer
 ```
 
 ### Phase 2: Commit Message Humanization
 
-Humanize commit messages in the git/gh wrappers before push. This happens at the wrapper level, not the gateway.
+Extend humanization to git commit messages in the git wrapper.
 
-**In git wrapper** (`jib-container/scripts/git` or `shared/jib_logging/wrappers/git.py`):
+**In git wrapper** (`shared/jib_logging/wrappers/git.py`):
 
 ```python
+from jib_humanizer import humanize_text
+
 def commit(self, message: str, *args, **kwargs):
     """Commit with humanized message."""
-    humanized_message = humanize(message)
+    humanized_message = humanize_text(message)
     return self._run(["commit", "-m", humanized_message, *args], **kwargs)
 ```
 
-**In gh wrapper** (for PR creation already handled in gateway):
-
-The gateway already humanizes PR titles/bodies in Phase 1. Commit messages are humanized at the wrapper level before they're created.
+**Note**: Both phases use the same `jib_humanizer` module. Phase 1 wires it into gh operations, Phase 2 extends to git operations.
 
 ### Phase 3: Quality Monitoring
 
@@ -345,12 +364,13 @@ def test_meaning_preserved():
 
 | Question | Decision | Rationale |
 |----------|----------|-----------|
+| **Location** | jib-container wrappers | Gateway-sidecar is security-critical; keep it deterministic with no LLM calls |
 | **Model** | Sonnet | Quality matters for natural writing |
 | **Diff visibility** | Log only | Users see final output, diffs for debugging |
 | **Default state** | Enabled | Goal is improved quality by default |
 | **Failure mode** | Fail open | Don't block operations if API unavailable |
 | **Caching** | Skip | Adds complexity; revisit only if needed |
-| **Commit messages** | Humanize on push | Handle in git/gh wrappers, not validation-only |
+| **Commit messages** | Humanize in wrapper | Handle in git/gh wrappers before content reaches gateway |
 | **Rollout** | All repos | Enable everywhere from start; fail-open means low risk |
 
 ---
