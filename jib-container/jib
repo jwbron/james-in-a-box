@@ -13,6 +13,7 @@ import argparse
 import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -234,7 +235,11 @@ def get_llm_provider() -> str:
 
 class Config:
     """Configuration paths and constants"""
-    CONFIG_DIR = Path.home() / ".jib"  # Docker staging directory
+    # Cache directory for Docker staging (XDG-compliant)
+    # Respects XDG_CACHE_HOME if set
+    _xdg_cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    CACHE_DIR = _xdg_cache / "jib"
+    CONFIG_DIR = CACHE_DIR  # Alias for backward compatibility
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
     USER_CONFIG_DIR = Path.home() / ".config" / "jib"  # User config (secrets, preferences)
     REPOS_CONFIG_FILE = USER_CONFIG_DIR / "repositories.yaml"
@@ -2610,7 +2615,6 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         # Steps: check docker image, check auth, build image, prepare container,
         #        create worktrees, configure mounts, configure github, launch
         init_statusbar(total_steps=8, enabled=True)
-
 
     # Handle reset
     if args.reset:

@@ -292,19 +292,25 @@ systemctl --user setup
 # - Allowed users (optional - your Slack user ID)
 ```
 
-**Configuration file**: `~/.config/jib-notifier/config.json`
+**Configuration files**: `~/.config/jib/`
 
-```json
-{
-  "slack_token": "xoxb-your-bot-token",
-  "slack_app_token": "xapp-your-app-token",
-  "allowed_users": ["U01234567"],  // Your Slack user ID (optional)
-  "incoming_directory": "~/.jib-sharing/incoming",
-  "responses_directory": "~/.jib-sharing/responses"
-}
+**secrets.env** (tokens - 600 permissions):
+```bash
+SLACK_TOKEN="xoxb-your-bot-token"
+SLACK_APP_TOKEN="xapp-your-app-token"
 ```
 
-**Security**: Config file has 600 permissions (owner read/write only)
+**config.yaml** (settings):
+```yaml
+slack:
+  allowed_users:
+    - "U01234567"  # Your Slack user ID (optional)
+services:
+  incoming_directory: "~/.jib-sharing/incoming"
+  responses_directory: "~/.jib-sharing/responses"
+```
+
+**Security**: secrets.env has 600 permissions (owner read/write only)
 
 ### Step 4: Start Receiver
 
@@ -420,10 +426,9 @@ You're away from your workstation but want to trigger work:
 └── responses/              # You → Claude (responses to notifications)
     └── response-20251121-150500.md
 
-~/.config/jib-notifier/
-├── config.json            # Slack tokens and configuration (600 perms)
-├── notifier.log          # Outgoing notifications log
-└── receiver.log          # Incoming messages log
+~/.config/jib/
+├── secrets.env           # Slack tokens (SLACK_TOKEN, etc.) - 600 perms
+└── config.yaml           # Slack settings (channel, allowed_users)
 ```
 
 ### Container
@@ -535,8 +540,8 @@ python3 -c "import slack_sdk"
 
 **Check config**:
 ```bash
-cat ~/.config/jib-notifier/config.json
-# Ensure slack_token and slack_app_token are set
+cat ~/.config/jib/secrets.env
+# Ensure SLACK_TOKEN and SLACK_APP_TOKEN are set
 ```
 
 **Check logs**:
@@ -606,7 +611,7 @@ curl -H "Authorization: Bearer xoxb-your-token" \
 
 ### Credential Storage
 
-- **Slack tokens** stored in `~/.config/jib-notifier/config.json` with 600 permissions
+- **Slack tokens** stored in `~/.config/jib/secrets.env` with 600 permissions
 - **Not in git repository** - excluded via .gitignore
 - **Not accessible from container** - outside mount points
 

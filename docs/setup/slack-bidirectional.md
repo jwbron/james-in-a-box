@@ -166,8 +166,8 @@ ls -la ~/sharing/incoming/
 
 ```bash
 # Ensure correct permissions
-chmod 700 ~/.config/jib-notifier
-chmod 600 ~/.config/jib-notifier/config.json
+chmod 700 ~/.config/jib
+chmod 600 ~/.config/jib/secrets.env
 chmod 755 ~/.jib-sharing
 ```
 
@@ -187,18 +187,25 @@ loginctl enable-linger $USER
 
 ## Configuration
 
-Edit `~/.config/jib-notifier/config.json`:
+Slack configuration is stored in `~/.config/jib/`:
 
-```json
-{
-  "slack_token": "xoxb-...",
-  "slack_app_token": "xapp-...",
-  "slack_channel": "D07S8SAB5FE",
-  "owner_user_id": "U07SK26JPJ5",
-  "allowed_users": ["U07SK26JPJ5"],
-  "batch_window_seconds": 30
-}
+**secrets.env** (tokens):
+```bash
+SLACK_TOKEN="xoxb-..."
+SLACK_APP_TOKEN="xapp-..."
 ```
+
+**config.yaml** (settings):
+```yaml
+slack:
+  channel: "D07S8SAB5FE"
+  owner_user_id: "U07SK26JPJ5"
+  allowed_users:
+    - "U07SK26JPJ5"
+  batch_window_seconds: 30
+```
+
+See [Configuration](../../config/README.md) for the complete directory structure.
 
 After editing, restart services:
 ```bash

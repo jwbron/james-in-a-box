@@ -3,19 +3,59 @@
 Configuration for james-in-a-box (jib). There are two types of config:
 
 1. **In-repo configs** (this directory) - Version-controlled templates and non-secret settings
-2. **Host configs** (`~/.config/jib/`) - User-specific settings, secrets, and repository access
+2. **Host configs** - User-specific settings, secrets, cache, and runtime data
 
-## Host Configuration (Consolidated)
+## Directory Structure Overview
 
-All host-side configuration is consolidated under `~/.config/jib/`:
+jib uses several directories under `~/`, each with a specific purpose:
+
+| Directory | Purpose | XDG Compliance |
+|-----------|---------|----------------|
+| `~/.config/jib/` | User configuration and secrets | `$XDG_CONFIG_HOME` |
+| `~/.cache/jib/` | Docker build staging and cache | `$XDG_CACHE_HOME` |
+| `~/.jib-sharing/` | Runtime data shared with containers | Kept at `~/` for visibility |
+| `~/.jib-worktrees/` | Git worktrees for isolated development | Kept at `~/` for visibility |
+
+### Why `~/.jib-sharing/` and `~/.jib-worktrees/` are at `~/`
+
+While XDG spec suggests `~/.local/share/` for runtime data, we keep these at `~/` for:
+- **Visibility**: Users frequently inspect these for debugging
+- **Docker simplicity**: Shorter paths are easier to mount
+- **Discoverability**: New users can see jib directories with `ls ~`
+
+## Host Configuration (`~/.config/jib/`)
+
+All persistent user configuration is consolidated under `~/.config/jib/`:
 
 ```
 ~/.config/jib/
 ├── config.yaml        # Non-secret settings (Slack channel, sync intervals, etc.)
 ├── secrets.env        # All secrets (Slack, GitHub, Confluence, JIRA tokens)
 ├── github-token       # GitHub token (dedicated file)
+├── github-app-id      # GitHub App ID (if using App auth)
+├── github-app-installation-id  # GitHub App Installation ID
+├── github-app.pem     # GitHub App private key
 └── repositories.yaml  # Repository access configuration (created by setup.py)
 ```
+
+## Cache Directory (`~/.cache/jib/`)
+
+Docker build staging and cache files (auto-managed, safe to delete):
+
+```
+~/.cache/jib/
+├── Dockerfile         # Generated Dockerfile for jib image
+├── docker-setup.py    # Container setup script
+├── entrypoint.py      # Container entrypoint
+├── shared/            # Shared modules for container build
+├── claude-commands/   # Claude command definitions
+├── claude-rules/      # Claude rules/instructions
+└── .claude/hooks/     # Claude hooks configuration
+```
+
+This directory respects `$XDG_CACHE_HOME` if set.
+
+**Note**: Previously this was `~/.jib/`. The jib script auto-migrates on first run.
 
 **Migration from legacy locations:**
 Run manual migration if you have existing configs:

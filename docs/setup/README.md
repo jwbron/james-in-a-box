@@ -78,12 +78,15 @@ All configuration is stored in `~/.config/jib/`:
 | `github-app.pem` | GitHub App private key |
 | `repositories.yaml` | Repository access configuration (created by setup.py) |
 
-Docker container configuration is stored in `~/.jib/`:
+Docker build cache and staging files are stored in `~/.cache/jib/` (XDG-compliant):
 
 | File | Purpose |
 |------|---------|
-| `mounts.conf` | Volume mount configuration for local repositories |
 | `Dockerfile` | Generated Dockerfile for the jib image |
+| `docker-setup.py` | Container setup script |
+| `shared/` | Shared modules copied for container build |
+
+Note: Volume mounts are configured dynamically from `repositories.yaml`.
 
 ## Service Overview
 
