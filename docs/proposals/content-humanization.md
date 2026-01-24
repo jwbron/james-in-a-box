@@ -200,7 +200,7 @@ def humanize(text: str, fail_open: bool = True) -> HumanizeResult:
     try:
         result = subprocess.run(
             ["claude", "--print", "--model", "sonnet", "--max-turns", "1", "-p", prompt],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=60,
         )
         if result.returncode != 0:
             raise HumanizationError(result.stderr)
@@ -346,7 +346,7 @@ def test_meaning_preserved():
     result = subprocess.run(
         ["claude", "--print", "--model", "haiku", "--max-turns", "1", "-p",
          f"Do these mean the same thing? Answer only YES or NO.\n\n1: {original}\n2: {humanized}"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
     )
     assert "YES" in result.stdout.upper()
 ```
