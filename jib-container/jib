@@ -236,12 +236,10 @@ def get_llm_provider() -> str:
 class Config:
     """Configuration paths and constants"""
     # Cache directory for Docker staging (XDG-compliant)
-    # Previously ~/.jib, now ~/.cache/jib per ADR-Config-Directory-Consolidation
     # Respects XDG_CACHE_HOME if set
     _xdg_cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     CACHE_DIR = _xdg_cache / "jib"
     CONFIG_DIR = CACHE_DIR  # Alias for backward compatibility
-    LEGACY_CONFIG_DIR = Path.home() / ".jib"  # Old location, for migration
     DOCKERFILE = CONFIG_DIR / "Dockerfile"
     USER_CONFIG_DIR = Path.home() / ".config" / "jib"  # User config (secrets, preferences)
     REPOS_CONFIG_FILE = USER_CONFIG_DIR / "repositories.yaml"
@@ -275,53 +273,6 @@ GATEWAY_CONTAINER_NAME = "jib-gateway"
 GATEWAY_IMAGE_NAME = "jib-gateway"
 JIB_NETWORK_NAME = "jib-network"
 GATEWAY_PORT = 9847
-
-
-def migrate_legacy_config_dir() -> None:
-    """Migrate ~/.jib to ~/.cache/jib if needed.
-
-    Per ADR-Config-Directory-Consolidation, the Docker staging directory
-    was moved from ~/.jib to ~/.cache/jib for XDG compliance.
-
-    This function:
-    1. Checks if legacy ~/.jib exists and new ~/.cache/jib doesn't
-    2. Moves the contents (not just symlink) to preserve Docker build cache
-    3. Logs a deprecation warning if legacy dir still exists
-    """
-    legacy = Config.LEGACY_CONFIG_DIR
-    new = Config.CACHE_DIR
-
-    # Skip if legacy doesn't exist
-    if not legacy.exists():
-        return
-
-    # Skip if legacy is actually a symlink (already migrated or custom setup)
-    if legacy.is_symlink():
-        return
-
-    # If new location doesn't exist, migrate
-    if not new.exists():
-        try:
-            # Ensure parent exists
-            new.parent.mkdir(parents=True, exist_ok=True)
-            # Move the entire directory
-            legacy.rename(new)
-            if not _quiet_mode:
-                print(f"{Colors.YELLOW}[MIGRATED]{Colors.NC} Moved {legacy} → {new}")
-        except OSError as e:
-            # If rename fails (cross-device), fall back to copy+delete
-            if not _quiet_mode:
-                print(f"{Colors.YELLOW}[WARNING]{Colors.NC} Cannot move {legacy}, copying instead: {e}")
-            shutil.copytree(legacy, new, dirs_exist_ok=True)
-            shutil.rmtree(legacy)
-            if not _quiet_mode:
-                print(f"{Colors.YELLOW}[MIGRATED]{Colors.NC} Copied {legacy} → {new}")
-    else:
-        # Both exist - warn about legacy but don't delete (user may have custom setup)
-        if not _quiet_mode:
-            print(f"{Colors.YELLOW}[DEPRECATED]{Colors.NC} Found legacy {legacy}")
-            print(f"  Config has moved to {new}")
-            print(f"  You can safely remove {legacy} after verifying jib works.")
 
 
 # Import shared config module for get_local_repos
@@ -2664,9 +2615,6 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         # Steps: check docker image, check auth, build image, prepare container,
         #        create worktrees, configure mounts, configure github, launch
         init_statusbar(total_steps=8, enabled=True)
-
-    # Migrate legacy config directory if needed (~/.jib → ~/.cache/jib)
-    migrate_legacy_config_dir()
 
     # Handle reset
     if args.reset:

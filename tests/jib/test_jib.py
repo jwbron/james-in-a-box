@@ -17,8 +17,6 @@ from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 # Load jib module (filename without .py extension)
 jib_path = Path(__file__).parent.parent.parent / "jib-container" / "jib"
@@ -27,7 +25,6 @@ jib = loader.load_module()
 
 Colors = jib.Colors
 Config = jib.Config
-migrate_legacy_config_dir = jib.migrate_legacy_config_dir
 
 
 class TestColors:
@@ -96,11 +93,6 @@ class TestConfig:
         # CACHE_DIR should be the same as CONFIG_DIR
         assert Config.CACHE_DIR == Config.CONFIG_DIR
 
-    def test_legacy_config_dir(self):
-        """Test legacy config directory path exists for migration."""
-        # Legacy path ~/.jib is preserved for migration
-        assert Config.LEGACY_CONFIG_DIR.name == ".jib"
-
     def test_user_config_dir(self):
         """Test user config directory path structure."""
         assert Config.USER_CONFIG_DIR.name == "jib"
@@ -142,112 +134,6 @@ class TestConfig:
         # gcloud is inside .config
         dangerous_str = [str(p) for p in Config.DANGEROUS_DIRS]
         assert any("gcloud" in s for s in dangerous_str)
-
-
-class TestMigrateLegacyConfigDir:
-    """Tests for migrate_legacy_config_dir() function."""
-
-    @pytest.fixture
-    def temp_home(self, tmp_path, monkeypatch):
-        """Create a temporary home directory for testing."""
-        home = tmp_path / "home"
-        home.mkdir()
-        monkeypatch.setattr(Path, "home", lambda: home)
-        # Also need to update Config class attributes since they're computed at import time
-        monkeypatch.setattr(Config, "LEGACY_CONFIG_DIR", home / ".jib")
-        monkeypatch.setattr(Config, "CACHE_DIR", home / ".cache" / "jib")
-        monkeypatch.setattr(Config, "CONFIG_DIR", home / ".cache" / "jib")
-        return home
-
-    def test_skips_when_legacy_not_exists(self, temp_home, capsys):
-        """Test no action when legacy directory doesn't exist."""
-        # Legacy doesn't exist, new doesn't exist
-        migrate_legacy_config_dir()
-        captured = capsys.readouterr()
-        assert captured.out == ""
-        assert not Config.CACHE_DIR.exists()
-
-    def test_migrates_when_legacy_exists(self, temp_home, monkeypatch, capsys):
-        """Test migration moves ~/.jib to ~/.cache/jib."""
-        # Create legacy directory with content
-        legacy = Config.LEGACY_CONFIG_DIR
-        legacy.mkdir(parents=True)
-        (legacy / "Dockerfile").write_text("FROM ubuntu")
-        (legacy / "subdir").mkdir()
-        (legacy / "subdir" / "file.txt").write_text("test")
-
-        # Enable verbose output
-        monkeypatch.setattr(jib, "_quiet_mode", False)
-
-        migrate_legacy_config_dir()
-
-        # Legacy should be gone, new should have content
-        assert not legacy.exists()
-        assert Config.CACHE_DIR.exists()
-        assert (Config.CACHE_DIR / "Dockerfile").read_text() == "FROM ubuntu"
-        assert (Config.CACHE_DIR / "subdir" / "file.txt").read_text() == "test"
-
-        # Should have printed migration message
-        captured = capsys.readouterr()
-        assert "[MIGRATED]" in captured.out
-
-    def test_skips_when_legacy_is_symlink(self, temp_home, capsys):
-        """Test symlinks are not migrated."""
-        # Create new location first
-        Config.CACHE_DIR.mkdir(parents=True)
-        (Config.CACHE_DIR / "Dockerfile").write_text("FROM ubuntu")
-
-        # Create legacy as symlink to new location
-        legacy = Config.LEGACY_CONFIG_DIR
-        legacy.symlink_to(Config.CACHE_DIR)
-
-        migrate_legacy_config_dir()
-
-        # Should have done nothing
-        captured = capsys.readouterr()
-        assert captured.out == ""
-        assert legacy.is_symlink()
-
-    def test_warns_when_both_exist(self, temp_home, monkeypatch, capsys):
-        """Test warning when legacy and new both exist."""
-        # Create both directories
-        legacy = Config.LEGACY_CONFIG_DIR
-        legacy.mkdir(parents=True)
-        (legacy / "old-file").write_text("old")
-
-        Config.CACHE_DIR.mkdir(parents=True)
-        (Config.CACHE_DIR / "new-file").write_text("new")
-
-        # Enable verbose output
-        monkeypatch.setattr(jib, "_quiet_mode", False)
-
-        migrate_legacy_config_dir()
-
-        # Both should still exist
-        assert legacy.exists()
-        assert Config.CACHE_DIR.exists()
-
-        # Should have printed deprecation warning
-        captured = capsys.readouterr()
-        assert "[DEPRECATED]" in captured.out
-        assert "You can safely remove" in captured.out
-
-    def test_quiet_mode_suppresses_output(self, temp_home, monkeypatch, capsys):
-        """Test that quiet mode suppresses all output."""
-        # Create legacy directory
-        legacy = Config.LEGACY_CONFIG_DIR
-        legacy.mkdir(parents=True)
-        (legacy / "Dockerfile").write_text("FROM ubuntu")
-
-        # Enable quiet mode
-        monkeypatch.setattr(jib, "_quiet_mode", True)
-
-        migrate_legacy_config_dir()
-
-        # Migration should happen but no output
-        captured = capsys.readouterr()
-        assert captured.out == ""
-        assert Config.CACHE_DIR.exists()
 
 
 class TestGetPlatform:

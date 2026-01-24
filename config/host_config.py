@@ -2,7 +2,7 @@
 """
 Unified Host Configuration Loader for james-in-a-box (jib)
 
-Consolidates all host-side configuration under ~/.config/jib/
+All host-side configuration is stored under ~/.config/jib/
 
 Configuration Locations:
 - ~/.config/jib/config.yaml        - Main settings (non-secret)
@@ -15,11 +15,6 @@ GitHub Token Sources (checked in order):
 2. ~/.config/jib/github-token      - Plain text token file
 3. ~/.jib-sharing/.github-token    - JSON from github-token-refresher service
 4. GITHUB_TOKEN environment var    - Overrides all above
-
-Migration:
-Run `python3 config/host_config.py --migrate` to migrate from legacy locations:
-- ~/.config/jib-notifier/config.json  -> ~/.config/jib/
-- ~/.config/context-sync/.env         -> ~/.config/jib/secrets.env
 
 Usage:
     from config.host_config import HostConfig
@@ -50,11 +45,10 @@ logger = logging.getLogger(__name__)
 class HostConfig:
     """Unified configuration loader for jib host services.
 
-    All configuration is expected to be in ~/.config/jib/.
-    Run `python3 config/host_config.py --migrate` to migrate from legacy locations.
+    All configuration is stored in ~/.config/jib/.
     """
 
-    # Consolidated config location
+    # Config location
     JIB_CONFIG_DIR = Path.home() / ".config" / "jib"
     CONFIG_FILE = JIB_CONFIG_DIR / "config.yaml"
     SECRETS_FILE = JIB_CONFIG_DIR / "secrets.env"
@@ -65,16 +59,10 @@ class HostConfig:
     JIB_SHARING_DIR = Path.home() / ".jib-sharing"
     REFRESHER_TOKEN_FILE = JIB_SHARING_DIR / ".github-token"
 
-    # Legacy locations (for migration only, not used at runtime)
-    LEGACY_NOTIFIER_DIR = Path.home() / ".config" / "jib-notifier"
-    LEGACY_NOTIFIER_CONFIG = LEGACY_NOTIFIER_DIR / "config.json"
-    LEGACY_CONTEXT_SYNC_ENV = Path.home() / ".config" / "context-sync" / ".env"
-
     def __init__(self):
         """Initialize configuration loader.
 
-        Loads config from ~/.config/jib/ only. No automatic migration.
-        Run `python3 config/host_config.py --migrate` to migrate from legacy locations.
+        Loads config from ~/.config/jib/.
         """
         self._config: dict[str, Any] = {}
         self._secrets: dict[str, str] = {}
@@ -83,82 +71,15 @@ class HostConfig:
         self.JIB_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         os.chmod(self.JIB_CONFIG_DIR, 0o700)
 
-        # Load configuration (no legacy fallback)
+        # Load configuration
         self._load_config()
         self._load_secrets()
-
-    def _migrate_legacy_configs(self):
-        """Migrate legacy configuration files to new consolidated location."""
-        logger.info("Migrating legacy configurations to ~/.config/jib/")
-
-        secrets = {}
-        config = {}
-
-        # Migrate from jib-notifier config.json
-        if self.LEGACY_NOTIFIER_CONFIG.exists():
-            logger.info(f"Migrating from {self.LEGACY_NOTIFIER_CONFIG}")
-            try:
-                with open(self.LEGACY_NOTIFIER_CONFIG) as f:
-                    notifier_config = json.load(f)
-
-                # Extract secrets
-                if notifier_config.get("slack_token"):
-                    secrets["SLACK_TOKEN"] = notifier_config["slack_token"]
-                if notifier_config.get("slack_app_token"):
-                    secrets["SLACK_APP_TOKEN"] = notifier_config["slack_app_token"]
-
-                # Extract non-secret settings
-                if notifier_config.get("slack_channel"):
-                    config["slack_channel"] = notifier_config["slack_channel"]
-                if notifier_config.get("self_dm_channel"):
-                    config["self_dm_channel"] = notifier_config["self_dm_channel"]
-                if notifier_config.get("allowed_users"):
-                    config["allowed_users"] = notifier_config["allowed_users"]
-                if notifier_config.get("batch_window_seconds"):
-                    config["batch_window_seconds"] = notifier_config["batch_window_seconds"]
-                if notifier_config.get("watch_directories"):
-                    config["watch_directories"] = notifier_config["watch_directories"]
-
-            except Exception as e:
-                logger.error(f"Failed to migrate jib-notifier config: {e}")
-
-        # Migrate from context-sync .env
-        if self.LEGACY_CONTEXT_SYNC_ENV.exists():
-            logger.info(f"Migrating from {self.LEGACY_CONTEXT_SYNC_ENV}")
-            try:
-                with open(self.LEGACY_CONTEXT_SYNC_ENV) as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            key, value = line.split("=", 1)
-                            key = key.strip()
-                            value = value.strip().strip("\"'")
-                            if value:
-                                secrets[key] = value
-            except Exception as e:
-                logger.error(f"Failed to migrate context-sync env: {e}")
-
-        # Write consolidated secrets.env
-        if secrets:
-            self._write_secrets_file(secrets)
-            logger.info(f"Created {self.SECRETS_FILE}")
-
-        # Write consolidated config.yaml
-        if config:
-            self._write_config_file(config)
-            logger.info(f"Created {self.CONFIG_FILE}")
-
-        logger.info("Migration complete. Legacy configs preserved for rollback.")
 
     def _write_secrets_file(self, secrets: dict[str, str]):
         """Write secrets to .env file with secure permissions."""
         lines = [
             "# jib Secrets Configuration",
             "# This file contains sensitive credentials - DO NOT COMMIT",
-            "#",
-            "# Migrated from:",
-            "#   - ~/.config/jib-notifier/config.json",
-            "#   - ~/.config/context-sync/.env",
             "",
         ]
 
@@ -316,19 +237,6 @@ def get_config() -> HostConfig:
     return get_config._instance
 
 
-def migrate_legacy_configs():
-    """Run migration from legacy config locations to ~/.config/jib/.
-
-    This is a standalone function for manual migration.
-    """
-    config = HostConfig.__new__(HostConfig)
-    config._config = {}
-    config._secrets = {}
-    config.JIB_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    os.chmod(config.JIB_CONFIG_DIR, 0o700)
-    config._migrate_legacy_configs()
-
-
 # CLI for testing
 if __name__ == "__main__":
     import argparse
@@ -338,25 +246,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--list-secrets", action="store_true", help="List secret keys (values hidden)"
     )
-    parser.add_argument(
-        "--migrate", action="store_true", help="Migrate from legacy config locations"
-    )
     parser.add_argument("--get", metavar="KEY", help="Get a config value")
     parser.add_argument("--get-secret", metavar="KEY", help="Get a secret value")
 
     args = parser.parse_args()
 
-    if args.migrate:
-        print("Migrating legacy configurations to ~/.config/jib/...")
-        migrate_legacy_configs()
-        print("Migration complete.")
-        print()
-        print("Legacy locations checked:")
-        print(f"  - {HostConfig.LEGACY_NOTIFIER_CONFIG}")
-        print(f"  - {HostConfig.LEGACY_CONTEXT_SYNC_ENV}")
-        print()
-        print("New config location: ~/.config/jib/")
-    elif args.list:
+    if args.list:
         config = HostConfig()
         print("Configuration values:")
         for k, v in config.get_all_config().items():
@@ -391,16 +286,6 @@ if __name__ == "__main__":
         )
         print()
 
-        # Check for legacy configs that need migration
-        legacy_exists = (
-            HostConfig.LEGACY_NOTIFIER_CONFIG.exists()
-            or HostConfig.LEGACY_CONTEXT_SYNC_ENV.exists()
-        )
-        if legacy_exists and not HostConfig.SECRETS_FILE.exists():
-            print("WARNING: Legacy configs found but not migrated!")
-            print("Run: python3 config/host_config.py --migrate")
-            print()
-
         try:
             config = HostConfig()
             print("Loaded secrets:")
@@ -413,6 +298,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error loading config: {e}")
             print()
-            print("To set up configuration:")
-            print("  1. Copy templates to ~/.config/jib/")
-            print("  2. Or run --migrate to migrate from legacy locations")
+            print("To set up configuration, copy templates to ~/.config/jib/")

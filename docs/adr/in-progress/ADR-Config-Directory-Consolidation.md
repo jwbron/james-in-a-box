@@ -1,6 +1,6 @@
 # ADR: Configuration Directory Consolidation
 
-**Status**: In Progress (Phase 1 & 2 Complete)
+**Status**: In Progress (Phase 1, 2 & 4 Complete)
 **Date**: 2026-01-23
 **Author**: jib
 
@@ -11,11 +11,11 @@ jib currently has configuration scattered across multiple directories under `~/`
 | Directory | Purpose | Status |
 |-----------|---------|--------|
 | `~/.config/jib/` | Host-side config (secrets, settings, repos) | **Primary** - keep |
-| `~/.jib/` | Docker staging directory | **Unclear** - audit needed |
+| `~/.cache/jib/` | Docker staging directory | **Cache** - migrated from `~/.jib/` |
 | `~/.jib-sharing/` | Host-container shared data | **Runtime** - keep |
 | `~/.jib-worktrees/` | Git worktrees for isolated development | **Runtime** - keep |
-| `~/.config/jib-notifier/` | Legacy Slack notifier config | **Legacy** - migrate |
-| `~/.config/context-sync/` | Legacy context-sync config | **Legacy** - migrate |
+| `~/.config/jib-notifier/` | Legacy Slack notifier config | **Removed** - cleanup manually |
+| `~/.config/context-sync/` | Legacy context-sync config | **Removed** - cleanup manually |
 
 This fragmentation causes:
 1. Confusion about where to put/find configuration
@@ -35,18 +35,15 @@ This is the **intended consolidated location** per `config/README.md`. Contains:
 
 **Recommendation**: Keep as-is. This is the target.
 
-### 2. `~/.jib/` (Consolidate)
+### 2. `~/.cache/jib/` (Migrated from `~/.jib/`)
 
-Referenced in `jib-container/jib` as `CONFIG_DIR = Path.home() / ".jib"` (line 237).
+Now referenced in `jib-container/jib` as `CACHE_DIR = XDG_CACHE_HOME / "jib"` (defaults to `~/.cache/jib/`).
 
 Used for:
 - Docker staging during container builds
-- Potentially overlaps with `~/.config/jib/` purpose
+- Temporary/derived files
 
-**Recommendation**:
-- Audit usage in `jib` script
-- Either rename to `~/.jib-docker-staging/` for clarity
-- Or consolidate into `~/.config/jib/docker-staging/`
+**Status**: Migration complete. The `jib` script now uses XDG-compliant cache location.
 
 ### 3. `~/.jib-sharing/` (Keep - Runtime Data)
 
@@ -74,25 +71,19 @@ Git worktree base directory for isolated development.
 
 **Recommendation**: Keep at `~/` for the same visibility/simplicity rationale as `~/.jib-sharing/`.
 
-### 5. `~/.config/jib-notifier/` (Migrate)
+### 5. `~/.config/jib-notifier/` (Removed)
 
-Legacy directory from before config consolidation. May contain:
+Legacy directory from before config consolidation. Contained:
 - `config.json` - Old Slack token config
 
-**Recommendation**:
-- Migration already exists in `config/host_config.py --migrate`
-- Add deprecation warning when accessed
-- Remove after transition period
+**Status**: Migration code removed. Users should manually clean up if present.
 
-### 6. `~/.config/context-sync/` (Migrate)
+### 6. `~/.config/context-sync/` (Removed)
 
-Legacy directory. May contain:
+Legacy directory. Contained:
 - `.env` - Old Confluence/JIRA credentials
 
-**Recommendation**:
-- Migration already exists in `config/host_config.py --migrate`
-- Add deprecation warning when accessed
-- Remove after transition period
+**Status**: Migration code removed. Users should manually clean up if present.
 
 ## Decision
 
@@ -114,17 +105,15 @@ This phase implements the migration:
 2. Document the purpose of each directory
 3. Update all references in docs to point to consolidated locations
 
-#### Phase 3: Add Migration Warnings
+#### Phase 3: Add Migration Warnings (Skipped)
 
-1. Add deprecation warnings when legacy configs are detected
-2. Prompt users to run migration
-3. Set removal timeline (e.g., 3 months)
+Skipped - user has migrated. Proceeding directly to cleanup.
 
-#### Phase 4: Clean Up
+#### Phase 4: Clean Up ✓
 
-1. Remove legacy config loading paths
-2. Update setup.py to only create consolidated structure
-3. Remove references to legacy directories
+1. ✓ Remove legacy config loading paths from `jib-container/jib`
+2. ✓ Remove migration code from `config/host_config.py`
+3. ✓ Remove legacy tests from `tests/jib/test_jib.py`
 
 ## Directory Structure After Consolidation
 
@@ -166,7 +155,7 @@ This phase implements the migration:
 ### Priority 1 (Core)
 - [x] `jib-container/jib` - Change `CONFIG_DIR` from `~/.jib` to `~/.cache/jib`
 - [x] `tests/jib/test_jib.py` - Update tests for new path structure
-- [ ] `config/host_config.py` - Remove legacy fallbacks, add deprecation warnings
+- [x] `config/host_config.py` - Remove legacy migration code
 - [ ] `setup.py` - Ensure only consolidated structure is created
 
 ### Priority 2 (Documentation)
@@ -186,32 +175,13 @@ This phase implements the migration:
 
 ## Migration Path
 
-For existing installations:
+Migration has been completed. Legacy migration scripts have been removed.
 
-```bash
-# 1. Run config migration script (already exists for legacy configs)
-python3 config/host_config.py --migrate
-
-# 2. Verify new config location
-ls -la ~/.config/jib/
-
-# 3. Test services work
-./setup.py --status
-
-# 4. (Optional) Remove legacy configs after verification
-rm -rf ~/.config/jib-notifier ~/.config/context-sync
-```
-
-**Note on migration script scope:**
-- `config/host_config.py --migrate` currently handles legacy directories (`~/.config/jib-notifier/`, `~/.config/context-sync/`)
-- The `~/.jib/` → `~/.cache/jib/` migration will be added to the `jib` script itself (Phase 1), since it's the component that uses this directory
-- The `jib` script will auto-migrate on first run after the update
+For new installations, configuration should be placed directly in `~/.config/jib/`.
 
 ## Backward Compatibility
 
-- Legacy paths will continue to work for 3 months
-- Deprecation warnings will be logged
-- Migration script handles all formats
+Legacy support has been removed. The consolidated directory structure is now the only supported configuration.
 
 ## Consequences
 
@@ -220,13 +190,14 @@ rm -rf ~/.config/jib-notifier ~/.config/context-sync
 - XDG-compliant directory structure
 - Clear separation: config vs runtime vs staging
 - Simpler troubleshooting
+- No legacy code maintenance burden
 
 ### Negative
-- Users need to run migration
-- Brief transition period with dual support
+- Existing installations required one-time migration (completed)
 
 ## Related
 
 - PR #523 - Configuration Modernization Framework
-- `config/host_config.py` - Existing migration code
+- PR #549 - This consolidation work
+- `config/host_config.py` - Host configuration loader
 - `setup.py` - Setup script that creates config structure
