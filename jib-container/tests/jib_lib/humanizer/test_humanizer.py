@@ -1,11 +1,12 @@
-"""Tests for the jib_humanizer module."""
+"""Tests for the lib.humanizer module."""
 
 import os
 import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
-from jib_humanizer import (
+
+from jib_lib.humanizer import (
     HumanizationError,
     HumanizeResult,
     get_config,
@@ -63,7 +64,7 @@ class TestHumanize:
         assert result.success is True
         assert result.text == "Short text"
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_successful_humanization(self, mock_run, monkeypatch):
         """Test successful humanization."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")
@@ -80,7 +81,7 @@ class TestHumanize:
         assert result.text == "Also, this is important."
         assert result.original == "Additionally, this is crucial."
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_humanization_failure_fail_open(self, mock_run, monkeypatch):
         """Test that original text is returned on failure when fail_open=True."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")
@@ -97,7 +98,7 @@ class TestHumanize:
         assert result.text == "Test text that is long enough"
         assert result.error is not None
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_humanization_failure_fail_closed(self, mock_run, monkeypatch):
         """Test that exception is raised on failure when fail_open=False."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")
@@ -112,7 +113,7 @@ class TestHumanize:
         with pytest.raises(HumanizationError):
             humanize("Test text that is long enough", fail_open=False)
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_timeout_fail_open(self, mock_run, monkeypatch):
         """Test timeout handling with fail_open=True."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")
@@ -126,7 +127,7 @@ class TestHumanize:
         assert result.text == "Test text that is long enough"
         assert "timed out" in result.error.lower()
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_empty_response_is_error(self, mock_run, monkeypatch):
         """Test that empty response is treated as error."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")
@@ -146,7 +147,7 @@ class TestHumanize:
 class TestHumanizeText:
     """Tests for the humanize_text convenience function."""
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_returns_humanized_text(self, mock_run, monkeypatch):
         """Test that humanize_text returns just the text."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")
@@ -161,7 +162,7 @@ class TestHumanizeText:
         text = humanize_text("Original text that is long")
         assert text == "Humanized text"
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_returns_original_on_failure(self, mock_run, monkeypatch):
         """Test that original is returned on failure."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")
@@ -180,7 +181,7 @@ class TestHumanizeText:
 class TestHumanizeAndLog:
     """Tests for the humanize_and_log function."""
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_logs_successful_humanization(self, mock_run, monkeypatch, caplog):
         """Test that successful humanization is logged."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")
@@ -200,7 +201,7 @@ class TestHumanizeAndLog:
         assert text == "Different humanized text"
         # Note: actual log assertion depends on logger configuration
 
-    @patch("jib_humanizer.humanizer.subprocess.run")
+    @patch("jib_lib.humanizer.humanizer.subprocess.run")
     def test_logs_failed_humanization(self, mock_run, monkeypatch, caplog):
         """Test that failed humanization is logged."""
         monkeypatch.setenv("JIB_HUMANIZE_ENABLED", "true")

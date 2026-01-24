@@ -23,11 +23,15 @@ Usage:
     bound.info("Processing step 1")
     bound.info("Processing step 2")
 
-    # Tool wrappers (Phase 2)
-    from jib_logging.wrappers import bd, git, gh
+    # Tool wrappers (beads only in shared - git/gh with humanization are in jib-container)
+    from jib_logging.wrappers import bd
 
-    result = git.push("origin", "main")
+    result = bd.update("bd-abc123", status="done")
     # Automatically logs with timing and context
+
+    # For git/gh wrappers with humanization (jib-container only):
+    from jib_lib.wrappers import git, gh
+    result = git.commit(message="Fix bug")  # Auto-humanized
 
     # Model output capture (Phase 3)
     from jib_logging.model_capture import capture_model_response

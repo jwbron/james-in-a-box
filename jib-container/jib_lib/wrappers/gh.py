@@ -1,8 +1,11 @@
 """
-GitHub CLI (gh) wrapper for jib_logging.
+GitHub CLI (gh) wrapper for jib-container.
 
 Wraps gh commands to capture GitHub API interactions with structured logging.
 Includes automatic humanization of PR/issue content to improve readability.
+
+IMPORTANT: This wrapper calls Claude Code for humanization and must only be
+used from jib-container, not from host-services or shared code.
 """
 
 import json
@@ -11,10 +14,9 @@ from typing import Any
 
 from .base import ToolResult, ToolWrapper
 
-
-# Import humanizer - fails gracefully if not available
+# Import humanizer from jib-container lib
 try:
-    from jib_humanizer import humanize_and_log
+    from jib_lib.humanizer import humanize_and_log
 
     HUMANIZER_AVAILABLE = True
 except ImportError:
