@@ -9,6 +9,12 @@ the appropriate LLM interface.
 Converted from entrypoint.sh for better maintainability.
 """
 
+# Capture container start time FIRST - before any other imports
+# This measures from the moment Python starts executing this file
+import time
+_CONTAINER_START_TIME = time.time()
+
+# Now import everything else
 import contextlib
 import json
 import os
@@ -16,13 +22,9 @@ import random
 import signal
 import subprocess
 import sys
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
-# Capture container start time as early as possible (wall clock for cross-process comparison)
-_CONTAINER_START_TIME = time.time()
 
 # =============================================================================
 # Startup Timing (Debug)
