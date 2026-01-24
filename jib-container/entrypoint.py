@@ -44,6 +44,7 @@ class StartupTimer:
     def _load_host_timing(self) -> None:
         """Load host timing data from environment variable."""
         import json
+
         host_timing_json = os.environ.get("JIB_HOST_TIMING", "")
         if host_timing_json:
             try:
