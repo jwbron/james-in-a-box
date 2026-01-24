@@ -24,6 +24,7 @@ from .claude import ClaudeWrapper
 from .gh import GhWrapper
 from .git import GitWrapper
 
+
 # Singleton wrapper instances
 git = GitWrapper()
 gh = GhWrapper()
