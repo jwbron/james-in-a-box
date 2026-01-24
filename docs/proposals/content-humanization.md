@@ -278,37 +278,20 @@ RUN mkdir -p ~/.claude/skills && \
 
 ### Phase 2: Commit Message Humanization
 
-Extend to commit messages via gateway validation on push:
+Humanize commit messages in the git/gh wrappers before push. This happens at the wrapper level, not the gateway.
+
+**In git wrapper** (`jib-container/scripts/git` or `shared/jib_logging/wrappers/git.py`):
 
 ```python
-def get_commits_in_push(repo_path: str, refspec: str) -> list[Commit]:
-    """Extract commit messages from a git push operation."""
-    local_ref = refspec.split(":")[0] if ":" in refspec else refspec
-
-    result = subprocess.run(
-        ["git", "-C", repo_path, "log", "--format=%H%n%B%n---COMMIT---",
-         f"{local_ref}@{{push}}..{local_ref}"],
-        capture_output=True, text=True
-    )
-
-    if result.returncode != 0:
-        # Fallback: commits since diverging from origin/main
-        result = subprocess.run(
-            ["git", "-C", repo_path, "log", "--format=%H%n%B%n---COMMIT---",
-             "--ancestry-path", "origin/main..HEAD"],
-            capture_output=True, text=True
-        )
-
-    commits = []
-    for block in result.stdout.split("---COMMIT---"):
-        block = block.strip()
-        if not block:
-            continue
-        lines = block.split("\n", 1)
-        commits.append(Commit(sha=lines[0], message=lines[1].strip() if len(lines) > 1 else ""))
-
-    return commits
+def commit(self, message: str, *args, **kwargs):
+    """Commit with humanized message."""
+    humanized_message = humanize(message)
+    return self._run(["commit", "-m", humanized_message, *args], **kwargs)
 ```
+
+**In gh wrapper** (for PR creation already handled in gateway):
+
+The gateway already humanizes PR titles/bodies in Phase 1. Commit messages are humanized at the wrapper level before they're created.
 
 ### Phase 3: Quality Monitoring
 
@@ -366,12 +349,9 @@ def test_meaning_preserved():
 | **Diff visibility** | Log only | Users see final output, diffs for debugging |
 | **Default state** | Enabled | Goal is improved quality by default |
 | **Failure mode** | Fail open | Don't block operations if API unavailable |
-
-## Remaining Questions
-
-1. **Caching**: Cache humanized text to avoid re-processing on retries?
-2. **Commit messages**: Humanize on push, or validation-only?
-3. **Rollout**: Gradual per-repo, or enable everywhere?
+| **Caching** | Skip | Adds complexity; revisit only if needed |
+| **Commit messages** | Humanize on push | Handle in git/gh wrappers, not validation-only |
+| **Rollout** | All repos | Enable everywhere from start; fail-open means low risk |
 
 ---
 
