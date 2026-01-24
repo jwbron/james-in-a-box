@@ -1,8 +1,11 @@
 """
-Git wrapper for jib_logging.
+Git wrapper for jib-container.
 
 Wraps git commands to capture repository operations with structured logging.
 Includes automatic humanization of commit messages to improve readability.
+
+IMPORTANT: This wrapper calls Claude Code for humanization and must only be
+used from jib-container, not from host-services or shared code.
 """
 
 import re
@@ -10,10 +13,9 @@ from typing import Any
 
 from .base import ToolResult, ToolWrapper
 
-
-# Import humanizer - fails gracefully if not available
+# Import humanizer from jib-container lib
 try:
-    from jib_humanizer import humanize_and_log
+    from jib_lib.humanizer import humanize_and_log
 
     HUMANIZER_AVAILABLE = True
 except ImportError:
