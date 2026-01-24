@@ -1,10 +1,7 @@
 """
-Git wrapper for jib-container.
+Git wrapper for jib_logging.
 
 Wraps git commands to capture repository operations with structured logging.
-
-Note: Humanization is handled by the shell wrapper (scripts/git), not here.
-This allows the wrapper to be used without triggering LLM calls.
 """
 
 import re

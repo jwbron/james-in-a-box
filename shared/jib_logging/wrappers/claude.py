@@ -1,13 +1,10 @@
 """
-Claude Code wrapper for jib-container.
+Claude Code wrapper for jib_logging.
 
 Wraps Claude Code CLI invocations to capture model interactions with structured logging.
 This is a basic wrapper for Phase 2 - full model output capture is planned for Phase 3.
 
-IMPORTANT: This wrapper calls Claude Code and must only be used from jib-container,
-not from host-services or shared code.
-
-Uses stdin mode with --dangerously-skip-permissions for full tool access.
+IMPORTANT: Uses stdin mode with --dangerously-skip-permissions for full tool access.
 Never use --print flag which creates a restricted session.
 """
 
