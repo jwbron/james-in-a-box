@@ -12,9 +12,7 @@ Docker and subprocess operations are mocked since they require Docker daemon.
 """
 
 import os
-import shutil
 import subprocess
-import tempfile
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from unittest.mock import MagicMock, patch
