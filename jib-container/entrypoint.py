@@ -12,6 +12,8 @@ Converted from entrypoint.sh for better maintainability.
 # Capture container start time FIRST - before any other imports
 # This measures from the moment Python starts executing this file
 import time
+
+
 _CONTAINER_START_TIME = time.time()
 
 # Now import everything else
