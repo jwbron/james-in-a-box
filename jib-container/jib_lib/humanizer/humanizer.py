@@ -114,10 +114,7 @@ def _is_invalid_response(response: str) -> bool:
     Returns:
         True if the response appears to be a clarification request, not humanized text
     """
-    return any(
-        re.search(pattern, response, re.IGNORECASE)
-        for pattern in INVALID_RESPONSE_PATTERNS
-    )
+    return any(re.search(pattern, response, re.IGNORECASE) for pattern in INVALID_RESPONSE_PATTERNS)
 
 
 def _build_prompt(text: str) -> str:
@@ -134,20 +131,20 @@ def _build_prompt(text: str) -> str:
     """
     # For short text, add explicit instructions
     if len(text) < 200:
-        return f'''/humanizer
+        return f"""/humanizer
 
 Rewrite this text to remove AI patterns. This may be a title, commit message, or short description - that's fine, just rewrite it.
 
 IMPORTANT: Output ONLY the rewritten text. No explanations, no questions, no "here is" prefix. If you can't improve it, output the original text unchanged.
 
 Text to rewrite:
-{text}'''
+{text}"""
     else:
-        return f'''/humanizer
+        return f"""/humanizer
 
 Rewrite this text to remove AI patterns. Output ONLY the rewritten text, nothing else - no explanations, no markdown formatting, no "here is" prefix:
 
-{text}'''
+{text}"""
 
 
 def _invoke_claude(prompt: str, config: HumanizeConfig) -> str:
@@ -193,7 +190,9 @@ def _invoke_claude(prompt: str, config: HumanizeConfig) -> str:
 
     # Check for invalid responses (model asking for clarification)
     if _is_invalid_response(humanized):
-        raise HumanizationError(f"Model asked for clarification instead of humanizing: {humanized[:100]}...")
+        raise HumanizationError(
+            f"Model asked for clarification instead of humanizing: {humanized[:100]}..."
+        )
 
     return humanized
 
@@ -249,7 +248,7 @@ def humanize(text: str, fail_open: bool | None = None) -> HumanizeResult:
         except subprocess.TimeoutExpired as e:
             last_error = e
             if attempt < config.max_retries:
-                delay = config.retry_delay * (2 ** attempt)
+                delay = config.retry_delay * (2**attempt)
                 logger.warning(
                     f"Humanization timed out (attempt {attempt + 1}/{config.max_retries + 1}), "
                     f"retrying in {delay}s..."
