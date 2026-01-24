@@ -140,7 +140,7 @@ git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer
 
 #### Implementation
 
-Located in `shared/jib_humanizer/` so it can be used by all wrappers:
+Located in `jib-container/jib_lib/humanizer/` (code that calls Claude must be in jib-container, not shared):
 
 ```python
 """Natural language quality improvement using humanizer skill."""

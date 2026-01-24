@@ -4,14 +4,26 @@ Base classes for tool wrappers.
 Provides common functionality for wrapping command-line tools with logging.
 """
 
+import logging
 import os
 import subprocess
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..context import get_current_context
-from ..logger import get_logger
+
+def get_logger(name: str, component: str = "wrapper") -> logging.Logger:
+    """Get a logger for the given name."""
+    return logging.getLogger(f"jib.{component}.{name}")
+
+
+def get_current_context():
+    """Get the current logging context (stub - returns None in jib-container).
+
+    The full context implementation is in shared/jib_logging/context.py.
+    This stub allows the wrappers to work without the full logging infrastructure.
+    """
+    return None
 
 
 @dataclass
