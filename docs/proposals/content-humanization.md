@@ -120,12 +120,15 @@ All humanization happens in the gateway sidecar, which already handles all git/g
 
 ### Humanizer Module
 
+Uses a headless Claude Code agent instead of direct API calls. This leverages existing OAuth authentication - no separate API key needed.
+
 ```python
 """Natural language quality improvement for LLM output."""
 
-import anthropic
+import subprocess
+import json
 
-HUMANIZER_SYSTEM_PROMPT = """You are a writing editor improving LLM-generated text for natural readability.
+HUMANIZER_PROMPT = """You are a writing editor improving LLM-generated text for natural readability.
 
 Remove these common LLM patterns:
 - Overused words: "Additionally", "crucial", "delve", "landscape", "tapestry", "testament"
@@ -139,32 +142,55 @@ Write naturally:
 - Vary sentence length
 - Keep technical accuracy
 
-Preserve the exact meaning. Keep it concise. This is for GitHub PR/comment content."""
+Preserve the exact meaning. Keep it concise. This is for GitHub PR/comment content.
+
+Rewrite the following text and output ONLY the rewritten version, nothing else:
+
+{text}"""
 
 
 def humanize(text: str) -> str:
-    """Rewrite text for natural readability."""
-    response = anthropic.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=len(text) * 2,
-        system=HUMANIZER_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": text}]
+    """Rewrite text for natural readability using headless Claude Code agent."""
+    prompt = HUMANIZER_PROMPT.format(text=text)
+
+    result = subprocess.run(
+        [
+            "claude",
+            "--print",           # Output response only, no interactive UI
+            "--model", "sonnet", # Use Sonnet for quality
+            "--max-turns", "1",  # Single turn, no back-and-forth
+            "-p", prompt,        # The prompt
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
-    return response.content[0].text
+
+    if result.returncode != 0:
+        raise HumanizationError(f"Claude Code failed: {result.stderr}")
+
+    return result.stdout.strip()
 ```
+
+### Benefits of Headless Claude Code
+
+- **No API key needed**: Uses existing OAuth authentication
+- **Consistent infrastructure**: Same Claude Code used elsewhere in jib
+- **Model selection**: Easy to switch models via `--model` flag
+- **Built-in rate limiting**: Handled by Claude Code
 
 ### Cost/Latency
 
-Using Sonnet for quality output (pricing: $3/1M input, $15/1M output):
+Using Sonnet for quality output:
 
-| Content Type | Typical Size | Cost | Latency |
-|--------------|--------------|------|---------|
-| PR title | ~50 chars | ~$0.0003 | ~1s |
-| PR body | ~500 chars | ~$0.003 | ~2s |
-| Comment | ~200 chars | ~$0.001 | ~1s |
-| Commit msg | ~100 chars | ~$0.0006 | ~1s |
+| Content Type | Typical Size | Latency |
+|--------------|--------------|---------|
+| PR title | ~50 chars | ~1-2s |
+| PR body | ~500 chars | ~2-3s |
+| Comment | ~200 chars | ~1-2s |
+| Commit msg | ~100 chars | ~1-2s |
 
-**Total per PR**: ~$0.005, ~3s latency. Worth it for interaction quality.
+**Total per PR**: ~3-5s latency. Cost handled through existing Claude Code billing.
 
 ### Error Handling
 
@@ -174,20 +200,25 @@ def humanize(text: str, fail_open: bool = True) -> HumanizeResult:
 
     Args:
         text: Text to humanize
-        fail_open: If True, return original text on API failure (default).
+        fail_open: If True, return original text on failure (default).
                    If False, raise exception blocking the operation.
     """
     try:
-        response = anthropic.messages.create(...)
-        return HumanizeResult(success=True, text=response.content[0].text, original=text)
-    except anthropic.APIError as e:
-        logger.error(f"Humanizer API error: {e}")
+        result = subprocess.run(
+            ["claude", "--print", "--model", "sonnet", "--max-turns", "1", "-p", prompt],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            raise HumanizationError(result.stderr)
+        return HumanizeResult(success=True, text=result.stdout.strip(), original=text)
+    except (subprocess.TimeoutExpired, HumanizationError) as e:
+        logger.error(f"Humanizer error: {e}")
         if fail_open:
             return HumanizeResult(success=False, text=text, original=text, error=str(e))
-        raise HumanizationError(f"Cannot humanize content: {e}")
+        raise
 ```
 
-Default is `fail_open=True` - if the API is unavailable, original content is used rather than blocking operations.
+Default is `fail_open=True` - if Claude Code is unavailable, original content is used rather than blocking operations.
 
 ### Diff Logging
 
@@ -213,10 +244,10 @@ def humanize_and_log(text: str, context: str) -> str:
 ```yaml
 # In repositories.yaml
 humanize:
-  enabled: true                      # Default: true
-  model: claude-sonnet-4-20250514    # Model for rewriting
-  min_length: 50                     # Skip for very short text
-  fail_open: true                    # Allow original on API failure
+  enabled: true         # Default: true
+  model: sonnet         # Model for rewriting (passed to claude --model)
+  min_length: 50        # Skip for very short text
+  fail_open: true       # Allow original on failure
 ```
 
 Per-repo override:
@@ -231,18 +262,18 @@ repos:
 
 ### Phase 1: Core Humanization
 
-1. Create `gateway-sidecar/humanizer.py` with LLM integration
-2. Add Anthropic API client to gateway
-3. Wire humanization into `gh_pr_create`, `gh_pr_edit`, `gh_pr_comment`
-4. Skip short content (< 50 chars) to reduce latency
-5. Log diffs at DEBUG level for quality monitoring
+1. Create `gateway-sidecar/humanizer.py` with headless Claude Code integration
+2. Wire humanization into `gh_pr_create`, `gh_pr_edit`, `gh_pr_comment`
+3. Skip short content (< 50 chars) to reduce latency
+4. Log diffs at DEBUG level for quality monitoring
 
 **Files:**
 - `gateway-sidecar/humanizer.py` (new)
 - `gateway-sidecar/gateway.py` (integration)
-- `gateway-sidecar/requirements.txt` (anthropic SDK)
 - `config/repositories.yaml.example` (config docs)
 - `tests/gateway/test_humanizer.py` (new)
+
+**Note**: No new dependencies needed - uses existing `claude` CLI with OAuth.
 
 ### Phase 2: Commit Message Humanization
 
@@ -306,18 +337,17 @@ def test_humanization_removes_ai_patterns():
             assert pattern.lower() not in result.lower()
 
 def test_meaning_preserved():
-    """Nightly batch test - uses LLM verification."""
+    """Nightly batch test - uses LLM verification via headless Claude Code."""
     original = "Fix the authentication bug in the login flow"
     humanized = humanize(original)
 
-    verification = anthropic.messages.create(
-        model="claude-3-5-haiku-20241022",
-        messages=[{
-            "role": "user",
-            "content": f"Do these mean the same thing? YES or NO.\n\n1: {original}\n2: {humanized}"
-        }]
+    # Use haiku for cheap verification
+    result = subprocess.run(
+        ["claude", "--print", "--model", "haiku", "--max-turns", "1", "-p",
+         f"Do these mean the same thing? Answer only YES or NO.\n\n1: {original}\n2: {humanized}"],
+        capture_output=True, text=True, timeout=30,
     )
-    assert "YES" in verification.content[0].text.upper()
+    assert "YES" in result.stdout.upper()
 ```
 
 ### Integration Tests
