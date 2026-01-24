@@ -166,7 +166,7 @@ def humanize(text: str) -> str:
             "claude",
             "--print",           # Output response only, no interactive UI
             "--model", "sonnet", # Use Sonnet for quality
-            "--max-turns", "1",  # Single turn
+            "--max-turns", "5",  # Skill needs multiple turns
             "-p", prompt,
         ],
         capture_output=True,
@@ -215,7 +215,7 @@ def humanize(text: str, fail_open: bool = True) -> HumanizeResult:
     """
     try:
         result = subprocess.run(
-            ["claude", "--print", "--model", "sonnet", "--max-turns", "1", "-p", prompt],
+            ["claude", "--print", "--model", "sonnet", "--max-turns", "5", "-p", prompt],
             capture_output=True, text=True, timeout=60,
         )
         if result.returncode != 0:
