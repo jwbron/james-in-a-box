@@ -79,6 +79,16 @@ class StartupTimer:
 
         return PhaseContext()
 
+    def to_json(self) -> str:
+        """Serialize timings to JSON for passing to container."""
+        import json
+        if not self.enabled or not self.timings:
+            return ""
+        return json.dumps({
+            "timings": self.timings,
+            "total_time": (time.perf_counter() - self.start_time) * 1000
+        })
+
     def print_summary(self) -> None:
         """Print timing summary."""
         if not self.enabled or not self.timings:
@@ -2255,8 +2265,12 @@ def run_claude() -> bool:
     # End timing for command build
     _host_timer.end_phase()  # build_docker_cmd
 
-    # Print timing summary before launching container
-    _host_timer.print_summary()
+    # Pass host timing data to container (must be after all host phases complete)
+    host_timing_json = _host_timer.to_json()
+    if host_timing_json:
+        # Insert timing env var before the image name (last element)
+        cmd.insert(-1, "-e")
+        cmd.insert(-1, f"JIB_HOST_TIMING={host_timing_json}")
 
     # Final status update before launching
     if _quiet_mode:
