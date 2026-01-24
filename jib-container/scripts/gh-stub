@@ -1,0 +1,17 @@
+#!/bin/bash
+#
+# Stub for /usr/bin/gh - blocks direct access
+#
+# This stub replaces /usr/bin/gh to prevent bypassing the gh wrapper.
+# The real gh binary has been relocated to prevent direct access.
+#
+# Always use 'gh' (from PATH) which routes through the gateway sidecar.
+#
+
+echo "ERROR: Direct /usr/bin/gh access is blocked." >&2
+echo "" >&2
+echo "Use 'gh' (without path) which routes through the gateway sidecar." >&2
+echo "The gateway enforces security policies and provides authentication." >&2
+echo "" >&2
+echo "Example: gh pr create --title 'My PR' --body '...'" >&2
+exit 1

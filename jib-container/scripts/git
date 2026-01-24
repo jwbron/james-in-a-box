@@ -3,7 +3,7 @@
 # Git wrapper for jib container
 # Intercepts git commands to ensure proper authentication and security.
 #
-# This wrapper is placed in PATH before /usr/bin/git to:
+# This wrapper is placed in PATH and the real git is hidden to:
 # 1. Block remote URL modifications (URLs are managed by the host)
 # 2. Route git push through the gateway sidecar for policy enforcement
 #
@@ -11,7 +11,9 @@
 # Authentication is handled by the gateway sidecar which holds the GITHUB_TOKEN.
 #
 
-REAL_GIT=/usr/bin/git
+# Real git binary - relocated to hidden path to prevent direct access
+# See Dockerfile for relocation logic; /usr/bin/git is now a stub
+REAL_GIT=/opt/.jib-internal/git
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
 GATEWAY_SECRET_FILE="${HOME}/sharing/.gateway-secret"
 # Worktree container ID - set by jib launcher to translate container paths
