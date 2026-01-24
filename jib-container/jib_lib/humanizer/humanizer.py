@@ -135,6 +135,7 @@ def humanize(text: str, fail_open: bool | None = None) -> HumanizeResult:
             capture_output=True,
             text=True,
             timeout=config.timeout,
+            check=False,  # We handle errors ourselves
         )
 
         if result.returncode != 0:
