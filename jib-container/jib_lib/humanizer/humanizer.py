@@ -118,7 +118,8 @@ def humanize(text: str, fail_open: bool | None = None) -> HumanizeResult:
     try:
         # Invoke Claude Code with the humanizer skill
         # The skill is installed at ~/.claude/skills/humanizer
-        prompt = f"/humanizer\n\n{text}"
+        # Request only the rewritten text, no explanations
+        prompt = f"/humanizer\n\nRewrite this text to remove AI patterns. Output ONLY the rewritten text, nothing else - no explanations, no markdown formatting, no \"here is\" prefix:\n\n{text}"
 
         result = subprocess.run(
             [
@@ -127,7 +128,7 @@ def humanize(text: str, fail_open: bool | None = None) -> HumanizeResult:
                 "--model",
                 config.model,
                 "--max-turns",
-                "1",
+                "5",  # Skill needs multiple turns to process
                 "-p",
                 prompt,
             ],
