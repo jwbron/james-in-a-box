@@ -5,7 +5,6 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from jib_lib.humanizer import (
     HumanizationError,
     HumanizeResult,
