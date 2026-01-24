@@ -120,50 +120,43 @@ All humanization happens in the gateway sidecar, which already handles all git/g
 
 ### Humanizer Module
 
-Uses a headless Claude Code agent instead of direct API calls. This leverages existing OAuth authentication - no separate API key needed.
+Uses the [blader/humanizer](https://github.com/blader/humanizer) Claude Code skill. This is a well-maintained skill that identifies and removes 24 AI writing patterns based on Wikipedia's "Signs of AI writing" guide.
+
+#### Skill Installation
+
+The humanizer skill must be installed in the gateway-sidecar's Claude Code environment:
+
+```bash
+# Install the skill
+mkdir -p ~/.claude/skills
+git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer
+```
+
+#### Implementation
 
 ```python
-"""Natural language quality improvement for LLM output."""
+"""Natural language quality improvement using humanizer skill."""
 
 import subprocess
-import json
-
-HUMANIZER_PROMPT = """You are a writing editor improving LLM-generated text for natural readability.
-
-Remove these common LLM patterns:
-- Overused words: "Additionally", "crucial", "delve", "landscape", "tapestry", "testament"
-- Structural patterns: "not just X...it's Y", rule-of-three lists, "serves as" (use "is")
-- Tone issues: sycophantic openers ("Great question!"), excessive hedging, generic conclusions
-- Formatting: em-dash overuse, unnecessary bold, decorative emojis
-
-Write naturally:
-- Use first person where appropriate ("I fixed" not "This PR fixes")
-- Be direct and specific
-- Vary sentence length
-- Keep technical accuracy
-
-Preserve the exact meaning. Keep it concise. This is for GitHub PR/comment content.
-
-Rewrite the following text and output ONLY the rewritten version, nothing else:
-
-{text}"""
-
 
 def humanize(text: str) -> str:
-    """Rewrite text for natural readability using headless Claude Code agent."""
-    prompt = HUMANIZER_PROMPT.format(text=text)
+    """Rewrite text for natural readability using the humanizer skill."""
+
+    # Invoke Claude Code with the humanizer skill
+    # The skill is triggered by /humanizer or by asking to humanize
+    prompt = f"/humanizer\n\n{text}"
 
     result = subprocess.run(
         [
             "claude",
             "--print",           # Output response only, no interactive UI
             "--model", "sonnet", # Use Sonnet for quality
-            "--max-turns", "1",  # Single turn, no back-and-forth
-            "-p", prompt,        # The prompt
+            "--max-turns", "1",  # Single turn
+            "-p", prompt,
         ],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=60,  # Skill may take longer
     )
 
     if result.returncode != 0:
@@ -172,12 +165,13 @@ def humanize(text: str) -> str:
     return result.stdout.strip()
 ```
 
-### Benefits of Headless Claude Code
+### Why Use the Humanizer Skill
 
+- **Comprehensive**: Covers 24 documented AI writing patterns
+- **Well-maintained**: Based on Wikipedia's AI cleanup guidelines
+- **No custom prompts**: Skill handles the complexity
+- **Consistent**: Same patterns used across all humanization
 - **No API key needed**: Uses existing OAuth authentication
-- **Consistent infrastructure**: Same Claude Code used elsewhere in jib
-- **Model selection**: Easy to switch models via `--model` flag
-- **Built-in rate limiting**: Handled by Claude Code
 
 ### Cost/Latency
 
@@ -262,18 +256,25 @@ repos:
 
 ### Phase 1: Core Humanization
 
-1. Create `gateway-sidecar/humanizer.py` with headless Claude Code integration
-2. Wire humanization into `gh_pr_create`, `gh_pr_edit`, `gh_pr_comment`
-3. Skip short content (< 50 chars) to reduce latency
-4. Log diffs at DEBUG level for quality monitoring
+1. Install [blader/humanizer](https://github.com/blader/humanizer) skill in gateway-sidecar environment
+2. Create `gateway-sidecar/humanizer.py` to invoke the skill via headless Claude Code
+3. Wire humanization into `gh_pr_create`, `gh_pr_edit`, `gh_pr_comment`
+4. Skip short content (< 50 chars) to reduce latency
+5. Log diffs at DEBUG level for quality monitoring
 
 **Files:**
 - `gateway-sidecar/humanizer.py` (new)
 - `gateway-sidecar/gateway.py` (integration)
+- `gateway-sidecar/Dockerfile` (install humanizer skill)
 - `config/repositories.yaml.example` (config docs)
 - `tests/gateway/test_humanizer.py` (new)
 
-**Note**: No new dependencies needed - uses existing `claude` CLI with OAuth.
+**Setup**: Install the humanizer skill in the gateway-sidecar container:
+```dockerfile
+# In gateway-sidecar/Dockerfile
+RUN mkdir -p ~/.claude/skills && \
+    git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer
+```
 
 ### Phase 2: Commit Message Humanization
 
