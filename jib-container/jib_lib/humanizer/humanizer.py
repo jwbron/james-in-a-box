@@ -156,13 +156,13 @@ def humanize(text: str, fail_open: bool | None = None) -> HumanizeResult:
             return HumanizeResult(success=False, text=text, original=text, error=error_msg)
         raise HumanizationError(error_msg) from e
 
-    except HumanizationError:
+    except HumanizationError as e:
         if fail_open:
             return HumanizeResult(
                 success=False,
                 text=text,
                 original=text,
-                error=str(e) if "e" in dir() else "Unknown error",
+                error=str(e),
             )
         raise
 
