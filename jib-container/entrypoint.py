@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+
 # Capture container start time as early as possible (wall clock for cross-process comparison)
 _CONTAINER_START_TIME = time.time()
 
@@ -129,7 +130,9 @@ class StartupTimer:
             print("DOCKER:")
             pct = (self.docker_startup_time / grand_total) * 100 if grand_total > 0 else 0
             bar = "█" * int(pct / 5)
-            print(f"  {'container_startup':<38} {self.docker_startup_time:>10.1f} {pct:>5.1f}% {bar}")
+            print(
+                f"  {'container_startup':<38} {self.docker_startup_time:>10.1f} {pct:>5.1f}% {bar}"
+            )
             print()
 
         # Print container phases (% of container total for meaningful breakdown)
