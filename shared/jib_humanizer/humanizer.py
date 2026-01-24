@@ -12,15 +12,13 @@ import logging
 import os
 import subprocess
 from dataclasses import dataclass
-from typing import Any
+
 
 logger = logging.getLogger(__name__)
 
 
 class HumanizationError(Exception):
     """Raised when humanization fails."""
-
-    pass
 
 
 @dataclass

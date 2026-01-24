@@ -38,6 +38,7 @@ from .humanizer import (
     humanize_text,
 )
 
+
 __all__ = [
     "HumanizationError",
     "HumanizeResult",
