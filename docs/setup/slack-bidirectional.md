@@ -191,7 +191,7 @@ Slack configuration is stored in `~/.config/jib/`:
 
 **secrets.env** (tokens):
 ```bash
-SLACK_BOT_TOKEN="xoxb-..."
+SLACK_TOKEN="xoxb-..."
 SLACK_APP_TOKEN="xapp-..."
 ```
 

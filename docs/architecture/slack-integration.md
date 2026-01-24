@@ -296,7 +296,7 @@ systemctl --user setup
 
 **secrets.env** (tokens - 600 permissions):
 ```bash
-SLACK_BOT_TOKEN="xoxb-your-bot-token"
+SLACK_TOKEN="xoxb-your-bot-token"
 SLACK_APP_TOKEN="xapp-your-app-token"
 ```
 
@@ -427,7 +427,7 @@ You're away from your workstation but want to trigger work:
     └── response-20251121-150500.md
 
 ~/.config/jib/
-├── secrets.env           # Slack tokens (SLACK_BOT_TOKEN, etc.) - 600 perms
+├── secrets.env           # Slack tokens (SLACK_TOKEN, etc.) - 600 perms
 └── config.yaml           # Slack settings (channel, allowed_users)
 ```
 
@@ -541,7 +541,7 @@ python3 -c "import slack_sdk"
 **Check config**:
 ```bash
 cat ~/.config/jib/secrets.env
-# Ensure SLACK_BOT_TOKEN and SLACK_APP_TOKEN are set
+# Ensure SLACK_TOKEN and SLACK_APP_TOKEN are set
 ```
 
 **Check logs**:

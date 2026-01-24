@@ -93,7 +93,7 @@ systemctl --user restart
 
 ```
 Host:
-  ~/.config/jib/secrets.env          Tokens (SLACK_BOT_TOKEN, etc.)
+  ~/.config/jib/secrets.env          Tokens (SLACK_TOKEN, etc.)
   ~/.config/jib/config.yaml          Settings (channel, users)
   ~/.jib-sharing/incoming/           Tasks from you
   ~/.jib-sharing/responses/          Your responses
