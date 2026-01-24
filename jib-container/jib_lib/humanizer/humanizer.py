@@ -119,7 +119,7 @@ def humanize(text: str, fail_open: bool | None = None) -> HumanizeResult:
         # Invoke Claude Code with the humanizer skill
         # The skill is installed at ~/.claude/skills/humanizer
         # Request only the rewritten text, no explanations
-        prompt = f"/humanizer\n\nRewrite this text to remove AI patterns. Output ONLY the rewritten text, nothing else - no explanations, no markdown formatting, no \"here is\" prefix:\n\n{text}"
+        prompt = f'/humanizer\n\nRewrite this text to remove AI patterns. Output ONLY the rewritten text, nothing else - no explanations, no markdown formatting, no "here is" prefix:\n\n{text}'
 
         result = subprocess.run(
             [
