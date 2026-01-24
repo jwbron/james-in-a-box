@@ -47,6 +47,9 @@ class StartupTimer:
         self.host_timings: list[tuple[str, float]] = []
         self.host_total_time: float = 0.0
         self.docker_startup_time: float = 0.0  # Gap between host launch and container start
+        # Capture time spent in Python init (imports) before this point
+        # Uses wall clock since _CONTAINER_START_TIME is wall clock
+        self.python_init_time: float = (time.time() - _CONTAINER_START_TIME) * 1000
         self._load_host_timing()
 
     def _load_host_timing(self) -> None:
@@ -110,7 +113,9 @@ class StartupTimer:
         if not self.timings and not self.host_timings:
             return
 
-        container_total = (time.perf_counter() - self.start_time) * 1000
+        # Container total includes python_init (imports) + all phases
+        phases_total = (time.perf_counter() - self.start_time) * 1000
+        container_total = self.python_init_time + phases_total
         grand_total = self.host_total_time + self.docker_startup_time + container_total
 
         print("\n" + "=" * 60)
@@ -140,8 +145,13 @@ class StartupTimer:
             print()
 
         # Print container phases (% of container total for meaningful breakdown)
-        if self.timings:
+        if self.timings or self.python_init_time > 0:
             print("CONTAINER:")
+            # Show python_init first (time for imports before StartupTimer was created)
+            if self.python_init_time > 0:
+                pct = (self.python_init_time / container_total) * 100 if container_total > 0 else 0
+                bar = "█" * int(pct / 5)
+                print(f"  {'python_init':<38} {self.python_init_time:>10.1f} {pct:>5.1f}% {bar}")
             for name, elapsed in self.timings:
                 pct = (elapsed / container_total) * 100 if container_total > 0 else 0
                 bar = "█" * int(pct / 5)
