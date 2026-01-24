@@ -17,11 +17,9 @@ All git/gh operations are routed through the gateway sidecar (runs as `jib-gatew
 - `gh pr merge`: **Blocked** - human must merge via GitHub UI
 - `gh pr comment/edit/close`: Only on PRs you authored
 
-## CRITICAL: Never Use Absolute Paths for git/gh
+## Git/Gh Binary Redirection
 
-**NEVER** invoke `/usr/bin/git`, `/usr/bin/gh`, or any absolute path to these binaries.
-
-Always use `git` and `gh` (without paths) which route through the gateway sidecar. The real binaries are relocated and `/usr/bin/git` returns an error stub.
+Both `/usr/bin/git` and `/usr/bin/gh` are symlinked to the gateway wrappers. All invocations (whether `git` or `/usr/bin/git`) route through the gateway sidecar for policy enforcement. The real binaries are relocated to a hidden path.
 
 ## Git Push
 

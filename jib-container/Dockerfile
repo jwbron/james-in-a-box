@@ -122,15 +122,14 @@ RUN chmod +x /opt/jib-runtime/jib-container/bin/* 2>/dev/null || true && \
     chmod +x /opt/jib-runtime/host-services/analysis/trace-collector/*.py 2>/dev/null || true && \
     chmod +x /opt/jib-runtime/host-services/analysis/index-generator/*.py 2>/dev/null || true
 
-# Relocate git/gh binaries to prevent direct access bypassing wrappers
-# The wrappers in PATH route through gateway sidecar for policy enforcement
-# Real binaries are hidden; stubs at /usr/bin show helpful error messages
+# Relocate git/gh binaries and symlink /usr/bin to wrappers
+# This ensures ALL git/gh invocations route through the gateway sidecar,
+# whether called as 'git' (PATH) or '/usr/bin/git' (absolute path)
 RUN mkdir -p /opt/.jib-internal && \
     mv /usr/bin/git /opt/.jib-internal/git && \
     mv /usr/bin/gh /opt/.jib-internal/gh && \
-    cp /opt/jib-runtime/jib-container/scripts/git-stub /usr/bin/git && \
-    cp /opt/jib-runtime/jib-container/scripts/gh-stub /usr/bin/gh && \
-    chmod +x /usr/bin/git /usr/bin/gh
+    ln -s /opt/jib-runtime/jib-container/scripts/git /usr/bin/git && \
+    ln -s /opt/jib-runtime/jib-container/scripts/gh /usr/bin/gh
 
 # Make jib-container and shared modules importable via PYTHONPATH
 # This is simpler than pip install and doesn't require pyproject.toml
