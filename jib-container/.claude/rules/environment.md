@@ -17,6 +17,10 @@ All git/gh operations are routed through the gateway sidecar (runs as `jib-gatew
 - `gh pr merge`: **Blocked** - human must merge via GitHub UI
 - `gh pr comment/edit/close`: Only on PRs you authored
 
+## Git/Gh Binary Redirection
+
+Both `/usr/bin/git` and `/usr/bin/gh` are symlinked to the gateway wrappers. All invocations (whether `git` or `/usr/bin/git`) route through the gateway sidecar for policy enforcement. The real binaries are relocated to a hidden path.
+
 ## Git Push
 
 Use `git push origin <branch>` (HTTPS). Operations are authenticated by the gateway sidecar.
