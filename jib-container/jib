@@ -1868,10 +1868,9 @@ def setup() -> bool:
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
         context_container_path = f"/home/jib/context-sync"
-        # Add :z flag for SELinux systems
-        mounts.append(f"{context_sync_dir}:{context_container_path}:ro,z")
+        mounts.append(f"{context_sync_dir}:{context_container_path}:ro")
         print(f"  ✓ Context sources: {context_sync_dir}")
-        print(f"    Mounted as: ~/context-sync/ (read-only, SELinux relabeled)")
+        print(f"    Mounted as: ~/context-sync/ (read-only)")
 
         # Show available context sources
         subdirs = []
@@ -1901,10 +1900,9 @@ def setup() -> bool:
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
 
     sharing_container_path = f"/home/jib/sharing"
-    # Add :z flag for SELinux systems
-    mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z")
+    mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
-    print(f"    Mounted as: ~/sharing/ (read-write, SELinux relabeled)")
+    print(f"    Mounted as: ~/sharing/ (read-write)")
     print(f"    Purpose: All persistent data")
     print(f"    - ~/sharing/tmp/           Persistent workspace (also at ~/tmp)")
     print(f"    - ~/sharing/context/       Context documents (@save-context)")
@@ -1976,9 +1974,8 @@ def setup() -> bool:
             else:
                 continue
 
-        # Add SELinux label for Fedora/RHEL compatibility
-        mounts.append(f"{mount_path}:{mode},z")
-        print(f"Added: {mount_path} ({mode}, SELinux relabeled)")
+        mounts.append(f"{mount_path}:{mode}")
+        print(f"Added: {mount_path} ({mode})")
 
     print()
     info("Summary of mounted directories:")
@@ -2015,7 +2012,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
     # Mount sharing directory (beads, notifications, incoming tasks, etc.)
     if Config.SHARING_DIR.exists():
         sharing_container_path = "/home/jib/sharing"
-        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
+        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw"])
         if not quiet:
             print(f"  • ~/sharing/ (beads, notifications, tasks)")
 
@@ -2023,7 +2020,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
         context_sync_container = "/home/jib/context-sync"
-        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
+        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro"])
         if not quiet:
             print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
 
@@ -2129,7 +2126,7 @@ def run_claude() -> bool:
         worktree_path = repo_info["worktree"]
         source_path = repo_info["source"]
         container_path = f"/home/jib/repos/{repo_name}"
-        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
+        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
         if not _quiet_mode:
             print(f"  • ~/repos/{repo_name} (WORKTREE, isolated from host)")
 
@@ -2138,7 +2135,7 @@ def run_claude() -> bool:
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
             git_container_path = f"/home/jib/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
+            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw"])
             if not _quiet_mode:
                 print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
         elif git_path.is_file():
@@ -2155,7 +2152,7 @@ def run_claude() -> bool:
                         main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
                         if main_git_path.is_dir():
                             git_container_path = f"/home/jib/.git-main/{repo_name}"
-                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
+                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw"])
                             if not _quiet_mode:
                                 print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
                         else:
@@ -2169,7 +2166,7 @@ def run_claude() -> bool:
 
     # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = f"/home/jib/.jib-worktrees"
-    mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
+    mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw"])
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
@@ -2184,13 +2181,13 @@ def run_claude() -> bool:
 
     if claude_dir.is_dir():
         container_claude_dir = f"/home/jib/.claude"
-        mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
+        mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
         if not _quiet_mode:
             print(f"  • ~/.claude (Claude config directory)")
 
     if claude_json.is_file():
         container_claude_json = f"/home/jib/.claude.json"
-        mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
+        mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
         if not _quiet_mode:
             print(f"  • ~/.claude.json (Claude settings)")
 
@@ -2212,6 +2209,7 @@ def run_claude() -> bool:
         "docker", "run",
         "--rm",  # Auto-remove container after exit
         "-it",   # Interactive with TTY
+        "--security-opt", "label=disable",  # Disable SELinux labeling for faster startup
         "--name", container_id,
         "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
                 "-e", f"RUNTIME_UID={os.getuid()}",
@@ -2398,7 +2396,7 @@ def exec_in_new_container(
         worktree_path = repo_info["worktree"]
         source_path = repo_info["source"]
         container_path = f"/home/jib/repos/{repo_name}"
-        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
+        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
         print(f"  • ~/repos/{repo_name} (WORKTREE, isolated)")
 
         # Mount main repo .git directories (read-write) so worktrees can commit changes
@@ -2406,7 +2404,7 @@ def exec_in_new_container(
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
             git_container_path = f"/home/jib/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
+            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
         elif git_path.is_file():
             # Host repo is a worktree - read .git file to find actual git directory
@@ -2419,7 +2417,7 @@ def exec_in_new_container(
                         main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
                         if main_git_path.is_dir():
                             git_container_path = f"/home/jib/.git-main/{repo_name}"
-                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
+                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw"])
                             print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
                         else:
                             warn(f"Could not find git directory for {repo_name}: {main_git_path}")
@@ -2441,12 +2439,12 @@ def exec_in_new_container(
 
         if claude_dir.is_dir():
             container_claude_dir = f"/home/jib/.claude"
-            mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
+            mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
             print(f"  • ~/.claude (Claude config directory)")
 
         if claude_json.is_file():
             container_claude_json = f"/home/jib/.claude.json"
-            mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
+            mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
             print(f"  • ~/.claude.json (Claude settings)")
 
     print()
@@ -2456,6 +2454,7 @@ def exec_in_new_container(
     worktree_host_path = Config.WORKTREE_BASE / container_id
     cmd = [
         "docker", "run",
+        "--security-opt", "label=disable",  # Disable SELinux labeling for faster startup
         "--name", container_id,
         "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
                 "-e", f"RUNTIME_UID={os.getuid()}",
