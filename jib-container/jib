@@ -587,8 +587,8 @@ def check_host_setup() -> bool:
         Path.home() / ".jib-sharing" / "responses",
     ]
 
-    # Configuration file
-    config_file = Path.home() / ".config" / "jib-notifier" / "config.json"
+    # Configuration file (consolidated location since PR #549)
+    config_file = Path.home() / ".config" / "jib" / "config.yaml"
 
     issues_found = []
 

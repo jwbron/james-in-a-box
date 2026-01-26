@@ -53,11 +53,11 @@ class HostCommandHandler:
             notification_dir: Directory to write notification files.
                             Defaults to ~/.jib-sharing/notifications
             log_file: Path to log file.
-                     Defaults to ~/.config/jib-notifier/remote-control.log
+                     Defaults to ~/.config/jib/remote-control.log
         """
         self.notification_dir = notification_dir or (Path.home() / ".jib-sharing" / "notifications")
         self.log_file = log_file or (
-            Path.home() / ".config" / "jib-notifier" / "remote-control.log"
+            Path.home() / ".config" / "jib" / "remote-control.log"
         )
 
         # Find james-in-a-box root directory

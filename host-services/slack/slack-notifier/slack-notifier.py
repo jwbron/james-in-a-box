@@ -46,18 +46,10 @@ except ImportError:
 class SlackNotifier:
     """Monitors directories and sends Slack notifications for changes."""
 
-    def __init__(self, config_dir: Path):
-        self.config_dir = config_dir
-        self.config_file = config_dir / "config.json"
-        self.state_file = config_dir / "state.json"
+    def __init__(self):
         # Store threads in shared directory (accessible to both host and container)
         # Host: ~/.jib-sharing/tracking/ -> Container: ~/sharing/tracking/
         self.threads_file = Path.home() / ".jib-sharing" / "tracking" / "slack-threads.json"
-        self.log_file = config_dir / "notifier.log"
-
-        # Ensure config directory exists with secure permissions
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.config_dir, 0o700)
 
         # Initialize jib_logging logger
         self.logger = get_logger("slack-notifier")
@@ -111,13 +103,6 @@ class SlackNotifier:
         config_file = Path.home() / ".config" / "jib" / "config.yaml"
         yaml_config = load_yaml_file(config_file)
         return yaml_config
-
-    def _save_config(self, config: dict):
-        """Save configuration to file with secure permissions."""
-        with open(self.config_file, "w") as f:
-            json.dump(config, f, indent=2)
-        os.chmod(self.config_file, 0o600)
-        self.logger.info("Configuration saved", config_file=str(self.config_file))
 
     def _load_threads(self) -> dict:
         """Load thread state mapping task IDs to Slack thread_ts."""
@@ -663,11 +648,10 @@ class SlackNotifier:
 
 def main():
     """Main entry point."""
-    config_dir = Path.home() / ".config" / "jib-notifier"
     logger = get_logger("slack-notifier")
 
     try:
-        notifier = SlackNotifier(config_dir)
+        notifier = SlackNotifier()
         notifier.watch()
     except KeyboardInterrupt:
         logger.info("Shutting down (keyboard interrupt)")
