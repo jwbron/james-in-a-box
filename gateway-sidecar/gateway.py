@@ -12,6 +12,7 @@ Security:
 
 Endpoints:
     POST /api/v1/git/push       - Push to remote (policy: branch_ownership or trusted_user)
+    POST /api/v1/git/fetch      - Fetch from remote (no policy - read operations allowed)
     POST /api/v1/gh/pr/create   - Create PR (policy: blocked in incognito mode)
     POST /api/v1/gh/pr/comment  - Comment on PR (policy: none - allowed on any PR)
     POST /api/v1/gh/pr/edit     - Edit PR (policy: pr_ownership)
@@ -105,6 +106,7 @@ SECRET_FILE = Path.home() / ".config" / "jib" / "gateway-secret"
 # limit of 4,000/hr provides a safety buffer. See ADR-Internet-Tool-Access-Lockdown.
 RATE_LIMITS = {
     "git_push": 1000,
+    "git_fetch": 2000,  # Higher limit for read operations
     "gh_pr_create": 500,
     "gh_pr_comment": 2000,
     "gh_pr_edit": 500,
@@ -578,6 +580,177 @@ fi
         return make_error("Push timed out", status_code=504)
     except Exception as e:
         return make_error(f"Push failed: {e}", status_code=500)
+
+
+@app.route("/api/v1/git/fetch", methods=["POST"])
+@require_auth
+@require_rate_limit("git_fetch")
+def git_fetch():
+    """
+    Handle git fetch requests.
+
+    Required because in incognito mode, the container doesn't have direct
+    access to GitHub tokens. This endpoint provides authenticated fetch
+    for git fetch, git ls-remote, and similar read operations.
+
+    Request body:
+        {
+            "repo_path": "/path/to/repo",
+            "remote": "origin",
+            "args": ["--tags"]  # optional additional args
+        }
+
+    For ls-remote:
+        {
+            "repo_path": "/path/to/repo",
+            "operation": "ls-remote",
+            "remote": "origin",
+            "args": ["HEAD"]  # optional refs to query
+        }
+    """
+    data = request.get_json()
+    if not data:
+        return make_error("Missing request body")
+
+    repo_path = data.get("repo_path")
+    remote = data.get("remote", "origin")
+    operation = data.get("operation", "fetch")  # fetch or ls-remote
+    extra_args = data.get("args", [])
+
+    if not repo_path:
+        return make_error("Missing repo_path")
+
+    if operation not in ("fetch", "ls-remote"):
+        return make_error(f"Unsupported operation: {operation}")
+
+    # Get remote URL to determine repo
+    try:
+        result = subprocess.run(
+            git_cmd("remote", "get-url", remote),
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode != 0:
+            return make_error(f"Failed to get remote URL: {result.stderr}")
+        remote_url = result.stdout.strip()
+    except Exception as e:
+        return make_error(f"Failed to get remote URL: {e}")
+
+    # Extract repo from URL
+    repo = extract_repo_from_remote(remote_url)
+    if not repo:
+        return make_error(f"Could not parse repository from URL: {remote_url}")
+
+    # Determine auth mode for this repo
+    auth_mode = get_auth_mode(repo)
+
+    # Get token based on auth mode
+    github = get_github_client(mode=auth_mode)
+
+    if auth_mode == "incognito":
+        token_str = github.get_incognito_token()
+        if not token_str:
+            return make_error(
+                "Incognito token not available. Set GITHUB_INCOGNITO_TOKEN environment variable.",
+                status_code=503,
+            )
+    else:
+        token = github.get_token()
+        if not token:
+            return make_error("GitHub token not available", status_code=503)
+        token_str = token.token
+
+    # Build command
+    if operation == "fetch":
+        cmd_args = ["fetch", remote] + extra_args
+    else:  # ls-remote
+        cmd_args = ["ls-remote", remote] + extra_args
+
+    cmd = git_cmd(*cmd_args)
+
+    # Configure git to use token via GIT_ASKPASS
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_USERNAME"] = "x-access-token"
+    env["GIT_PASSWORD"] = token_str
+
+    # Create inline credential helper script
+    askpass_script = """#!/bin/bash
+if [[ "$1" == *"Username"* ]]; then
+    echo "$GIT_USERNAME"
+elif [[ "$1" == *"Password"* ]]; then
+    echo "$GIT_PASSWORD"
+fi
+"""
+
+    try:
+        import tempfile
+
+        fd, credential_helper_path = tempfile.mkstemp(suffix=".sh", prefix="git-askpass-")
+        try:
+            os.fchmod(fd, 0o700)
+            os.write(fd, askpass_script.encode())
+        finally:
+            os.close(fd)
+
+        env["GIT_ASKPASS"] = credential_helper_path
+
+        result = subprocess.run(
+            cmd,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+            check=False,
+        )
+
+        # Clean up immediately
+        os.unlink(credential_helper_path)
+
+        if result.returncode == 0:
+            audit_log(
+                f"{operation}_success",
+                f"git_{operation}",
+                success=True,
+                details={
+                    "repo": repo,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_success(
+                f"{operation.capitalize()} successful",
+                {
+                    "repo": repo,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "auth_mode": auth_mode,
+                },
+            )
+        else:
+            audit_log(
+                f"{operation}_failed",
+                f"git_{operation}",
+                success=False,
+                details={
+                    "repo": repo,
+                    "returncode": result.returncode,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_error(
+                f"{operation.capitalize()} failed: {result.stderr}",
+                status_code=500,
+                details={"stdout": result.stdout, "stderr": result.stderr},
+            )
+
+    except subprocess.TimeoutExpired:
+        return make_error(f"{operation.capitalize()} timed out", status_code=504)
+    except Exception as e:
+        return make_error(f"{operation.capitalize()} failed: {e}", status_code=500)
 
 
 @app.route("/api/v1/gh/pr/create", methods=["POST"])

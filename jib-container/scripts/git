@@ -6,9 +6,12 @@
 # This wrapper is placed in PATH and the real git is hidden to:
 # 1. Block remote URL modifications (URLs are managed by the host)
 # 2. Route git push through the gateway sidecar for policy enforcement
+# 3. Route git fetch/ls-remote through gateway for authentication (incognito mode)
 #
 # Security: Requires gateway sidecar - fails closed if gateway unavailable.
 # Authentication is handled by the gateway sidecar which holds the GITHUB_TOKEN.
+# In incognito mode, the container has no direct access to GitHub tokens,
+# so all network operations (push, fetch, ls-remote) go through the gateway.
 #
 
 # Real git binary - relocated to hidden path to prevent direct access
@@ -236,6 +239,106 @@ EOF
     fi
 }
 
+# Function to fetch via gateway
+# Args: operation remote work_dir extra_args...
+# operation: "fetch" or "ls-remote"
+fetch_via_gateway() {
+    local operation="$1"
+    local remote="$2"
+    local work_dir="${3:-}"
+    shift 3
+    local extra_args=("$@")
+    local container_path
+    local repo_path
+
+    # Use provided work_dir or current directory
+    if [ -n "$work_dir" ]; then
+        if [[ "$work_dir" != /* ]]; then
+            container_path="$(pwd)/$work_dir"
+        else
+            container_path="$work_dir"
+        fi
+    else
+        container_path=$(pwd)
+    fi
+
+    # Translate container path for gateway
+    repo_path=$(translate_path_for_gateway "$container_path")
+
+    # Get authentication secret
+    local secret
+    secret=$(get_gateway_secret)
+    if [ -z "$secret" ]; then
+        echo "ERROR: Gateway secret not available at $GATEWAY_SECRET_FILE" >&2
+        echo "The gateway sidecar must be running and properly configured." >&2
+        return 1
+    fi
+
+    # Build JSON payload using Python for proper escaping
+    local payload
+    payload=$(python3 -c "
+import json
+import sys
+args = sys.argv[4:] if len(sys.argv) > 4 else []
+print(json.dumps({
+    'repo_path': sys.argv[1],
+    'remote': sys.argv[2],
+    'operation': sys.argv[3],
+    'args': args
+}))
+" "$repo_path" "$remote" "$operation" "${extra_args[@]}")
+
+    # Call gateway with authentication
+    local response
+    local http_code
+    response=$(curl -s -w "\n%{http_code}" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $secret" \
+        -d "$payload" \
+        "${GATEWAY_URL}/api/v1/git/fetch" 2>&1)
+
+    # Split response and status code
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+
+    # Parse response
+    local success
+    local message
+    success=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null)
+    message=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('message', 'Unknown error'))" 2>/dev/null)
+
+    if [ "$success" = "True" ]; then
+        # Show stdout/stderr from the operation
+        local stdout stderr
+        stdout=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', {}).get('stdout', ''))" 2>/dev/null)
+        stderr=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', {}).get('stderr', ''))" 2>/dev/null)
+        [ -n "$stdout" ] && echo "$stdout"
+        [ -n "$stderr" ] && echo "$stderr" >&2
+        return 0
+    else
+        # Show error message
+        echo "ERROR: $message" >&2
+
+        # Show details if available
+        local details
+        details=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stderr', '') if d else '')" 2>/dev/null)
+        [ -n "$details" ] && echo "$details" >&2
+
+        # Special handling for error codes
+        case "$http_code" in
+            401)
+                echo "Authentication failed - check gateway secret configuration" >&2
+                ;;
+            503)
+                echo "GitHub token not available - check gateway configuration" >&2
+                ;;
+        esac
+
+        return 1
+    fi
+}
+
 # Function to check if push target is HTTPS (we don't have SSH keys)
 # Args: remote [work_dir]
 check_push_remote() {
@@ -425,6 +528,104 @@ EOF
         fi
 
         push_via_gateway "$remote" "$refspec" "$force" "$git_work_dir"
+        exit $?
+        ;;
+    fetch)
+        # Route fetch through gateway for authentication
+        # git fetch [options] [remote] [refspec...]
+        remote="origin"
+        extra_args=()
+        skip_next=false
+        remote_seen=false
+
+        for arg in "${args_after_globals[@]}"; do
+            if $skip_next; then
+                extra_args+=("$arg")
+                skip_next=false
+                continue
+            fi
+
+            case "$arg" in
+                fetch)
+                    continue
+                    ;;
+                --depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs|--recurse-submodules-default|--submodule-prefix|--upload-pack|-o|--server-option|--negotiation-tip|--filter|--refmap)
+                    # These flags take an argument
+                    extra_args+=("$arg")
+                    skip_next=true
+                    ;;
+                -*)
+                    # Other flags
+                    extra_args+=("$arg")
+                    ;;
+                *)
+                    # First non-flag is remote, rest are refspecs
+                    if [ "$remote_seen" = "false" ]; then
+                        remote="$arg"
+                        remote_seen=true
+                    else
+                        extra_args+=("$arg")
+                    fi
+                    ;;
+            esac
+        done
+
+        # Check if gateway is available
+        if ! check_gateway_available; then
+            # Fall back to direct git (may fail if credentials needed)
+            exec "$REAL_GIT" "$@"
+        fi
+
+        fetch_via_gateway "fetch" "$remote" "$git_work_dir" "${extra_args[@]}"
+        exit $?
+        ;;
+    ls-remote)
+        # Route ls-remote through gateway for authentication
+        # git ls-remote [options] [repository] [refs...]
+        remote="origin"
+        extra_args=()
+        skip_next=false
+        remote_seen=false
+
+        for arg in "${args_after_globals[@]}"; do
+            if $skip_next; then
+                extra_args+=("$arg")
+                skip_next=false
+                continue
+            fi
+
+            case "$arg" in
+                ls-remote)
+                    continue
+                    ;;
+                --upload-pack|-o|--server-option|--sort)
+                    # These flags take an argument
+                    extra_args+=("$arg")
+                    skip_next=true
+                    ;;
+                -*)
+                    # Other flags
+                    extra_args+=("$arg")
+                    ;;
+                *)
+                    # First non-flag is remote/repository, rest are refs
+                    if [ "$remote_seen" = "false" ]; then
+                        remote="$arg"
+                        remote_seen=true
+                    else
+                        extra_args+=("$arg")
+                    fi
+                    ;;
+            esac
+        done
+
+        # Check if gateway is available
+        if ! check_gateway_available; then
+            # Fall back to direct git (may fail if credentials needed)
+            exec "$REAL_GIT" "$@"
+        fi
+
+        fetch_via_gateway "ls-remote" "$remote" "$git_work_dir" "${extra_args[@]}"
         exit $?
         ;;
     remote)
