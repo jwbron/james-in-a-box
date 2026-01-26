@@ -26,6 +26,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 
 # =============================================================================
@@ -187,8 +188,11 @@ class Config:
     # Auth method: "api_key" (default) or "oauth"
     # When oauth, don't warn about missing ANTHROPIC_API_KEY
     anthropic_auth_method: str = field(
-        default_factory=lambda: os.environ.get("ANTHROPIC_AUTH_METHOD", "api_key")
+        default_factory=lambda: os.environ.get("ANTHROPIC_AUTH_METHOD", "api_key").lower()
     )
+
+    # Valid auth methods for validation
+    VALID_AUTH_METHODS: ClassVar[tuple[str, ...]] = ("api_key", "oauth")
     google_api_key: str | None = field(default_factory=lambda: os.environ.get("GOOGLE_API_KEY"))
     anthropic_api_key: str | None = field(
         default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY")
@@ -735,6 +739,13 @@ def setup_claude(config: Config, logger: Logger) -> None:
 
     # Check API key (only warn if using api_key auth method)
     if config.llm_provider == "anthropic":
+        # Validate auth method
+        if config.anthropic_auth_method not in config.VALID_AUTH_METHODS:
+            logger.warn(
+                f"Invalid ANTHROPIC_AUTH_METHOD '{config.anthropic_auth_method}', "
+                f"expected one of: {', '.join(config.VALID_AUTH_METHODS)}"
+            )
+
         if config.anthropic_api_key:
             logger.success("Anthropic API key configured")
         elif config.anthropic_auth_method == "oauth":
@@ -927,6 +938,13 @@ def setup_router(config: Config, logger: Logger) -> None:
         logger.success("Router configured for OpenAI GPT-5.2")
 
     else:  # anthropic (default)
+        # Validate auth method
+        if config.anthropic_auth_method not in config.VALID_AUTH_METHODS:
+            logger.warn(
+                f"Invalid ANTHROPIC_AUTH_METHOD '{config.anthropic_auth_method}', "
+                f"expected one of: {', '.join(config.VALID_AUTH_METHODS)}"
+            )
+
         if config.anthropic_api_key:
             logger.success("Anthropic API key configured")
             logger.info("Using Claude Code directly with API key (no router)")
