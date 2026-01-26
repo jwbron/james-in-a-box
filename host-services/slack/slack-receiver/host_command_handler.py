@@ -56,9 +56,7 @@ class HostCommandHandler:
                      Defaults to ~/.config/jib/remote-control.log
         """
         self.notification_dir = notification_dir or (Path.home() / ".jib-sharing" / "notifications")
-        self.log_file = log_file or (
-            Path.home() / ".config" / "jib" / "remote-control.log"
-        )
+        self.log_file = log_file or (Path.home() / ".config" / "jib" / "remote-control.log")
 
         # Find james-in-a-box root directory
         self.script_dir = Path(__file__).parent.parent.parent.parent
