@@ -452,7 +452,9 @@ class TestBuildImage:
     @patch("subprocess.run")
     @patch.object(jib, "create_dockerfile")
     @patch.object(jib, "check_claude_update", return_value=None)
-    def test_build_image_success(self, mock_update, mock_create, mock_run, monkeypatch):
+    @patch.object(jib, "should_rebuild_image", return_value=(True, "test"))
+    @patch.object(jib, "compute_build_hash", return_value="testhash123")
+    def test_build_image_success(self, mock_hash, mock_should, mock_update, mock_create, mock_run, monkeypatch):
         """Test successful Docker build."""
         mock_run.return_value = MagicMock(returncode=0)
 
@@ -466,7 +468,9 @@ class TestBuildImage:
     @patch("subprocess.run")
     @patch.object(jib, "create_dockerfile")
     @patch.object(jib, "check_claude_update", return_value=None)
-    def test_build_image_failure(self, mock_update, mock_create, mock_run, capsys, monkeypatch):
+    @patch.object(jib, "should_rebuild_image", return_value=(True, "test"))
+    @patch.object(jib, "compute_build_hash", return_value="testhash123")
+    def test_build_image_failure(self, mock_hash, mock_should, mock_update, mock_create, mock_run, capsys, monkeypatch):
         """Test Docker build failure."""
         mock_run.side_effect = subprocess.CalledProcessError(1, "docker build")
         monkeypatch.setenv("USER", "testuser")
@@ -476,3 +480,10 @@ class TestBuildImage:
 
         captured = capsys.readouterr()
         assert "build failed" in captured.err.lower()
+
+    @patch.object(jib, "should_rebuild_image", return_value=(False, "build hash matches"))
+    def test_build_image_skipped_when_hash_matches(self, mock_should):
+        """Test that build is skipped when hash matches."""
+        result = jib.build_image()
+        assert result is True
+        mock_should.assert_called_once()
