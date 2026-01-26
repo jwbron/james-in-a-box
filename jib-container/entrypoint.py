@@ -800,17 +800,21 @@ def setup_claude(config: Config, logger: Logger) -> None:
     os.chown(settings_file, config.runtime_uid, config.runtime_gid)
 
     # Create ~/.claude.json user state to skip onboarding prompts
-    user_state = {
-        "hasCompletedOnboarding": True,
-        "lastOnboardingVersion": "2.0.69",
-        "numStartups": 1,
-        "installMethod": "api_key",
-        "autoUpdates": False,
-    }
+    # Skip if file already exists (may be bind-mounted from host with different permissions)
     user_state_file = config.user_home / ".claude.json"
-    user_state_file.write_text(json.dumps(user_state, indent=2))
-    os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
-    user_state_file.chmod(0o600)
+    user_state_created = False
+    if not user_state_file.exists():
+        user_state = {
+            "hasCompletedOnboarding": True,
+            "lastOnboardingVersion": "2.0.69",
+            "numStartups": 1,
+            "installMethod": "api_key",
+            "autoUpdates": False,
+        }
+        user_state_file.write_text(json.dumps(user_state, indent=2))
+        os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
+        user_state_file.chmod(0o600)
+        user_state_created = True
 
     # Fix ownership
     chown_recursive(config.claude_dir, config.runtime_uid, config.runtime_gid)
@@ -820,7 +824,10 @@ def setup_claude(config: Config, logger: Logger) -> None:
     config.claude_dir.chmod(0o700)
 
     logger.success(f"Claude settings created: {settings_file}")
-    logger.success(f"Claude user state created: {user_state_file} (onboarding skipped)")
+    if user_state_created:
+        logger.success(f"Claude user state created: {user_state_file} (onboarding skipped)")
+    else:
+        logger.success(f"Claude user state exists: {user_state_file} (using host config)")
     if not config.quiet:
         print(json.dumps(settings, indent=2))
         print()
