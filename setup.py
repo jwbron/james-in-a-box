@@ -1509,7 +1509,9 @@ class MinimalSetup:
             existing_token = self.existing_secrets.get("GITHUB_TOKEN", "")
             self.logger.info(f"Current GitHub token: {self._mask_secret(existing_token)}")
             self.logger.info("Press Enter to keep existing, or enter new token.")
-            self.logger.info("Required permissions: Contents (R/W), Pull requests (R/W), Workflows (R)")
+            self.logger.info(
+                "Required permissions: Contents (R/W), Pull requests (R/W), Workflows (R)"
+            )
             self.logger.info("")
 
             new_token = self.prompter.prompt(
