@@ -183,30 +183,40 @@ subprocess.Popen(
 )
 ```
 
-### Lower Impact: Cache Docker Build
+### Lower Impact: Cache Docker Build (IMPLEMENTED)
 
-Ensure `build_image` only runs when needed:
-- Skip build if image exists and is up-to-date
-- Use buildkit with better caching
+Skip `docker build` entirely when nothing has changed:
+- Compute SHA256 hash of all build-affecting files (Dockerfile, entrypoint.py, scripts, shared modules)
+- Store hash as Docker image label (`org.jib.build-hash`)
+- On startup, compare current hash with stored hash
+- Skip build if hashes match (saves ~25 seconds)
+- Still check for Claude Code updates (force rebuild if update available)
 
 ## Implementation Priority
 
-| Priority | Change | Impact | Effort |
-|----------|--------|--------|--------|
-| 1 | Disable SELinux relabeling | ~65 seconds saved | Low |
-| 2 | Cache/skip image build | ~25 seconds saved | Low |
-| 3 | Async beads sync | ~300ms saved | Low |
-| 4 | Eliminate chown -R | ~100-500ms saved | Medium |
+| Priority | Change | Impact | Effort | Status |
+|----------|--------|--------|--------|--------|
+| 1 | Disable SELinux relabeling | ~65 seconds saved | Low | **DONE** |
+| 2 | Cache/skip image build | ~25 seconds saved | Low | **DONE** |
+| 3 | Async beads sync | ~300ms saved | Low | Pending |
+| 4 | Eliminate chown -R | ~100-500ms saved | Medium | Pending |
 
-## Files to Modify
+## Files Modified
 
 1. **`jib-container/jib`**
-   - Add `--security-opt label=disable` to docker run command
-   - Remove `:z` from all mount options
+   - Added `--security-opt label=disable` to docker run command (Priority 1)
+   - Removed `:z` from all mount options (Priority 1)
+   - Added `compute_build_hash()` to hash all build-affecting files (Priority 2)
+   - Added `get_image_build_hash()` to retrieve stored hash from image label (Priority 2)
+   - Added `should_rebuild_image()` to check if rebuild is needed (Priority 2)
+   - Modified `build_image()` to skip build when hash matches (Priority 2)
+   - Added `--label org.jib.build-hash=<hash>` to docker build command (Priority 2)
 
-2. **`jib-container/entrypoint.py`**
-   - Make beads sync async (optional)
-   - Consider lazy chown (only when UID mismatch)
+## Files to Modify (Remaining)
+
+1. **`jib-container/entrypoint.py`**
+   - Make beads sync async (Priority 3)
+   - Consider lazy chown (only when UID mismatch) (Priority 4)
 
 ## Testing Plan
 
