@@ -570,9 +570,11 @@ EOF
             esac
         done
 
-        # Check if gateway is available
+        # Gateway is required for fetch in incognito mode
+        # Fall back to direct git only if gateway unavailable (may fail without credentials)
         if ! check_gateway_available; then
-            # Fall back to direct git (may fail if credentials needed)
+            # Try direct git - will work if credentials are configured locally
+            # or fail with authentication error if in incognito mode
             exec "$REAL_GIT" "$@"
         fi
 
@@ -619,9 +621,11 @@ EOF
             esac
         done
 
-        # Check if gateway is available
+        # Gateway is required for ls-remote in incognito mode
+        # Fall back to direct git only if gateway unavailable (may fail without credentials)
         if ! check_gateway_available; then
-            # Fall back to direct git (may fail if credentials needed)
+            # Try direct git - will work if credentials are configured locally
+            # or fail with authentication error if in incognito mode
             exec "$REAL_GIT" "$@"
         fi
 

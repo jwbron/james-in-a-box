@@ -30,6 +30,7 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -357,6 +358,83 @@ def health_check():
     )
 
 
+# Allowed base paths for repo_path validation
+# These are the only directories where git operations are permitted
+ALLOWED_REPO_PATHS = [
+    "/home/jib/repos/",
+    "/home/jib/.jib-worktrees/",
+    "/repos/",  # Legacy path
+]
+
+
+def validate_repo_path(path: str) -> tuple[bool, str]:
+    """
+    Validate that repo_path is within allowed directories.
+
+    Prevents path traversal attacks by ensuring the resolved path
+    starts with an allowed prefix.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not path:
+        return False, "repo_path is required"
+
+    try:
+        # Resolve to absolute path, following symlinks
+        real_path = os.path.realpath(path)
+
+        # Check if path is within allowed directories
+        for allowed in ALLOWED_REPO_PATHS:
+            if real_path.startswith(allowed):
+                return True, ""
+
+        return False, f"repo_path must be within allowed directories: {ALLOWED_REPO_PATHS}"
+    except Exception as e:
+        return False, f"Invalid repo_path: {e}"
+
+
+# Git args that could be used for command injection or other attacks
+# These are blocked for fetch/ls-remote operations
+BLOCKED_GIT_ARGS = [
+    "--upload-pack",  # Can specify arbitrary command
+    "--exec",  # Can specify arbitrary command
+    "-u",  # Short for --upload-pack
+]
+
+
+def sanitize_git_args(args: list[str]) -> tuple[bool, str, list[str]]:
+    """
+    Sanitize git arguments, blocking potentially dangerous options.
+
+    Returns:
+        Tuple of (is_valid, error_message, sanitized_args)
+    """
+    if not args:
+        return True, "", []
+
+    sanitized = []
+    for arg in args:
+        # Check for blocked args (case-sensitive)
+        arg_lower = arg.lower()
+        blocked = False
+        for blocked_arg in BLOCKED_GIT_ARGS:
+            if arg_lower.startswith(blocked_arg.lower()):
+                blocked = True
+                break
+
+        if blocked:
+            return False, f"Blocked git argument: {arg}", []
+
+        # Ensure arg is a string (not a nested structure)
+        if not isinstance(arg, str):
+            return False, f"Invalid argument type: {type(arg)}", []
+
+        sanitized.append(arg)
+
+    return True, "", sanitized
+
+
 @app.route("/api/v1/git/push", methods=["POST"])
 @require_auth
 @require_rate_limit("git_push")
@@ -620,8 +698,30 @@ def git_fetch():
     if not repo_path:
         return make_error("Missing repo_path")
 
+    # Validate repo_path to prevent path traversal attacks
+    path_valid, path_error = validate_repo_path(repo_path)
+    if not path_valid:
+        audit_log(
+            "fetch_blocked",
+            "git_fetch",
+            success=False,
+            details={"repo_path": repo_path, "reason": path_error},
+        )
+        return make_error(path_error, status_code=403)
+
     if operation not in ("fetch", "ls-remote"):
         return make_error(f"Unsupported operation: {operation}")
+
+    # Sanitize extra args to block dangerous options
+    args_valid, args_error, sanitized_args = sanitize_git_args(extra_args)
+    if not args_valid:
+        audit_log(
+            "fetch_blocked",
+            "git_fetch",
+            success=False,
+            details={"reason": args_error},
+        )
+        return make_error(args_error, status_code=400)
 
     # Get remote URL to determine repo
     try:
@@ -663,11 +763,11 @@ def git_fetch():
             return make_error("GitHub token not available", status_code=503)
         token_str = token.token
 
-    # Build command
+    # Build command using sanitized args
     if operation == "fetch":
-        cmd_args = ["fetch", remote] + extra_args
+        cmd_args = ["fetch", remote] + sanitized_args
     else:  # ls-remote
-        cmd_args = ["ls-remote", remote] + extra_args
+        cmd_args = ["ls-remote", remote] + sanitized_args
 
     cmd = git_cmd(*cmd_args)
 
@@ -686,9 +786,10 @@ elif [[ "$1" == *"Password"* ]]; then
 fi
 """
 
+    # Create temp file for credential helper
+    # Use try/finally to ensure cleanup even on exceptions
+    credential_helper_path = None
     try:
-        import tempfile
-
         fd, credential_helper_path = tempfile.mkstemp(suffix=".sh", prefix="git-askpass-")
         try:
             os.fchmod(fd, 0o700)
@@ -707,9 +808,6 @@ fi
             env=env,
             check=False,
         )
-
-        # Clean up immediately
-        os.unlink(credential_helper_path)
 
         if result.returncode == 0:
             audit_log(
@@ -751,6 +849,13 @@ fi
         return make_error(f"{operation.capitalize()} timed out", status_code=504)
     except Exception as e:
         return make_error(f"{operation.capitalize()} failed: {e}", status_code=500)
+    finally:
+        # Always clean up credential helper file
+        if credential_helper_path and os.path.exists(credential_helper_path):
+            try:
+                os.unlink(credential_helper_path)
+            except OSError:
+                pass  # Best effort cleanup
 
 
 @app.route("/api/v1/gh/pr/create", methods=["POST"])
