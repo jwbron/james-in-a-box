@@ -1509,6 +1509,9 @@ class MinimalSetup:
             existing_token = self.existing_secrets.get("GITHUB_TOKEN", "")
             self.logger.info(f"Current GitHub token: {self._mask_secret(existing_token)}")
             self.logger.info("Press Enter to keep existing, or enter new token.")
+            self.logger.info(
+                "Required permissions: Contents (R/W), Pull requests (R/W), Workflows (R)"
+            )
             self.logger.info("")
 
             new_token = self.prompter.prompt(
@@ -1523,6 +1526,7 @@ class MinimalSetup:
             existing_readonly = self.existing_secrets.get("GITHUB_READONLY_TOKEN", "")
             if existing_readonly:
                 self.logger.info(f"Current read-only token: {self._mask_secret(existing_readonly)}")
+                self.logger.info("Required permissions: Contents (R), Pull requests (R)")
                 new_readonly = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...) [keep existing]",
                     validator=lambda t: None
@@ -1535,6 +1539,7 @@ class MinimalSetup:
             elif self.prompter.prompt_yes_no(
                 "Add a read-only token for monitoring external repos?", default=False
             ):
+                self.logger.info("Required permissions: Contents (R), Pull requests (R)")
                 readonly_token = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...)",
                     validator=lambda t: None
@@ -1543,6 +1548,9 @@ class MinimalSetup:
                 )
                 if readonly_token:
                     secrets["GITHUB_READONLY_TOKEN"] = readonly_token
+
+            # Prompt for incognito token (was missing in update mode)
+            self._prompt_incognito_token(secrets)
 
             return secrets
 
