@@ -159,7 +159,7 @@ generate_mounts_env() {
 
             # Mount .git directory at ~/.git-main/<repo> for worktree resolution
             if [ -d "$git_dir" ]; then
-                GIT_MOUNTS="${GIT_MOUNTS} -v ${git_dir}:${HOME}/.git-main/${repo_name}:ro,z"
+                GIT_MOUNTS="${GIT_MOUNTS} -v ${git_dir}:${HOME}/.git-main/${repo_name}:rw,z"
                 echo "  Will mount .git for: $repo_name"
             fi
         fi
