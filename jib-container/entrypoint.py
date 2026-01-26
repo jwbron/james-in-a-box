@@ -184,6 +184,11 @@ class Config:
 
     # LLM configuration
     llm_provider: str = field(default_factory=lambda: os.environ.get("LLM_PROVIDER", "anthropic"))
+    # Auth method: "api_key" (default) or "oauth"
+    # When oauth, don't warn about missing ANTHROPIC_API_KEY
+    anthropic_auth_method: str = field(
+        default_factory=lambda: os.environ.get("ANTHROPIC_AUTH_METHOD", "api_key")
+    )
     google_api_key: str | None = field(default_factory=lambda: os.environ.get("GOOGLE_API_KEY"))
     anthropic_api_key: str | None = field(
         default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY")
@@ -728,13 +733,16 @@ def setup_claude(config: Config, logger: Logger) -> None:
     (config.claude_dir / "hooks").mkdir(exist_ok=True)
     (config.user_home / ".config" / "claude-code").mkdir(parents=True, exist_ok=True)
 
-    # Check API key
+    # Check API key (only warn if using api_key auth method)
     if config.llm_provider == "anthropic":
         if config.anthropic_api_key:
             logger.success("Anthropic API key configured")
+        elif config.anthropic_auth_method == "oauth":
+            logger.success("Anthropic OAuth authentication enabled")
         else:
             logger.warn("ANTHROPIC_API_KEY not set")
             logger.info("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+            logger.info("  Or use OAuth: export ANTHROPIC_AUTH_METHOD=oauth")
 
     # Copy custom commands
     commands_src = Path("/usr/local/share/claude-commands")
@@ -919,14 +927,19 @@ def setup_router(config: Config, logger: Logger) -> None:
         logger.success("Router configured for OpenAI GPT-5.2")
 
     else:  # anthropic (default)
-        if not config.anthropic_api_key:
-            logger.warn("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY not set")
-        else:
+        if config.anthropic_api_key:
             logger.success("Anthropic API key configured")
+            logger.info("Using Claude Code directly with API key (no router)")
+        elif config.anthropic_auth_method == "oauth":
+            logger.success("Anthropic OAuth authentication enabled")
+            logger.info("Using Claude Code directly with OAuth (no router)")
+        else:
+            logger.warn("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY not set")
+            logger.info("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+            logger.info("  Or use OAuth: export ANTHROPIC_AUTH_METHOD=oauth")
 
-        # Claude Code natively supports Anthropic via ANTHROPIC_API_KEY env var
-        # No router needed - just ensure the env var is set
-        logger.info("Using Claude Code directly with API key (no router)")
+        # Claude Code natively supports Anthropic via API key or OAuth
+        # No router needed
         return
 
     # Write config
