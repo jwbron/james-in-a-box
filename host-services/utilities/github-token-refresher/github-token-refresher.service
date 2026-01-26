@@ -11,7 +11,7 @@ WorkingDirectory=%h/repos/james-in-a-box
 
 # Restart on failure (e.g., network not ready after wake from sleep)
 Restart=on-failure
-RestartSec=30
+RestartSec=5
 
 # Use the shared virtual environment
 # --once flag runs a single refresh cycle and exits (for timer-based execution)
