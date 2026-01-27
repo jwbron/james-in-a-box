@@ -63,7 +63,13 @@ RUN pip3 install --no-cache-dir \
     requests \
     claude-agent-sdk \
     cryptography \
-    PyJWT
+    PyJWT \
+    # Dev dependencies for linting and testing
+    ruff \
+    pytest \
+    # Required by gateway-sidecar (for running tests)
+    flask \
+    waitress
 
 # Install beads llm issue tracker
 # When running as root, the install script puts bd directly in /usr/local/bin
