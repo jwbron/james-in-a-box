@@ -6,12 +6,12 @@
 # This wrapper is placed in PATH and the real git is hidden to:
 # 1. Block remote URL modifications (URLs are managed by the host)
 # 2. Route git push through the gateway sidecar for policy enforcement
-# 3. Route git fetch/ls-remote through gateway for authentication (incognito mode)
+# 3. Route git fetch/ls-remote through gateway for authentication
 #
 # Security: Requires gateway sidecar - fails closed if gateway unavailable.
-# Authentication is handled by the gateway sidecar which holds the GITHUB_TOKEN.
-# In incognito mode, the container has no direct access to GitHub tokens,
-# so all network operations (push, fetch, ls-remote) go through the gateway.
+# The container does not have direct access to GitHub tokens - they are held
+# by the gateway sidecar. All network operations (push, fetch, ls-remote)
+# are routed through the gateway for authentication.
 #
 
 # Real git binary - relocated to hidden path to prevent direct access
@@ -570,11 +570,11 @@ EOF
             esac
         done
 
-        # Gateway is required for fetch in incognito mode
+        # Gateway provides authentication for fetch operations
         # Fall back to direct git only if gateway unavailable (may fail without credentials)
         if ! check_gateway_available; then
             # Try direct git - will work if credentials are configured locally
-            # or fail with authentication error if in incognito mode
+            # or fail with authentication error for private repos
             exec "$REAL_GIT" "$@"
         fi
 
@@ -621,11 +621,11 @@ EOF
             esac
         done
 
-        # Gateway is required for ls-remote in incognito mode
+        # Gateway provides authentication for ls-remote operations
         # Fall back to direct git only if gateway unavailable (may fail without credentials)
         if ! check_gateway_available; then
             # Try direct git - will work if credentials are configured locally
-            # or fail with authentication error if in incognito mode
+            # or fail with authentication error for private repos
             exec "$REAL_GIT" "$@"
         fi
 

@@ -667,9 +667,9 @@ def git_fetch():
     """
     Handle git fetch requests.
 
-    Required because in incognito mode, the container doesn't have direct
-    access to GitHub tokens. This endpoint provides authenticated fetch
-    for git fetch, git ls-remote, and similar read operations.
+    Required because the container doesn't have direct access to GitHub tokens
+    (they are held by the gateway sidecar). This endpoint provides authenticated
+    fetch for git fetch, git ls-remote, and similar read operations.
 
     Request body:
         {
