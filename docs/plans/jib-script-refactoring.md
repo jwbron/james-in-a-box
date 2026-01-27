@@ -32,6 +32,23 @@ jib-container/
     └── timing.py                # StartupTimer class (~80 lines)
 ```
 
+## Design Decisions
+
+### Why not a separate `types.py`?
+
+The `Config` class and other types are primarily used within their originating modules. While `Config` is imported by several modules, it contains both type definitions and runtime behavior (path resolution, platform detection). Splitting types would require separating data from behavior, adding complexity without clear benefit for a codebase of this size.
+
+**Decision**: Keep types with their behavior. If future refactoring reveals shared types that are pure data structures, extract them then.
+
+### Naming: `container_logging.py` vs `logging.py`
+
+Using `logging.py` would shadow Python's stdlib `logging` module, requiring careful import handling (`from __future__ import annotations` doesn't help with this). The explicit `container_logging.py` name:
+- Avoids any ambiguity with stdlib
+- Clearly describes the module's purpose
+- Requires no special import gymnastics
+
+**Decision**: Keep `container_logging.py`.
+
 ## Module Breakdown
 
 ### 1. `jib` (main entrypoint)
@@ -95,13 +112,13 @@ jib-container/
 - `get_installed_claude_version()`
 - `get_latest_claude_version()`
 - `check_claude_update()`
-- Build hash functions (`_hash_file`, `_hash_directory`, `compute_build_hash`, etc.)
+- Build hash functions (`_hash_file`, `_hash_directory`, `compute_build_hash`, `should_rebuild_image`)
 - `build_image()`
 - `image_exists()`
 - `ensure_jib_network()`
 
 **Dependencies**: `config.Config`, `output.*`, `timing._host_timer`
-**Exports**: All docker functions
+**Exports**: All docker functions including `should_rebuild_image`
 
 ### 7. `jib_lib/gateway.py`
 **Purpose**: Gateway sidecar container management
@@ -138,8 +155,10 @@ jib-container/
 - `create_worktrees()`
 - `cleanup_worktrees()`
 
-**Dependencies**: `config.Config`, `output.*`, `jib_config.get_local_repos`
+**Dependencies**: `config.Config`, `output.*`, external `jib_config` module (separate file at `jib-container/jib_config.py`)
 **Exports**: `get_default_branch`, `create_worktrees`, `cleanup_worktrees`
+
+**Note**: `jib_config` is an existing external module (`jib-container/jib_config.py`) that provides `get_local_repos()`. It is NOT part of this refactoring - it remains a separate file.
 
 ### 10. `jib_lib/setup_flow.py`
 **Purpose**: Interactive setup process
@@ -184,17 +203,25 @@ jib-container/
 - Create empty `__init__.py`
 
 ### Step 2: Extract modules (in dependency order)
+
+**Phase A** (can be done in a single PR - minimal cross-dependencies):
 1. `config.py` - no internal dependencies
 2. `output.py` - depends on config
 3. `timing.py` - no internal dependencies
 4. `auth.py` - depends on config, output
+
+**Phase B** (depends on Phase A):
 5. `docker.py` - depends on config, output, timing
 6. `gateway.py` - depends on config, output
 7. `container_logging.py` - depends on config, output
 8. `worktrees.py` - depends on config, output
+
+**Phase C** (depends on Phase B):
 9. `setup_flow.py` - depends on config, output, auth, docker
 10. `runtime.py` - depends on all above
 11. `cli.py` - depends on all above
+
+**Note**: Line counts are estimates based on visual inspection. Actual counts should be verified during extraction - the goal is reasonable module sizes, not exact line counts.
 
 ### Step 3: Update main `jib` script
 - Replace all code with minimal wrapper
@@ -238,8 +265,8 @@ The existing test file at `tests/jib/test_jib.py` loads the jib module using `So
 - `jib.build_image()`
 - `jib.create_dockerfile()`
 - `jib.check_claude_update()`
-- `jib.should_rebuild_image()`
-- `jib.compute_build_hash()`
+- `jib.should_rebuild_image()` (from `docker.py`)
+- `jib.compute_build_hash()` (from `docker.py`)
 
 **Solution**: The main `jib` script will re-export all public symbols from `jib_lib` so that `SourceFileLoader("jib", ...)` continues to work:
 
