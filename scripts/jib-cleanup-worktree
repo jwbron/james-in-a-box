@@ -1,0 +1,121 @@
+#!/bin/bash
+# Restore gitdir and commondir files from backups after container crash
+#
+# When containers exit normally, cleanup_on_exit() in entrypoint.py restores
+# these files. But if a container crashes or is killed, the backup files
+# may be left behind. This script restores them.
+#
+# Usage: jib-cleanup-worktree [--dry-run]
+#
+# The script scans all worktree admin directories for *.host-backup files
+# and restores them.
+
+set -euo pipefail
+
+DRY_RUN=false
+VERBOSE=false
+
+usage() {
+    echo "Usage: jib-cleanup-worktree [OPTIONS]"
+    echo ""
+    echo "Restore gitdir and commondir files from backups after container crash."
+    echo ""
+    echo "Options:"
+    echo "  --dry-run    Show what would be restored without making changes"
+    echo "  --verbose    Show detailed output"
+    echo "  --help       Show this help message"
+    echo ""
+    echo "This script looks for backup files in:"
+    echo "  ~/.git/*/worktrees/*/*.host-backup"
+    echo ""
+    echo "These backups are created when containers start and should be"
+    echo "cleaned up when containers exit. If a container crashes, run"
+    echo "this script to restore the original files."
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --verbose|-v)
+            VERBOSE=true
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Function to restore a backup file
+restore_backup() {
+    local backup="$1"
+    local target="${backup%.host-backup}"
+    local worktree_dir=$(dirname "$backup")
+    local worktree_name=$(basename "$worktree_dir")
+    local file_type=$(basename "$target")
+
+    if $VERBOSE || $DRY_RUN; then
+        echo "Found backup: $backup"
+        echo "  Worktree: $worktree_name"
+        echo "  Target: $target"
+        if [[ -f "$target" ]]; then
+            echo "  Current $file_type content: $(cat "$target")"
+        fi
+        echo "  Backup content: $(cat "$backup")"
+    fi
+
+    if $DRY_RUN; then
+        echo "  Would restore: $target"
+        echo ""
+    else
+        cp "$backup" "$target"
+        rm "$backup"
+        echo "Restored: $target (worktree: $worktree_name)"
+    fi
+}
+
+# Find all backup files
+# Pattern: ~/.git/<repo>/worktrees/<worktree>/*.host-backup
+# or for repos that use .git as a directory: <repo>/.git/worktrees/<worktree>/*.host-backup
+found_any=false
+
+# Use nullglob to handle no matches gracefully
+shopt -s nullglob
+
+# Look for gitdir.host-backup files
+for backup in ~/.git/*/worktrees/*/gitdir.host-backup ~/repos/*/.git/worktrees/*/gitdir.host-backup; do
+    [[ -f "$backup" ]] || continue
+    found_any=true
+    restore_backup "$backup"
+done
+
+# Look for commondir.host-backup files
+for backup in ~/.git/*/worktrees/*/commondir.host-backup ~/repos/*/.git/worktrees/*/commondir.host-backup; do
+    [[ -f "$backup" ]] || continue
+    found_any=true
+    restore_backup "$backup"
+done
+
+shopt -u nullglob
+
+if ! $found_any; then
+    if $VERBOSE; then
+        echo "No backup files found - nothing to clean up."
+    fi
+    exit 0
+fi
+
+if $DRY_RUN; then
+    echo ""
+    echo "Dry run complete. Run without --dry-run to apply changes."
+fi

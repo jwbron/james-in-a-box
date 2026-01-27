@@ -45,10 +45,16 @@ def _setup_git_isolation_mounts(
 
     This implements the Container Worktree Isolation ADR by mounting:
     1. Container's worktree admin dir only (rw) - isolates git state
-    2. Container's local objects directory (rw) - for new commits
-    3. Shared objects directory (ro) - via alternates
-    4. Shared refs directory (ro) - visible refs
-    5. Common git directory (ro) - for commondir resolution
+    2. Shared objects directory (rw) - for creating commits
+    3. Shared refs directory (rw) - for updating branch pointers
+    4. Packed refs file (rw) - git stores refs both as loose files and packed-refs
+    5. Config file (ro) - shared configuration
+    6. Hooks directory (ro) - shared hooks
+
+    Key design decisions:
+    - No alternates: Objects are mounted directly (rw) for simplicity
+    - All shared git components mount under /home/jib/.git-common/{repo}/
+    - commondir in worktree admin points to this location
 
     Args:
         worktrees: Dict of repo_name -> {"worktree": path, "source": path}
@@ -110,35 +116,50 @@ def _setup_git_isolation_mounts(
                 if not quiet:
                     print(f"  • ~/.git-admin/{repo_name} (worktree admin, isolated)")
 
-            # 2. Mount container's local objects directory (rw)
-            local_objects_path = Config.LOCAL_OBJECTS_BASE / container_id / repo_name
-            local_objects_path.mkdir(parents=True, exist_ok=True)
-            mount_args.extend(
-                ["-v", f"{local_objects_path}:/home/jib/.git-local-objects/{repo_name}:rw"]
-            )
-            if not quiet:
-                print(f"  • ~/.git-local-objects/{repo_name} (local objects, writable)")
-
-            # 3. Mount shared objects directory (ro)
+            # 2. Mount shared objects directory (rw) - for creating commits
             shared_objects_path = main_git_path / "objects"
             if shared_objects_path.is_dir():
                 mount_args.extend(
-                    ["-v", f"{shared_objects_path}:/home/jib/.git-objects/{repo_name}:ro"]
+                    ["-v", f"{shared_objects_path}:/home/jib/.git-common/{repo_name}/objects:rw"]
                 )
                 if not quiet:
-                    print(f"  • ~/.git-objects/{repo_name} (shared objects, read-only)")
+                    print(f"  • ~/.git-common/{repo_name}/objects (shared objects, writable)")
 
-            # 4. Mount shared refs directory (ro)
+            # 3. Mount shared refs directory (rw) - for updating branch pointers
             shared_refs_path = main_git_path / "refs"
             if shared_refs_path.is_dir():
-                mount_args.extend(["-v", f"{shared_refs_path}:/home/jib/.git-refs/{repo_name}:ro"])
+                mount_args.extend(
+                    ["-v", f"{shared_refs_path}:/home/jib/.git-common/{repo_name}/refs:rw"]
+                )
                 if not quiet:
-                    print(f"  • ~/.git-refs/{repo_name} (shared refs, read-only)")
+                    print(f"  • ~/.git-common/{repo_name}/refs (shared refs, writable)")
 
-            # 5. Mount common git directory for commondir resolution (ro)
-            mount_args.extend(["-v", f"{main_git_path}:/home/jib/.git-common/{repo_name}:ro"])
-            if not quiet:
-                print(f"  • ~/.git-common/{repo_name} (common git dir, read-only)")
+            # 4. Mount packed-refs file (rw) - git stores refs both as loose files and packed
+            packed_refs_path = main_git_path / "packed-refs"
+            if packed_refs_path.exists():
+                mount_args.extend(
+                    ["-v", f"{packed_refs_path}:/home/jib/.git-common/{repo_name}/packed-refs:rw"]
+                )
+                if not quiet:
+                    print(f"  • ~/.git-common/{repo_name}/packed-refs (packed refs, writable)")
+
+            # 5. Mount config file (ro) - shared configuration
+            config_path = main_git_path / "config"
+            if config_path.exists():
+                mount_args.extend(
+                    ["-v", f"{config_path}:/home/jib/.git-common/{repo_name}/config:ro"]
+                )
+                if not quiet:
+                    print(f"  • ~/.git-common/{repo_name}/config (config, read-only)")
+
+            # 6. Mount hooks directory (ro) - shared hooks
+            hooks_path = main_git_path / "hooks"
+            if hooks_path.is_dir():
+                mount_args.extend(
+                    ["-v", f"{hooks_path}:/home/jib/.git-common/{repo_name}/hooks:ro"]
+                )
+                if not quiet:
+                    print(f"  • ~/.git-common/{repo_name}/hooks (hooks, read-only)")
 
 
 def run_claude() -> bool:
