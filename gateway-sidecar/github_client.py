@@ -182,11 +182,7 @@ def is_command_readonly(args: list[str]) -> bool:
     """
     cmd_str = " ".join(args[:2]) if len(args) >= 2 else args[0] if args else ""
 
-    for readonly in READONLY_GH_COMMANDS:
-        if cmd_str.startswith(readonly):
-            return True
-
-    return False
+    return any(cmd_str.startswith(readonly) for readonly in READONLY_GH_COMMANDS)
 
 
 @dataclass

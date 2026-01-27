@@ -12,17 +12,20 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 # Add shared directory to path for jib_logging
 _shared_path = Path(__file__).parent.parent.parent / "shared"
 if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
 from jib_logging import get_logger
 
+
 # Import repo_config for auth mode support
 _config_path = Path(__file__).parent.parent / "config"
 if _config_path.exists() and str(_config_path) not in sys.path:
     sys.path.insert(0, str(_config_path))
 from repo_config import get_auth_mode
+
 
 # Import using try/except for both module and standalone script mode
 try:
@@ -229,9 +232,7 @@ def validate_git_args(operation: str, args: list[str]) -> tuple[bool, str, list[
         normalized_flag = normalize_flag(arg)
 
         # Check for explicitly blocked flags first
-        flag_base = (
-            normalized_flag.split("=")[0] if "=" in normalized_flag else normalized_flag
-        )
+        flag_base = normalized_flag.split("=")[0] if "=" in normalized_flag else normalized_flag
         for blocked in BLOCKED_GIT_FLAGS:
             if flag_base.lower() == blocked.lower():
                 return False, f"Flag '{arg}' is not allowed for git {operation}", []
