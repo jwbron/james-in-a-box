@@ -10,7 +10,11 @@ Usage:
 """
 
 import argparse
+import json
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -115,10 +119,6 @@ def verify_config(run_health_checks: bool = False) -> bool:
 
 def run_api_health_checks(slack, github, jira, confluence):
     """Run actual API connectivity tests."""
-    import json
-    import time
-    import urllib.request
-
     print("\n" + "=" * 60)
     print(" HEALTH CHECKS (API Connectivity)")
     print("=" * 60)
@@ -260,9 +260,6 @@ def run_api_health_checks(slack, github, jira, confluence):
 
 def test_slack_app_token(app_token: str, timeout: float = 10.0) -> dict:
     """Test Slack app token for Socket Mode connectivity."""
-    import json
-    import urllib.request
-
     try:
         # Use apps.connections.open to verify app token
         req = urllib.request.Request(
