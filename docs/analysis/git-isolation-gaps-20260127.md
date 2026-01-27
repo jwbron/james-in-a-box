@@ -63,26 +63,26 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 
 ```bash
 # Working directory (rw) - where files are edited
--v ~/.jib-worktrees/${CONTAINER}/repo:/home/jib/repos/repo:rw
+-v ~/.jib-worktrees/${CONTAINER}/${REPO}:/home/jib/repos/${REPO}:rw
 
 # Worktree admin (rw) - ONLY this container's worktree
--v ~/.git/repo/worktrees/${WORKTREE}:/home/jib/.git-admin/repo:rw
+-v ~/.git/${REPO}/worktrees/${WORKTREE}:/home/jib/.git-admin/${REPO}:rw
 
 # Shared objects (rw) - for creating commits
--v ~/.git/repo/objects:/home/jib/.git-admin/objects:rw
+-v ~/.git/${REPO}/objects:/home/jib/.git-common/${REPO}/objects:rw
 
 # Shared refs (rw) - for updating branch pointers
--v ~/.git/repo/refs:/home/jib/.git-admin/refs:rw
+-v ~/.git/${REPO}/refs:/home/jib/.git-common/${REPO}/refs:rw
 
 # Packed refs (rw) - git stores refs both as loose files and packed-refs
--v ~/.git/repo/packed-refs:/home/jib/.git-admin/packed-refs:rw
+-v ~/.git/${REPO}/packed-refs:/home/jib/.git-common/${REPO}/packed-refs:rw
 
 # Config and hooks (ro) - shared configuration
--v ~/.git/repo/config:/home/jib/.git-admin/config:ro
--v ~/.git/repo/hooks:/home/jib/.git-admin/hooks:ro
+-v ~/.git/${REPO}/config:/home/jib/.git-common/${REPO}/config:ro
+-v ~/.git/${REPO}/hooks:/home/jib/.git-common/${REPO}/hooks:ro
 ```
 
-**Path convention:** All shared git directories are mounted under `/home/jib/.git-admin/` to match the `commondir` relative path resolution (`../..` from `/home/jib/.git-admin/repo`).
+**Path convention:** Worktree admin is mounted at `.git-admin/{repo}/`. Shared git components are mounted under `.git-common/{repo}/` to support multiple repositories. The `commondir` file uses an absolute path `/home/jib/.git-common/{repo}`.
 
 ### Why This Works
 

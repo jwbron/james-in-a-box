@@ -851,3 +851,83 @@ class TestHostWorktreeIntegration:
             text=True,
         )
         assert result.returncode == 0
+
+    def test_worktree_fails_without_commondir_restore(self, real_git_repo):
+        """Test that worktree FAILS if commondir points to non-existent container path.
+
+        This demonstrates WHY we need backup/restore for commondir:
+        - Container writes /home/jib/.git-common/repo to commondir
+        - After container exit, this path doesn't exist on host
+        - Git operations on worktree fail with "unable to read commondir"
+
+        The backup/restore mechanism in entrypoint.py prevents this.
+        """
+        git_dir = real_git_repo["git_dir"]
+        worktree_name = real_git_repo["worktree_path"].name
+        admin_dir = git_dir / "worktrees" / worktree_name
+
+        # Save original commondir for cleanup
+        original_commondir = (admin_dir / "commondir").read_text()
+
+        try:
+            # Simulate container exit WITHOUT restore (crash scenario)
+            (admin_dir / "commondir").write_text("/home/jib/.git-common/test-repo\n")
+
+            # Worktree operations should FAIL because commondir path doesn't exist
+            result = subprocess.run(
+                ["git", "status"],
+                cwd=real_git_repo["worktree_path"],
+                capture_output=True,
+                text=True,
+            )
+
+            # This SHOULD fail - that's the bug we're protecting against
+            assert result.returncode != 0, (
+                "Expected git status to fail with invalid commondir, "
+                "but it succeeded. This test verifies the need for backup/restore."
+            )
+            assert "commondir" in result.stderr.lower() or "fatal" in result.stderr.lower()
+
+        finally:
+            # Always restore for test cleanup
+            (admin_dir / "commondir").write_text(original_commondir)
+
+    def test_commondir_backup_restore_cycle(self, real_git_repo):
+        """Test complete backup/restore cycle for commondir (same as gitdir test)."""
+        git_dir = real_git_repo["git_dir"]
+        worktree_name = real_git_repo["worktree_path"].name
+        admin_dir = git_dir / "worktrees" / worktree_name
+
+        # Save original commondir content
+        original_commondir = (admin_dir / "commondir").read_text()
+
+        # Simulate container startup: backup and rewrite
+        backup_path = admin_dir / "commondir.host-backup"
+        shutil.copy2(admin_dir / "commondir", backup_path)
+        (admin_dir / "commondir").write_text("/home/jib/.git-common/test-repo\n")
+
+        # Main repo should still work
+        result = subprocess.run(
+            ["git", "status"],
+            cwd=real_git_repo["main_repo"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+
+        # Simulate container exit: restore
+        shutil.copy2(backup_path, admin_dir / "commondir")
+        backup_path.unlink()
+
+        # Verify commondir is restored
+        assert (admin_dir / "commondir").read_text() == original_commondir
+        assert not backup_path.exists()
+
+        # Verify worktree operations work after restore
+        result = subprocess.run(
+            ["git", "status"],
+            cwd=real_git_repo["worktree_path"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
