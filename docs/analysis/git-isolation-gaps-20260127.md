@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-The Container Worktree Isolation architecture (ADR in PR #571) is partially implemented. The mount structure is in place, but critical git configuration inside containers is missing, preventing local commits. This document identifies the gaps and proposes solutions.
+The Container Worktree Isolation architecture (ADR in PR #571) is partially implemented. The mount structure is in place, but critical git configuration inside containers is missing, preventing local commits. Additionally, container path writes leak back to the host, breaking git commands on the host after containers exit. This document identifies the gaps and proposes solutions.
 
 ## Observed Behavior
 
@@ -20,6 +20,15 @@ Read-only file system
 ```
 
 **Root Cause:** Git attempts to write ref locks to the read-only `.git-common` mount instead of the writable worktree admin directory.
+
+When running git commands on the host after a container has run:
+
+```
+$ git branch
+fatal: Invalid path '/home/jib': No such file or directory
+```
+
+**Root Cause:** Container writes container-specific paths (`/home/jib/...`) to the host's worktree metadata files, which persist after container exit.
 
 ## Current Mount Structure (Working)
 
@@ -65,7 +74,39 @@ The ADR's description of how this should work is incomplete:
 - Branch locks are in worktree admin dir ✗ (git tries `.git-common/refs/`)
 - No ref redirection mechanism implemented
 
-### 3. Implementation Plan Unchecked
+### 3. Host-Side Path Leakage (Breaks Host Git)
+
+**Problem:** After a container runs, git commands fail on the host:
+
+```
+$ git branch
+fatal: Invalid path '/home/jib': No such file or directory
+```
+
+**Root Cause:** The container's `entrypoint.py` (`setup_worktrees()` function, lines 564-694) writes container paths to the host's worktree metadata files. These files are in `.git/worktrees/<name>/` which is mounted read-write from the host.
+
+The following files get corrupted with container paths:
+
+| File | Container writes | Should be |
+|------|------------------|-----------|
+| `commondir` | `/home/jib/.git-common/repo` | `../..` or absolute host path |
+| `config` | `worktree = /home/jib/repos/repo` | Host worktree path |
+| `gitdir` | `/home/jib/.git-admin/repo` | Host `.git` file path |
+
+**Why this persists:** The worktree admin directory is mounted `rw` so the container can update `HEAD`, `index`, etc. But the path updates leak back to the host and persist after the container exits.
+
+**Workaround:** Remove the corrupted worktree metadata:
+```bash
+rm -rf .git/worktrees/<worktree-name>
+```
+
+**Fix Options:**
+1. **Make worktree admin read-only** - but this breaks legitimate writes (HEAD, index)
+2. **Use relative paths** - `commondir: ../..` works from both perspectives
+3. **Restore paths on container exit** - add cleanup in signal handler
+4. **Copy instead of mount** - fully isolate the worktree admin directory
+
+### 4. Implementation Plan Unchecked
 
 The ADR's implementation plan shows all tasks unchecked:
 
@@ -82,6 +123,7 @@ Yet the ADR status says "Implemented".
 1. **Containers cannot make local commits** - all commits must go through GitHub API
 2. **Workaround required** - using `gh api` contents endpoint works but is slow
 3. **Gateway push won't work** - even if we could commit locally, push would fail without object sync
+4. **Host git breaks after container runs** - container paths leak into host worktree metadata, requiring manual cleanup
 
 ## Proposed Solutions
 
@@ -141,6 +183,7 @@ Document that containers should use GitHub API for commits:
 3. [ ] Object visibility after gateway sync
 4. [ ] Concurrent commits from multiple containers
 5. [ ] Push after local commit
+6. [ ] Host git commands work after container exit (no path leakage)
 
 ## References
 
