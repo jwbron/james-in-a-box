@@ -26,6 +26,7 @@ def is_gateway_running() -> bool:
         ["docker", "container", "inspect", "-f", "{{.State.Running}}", GATEWAY_CONTAINER_NAME],
         capture_output=True,
         text=True,
+        check=False,
     )
     return result.returncode == 0 and result.stdout.strip() == "true"
 
@@ -34,7 +35,7 @@ def gateway_image_exists() -> bool:
     """Check if gateway Docker image exists."""
     return (
         subprocess.run(
-            ["docker", "image", "inspect", GATEWAY_IMAGE_NAME], capture_output=True
+            ["docker", "image", "inspect", GATEWAY_IMAGE_NAME], capture_output=True, check=False
         ).returncode
         == 0
     )
@@ -63,6 +64,7 @@ def build_gateway_image() -> bool:
         ["docker", "build", "-t", GATEWAY_IMAGE_NAME, "-f", str(dockerfile_path), str(repo_root)],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if result.returncode == 0:
@@ -122,6 +124,7 @@ def start_gateway_container() -> bool:
         ["systemctl", "--user", "is-active", "gateway-sidecar.service"],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if service_result.returncode != 0:

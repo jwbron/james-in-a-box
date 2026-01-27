@@ -225,7 +225,11 @@ def save_container_logs(
     try:
         # Get container logs using docker logs command
         result = subprocess.run(
-            ["docker", "logs", container_id], capture_output=True, text=True, timeout=30
+            ["docker", "logs", container_id],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
         )
 
         # Check log size before writing to prevent disk space exhaustion

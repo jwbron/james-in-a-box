@@ -23,7 +23,7 @@ BUILD_HASH_LABEL = "org.jib.build-hash"
 
 def check_docker_permissions() -> bool:
     """Check if user has permission to run Docker commands"""
-    result = subprocess.run(["docker", "ps"], capture_output=True, text=True)
+    result = subprocess.run(["docker", "ps"], capture_output=True, text=True, check=False)
 
     if result.returncode == 0:
         return True
@@ -55,7 +55,7 @@ def check_docker() -> bool:
 
     platform_name = get_platform()
 
-    if subprocess.run(["which", "docker"], capture_output=True).returncode != 0:
+    if subprocess.run(["which", "docker"], capture_output=True, check=False).returncode != 0:
         error("Docker is not installed.")
 
         if platform_name == "macos":
@@ -356,6 +356,7 @@ def get_installed_claude_version() -> str | None:
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
         if result.returncode == 0 and result.stdout.strip():
             # Version output is like "claude 2.1.7" - extract just the number
@@ -542,6 +543,7 @@ def get_image_build_hash() -> str | None:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         if result.returncode == 0:
             hash_value = result.stdout.strip()
@@ -635,7 +637,7 @@ def build_image() -> bool:
         # In quiet mode, suppress Docker build output
         if quiet:
             cmd.insert(2, "--quiet")
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if result.returncode != 0:
                 # Show error output if build failed
                 error("Docker build failed")
@@ -655,7 +657,7 @@ def image_exists() -> bool:
     """Check if Docker image exists"""
     return (
         subprocess.run(
-            ["docker", "image", "inspect", Config.IMAGE_NAME], capture_output=True
+            ["docker", "image", "inspect", Config.IMAGE_NAME], capture_output=True, check=False
         ).returncode
         == 0
     )
@@ -668,13 +670,18 @@ def ensure_jib_network() -> bool:
         True if network exists or was created, False on failure
     """
     # Check if network exists
-    result = subprocess.run(["docker", "network", "inspect", JIB_NETWORK_NAME], capture_output=True)
+    result = subprocess.run(
+        ["docker", "network", "inspect", JIB_NETWORK_NAME], capture_output=True, check=False
+    )
     if result.returncode == 0:
         return True
 
     # Create the network
     result = subprocess.run(
-        ["docker", "network", "create", JIB_NETWORK_NAME], capture_output=True, text=True
+        ["docker", "network", "create", JIB_NETWORK_NAME],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode == 0:
         info(f"Created Docker network: {JIB_NETWORK_NAME}")

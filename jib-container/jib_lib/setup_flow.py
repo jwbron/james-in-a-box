@@ -55,7 +55,9 @@ def run_setup_script() -> bool:
 
     try:
         # Run setup.py in its directory
-        result = subprocess.run([sys.executable, str(setup_script)], cwd=setup_script.parent)
+        result = subprocess.run(
+            [sys.executable, str(setup_script)], cwd=setup_script.parent, check=False
+        )
         return result.returncode == 0
     except Exception as e:
         error(f"Failed to run setup.py: {e}")
@@ -85,7 +87,10 @@ def check_host_setup() -> bool:
     # Check if Slack services are installed
     for service in slack_services:
         result = subprocess.run(
-            ["systemctl", "--user", "list-unit-files", service], capture_output=True, text=True
+            ["systemctl", "--user", "list-unit-files", service],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if result.returncode != 0 or service not in result.stdout:
             issues_found.append(f"Service not installed: {service}")
@@ -97,6 +102,7 @@ def check_host_setup() -> bool:
         ["systemctl", "--user", "list-unit-files", "gateway-sidecar.service"],
         capture_output=True,
         text=True,
+        check=False,
     )
     gateway_systemd_ok = (
         gateway_systemd_result.returncode == 0

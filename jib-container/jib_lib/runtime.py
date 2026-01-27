@@ -217,6 +217,7 @@ def run_claude() -> bool:
             ["docker", "rm", "-f", container_id],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            check=False,
         )
 
     # Build docker run command on jib-network (shared network with gateway sidecar)
@@ -302,7 +303,7 @@ def run_claude() -> bool:
 
     # Run container
     try:
-        subprocess.run(cmd)
+        subprocess.run(cmd, check=False)
         return True
     except KeyboardInterrupt:
         print()
@@ -549,27 +550,34 @@ def exec_in_new_container(
                     ["docker", "rm", "-f", container_id],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    check=False,
                 )
             except Exception as e:
                 error(f"Failed to remove container: {e}")
                 # Don't re-raise - original error is more important
 
     try:
-        result = subprocess.run(cmd, timeout=timeout_seconds)
+        result = subprocess.run(cmd, timeout=timeout_seconds, check=False)
         run_success = result.returncode == 0
     except subprocess.TimeoutExpired:
         print()
         error(f"Container execution timed out after {timeout_minutes} minutes")
         # Kill the container if it's still running
         subprocess.run(
-            ["docker", "kill", container_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ["docker", "kill", container_id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
         )
     except KeyboardInterrupt:
         print()
         warn("Interrupted by user")
         # Kill container on interrupt
         subprocess.run(
-            ["docker", "kill", container_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ["docker", "kill", container_id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
         )
     except Exception as e:
         error(f"Failed to run container: {e}")

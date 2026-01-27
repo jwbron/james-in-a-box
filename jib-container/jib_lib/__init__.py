@@ -7,103 +7,198 @@ All public symbols are re-exported here for backward compatibility
 with tests that use SourceFileLoader to import the jib module.
 """
 
-# Config module exports
 # Auth module exports
 from .auth import (
-    get_anthropic_api_key,
-    get_anthropic_auth_method,
-    get_github_app_token,
-    get_github_readonly_token,
-    get_github_token,
-    write_github_token_file,
+    get_anthropic_api_key as get_anthropic_api_key,
+)
+from .auth import (
+    get_anthropic_auth_method as get_anthropic_auth_method,
+)
+from .auth import (
+    get_github_app_token as get_github_app_token,
+)
+from .auth import (
+    get_github_readonly_token as get_github_readonly_token,
+)
+from .auth import (
+    get_github_token as get_github_token,
+)
+from .auth import (
+    write_github_token_file as write_github_token_file,
 )
 
 # CLI module exports
-from .cli import main
+from .cli import main as main
+
+# Config module exports
 from .config import (
-    GATEWAY_CONTAINER_NAME,
-    GATEWAY_IMAGE_NAME,
-    GATEWAY_PORT,
-    JIB_NETWORK_NAME,
-    Colors,
-    Config,
-    get_local_repos,
-    get_platform,
+    GATEWAY_CONTAINER_NAME as GATEWAY_CONTAINER_NAME,
+)
+from .config import (
+    GATEWAY_IMAGE_NAME as GATEWAY_IMAGE_NAME,
+)
+from .config import (
+    GATEWAY_PORT as GATEWAY_PORT,
+)
+from .config import (
+    JIB_NETWORK_NAME as JIB_NETWORK_NAME,
+)
+from .config import (
+    Colors as Colors,
+)
+from .config import (
+    Config as Config,
+)
+from .config import (
+    get_local_repos as get_local_repos,
+)
+from .config import (
+    get_platform as get_platform,
 )
 
 # Container logging module exports
 from .container_logging import (
-    CONTAINER_LOGS_DIR,
-    extract_task_id_from_command,
-    extract_thread_ts_from_task_file,
-    generate_container_id,
-    get_docker_log_config,
-    save_container_logs,
-    update_log_index,
+    CONTAINER_LOGS_DIR as CONTAINER_LOGS_DIR,
+)
+from .container_logging import (
+    extract_task_id_from_command as extract_task_id_from_command,
+)
+from .container_logging import (
+    extract_thread_ts_from_task_file as extract_thread_ts_from_task_file,
+)
+from .container_logging import (
+    generate_container_id as generate_container_id,
+)
+from .container_logging import (
+    get_docker_log_config as get_docker_log_config,
+)
+from .container_logging import (
+    save_container_logs as save_container_logs,
+)
+from .container_logging import (
+    update_log_index as update_log_index,
 )
 
 # Docker module exports
 from .docker import (
-    BUILD_HASH_LABEL,
-    build_image,
-    check_claude_update,
-    check_docker,
-    check_docker_permissions,
-    compute_build_hash,
-    create_dockerfile,
-    ensure_jib_network,
-    get_installed_claude_version,
-    get_latest_claude_version,
-    image_exists,
-    is_dangerous_dir,
-    should_rebuild_image,
+    BUILD_HASH_LABEL as BUILD_HASH_LABEL,
+)
+from .docker import (
+    build_image as build_image,
+)
+from .docker import (
+    check_claude_update as check_claude_update,
+)
+from .docker import (
+    check_docker as check_docker,
+)
+from .docker import (
+    check_docker_permissions as check_docker_permissions,
+)
+from .docker import (
+    compute_build_hash as compute_build_hash,
+)
+from .docker import (
+    create_dockerfile as create_dockerfile,
+)
+from .docker import (
+    ensure_jib_network as ensure_jib_network,
+)
+from .docker import (
+    get_installed_claude_version as get_installed_claude_version,
+)
+from .docker import (
+    get_latest_claude_version as get_latest_claude_version,
+)
+from .docker import (
+    image_exists as image_exists,
+)
+from .docker import (
+    is_dangerous_dir as is_dangerous_dir,
+)
+from .docker import (
+    should_rebuild_image as should_rebuild_image,
 )
 
 # Gateway module exports
 from .gateway import (
-    build_gateway_image,
-    gateway_image_exists,
-    is_gateway_running,
-    start_gateway_container,
-    wait_for_gateway_health,
+    build_gateway_image as build_gateway_image,
+)
+from .gateway import (
+    gateway_image_exists as gateway_image_exists,
+)
+from .gateway import (
+    is_gateway_running as is_gateway_running,
+)
+from .gateway import (
+    start_gateway_container as start_gateway_container,
+)
+from .gateway import (
+    wait_for_gateway_health as wait_for_gateway_health,
 )
 
 # Output module exports
 from .output import (
-    error,
-    get_quiet_mode,
-    info,
-    set_quiet_mode,
-    success,
-    warn,
+    error as error,
+)
+from .output import (
+    get_quiet_mode as get_quiet_mode,
+)
+from .output import (
+    info as info,
+)
+from .output import (
+    set_quiet_mode as set_quiet_mode,
+)
+from .output import (
+    success as success,
+)
+from .output import (
+    warn as warn,
 )
 
 # Runtime module exports
 from .runtime import (
-    exec_in_new_container,
-    run_claude,
+    exec_in_new_container as exec_in_new_container,
+)
+from .runtime import (
+    run_claude as run_claude,
 )
 
 # Setup flow module exports
 from .setup_flow import (
-    add_standard_mounts,
-    check_host_setup,
-    get_setup_script_path,
-    run_setup_script,
-    setup,
+    add_standard_mounts as add_standard_mounts,
+)
+from .setup_flow import (
+    check_host_setup as check_host_setup,
+)
+from .setup_flow import (
+    get_setup_script_path as get_setup_script_path,
+)
+from .setup_flow import (
+    run_setup_script as run_setup_script,
+)
+from .setup_flow import (
+    setup as setup,
 )
 
 # Timing module exports
 from .timing import (
-    StartupTimer,
-    _host_timer,
+    StartupTimer as StartupTimer,
+)
+from .timing import (
+    _host_timer as _host_timer,
 )
 
 # Worktrees module exports
 from .worktrees import (
-    cleanup_worktrees,
-    create_worktrees,
-    get_default_branch,
+    cleanup_worktrees as cleanup_worktrees,
+)
+from .worktrees import (
+    create_worktrees as create_worktrees,
+)
+from .worktrees import (
+    get_default_branch as get_default_branch,
 )
 
 

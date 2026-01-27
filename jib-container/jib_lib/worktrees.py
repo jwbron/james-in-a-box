@@ -4,6 +4,7 @@ This module handles creating and cleaning up git worktrees
 for container isolation.
 """
 
+import contextlib
 import errno
 import fcntl
 import os
@@ -31,6 +32,7 @@ def get_default_branch(repo_path: Path) -> str:
         cwd=repo_path,
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
@@ -41,6 +43,7 @@ def get_default_branch(repo_path: Path) -> str:
         cwd=repo_path,
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.returncode == 0 and result.stdout.strip():
         # Format: refs/remotes/origin/main -> main
@@ -53,6 +56,7 @@ def get_default_branch(repo_path: Path) -> str:
             cwd=repo_path,
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode == 0:
             return branch
@@ -200,6 +204,7 @@ def create_worktrees(container_id: str) -> dict:
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
+                check=False,
             )
 
             if result.returncode == 0:
@@ -286,7 +291,7 @@ def cleanup_worktrees(container_id: str) -> None:
 
     # Also run git worktree prune as a fallback for any we missed
     for repo_path in repos_to_clean:
-        try:
+        with contextlib.suppress(Exception):
             subprocess.run(
                 ["git", "worktree", "prune", "-v"],
                 cwd=repo_path,
@@ -294,8 +299,6 @@ def cleanup_worktrees(container_id: str) -> None:
                 text=True,
                 check=False,  # Don't fail if prune has issues
             )
-        except Exception:
-            pass
 
     if admin_dirs_removed > 0 and not quiet:
         info(f"  ✓ Removed {admin_dirs_removed} worktree admin dir(s)")

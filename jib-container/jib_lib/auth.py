@@ -164,6 +164,7 @@ def get_github_app_token() -> str | None:
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
 
         if result.returncode == 0:
