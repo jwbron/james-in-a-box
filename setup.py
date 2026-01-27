@@ -2382,6 +2382,7 @@ def main():
             result = subprocess.run(
                 [sys.executable, str(validate_script)],
                 capture_output=False,
+                check=False,
             )
             if result.returncode != 0:
                 logger.warning("Configuration validation found issues (see above)")

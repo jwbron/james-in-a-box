@@ -141,7 +141,7 @@ def run_api_health_checks(slack, github, jira, confluence):
 
     # Test app token (xapp-) for Socket Mode
     if slack.app_token:
-        result = test_slack_app_token(slack.app_token)
+        result = check_slack_app_token(slack.app_token)
         if result["healthy"]:
             print("  ✓ App token (xapp-): Valid for Socket Mode")
         else:
@@ -258,7 +258,7 @@ def run_api_health_checks(slack, github, jira, confluence):
         print(f"  ⚠ Not configured (missing: {', '.join(missing)})")
 
 
-def test_slack_app_token(app_token: str, timeout: float = 10.0) -> dict:
+def check_slack_app_token(app_token: str, timeout: float = 10.0) -> dict:
     """Test Slack app token for Socket Mode connectivity."""
     try:
         # Use apps.connections.open to verify app token
