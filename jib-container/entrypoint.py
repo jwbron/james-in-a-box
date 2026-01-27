@@ -646,10 +646,16 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
                 # This is done via the worktree admin's config
                 worktree_config = target_path / "config"
                 try:
-                    run_cmd_with_retry([
-                        "git", "config", "-f", str(worktree_config),
-                        "core.worktree", str(repo_dir)
-                    ])
+                    run_cmd_with_retry(
+                        [
+                            "git",
+                            "config",
+                            "-f",
+                            str(worktree_config),
+                            "core.worktree",
+                            str(repo_dir),
+                        ]
+                    )
                 except Exception:
                     pass  # Non-fatal, git usually figures this out
 
