@@ -20,6 +20,20 @@ from .output import error, get_quiet_mode, info, success, warn
 # Label used to store build content hash on Docker image
 BUILD_HASH_LABEL = "org.jib.build-hash"
 
+# Global force rebuild flag (set by --rebuild)
+_force_rebuild = False
+
+
+def set_force_rebuild(force: bool) -> None:
+    """Set the global force rebuild flag."""
+    global _force_rebuild
+    _force_rebuild = force
+
+
+def get_force_rebuild() -> bool:
+    """Get the current force rebuild setting."""
+    return _force_rebuild
+
 
 def check_docker_permissions() -> bool:
     """Check if user has permission to run Docker commands"""
@@ -561,6 +575,10 @@ def should_rebuild_image() -> tuple[bool, str]:
     Returns:
         Tuple of (should_rebuild, reason)
     """
+    # Force rebuild if --rebuild flag is set
+    if _force_rebuild:
+        return True, "forced rebuild (--rebuild flag)"
+
     if not image_exists():
         return True, "image does not exist"
 
@@ -598,7 +616,10 @@ def build_image() -> bool:
             info(f"Docker image up-to-date: {reason}")
         return True
 
-    if not quiet:
+    # Show rebuild reason - use warn() so it's visible in quiet mode for --rebuild
+    if _force_rebuild:
+        warn(f"Building Docker image: {reason}")
+    elif not quiet:
         info(f"Building Docker image: {reason}")
 
     # Sync files to build context
@@ -633,6 +654,10 @@ def build_image() -> bool:
         if claude_version:
             cmd.insert(2, "--build-arg")
             cmd.insert(3, f"CLAUDE_CODE_VERSION={claude_version}")
+
+        # Force no-cache when --rebuild flag is set
+        if _force_rebuild:
+            cmd.insert(2, "--no-cache")
 
         # In quiet mode, suppress Docker build output
         if quiet:

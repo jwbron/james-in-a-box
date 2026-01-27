@@ -10,7 +10,7 @@ import shutil
 from statusbar import init_statusbar
 
 from .config import Config
-from .docker import check_docker, check_docker_permissions
+from .docker import check_docker, check_docker_permissions, set_force_rebuild
 from .output import info, set_quiet_mode, success, warn
 from .runtime import exec_in_new_container, run_claude
 from .setup_flow import check_host_setup, run_setup_script
@@ -28,6 +28,7 @@ Examples:
   jib --time                               # Show startup timing breakdown for debugging
   jib --setup                              # Run full setup (delegates to setup.py)
   jib --reset                              # Reset configuration and remove Docker image
+  jib --rebuild                            # Force rebuild Docker image (even if files unchanged)
   jib --exec <command> [args...]          # Execute command in new ephemeral container
   jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
 
@@ -35,6 +36,7 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
       Default timeout is 30 minutes, configurable via --timeout
       If setup is incomplete, jib will prompt to run setup automatically
       Default shows progress bar; use -v for verbose output
+      Use --rebuild if container seems stale (forces fresh Docker build)
         """,
     )
     parser.add_argument(
@@ -70,6 +72,11 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         action="store_true",
         help="Show startup timing breakdown for debugging slow startup",
     )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Force rebuild of Docker image even if files haven't changed",
+    )
 
     args = parser.parse_args()
 
@@ -81,6 +88,10 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     # Quiet is the default; verbose (-v) overrides it
     quiet_mode = not args.verbose
     set_quiet_mode(quiet_mode)
+
+    # Initialize force rebuild flag
+    set_force_rebuild(args.rebuild)
+
     if quiet_mode:
         # Initialize statusbar with estimated steps for interactive mode
         # Steps: check docker image, check auth, build image, prepare container,
