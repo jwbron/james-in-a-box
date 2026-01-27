@@ -1,6 +1,7 @@
 # Git Worktree Isolation: Implementation Gap Assessment
 
 **Date:** 2026-01-27
+**Updated:** 2026-01-27 (added implementation details and decisions)
 **Related PRs:** #590 (this revision), #571 (original ADR), #588 (dockerignore fix)
 **Status:** Decision Made - Local Operations with Mount Isolation
 
@@ -12,6 +13,21 @@ The Container Worktree Isolation architecture (ADR in PR #571) needs revision. T
 - All **local** git operations (commit, add, status, etc.) happen **in the container**
 - Only **remote** operations (push, fetch, pull) go through the **gateway sidecar**
 - **Isolation** is achieved through mount structure - each container only sees its own worktree
+
+## Current Implementation State
+
+The mount isolation is **partially implemented** in `jib-container/jib_lib/runtime.py` (`_setup_git_isolation_mounts()` function, lines 38-141). However, it has issues:
+
+| Component | Current State | Target State | Status |
+|-----------|--------------|--------------|--------|
+| Worktree admin mount | Mounted as rw | rw | ✅ Done |
+| Objects mount | Mounted as **ro** via alternates | **rw** direct mount | ❌ Needs change |
+| Refs mount | Mounted as **ro** | **rw** | ❌ Needs change |
+| packed-refs mount | **Not mounted** | rw | ❌ Missing |
+| Config/hooks mount | Mounted as ro | ro | ✅ Done |
+| Local objects + alternates | Implemented | **Remove** (unnecessary complexity) | ❌ Needs removal |
+
+**Key decision:** Remove the alternates approach. The current code creates a local objects directory with alternates pointing to shared objects (ro). This adds complexity without security benefit since objects are content-addressed. We'll mount shared objects directly as rw instead.
 
 ## The Problem
 
@@ -97,14 +113,45 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 
 ### Phase 1: Mount Structure Fix
 
-**Goal:** Isolate containers from each other
+**Goal:** Isolate containers from each other and enable local commits
 
-1. Change mount from `worktrees/` directory to specific `worktrees/${WORKTREE}` directory
-2. Mount objects, refs, and packed-refs as rw (needed for local commits)
-3. Mount config/hooks as ro
+**File to modify:** `jib-container/jib_lib/runtime.py`
 
-**Files to modify:**
-- `jib-container/runtime.py` - mount structure
+**Changes to `_setup_git_isolation_mounts()` function:**
+
+1. **Change objects mount from ro to rw** (line ~127):
+   ```python
+   # Current:
+   ["-v", f"{shared_objects_path}:/home/jib/.git-objects/{repo_name}:ro"]
+   # Change to:
+   ["-v", f"{shared_objects_path}:/home/jib/.git-admin/objects:rw"]
+   ```
+
+2. **Change refs mount from ro to rw** (line ~135):
+   ```python
+   # Current:
+   ["-v", f"{shared_refs_path}:/home/jib/.git-refs/{repo_name}:ro"]
+   # Change to:
+   ["-v", f"{shared_refs_path}:/home/jib/.git-admin/refs:rw"]
+   ```
+
+3. **Add packed-refs mount** (new, after refs mount):
+   ```python
+   packed_refs_path = main_git_path / "packed-refs"
+   if packed_refs_path.exists():
+       mount_args.extend(
+           ["-v", f"{packed_refs_path}:/home/jib/.git-admin/packed-refs:rw"]
+       )
+   ```
+
+4. **Remove local objects directory and alternates setup** (lines ~114-120):
+   - Remove `Config.LOCAL_OBJECTS_BASE` directory creation
+   - Remove local objects mount
+   - This simplifies the architecture (alternates no longer needed)
+
+5. **Update mount paths for consistency**:
+   - All shared git dirs mount under `/home/jib/.git-admin/` (not `.git-objects/`, `.git-refs/`)
+   - This matches `commondir` resolution (`../..` from `/home/jib/.git-admin/repo`)
 
 **Validation:**
 - Container can't see other worktrees
@@ -115,17 +162,64 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 
 **Goal:** Prevent container paths from corrupting host git state
 
-1. Use relative paths in `commondir` file (`../..` instead of absolute)
-2. Ensure `.git` file uses paths that work from container's view
-3. Implement gitdir backup/restore to prevent host path leakage:
-   - On container startup: backup original `gitdir` to `gitdir.host-backup`
-   - During operation: use container-internal path in `gitdir`
-   - On container exit: restore original `gitdir` from backup
-4. Add cleanup script for crashed containers (restore gitdir from backup if present)
+**File to modify:** `jib-container/entrypoint.py`
 
-**Files to modify:**
-- `jib-container/entrypoint.py` - path handling, gitdir backup/restore
-- `bin/jib-cleanup-worktree` (new) - cleanup script to restore gitdir after container crash
+**Changes to `setup_worktrees()` function:**
+
+1. **Remove alternates setup** (lines ~630-637):
+   - Delete code that creates alternates file pointing to shared objects
+   - Delete `Config.git_local_objects_dir` usage
+   - No longer needed since we mount objects directly as rw
+
+2. **Set `commondir` to relative path**:
+   ```python
+   # In worktree admin dir, write:
+   commondir_file.write_text("../..\n")
+   ```
+   This resolves to `/home/jib/.git-admin` where objects/refs are mounted.
+
+3. **Implement gitdir backup/restore**:
+   ```python
+   # On container startup (in setup_worktrees):
+   gitdir_file = target_path / "gitdir"
+   gitdir_backup = target_path / "gitdir.host-backup"
+
+   # Backup original host path
+   if gitdir_file.exists() and not gitdir_backup.exists():
+       shutil.copy2(gitdir_file, gitdir_backup)
+
+   # Write container-internal path
+   gitdir_file.write_text(f"/home/jib/repos/{repo_name}\n")
+   ```
+
+4. **Restore gitdir on exit** (in `cleanup_on_exit()`):
+   ```python
+   # For each worktree admin dir:
+   gitdir_backup = admin_path / "gitdir.host-backup"
+   gitdir_file = admin_path / "gitdir"
+   if gitdir_backup.exists():
+       shutil.copy2(gitdir_backup, gitdir_file)
+       gitdir_backup.unlink()
+   ```
+
+**New file:** `bin/jib-cleanup-worktree`
+
+Cleanup script for crashed containers that didn't restore gitdir:
+
+```bash
+#!/bin/bash
+# Restore gitdir files from backups after container crash
+# Usage: jib-cleanup-worktree [container-id]
+
+for backup in ~/.git/*/worktrees/*/gitdir.host-backup; do
+    if [[ -f "$backup" ]]; then
+        gitdir="${backup%.host-backup}"
+        echo "Restoring: $gitdir"
+        cp "$backup" "$gitdir"
+        rm "$backup"
+    fi
+done
+```
 
 **Validation:**
 - Host git commands work after container exit
@@ -200,6 +294,28 @@ Previous revision proposed intercepting `git commit`, `git reset`, etc. This is 
 Previous revision proposed separate rw mount for index file. This is unnecessary because:
 - Entire worktree admin dir can be rw
 - It's isolated to this container anyway
+
+### No Alternates for Objects
+
+Current implementation uses local objects directory with alternates to shared objects (ro). We're removing this because:
+- Adds complexity (alternates file setup, local objects dir management)
+- No security benefit (objects are content-addressed, corruption is detectable)
+- Direct rw mount is simpler and works correctly
+
+## Risk Assessment
+
+| Risk | Severity | Likelihood | Mitigation |
+|------|----------|------------|------------|
+| Container corrupts shared refs (e.g., `refs/heads/main`) | Medium | Low | Gateway blocks unauthorized push; `git fetch origin main:refs/heads/main` recovers; remote is source of truth |
+| Container corrupts shared objects | Low | Very Low | Content-addressed (SHA-1); corruption detectable via hash mismatch; `git fetch` recovers |
+| gitdir not restored after crash | Medium | Low | `bin/jib-cleanup-worktree` script; backup file makes recovery trivial |
+| Concurrent commits race condition | Low | Low | Git's native `.lock` files work correctly across Docker bind mounts |
+| Container paths leak to host metadata | Medium | Medium | gitdir backup/restore; relative paths in commondir; cleanup on exit |
+
+**Accepted risks:**
+- Containers have rw access to shared refs and objects
+- A malicious container could corrupt local git state for other containers
+- This is acceptable because: (1) gateway enforces push policy, (2) remote is source of truth, (3) recovery is straightforward via fetch
 
 ## References
 

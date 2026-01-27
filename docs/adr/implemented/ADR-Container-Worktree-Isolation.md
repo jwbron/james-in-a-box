@@ -372,17 +372,21 @@ With separate restricted views:
 
 ### Phase 1: Mount Structure Fix
 
-**Files to modify:** `jib-container/runtime.py`
+**Files to modify:** `jib-container/jib_lib/runtime.py`
+
+**Note:** The current implementation uses a local objects directory with git alternates pointing to shared objects (ro). This should be replaced with direct rw mounts as described below - the alternates approach adds complexity without security benefit.
 
 - [ ] Mount only specific worktree admin dir (not parent `worktrees/` dir)
 - [ ] Mount objects, refs, and packed-refs as rw under `.git-admin/` for local commits
 - [ ] Mount config/hooks as ro under `.git-admin/`
+- [ ] Remove local objects directory and alternates setup (no longer needed)
 - [ ] Update mount paths to match `commondir` relative path resolution
 
 ### Phase 2: Host Path Handling
 
-**Files to modify:** `jib-container/entrypoint.py`
+**Files to modify:** `jib-container/entrypoint.py`, `bin/jib-cleanup-worktree` (new)
 
+- [ ] Remove alternates setup from `setup_worktrees()` (no longer needed with direct rw mounts)
 - [ ] Set `.git` file content to `gitdir: /home/jib/.git-admin/repo`
 - [ ] Set `commondir` to relative path (`../..`)
 - [ ] Implement gitdir backup/restore mechanism:
