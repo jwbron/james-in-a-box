@@ -13,6 +13,10 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+# Tell pytest to ignore the parent __init__.py which has relative imports
+# that fail when pytest tries to import it directly
+collect_ignore = [str(Path(__file__).parent.parent / "__init__.py")]
+
 
 # Set up test secret before any gateway imports
 TEST_SECRET = "test-secret-token-12345"
@@ -67,6 +71,15 @@ github_client = _load_module_with_replaced_imports(
     GATEWAY_DIR / "github_client.py",
 )
 
+# git_client imports from .github_client - convert to absolute
+git_client = _load_module_with_replaced_imports(
+    "git_client",
+    GATEWAY_DIR / "git_client.py",
+    import_replacements={
+        "from .github_client import": "from github_client import",
+    },
+)
+
 # policy imports from .github_client - convert to absolute
 policy = _load_module_with_replaced_imports(
     "policy",
@@ -76,11 +89,12 @@ policy = _load_module_with_replaced_imports(
     },
 )
 
-# gateway imports from both
+# gateway imports from all three
 gateway = _load_module_with_replaced_imports(
     "gateway",
     GATEWAY_DIR / "gateway.py",
     import_replacements={
+        "from .git_client import": "from git_client import",
         "from .github_client import": "from github_client import",
         "from .policy import": "from policy import",
     },
@@ -93,6 +107,7 @@ init_module = _load_module_with_replaced_imports(
     GATEWAY_DIR / "__init__.py",
     import_replacements={
         "from .gateway import": "from gateway import",
+        "from .git_client import": "from git_client import",
         "from .github_client import": "from github_client import",
         "from .policy import": "from policy import",
     },
