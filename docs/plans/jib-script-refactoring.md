@@ -280,11 +280,45 @@ if __name__ == "__main__":
     main()
 ```
 
+## Startup Message Cleanup
+
+During the refactoring, clean up verbose startup output that is no longer relevant. Since quiet mode with the statusbar is now the default, the verbose (`-v`) output should be streamlined to show only truly useful information.
+
+### Messages to Remove
+
+1. **Per-mount listings** (lines 2346-2408 in `run_claude()`, similar in `exec_in_new_container()`)
+   - Currently prints every mount: `~/repos/foo (WORKTREE, isolated)`, `~/.git-main/foo (git metadata)`, etc.
+   - **Remove**: These are implementation details, not useful for users
+   - **Keep**: Summary count only (e.g., "Mounted 3 repositories")
+
+2. **Authentication check banner** (lines 2269-2283)
+   - Currently shows API key fragment even in verbose mode
+   - **Remove**: The masked key print (`sk-ant-api03-...xyz`)
+   - **Keep**: Success/warn message via `info()`/`warn()`
+
+3. **Directory listings in setup** (lines 2018-2127)
+   - The "AUTONOMOUS ENGINEERING AGENT" banner with capability lists
+   - **Keep**: This is intentional onboarding text for `--setup`
+
+### Messages to Consolidate
+
+Move repetitive startup phases into single summary lines:
+
+| Current (verbose) | Proposed |
+|------------------|----------|
+| `Creating isolated worktrees...` + per-repo listing | `Created 3 worktrees` |
+| Per-mount `• ~/repos/foo...` lines | `Mounted: 3 repos, sharing, context-sync` |
+| Container ID + launch message | `Launching container jib-abc123...` |
+
+### Implementation
+
+This cleanup should happen in **Phase C** when extracting `runtime.py`. The verbose print statements will be consolidated during extraction rather than copied verbatim.
+
 ## Verification
 
 After implementation:
 1. `jib --help` - CLI help should work
-2. `jib -v` - Verbose mode should show all startup output
+2. `jib -v` - Verbose mode should show streamlined startup info (not per-mount details)
 3. `jib --setup` - Should delegate to setup.py
 4. `jib --exec echo hello` - Should execute in ephemeral container
 5. Run tests: `pytest tests/jib/test_jib.py -v`
