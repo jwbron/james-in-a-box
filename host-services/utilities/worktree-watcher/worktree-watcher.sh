@@ -6,10 +6,74 @@
 set -u
 
 WORKTREE_BASE="$HOME/.jib-worktrees"
-LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
+CONFIG_FILE="$HOME/.config/jib/repositories.yaml"
+# Path to shared jib_config module (relative to james-in-a-box repo)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JIB_REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+JIB_CONFIG_MODULE="$JIB_REPO_DIR/shared"
 
 log() {
-    echo "$LOG_PREFIX $1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+# Get configured local repos from jib config
+# Returns repo paths one per line
+get_configured_repos() {
+    # Try using the shared Python module first
+    if [ -d "$JIB_CONFIG_MODULE" ]; then
+        local repos
+        repos=$(PYTHONPATH="$JIB_CONFIG_MODULE" python3 -m jib_config.config 2>/dev/null)
+        if [ -n "$repos" ]; then
+            echo "$repos"
+            return 0
+        fi
+    fi
+
+    # Fallback: parse YAML directly if Python module unavailable
+    if [ -f "$CONFIG_FILE" ]; then
+        # Extract paths from local_repos.paths using simple parsing
+        # This handles the YAML format:
+        #   local_repos:
+        #     paths:
+        #       - /path/to/repo1
+        #       - /path/to/repo2
+        local in_paths=false
+        while IFS= read -r line; do
+            # Check if we're entering the paths section
+            if [[ "$line" =~ ^[[:space:]]*paths: ]]; then
+                in_paths=true
+                continue
+            fi
+            # If in paths section and line starts with "- ", extract the path
+            if [ "$in_paths" = true ]; then
+                if [[ "$line" =~ ^[[:space:]]*-[[:space:]]+(.*) ]]; then
+                    local path="${BASH_REMATCH[1]}"
+                    # Expand ~ to $HOME
+                    path="${path/#\~/$HOME}"
+                    if [ -d "$path" ]; then
+                        echo "$path"
+                    fi
+                elif [[ "$line" =~ ^[[:space:]]*[a-zA-Z_]+: ]]; then
+                    # Hit a new section, stop parsing paths
+                    break
+                fi
+            fi
+        done < "$CONFIG_FILE"
+    fi
+}
+
+# Build a lookup table of repo names to paths
+# Sets global associative array REPO_PATHS
+declare -A REPO_PATHS
+build_repo_lookup() {
+    REPO_PATHS=()
+    while IFS= read -r repo_path; do
+        if [ -n "$repo_path" ] && [ -d "$repo_path/.git" ]; then
+            local repo_name
+            repo_name=$(basename "$repo_path")
+            REPO_PATHS["$repo_name"]="$repo_path"
+        fi
+    done < <(get_configured_repos)
 }
 
 cleanup_orphaned_worktrees() {
@@ -20,6 +84,9 @@ cleanup_orphaned_worktrees() {
         log "No worktrees directory found at $WORKTREE_BASE"
         return 0
     fi
+
+    # Build repo lookup table
+    build_repo_lookup
 
     local total_checked=0
     local total_cleaned=0
@@ -51,9 +118,10 @@ cleanup_orphaned_worktrees() {
             fi
 
             repo_name=$(basename "$worktree")
-            original_repo="$HOME/repos/$repo_name"
+            # Look up the original repo path from config
+            original_repo="${REPO_PATHS[$repo_name]:-}"
 
-            if [ -d "$original_repo/.git" ]; then
+            if [ -n "$original_repo" ] && [ -d "$original_repo/.git" ]; then
                 log "  Removing worktree: $repo_name"
                 cd "$original_repo"
 
@@ -63,6 +131,8 @@ cleanup_orphaned_worktrees() {
                 else
                     log "  Warning: Could not remove worktree $worktree (may already be removed)"
                 fi
+            else
+                log "  Warning: Could not find original repo for $repo_name"
             fi
         done
 
@@ -85,10 +155,9 @@ cleanup_orphaned_worktrees() {
 prune_stale_worktree_references() {
     log "Pruning stale worktree references..."
 
-    # Prune worktree references in all khan repos
     local repos_pruned=0
-    for repo in "$HOME/khan"/*; do
-        if [ ! -d "$repo/.git" ]; then
+    while IFS= read -r repo; do
+        if [ -z "$repo" ] || [ ! -d "$repo/.git" ]; then
             continue
         fi
 
@@ -102,7 +171,7 @@ prune_stale_worktree_references() {
             log "  Pruned stale references in $repo_name"
             repos_pruned=$((repos_pruned + 1))
         fi
-    done
+    done < <(get_configured_repos)
 
     if [ $repos_pruned -gt 0 ]; then
         log "Pruned stale references in $repos_pruned repo(s)"
@@ -117,9 +186,8 @@ cleanup_orphaned_branches() {
     local total_branches_deleted=0
     local total_branches_skipped=0
 
-    # Iterate through all repos in ~/repos/
-    for repo in "$HOME/khan"/*; do
-        if [ ! -d "$repo/.git" ]; then
+    while IFS= read -r repo; do
+        if [ -z "$repo" ] || [ ! -d "$repo/.git" ]; then
             continue
         fi
 
@@ -251,7 +319,7 @@ cleanup_orphaned_branches() {
         if [ $repo_branches_deleted -gt 0 ]; then
             log "  Deleted $repo_branches_deleted branch(es) in $repo_name"
         fi
-    done
+    done < <(get_configured_repos)
 
     if [ $total_branches_deleted -gt 0 ] || [ $total_branches_skipped -gt 0 ]; then
         log "Branch cleanup complete: deleted $total_branches_deleted, skipped $total_branches_skipped (have unmerged changes without PR)"
