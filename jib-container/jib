@@ -18,9 +18,9 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Optional
+
 
 # Add shared modules to path (relative to jib-container directory)
 _SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -28,7 +28,7 @@ _SHARED_DIR = _SCRIPT_DIR.parent / "shared"
 if _SHARED_DIR.exists():
     sys.path.insert(0, str(_SHARED_DIR))
 
-from statusbar import StatusBar, init_statusbar, status, status_success, status_error, status_warn, status_finish
+from statusbar import init_statusbar, status, status_error, status_success, status_warn
 
 
 # Global quiet mode flag
@@ -85,7 +85,6 @@ class StartupTimer:
 
     def to_json(self) -> str:
         """Serialize timings to JSON for passing to container."""
-        import json
         if not self.enabled or not self.timings:
             return ""
         return json.dumps({
@@ -166,7 +165,7 @@ def error(msg: str) -> None:
         print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}", file=sys.stderr)
 
 
-def get_anthropic_api_key() -> Optional[str]:
+def get_anthropic_api_key() -> str | None:
     """
     Get Anthropic API key from environment or config file.
 
@@ -176,12 +175,12 @@ def get_anthropic_api_key() -> Optional[str]:
     # Check environment variable first
     if os.environ.get("ANTHROPIC_API_KEY"):
         return os.environ["ANTHROPIC_API_KEY"]
-    
+
     # Check config file
     api_key_file = Config.USER_CONFIG_DIR / "anthropic-api-key"
     if api_key_file.exists():
         return api_key_file.read_text().strip()
-    
+
     return None
 
 
@@ -201,6 +200,7 @@ def get_anthropic_auth_method() -> str:
     config_file = Config.USER_CONFIG_DIR / "config.yaml"
     if config_file.exists():
         try:
+            import yaml
             with open(config_file) as f:
                 config = yaml.safe_load(f) or {}
                 method = config.get("anthropic_auth_method", "").lower()
@@ -261,7 +261,7 @@ try:
     from jib_config import get_local_repos
 except ImportError:
     # Fallback if shared module not available (shouldn't happen in normal use)
-    def get_local_repos() -> List[Path]:
+    def get_local_repos() -> list[Path]:
         """Fallback: Load local repository paths from configuration."""
         if not Config.REPOS_CONFIG_FILE.exists():
             return []
@@ -292,7 +292,7 @@ def get_platform() -> str:
     return "unknown"
 
 
-def get_github_token() -> Optional[str]:
+def get_github_token() -> str | None:
     """Get GitHub PAT using the unified HostConfig system.
 
     Uses HostConfig to load the token from (in order of precedence):
@@ -326,7 +326,7 @@ def get_github_token() -> Optional[str]:
     return None
 
 
-def get_github_readonly_token() -> Optional[str]:
+def get_github_readonly_token() -> str | None:
     """Get read-only GitHub token for external repositories.
 
     This token is used for repos outside the primary GitHub App's scope,
@@ -354,7 +354,7 @@ def get_github_readonly_token() -> Optional[str]:
     return None
 
 
-def get_github_app_token() -> Optional[str]:
+def get_github_app_token() -> str | None:
     """Generate GitHub App installation token for container use.
 
     Uses the github-app-token.py script to generate a fresh installation token
@@ -430,8 +430,7 @@ def write_github_token_file(token: str) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    import json
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     token_file = Config.SHARING_DIR / ".github-token"
     validity_seconds = 60 * 60  # 1 hour
@@ -439,14 +438,14 @@ def write_github_token_file(token: str) -> bool:
     # Ensure sharing directory exists
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now.timestamp() + validity_seconds
 
     data = {
         "token": token,
         "generated_at": now.isoformat(),
         "expires_at_unix": expires_at,
-        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
+        "expires_at": datetime.fromtimestamp(expires_at, UTC).isoformat(),
         "generated_by": "jib-launcher",
         "validity_seconds": validity_seconds
     }
@@ -495,7 +494,7 @@ def check_docker_permissions() -> bool:
     return False
 
 
-def get_setup_script_path() -> Optional[Path]:
+def get_setup_script_path() -> Path | None:
     """Find the setup.py script relative to the jib launcher location"""
     # Try to find setup.py relative to the jib script
     jib_script = Path(__file__).resolve()
@@ -700,8 +699,6 @@ def _copy_directory_atomic(src: Path, dest: Path, name: str, quiet: bool = False
     Returns:
         True if successful, False otherwise
     """
-    import shutil
-    import tempfile
     import uuid
 
     max_retries = 3
@@ -722,7 +719,7 @@ def _copy_directory_atomic(src: Path, dest: Path, name: str, quiet: bool = False
                 except FileNotFoundError:
                     # Another process already removed it - that's fine
                     pass
-                except OSError as e:
+                except OSError:
                     # Directory not empty (ENOTEMPTY) - another process is writing
                     # Clean up temp and retry
                     shutil.rmtree(temp_dir, ignore_errors=True)
@@ -784,7 +781,6 @@ def is_dangerous_dir(path: Path) -> bool:
 
 def create_dockerfile() -> None:
     """Create the Dockerfile for the container"""
-    import shutil
 
     # Resolve symlinks to find the actual project directory
     script_dir = Path(__file__).resolve().parent
@@ -947,7 +943,6 @@ def get_latest_claude_version() -> str | None:
     Returns:
         Version string (e.g., "2.1.17") or None if check fails
     """
-    import json
     import urllib.request
 
     try:
@@ -1006,7 +1001,7 @@ def _hash_file(path: Path, hasher) -> None:
         with open(path, "rb") as f:
             while chunk := f.read(8192):
                 hasher.update(chunk)
-    except (OSError, IOError):
+    except OSError:
         pass
 
 
@@ -1104,7 +1099,7 @@ def compute_build_hash() -> str:
     return hasher.hexdigest()
 
 
-def get_image_build_hash() -> Optional[str]:
+def get_image_build_hash() -> str | None:
     """Get the build hash stored in the Docker image label.
 
     Returns:
@@ -1206,7 +1201,7 @@ def build_image() -> bool:
 
         # Pass Claude version to bust cache if update available
         if claude_version:
-            cmd.insert(2, f"--build-arg")
+            cmd.insert(2, "--build-arg")
             cmd.insert(3, f"CLAUDE_CODE_VERSION={claude_version}")
 
         # Force no-cache when --rebuild flag is set
@@ -1339,8 +1334,8 @@ def wait_for_gateway_health(timeout: int = 30) -> bool:
     Returns:
         True if gateway is healthy, False on timeout
     """
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     # Use container name for health check since we're on the same network
     # But during startup from host, we need to use localhost or check via docker exec
@@ -1408,7 +1403,7 @@ def generate_container_id() -> str:
     return f"jib-{timestamp}-{pid}"
 
 
-def get_docker_log_config(container_id: str, task_id: Optional[str] = None) -> list:
+def get_docker_log_config(container_id: str, task_id: str | None = None) -> list:
     """Generate Docker logging configuration arguments.
 
     Uses the json-file logging driver with:
@@ -1426,9 +1421,6 @@ def get_docker_log_config(container_id: str, task_id: Optional[str] = None) -> l
     # Ensure container logs directory exists
     CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Log file path based on container ID
-    log_file = CONTAINER_LOGS_DIR / f"{container_id}.log"
-
     log_args = [
         "--log-driver", "json-file",
         "--log-opt", "max-size=10m",
@@ -1443,7 +1435,7 @@ def get_docker_log_config(container_id: str, task_id: Optional[str] = None) -> l
     return log_args
 
 
-def extract_task_id_from_command(command: List[str]) -> Optional[str]:
+def extract_task_id_from_command(command: list[str]) -> str | None:
     """Extract task ID from the command if it's processing a task file.
 
     Looks for patterns like:
@@ -1467,7 +1459,7 @@ def extract_task_id_from_command(command: List[str]) -> Optional[str]:
     return None
 
 
-def extract_thread_ts_from_task_file(task_file_path: str) -> Optional[str]:
+def extract_thread_ts_from_task_file(task_file_path: str) -> str | None:
     """Extract thread_ts from a task file's YAML frontmatter.
 
     Task files contain YAML frontmatter like:
@@ -1509,9 +1501,9 @@ def extract_thread_ts_from_task_file(task_file_path: str) -> Optional[str]:
 
 def update_log_index(
     container_id: str,
-    task_id: Optional[str] = None,
-    thread_ts: Optional[str] = None,
-    log_file: Optional[str] = None,
+    task_id: str | None = None,
+    thread_ts: str | None = None,
+    log_file: str | None = None,
 ) -> None:
     """Update the log index file with correlation information.
 
@@ -1529,7 +1521,6 @@ def update_log_index(
         thread_ts: Optional Slack thread timestamp
         log_file: Path to the log file
     """
-    import json
     import fcntl
 
     index_file = CONTAINER_LOGS_DIR / "log-index.json"
@@ -1584,9 +1575,9 @@ def update_log_index(
 
 def save_container_logs(
     container_id: str,
-    task_id: Optional[str] = None,
-    thread_ts: Optional[str] = None,
-) -> Optional[Path]:
+    task_id: str | None = None,
+    thread_ts: str | None = None,
+) -> Path | None:
     """Save Docker container logs to persistent storage.
 
     Uses `docker logs` to capture all container output and saves it to
@@ -1721,7 +1712,7 @@ def get_default_branch(repo_path: Path) -> str:
     return "main"
 
 
-def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> Optional[int]:
+def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> int | None:
     """Acquire an exclusive lock for git operations on a repository.
 
     Git doesn't handle concurrent operations well. When multiple jib --exec
@@ -1736,8 +1727,8 @@ def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> Optional[int]:
     Returns:
         File descriptor for the lock (must be closed to release), or None if failed
     """
-    import fcntl
     import errno
+    import fcntl
 
     # Create lock file in the repo's .git directory
     git_dir = repo_path / ".git"
@@ -1769,7 +1760,7 @@ def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> Optional[int]:
             # Got the lock
             return fd
 
-        except (OSError, IOError) as e:
+        except OSError as e:
             if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES):
                 # Lock held by another process
                 elapsed = time.time() - start_time
@@ -1888,7 +1879,6 @@ def cleanup_worktrees(container_id: str) -> None:
     Args:
         container_id: Unique container identifier
     """
-    import shutil
 
     worktree_dir = Config.WORKTREE_BASE / container_id
 
@@ -1930,7 +1920,7 @@ def cleanup_worktrees(container_id: str) -> None:
     try:
         shutil.rmtree(worktree_dir)
         if not _quiet_mode:
-            info(f"  ✓ Removed worktree directory")
+            info("  ✓ Removed worktree directory")
     except Exception as e:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
@@ -1950,7 +1940,7 @@ def cleanup_worktrees(container_id: str) -> None:
                         warn(f"  ✗ Failed to remove admin dir {admin_dir}: {e}")
 
     # Also run git worktree prune as a fallback for any we missed
-    for repo_path in repos_to_clean.keys():
+    for repo_path in repos_to_clean:
         try:
             subprocess.run(
                 ["git", "worktree", "prune", "-v"],
@@ -2037,10 +2027,10 @@ def setup() -> bool:
     print()
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
-        context_container_path = f"/home/jib/context-sync"
+        context_container_path = "/home/jib/context-sync"
         mounts.append(f"{context_sync_dir}:{context_container_path}:ro")
         print(f"  ✓ Context sources: {context_sync_dir}")
-        print(f"    Mounted as: ~/context-sync/ (read-only)")
+        print("    Mounted as: ~/context-sync/ (read-only)")
 
         # Show available context sources
         subdirs = []
@@ -2056,10 +2046,10 @@ def setup() -> bool:
         if subdirs:
             print(f"    Contains: {', '.join(subdirs)}")
         else:
-            print(f"    Note: No context subdirectories found yet")
+            print("    Note: No context subdirectories found yet")
     else:
         warn(f"Context sync directory not found: {context_sync_dir}")
-        warn(f"Expected directory with confluence/, jira/, etc. subdirectories")
+        warn("Expected directory with confluence/, jira/, etc. subdirectories")
 
     # Create and mount persistent directories for agent
     print()
@@ -2069,16 +2059,16 @@ def setup() -> bool:
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
 
-    sharing_container_path = f"/home/jib/sharing"
+    sharing_container_path = "/home/jib/sharing"
     mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
-    print(f"    Mounted as: ~/sharing/ (read-write)")
-    print(f"    Purpose: All persistent data")
-    print(f"    - ~/sharing/tmp/           Persistent workspace (also at ~/tmp)")
-    print(f"    - ~/sharing/context/       Context documents (@save-context)")
-    print(f"    - ~/sharing/notifications/ Notifications to human")
-    print(f"    - ~/sharing/incoming/      Incoming tasks from Slack")
-    print(f"    - ~/sharing/analysis/      Analysis reports")
+    print("    Mounted as: ~/sharing/ (read-write)")
+    print("    Purpose: All persistent data")
+    print("    - ~/sharing/tmp/           Persistent workspace (also at ~/tmp)")
+    print("    - ~/sharing/context/       Context documents (@save-context)")
+    print("    - ~/sharing/notifications/ Notifications to human")
+    print("    - ~/sharing/incoming/      Incoming tasks from Slack")
+    print("    - ~/sharing/analysis/      Analysis reports")
 
     # Create convenience symlink in container for tmp
     # Note: Actual symlink creation happens in container entrypoint
@@ -2093,7 +2083,7 @@ def setup() -> bool:
         print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
     else:
         warn("Anthropic API key not configured")
-        print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+        print("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
         print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
         print()
         info("Container will not be able to use Claude without an API key.")
@@ -2173,7 +2163,7 @@ def setup() -> bool:
     return True
 
 
-def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
+def add_standard_mounts(mount_args: list[str], quiet: bool = False) -> None:
     """Add standard mounts (sharing, context-sync) to mount_args list.
 
     These mounts are always added dynamically rather than relying on config files,
@@ -2184,7 +2174,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
         sharing_container_path = "/home/jib/sharing"
         mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw"])
         if not quiet:
-            print(f"  • ~/sharing/ (beads, notifications, tasks)")
+            print("  • ~/sharing/ (beads, notifications, tasks)")
 
     # Mount context-sync directory if it exists (Confluence, JIRA docs)
     context_sync_dir = Path.home() / "context-sync"
@@ -2192,7 +2182,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
         context_sync_container = "/home/jib/context-sync"
         mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro"])
         if not quiet:
-            print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
+            print("  • ~/context-sync/ (Confluence, JIRA - read-only)")
 
 
 def run_claude() -> bool:
@@ -2229,7 +2219,7 @@ def run_claude() -> bool:
                 print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
             else:
                 warn("Anthropic API key not configured")
-                print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+                print("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
                 print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
                 print()
                 warn("Container will not be able to use Claude without an API key.")
@@ -2335,10 +2325,10 @@ def run_claude() -> bool:
                 warn(f"Error reading .git file for {repo_name}: {e}")
 
     # Mount worktree base directory (used by both interactive and --exec modes)
-    worktree_base_container = f"/home/jib/.jib-worktrees"
+    worktree_base_container = "/home/jib/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw"])
     if not _quiet_mode:
-        print(f"  • ~/.jib-worktrees/ (worktree base directory)")
+        print("  • ~/.jib-worktrees/ (worktree base directory)")
 
     # Add standard mounts (sharing, context-sync)
     add_standard_mounts(mount_args, quiet=_quiet_mode)
@@ -2350,16 +2340,16 @@ def run_claude() -> bool:
     claude_json = home / ".claude.json"
 
     if claude_dir.is_dir():
-        container_claude_dir = f"/home/jib/.claude"
+        container_claude_dir = "/home/jib/.claude"
         mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
         if not _quiet_mode:
-            print(f"  • ~/.claude (Claude config directory)")
+            print("  • ~/.claude (Claude config directory)")
 
     if claude_json.is_file():
-        container_claude_json = f"/home/jib/.claude.json"
+        container_claude_json = "/home/jib/.claude.json"
         mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
         if not _quiet_mode:
-            print(f"  • ~/.claude.json (Claude settings)")
+            print("  • ~/.claude.json (Claude settings)")
 
     if not _quiet_mode:
         print()
@@ -2455,10 +2445,10 @@ def run_claude() -> bool:
 
 
 def exec_in_new_container(
-    command: List[str],
+    command: list[str],
     timeout_minutes: int = 30,
-    task_id: Optional[str] = None,
-    thread_ts: Optional[str] = None,
+    task_id: str | None = None,
+    thread_ts: str | None = None,
     auth_mode: str = "host",
 ) -> bool:
     """Execute a command in a new ephemeral container with isolated worktrees.
@@ -2598,14 +2588,14 @@ def exec_in_new_container(
         claude_json = home / ".claude.json"
 
         if claude_dir.is_dir():
-            container_claude_dir = f"/home/jib/.claude"
+            container_claude_dir = "/home/jib/.claude"
             mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
-            print(f"  • ~/.claude (Claude config directory)")
+            print("  • ~/.claude (Claude config directory)")
 
         if claude_json.is_file():
-            container_claude_json = f"/home/jib/.claude.json"
+            container_claude_json = "/home/jib/.claude.json"
             mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
-            print(f"  • ~/.claude.json (Claude settings)")
+            print("  • ~/.claude.json (Claude settings)")
 
     print()
 
