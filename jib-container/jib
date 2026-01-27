@@ -34,6 +34,9 @@ from statusbar import StatusBar, init_statusbar, status, status_success, status_
 # Global quiet mode flag
 _quiet_mode = False
 
+# Global force rebuild flag (set by --rebuild)
+_force_rebuild = False
+
 # =============================================================================
 # Startup Timing (Debug)
 # =============================================================================
@@ -1133,6 +1136,10 @@ def should_rebuild_image() -> tuple[bool, str]:
     Returns:
         Tuple of (should_rebuild, reason)
     """
+    # Force rebuild if --rebuild flag is set
+    if _force_rebuild:
+        return True, "forced rebuild (--rebuild flag)"
+
     if not image_exists():
         return True, "image does not exist"
 
@@ -1168,7 +1175,12 @@ def build_image() -> bool:
             info(f"Docker image up-to-date: {reason}")
         return True
 
-    if not _quiet_mode:
+    # Show rebuild reason in both quiet and verbose modes
+    # In quiet mode, this appears briefly before the progress bar updates
+    if _quiet_mode:
+        # Use status_warn to make rebuild reason visible even in quiet mode
+        status_warn(f"Rebuilding: {reason}")
+    else:
         info(f"Building Docker image: {reason}")
 
     # Sync files to build context
@@ -1196,6 +1208,10 @@ def build_image() -> bool:
         if claude_version:
             cmd.insert(2, f"--build-arg")
             cmd.insert(3, f"CLAUDE_CODE_VERSION={claude_version}")
+
+        # Force no-cache when --rebuild flag is set
+        if _force_rebuild:
+            cmd.insert(2, "--no-cache")
 
         # In quiet mode, suppress Docker build output
         if _quiet_mode:
@@ -2706,6 +2722,7 @@ Examples:
   jib --time                               # Show startup timing breakdown for debugging
   jib --setup                              # Run full setup (delegates to setup.py)
   jib --reset                              # Reset configuration and remove Docker image
+  jib --rebuild                            # Force rebuild Docker image (even if files unchanged)
   jib --exec <command> [args...]          # Execute command in new ephemeral container
   jib --timeout 60 --exec <command>       # Execute with custom timeout (60 minutes)
 
@@ -2713,6 +2730,7 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
       Default timeout is 30 minutes, configurable via --timeout
       If setup is incomplete, jib will prompt to run setup automatically
       Default shows progress bar; use -v for verbose output
+      Use --rebuild if container seems stale (forces fresh Docker build)
         """
     )
     parser.add_argument(
@@ -2753,6 +2771,11 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
         action="store_true",
         help="Show startup timing breakdown for debugging slow startup"
     )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Force rebuild of Docker image even if files haven't changed"
+    )
 
     args = parser.parse_args()
 
@@ -2764,6 +2787,11 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
     # Quiet is the default; verbose (-v) overrides it
     global _quiet_mode
     _quiet_mode = not args.verbose
+
+    # Initialize force rebuild flag
+    global _force_rebuild
+    _force_rebuild = args.rebuild
+
     if _quiet_mode:
         # Initialize statusbar with estimated steps for interactive mode
         # Steps: check docker image, check auth, build image, prepare container,
