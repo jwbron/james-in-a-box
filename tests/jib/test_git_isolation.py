@@ -14,11 +14,11 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 
 # Load modules under test
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "jib-container"))
@@ -82,7 +82,9 @@ class TestMountStructure:
 
         # Check worktree admin mount
         admin_mount = f"{git_repo['worktree_admin']}:/home/jib/.git-admin/test-repo:rw"
-        assert any(admin_mount in arg for arg in mount_args), f"Expected admin mount in {mount_args}"
+        assert any(admin_mount in arg for arg in mount_args), (
+            f"Expected admin mount in {mount_args}"
+        )
 
     def test_mount_args_include_objects_rw(self, git_repo):
         """Test that objects directory is mounted as rw."""
@@ -101,7 +103,9 @@ class TestMountStructure:
         # Check objects mount is rw
         objects_path = git_repo["git_dir"] / "objects"
         objects_mount = f"{objects_path}:/home/jib/.git-common/test-repo/objects:rw"
-        assert any(objects_mount in arg for arg in mount_args), f"Expected objects mount in {mount_args}"
+        assert any(objects_mount in arg for arg in mount_args), (
+            f"Expected objects mount in {mount_args}"
+        )
 
     def test_mount_args_include_refs_rw(self, git_repo):
         """Test that refs directory is mounted as rw."""
@@ -139,7 +143,9 @@ class TestMountStructure:
         # Check packed-refs mount
         packed_refs_path = git_repo["git_dir"] / "packed-refs"
         packed_refs_mount = f"{packed_refs_path}:/home/jib/.git-common/test-repo/packed-refs:rw"
-        assert any(packed_refs_mount in arg for arg in mount_args), f"Expected packed-refs mount in {mount_args}"
+        assert any(packed_refs_mount in arg for arg in mount_args), (
+            f"Expected packed-refs mount in {mount_args}"
+        )
 
     def test_mount_args_include_config_ro(self, git_repo):
         """Test that config file is mounted as ro."""
@@ -158,7 +164,9 @@ class TestMountStructure:
         # Check config mount is ro
         config_path = git_repo["git_dir"] / "config"
         config_mount = f"{config_path}:/home/jib/.git-common/test-repo/config:ro"
-        assert any(config_mount in arg for arg in mount_args), f"Expected config mount in {mount_args}"
+        assert any(config_mount in arg for arg in mount_args), (
+            f"Expected config mount in {mount_args}"
+        )
 
     def test_mount_args_include_hooks_ro(self, git_repo):
         """Test that hooks directory is mounted as ro."""
@@ -177,7 +185,9 @@ class TestMountStructure:
         # Check hooks mount is ro
         hooks_path = git_repo["git_dir"] / "hooks"
         hooks_mount = f"{hooks_path}:/home/jib/.git-common/test-repo/hooks:ro"
-        assert any(hooks_mount in arg for arg in mount_args), f"Expected hooks mount in {mount_args}"
+        assert any(hooks_mount in arg for arg in mount_args), (
+            f"Expected hooks mount in {mount_args}"
+        )
 
     def test_no_local_objects_mount(self, git_repo):
         """Test that local objects directory is NOT mounted (removed in new implementation)."""
@@ -213,9 +223,9 @@ class TestMountStructure:
 
         # Verify no full git-common mount (should only have subdirectory mounts)
         git_common_full_mount = f"{git_repo['git_dir']}:/home/jib/.git-common/test-repo:ro"
-        assert not any(
-            git_common_full_mount in arg for arg in mount_args
-        ), "Full git-common mount should be removed"
+        assert not any(git_common_full_mount in arg for arg in mount_args), (
+            "Full git-common mount should be removed"
+        )
 
     def test_multiple_repos(self, tmp_path):
         """Test mount structure with multiple repositories."""
@@ -249,12 +259,12 @@ class TestMountStructure:
 
         # Verify both repos have their own mounts
         for repo_name in ["repo-a", "repo-b"]:
-            assert any(
-                f".git-admin/{repo_name}" in arg for arg in mount_args
-            ), f"Missing admin mount for {repo_name}"
-            assert any(
-                f".git-common/{repo_name}/objects" in arg for arg in mount_args
-            ), f"Missing objects mount for {repo_name}"
+            assert any(f".git-admin/{repo_name}" in arg for arg in mount_args), (
+                f"Missing admin mount for {repo_name}"
+            )
+            assert any(f".git-common/{repo_name}/objects" in arg for arg in mount_args), (
+                f"Missing objects mount for {repo_name}"
+            )
 
 
 class TestWorktreeSetup:
