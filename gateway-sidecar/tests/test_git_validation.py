@@ -12,8 +12,6 @@ import os
 import tempfile
 from unittest.mock import patch
 
-import pytest
-
 import gateway
 
 
@@ -33,9 +31,7 @@ class TestRepoPathValidation:
             "os.path.realpath",
             return_value="/home/jib/.jib-worktrees/jib-123/repo",
         ):
-            valid, error = gateway.validate_repo_path(
-                "/home/jib/.jib-worktrees/jib-123/repo"
-            )
+            valid, error = gateway.validate_repo_path("/home/jib/.jib-worktrees/jib-123/repo")
             assert valid is True
             assert error == ""
 
@@ -50,9 +46,7 @@ class TestRepoPathValidation:
         """Path traversal attempt via .. is blocked."""
         # Simulate realpath resolving the traversal
         with patch("os.path.realpath", return_value="/etc/passwd"):
-            valid, error = gateway.validate_repo_path(
-                "/home/jib/repos/../../../etc/passwd"
-            )
+            valid, error = gateway.validate_repo_path("/home/jib/repos/../../../etc/passwd")
             assert valid is False
             assert "allowed directories" in error
 
@@ -126,7 +120,7 @@ class TestGitArgsSanitization:
 
     def test_none_args_allowed(self):
         """None argument list becomes empty."""
-        valid, error, args = gateway.sanitize_git_args(None)
+        valid, _error, args = gateway.sanitize_git_args(None)
         assert valid is True
         assert args == []
 
@@ -138,9 +132,7 @@ class TestGitArgsSanitization:
 
     def test_mixed_valid_and_blocked(self):
         """Mixed valid and blocked args are rejected."""
-        valid, error, _ = gateway.sanitize_git_args(
-            ["--tags", "--upload-pack=/evil", "--prune"]
-        )
+        valid, error, _ = gateway.sanitize_git_args(["--tags", "--upload-pack=/evil", "--prune"])
         assert valid is False
         assert "Blocked" in error
 
@@ -261,31 +253,25 @@ class TestGhApiPathValidation:
 
     def test_delete_method_blocked(self):
         """DELETE method is blocked."""
-        valid, error = gateway.validate_gh_api_path(
-            "repos/owner/repo/pulls/123", method="DELETE"
-        )
+        valid, error = gateway.validate_gh_api_path("repos/owner/repo/pulls/123", method="DELETE")
         assert valid is False
         assert "method" in error.lower()
 
     def test_get_method_allowed(self):
         """GET method is allowed."""
-        valid, error = gateway.validate_gh_api_path(
-            "repos/owner/repo/pulls", method="GET"
-        )
+        valid, _error = gateway.validate_gh_api_path("repos/owner/repo/pulls", method="GET")
         assert valid is True
 
     def test_post_method_allowed(self):
         """POST method is allowed."""
-        valid, error = gateway.validate_gh_api_path(
+        valid, _error = gateway.validate_gh_api_path(
             "repos/owner/repo/pulls/123/comments", method="POST"
         )
         assert valid is True
 
     def test_patch_method_allowed(self):
         """PATCH method is allowed."""
-        valid, error = gateway.validate_gh_api_path(
-            "repos/owner/repo/pulls/123", method="PATCH"
-        )
+        valid, _error = gateway.validate_gh_api_path("repos/owner/repo/pulls/123", method="PATCH")
         assert valid is True
 
     def test_pr_number_must_be_numeric(self):
