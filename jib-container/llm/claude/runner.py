@@ -9,6 +9,7 @@ Supports both synchronous and asynchronous execution with streaming output.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import subprocess
@@ -188,8 +189,10 @@ async def run_agent_async(
         "claude",
         "--print",
         "--dangerously-skip-permissions",
-        "--model", model,
-        "--output-format", "stream-json",
+        "--model",
+        model,
+        "--output-format",
+        "stream-json",
     ]
 
     logger.debug(f"Running: {' '.join(cmd)} (cwd={cwd_path})")
@@ -268,13 +271,13 @@ async def run_agent_async(
                 metadata={"model": actual_model} if actual_model else None,
             )
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Graceful shutdown: SIGTERM first, then SIGKILL
         if process:
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 process.kill()
                 await process.wait()
 
@@ -306,10 +309,8 @@ async def run_agent_async(
         # Final cleanup to prevent zombies
         if process and process.returncode is None:
             process.kill()
-            try:
+            with contextlib.suppress(Exception):
                 await process.wait()
-            except Exception:
-                pass
 
 
 def run_agent(
