@@ -126,7 +126,9 @@ class TestGitArgsValidation:
 
     def test_mixed_valid_and_blocked(self):
         """Mixed valid and blocked args are rejected."""
-        valid, error, _ = gateway.validate_git_args("fetch", ["--tags", "--upload-pack=/evil", "--prune"])
+        valid, error, _ = gateway.validate_git_args(
+            "fetch", ["--tags", "--upload-pack=/evil", "--prune"]
+        )
         assert valid is False
         assert "not allowed" in error
 
@@ -139,7 +141,7 @@ class TestGitArgsValidation:
 
     def test_ls_remote_flags(self):
         """ls-remote operation has its own allowed flags."""
-        valid, error, args = gateway.validate_git_args("ls-remote", ["--heads", "--tags"])
+        valid, error, _args = gateway.validate_git_args("ls-remote", ["--heads", "--tags"])
         assert valid is True
         assert error == ""
 
@@ -151,7 +153,7 @@ class TestGitArgsValidation:
 
     def test_push_flags(self):
         """push operation has its own allowed flags."""
-        valid, error, args = gateway.validate_git_args("push", ["--force", "--set-upstream"])
+        valid, error, _args = gateway.validate_git_args("push", ["--force", "--set-upstream"])
         assert valid is True
         assert error == ""
 
@@ -163,13 +165,13 @@ class TestGitArgsValidation:
 
     def test_short_flags_normalized(self):
         """Short flags are normalized to long form."""
-        valid, error, args = gateway.validate_git_args("fetch", ["-t", "-p"])
+        valid, _error, args = gateway.validate_git_args("fetch", ["-t", "-p"])
         assert valid is True
         assert args == ["--tags", "--prune"]
 
     def test_refs_pass_through(self):
         """Non-flag arguments (refs, branch names) pass through."""
-        valid, error, args = gateway.validate_git_args("fetch", ["origin", "main", "--tags"])
+        valid, _error, args = gateway.validate_git_args("fetch", ["origin", "main", "--tags"])
         assert valid is True
         assert "origin" in args
         assert "main" in args
