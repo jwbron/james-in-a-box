@@ -6,7 +6,7 @@ OnFailure=service-failure-notify@%n.service
 
 [Service]
 Type=oneshot
-ExecStart=%h/repos/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
+ExecStart=%h/repos/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.py
 
 # Logging
 StandardOutput=journal
