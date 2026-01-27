@@ -58,6 +58,9 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 # Shared refs (rw) - for updating branch pointers
 -v ~/.git/repo/refs:/home/jib/.git-admin/refs:rw
 
+# Packed refs (rw) - git stores refs both as loose files and packed-refs
+-v ~/.git/repo/packed-refs:/home/jib/.git-admin/packed-refs:rw
+
 # Config and hooks (ro) - shared configuration
 -v ~/.git/repo/config:/home/jib/.git-admin/config:ro
 -v ~/.git/repo/hooks:/home/jib/.git-admin/hooks:ro
@@ -97,7 +100,7 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 **Goal:** Isolate containers from each other
 
 1. Change mount from `worktrees/` directory to specific `worktrees/${WORKTREE}` directory
-2. Mount objects and refs as rw (needed for local commits)
+2. Mount objects, refs, and packed-refs as rw (needed for local commits)
 3. Mount config/hooks as ro
 
 **Files to modify:**
@@ -114,14 +117,19 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 
 1. Use relative paths in `commondir` file (`../..` instead of absolute)
 2. Ensure `.git` file uses paths that work from container's view
-3. Don't modify host worktree metadata from container
+3. Implement gitdir backup/restore to prevent host path leakage:
+   - On container startup: backup original `gitdir` to `gitdir.host-backup`
+   - During operation: use container-internal path in `gitdir`
+   - On container exit: restore original `gitdir` from backup
 
 **Files to modify:**
-- `jib-container/entrypoint.py` - path handling
+- `jib-container/entrypoint.py` - path handling, gitdir backup/restore
 
 **Validation:**
 - Host git commands work after container exit
-- No `/home/jib/...` paths in host metadata
+- `gitdir` file contains host path after container exit
+- `gitdir.host-backup` cleaned up after normal exit
+- No `/home/jib/...` paths in host metadata after container exit
 
 ### Phase 3: Testing
 
@@ -156,9 +164,12 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 - [ ] Credentials never exposed to container
 
 ### Host Protection Tests
-- [ ] Host `git status` works after container exit
-- [ ] Host `git log` works after container exit
-- [ ] No container paths in host metadata
+- [ ] Host `git status` works on worktree after container exit
+- [ ] Host `git log` works on worktree after container exit
+- [ ] Verify `gitdir` file restored to host path after container exit
+- [ ] Verify `gitdir.host-backup` cleaned up after normal exit
+- [ ] Test recovery from crashed container (manual `gitdir` restore)
+- [ ] No container paths in host metadata (except during container runtime)
 
 ### Concurrency Tests
 - [ ] Two containers commit simultaneously - both succeed without corruption

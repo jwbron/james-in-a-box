@@ -180,6 +180,9 @@ Mount **only** the specific worktree admin directory, **not** the parent `worktr
 # Shared refs - for updating branch pointers
 -v ~/.git/repo/refs:/home/jib/.git-admin/refs:rw
 
+# Packed refs - git stores refs both as loose files and in packed-refs
+-v ~/.git/repo/packed-refs:/home/jib/.git-admin/packed-refs:rw
+
 # Config and hooks - read-only access to shared configuration
 -v ~/.git/repo/config:/home/jib/.git-admin/config:ro
 -v ~/.git/repo/hooks:/home/jib/.git-admin/hooks:ro
@@ -212,23 +215,59 @@ The `commondir` file tells git where to find the shared repository (objects, ref
 ../..
 ```
 
-This resolves to `/home/jib/.git-admin` from the container's view, where:
-- `../repo/objects` → mounted objects directory
-- `../repo/refs` → mounted refs directory
-- `../repo/config` → mounted config file
+This resolves to `/home/jib/.git-admin` from the container's view. Git then looks for shared resources at:
+- `/home/jib/.git-admin/objects` → mounted objects directory
+- `/home/jib/.git-admin/refs` → mounted refs directory
+- `/home/jib/.git-admin/packed-refs` → mounted packed-refs file
+- `/home/jib/.git-admin/config` → mounted config file
 
 **Important:** Absolute paths like `/home/jib/.git-common/repo` would leak container paths to host metadata. Always use relative paths.
 
 #### `gitdir` File (reverse resolution)
 
-The `gitdir` file in the worktree admin allows git to find the working directory:
+The `gitdir` file in the worktree admin allows git to find the working directory from the worktree admin directory:
 
 ```
 # In /home/jib/.git-admin/repo/gitdir
 /home/jib/repos/repo
 ```
 
-This is a container-internal path and doesn't affect host operations since each container has isolated mounts.
+**Host Leakage Consideration:** Since the worktree admin directory is bind-mounted, container writes to `gitdir` persist on the host. This container-internal path would break host git operations on this worktree after container exit.
+
+**Mitigation Strategy:**
+
+1. **On container startup** (entrypoint.py): Save the original host `gitdir` content to a backup file (e.g., `gitdir.host-backup`)
+2. **During container operation**: Use the container-internal path `/home/jib/repos/repo`
+3. **On container exit**: Restore the original `gitdir` from backup
+
+**Implementation in entrypoint.py:**
+```python
+# On startup
+gitdir_path = "/home/jib/.git-admin/repo/gitdir"
+backup_path = "/home/jib/.git-admin/repo/gitdir.host-backup"
+
+# Save original if not already backed up
+if os.path.exists(gitdir_path) and not os.path.exists(backup_path):
+    shutil.copy(gitdir_path, backup_path)
+
+# Write container-internal path
+with open(gitdir_path, 'w') as f:
+    f.write('/home/jib/repos/repo\n')
+```
+
+**Cleanup script (or exit hook):**
+```python
+# On exit - restore original gitdir
+if os.path.exists(backup_path):
+    shutil.copy(backup_path, gitdir_path)
+    os.remove(backup_path)
+```
+
+**Fallback recovery:** If container crashes without cleanup, host can restore manually:
+```bash
+# In worktree admin directory
+mv gitdir.host-backup gitdir
+```
 
 ### Shared Directory Safety
 
@@ -335,7 +374,7 @@ With separate restricted views:
 **Files to modify:** `jib-container/runtime.py`
 
 - [ ] Mount only specific worktree admin dir (not parent `worktrees/` dir)
-- [ ] Mount objects and refs as rw under `.git-admin/` for local commits
+- [ ] Mount objects, refs, and packed-refs as rw under `.git-admin/` for local commits
 - [ ] Mount config/hooks as ro under `.git-admin/`
 - [ ] Update mount paths to match `commondir` relative path resolution
 
@@ -345,8 +384,11 @@ With separate restricted views:
 
 - [ ] Set `.git` file content to `gitdir: /home/jib/.git-admin/repo`
 - [ ] Set `commondir` to relative path (`../..`)
-- [ ] Set `gitdir` file for reverse resolution
-- [ ] Ensure container paths don't leak to host metadata
+- [ ] Implement gitdir backup/restore mechanism:
+  - [ ] On startup: backup original `gitdir` to `gitdir.host-backup`
+  - [ ] On startup: write container-internal path to `gitdir`
+  - [ ] On exit: restore original `gitdir` from backup
+- [ ] Add cleanup script for crashed containers (restore gitdir from backup)
 - [ ] Test host git commands work after container exit
 
 ### Phase 3: Testing
@@ -355,6 +397,12 @@ With separate restricted views:
 - [ ] Test cross-container isolation (can't access other worktrees)
 - [ ] Test push/fetch still work via gateway
 - [ ] Test concurrent operations from multiple containers (see concurrency test cases below)
+- [ ] Test host protection:
+  - [ ] Host `git status` works on worktree after container exit
+  - [ ] Host `git log` works on worktree after container exit
+  - [ ] Verify `gitdir` file restored to host path after container exit
+  - [ ] Verify `gitdir.host-backup` cleaned up after normal exit
+  - [ ] Test recovery from crashed container (manual `gitdir` restore)
 
 ### Concurrency Test Cases
 
