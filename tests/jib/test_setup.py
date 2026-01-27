@@ -77,7 +77,9 @@ class TestValidatePrefix:
 
     def test_empty_allowed_passes(self, setup_instance):
         """Test that empty value passes when allow_empty=True."""
-        setup_instance._validate_prefix("", "ghp_", "Token must start with 'ghp_'", allow_empty=True)
+        setup_instance._validate_prefix(
+            "", "ghp_", "Token must start with 'ghp_'", allow_empty=True
+        )
 
     def test_empty_not_allowed_raises(self, setup_instance):
         """Test that empty value raises when allow_empty=False."""
