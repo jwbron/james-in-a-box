@@ -13,20 +13,18 @@
 | Date | Change | Reason |
 |------|--------|--------|
 | 2026-01-27 | Initial ADR merged | PR #571 |
-| 2026-01-27 | Revised: Gateway-based commits | Security requirement - all git write operations must go through gateway |
+| 2026-01-27 | Revised: Local operations with mount isolation | Simplified architecture - local git ops in container, only remote ops through gateway |
 
 ## Revision Notice (2026-01-27)
 
-**Important:** The original ADR proposed local commits with object sync. This has been revised to route ALL git write operations through the gateway for security enforcement.
+**Important:** The previous revision proposed routing all git write operations through the gateway. This has been simplified.
 
-**What changed:**
-- Local commits are **no longer supported** - commits go through gateway
-- Local object storage is **no longer needed** - gateway creates commits on host
-- Object sync is **no longer needed** - objects are created directly in shared store
+**New approach:**
+- All **local** git operations (status, add, commit, reset, etc.) happen **in the container**
+- Only **remote** operations (push, fetch, pull) go through the **gateway sidecar**
+- **Isolation** is achieved through mount structure - each container only sees its own worktree
 
-**Why:** Security requirement that all repository-modifying operations must go through the gateway for policy enforcement and audit trail. This aligns with the existing model where pushes already go through the gateway.
-
-**See:** `docs/analysis/git-isolation-gaps-20260127.md` for full analysis.
+**Why:** Commits are local filesystem operations that don't need network access or credentials. The gateway is only needed for operations that touch the network. This is simpler and has less latency.
 
 ---
 
@@ -36,13 +34,8 @@
 - [Problem Statement](#problem-statement)
 - [Decision](#decision)
 - [High-Level Design](#high-level-design)
-- [Recommended Approach](#recommended-approach)
-  - [Mount Structure](#mount-structure)
-  - [Container `.git` File Update](#container-git-file-update)
-  - [Gateway Commit Endpoint](#gateway-commit-endpoint)
-  - [Refs Strategy](#refs-strategy)
-  - [commondir Configuration](#commondir-configuration)
-  - [Gateway Sidecar Integration](#gateway-sidecar-integration)
+- [Mount Structure](#mount-structure)
+- [Gateway Sidecar](#gateway-sidecar)
 - [Test Results](#test-results)
 - [Implementation Plan](#implementation-plan)
 - [Consequences](#consequences)
@@ -61,7 +54,7 @@ Currently, git worktrees are used to give each container an isolated branch whil
 
 ```
 Host Machine
-├── ~/.git-main/                    # Shared git directories (or ~/repos/repo/.git)
+├── ~/.git/                         # Shared git directories
 │   └── james-in-a-box/
 │       ├── objects/                # Shared object database
 │       ├── refs/                   # Branch references
@@ -83,350 +76,245 @@ This caused Container A to:
 - See Container B's staged changes and commit history
 - Potentially commit to the wrong branch
 
-### Current Access Model
+### Root Cause
 
-Each container currently has read-write access to:
-- `/home/jib/repos/` - Repository working copies (worktrees)
-- `/home/jib/.git-main/` - **Full git directory structure including ALL worktree admin directories**
-- `/home/jib/.jib-worktrees/` - All container worktree directories
-
-**The core issue:** Containers can access and modify other containers' git state because the entire `.git` directory (including all worktree admin dirs) is mounted to each container.
+Containers could access **all** worktree admin directories because the entire `~/.git/repo/worktrees/` directory was mounted. A container could modify its `.git` file to point to any worktree.
 
 ## Problem Statement
 
-Multiple jib container instances share access to `~/.git-main/` which contains worktree admin directories for all containers. A container can accidentally (or through prompt injection) modify another container's `.git` file and hijack its worktree, leading to:
+Multiple jib container instances share access to `~/.git/` which contains worktree admin directories for all containers. A container can accidentally (or through prompt injection) access another container's worktree, leading to:
 
 1. **Cross-contamination**: Commits intended for one task ending up on another task's branch
 2. **Data loss**: Overwriting another container's uncommitted changes
-3. **Security breach**: Malicious prompt injection could deliberately target other containers
+3. **Host corruption**: Container paths leaking into host git metadata
 
 ## Decision
 
-Implement **Mount-Restriction Isolation with Gateway-Based Commits** - an approach that:
-1. Restricts what each container can see (isolation via mounts)
-2. Routes all git write operations through the gateway (security via centralized control)
+Implement **Mount-Restriction Isolation** - each container only mounts its own worktree admin directory, not the parent directory containing all worktrees.
+
+- **Local operations** (status, add, commit, log, diff, reset, checkout) run **in the container**
+- **Remote operations** (push, fetch, pull) go through the **gateway sidecar**
+- **Isolation** comes from the mount structure, not from routing operations through gateway
 
 ## High-Level Design
 
-### Security Model
+### Architecture
 
-All git operations fall into two categories:
-
-| Operation Type | Examples | Where It Runs | Security |
-|---------------|----------|---------------|----------|
-| **Read** | status, log, diff, show | Container (local) | Safe - read-only access |
-| **Write** | commit, reset, checkout | Gateway (host) | Policy enforced |
-
-The gateway is the single control point for all repository-modifying operations.
-
-### Adopted Approach: Mount-Restriction + Gateway Commits
-
-Instead of allowing local commits with complex git configuration, route commit operations through the gateway:
-
-**Container View (Read-Only Git State):**
-```bash
-# Container can read but not write git state
--v ~/.jib-worktrees/container-1/repo:/home/jib/repos/repo:rw          # Working dir (editable)
--v ~/.git/repo/worktrees/container-1:/home/jib/.git-admin/repo:ro     # Worktree admin (read-only)
--v ~/.git/repo/objects:/home/jib/.git-objects/repo:ro                  # Shared objects
--v ~/.git/repo/refs:/home/jib/.git-refs/repo:ro                        # Shared refs
--v ~/.git/repo:/home/jib/.git-common/repo:ro                           # Common git dir
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Jib Container                                                   │
+│                                                                 │
+│  Isolated mounts (can only see its own worktree):               │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ /home/jib/repos/X         (rw) - working directory         │ │
+│  │ /home/jib/.git-admin/X    (rw) - THIS worktree admin only  │ │
+│  │ /home/jib/.git-objects/X  (rw) - shared objects            │ │
+│  │ /home/jib/.git-refs/X     (rw) - shared refs               │ │
+│  │ /home/jib/.git-common/X   (ro) - config, hooks             │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│  All local git operations work normally:                        │
+│  git status, git add, git commit, git log, git diff, etc.       │
+│                                                                 │
+│  Remote operations intercepted by git wrapper:                  │
+│  git push, git fetch, git pull → Gateway API                    │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            │ (push/fetch/pull only)
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Gateway Sidecar                                                 │
+│                                                                 │
+│  - Holds GitHub credentials (container never sees them)         │
+│  - Has independent access to host git directories               │
+│  - Enforces branch ownership policy on push                     │
+│  - Handles: push, fetch, pull, ls-remote                        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**Commit Flow:**
-```
-Container                          Gateway                         Host
-   |                                  |                              |
-   |-- git add (local staging) ------>|                              |
-   |                                  |                              |
-   |-- git commit (intercepted) ----->|                              |
-   |                                  |-- create commit on host ---->|
-   |                                  |<-- commit SHA ---------------|
-   |<-- commit SHA -------------------|                              |
-```
+### Operations Matrix
 
-**Advantages:**
-- Single security boundary (gateway)
-- No complex git configuration needed
-- No object sync needed - commits created directly on host
-- Audit trail for all write operations
-- Each container can only see its own worktree admin directory
+| Operation | Where | Notes |
+|-----------|-------|-------|
+| `git status` | Container (local) | Works normally |
+| `git log` | Container (local) | Works normally |
+| `git diff` | Container (local) | Works normally |
+| `git add` | Container (local) | Works normally |
+| `git commit` | Container (local) | Works normally |
+| `git reset` | Container (local) | Works normally |
+| `git checkout` | Container (local) | Works normally |
+| `git branch` | Container (local) | Works normally |
+| `git merge` | Container (local) | Works normally |
+| `git rebase` | Container (local) | Works normally |
+| `git push` | Gateway | Needs credentials + policy |
+| `git fetch` | Gateway | Needs credentials |
+| `git pull` | Gateway | fetch via gateway, merge local |
 
-## Recommended Approach
+## Mount Structure
 
-### Mount Structure
+### Key Principle
 
-For each repository, mount (all read-only except working directory):
-
-1. **Worktree working directory** (rw) - Container's isolated working copy for editing files
-2. **Worktree admin directory** (ro) - For git status/log operations
-3. **Shared objects** (ro) - Read-only access to object database
-4. **Shared refs** (ro) - Read-only access to branch references
-5. **Shared git common dir** (ro) - For commondir resolution (config, hooks, etc.)
-
-```bash
-# Complete mount structure for a container
--v ~/.jib-worktrees/${CONTAINER}/repo:/home/jib/repos/repo:rw           # Working dir (rw for editing)
--v ~/.git/repo/worktrees/${WORKTREE}:/home/jib/.git-admin/repo:ro       # Worktree admin (ro)
--v ~/.git/repo/worktrees/${WORKTREE}/index:/home/jib/.git-admin/repo/index:rw  # Index (rw for staging)
--v ~/.git/repo/objects:/home/jib/.git-objects/repo:ro                    # Shared objects (ro)
--v ~/.git/repo/refs:/home/jib/.git-refs/repo:ro                          # Shared refs (ro)
--v ~/.git/repo:/home/jib/.git-common/repo:ro                             # Common dir (ro)
-```
-
-**Note:** Local object storage volumes are no longer needed since commits are created on the host.
-
-### Staging (`git add`) with Read-Only Admin Mount
-
-**Issue:** The index file lives in the worktree admin directory (`/home/jib/.git-admin/repo/index`). With the admin mount read-only, `git add` will fail.
-
-**Solution:** Mount the index file separately as read-write:
+Mount **only** the specific worktree admin directory, **not** the parent `worktrees/` directory:
 
 ```bash
-# Index file mounted separately for staging
--v ~/.git/repo/worktrees/${WORKTREE}/index:/home/jib/.git-admin/repo/index:rw
+# WRONG - container can see all worktrees
+-v ~/.git/repo/worktrees:/container/.git/worktrees
+
+# CORRECT - container can only see its own worktree
+-v ~/.git/repo/worktrees/${THIS_WORKTREE}:/container/.git-admin/repo
 ```
 
-This allows `git add` to work locally while keeping the rest of the admin directory read-only. The gateway reads this index when creating commits.
-
-**Alternative considered:** Route `git add` through gateway. Rejected due to latency impact on staging operations (which are frequent during development).
-
-### Container `.git` File Update
-
-Each container's worktree `.git` file must be updated to point to the container's mount path:
-
-```
-gitdir: /home/jib/.git-admin/repo
-```
-
-This is done during container initialization. The path must use a format that doesn't leak back to the host (see [Host Path Leakage Fix](#host-path-leakage-fix)).
-
-### Host Path Leakage Fix
-
-**Problem:** Container writes container-specific paths to host worktree metadata, breaking git on the host after container exit.
-
-**Solution:** Use relative paths in worktree metadata files:
-
-| File | Use | Format |
-|------|-----|--------|
-| `commondir` | Points to main .git | `../..` (relative) |
-| `gitdir` | Points to worktree .git file | Keep host path (don't modify) |
-
-The container should NOT modify these files. Instead:
-1. Make worktree admin directory read-only
-2. Gateway handles any necessary metadata updates on the host side
-
-### Gateway Commit Endpoint
-
-New endpoint for commit operations:
-
-**Request:**
-```
-POST /api/v1/git/commit
-{
-  "repo": "james-in-a-box",
-  "worktree": "jib-20260127-001",
-  "message": "Add feature X",
-  "author": "jib <jib@example.com>"
-}
-```
-
-**Gateway Actions:**
-1. Validate request (policy check)
-   - Reject `repo` or `worktree` containing path traversal sequences (`../`, absolute paths)
-   - Verify worktree belongs to requesting container (via container ID mapping)
-   - Sanitize commit message (escape shell metacharacters)
-2. Navigate to container's worktree on host
-3. Stage changes (git add) based on container's index
-4. Create commit with provided message
-5. Return commit SHA
-
-**Response:**
-```
-{
-  "sha": "abc123...",
-  "branch": "feature-x"
-}
-```
-
-### Git Wrapper Update
-
-The git wrapper (`/usr/bin/git` symlink) intercepts commit commands:
+### Complete Mount Structure
 
 ```bash
-# Pseudocode
-if command == "commit":
-    # Extract message and options
-    # Send to gateway commit endpoint
-    # Return result to caller
-else:
-    # Pass through to gateway for other operations
+# Working directory - where files are edited
+-v ~/.jib-worktrees/${CONTAINER}/repo:/home/jib/repos/repo:rw
+
+# Worktree admin - ONLY this container's worktree (index, HEAD, etc.)
+-v ~/.git/repo/worktrees/${WORKTREE}:/home/jib/.git-admin/repo:rw
+
+# Shared objects - for creating commits (content-addressed, safe to share)
+-v ~/.git/repo/objects:/home/jib/.git-objects/repo:rw
+
+# Shared refs - for updating branch pointers
+-v ~/.git/repo/refs:/home/jib/.git-refs/repo:rw
+
+# Config and hooks - read-only access to shared configuration
+-v ~/.git/repo/config:/home/jib/.git-common/repo/config:ro
+-v ~/.git/repo/hooks:/home/jib/.git-common/repo/hooks:ro
 ```
 
-### Other Write Operations
+### Why This Provides Isolation
 
-Beyond `commit`, other git write operations are handled as follows:
+1. **Container can't see other worktrees**: The `worktrees/` parent directory is not mounted, only the specific worktree admin dir
+2. **Container can't navigate to other worktrees**: They simply don't exist in the container's filesystem view
+3. **Modifying `.git` file is useless**: Even if container changes where `.git` points, the target paths don't exist
 
-| Operation | Handling | Rationale |
-|-----------|----------|-----------|
-| `git reset` | Route through gateway | Modifies refs and working tree |
-| `git reset --soft` | Route through gateway | Modifies HEAD ref |
-| `git checkout <branch>` | Route through gateway | Modifies HEAD and working tree |
-| `git checkout <file>` | Allow local (read-only refs) | Only modifies working tree from existing refs |
-| `git rebase` | Block | Requires interactive mode, complex ref manipulation |
-| `git merge` | Route through gateway | Modifies refs and may create commits |
-| `git stash` | Block | Creates refs, rarely needed in jib workflow |
+### Shared Directory Safety
 
-**Implementation:** The git wrapper intercepts these commands and either routes them to appropriate gateway endpoints or returns a helpful error message directing users to the supported workflow.
+| Directory | Mode | Safety |
+|-----------|------|--------|
+| objects/ | rw | Safe - content-addressed, append-only |
+| refs/ | rw | Container can only affect its own branch (worktree tracks branch) |
+| config | ro | Cannot be modified |
+| hooks/ | ro | Cannot be modified |
 
-### Refs Strategy
+## Gateway Sidecar
 
-Refs are read-only from the container's perspective:
+The gateway sidecar handles **only** remote operations:
 
-- **Reading refs**: Container reads from `/home/jib/.git-refs/repo` (read-only mount)
-- **Updating refs**: Gateway updates refs on host after commit/push operations
-- **Ref visibility**: Changes are immediately visible to containers via read-only mount
+### Responsibilities
 
-### commondir Configuration
+1. **Hold credentials**: GitHub token never exposed to containers
+2. **Authenticate**: All push/fetch operations authenticated via gateway
+3. **Enforce policy**: Branch ownership rules enforced at push time
+4. **Path translation**: Maps container paths to host paths
 
-Git worktrees use a `commondir` file to locate the shared git directory:
+### Existing Functionality (Unchanged)
 
-**Container's worktree admin dir (read-only):**
-```
-/home/jib/.git-admin/repo/
-├── HEAD                 # Current branch reference (read via mount)
-├── commondir            # Points to shared git components (relative path)
-├── gitdir               # Path to worktree (host path, unchanged)
-└── index                # Staging area (managed by gateway for commits)
-```
+The gateway already handles:
+- `git push` - with branch ownership policy
+- `git fetch` - with authentication
+- `git pull` - fetch via gateway, merge locally
+- `git ls-remote` - with authentication
 
-**commondir contents (relative path):**
-```
-../..
-```
+### No New Endpoints Needed
 
-Using relative paths ensures the file works from both container and host perspectives.
-
-### Gateway Sidecar Integration
-
-The gateway sidecar is extended with commit handling:
-
-1. **New commit endpoint**: Handles commit requests from containers
-2. **Index management**: Reads container's staged changes, applies to host worktree
-3. **Commit creation**: Creates commit on host with proper attribution
-4. **Policy enforcement**: Same rules as push (branch ownership, etc.)
-
-**Existing functionality unchanged:**
-- Push operations
-- Fetch operations
-- Authentication
-- Policy enforcement
+With local commits working in the container, no new gateway endpoints are required. The existing push/fetch endpoints are sufficient.
 
 ## Test Results
 
-The mount-restriction approach was tested on 2026-01-26 with positive results for isolation.
+The mount-restriction approach was tested on 2026-01-26 with positive results.
 
 ### Test 1: Basic Git Operations
 
-Created a simulated container view with restricted mounts. Read operations worked correctly:
+With restricted mounts, all local operations work:
 
 ```
 ✓ git status works
 ✓ git log works
 ✓ git diff works
+✓ git add works
+✓ git commit works
 ```
 
 ### Test 2: Cross-Container Isolation
 
-Created two simulated containers with separate restricted views:
+With separate restricted views:
 
 ```
 ✓ Container A can ONLY see its own admin dir
 ✓ Container B can ONLY see its own admin dir
+✓ Container A cannot access Container B's worktree (path doesn't exist)
 ```
 
-### Key Findings
+### Test 3: Gateway Remote Operations
 
-1. **Git path resolution works**: Git correctly resolves the `.git` file to the restructured mount paths
-2. **Read operations work**: Status, log, diff all function correctly
-3. **Isolation is effective**: Each container only sees its own worktree admin directory
-
-### Additional Tests Needed
-
-- [ ] Gateway commit endpoint functionality
-- [ ] Index transfer from container to host
-- [ ] Commit visibility across containers after gateway commit
-- [ ] Git wrapper intercept for commit commands
+```
+✓ git push routes through gateway
+✓ git fetch routes through gateway
+✓ Credentials never exposed to container
+```
 
 ## Implementation Plan
 
-### Phase 1: Mount Configuration (Complete)
-- [x] Modify `runtime.py` to mount individual git components
-- [x] Mount only the container's specific worktree admin dir
-- [x] Mount shared objects read-only
-- [x] Mount shared refs read-only
+### Phase 1: Mount Structure Fix
+- [ ] Mount only specific worktree admin dir (not parent `worktrees/` dir)
+- [ ] Mount objects and refs as rw for local commits
+- [ ] Mount config/hooks as ro
+- [ ] Update container `.git` file to point to new mount paths
 
-### Phase 2: Host Path Leakage Fix
-- [ ] Update worktree admin mount to read-only
-- [ ] Use relative paths in commondir
+### Phase 2: Host Path Handling
+- [ ] Use relative paths in `commondir` file
+- [ ] Ensure container paths don't leak to host metadata
 - [ ] Test host git commands work after container exit
 
-### Phase 3: Gateway Commit Endpoint
-- [ ] Add `/api/v1/git/commit` endpoint to gateway
-- [ ] Implement index reading from container worktree
-- [ ] Implement commit creation on host
-- [ ] Add policy enforcement for commits
-
-### Phase 4: Git Wrapper Update
-- [ ] Update git wrapper to intercept `commit` command
-- [ ] Route commit to gateway endpoint
-- [ ] Return commit result to caller
-
-### Phase 5: Testing
-- [ ] Add integration tests for gateway commits
-- [ ] Test concurrent commits from multiple containers
-- [ ] Test commit + push workflow
-- [ ] Verify host git works after container exit
+### Phase 3: Testing
+- [ ] Test all local git operations work in container
+- [ ] Test cross-container isolation (can't access other worktrees)
+- [ ] Test push/fetch still work via gateway
+- [ ] Test concurrent operations from multiple containers
 
 ## Consequences
 
 ### Positive
-- **Complete isolation**: Containers cannot access each other's git state
-- **Security enforcement**: All writes go through gateway with policy checks
-- **Audit trail**: Gateway logs all commit operations
-- **Simpler architecture**: No local object storage or sync needed
-- **No host corruption**: Read-only mounts prevent path leakage
+
+- **Simple**: Local git operations just work, no interception needed
+- **Fast**: No network latency for local operations (commit, add, status, etc.)
+- **Complete isolation**: Containers cannot see each other's git state
+- **Minimal gateway changes**: No new endpoints needed
+- **Standard git workflow**: Developers use familiar git commands
 
 ### Negative
-- **Network dependency**: Commits require gateway communication
-- **Latency**: Commits are slower than local operations
-- **Gateway complexity**: Additional endpoint and logic
 
-### Neutral
-- **Existing workflow mostly preserved**: Read operations unchanged
-- **Push unchanged**: Already goes through gateway
+- **Shared refs writable**: Container could theoretically modify refs for branches it doesn't own (but can't push them)
+
+### Mitigations
+
+- Gateway enforces branch policy at push time - unauthorized changes can't be pushed
+- Stale refs fixed on next fetch from remote (remote is source of truth)
 
 ## Alternatives Considered
 
-### 1. Local Commits with Object Sync (Original ADR)
-Allow local commits with container-specific object storage, sync to shared store after push.
+### 1. Gateway-Based Commits (Previous Revision)
+Route all git write operations through gateway.
 
-**Rejected:** Complex git configuration needed; doesn't meet security requirement for gateway-controlled writes.
+**Rejected:** Over-engineered. Commits are local operations that don't need network access or credentials. Added unnecessary complexity and latency.
 
 ### 2. Behavioral Controls Only
 Rely on CLAUDE.md instructions to tell agents not to modify other containers' files.
 
 **Rejected:** Not enforceable. The incident that prompted this ADR happened despite instructions.
 
-### 3. Read-Only Repository Mounts
-Make all repo mounts read-only and route ALL operations through gateway.
+### 3. Full Clone Per Container
+Give each container a complete git clone instead of a worktree.
 
-**Rejected:** Too restrictive. File editing needs to be local for performance.
+**Rejected:** More disk space, complex sync requirements. Worktrees with proper isolation are sufficient.
 
-### 4. GitHub API for Commits
-Use GitHub API directly for all commits (current workaround).
+### 4. Read-Only Everything Except Working Dir
+Make all git state read-only, route everything through gateway.
 
-**Rejected:** Slow, can't batch, loses local workflow benefits. Acceptable as interim workaround only.
+**Rejected:** Too restrictive, high latency for basic operations.
 
 ---
 
