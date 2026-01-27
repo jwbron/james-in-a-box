@@ -1,6 +1,8 @@
 [Unit]
 Description=JIB Host Services - Python venv setup
 Documentation=file://%h/repos/james-in-a-box/host-services/README.md
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot

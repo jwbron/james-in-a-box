@@ -3,7 +3,7 @@
 # This oneshot service ensures the Python venv exists before dependent services start
 set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPONENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="venv-setup.service"
 SYSTEMD_DIR="${HOME}/.config/systemd/user"
 
@@ -13,7 +13,7 @@ echo "Setting up venv-setup service..."
 mkdir -p "$SYSTEMD_DIR"
 
 # Symlink service file
-if ln -sf "$SCRIPT_DIR/$SERVICE_NAME" "$SYSTEMD_DIR/"; then
+if ln -sf "$COMPONENT_DIR/$SERVICE_NAME" "$SYSTEMD_DIR/"; then
     echo "✓ Service file symlinked to $SYSTEMD_DIR/$SERVICE_NAME"
 else
     echo "✗ Failed to create symlink"
@@ -32,6 +32,11 @@ echo "✓ Service enabled"
 echo "Running venv setup..."
 systemctl --user start "$SERVICE_NAME"
 echo "✓ Venv setup complete"
+
+# Check status
+echo ""
+echo "Service status:"
+systemctl --user status "$SERVICE_NAME" --no-pager
 
 echo ""
 echo "Setup complete!"
