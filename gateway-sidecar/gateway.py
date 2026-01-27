@@ -27,6 +27,7 @@ Usage:
 import argparse
 import functools
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -402,6 +403,99 @@ BLOCKED_GIT_ARGS = [
     "-u",  # Short for --upload-pack
 ]
 
+# Flag normalization: map short flags to long form for consistent validation
+FLAG_NORMALIZATION = {
+    # fetch/ls-remote
+    "-a": "--all",
+    "-t": "--tags",
+    "-p": "--prune",
+    "-v": "--verbose",
+    "-q": "--quiet",
+    "-j": "--jobs",
+    # push
+    "-f": "--force",
+    "-d": "--delete",
+    "-u": "--set-upstream",
+    "-n": "--dry-run",
+}
+
+
+def normalize_flag(flag: str) -> str:
+    """
+    Normalize short flags to long form for consistent validation.
+
+    Args:
+        flag: The flag to normalize (e.g., "-a" or "--all")
+
+    Returns:
+        The normalized long-form flag, or original if not found
+    """
+    # Handle -X=value format
+    if "=" in flag:
+        base, value = flag.split("=", 1)
+        normalized = FLAG_NORMALIZATION.get(base, base)
+        return f"{normalized}={value}"
+    return FLAG_NORMALIZATION.get(flag, flag)
+
+
+# Allowlist of gh api paths that are permitted
+# These patterns match GitHub API endpoints that are safe for read/write operations
+GH_API_ALLOWED_PATHS = [
+    # PR operations
+    re.compile(r"^repos/[^/]+/[^/]+/pulls$"),  # List PRs
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+$"),  # View PR
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/comments$"),  # PR comments
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews$"),  # PR reviews
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews/\d+$"),  # Specific review
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews/\d+/comments$"),  # Review comments
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/requested_reviewers$"),  # Requested reviewers
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/files$"),  # PR files
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/commits$"),  # PR commits
+    # Issue operations
+    re.compile(r"^repos/[^/]+/[^/]+/issues$"),  # List issues
+    re.compile(r"^repos/[^/]+/[^/]+/issues/\d+$"),  # View issue
+    re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/comments$"),  # Issue comments
+    re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/labels$"),  # Issue labels
+    # Repository info
+    re.compile(r"^repos/[^/]+/[^/]+$"),  # Repo info
+    re.compile(r"^repos/[^/]+/[^/]+/branches$"),  # List branches
+    re.compile(r"^repos/[^/]+/[^/]+/branches/[^/]+$"),  # Branch info
+    re.compile(r"^repos/[^/]+/[^/]+/commits$"),  # List commits
+    re.compile(r"^repos/[^/]+/[^/]+/commits/[a-f0-9]+$"),  # Specific commit
+    re.compile(r"^repos/[^/]+/[^/]+/contents/.*$"),  # File contents
+    re.compile(r"^repos/[^/]+/[^/]+/git/refs.*$"),  # Git refs
+    re.compile(r"^repos/[^/]+/[^/]+/compare/.*$"),  # Compare commits
+    # User info
+    re.compile(r"^user$"),  # Current user
+    re.compile(r"^users/[^/]+$"),  # User info
+]
+
+
+def validate_gh_api_path(path: str, method: str = "GET") -> tuple[bool, str]:
+    """
+    Validate gh api path against allowlist.
+
+    Args:
+        path: The API path (e.g., "repos/owner/repo/pulls/123")
+        method: The HTTP method (GET, POST, etc.)
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Only GET, POST, PATCH allowed - no DELETE for safety
+    if method.upper() not in ("GET", "POST", "PATCH"):
+        return False, f"HTTP method '{method}' not allowed for gh api"
+
+    # Strip leading slash if present
+    path = path.lstrip("/")
+
+    # Check against allowed patterns
+    for pattern in GH_API_ALLOWED_PATHS:
+        if pattern.match(path):
+            return True, ""
+
+    return False, f"API path '{path}' not in allowlist"
+
 
 def sanitize_git_args(args: list[str]) -> tuple[bool, str, list[str]]:
     """
@@ -433,6 +527,106 @@ def sanitize_git_args(args: list[str]) -> tuple[bool, str, list[str]]:
         sanitized.append(arg)
 
     return True, "", sanitized
+
+
+# =============================================================================
+# Shared Helper Functions for Git Operations
+# =============================================================================
+
+# Credential helper script template for GIT_ASKPASS
+_ASKPASS_SCRIPT = """#!/bin/bash
+if [[ "$1" == *"Username"* ]]; then
+    echo "$GIT_USERNAME"
+elif [[ "$1" == *"Password"* ]]; then
+    echo "$GIT_PASSWORD"
+fi
+"""
+
+
+def create_credential_helper(token_str: str, env: dict) -> tuple[str, dict]:
+    """
+    Create a temporary credential helper script for git authentication.
+
+    Creates a GIT_ASKPASS script that provides credentials from environment
+    variables. The script is written to a temp file with restrictive permissions.
+
+    Args:
+        token_str: The GitHub token to use for authentication
+        env: The environment dict to update
+
+    Returns:
+        Tuple of (credential_helper_path, updated_env)
+
+    Note:
+        Caller MUST clean up the credential file using cleanup_credential_helper()
+        in a finally block to ensure the token is never left on disk.
+    """
+    # Update environment with credential info
+    env = env.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_USERNAME"] = "x-access-token"
+    env["GIT_PASSWORD"] = token_str
+
+    # Create temp file with restrictive permissions BEFORE writing
+    fd, path = tempfile.mkstemp(suffix=".sh", prefix="git-askpass-")
+    try:
+        os.fchmod(fd, 0o700)  # Set permissions on fd before writing
+        os.write(fd, _ASKPASS_SCRIPT.encode())
+    finally:
+        os.close(fd)
+
+    env["GIT_ASKPASS"] = path
+    return path, env
+
+
+def cleanup_credential_helper(path: str | None) -> None:
+    """
+    Safely clean up a credential helper file.
+
+    Args:
+        path: Path to the credential helper file, or None if not created yet
+    """
+    if path and os.path.exists(path):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass  # Best effort cleanup
+
+
+def get_token_for_repo(repo: str) -> tuple[str | None, str, str]:
+    """
+    Get the authentication token for a repository.
+
+    Determines the auth mode (bot vs incognito) for the repo and retrieves
+    the appropriate token.
+
+    Args:
+        repo: Repository in "owner/repo" format
+
+    Returns:
+        Tuple of (token_str, auth_mode, error_message)
+        - token_str is None if token unavailable (error_message explains why)
+        - auth_mode is "bot" or "incognito"
+        - error_message is empty string on success
+    """
+    auth_mode = get_auth_mode(repo)
+    github = get_github_client(mode=auth_mode)
+
+    if auth_mode == "incognito":
+        token_str = github.get_incognito_token()
+        if not token_str:
+            return (
+                None,
+                auth_mode,
+                "Incognito token not available. Set GITHUB_INCOGNITO_TOKEN environment variable.",
+            )
+    else:
+        token = github.get_token()
+        if not token:
+            return None, auth_mode, "GitHub token not available"
+        token_str = token.token
+
+    return token_str, auth_mode, ""
 
 
 @app.route("/api/v1/git/push", methods=["POST"])
@@ -518,7 +712,6 @@ def git_push():
 
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
-    incognito_cfg = get_incognito_config() if auth_mode == "incognito" else {}
 
     # Check branch ownership policy (pass auth mode for relaxed policy in incognito)
     policy = get_policy_engine()
@@ -542,22 +735,10 @@ def git_push():
             details=policy_result.details,
         )
 
-    # Execute git push with authentication
-    github = get_github_client(mode=auth_mode)
-
-    # Get token based on auth mode
-    if auth_mode == "incognito":
-        token_str = github.get_incognito_token()
-        if not token_str:
-            return make_error(
-                "Incognito token not available. Set GITHUB_INCOGNITO_TOKEN environment variable.",
-                status_code=503,
-            )
-    else:
-        token = github.get_token()
-        if not token:
-            return make_error("GitHub token not available", status_code=503)
-        token_str = token.token
+    # Get authentication token using shared helper
+    token_str, auth_mode, token_error = get_token_for_repo(repo)
+    if not token_str:
+        return make_error(token_error, status_code=503)
 
     # Build push command with safe.directory for worktree paths
     push_args = ["push"]
@@ -566,52 +747,17 @@ def git_push():
     push_args.extend([remote, refspec] if refspec else [remote])
     cmd = git_cmd(*push_args)
 
-    # Configure git to use token via GIT_ASKPASS
-    # Create a secure credential helper using a file descriptor instead of temp file
-    env = os.environ.copy()
-    env["GIT_TERMINAL_PROMPT"] = "0"
-
-    # Use environment variable for credential helper to avoid temp file
-    # Git credential helper protocol: respond with username and password
-    env["GIT_USERNAME"] = "x-access-token"
-    env["GIT_PASSWORD"] = token_str
-
     # NOTE: Git author/committer info is set at COMMIT time, not push time.
     # For incognito mode, the user must configure their local git:
     #   git config user.name "Your Name"
     #   git config user.email "your@email.com"
-    # The incognito.git_name and incognito.git_email in repositories.yaml
-    # are for documentation purposes only - they don't affect commits.
     if auth_mode == "incognito":
-        logger.debug(
-            "Incognito mode push",
-            repo=repo,
-            incognito_user=incognito_cfg.get("github_user") if incognito_cfg else None,
-        )
+        logger.debug("Incognito mode push", repo=repo)
 
-    # Create inline credential helper script that reads from env
-    # This avoids writing token to disk
-    askpass_script = """#!/bin/bash
-if [[ "$1" == *"Username"* ]]; then
-    echo "$GIT_USERNAME"
-elif [[ "$1" == *"Password"* ]]; then
-    echo "$GIT_PASSWORD"
-fi
-"""
-
-    # Create temp file for credential helper
-    # Use try/finally to ensure cleanup even on exceptions
+    # Create credential helper and execute push
     credential_helper_path = None
     try:
-        # Create temp file with restrictive permissions BEFORE writing
-        fd, credential_helper_path = tempfile.mkstemp(suffix=".sh", prefix="git-askpass-")
-        try:
-            os.fchmod(fd, 0o700)  # Set permissions on fd before writing
-            os.write(fd, askpass_script.encode())
-        finally:
-            os.close(fd)
-
-        env["GIT_ASKPASS"] = credential_helper_path
+        credential_helper_path, env = create_credential_helper(token_str, os.environ.copy())
 
         result = subprocess.run(
             cmd,
@@ -668,12 +814,7 @@ fi
     except Exception as e:
         return make_error(f"Push failed: {e}", status_code=500)
     finally:
-        # Always clean up credential helper file
-        if credential_helper_path and os.path.exists(credential_helper_path):
-            try:
-                os.unlink(credential_helper_path)
-            except OSError:
-                pass  # Best effort cleanup
+        cleanup_credential_helper(credential_helper_path)
 
 
 @app.route("/api/v1/git/fetch", methods=["POST"])
@@ -760,24 +901,10 @@ def git_fetch():
     if not repo:
         return make_error(f"Could not parse repository from URL: {remote_url}")
 
-    # Determine auth mode for this repo
-    auth_mode = get_auth_mode(repo)
-
-    # Get token based on auth mode
-    github = get_github_client(mode=auth_mode)
-
-    if auth_mode == "incognito":
-        token_str = github.get_incognito_token()
-        if not token_str:
-            return make_error(
-                "Incognito token not available. Set GITHUB_INCOGNITO_TOKEN environment variable.",
-                status_code=503,
-            )
-    else:
-        token = github.get_token()
-        if not token:
-            return make_error("GitHub token not available", status_code=503)
-        token_str = token.token
+    # Get authentication token using shared helper
+    token_str, auth_mode, token_error = get_token_for_repo(repo)
+    if not token_str:
+        return make_error(token_error, status_code=503)
 
     # Build command using sanitized args
     if operation == "fetch":
@@ -787,33 +914,10 @@ def git_fetch():
 
     cmd = git_cmd(*cmd_args)
 
-    # Configure git to use token via GIT_ASKPASS
-    env = os.environ.copy()
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    env["GIT_USERNAME"] = "x-access-token"
-    env["GIT_PASSWORD"] = token_str
-
-    # Create inline credential helper script
-    askpass_script = """#!/bin/bash
-if [[ "$1" == *"Username"* ]]; then
-    echo "$GIT_USERNAME"
-elif [[ "$1" == *"Password"* ]]; then
-    echo "$GIT_PASSWORD"
-fi
-"""
-
-    # Create temp file for credential helper
-    # Use try/finally to ensure cleanup even on exceptions
+    # Create credential helper and execute operation
     credential_helper_path = None
     try:
-        fd, credential_helper_path = tempfile.mkstemp(suffix=".sh", prefix="git-askpass-")
-        try:
-            os.fchmod(fd, 0o700)
-            os.write(fd, askpass_script.encode())
-        finally:
-            os.close(fd)
-
-        env["GIT_ASKPASS"] = credential_helper_path
+        credential_helper_path, env = create_credential_helper(token_str, os.environ.copy())
 
         result = subprocess.run(
             cmd,
@@ -866,12 +970,7 @@ fi
     except Exception as e:
         return make_error(f"{operation.capitalize()} failed: {e}", status_code=500)
     finally:
-        # Always clean up credential helper file
-        if credential_helper_path and os.path.exists(credential_helper_path):
-            try:
-                os.unlink(credential_helper_path)
-            except OSError:
-                pass  # Best effort cleanup
+        cleanup_credential_helper(credential_helper_path)
 
 
 @app.route("/api/v1/gh/pr/create", methods=["POST"])

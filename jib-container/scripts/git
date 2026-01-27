@@ -632,6 +632,137 @@ EOF
         fetch_via_gateway "ls-remote" "$remote" "$git_work_dir" "${extra_args[@]}"
         exit $?
         ;;
+    pull)
+        # git pull = git fetch + git merge
+        # Route the fetch part through gateway, then merge locally
+        # git pull [options] [remote] [refspec]
+        remote="origin"
+        branch=""
+        fetch_args=()
+        merge_args=()
+        skip_next=false
+        prev_flag=""
+        remote_seen=false
+
+        for arg in "${args_after_globals[@]}"; do
+            if $skip_next; then
+                # Previous arg was a flag that takes a value
+                case "$prev_flag" in
+                    --depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs)
+                        fetch_args+=("$prev_flag" "$arg")
+                        ;;
+                    -s|--strategy|-X|--strategy-option)
+                        merge_args+=("$prev_flag" "$arg")
+                        ;;
+                    *)
+                        # Unknown flag with value, assume merge
+                        merge_args+=("$prev_flag" "$arg")
+                        ;;
+                esac
+                skip_next=false
+                continue
+            fi
+
+            case "$arg" in
+                pull)
+                    continue
+                    ;;
+                # Flags that take an argument
+                --depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs|-s|--strategy|-X|--strategy-option)
+                    prev_flag="$arg"
+                    skip_next=true
+                    ;;
+                # Merge-specific flags (no argument)
+                --rebase|--no-rebase|--ff|--no-ff|--ff-only|--squash|--no-squash|--commit|--no-commit|--edit|--no-edit|--autostash|--no-autostash)
+                    merge_args+=("$arg")
+                    ;;
+                # Fetch-specific flags (no argument)
+                --all|--tags|--prune|--no-tags|-f|--force|-k|--keep|-t|--update-head-ok|-q|--quiet|-v|--verbose|--progress|--no-progress)
+                    fetch_args+=("$arg")
+                    ;;
+                -*)
+                    # Unknown flag - assume it's for merge
+                    merge_args+=("$arg")
+                    ;;
+                *)
+                    # First non-flag is remote, second is branch
+                    if [ "$remote_seen" = "false" ]; then
+                        remote="$arg"
+                        remote_seen=true
+                    elif [ -z "$branch" ]; then
+                        branch="$arg"
+                    fi
+                    ;;
+            esac
+        done
+
+        # Gateway is REQUIRED for pull operations
+        if ! check_gateway_available; then
+            cat >&2 << 'EOF'
+
+================================================================================
+  GATEWAY SIDECAR NOT AVAILABLE
+================================================================================
+
+Cannot pull: The gateway sidecar is required but not reachable.
+
+The gateway holds GitHub credentials needed for fetch operations.
+Without it, pull operations cannot authenticate with the remote.
+
+Please ensure the gateway sidecar is running:
+  curl http://jib-gateway:9847/api/v1/health
+
+================================================================================
+
+EOF
+            exit 1
+        fi
+
+        # Step 1: Fetch via gateway
+        # If branch specified, fetch that specific ref
+        if [ -n "$branch" ]; then
+            if ! fetch_via_gateway "fetch" "$remote" "$git_work_dir" "${fetch_args[@]}" "$branch"; then
+                echo "ERROR: Fetch failed, aborting pull" >&2
+                exit 1
+            fi
+        else
+            if ! fetch_via_gateway "fetch" "$remote" "$git_work_dir" "${fetch_args[@]}"; then
+                echo "ERROR: Fetch failed, aborting pull" >&2
+                exit 1
+            fi
+        fi
+
+        # Step 2: Merge locally
+        # Determine what to merge
+        merge_target=""
+        if [ -n "$branch" ]; then
+            # User specified a branch, merge remote/branch
+            merge_target="$remote/$branch"
+        else
+            # Get current branch's upstream
+            current_branch=$("$REAL_GIT" ${git_work_dir:+-C "$git_work_dir"} branch --show-current 2>/dev/null)
+            if [ -n "$current_branch" ]; then
+                # Try to get the upstream tracking branch
+                upstream=$("$REAL_GIT" ${git_work_dir:+-C "$git_work_dir"} rev-parse --abbrev-ref "@{upstream}" 2>/dev/null)
+                if [ -n "$upstream" ]; then
+                    merge_target="$upstream"
+                else
+                    # No upstream configured, default to remote/current_branch
+                    merge_target="$remote/$current_branch"
+                fi
+            else
+                # Detached HEAD or no branch, try FETCH_HEAD
+                merge_target="FETCH_HEAD"
+            fi
+        fi
+
+        # Build merge command
+        merge_cmd=("$REAL_GIT")
+        [ -n "$git_work_dir" ] && merge_cmd+=("-C" "$git_work_dir")
+        merge_cmd+=("merge" "${merge_args[@]}" "$merge_target")
+
+        exec "${merge_cmd[@]}"
+        ;;
     remote)
         # Check for subcommands that modify remotes
         # Find subcmd in args_after_globals (skip 'remote' itself)
@@ -648,6 +779,42 @@ EOF
             fi
         done
         case "$subcmd" in
+            update)
+                # Convert 'git remote update' to 'git fetch --all' via gateway
+                # This provides authenticated access to all configured remotes
+                if ! check_gateway_available; then
+                    cat >&2 << 'EOF'
+
+================================================================================
+  GATEWAY SIDECAR NOT AVAILABLE
+================================================================================
+
+Cannot update remotes: The gateway sidecar is required but not reachable.
+
+The gateway holds GitHub credentials needed for remote operations.
+
+Please ensure the gateway sidecar is running:
+  curl http://jib-gateway:9847/api/v1/health
+
+================================================================================
+
+EOF
+                    exit 1
+                fi
+
+                # Extract any additional flags (like --prune)
+                update_args=()
+                for arg in "${args_after_globals[@]}"; do
+                    case "$arg" in
+                        remote|update) continue ;;
+                        --prune|-p) update_args+=("--prune") ;;
+                        *) ;;  # Ignore remote names for now, fetch --all gets all
+                    esac
+                done
+
+                fetch_via_gateway "fetch" "origin" "$git_work_dir" "--all" "${update_args[@]}"
+                exit $?
+                ;;
             set-url|add|remove|rm|rename|set-head|set-branches|prune)
                 show_remote_blocked_message
                 exit 1

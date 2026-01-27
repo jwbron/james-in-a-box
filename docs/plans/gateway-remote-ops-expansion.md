@@ -9,14 +9,14 @@ PR #570 added gateway support for `git fetch` and `git ls-remote` to enable auth
 
 This plan covers implementing both improvements **within this PR** rather than splitting across multiple PRs.
 
-## Current State
+## Current State (After Implementation)
 
 - `git push` → routed through gateway (`/api/v1/git/push`)
 - `git fetch` → routed through gateway (`/api/v1/git/fetch`)
 - `git ls-remote` → routed through gateway (`/api/v1/git/fetch`)
-- `git pull` → NOT routed (fetch + merge, but fetch part goes direct)
-- `git clone` → NOT routed
-- `git remote update` → NOT routed
+- `git pull` → routed through gateway (fetch via gateway, merge locally)
+- `git remote update` → routed through gateway (converted to fetch --all)
+- `git clone` → NOT routed (deferred - containers receive pre-cloned repos)
 
 ## Security Fixes (Implemented)
 
@@ -377,10 +377,11 @@ All changes are being implemented in this PR (#570) rather than split across mul
 
 **Checklist:**
 - [x] Security fixes (path validation, try/finally cleanup, module-level import)
-- [ ] Shared helper functions (optional refactor, can defer)
-- [ ] `git pull` support in wrapper
-- [ ] `git remote update` support in wrapper
-- [ ] Unit tests for validation functions
+- [x] Shared helper functions (create_credential_helper, cleanup_credential_helper, get_token_for_repo)
+- [x] `git pull` support in wrapper (fetch via gateway, merge locally)
+- [x] `git remote update` support in wrapper (converted to fetch --all)
+- [x] Allowlist validation (flag normalization, gh API path validation)
+- [x] Unit tests for validation functions (test_git_validation.py)
 - [ ] Integration test sign-off (human required)
 
 ## Open Questions
