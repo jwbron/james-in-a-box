@@ -5,7 +5,8 @@ Wraps Claude Code CLI invocations to capture model interactions with structured 
 This is a basic wrapper for Phase 2 - full model output capture is planned for Phase 3.
 
 IMPORTANT: Uses stdin mode with --dangerously-skip-permissions for full tool access.
-Never use --print flag which creates a restricted session.
+The --print flag combined with --dangerously-skip-permissions provides headless mode
+with full tool access.
 """
 
 import json
@@ -26,7 +27,8 @@ class ClaudeWrapper(ToolWrapper):
 
     IMPORTANT: This wrapper uses stdin mode (input_text parameter) with
     --dangerously-skip-permissions flag for full tool access. The --print flag
-    should NEVER be used as it creates a restricted session.
+    combined with --dangerously-skip-permissions provides headless mode with
+    full tool access.
 
     Usage:
         from jib_logging.wrappers import claude
@@ -58,7 +60,6 @@ class ClaudeWrapper(ToolWrapper):
         """Run claude with a prompt via stdin.
 
         Uses stdin mode with --dangerously-skip-permissions for full tool access.
-        Never uses --print which creates a restricted session.
 
         Args:
             prompt_text: The prompt to send (via stdin)
