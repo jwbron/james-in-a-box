@@ -227,23 +227,16 @@ class Config:
         return self.user_home / ".git-admin"
 
     @property
-    def git_local_objects_dir(self) -> Path:
-        """Container's local objects directory (writable)."""
-        return self.user_home / ".git-local-objects"
-
-    @property
-    def git_shared_objects_dir(self) -> Path:
-        """Shared objects directory (read-only)."""
-        return self.user_home / ".git-objects"
-
-    @property
-    def git_shared_refs_dir(self) -> Path:
-        """Shared refs directory (read-only)."""
-        return self.user_home / ".git-refs"
-
-    @property
     def git_common_dir(self) -> Path:
-        """Common git directory for commondir resolution (read-only)."""
+        """Common git directory containing shared resources (objects, refs, etc).
+
+        Structure per repo:
+        - .git-common/{repo}/objects/     (rw) - for creating commits
+        - .git-common/{repo}/refs/        (rw) - for updating branch pointers
+        - .git-common/{repo}/packed-refs  (rw) - for packed references
+        - .git-common/{repo}/config       (ro) - shared configuration
+        - .git-common/{repo}/hooks/       (ro) - shared hooks
+        """
         return self.user_home / ".git-common"
 
     @property
@@ -566,8 +559,9 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
 
     This implements the Container Worktree Isolation ADR:
     - Each container only sees its own worktree admin directory
-    - Objects are stored in a container-local directory with shared objects via alternates
-    - Refs and common git config are read-only from shared mounts
+    - Shared objects/refs are mounted directly (rw) at .git-common/{repo}/
+    - commondir points to .git-common/{repo}/ for git to find shared resources
+    - gitdir is backed up and rewritten for container-internal paths
 
     Returns False if setup failed fatally.
     """
@@ -615,47 +609,44 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
             git_file.write_text(f"gitdir: {target_path}\n")
             os.chown(git_file, config.runtime_uid, config.runtime_gid)
 
+            # Backup and rewrite gitdir file for container-internal paths
+            # This prevents container paths from leaking to host metadata
+            gitdir_file = target_path / "gitdir"
+            gitdir_backup = target_path / "gitdir.host-backup"
+
+            if gitdir_file.exists() and not gitdir_backup.exists():
+                # Backup original host path (only if not already backed up)
+                import shutil
+
+                shutil.copy2(gitdir_file, gitdir_backup)
+                os.chown(gitdir_backup, config.runtime_uid, config.runtime_gid)
+
+            # Write container-internal path
+            gitdir_file.write_text(f"/home/jib/repos/{repo_name}\n")
+            os.chown(gitdir_file, config.runtime_uid, config.runtime_gid)
+
             # Configure commondir to point to shared git directory
+            # All shared git components (objects, refs, packed-refs, config, hooks)
+            # are mounted under .git-common/{repo_name}/
             commondir_file = target_path / "commondir"
             common_git_path = config.git_common_dir / repo_name
-            if common_git_path.exists():
-                commondir_file.write_text(f"{common_git_path}\n")
-                os.chown(commondir_file, config.runtime_uid, config.runtime_gid)
+            commondir_file.write_text(f"{common_git_path}\n")
+            os.chown(commondir_file, config.runtime_uid, config.runtime_gid)
 
-            # Set up local objects with alternates to shared objects
-            local_objects_dir = config.git_local_objects_dir / repo_name
-            shared_objects_dir = config.git_shared_objects_dir / repo_name
-
-            if local_objects_dir.exists():
-                # Create alternates file to read from shared objects
-                alternates_dir = local_objects_dir / "info"
-                alternates_dir.mkdir(parents=True, exist_ok=True)
-                alternates_file = alternates_dir / "alternates"
-
-                if shared_objects_dir.exists():
-                    alternates_file.write_text(f"{shared_objects_dir}\n")
-                    os.chown(alternates_file, config.runtime_uid, config.runtime_gid)
-
-                # Fix ownership of local objects directory structure
-                for path in [local_objects_dir, alternates_dir]:
-                    if path.exists():
-                        os.chown(path, config.runtime_uid, config.runtime_gid)
-
-                # Update git config to use local objects directory
-                # This is done via the worktree admin's config
-                # Non-fatal if this fails - git usually figures it out
-                worktree_config = target_path / "config"
-                with contextlib.suppress(Exception):
-                    run_cmd_with_retry(
-                        [
-                            "git",
-                            "config",
-                            "-f",
-                            str(worktree_config),
-                            "core.worktree",
-                            str(repo_dir),
-                        ]
-                    )
+            # Update git config to set core.worktree
+            # Non-fatal if this fails - git usually figures it out
+            worktree_config = target_path / "config"
+            with contextlib.suppress(Exception):
+                run_cmd_with_retry(
+                    [
+                        "git",
+                        "config",
+                        "-f",
+                        str(worktree_config),
+                        "core.worktree",
+                        str(repo_dir),
+                    ]
+                )
 
             configured += 1
         else:
@@ -1047,9 +1038,27 @@ def generate_docs_indexes(config: Config, logger: Logger) -> None:
 
 def cleanup_on_exit(config: Config, logger: Logger) -> None:
     """Cleanup handler for container shutdown."""
+    import shutil
+
     if not config.quiet:
         print("")
         print("Cleaning up on container exit...")
+
+    # Restore gitdir files from backups (prevent container paths from leaking to host)
+    if config.git_admin_dir.exists():
+        for admin_dir in config.git_admin_dir.iterdir():
+            if not admin_dir.is_dir():
+                continue
+            gitdir_backup = admin_dir / "gitdir.host-backup"
+            gitdir_file = admin_dir / "gitdir"
+            if gitdir_backup.exists():
+                try:
+                    shutil.copy2(gitdir_backup, gitdir_file)
+                    gitdir_backup.unlink()
+                    if not config.quiet:
+                        print(f"  Restored gitdir for {admin_dir.name}")
+                except Exception as e:
+                    print(f"WARNING: Failed to restore gitdir for {admin_dir.name}: {e}")
 
     # Check and clean git remote URLs
     if config.git_main_dir.exists():

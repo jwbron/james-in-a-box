@@ -1,0 +1,103 @@
+#!/bin/bash
+# Restore gitdir files from backups after container crash
+#
+# When containers exit normally, cleanup_on_exit() in entrypoint.py restores
+# the gitdir files. But if a container crashes or is killed, the backup files
+# may be left behind. This script restores them.
+#
+# Usage: jib-cleanup-worktree [--dry-run]
+#
+# The script scans all worktree admin directories for gitdir.host-backup files
+# and restores them to gitdir.
+
+set -euo pipefail
+
+DRY_RUN=false
+VERBOSE=false
+
+usage() {
+    echo "Usage: jib-cleanup-worktree [OPTIONS]"
+    echo ""
+    echo "Restore gitdir files from backups after container crash."
+    echo ""
+    echo "Options:"
+    echo "  --dry-run    Show what would be restored without making changes"
+    echo "  --verbose    Show detailed output"
+    echo "  --help       Show this help message"
+    echo ""
+    echo "This script looks for gitdir.host-backup files in:"
+    echo "  ~/.git/*/worktrees/*/gitdir.host-backup"
+    echo ""
+    echo "These backups are created when containers start and should be"
+    echo "cleaned up when containers exit. If a container crashes, run"
+    echo "this script to restore the original gitdir files."
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --verbose|-v)
+            VERBOSE=true
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Find all backup files
+# Pattern: ~/.git/<repo>/worktrees/<worktree>/gitdir.host-backup
+# or for repos that use .git as a directory: <repo>/.git/worktrees/<worktree>/gitdir.host-backup
+found_any=false
+
+for backup in ~/.git/*/worktrees/*/gitdir.host-backup ~/repos/*/.git/worktrees/*/gitdir.host-backup 2>/dev/null; do
+    # Skip if glob didn't match anything
+    [[ -f "$backup" ]] || continue
+
+    found_any=true
+    gitdir="${backup%.host-backup}"
+    worktree_dir=$(dirname "$backup")
+    worktree_name=$(basename "$worktree_dir")
+
+    if $VERBOSE || $DRY_RUN; then
+        echo "Found backup: $backup"
+        echo "  Worktree: $worktree_name"
+        echo "  Target: $gitdir"
+        if [[ -f "$gitdir" ]]; then
+            echo "  Current gitdir content: $(cat "$gitdir")"
+        fi
+        echo "  Backup content: $(cat "$backup")"
+    fi
+
+    if $DRY_RUN; then
+        echo "  Would restore: $gitdir"
+        echo ""
+    else
+        cp "$backup" "$gitdir"
+        rm "$backup"
+        echo "Restored: $gitdir (worktree: $worktree_name)"
+    fi
+done
+
+if ! $found_any; then
+    if $VERBOSE; then
+        echo "No gitdir.host-backup files found - nothing to clean up."
+    fi
+    exit 0
+fi
+
+if $DRY_RUN; then
+    echo ""
+    echo "Dry run complete. Run without --dry-run to apply changes."
+fi

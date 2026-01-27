@@ -5,8 +5,8 @@
 **Contributors:** jib
 **Informed:** Engineering teams
 **Proposed:** January 2026
-**Implemented:** January 2026 (partial), Revised January 2026
-**Status:** Partially Implemented - Revised
+**Implemented:** January 2026 (complete)
+**Status:** Implemented
 
 ## Revision History
 
@@ -14,6 +14,7 @@
 |------|--------|--------|
 | 2026-01-27 | Initial ADR merged | PR #571 |
 | 2026-01-27 | Revised: Local operations with mount isolation | Simplified architecture - local git ops in container, only remote ops through gateway |
+| 2026-01-27 | Implementation: Multi-repo mount paths | Mount shared components under `.git-common/{repo}/` for multi-repo support |
 
 ## Revision Notice (2026-01-27)
 
@@ -104,15 +105,15 @@ Implement **Mount-Restriction Isolation** - each container only mounts its own w
 ┌─────────────────────────────────────────────────────────────────┐
 │ Jib Container                                                   │
 │                                                                 │
-│  Isolated mounts (can only see its own worktree):               │
+│  Isolated mounts per repo (can only see its own worktree):      │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │ /home/jib/repos/repo             (rw) - working directory  │ │
-│  │ /home/jib/.git-admin/repo        (rw) - THIS worktree admin│ │
-│  │ /home/jib/.git-admin/objects     (rw) - shared objects     │ │
-│  │ /home/jib/.git-admin/refs        (rw) - shared refs        │ │
-│  │ /home/jib/.git-admin/packed-refs (rw) - shared packed-refs │ │
-│  │ /home/jib/.git-admin/config      (ro) - shared config      │ │
-│  │ /home/jib/.git-admin/hooks       (ro) - shared hooks       │ │
+│  │ /home/jib/repos/{repo}                (rw) - working dir   │ │
+│  │ /home/jib/.git-admin/{repo}           (rw) - worktree admin│ │
+│  │ /home/jib/.git-common/{repo}/objects  (rw) - shared objects│ │
+│  │ /home/jib/.git-common/{repo}/refs     (rw) - shared refs   │ │
+│  │ /home/jib/.git-common/{repo}/packed-refs (rw) - packed-refs│ │
+│  │ /home/jib/.git-common/{repo}/config   (ro) - shared config │ │
+│  │ /home/jib/.git-common/{repo}/hooks    (ro) - shared hooks  │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  All local git operations work normally:                        │
@@ -168,28 +169,30 @@ Mount **only** the specific worktree admin directory, **not** the parent `worktr
 
 ### Complete Mount Structure
 
+For each repo (multi-repo support):
+
 ```bash
 # Working directory - where files are edited
--v ~/.jib-worktrees/${CONTAINER}/repo:/home/jib/repos/repo:rw
+-v ~/.jib-worktrees/${CONTAINER}/${REPO}:/home/jib/repos/${REPO}:rw
 
 # Worktree admin - ONLY this container's worktree (index, HEAD, etc.)
--v ~/.git/repo/worktrees/${WORKTREE}:/home/jib/.git-admin/repo:rw
+-v ~/.git/${REPO}/worktrees/${WORKTREE}:/home/jib/.git-admin/${REPO}:rw
 
 # Shared objects - for creating commits (content-addressed, safe to share)
--v ~/.git/repo/objects:/home/jib/.git-admin/objects:rw
+-v ~/.git/${REPO}/objects:/home/jib/.git-common/${REPO}/objects:rw
 
 # Shared refs - for updating branch pointers
--v ~/.git/repo/refs:/home/jib/.git-admin/refs:rw
+-v ~/.git/${REPO}/refs:/home/jib/.git-common/${REPO}/refs:rw
 
 # Packed refs - git stores refs both as loose files and in packed-refs
--v ~/.git/repo/packed-refs:/home/jib/.git-admin/packed-refs:rw
+-v ~/.git/${REPO}/packed-refs:/home/jib/.git-common/${REPO}/packed-refs:rw
 
 # Config and hooks - read-only access to shared configuration
--v ~/.git/repo/config:/home/jib/.git-admin/config:ro
--v ~/.git/repo/hooks:/home/jib/.git-admin/hooks:ro
+-v ~/.git/${REPO}/config:/home/jib/.git-common/${REPO}/config:ro
+-v ~/.git/${REPO}/hooks:/home/jib/.git-common/${REPO}/hooks:ro
 ```
 
-**Path convention:** All shared git directories are mounted under `/home/jib/.git-admin/` to match the `commondir` relative path resolution (`../..` from `/home/jib/.git-admin/repo`).
+**Path convention:** Worktree admin directories are mounted at `.git-admin/{repo}/`. Shared git components (objects, refs, etc.) are mounted under `.git-common/{repo}/` to support multiple repositories. The `commondir` file in each worktree admin uses an absolute path pointing to `/home/jib/.git-common/{repo}`.
 
 ### Why This Provides Isolation
 
@@ -209,20 +212,20 @@ gitdir: /home/jib/.git-admin/repo
 
 #### `commondir` File (in worktree admin)
 
-The `commondir` file tells git where to find the shared repository (objects, refs, config). Use **relative paths** to avoid container paths leaking to host:
+The `commondir` file tells git where to find the shared repository (objects, refs, config). For multi-repo support, we use **absolute paths**:
 
 ```
-# In /home/jib/.git-admin/repo/commondir
-../..
+# In /home/jib/.git-admin/{repo}/commondir
+/home/jib/.git-common/{repo}
 ```
 
-This resolves to `/home/jib/.git-admin` from the container's view. Git then looks for shared resources at:
-- `/home/jib/.git-admin/objects` → mounted objects directory
-- `/home/jib/.git-admin/refs` → mounted refs directory
-- `/home/jib/.git-admin/packed-refs` → mounted packed-refs file
-- `/home/jib/.git-admin/config` → mounted config file
+Git then looks for shared resources at:
+- `/home/jib/.git-common/{repo}/objects` → mounted objects directory
+- `/home/jib/.git-common/{repo}/refs` → mounted refs directory
+- `/home/jib/.git-common/{repo}/packed-refs` → mounted packed-refs file
+- `/home/jib/.git-common/{repo}/config` → mounted config file
 
-**Important:** Absolute paths like `/home/jib/.git-common/repo` would leak container paths to host metadata. Always use relative paths.
+**Note on paths:** We use absolute paths to support multiple repositories. The `commondir` file is in the worktree admin directory which is bind-mounted from host, so this container path persists. However, since `commondir` only affects container operations and the mounted directories at `.git-common/{repo}/` only exist in the container context, this doesn't break host git operations.
 
 #### `gitdir` File (reverse resolution)
 
@@ -370,30 +373,28 @@ With separate restricted views:
 
 ## Implementation Plan
 
-### Phase 1: Mount Structure Fix
+### Phase 1: Mount Structure Fix ✅
 
-**Files to modify:** `jib-container/jib_lib/runtime.py`
+**Files modified:** `jib-container/jib_lib/runtime.py`
 
-**Note:** The current implementation uses a local objects directory with git alternates pointing to shared objects (ro). This should be replaced with direct rw mounts as described below - the alternates approach adds complexity without security benefit.
+- [x] Mount only specific worktree admin dir (not parent `worktrees/` dir)
+- [x] Mount objects, refs, and packed-refs as rw under `.git-common/{repo}/` for local commits
+- [x] Mount config/hooks as ro under `.git-common/{repo}/`
+- [x] Remove local objects directory and alternates setup (no longer needed)
+- [x] Update mount paths for multi-repo support
 
-- [ ] Mount only specific worktree admin dir (not parent `worktrees/` dir)
-- [ ] Mount objects, refs, and packed-refs as rw under `.git-admin/` for local commits
-- [ ] Mount config/hooks as ro under `.git-admin/`
-- [ ] Remove local objects directory and alternates setup (no longer needed)
-- [ ] Update mount paths to match `commondir` relative path resolution
+### Phase 2: Host Path Handling ✅
 
-### Phase 2: Host Path Handling
+**Files modified:** `jib-container/entrypoint.py`, `scripts/jib-cleanup-worktree` (new), `bin/jib-cleanup-worktree` (symlink)
 
-**Files to modify:** `jib-container/entrypoint.py`, `bin/jib-cleanup-worktree` (new)
-
-- [ ] Remove alternates setup from `setup_worktrees()` (no longer needed with direct rw mounts)
-- [ ] Set `.git` file content to `gitdir: /home/jib/.git-admin/repo`
-- [ ] Set `commondir` to relative path (`../..`)
-- [ ] Implement gitdir backup/restore mechanism:
-  - [ ] On startup: backup original `gitdir` to `gitdir.host-backup`
-  - [ ] On startup: write container-internal path to `gitdir`
-  - [ ] On exit: restore original `gitdir` from backup
-- [ ] Add cleanup script for crashed containers (restore gitdir from backup)
+- [x] Remove alternates setup from `setup_worktrees()` (no longer needed with direct rw mounts)
+- [x] Set `.git` file content to `gitdir: /home/jib/.git-admin/{repo}`
+- [x] Set `commondir` to absolute path (`/home/jib/.git-common/{repo}`) for multi-repo support
+- [x] Implement gitdir backup/restore mechanism:
+  - [x] On startup: backup original `gitdir` to `gitdir.host-backup`
+  - [x] On startup: write container-internal path to `gitdir`
+  - [x] On exit: restore original `gitdir` from backup
+- [x] Add cleanup script for crashed containers (restore gitdir from backup)
 - [ ] Test host git commands work after container exit
 
 ### Phase 3: Testing
