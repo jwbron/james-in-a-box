@@ -7,6 +7,7 @@ Provides:
 - Credential helper management for authenticated git operations
 """
 
+import contextlib
 import os
 import sys
 import tempfile
@@ -310,10 +311,8 @@ def cleanup_credential_helper(path: str | None) -> None:
         path: Path to the credential helper file, or None if not created yet
     """
     if path and os.path.exists(path):
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(path)
-        except OSError:
-            pass  # Best effort cleanup
 
 
 def get_token_for_repo(repo: str) -> tuple[str | None, str, str]:

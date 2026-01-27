@@ -9,7 +9,6 @@ Supports both synchronous and asynchronous execution with streaming output.
 
 import asyncio
 import logging
-import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -64,9 +63,6 @@ async def run_agent_async(
     timeout = timeout or config.timeout
     cwd = cwd or config.cwd
     model = model or DEFAULT_MODEL
-
-    # Set up environment for router if needed
-    _setup_environment(config)
 
     try:
         import claude_agent_sdk as sdk
@@ -167,33 +163,6 @@ def run_agent(
             print(f"Model used: {result.metadata.get('model')}")
     """
     return asyncio.run(run_agent_async(prompt, model=model, **kwargs))
-
-
-def _setup_environment(config: ClaudeConfig) -> None:
-    """Set up environment variables for the SDK.
-
-    For Anthropic provider: Use ANTHROPIC_API_KEY directly (no router needed).
-    For other providers: Use claude-code-router to translate requests.
-    """
-    # Check if we should use the router
-    # Router is only needed for non-Anthropic providers (OpenAI, Gemini via router)
-    llm_provider = os.environ.get("LLM_PROVIDER", "anthropic").lower()
-    has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-
-    if llm_provider == "anthropic" and has_api_key:
-        # Direct Anthropic access - no router needed
-        # Don't set ANTHROPIC_BASE_URL so SDK uses default Anthropic API
-        return
-
-    # Non-Anthropic provider or no API key - use router
-    base_url = config.router_base_url or f"http://localhost:{config.router_port}"
-
-    if not os.environ.get("ANTHROPIC_BASE_URL"):
-        os.environ["ANTHROPIC_BASE_URL"] = base_url
-
-    # SDK validates API key exists, but router handles actual auth
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        os.environ["ANTHROPIC_API_KEY"] = "placeholder-for-router"
 
 
 def _extract_model_info(message, current_model: str | None) -> str | None:

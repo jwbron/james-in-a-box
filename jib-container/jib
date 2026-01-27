@@ -182,68 +182,6 @@ def get_anthropic_api_key() -> Optional[str]:
     return None
 
 
-def get_google_api_key() -> Optional[str]:
-    """
-    Get Google API key from environment or config file.
-
-    Returns:
-        API key string if found, None otherwise.
-    """
-    # Check environment variables (support both names)
-    if os.environ.get("GOOGLE_API_KEY"):
-        return os.environ["GOOGLE_API_KEY"]
-    if os.environ.get("GEMINI_API_KEY"):
-        return os.environ["GEMINI_API_KEY"]
-    
-    # Check config file
-    api_key_file = Config.USER_CONFIG_DIR / "google-api-key"
-    if api_key_file.exists():
-        return api_key_file.read_text().strip()
-    
-    return None
-
-
-def get_openai_api_key() -> Optional[str]:
-    """
-    Get OpenAI API key from environment or config file.
-
-    Returns:
-        API key string if found, None otherwise.
-    """
-    if os.environ.get("OPENAI_API_KEY"):
-        return os.environ["OPENAI_API_KEY"]
-    
-    # Check config file
-    api_key_file = Config.USER_CONFIG_DIR / "openai-api-key"
-    if api_key_file.exists():
-        return api_key_file.read_text().strip()
-    
-    return None
-
-
-def get_llm_provider() -> str:
-    """
-    Get the LLM provider preference from environment or config file.
-
-    Returns:
-        Provider name: 'anthropic', 'openai', or 'google'
-    """
-    # Check environment variable
-    provider = os.environ.get("LLM_PROVIDER", "").lower()
-    if provider in ("anthropic", "openai", "google", "gemini"):
-        return "google" if provider == "gemini" else provider
-    
-    # Check config file
-    provider_file = Config.USER_CONFIG_DIR / "llm-provider"
-    if provider_file.exists():
-        provider = provider_file.read_text().strip().lower()
-        if provider in ("anthropic", "openai", "google", "gemini"):
-            return "google" if provider == "gemini" else provider
-    
-    # Default to anthropic
-    return "anthropic"
-
-
 def get_anthropic_auth_method() -> str:
     """
     Get the Anthropic authentication method from environment or config file.
@@ -2445,30 +2383,16 @@ def run_claude() -> bool:
     if not _quiet_mode:
         info("GitHub auth: Via gateway sidecar (credentials not in container)")
 
-    # Add LLM provider preference and API keys
-    llm_provider = get_llm_provider()
-    cmd.extend(["-e", f"LLM_PROVIDER={llm_provider}"])
-
-    # Add Anthropic auth method (api_key or oauth)
+    # Add Anthropic auth configuration
     anthropic_auth_method = get_anthropic_auth_method()
     cmd.extend(["-e", f"ANTHROPIC_AUTH_METHOD={anthropic_auth_method}"])
 
-    # Add provider-specific API keys
-    google_api_key = get_google_api_key()
-    openai_api_key = get_openai_api_key()
-    
-    if google_api_key:
-        cmd.extend(["-e", f"GOOGLE_API_KEY={google_api_key}"])
-    if openai_api_key:
-        cmd.extend(["-e", f"OPENAI_API_KEY={openai_api_key}"])
-    
     # Set Anthropic API key if available
-    # For non-Anthropic providers, the router handles auth via ANTHROPIC_AUTH_TOKEN
     if api_key:
         cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
 
     if not _quiet_mode:
-        info(f"LLM Provider: {llm_provider}")
+        info(f"Claude auth method: {anthropic_auth_method}")
         info("Network mode: Bridge (isolated from host, outbound HTTP only)")
         print("  Container can: Access Claude API, download packages")
         print("  Container cannot: Access host services, accept inbound connections")
@@ -2701,23 +2625,9 @@ def exec_in_new_container(
     # The container does NOT receive GITHUB_TOKEN - all git/gh operations
     # route through the gateway which holds the credentials
 
-    # Add LLM provider preference and API keys
-    llm_provider = get_llm_provider()
-    cmd.extend(["-e", f"LLM_PROVIDER={llm_provider}"])
-
-    # Add Anthropic auth method (api_key or oauth)
+    # Add Anthropic auth configuration
     anthropic_auth_method = get_anthropic_auth_method()
     cmd.extend(["-e", f"ANTHROPIC_AUTH_METHOD={anthropic_auth_method}"])
-
-    # Add provider-specific API keys
-    # Google and OpenAI keys are always passed (may be needed for other purposes)
-    google_api_key = get_google_api_key()
-    openai_api_key = get_openai_api_key()
-
-    if google_api_key:
-        cmd.extend(["-e", f"GOOGLE_API_KEY={google_api_key}"])
-    if openai_api_key:
-        cmd.extend(["-e", f"OPENAI_API_KEY={openai_api_key}"])
 
     # Set Anthropic API key only when using api-key auth mode
     # When using host auth, Claude Code will use ~/.claude for authentication

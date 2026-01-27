@@ -2372,6 +2372,26 @@ def main():
         success = full_setup.run()
 
     if success:
+        # Run configuration validation to verify secrets are valid
+        logger.info("\n" + "=" * 60)
+        logger.info("Validating configuration...")
+        logger.info("=" * 60)
+
+        validate_script = Path(__file__).parent / "scripts" / "validate-config.py"
+        if validate_script.exists():
+            result = subprocess.run(
+                [sys.executable, str(validate_script)],
+                capture_output=False,
+                check=False,
+            )
+            if result.returncode != 0:
+                logger.warning("Configuration validation found issues (see above)")
+                logger.info(
+                    "Run './scripts/validate-config.py --health' for API connectivity tests"
+                )
+        else:
+            logger.warning(f"Validation script not found: {validate_script}")
+
         logger.info("\n" + "=" * 60)
         logger.success("Setup completed successfully!")
         logger.info("=" * 60)
