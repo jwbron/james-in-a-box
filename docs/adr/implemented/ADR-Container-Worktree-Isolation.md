@@ -106,12 +106,13 @@ Implement **Mount-Restriction Isolation** - each container only mounts its own w
 │                                                                 │
 │  Isolated mounts (can only see its own worktree):               │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │ /home/jib/repos/repo         (rw) - working directory      │ │
-│  │ /home/jib/.git-admin/repo    (rw) - THIS worktree admin    │ │
-│  │ /home/jib/.git-admin/objects (rw) - shared objects         │ │
-│  │ /home/jib/.git-admin/refs    (rw) - shared refs            │ │
-│  │ /home/jib/.git-admin/config  (ro) - shared config          │ │
-│  │ /home/jib/.git-admin/hooks   (ro) - shared hooks           │ │
+│  │ /home/jib/repos/repo             (rw) - working directory  │ │
+│  │ /home/jib/.git-admin/repo        (rw) - THIS worktree admin│ │
+│  │ /home/jib/.git-admin/objects     (rw) - shared objects     │ │
+│  │ /home/jib/.git-admin/refs        (rw) - shared refs        │ │
+│  │ /home/jib/.git-admin/packed-refs (rw) - shared packed-refs │ │
+│  │ /home/jib/.git-admin/config      (ro) - shared config      │ │
+│  │ /home/jib/.git-admin/hooks       (ro) - shared hooks       │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  All local git operations work normally:                        │

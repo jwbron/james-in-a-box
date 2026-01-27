@@ -121,9 +121,11 @@ Mount **only** the specific worktree admin directory, not the parent directory:
    - On container startup: backup original `gitdir` to `gitdir.host-backup`
    - During operation: use container-internal path in `gitdir`
    - On container exit: restore original `gitdir` from backup
+4. Add cleanup script for crashed containers (restore gitdir from backup if present)
 
 **Files to modify:**
 - `jib-container/entrypoint.py` - path handling, gitdir backup/restore
+- `bin/jib-cleanup-worktree` (new) - cleanup script to restore gitdir after container crash
 
 **Validation:**
 - Host git commands work after container exit
