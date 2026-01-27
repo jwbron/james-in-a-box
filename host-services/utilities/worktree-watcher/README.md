@@ -70,7 +70,7 @@ systemctl --user disable worktree-watcher.timer
 
 ## Files
 
-- `worktree-watcher.sh` - Main cleanup script
+- `worktree-watcher.py` - Main cleanup script (uses shared jib_config module)
 - `worktree-watcher.service` - Systemd service file
 - `worktree-watcher.timer` - Systemd timer file
 - `setup.sh` - Installation script
@@ -107,7 +107,7 @@ docker stop $(docker ps -q --filter "name=jib-")
 systemctl --user start worktree-watcher.service
 
 # Or run script directly
-~/repos/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
+~/repos/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.py
 ```
 
 ## Troubleshooting
@@ -129,7 +129,7 @@ systemctl --user start worktree-watcher.timer
 
 Ensure script is executable:
 ```bash
-chmod +x ~/repos/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.sh
+chmod +x ~/repos/james-in-a-box/host-services/utilities/worktree-watcher/worktree-watcher.py
 ```
 
 ### View cleanup history
