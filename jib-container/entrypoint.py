@@ -614,10 +614,10 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
             gitdir_file = target_path / "gitdir"
             gitdir_backup = target_path / "gitdir.host-backup"
 
+            import shutil
+
             if gitdir_file.exists() and not gitdir_backup.exists():
                 # Backup original host path (only if not already backed up)
-                import shutil
-
                 shutil.copy2(gitdir_file, gitdir_backup)
                 os.chown(gitdir_backup, config.runtime_uid, config.runtime_gid)
 
