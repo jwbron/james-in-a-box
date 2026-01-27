@@ -180,14 +180,18 @@ class TestLLMConfig:
         result = config.validate()
         assert result.is_valid
 
-    def test_missing_anthropic_key(self):
-        """Test validation fails with missing Anthropic key."""
+    def test_missing_anthropic_key(self, monkeypatch):
+        """Test validation fails with missing Anthropic key in api_key mode."""
+        # Ensure we're testing API key mode, not OAuth
+        monkeypatch.setenv("ANTHROPIC_AUTH_METHOD", "api_key")
         config = LLMConfig()
         result = config.validate()
         assert not result.is_valid
 
-    def test_invalid_anthropic_key_prefix(self):
+    def test_invalid_anthropic_key_prefix(self, monkeypatch):
         """Test validation fails with invalid Anthropic key prefix."""
+        # Ensure we're testing API key mode, not OAuth
+        monkeypatch.setenv("ANTHROPIC_AUTH_METHOD", "api_key")
         config = LLMConfig(
             anthropic_api_key="invalid-key-format",
         )
@@ -210,6 +214,22 @@ class TestLLMConfig:
 
         config = LLMConfig.from_env()
         assert config.anthropic_api_key == "sk-ant-api03-test-key-123"
+
+    def test_oauth_mode_no_key_required(self, monkeypatch):
+        """Test validation passes in OAuth mode without API key."""
+        monkeypatch.setenv("ANTHROPIC_AUTH_METHOD", "oauth")
+        config = LLMConfig()
+        result = config.validate()
+        assert result.is_valid
+        assert any("oauth" in w.lower() for w in result.warnings)
+
+    def test_oauth_mode_health_check(self, monkeypatch):
+        """Test health check in OAuth mode without API key."""
+        monkeypatch.setenv("ANTHROPIC_AUTH_METHOD", "oauth")
+        config = LLMConfig()
+        result = config.health_check()
+        assert result.healthy
+        assert "oauth" in result.message.lower()
 
 
 class TestConfluenceConfig:
@@ -456,8 +476,10 @@ class TestConfigHealthChecks:
         assert not result.healthy
         assert "not configured" in result.message.lower()
 
-    def test_llm_health_no_key(self):
-        """Test LLM health check with no API key."""
+    def test_llm_health_no_key(self, monkeypatch):
+        """Test LLM health check with no API key in api_key mode."""
+        # Ensure we're testing API key mode, not OAuth
+        monkeypatch.setenv("ANTHROPIC_AUTH_METHOD", "api_key")
         config = LLMConfig()
         result = config.health_check()
         assert not result.healthy
