@@ -646,10 +646,12 @@ class TestGitFetch:
         response = client.post(
             "/api/v1/git/fetch",
             headers=auth_headers,
-            data=json.dumps({
-                "repo_path": "/home/jib/repos/../../../etc/passwd",
-                "remote": "origin",
-            }),
+            data=json.dumps(
+                {
+                    "repo_path": "/home/jib/repos/../../../etc/passwd",
+                    "remote": "origin",
+                }
+            ),
             content_type="application/json",
         )
 
@@ -662,11 +664,13 @@ class TestGitFetch:
         response = client.post(
             "/api/v1/git/fetch",
             headers=auth_headers,
-            data=json.dumps({
-                "repo_path": "/home/jib/repos/test",
-                "remote": "origin",
-                "args": ["--upload-pack=/bin/evil"],
-            }),
+            data=json.dumps(
+                {
+                    "repo_path": "/home/jib/repos/test",
+                    "remote": "origin",
+                    "args": ["--upload-pack=/bin/evil"],
+                }
+            ),
             content_type="application/json",
         )
 
@@ -706,10 +710,12 @@ class TestGitFetch:
             response = client.post(
                 "/api/v1/git/fetch",
                 headers=auth_headers,
-                data=json.dumps({
-                    "repo_path": "/home/jib/repos/test",
-                    "remote": "origin",
-                }),
+                data=json.dumps(
+                    {
+                        "repo_path": "/home/jib/repos/test",
+                        "remote": "origin",
+                    }
+                ),
                 content_type="application/json",
             )
 
@@ -749,11 +755,13 @@ class TestGitFetch:
             response = client.post(
                 "/api/v1/git/fetch",
                 headers=auth_headers,
-                data=json.dumps({
-                    "repo_path": "/home/jib/repos/test",
-                    "operation": "ls-remote",
-                    "remote": "origin",
-                }),
+                data=json.dumps(
+                    {
+                        "repo_path": "/home/jib/repos/test",
+                        "operation": "ls-remote",
+                        "remote": "origin",
+                    }
+                ),
                 content_type="application/json",
             )
 
@@ -767,11 +775,13 @@ class TestGitFetch:
         response = client.post(
             "/api/v1/git/fetch",
             headers=auth_headers,
-            data=json.dumps({
-                "repo_path": "/home/jib/repos/test",
-                "operation": "clone",
-                "remote": "origin",
-            }),
+            data=json.dumps(
+                {
+                    "repo_path": "/home/jib/repos/test",
+                    "operation": "clone",
+                    "remote": "origin",
+                }
+            ),
             content_type="application/json",
         )
 
