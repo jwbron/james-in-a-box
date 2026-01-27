@@ -39,7 +39,7 @@ The **Confluence Connector** (#6) only syncs pages from **explicitly configured 
 - [Self-Improvement System](#self-improvement-system)
 - [Documentation System](#documentation-system)
 - [Custom Commands](#custom-commands)
-- [LLM Providers](#llm-providers)
+- [LLM Interface](#llm-interface)
 - [Container Infrastructure](#container-infrastructure)
 - [Utilities](#utilities)
 - [Security Features](#security-features)
@@ -415,58 +415,29 @@ Slash command system for common agent operations including task status and metri
 - **Show Metrics Command** (`jib-container/.claude/commands/show-metrics.md`)
   - Generates monitoring reports with API usage, task completion statistics, and optimization insights.
 
-## LLM Providers
+## LLM Interface
 
-### 34. Multi-Provider LLM Module
+### 34. Claude Code Integration
 **Location:**
 - `jib-container/llm/__init__.py`
 - `jib-container/llm/config.py`
 - `jib-container/llm/runner.py`
 - `jib-container/llm/result.py`
+- `jib-container/llm/claude/`
 
-Unified LLM interface that abstracts away provider-specific implementations, enabling seamless switching between Anthropic (Claude), Google (Gemini), and OpenAI providers. All jib-tasks use `from llm import run_agent` for consistent LLM interactions regardless of configured provider.
-
-**Components:**
-
-- **Provider Selection** (`jib-container/llm/config.py`)
-  - Automatic provider selection via `LLM_PROVIDER` environment variable (anthropic, google/gemini, openai). Defaults to Anthropic/Claude.
-- **Unified Result Handling** (`jib-container/llm/result.py`)
-  - Common `AgentResult` dataclass providing standardized success/error status, stdout/stderr capture, and return codes across all providers.
-
-### 35. Gemini CLI Integration
-**Location:**
-- `jib-container/llm/gemini/__init__.py`
-- `jib-container/llm/gemini/config.py`
-- `jib-container/llm/gemini/runner.py`
-
-Direct integration with Google's Gemini CLI (`@google/gemini-cli`) for native Gemini model access. Supports both synchronous and asynchronous execution with streaming output callbacks.
+Claude Code interface providing both interactive and programmatic access to Claude models. Supports API key authentication and OAuth login. All jib-tasks use `from llm import run_agent` for consistent LLM interactions.
 
 **Components:**
 
-- **Gemini Configuration** (`jib-container/llm/gemini/config.py`)
-  - Provider-specific configuration including model selection via `GEMINI_MODEL` environment variable, sandbox settings, and API key management (`GOOGLE_API_KEY`/`GEMINI_API_KEY`).
-- **Auto-Approval Mode** (`jib-container/llm/gemini/runner.py`)
-  - Runs with `--yolo` flag for unattended tool execution, similar to Claude Code's `--dangerously-skip-permissions`.
-- **GEMINI.md Symlink** (`jib-container/GEMINI.md`)
-  - Symlinked to CLAUDE.md for consistent project context across both CLI tools.
-
-### 36. Claude Code Router Support
-**Location:**
-- `jib-container/llm/claude/__init__.py`
-- `jib-container/llm/claude/config.py`
-- `jib-container/llm/claude/runner.py`
-- `jib-container/llm/claude/router.py`
-
-Integration with claude-code-router, an optional proxy that routes Claude Code requests to alternative LLM providers (OpenAI, Gemini, DeepSeek) while maintaining Claude Code's tooling and user experience.
-
-**Components:**
-
-- **Router Manager** (`jib-container/llm/claude/router.py`)
-  - Lifecycle management for the claude-code-router process including automatic startup, health checks, and graceful shutdown via context manager.
-- **Claude Agent SDK Integration** (`jib-container/llm/claude/runner.py`)
-  - Programmatic Claude Code execution using the Claude Agent SDK, supporting both synchronous and async modes with timeout handling.
-- **API Key Authentication** (`jib-container/llm/claude/config.py`)
-  - Migrated from OAuth to API key authentication (`ANTHROPIC_API_KEY`) for simpler credential management.
+- **Interactive Mode** (`jib-container/llm/runner.py`)
+  - Launches Claude Code CLI with `--dangerously-skip-permissions` for autonomous operation in the sandboxed container.
+- **Programmatic Mode** (`jib-container/llm/claude/runner.py`)
+  - Claude Agent SDK integration for non-interactive task execution with streaming output support.
+- **Result Handling** (`jib-container/llm/result.py`)
+  - `AgentResult` dataclass providing standardized success/error status, stdout/stderr capture, and return codes.
+- **Authentication**
+  - API key via `ANTHROPIC_API_KEY` environment variable
+  - OAuth via `ANTHROPIC_AUTH_METHOD=oauth` for Claude's built-in OAuth flow
 
 ## Container Infrastructure
 
