@@ -151,40 +151,6 @@ def validate_gh_api_path(path: str, method: str = "GET") -> tuple[bool, str]:
     return False, f"API path '{path}' not in allowlist"
 
 
-def is_command_blocked(args: list[str]) -> tuple[bool, str | None]:
-    """
-    Check if a gh command is blocked.
-
-    Args:
-        args: Command arguments (e.g., ["pr", "merge", "123"])
-
-    Returns:
-        Tuple of (is_blocked, blocked_command_name)
-    """
-    cmd_str = " ".join(args[:2]) if len(args) >= 2 else args[0] if args else ""
-
-    for blocked in BLOCKED_GH_COMMANDS:
-        if cmd_str.startswith(blocked):
-            return True, blocked
-
-    return False, None
-
-
-def is_command_readonly(args: list[str]) -> bool:
-    """
-    Check if a gh command is read-only.
-
-    Args:
-        args: Command arguments
-
-    Returns:
-        True if the command is read-only
-    """
-    cmd_str = " ".join(args[:2]) if len(args) >= 2 else args[0] if args else ""
-
-    return any(cmd_str.startswith(readonly) for readonly in READONLY_GH_COMMANDS)
-
-
 @dataclass
 class GitHubToken:
     """GitHub App installation token with metadata."""

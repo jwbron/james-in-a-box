@@ -56,6 +56,11 @@ POST /api/v1/git/push
   Request: {repo_path, remote, refspec, force}
   Policy: branch_ownership
 
+POST /api/v1/git/fetch
+  Request: {repo_path, remote, operation, args[]}
+  Policy: none (read operations)
+  Operations: "fetch", "ls-remote"
+
 POST /api/v1/gh/pr/create
   Request: {repo, title, body, base, head}
   Policy: none (always allowed)
@@ -87,6 +92,7 @@ host-services/gateway-sidecar/
 ├── gateway.py              # Flask REST API server
 ├── policy.py               # Policy enforcement logic
 ├── github_client.py        # Wraps gh CLI with token
+├── git_client.py           # Git path/arg validation, credential helpers
 ├── setup.sh                # Installation script
 ├── gateway-sidecar.service # Systemd unit file
 ├── tests/                  # Unit tests

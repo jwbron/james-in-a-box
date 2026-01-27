@@ -625,6 +625,161 @@ class TestGhExecute:
             assert data["success"] is True
 
 
+class TestGitFetch:
+    """Tests for /api/v1/git/fetch endpoint."""
+
+    def test_fetch_requires_repo_path(self, client, auth_headers):
+        """Fetch requires repo_path parameter."""
+        response = client.post(
+            "/api/v1/git/fetch",
+            headers=auth_headers,
+            data=json.dumps({"remote": "origin"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert "repo_path" in data["message"]
+
+    def test_fetch_path_traversal_blocked(self, client, auth_headers):
+        """Fetch blocked for path traversal attempts."""
+        response = client.post(
+            "/api/v1/git/fetch",
+            headers=auth_headers,
+            data=json.dumps({
+                "repo_path": "/home/jib/repos/../../../etc/passwd",
+                "remote": "origin",
+            }),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 403
+        data = json.loads(response.data)
+        assert data["success"] is False
+
+    def test_fetch_invalid_args_rejected(self, client, auth_headers):
+        """Fetch rejects invalid arguments."""
+        response = client.post(
+            "/api/v1/git/fetch",
+            headers=auth_headers,
+            data=json.dumps({
+                "repo_path": "/home/jib/repos/test",
+                "remote": "origin",
+                "args": ["--upload-pack=/bin/evil"],
+            }),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert "not allowed" in data["message"]
+
+    def test_fetch_success(self, client, auth_headers):
+        """Fetch succeeds with valid parameters."""
+        with (
+            patch("subprocess.run") as mock_run,
+            patch.object(gateway, "get_github_client") as mock_gh,
+        ):
+            # Configure subprocess.run to return different values based on args
+            def run_side_effect(*args, **kwargs):
+                cmd = args[0] if args else kwargs.get("args", [])
+                result = MagicMock()
+                result.returncode = 0
+                result.stderr = ""
+
+                if "remote" in cmd and "get-url" in cmd:
+                    result.stdout = "https://github.com/owner/repo.git\n"
+                elif "fetch" in cmd:
+                    result.stdout = ""
+                else:
+                    result.stdout = ""
+                return result
+
+            mock_run.side_effect = run_side_effect
+
+            # Mock GitHub client for token
+            mock_token = MagicMock()
+            mock_token.token = "test-token"
+            mock_gh.return_value.get_token.return_value = mock_token
+            mock_gh.return_value.get_incognito_token.return_value = None
+
+            response = client.post(
+                "/api/v1/git/fetch",
+                headers=auth_headers,
+                data=json.dumps({
+                    "repo_path": "/home/jib/repos/test",
+                    "remote": "origin",
+                }),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            assert data["success"] is True
+
+    def test_ls_remote_success(self, client, auth_headers):
+        """ls-remote succeeds with valid parameters."""
+        with (
+            patch("subprocess.run") as mock_run,
+            patch.object(gateway, "get_github_client") as mock_gh,
+        ):
+            # Configure subprocess.run
+            def run_side_effect(*args, **kwargs):
+                cmd = args[0] if args else kwargs.get("args", [])
+                result = MagicMock()
+                result.returncode = 0
+                result.stderr = ""
+
+                if "remote" in cmd and "get-url" in cmd:
+                    result.stdout = "https://github.com/owner/repo.git\n"
+                elif "ls-remote" in cmd:
+                    result.stdout = "abc123\trefs/heads/main\n"
+                else:
+                    result.stdout = ""
+                return result
+
+            mock_run.side_effect = run_side_effect
+
+            # Mock GitHub client for token
+            mock_token = MagicMock()
+            mock_token.token = "test-token"
+            mock_gh.return_value.get_token.return_value = mock_token
+            mock_gh.return_value.get_incognito_token.return_value = None
+
+            response = client.post(
+                "/api/v1/git/fetch",
+                headers=auth_headers,
+                data=json.dumps({
+                    "repo_path": "/home/jib/repos/test",
+                    "operation": "ls-remote",
+                    "remote": "origin",
+                }),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            assert data["success"] is True
+            assert "refs/heads/main" in data["data"]["stdout"]
+
+    def test_fetch_unsupported_operation_rejected(self, client, auth_headers):
+        """Unsupported operations are rejected."""
+        response = client.post(
+            "/api/v1/git/fetch",
+            headers=auth_headers,
+            data=json.dumps({
+                "repo_path": "/home/jib/repos/test",
+                "operation": "clone",
+                "remote": "origin",
+            }),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert "Unsupported" in data["message"]
+
+
 class TestBlockedCommands:
     """Tests for blocked commands."""
 
