@@ -146,8 +146,9 @@ config/                        # Global configuration
 host-services/<service>/       # Service-specific config
 └── requirements.txt           # Python dependencies
 
-~/.config/jib-notifier/        # Runtime user config (not in repo)
-└── config.json                # Slack tokens, user preferences
+~/.config/jib/                 # Runtime user config (not in repo)
+├── config.yaml                # Non-secret settings (Slack channel, etc.)
+└── secrets.env                # Secrets (Slack tokens, API keys)
 ```
 
 ## Documentation Organization
