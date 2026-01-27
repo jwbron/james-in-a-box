@@ -98,24 +98,6 @@ Each config loads from multiple sources in priority order:
 3. **`~/.config/jib/config.yaml`** (for other settings)
 4. **Default values** (lowest priority)
 
-## Migration Tool
-
-To migrate from the old flat config format to the new nested format:
-
-```bash
-# Preview changes (dry run)
-./scripts/migrate-config.py
-
-# Apply migration (adds nested sections, keeps old keys)
-./scripts/migrate-config.py --apply
-
-# Test API connectivity
-./scripts/migrate-config.py --health
-
-# Remove old top-level keys after verification
-./scripts/migrate-config.py --cleanup
-```
-
 ## Health Checks
 
 Each config has a `health_check()` method that tests actual API connectivity:
@@ -126,12 +108,6 @@ from jib_config import SlackConfig, GitHubConfig, JiraConfig
 slack = SlackConfig.from_env()
 result = slack.health_check(timeout=10.0)
 # Returns: HealthCheckResult(healthy=True, message="Authenticated as bot_name", latency_ms=150)
-```
-
-Run all health checks at once:
-
-```bash
-./scripts/migrate-config.py --health
 ```
 
 ## Validation
@@ -214,7 +190,4 @@ from .configs.myservice import MyServiceConfig
 ```bash
 # Run all jib_config tests
 python -m pytest tests/jib_config/ -v
-
-# Run integration tests (requires config files)
-./scripts/test-config-migration.sh
 ```
