@@ -328,6 +328,146 @@ class TestGhApiPathValidation:
         assert "not in allowlist" in error
 
 
+class TestParseGhApiArgs:
+    """Tests for parse_gh_api_args function."""
+
+    def test_simple_path(self):
+        """Simple path without flags is parsed correctly."""
+        path, method = github_client.parse_gh_api_args(["repos/owner/repo/pulls"])
+        assert path == "repos/owner/repo/pulls"
+        assert method == "GET"
+
+    def test_path_with_leading_slash(self):
+        """Path with leading slash is parsed correctly."""
+        path, method = github_client.parse_gh_api_args(["/repos/owner/repo/pulls"])
+        assert path == "/repos/owner/repo/pulls"
+        assert method == "GET"
+
+    def test_method_flag_short(self):
+        """Short -X flag for method is parsed correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["-X", "PATCH", "repos/owner/repo/pulls/123"]
+        )
+        assert path == "repos/owner/repo/pulls/123"
+        assert method == "PATCH"
+
+    def test_method_flag_long(self):
+        """Long --method flag is parsed correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["--method", "POST", "repos/owner/repo/issues"]
+        )
+        assert path == "repos/owner/repo/issues"
+        assert method == "POST"
+
+    def test_method_flag_equals_format(self):
+        """Method flag with = format is parsed correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["--method=PATCH", "repos/owner/repo/pulls/123"]
+        )
+        assert path == "repos/owner/repo/pulls/123"
+        assert method == "PATCH"
+
+    def test_method_flag_short_equals_format(self):
+        """Short method flag with = format is parsed correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["-X=POST", "repos/owner/repo/issues"]
+        )
+        assert path == "repos/owner/repo/issues"
+        assert method == "POST"
+
+    def test_multiple_flags_before_path(self):
+        """Multiple flags before path are skipped correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["-X", "PATCH", "-H", "Accept: application/json", "repos/owner/repo/pulls/123"]
+        )
+        assert path == "repos/owner/repo/pulls/123"
+        assert method == "PATCH"
+
+    def test_field_flags_skipped(self):
+        """Field flags (-f, -F) with values are skipped correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["-X", "PATCH", "repos/owner/repo/pulls/123", "-f", "base=main"]
+        )
+        assert path == "repos/owner/repo/pulls/123"
+        assert method == "PATCH"
+
+    def test_repo_flag_skipped(self):
+        """Repo flag (-R, --repo) with value is skipped correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["--repo", "owner/repo", "repos/owner/repo/pulls"]
+        )
+        assert path == "repos/owner/repo/pulls"
+        assert method == "GET"
+
+    def test_boolean_flags_skipped(self):
+        """Boolean flags (--paginate, --silent, etc.) are skipped correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["--paginate", "--silent", "repos/owner/repo/issues"]
+        )
+        assert path == "repos/owner/repo/issues"
+        assert method == "GET"
+
+    def test_jq_flag_skipped(self):
+        """JQ flag with query is skipped correctly."""
+        path, method = github_client.parse_gh_api_args(
+            ["repos/owner/repo/pulls", "--jq", ".[] | .number"]
+        )
+        assert path == "repos/owner/repo/pulls"
+        assert method == "GET"
+
+    def test_complex_command(self):
+        """Complex command with many flags is parsed correctly."""
+        # gh api -X POST -H "Accept: application/json" --repo owner/repo repos/owner/repo/pulls/123/comments -f body="test"
+        path, method = github_client.parse_gh_api_args(
+            [
+                "-X",
+                "POST",
+                "-H",
+                "Accept: application/json",
+                "--repo",
+                "owner/repo",
+                "repos/owner/repo/pulls/123/comments",
+                "-f",
+                "body=test",
+            ]
+        )
+        assert path == "repos/owner/repo/pulls/123/comments"
+        assert method == "POST"
+
+    def test_no_path_returns_none(self):
+        """When no path is provided, returns None."""
+        path, method = github_client.parse_gh_api_args(["-X", "POST"])
+        assert path is None
+        assert method == "POST"
+
+    def test_empty_args_returns_none(self):
+        """Empty args list returns None path."""
+        path, method = github_client.parse_gh_api_args([])
+        assert path is None
+        assert method == "GET"
+
+    def test_only_flags_returns_none(self):
+        """Only flags without path returns None."""
+        path, method = github_client.parse_gh_api_args(
+            ["-X", "PATCH", "-H", "Accept: application/json", "-f", "key=value"]
+        )
+        assert path is None
+        assert method == "PATCH"
+
+    def test_method_case_insensitive(self):
+        """Method value is uppercased."""
+        path, method = github_client.parse_gh_api_args(["-X", "patch", "repos/owner/repo"])
+        assert method == "PATCH"
+
+    def test_unknown_flags_skipped(self):
+        """Unknown flags are skipped (defensive behavior)."""
+        path, method = github_client.parse_gh_api_args(
+            ["--unknown-flag", "repos/owner/repo/pulls"]
+        )
+        assert path == "repos/owner/repo/pulls"
+        assert method == "GET"
+
+
 class TestSharedHelperFunctions:
     """Tests for shared credential helper functions."""
 

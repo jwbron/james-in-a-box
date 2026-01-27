@@ -151,6 +151,111 @@ def validate_gh_api_path(path: str, method: str = "GET") -> tuple[bool, str]:
     return False, f"API path '{path}' not in allowlist"
 
 
+# gh api flags that take a value argument
+# These must be skipped when looking for the API path
+GH_API_FLAGS_WITH_VALUES = frozenset(
+    {
+        "-X",
+        "--method",
+        "-H",
+        "--header",
+        "-f",
+        "--field",
+        "-F",
+        "--raw-field",
+        "-q",
+        "--jq",
+        "-t",
+        "--template",
+        "-R",
+        "--repo",
+        "--input",
+        "--cache",
+        "--hostname",
+    }
+)
+
+# gh api flags that don't take a value (boolean flags)
+GH_API_FLAGS_NO_VALUE = frozenset(
+    {
+        "-p",
+        "--paginate",
+        "--slurp",
+        "-i",
+        "--include",
+        "--silent",
+        "--verbose",
+    }
+)
+
+
+def parse_gh_api_args(args: list[str]) -> tuple[str | None, str]:
+    """
+    Parse gh api command arguments to extract the API path and HTTP method.
+
+    The gh api command accepts various flags before the API path:
+        gh api -X PATCH repos/owner/repo/pulls/123 -f base=main
+        gh api --method POST -H "Accept: application/json" /repos/owner/repo/issues
+
+    This function properly skips flags and their values to find the actual API path.
+
+    Args:
+        args: The argument list after 'api' (e.g., ["-X", "PATCH", "repos/..."])
+
+    Returns:
+        Tuple of (api_path, http_method).
+        api_path is None if no path could be found.
+        http_method defaults to "GET" if not specified.
+    """
+    method = "GET"
+    api_path = None
+    i = 0
+
+    while i < len(args):
+        arg = args[i]
+
+        # Check for HTTP method flag
+        if arg in ("-X", "--method"):
+            if i + 1 < len(args):
+                method = args[i + 1].upper()
+                i += 2
+                continue
+            else:
+                # Flag without value - skip it
+                i += 1
+                continue
+
+        # Check for other flags that take values
+        if arg in GH_API_FLAGS_WITH_VALUES:
+            # Skip flag and its value
+            i += 2
+            continue
+
+        # Check for flags that don't take values
+        if arg in GH_API_FLAGS_NO_VALUE:
+            i += 1
+            continue
+
+        # Check for combined flag=value format (e.g., --method=PATCH, -f=key=value)
+        if "=" in arg and arg.startswith("-"):
+            # Handle method specially
+            if arg.startswith("-X=") or arg.startswith("--method="):
+                method = arg.split("=", 1)[1].upper()
+            i += 1
+            continue
+
+        # Check for other flags we don't recognize (starts with -)
+        if arg.startswith("-"):
+            i += 1
+            continue
+
+        # This is a positional argument - should be the API path
+        api_path = arg
+        break
+
+    return api_path, method
+
+
 @dataclass
 class GitHubToken:
     """GitHub App installation token with metadata."""
