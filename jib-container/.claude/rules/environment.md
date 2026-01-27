@@ -14,6 +14,8 @@ All git/gh operations are routed through the gateway sidecar (runs as `jib-gatew
 
 **Policy enforcement:**
 - `git push`: Only to branches you own (jib-prefixed or has your open PR)
+- `git fetch/pull/ls-remote`: Routed through gateway for authentication
+- `git remote update`: Converted to `fetch --all` via gateway
 - `gh pr merge`: **Blocked** - human must merge via GitHub UI
 - `gh pr comment/edit/close`: Only on PRs you authored
 
