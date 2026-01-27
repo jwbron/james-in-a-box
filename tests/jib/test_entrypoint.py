@@ -332,6 +332,7 @@ class TestSetupWorktrees:
         config = MagicMock()
         config.repos_dir = fake_home / "repos"  # Doesn't exist
         config.git_main_dir = fake_home / ".git-main"
+        config.git_admin_dir = fake_home / ".git-admin"  # Doesn't exist (legacy mode)
 
         logger = entrypoint.Logger(quiet=True)
         result = entrypoint.setup_worktrees(config, logger)
@@ -348,14 +349,15 @@ class TestSetupWorktrees:
         config = MagicMock()
         config.repos_dir = repos_dir
         config.git_main_dir = fake_home / ".git-main"
+        config.git_admin_dir = fake_home / ".git-admin"  # Doesn't exist (legacy mode)
 
         logger = entrypoint.Logger(quiet=True)
         result = entrypoint.setup_worktrees(config, logger)
 
         assert result is True
 
-    def test_returns_false_if_git_main_missing(self, temp_dir, monkeypatch, capsys):
-        """Test that function returns False if .git-main is missing but worktrees exist."""
+    def test_returns_false_if_git_dirs_missing(self, temp_dir, monkeypatch, capsys):
+        """Test that function returns False if both .git-admin and .git-main are missing but worktrees exist."""
         fake_home = temp_dir / "home" / "testuser"
         fake_home.mkdir(parents=True)
 
@@ -367,7 +369,8 @@ class TestSetupWorktrees:
 
         config = MagicMock()
         config.repos_dir = repos_dir
-        config.git_main_dir = fake_home / ".git-main-nonexistent"  # Doesn't exist
+        config.git_admin_dir = fake_home / ".git-admin-nonexistent"  # Doesn't exist (no isolated mode)
+        config.git_main_dir = fake_home / ".git-main-nonexistent"  # Doesn't exist (no legacy mode)
 
         logger = entrypoint.Logger(quiet=False)
         result = entrypoint.setup_worktrees(config, logger)
