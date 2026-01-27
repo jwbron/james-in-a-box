@@ -1404,6 +1404,15 @@ class MinimalSetup:
         if not token.startswith(prefix):
             raise ValueError(f"Token must start with '{prefix}'")
 
+    def _validate_choice(
+        self, value: str, valid_choices: list[str], error_msg: str, case_insensitive: bool = False
+    ):
+        """Validate value is one of the valid choices."""
+        check_value = value.lower() if case_insensitive else value
+        check_choices = [c.lower() for c in valid_choices] if case_insensitive else valid_choices
+        if check_value not in check_choices:
+            raise ValueError(error_msg)
+
     def _mask_secret(self, secret: str, visible_chars: int = 8) -> str:
         """Mask a secret for display, showing only first few characters."""
         if not secret:
@@ -1582,7 +1591,7 @@ class MinimalSetup:
         choice = self.prompter.prompt(
             "Choose authentication method [1/2]",
             default="2",
-            validator=lambda c: None if c in ["1", "2"] else ValueError("Choose 1 or 2"),
+            validator=lambda c: self._validate_choice(c, ["1", "2"], "Choose 1 or 2"),
         )
 
         if choice == "1":
@@ -2129,9 +2138,9 @@ class MinimalSetup:
             choice = self.prompter.prompt(
                 "Auth method (api_key/oauth)",
                 default=existing,
-                validator=lambda v: None
-                if v.lower() in ("api_key", "oauth")
-                else ValueError("Must be 'api_key' or 'oauth'"),
+                validator=lambda v: self._validate_choice(
+                    v, ["api_key", "oauth"], "Must be 'api_key' or 'oauth'", case_insensitive=True
+                ),
             )
             return choice.lower() if choice else existing
 
@@ -2147,9 +2156,9 @@ class MinimalSetup:
         choice = self.prompter.prompt(
             "Auth method (api_key/oauth)",
             default="oauth",
-            validator=lambda v: None
-            if v.lower() in ("api_key", "oauth")
-            else ValueError("Must be 'api_key' or 'oauth'"),
+            validator=lambda v: self._validate_choice(
+                v, ["api_key", "oauth"], "Must be 'api_key' or 'oauth'", case_insensitive=True
+            ),
         )
         return choice.lower() if choice else "oauth"
 
