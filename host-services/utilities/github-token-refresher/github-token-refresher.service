@@ -1,8 +1,9 @@
 [Unit]
 Description=GitHub Token Refresher - Keep GitHub App tokens fresh for jib containers
 Documentation=file://%h/repos/james-in-a-box/host-services/utilities/github-token-refresher/README.md
-After=network-online.target
+After=network-online.target venv-setup.service
 Wants=network-online.target
+Requires=venv-setup.service
 OnFailure=service-failure-notify@%n.service
 
 [Service]
