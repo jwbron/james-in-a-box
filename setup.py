@@ -649,7 +649,9 @@ class ServiceManager:
     """Manages systemd services."""
 
     # Core services that should always be enabled (non-LLM)
+    # Note: venv-setup must be first since other Python services depend on it
     CORE_SERVICES = [
+        "venv-setup.service",
         "slack-notifier.service",
         "slack-receiver.service",
         "github-token-refresher.timer",
@@ -668,6 +670,7 @@ class ServiceManager:
 
     # Mapping of service names to their setup script paths
     SERVICE_SETUP_SCRIPTS = {
+        "venv-setup.service": "host-services/venv-setup.sh",
         "slack-notifier.service": "host-services/slack/slack-notifier/setup.sh",
         "slack-receiver.service": "host-services/slack/slack-receiver/setup.sh",
         "github-token-refresher.timer": "host-services/utilities/github-token-refresher/setup.sh",
