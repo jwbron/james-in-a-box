@@ -106,11 +106,12 @@ Implement **Mount-Restriction Isolation** - each container only mounts its own w
 │                                                                 │
 │  Isolated mounts (can only see its own worktree):               │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │ /home/jib/repos/X         (rw) - working directory         │ │
-│  │ /home/jib/.git-admin/X    (rw) - THIS worktree admin only  │ │
-│  │ /home/jib/.git-objects/X  (rw) - shared objects            │ │
-│  │ /home/jib/.git-refs/X     (rw) - shared refs               │ │
-│  │ /home/jib/.git-common/X   (ro) - config, hooks             │ │
+│  │ /home/jib/repos/repo         (rw) - working directory      │ │
+│  │ /home/jib/.git-admin/repo    (rw) - THIS worktree admin    │ │
+│  │ /home/jib/.git-admin/objects (rw) - shared objects         │ │
+│  │ /home/jib/.git-admin/refs    (rw) - shared refs            │ │
+│  │ /home/jib/.git-admin/config  (ro) - shared config          │ │
+│  │ /home/jib/.git-admin/hooks   (ro) - shared hooks           │ │
 │  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  All local git operations work normally:                        │
@@ -174,15 +175,17 @@ Mount **only** the specific worktree admin directory, **not** the parent `worktr
 -v ~/.git/repo/worktrees/${WORKTREE}:/home/jib/.git-admin/repo:rw
 
 # Shared objects - for creating commits (content-addressed, safe to share)
--v ~/.git/repo/objects:/home/jib/.git-objects/repo:rw
+-v ~/.git/repo/objects:/home/jib/.git-admin/objects:rw
 
 # Shared refs - for updating branch pointers
--v ~/.git/repo/refs:/home/jib/.git-refs/repo:rw
+-v ~/.git/repo/refs:/home/jib/.git-admin/refs:rw
 
 # Config and hooks - read-only access to shared configuration
--v ~/.git/repo/config:/home/jib/.git-common/repo/config:ro
--v ~/.git/repo/hooks:/home/jib/.git-common/repo/hooks:ro
+-v ~/.git/repo/config:/home/jib/.git-admin/config:ro
+-v ~/.git/repo/hooks:/home/jib/.git-admin/hooks:ro
 ```
+
+**Path convention:** All shared git directories are mounted under `/home/jib/.git-admin/` to match the `commondir` relative path resolution (`../..` from `/home/jib/.git-admin/repo`).
 
 ### Why This Provides Isolation
 
@@ -190,14 +193,83 @@ Mount **only** the specific worktree admin directory, **not** the parent `worktr
 2. **Container can't navigate to other worktrees**: They simply don't exist in the container's filesystem view
 3. **Modifying `.git` file is useless**: Even if container changes where `.git` points, the target paths don't exist
 
+### Git Metadata Configuration
+
+#### `.git` File (in working directory)
+
+The working directory's `.git` file must point to the container's view of the worktree admin:
+
+```
+gitdir: /home/jib/.git-admin/repo
+```
+
+#### `commondir` File (in worktree admin)
+
+The `commondir` file tells git where to find the shared repository (objects, refs, config). Use **relative paths** to avoid container paths leaking to host:
+
+```
+# In /home/jib/.git-admin/repo/commondir
+../..
+```
+
+This resolves to `/home/jib/.git-admin` from the container's view, where:
+- `../repo/objects` → mounted objects directory
+- `../repo/refs` → mounted refs directory
+- `../repo/config` → mounted config file
+
+**Important:** Absolute paths like `/home/jib/.git-common/repo` would leak container paths to host metadata. Always use relative paths.
+
+#### `gitdir` File (reverse resolution)
+
+The `gitdir` file in the worktree admin allows git to find the working directory:
+
+```
+# In /home/jib/.git-admin/repo/gitdir
+/home/jib/repos/repo
+```
+
+This is a container-internal path and doesn't affect host operations since each container has isolated mounts.
+
 ### Shared Directory Safety
 
-| Directory | Mode | Safety |
-|-----------|------|--------|
-| objects/ | rw | Safe - content-addressed, append-only |
-| refs/ | rw | Container can only affect its own branch (worktree tracks branch) |
-| config | ro | Cannot be modified |
-| hooks/ | ro | Cannot be modified |
+| Directory | Mode | Risk | Mitigation |
+|-----------|------|------|------------|
+| objects/ | rw | Low - could overwrite existing objects | Content-addressed; corruption detectable via hash mismatch; recover via `git fetch` |
+| refs/ | rw | Medium - could corrupt shared refs like `refs/heads/main` | Gateway enforces push policy; corrupted refs recovered via `git fetch`; remote is source of truth |
+| config | ro | None | Cannot be modified |
+| hooks/ | ro | None | Cannot be modified |
+
+**Accepted Risks:**
+
+1. **refs/ corruption**: A container could theoretically corrupt `refs/heads/main` locally, breaking other containers' git operations. This is accepted because:
+   - Gateway prevents pushing unauthorized changes
+   - Recovery: `git fetch origin main:refs/heads/main` restores correct state
+   - Remote repository is always source of truth
+   - Detection: Operations on wrong branch will fail push policy check
+
+2. **objects/ corruption**: A container could overwrite objects with garbage. This is low risk because:
+   - Git objects are content-addressed (SHA-1 hash of content)
+   - Corruption is detectable (hash won't match content)
+   - Recovery: `git fetch` retrieves objects from remote
+
+### Concurrency Considerations
+
+**Race Conditions:**
+
+Git uses file locking (`.lock` files) to prevent concurrent modifications to refs and index. This works correctly across Docker bind mounts because:
+- Lock files are created in the same directory as the file being modified
+- Docker bind mounts preserve file locking semantics
+- Multiple containers writing to shared `refs/` will properly serialize via git's locking
+
+**Tested scenario:** Two containers committing simultaneously - both succeed without corruption due to git's built-in locking.
+
+**Garbage Collection:**
+
+Orphaned objects from crashed containers are handled by standard git garbage collection:
+- Objects without refs are pruned by `git gc`
+- Run `git gc` on host periodically (or on-demand) to clean up
+- Gateway sidecar can optionally trigger GC after container termination
+- Loose objects don't affect correctness, only disk space
 
 ## Gateway Sidecar
 
@@ -259,21 +331,36 @@ With separate restricted views:
 ## Implementation Plan
 
 ### Phase 1: Mount Structure Fix
+
+**Files to modify:** `jib-container/runtime.py`
+
 - [ ] Mount only specific worktree admin dir (not parent `worktrees/` dir)
-- [ ] Mount objects and refs as rw for local commits
-- [ ] Mount config/hooks as ro
-- [ ] Update container `.git` file to point to new mount paths
+- [ ] Mount objects and refs as rw under `.git-admin/` for local commits
+- [ ] Mount config/hooks as ro under `.git-admin/`
+- [ ] Update mount paths to match `commondir` relative path resolution
 
 ### Phase 2: Host Path Handling
-- [ ] Use relative paths in `commondir` file
+
+**Files to modify:** `jib-container/entrypoint.py`
+
+- [ ] Set `.git` file content to `gitdir: /home/jib/.git-admin/repo`
+- [ ] Set `commondir` to relative path (`../..`)
+- [ ] Set `gitdir` file for reverse resolution
 - [ ] Ensure container paths don't leak to host metadata
 - [ ] Test host git commands work after container exit
 
 ### Phase 3: Testing
+
 - [ ] Test all local git operations work in container
 - [ ] Test cross-container isolation (can't access other worktrees)
 - [ ] Test push/fetch still work via gateway
-- [ ] Test concurrent operations from multiple containers
+- [ ] Test concurrent operations from multiple containers (see concurrency test cases below)
+
+### Concurrency Test Cases
+
+- [ ] Two containers commit simultaneously - both succeed without corruption
+- [ ] Verify git ref locking works across Docker bind mount boundaries
+- [ ] Verify no data loss when containers write to shared objects/ concurrently
 
 ## Consequences
 

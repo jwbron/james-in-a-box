@@ -1,7 +1,7 @@
 # Git Worktree Isolation: Implementation Gap Assessment
 
 **Date:** 2026-01-27
-**Related PRs:** #571 (ADR), #588 (dockerignore fix)
+**Related PRs:** #590 (this revision), #571 (original ADR), #588 (dockerignore fix)
 **Status:** Decision Made - Local Operations with Mount Isolation
 
 ## Executive Summary
@@ -53,15 +53,17 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 -v ~/.git/repo/worktrees/${WORKTREE}:/home/jib/.git-admin/repo:rw
 
 # Shared objects (rw) - for creating commits
--v ~/.git/repo/objects:/home/jib/.git-objects/repo:rw
+-v ~/.git/repo/objects:/home/jib/.git-admin/objects:rw
 
 # Shared refs (rw) - for updating branch pointers
--v ~/.git/repo/refs:/home/jib/.git-refs/repo:rw
+-v ~/.git/repo/refs:/home/jib/.git-admin/refs:rw
 
 # Config and hooks (ro) - shared configuration
--v ~/.git/repo/config:/home/jib/.git-common/repo/config:ro
--v ~/.git/repo/hooks:/home/jib/.git-common/repo/hooks:ro
+-v ~/.git/repo/config:/home/jib/.git-admin/config:ro
+-v ~/.git/repo/hooks:/home/jib/.git-admin/hooks:ro
 ```
+
+**Path convention:** All shared git directories are mounted under `/home/jib/.git-admin/` to match the `commondir` relative path resolution (`../..` from `/home/jib/.git-admin/repo`).
 
 ### Why This Works
 
@@ -157,6 +159,12 @@ Mount **only** the specific worktree admin directory, not the parent directory:
 - [ ] Host `git status` works after container exit
 - [ ] Host `git log` works after container exit
 - [ ] No container paths in host metadata
+
+### Concurrency Tests
+- [ ] Two containers commit simultaneously - both succeed without corruption
+- [ ] Verify git ref locking works across Docker bind mount boundaries
+- [ ] Verify no data loss when containers write to shared objects/ concurrently
+- [ ] Concurrent `git add` operations don't corrupt index files (each container has own index)
 
 ## What We're NOT Doing
 
