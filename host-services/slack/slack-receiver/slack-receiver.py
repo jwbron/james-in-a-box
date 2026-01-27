@@ -710,8 +710,9 @@ class SlackReceiver:
 
             # Convert host paths to container paths
             # Host: ~/.jib-sharing/incoming/task.md → Container: ~/sharing/incoming/task.md
+            # Note: Container user is always 'jib', not the host username
             container_message_path = str(filepath).replace(
-                str(Path.home() / ".jib-sharing"), f"/home/{os.environ['USER']}/sharing"
+                str(Path.home() / ".jib-sharing"), "/home/jib/sharing"
             )
 
             # Create log file for streaming Claude output
