@@ -7,8 +7,9 @@ All configuration is handled by llm.claude.config.
 
 from llm.claude.config import ClaudeConfig
 
+
 # Backward compatibility aliases
 LLMConfig = ClaudeConfig
 BaseConfig = ClaudeConfig
 
-__all__ = ["ClaudeConfig", "LLMConfig", "BaseConfig"]
+__all__ = ["BaseConfig", "ClaudeConfig", "LLMConfig"]

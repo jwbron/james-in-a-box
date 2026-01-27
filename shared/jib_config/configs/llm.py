@@ -7,7 +7,6 @@ Supports Claude Code with Anthropic API via API key or OAuth.
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from ..base import BaseConfig, HealthCheckResult, ValidationResult
