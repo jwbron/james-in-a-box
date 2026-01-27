@@ -6,6 +6,7 @@
 set -u
 
 WORKTREE_BASE="$HOME/.jib-worktrees"
+LOCAL_OBJECTS_BASE="$HOME/.jib-local-objects"
 LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
 
 log() {
@@ -73,6 +74,17 @@ cleanup_orphaned_worktrees() {
         else
             log "  Warning: Could not remove all files (permission denied on some files)"
             log "  Manual cleanup may be needed: rm -rf $container_dir"
+        fi
+
+        # Remove container's local objects directory (worktree isolation)
+        local local_objects_dir="$LOCAL_OBJECTS_BASE/$container_id"
+        if [ -d "$local_objects_dir" ]; then
+            log "  Removing local objects: $local_objects_dir"
+            if rm -rf "$local_objects_dir" 2>/dev/null; then
+                log "  Successfully removed local objects"
+            else
+                log "  Warning: Could not remove local objects directory"
+            fi
         fi
 
         total_cleaned=$((total_cleaned + 1))
@@ -260,8 +272,58 @@ cleanup_orphaned_branches() {
     fi
 }
 
+cleanup_orphaned_local_objects() {
+    log "Checking for orphaned local objects directories..."
+
+    # Check if local objects directory exists
+    if [ ! -d "$LOCAL_OBJECTS_BASE" ]; then
+        log "No local objects directory found at $LOCAL_OBJECTS_BASE"
+        return 0
+    fi
+
+    local total_cleaned=0
+
+    # Iterate through container local objects directories
+    for objects_dir in "$LOCAL_OBJECTS_BASE"/jib-*; do
+        # Skip if no directories match
+        if [ ! -d "$objects_dir" ]; then
+            continue
+        fi
+
+        container_id=$(basename "$objects_dir")
+
+        # Check if container is still running or exists
+        if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${container_id}$"; then
+            continue
+        fi
+
+        # Check if worktree still exists (container might still be cleaning up)
+        if [ -d "$WORKTREE_BASE/$container_id" ]; then
+            continue
+        fi
+
+        # Neither container nor worktree exists - safe to remove
+        log "Orphaned local objects found: $container_id"
+        if rm -rf "$objects_dir" 2>/dev/null; then
+            log "  Removed local objects for $container_id"
+            total_cleaned=$((total_cleaned + 1))
+        else
+            log "  Warning: Could not remove $objects_dir"
+        fi
+    done
+
+    if [ $total_cleaned -gt 0 ]; then
+        log "Cleaned up $total_cleaned orphaned local objects director(ies)"
+    else
+        log "No orphaned local objects directories found"
+    fi
+}
+
 # Run cleanup
 cleanup_orphaned_worktrees
+
+# Clean up orphaned local objects
+cleanup_orphaned_local_objects
 
 # Prune stale references
 prune_stale_worktree_references

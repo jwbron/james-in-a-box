@@ -95,6 +95,110 @@ def git_cmd(*args: str) -> list[str]:
     return [GIT_CLI, "-c", "safe.directory=*", *args]
 
 
+# Container worktree isolation paths
+LOCAL_OBJECTS_BASE = Path("/home/jib/.jib-local-objects")
+GIT_MAIN_DIR = Path("/home/jib/.git-main")
+
+
+def sync_objects_after_push(repo_path: str) -> dict[str, Any]:
+    """
+    Sync newly-created objects from container's local objects to shared store.
+
+    This implements the Container Worktree Isolation ADR's object sync:
+    - Container creates objects in its local objects directory
+    - After push, gateway copies new objects to shared store
+    - Makes commits available to other containers
+
+    Args:
+        repo_path: Path to the worktree (e.g., /home/jib/.jib-worktrees/<id>/<repo>/)
+
+    Returns:
+        Dict with sync results: {"synced": count, "errors": []}
+    """
+    result: dict[str, Any] = {"synced": 0, "errors": []}
+
+    # Parse repo_path to extract container_id and repo_name
+    # Format: /home/jib/.jib-worktrees/<container-id>/<repo-name>
+    try:
+        path = Path(repo_path)
+        parts = path.parts
+        # Find index of .jib-worktrees
+        if ".jib-worktrees" not in parts:
+            logger.debug("Not a worktree path, skipping object sync", repo_path=repo_path)
+            return result
+
+        worktrees_idx = parts.index(".jib-worktrees")
+        if len(parts) <= worktrees_idx + 2:
+            logger.warning("Invalid worktree path format", repo_path=repo_path)
+            return result
+
+        container_id = parts[worktrees_idx + 1]
+        repo_name = parts[worktrees_idx + 2]
+    except Exception as e:
+        logger.warning("Failed to parse repo_path", repo_path=repo_path, error=str(e))
+        return result
+
+    # Find local and shared object directories
+    local_objects = LOCAL_OBJECTS_BASE / container_id / repo_name
+    shared_objects = GIT_MAIN_DIR / repo_name / "objects"
+
+    if not local_objects.exists():
+        logger.debug("No local objects directory, skipping sync", path=str(local_objects))
+        return result
+
+    if not shared_objects.exists():
+        logger.warning("Shared objects directory not found", path=str(shared_objects))
+        result["errors"].append(f"Shared objects directory not found: {shared_objects}")
+        return result
+
+    # Copy new objects from local to shared
+    # Git stores objects in subdirectories named by first 2 chars of hash
+    try:
+        import shutil
+
+        for subdir in local_objects.iterdir():
+            # Skip info directory (contains alternates file)
+            if subdir.name == "info":
+                continue
+            # Skip pack directory (packfiles are handled by git)
+            if subdir.name == "pack":
+                continue
+            if not subdir.is_dir():
+                continue
+            if len(subdir.name) != 2:
+                continue
+
+            # Create target subdirectory if needed
+            target_subdir = shared_objects / subdir.name
+            target_subdir.mkdir(exist_ok=True)
+
+            # Copy object files
+            for obj_file in subdir.iterdir():
+                if obj_file.is_file():
+                    target_file = target_subdir / obj_file.name
+                    if not target_file.exists():
+                        shutil.copy2(obj_file, target_file)
+                        result["synced"] += 1
+                        logger.debug(
+                            "Synced object",
+                            object_hash=f"{subdir.name}{obj_file.name}",
+                        )
+
+    except Exception as e:
+        logger.error("Object sync failed", error=str(e))
+        result["errors"].append(f"Object sync failed: {e}")
+
+    if result["synced"] > 0:
+        logger.info(
+            "Object sync complete",
+            synced=result["synced"],
+            container_id=container_id,
+            repo=repo_name,
+        )
+
+    return result
+
+
 # Authentication - shared secret from environment
 GATEWAY_SECRET = os.environ.get("JIB_GATEWAY_SECRET", "")
 SECRET_FILE = Path.home() / ".config" / "jib" / "gateway-secret"
@@ -535,6 +639,10 @@ fi
         os.unlink(credential_helper_path)
 
         if result.returncode == 0:
+            # Sync objects from container's local store to shared store
+            # This ensures other containers can see the pushed commits
+            sync_result = sync_objects_after_push(repo_path)
+
             audit_log(
                 "push_success",
                 "git_push",
@@ -544,6 +652,7 @@ fi
                     "branch": branch,
                     "force": force,
                     "auth_mode": auth_mode,
+                    "objects_synced": sync_result.get("synced", 0),
                 },
             )
             return make_success(
@@ -554,6 +663,7 @@ fi
                     "stdout": result.stdout,
                     "stderr": result.stderr,
                     "auth_mode": auth_mode,
+                    "objects_synced": sync_result.get("synced", 0),
                 },
             )
         else:
