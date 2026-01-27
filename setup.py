@@ -2104,7 +2104,10 @@ class MinimalSetup:
                     "Slack channel ID (starts with D, C, or G)",
                     default=existing,
                     validator=lambda c: self._validate_first_char(
-                        c, ["D", "C", "G"], "Channel ID must start with D, C, or G", allow_empty=True
+                        c,
+                        ["D", "C", "G"],
+                        "Channel ID must start with D, C, or G",
+                        allow_empty=True,
                     ),
                 )
                 or existing
@@ -2150,9 +2153,7 @@ class MinimalSetup:
 
         user_id = self.prompter.prompt(
             "Your Slack user ID (starts with U)",
-            validator=lambda u: self._validate_prefix(
-                u, "U", "User ID must start with U"
-            ),
+            validator=lambda u: self._validate_prefix(u, "U", "User ID must start with U"),
         )
 
         return user_id if user_id else ""
