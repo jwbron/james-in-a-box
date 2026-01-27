@@ -14,6 +14,12 @@
 - [Decision](#decision)
 - [High-Level Design](#high-level-design)
 - [Recommended Approach](#recommended-approach)
+  - [Mount Structure](#mount-structure)
+  - [Container `.git` File Update](#container-git-file-update)
+  - [Object Storage Strategy](#object-storage-strategy)
+  - [Refs Strategy](#refs-strategy)
+  - [commondir Configuration](#commondir-configuration)
+  - [Gateway Sidecar Integration](#gateway-sidecar-integration)
 - [Test Results](#test-results)
 - [Implementation Plan](#implementation-plan)
 - [Consequences](#consequences)
@@ -102,8 +108,11 @@ Instead of creating new per-container git directories, restrict what the existin
 -v ~/.jib-worktrees/container-1/repo:/home/jib/repos/repo:rw          # Worktree working dir
 -v ~/.git/repo/worktrees/container-1:/home/jib/.git-admin/repo:rw     # ONLY this container's admin
 -v ~/.git/repo/objects:/home/jib/.git-objects/repo:ro                  # Shared objects (read-only)
+-v container-1-objects:/home/jib/.git-local-objects/repo:rw            # Container's writable objects
 -v ~/.git/repo/refs:/home/jib/.git-refs/repo:ro                        # Shared refs (read-only)
 ```
+
+**Note on Object Storage:** Containers need their own writable objects directory to create new commits. The shared objects mount provides read-only access to existing objects. Git's alternates mechanism allows the container to read from the shared store while writing to its local store. See [Object Storage Strategy](#object-storage-strategy) for details.
 
 **Advantages:**
 - Preserves existing worktree architecture
@@ -120,9 +129,20 @@ For each repository, mount:
 
 1. **Worktree working directory** (rw) - Container's isolated working copy
 2. **Worktree admin directory ONLY** (rw) - Just this container's admin dir, not all worktrees
-3. **Shared objects** (ro) - Read-only access to object database
-4. **Shared refs** (ro) - Read-only access to branch references
-5. **Essential config files** - Copy of git config
+3. **Container's local objects** (rw, Docker volume) - Writable object storage for new commits
+4. **Shared objects** (ro) - Read-only access to existing object database (via alternates)
+5. **Shared refs** (ro) - Read-only access to branch references
+6. **Shared git common dir** (ro) - For commondir resolution (config, hooks, etc.)
+
+```bash
+# Complete mount structure for a container
+-v ~/.jib-worktrees/${CONTAINER}/repo:/home/jib/repos/repo:rw           # Working dir
+-v ~/.git/repo/worktrees/${WORKTREE}:/home/jib/.git-admin/repo:rw       # Worktree admin
+-v ${CONTAINER}-objects:/home/jib/.git-local-objects/repo:rw             # Local objects (volume)
+-v ~/.git/repo/objects:/home/jib/.git-objects/repo:ro                    # Shared objects
+-v ~/.git/repo/refs:/home/jib/.git-refs/repo:ro                          # Shared refs
+-v ~/.git/repo:/home/jib/.git-common/repo:ro                             # Common dir
+```
 
 ### Container `.git` File Update
 
@@ -133,6 +153,92 @@ gitdir: /home/jib/.git-admin/repo
 ```
 
 This is done during container initialization.
+
+### Object Storage Strategy
+
+Git creates objects (blobs, trees, commits) when staging and committing. With a read-only shared objects directory, containers cannot write these directly. The solution uses git's alternates mechanism:
+
+**Structure:**
+```
+Container View
+├── /home/jib/.git-local-objects/repo/    # Container's writable objects (Docker volume)
+│   ├── info/
+│   │   └── alternates                    # Points to shared objects
+│   ├── pack/
+│   └── [object dirs created during commits]
+│
+└── /home/jib/.git-objects/repo/          # Shared objects (read-only mount)
+    ├── pack/                             # Existing packfiles
+    └── [existing loose objects]
+```
+
+**How it works:**
+1. Container's git config is updated: `objects = /home/jib/.git-local-objects/repo`
+2. Alternates file contains: `/home/jib/.git-objects/repo`
+3. When git needs an object: first checks local, then alternates (shared)
+4. When git creates an object: writes to local writable directory
+
+**After push via gateway:**
+The gateway sidecar copies newly-created objects from the container's local objects to the shared store. This makes commits available to other containers and the host. The gateway already handles push operations, so this is an extension of existing functionality.
+
+### Refs Strategy
+
+Refs (branch references) need special handling because:
+- **Reading**: Containers need to see current branch HEADs for fetch/merge operations
+- **Writing**: Commits update branch refs
+
+**How worktree refs work:**
+- Worktrees store their checked-out branch in the worktree admin dir (`HEAD` file)
+- Branch locks are also stored per-worktree
+- The main refs directory is shared for reading via read-only mount
+
+**Ref updates during commits:**
+When a container commits, git updates the ref for the current branch. In worktrees, this happens via:
+1. The worktree's `HEAD` file identifies which branch is checked out
+2. Git acquires a lock in the worktree admin dir
+3. Git updates the ref (in the container's view, this writes to a path that maps back to the host)
+
+**Ref visibility after gateway operations:**
+After `git fetch` via gateway, the gateway updates refs on the host in `~/.git/repo/refs/`. Containers see these updates immediately through their read-only refs mount.
+
+### commondir Configuration
+
+Git worktrees use a `commondir` file to locate the shared git directory. With the new mount structure:
+
+**Container's worktree admin dir:**
+```
+/home/jib/.git-admin/repo/
+├── HEAD                 # Current branch reference
+├── commondir            # Points to shared git components
+├── gitdir               # Path to worktree (for reverse resolution)
+└── index                # Staging area
+```
+
+**commondir contents:**
+```
+/home/jib/.git-common/repo
+```
+
+**Additional mount needed:**
+```bash
+-v ~/.git/repo:/home/jib/.git-common/repo:ro    # Shared git dir (for commondir resolution)
+```
+
+This mount provides access to shared git components (config, hooks, etc.) while the specific worktree admin mounts ensure containers can only see their own working state.
+
+### Gateway Sidecar Integration
+
+The gateway sidecar is unaffected by this change because:
+
+1. **Host-side operation:** Gateway runs on the host, directly accessing `~/.git/repo/` and `~/.jib-worktrees/`. Container mount changes don't affect host-side paths.
+
+2. **Path mapping:** When containers send requests with `/home/jib/repos/repo`, the gateway translates this to the host worktree path. This translation logic remains unchanged.
+
+3. **Refs visibility:** After gateway performs `git fetch`, refs are updated in `~/.git/repo/refs/` on the host. Containers see these updates through their read-only refs mount.
+
+4. **Object sync extension:** The gateway will be extended to copy newly-created objects from container local storage to the shared store after successful push. This happens host-side after the push completes.
+
+5. **No code changes for core operations:** Gateway policy enforcement, authentication, and command execution remain identical.
 
 ## Test Results
 
@@ -187,7 +293,18 @@ Summary:
 1. **Git path resolution works**: Git correctly resolves the `.git` file to the restructured mount paths
 2. **Objects remain shared**: The alternates mechanism works - commits from one container are visible to others
 3. **Isolation is effective**: Each container only sees its own worktree admin directory
-4. **No new mechanisms needed**: The existing worktree architecture is preserved
+
+### Test Clarification
+
+The initial tests used a simplified setup where objects were writable. The full implementation requires:
+- Separate local objects directory per container (writable)
+- Shared objects directory (read-only) accessible via alternates
+- Gateway object sync after push to populate shared store
+
+Additional integration tests needed:
+- [ ] Commit with read-only shared objects + writable local objects
+- [ ] Object visibility across containers after gateway sync
+- [ ] commondir resolution with separated mounts
 
 ## Implementation Plan
 
@@ -200,9 +317,20 @@ Summary:
 
 ### Phase 2: Container Initialization
 - [ ] Update worktree `.git` file to point to container mount paths during initialization
-- [ ] Ensure `commondir` resolution works with new paths
+- [ ] Configure `commondir` file to point to `/home/jib/.git-common/repo`
+- [ ] Create alternates file in local objects pointing to shared objects
+- [ ] Update git config to use local objects directory
 
-### Phase 3: Testing
+### Phase 3: Gateway Updates
+- [ ] Add object sync after successful push (copy new objects from container volume to shared store)
+- [ ] Test object visibility across containers after push
+
+### Phase 4: Cleanup Verification
+- [ ] Verify `worktree-watcher.sh` continues to work with new structure
+- [ ] Ensure cleanup removes container object volumes when containers are removed
+- [ ] Test orphaned worktree detection and removal
+
+### Phase 5: Testing
 - [ ] Add integration tests for container isolation
 - [ ] Test concurrent container operations
 - [ ] Test cleanup still works correctly
@@ -216,12 +344,15 @@ Summary:
 - **Reduced accident risk**: No way to accidentally hijack another container's worktree
 
 ### Negative
-- **More mount points**: Each repo needs 4-5 mounts instead of 2
+- **More mount points**: Each repo needs 6 mounts instead of 2
 - **Path translation**: Container paths differ from host paths (already the case)
+- **Object sync complexity**: Gateway must sync objects after push (additional code)
+- **Docker volumes**: Each container needs a volume for local objects (minor resource overhead)
 
 ### Neutral
 - **Existing workflow preserved**: Git commands work the same from user perspective
-- **Worktree cleanup unchanged**: Existing cleanup mechanisms still work
+- **Worktree cleanup**: Existing `worktree-watcher.sh` continues to work for worktree cleanup; volume cleanup is a new requirement
+- **Gateway changes**: Minor extension to existing push handler
 
 ## Alternatives Considered
 
