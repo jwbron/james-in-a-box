@@ -740,10 +740,19 @@ EOF
             merge_target="$remote/$branch"
         else
             # Get current branch's upstream
-            current_branch=$("$REAL_GIT" ${git_work_dir:+-C "$git_work_dir"} branch --show-current 2>/dev/null)
+            # Use explicit if/else to handle paths with spaces correctly
+            if [ -n "$git_work_dir" ]; then
+                current_branch=$("$REAL_GIT" -C "$git_work_dir" branch --show-current 2>/dev/null)
+            else
+                current_branch=$("$REAL_GIT" branch --show-current 2>/dev/null)
+            fi
             if [ -n "$current_branch" ]; then
                 # Try to get the upstream tracking branch
-                upstream=$("$REAL_GIT" ${git_work_dir:+-C "$git_work_dir"} rev-parse --abbrev-ref "@{upstream}" 2>/dev/null)
+                if [ -n "$git_work_dir" ]; then
+                    upstream=$("$REAL_GIT" -C "$git_work_dir" rev-parse --abbrev-ref "@{upstream}" 2>/dev/null)
+                else
+                    upstream=$("$REAL_GIT" rev-parse --abbrev-ref "@{upstream}" 2>/dev/null)
+                fi
                 if [ -n "$upstream" ]; then
                     merge_target="$upstream"
                 else

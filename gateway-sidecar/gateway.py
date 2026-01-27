@@ -395,13 +395,42 @@ def validate_repo_path(path: str) -> tuple[bool, str]:
         return False, f"Invalid repo_path: {e}"
 
 
-# Git args that could be used for command injection or other attacks
-# These are blocked for fetch/ls-remote operations
-BLOCKED_GIT_ARGS = [
+# Explicitly dangerous git flags - never allowed regardless of operation
+# These could be used for command injection or config override attacks
+BLOCKED_GIT_FLAGS = [
     "--upload-pack",  # Can specify arbitrary command
     "--exec",  # Can specify arbitrary command
-    "-u",  # Short for --upload-pack
+    "-u",  # Short for --upload-pack (blocked here, but -u for --set-upstream is normalized)
+    "-c",  # Config override (could disable security)
+    "--config",  # Config override
+    "--receive-pack",  # Arbitrary command execution
 ]
+
+# Per-operation allowlist of flags that are permitted
+# This is more secure than a blocklist - unknown flags are rejected by default
+GIT_ALLOWED_COMMANDS = {
+    "fetch": {
+        "allowed_flags": [
+            "--all", "--tags", "--prune", "--depth", "--shallow-since",
+            "--shallow-exclude", "--jobs", "--no-tags", "--force",
+            "--verbose", "--quiet", "--dry-run", "--recurse-submodules",
+            "--progress", "--no-progress",
+        ],
+    },
+    "ls-remote": {
+        "allowed_flags": [
+            "--heads", "--tags", "--refs", "--quiet", "--exit-code",
+            "--get-url", "--sort", "--symref",
+        ],
+    },
+    "push": {
+        "allowed_flags": [
+            "--force", "--force-with-lease", "--tags", "--delete",
+            "--set-upstream", "--verbose", "--quiet",
+            "--dry-run", "--no-verify",
+        ],
+    },
+}
 
 # Flag normalization: map short flags to long form for consistent validation
 FLAG_NORMALIZATION = {
@@ -497,36 +526,67 @@ def validate_gh_api_path(path: str, method: str = "GET") -> tuple[bool, str]:
     return False, f"API path '{path}' not in allowlist"
 
 
-def sanitize_git_args(args: list[str]) -> tuple[bool, str, list[str]]:
+def validate_git_args(operation: str, args: list[str]) -> tuple[bool, str, list[str]]:
     """
-    Sanitize git arguments, blocking potentially dangerous options.
+    Validate git arguments against per-operation allowlist.
+
+    Uses explicit allowlists instead of blocklists for better security.
+    Unknown flags are rejected by default.
+
+    Args:
+        operation: The git operation (fetch, ls-remote, push)
+        args: List of arguments to validate
 
     Returns:
-        Tuple of (is_valid, error_message, sanitized_args)
+        Tuple of (is_valid, error_message, normalized_args)
     """
     if not args:
         return True, "", []
 
-    sanitized = []
-    for arg in args:
-        # Check for blocked args (case-sensitive)
-        arg_lower = arg.lower()
-        blocked = False
-        for blocked_arg in BLOCKED_GIT_ARGS:
-            if arg_lower.startswith(blocked_arg.lower()):
-                blocked = True
-                break
+    # Get operation config
+    op_config = GIT_ALLOWED_COMMANDS.get(operation)
+    if not op_config:
+        return False, f"Unknown operation: {operation}", []
 
-        if blocked:
-            return False, f"Blocked git argument: {arg}", []
+    allowed_flags = set(op_config["allowed_flags"])
+    normalized = []
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
 
         # Ensure arg is a string (not a nested structure)
         if not isinstance(arg, str):
             return False, f"Invalid argument type: {type(arg)}", []
 
-        sanitized.append(arg)
+        # Skip non-flag arguments (refs, branch names, etc.)
+        if not arg.startswith("-"):
+            normalized.append(arg)
+            i += 1
+            continue
 
-    return True, "", sanitized
+        # Normalize short flags to long form
+        normalized_flag = normalize_flag(arg)
+
+        # Check for explicitly blocked flags first
+        flag_base = normalized_flag.split("=")[0] if "=" in normalized_flag else normalized_flag
+        for blocked in BLOCKED_GIT_FLAGS:
+            if flag_base.lower() == blocked.lower():
+                return False, f"Flag '{arg}' is not allowed for git {operation}", []
+
+        # Check against allowlist
+        if flag_base not in allowed_flags:
+            return (
+                False,
+                f"Flag '{arg}' is not allowed for git {operation}. "
+                f"Allowed flags: {', '.join(sorted(allowed_flags))}",
+                [],
+            )
+
+        normalized.append(normalized_flag)
+        i += 1
+
+    return True, "", normalized
 
 
 # =============================================================================
@@ -869,14 +929,14 @@ def git_fetch():
     if operation not in ("fetch", "ls-remote"):
         return make_error(f"Unsupported operation: {operation}")
 
-    # Sanitize extra args to block dangerous options
-    args_valid, args_error, sanitized_args = sanitize_git_args(extra_args)
+    # Validate extra args against operation-specific allowlist
+    args_valid, args_error, validated_args = validate_git_args(operation, extra_args)
     if not args_valid:
         audit_log(
             "fetch_blocked",
             "git_fetch",
             success=False,
-            details={"reason": args_error},
+            details={"reason": args_error, "operation": operation},
         )
         return make_error(args_error, status_code=400)
 
@@ -906,11 +966,11 @@ def git_fetch():
     if not token_str:
         return make_error(token_error, status_code=503)
 
-    # Build command using sanitized args
+    # Build command using validated args
     if operation == "fetch":
-        cmd_args = ["fetch", remote] + sanitized_args
+        cmd_args = ["fetch", remote] + validated_args
     else:  # ls-remote
-        cmd_args = ["ls-remote", remote] + sanitized_args
+        cmd_args = ["ls-remote", remote] + validated_args
 
     cmd = git_cmd(*cmd_args)
 
@@ -1370,10 +1430,30 @@ def gh_execute():
                 details={"command_args": args, "blocked_command": blocked},
             )
             return make_error(
-                f"Command '{blocked}' is not allowed through the gateway",
+                f"Command '{blocked}' is not allowed through the gateway. "
+                f"Allowed read-only commands: {', '.join(sorted(READONLY_GH_COMMANDS))}",
                 status_code=403,
                 details={"blocked_command": blocked, "command_args": args},
             )
+
+    # For 'gh api' commands, validate the path against allowlist
+    if args and args[0] == "api" and len(args) > 1:
+        api_path = args[1]
+        method = "GET"
+        for i, arg in enumerate(args):
+            if arg in ("-X", "--method") and i + 1 < len(args):
+                method = args[i + 1].upper()
+                break
+
+        path_valid, path_error = validate_gh_api_path(api_path, method)
+        if not path_valid:
+            audit_log(
+                "api_path_blocked",
+                "gh_execute",
+                success=False,
+                details={"api_path": api_path, "method": method, "reason": path_error},
+            )
+            return make_error(path_error, status_code=403)
 
     # Extract repo from args to determine auth mode
     # Look for --repo flag or -R shorthand

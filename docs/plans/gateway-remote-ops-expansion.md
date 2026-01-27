@@ -380,7 +380,14 @@ All changes are being implemented in this PR (#570) rather than split across mul
 - [x] Shared helper functions (create_credential_helper, cleanup_credential_helper, get_token_for_repo)
 - [x] `git pull` support in wrapper (fetch via gateway, merge locally)
 - [x] `git remote update` support in wrapper (converted to fetch --all)
-- [x] Allowlist validation (flag normalization, gh API path validation)
+- [x] Allowlist validation
+  - [x] FLAG_NORMALIZATION defined
+  - [x] normalize_flag() called in validate_git_args() before validation
+  - [x] GIT_ALLOWED_COMMANDS per-operation allowlists defined
+  - [x] validate_git_args() implemented and called in git_fetch()
+  - [x] GH_API_ALLOWED_PATHS defined
+  - [x] validate_gh_api_path() called in gh_execute() for 'gh api' commands
+- [x] Error messages include allowed commands/flags for guidance
 - [x] Unit tests for validation functions (test_git_validation.py)
 - [ ] Integration test sign-off (human required)
 

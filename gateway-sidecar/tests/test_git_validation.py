@@ -77,64 +77,102 @@ class TestRepoPathValidation:
             assert "Invalid repo_path" in error
 
 
-class TestGitArgsSanitization:
-    """Tests for sanitize_git_args function."""
+class TestGitArgsValidation:
+    """Tests for validate_git_args function with per-operation allowlists."""
 
     def test_upload_pack_blocked(self):
         """--upload-pack flag is blocked."""
-        valid, error, _ = gateway.sanitize_git_args(["--upload-pack=/evil/cmd"])
+        valid, error, _ = gateway.validate_git_args("fetch", ["--upload-pack=/evil/cmd"])
         assert valid is False
-        assert "Blocked" in error
+        assert "not allowed" in error
 
     def test_exec_blocked(self):
         """--exec flag is blocked."""
-        valid, error, _ = gateway.sanitize_git_args(["--exec=/evil/cmd"])
+        valid, error, _ = gateway.validate_git_args("fetch", ["--exec=/evil/cmd"])
         assert valid is False
-        assert "Blocked" in error
+        assert "not allowed" in error
 
-    def test_short_u_blocked(self):
-        """-u flag (short for --upload-pack) is blocked."""
-        valid, error, _ = gateway.sanitize_git_args(["-u=/evil/cmd"])
+    def test_config_override_blocked(self):
+        """-c flag (config override) is blocked."""
+        valid, error, _ = gateway.validate_git_args("fetch", ["-c", "protocol.file.allow=always"])
         assert valid is False
-        assert "Blocked" in error
+        assert "not allowed" in error
 
     def test_upload_pack_case_insensitive(self):
         """Blocking is case-insensitive."""
-        valid, error, _ = gateway.sanitize_git_args(["--Upload-Pack=/evil"])
+        valid, error, _ = gateway.validate_git_args("fetch", ["--Upload-Pack=/evil"])
         assert valid is False
-        assert "Blocked" in error
+        assert "not allowed" in error
 
-    def test_normal_args_allowed(self):
-        """Normal git arguments are allowed."""
-        valid, error, args = gateway.sanitize_git_args(["--tags", "--prune", "main"])
+    def test_normal_fetch_args_allowed(self):
+        """Normal git fetch arguments are allowed."""
+        valid, error, args = gateway.validate_git_args("fetch", ["--tags", "--prune", "main"])
         assert valid is True
         assert error == ""
         assert args == ["--tags", "--prune", "main"]
 
     def test_empty_args_allowed(self):
         """Empty argument list is allowed."""
-        valid, error, args = gateway.sanitize_git_args([])
+        valid, error, args = gateway.validate_git_args("fetch", [])
         assert valid is True
         assert error == ""
         assert args == []
 
-    def test_none_args_allowed(self):
-        """None argument list becomes empty."""
-        valid, _error, args = gateway.sanitize_git_args(None)
-        assert valid is True
-        assert args == []
-
     def test_non_string_rejected(self):
         """Non-string arguments are rejected."""
-        valid, error, _ = gateway.sanitize_git_args([{"nested": "object"}])
+        valid, error, _ = gateway.validate_git_args("fetch", [{"nested": "object"}])
         assert valid is False
         assert "Invalid argument type" in error
 
     def test_mixed_valid_and_blocked(self):
         """Mixed valid and blocked args are rejected."""
-        valid, error, _ = gateway.sanitize_git_args(["--tags", "--upload-pack=/evil", "--prune"])
+        valid, error, _ = gateway.validate_git_args("fetch", ["--tags", "--upload-pack=/evil", "--prune"])
         assert valid is False
-        assert "Blocked" in error
+        assert "not allowed" in error
+
+    def test_unknown_flag_rejected(self):
+        """Unknown flags are rejected (allowlist, not blocklist)."""
+        valid, error, _ = gateway.validate_git_args("fetch", ["--unknown-flag"])
+        assert valid is False
+        assert "not allowed" in error
+        assert "Allowed flags:" in error
+
+    def test_ls_remote_flags(self):
+        """ls-remote operation has its own allowed flags."""
+        valid, error, args = gateway.validate_git_args("ls-remote", ["--heads", "--tags"])
+        assert valid is True
+        assert error == ""
+
+    def test_ls_remote_rejects_fetch_only_flags(self):
+        """ls-remote rejects flags only allowed for fetch."""
+        valid, error, _ = gateway.validate_git_args("ls-remote", ["--all"])
+        assert valid is False
+        assert "not allowed" in error
+
+    def test_push_flags(self):
+        """push operation has its own allowed flags."""
+        valid, error, args = gateway.validate_git_args("push", ["--force", "--set-upstream"])
+        assert valid is True
+        assert error == ""
+
+    def test_unknown_operation_rejected(self):
+        """Unknown operation is rejected."""
+        valid, error, _ = gateway.validate_git_args("unknown", ["--flag"])
+        assert valid is False
+        assert "Unknown operation" in error
+
+    def test_short_flags_normalized(self):
+        """Short flags are normalized to long form."""
+        valid, error, args = gateway.validate_git_args("fetch", ["-t", "-p"])
+        assert valid is True
+        assert args == ["--tags", "--prune"]
+
+    def test_refs_pass_through(self):
+        """Non-flag arguments (refs, branch names) pass through."""
+        valid, error, args = gateway.validate_git_args("fetch", ["origin", "main", "--tags"])
+        assert valid is True
+        assert "origin" in args
+        assert "main" in args
 
 
 class TestFlagNormalization:
