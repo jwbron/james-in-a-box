@@ -5,7 +5,8 @@
 **Contributors:** jib
 **Informed:** Engineering teams
 **Proposed:** January 2026
-**Status:** Proposed
+**Implemented:** January 2026
+**Status:** Implemented
 
 ## Table of Contents
 
