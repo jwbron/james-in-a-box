@@ -7,19 +7,18 @@ running the setup script, and adding standard mounts.
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
 
-from .config import Config, Colors, get_local_repos
-from .output import info, success, warn, error
 from .auth import get_anthropic_api_key
+from .config import Colors, Config, get_local_repos
 from .docker import (
     build_image,
     create_dockerfile,
     is_dangerous_dir,
 )
+from .output import error, info, success, warn
 
 
-def get_setup_script_path() -> Optional[Path]:
+def get_setup_script_path() -> Path | None:
     """Find the setup.py script relative to the jib launcher location"""
     # Try to find setup.py relative to the jib script
     jib_script = Path(__file__).resolve().parent.parent
@@ -56,10 +55,7 @@ def run_setup_script() -> bool:
 
     try:
         # Run setup.py in its directory
-        result = subprocess.run(
-            [sys.executable, str(setup_script)],
-            cwd=setup_script.parent
-        )
+        result = subprocess.run([sys.executable, str(setup_script)], cwd=setup_script.parent)
         return result.returncode == 0
     except Exception as e:
         error(f"Failed to run setup.py: {e}")
@@ -89,9 +85,7 @@ def check_host_setup() -> bool:
     # Check if Slack services are installed
     for service in slack_services:
         result = subprocess.run(
-            ["systemctl", "--user", "list-unit-files", service],
-            capture_output=True,
-            text=True
+            ["systemctl", "--user", "list-unit-files", service], capture_output=True, text=True
         )
         if result.returncode != 0 or service not in result.stdout:
             issues_found.append(f"Service not installed: {service}")
@@ -102,9 +96,12 @@ def check_host_setup() -> bool:
     gateway_systemd_result = subprocess.run(
         ["systemctl", "--user", "list-unit-files", "gateway-sidecar.service"],
         capture_output=True,
-        text=True
+        text=True,
     )
-    gateway_systemd_ok = gateway_systemd_result.returncode == 0 and "gateway-sidecar.service" in gateway_systemd_result.stdout
+    gateway_systemd_ok = (
+        gateway_systemd_result.returncode == 0
+        and "gateway-sidecar.service" in gateway_systemd_result.stdout
+    )
     gateway_container_ok = gateway_secret.exists()
 
     if not gateway_systemd_ok and not gateway_container_ok:
@@ -228,10 +225,10 @@ def setup() -> bool:
     print()
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
-        context_container_path = f"/home/jib/context-sync"
+        context_container_path = "/home/jib/context-sync"
         mounts.append(f"{context_sync_dir}:{context_container_path}:ro")
         print(f"  ✓ Context sources: {context_sync_dir}")
-        print(f"    Mounted as: ~/context-sync/ (read-only)")
+        print("    Mounted as: ~/context-sync/ (read-only)")
 
         # Show available context sources
         subdirs = []
@@ -247,10 +244,10 @@ def setup() -> bool:
         if subdirs:
             print(f"    Contains: {', '.join(subdirs)}")
         else:
-            print(f"    Note: No context subdirectories found yet")
+            print("    Note: No context subdirectories found yet")
     else:
         warn(f"Context sync directory not found: {context_sync_dir}")
-        warn(f"Expected directory with confluence/, jira/, etc. subdirectories")
+        warn("Expected directory with confluence/, jira/, etc. subdirectories")
 
     # Create and mount persistent directories for agent
     print()
@@ -258,18 +255,18 @@ def setup() -> bool:
 
     # Sharing directory - single location for ALL persistent data
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
-    Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
+    Config.TMP_DIR.mkdir(parents=True, exist_ok=True)  # tmp/ inside sharing/
 
-    sharing_container_path = f"/home/jib/sharing"
+    sharing_container_path = "/home/jib/sharing"
     mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
-    print(f"    Mounted as: ~/sharing/ (read-write)")
-    print(f"    Purpose: All persistent data")
-    print(f"    - ~/sharing/tmp/           Persistent workspace (also at ~/tmp)")
-    print(f"    - ~/sharing/context/       Context documents (@save-context)")
-    print(f"    - ~/sharing/notifications/ Notifications to human")
-    print(f"    - ~/sharing/incoming/      Incoming tasks from Slack")
-    print(f"    - ~/sharing/analysis/      Analysis reports")
+    print("    Mounted as: ~/sharing/ (read-write)")
+    print("    Purpose: All persistent data")
+    print("    - ~/sharing/tmp/           Persistent workspace (also at ~/tmp)")
+    print("    - ~/sharing/context/       Context documents (@save-context)")
+    print("    - ~/sharing/notifications/ Notifications to human")
+    print("    - ~/sharing/incoming/      Incoming tasks from Slack")
+    print("    - ~/sharing/analysis/      Analysis reports")
 
     # Create convenience symlink in container for tmp
     # Note: Actual symlink creation happens in container entrypoint
@@ -284,7 +281,7 @@ def setup() -> bool:
         print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
     else:
         warn("Anthropic API key not configured")
-        print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+        print("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
         print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
         print()
         info("Container will not be able to use Claude without an API key.")
@@ -364,7 +361,7 @@ def setup() -> bool:
     return True
 
 
-def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
+def add_standard_mounts(mount_args: list[str], quiet: bool = False) -> None:
     """Add standard mounts (sharing, context-sync) to mount_args list.
 
     These mounts are always added dynamically rather than relying on config files,
@@ -375,7 +372,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
         sharing_container_path = "/home/jib/sharing"
         mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw"])
         if not quiet:
-            print(f"  • ~/sharing/ (beads, notifications, tasks)")
+            print("  • ~/sharing/ (beads, notifications, tasks)")
 
     # Mount context-sync directory if it exists (Confluence, JIRA docs)
     context_sync_dir = Path.home() / "context-sync"
@@ -383,4 +380,4 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
         context_sync_container = "/home/jib/context-sync"
         mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro"])
         if not quiet:
-            print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
+            print("  • ~/context-sync/ (Confluence, JIRA - read-only)")

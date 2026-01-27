@@ -7,15 +7,14 @@ and related authentication utilities.
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from .config import Config
 from .output import warn
 
 
-def get_anthropic_api_key() -> Optional[str]:
+def get_anthropic_api_key() -> str | None:
     """
     Get Anthropic API key from environment or config file.
 
@@ -64,7 +63,7 @@ def get_anthropic_auth_method() -> str:
     return "api_key"
 
 
-def get_github_token() -> Optional[str]:
+def get_github_token() -> str | None:
     """Get GitHub PAT using the unified HostConfig system.
 
     Uses HostConfig to load the token from (in order of precedence):
@@ -86,6 +85,7 @@ def get_github_token() -> Optional[str]:
             sys.path.insert(0, str(project_root))
 
         from config.host_config import HostConfig
+
         config = HostConfig()
         token = config.github_token
 
@@ -98,7 +98,7 @@ def get_github_token() -> Optional[str]:
     return None
 
 
-def get_github_readonly_token() -> Optional[str]:
+def get_github_readonly_token() -> str | None:
     """Get read-only GitHub token for external repositories.
 
     This token is used for repos outside the primary GitHub App's scope,
@@ -114,6 +114,7 @@ def get_github_readonly_token() -> Optional[str]:
             sys.path.insert(0, str(project_root))
 
         from config.host_config import HostConfig
+
         config = HostConfig()
         # Note: github_readonly_token falls back to github_token if not set
         token = config.get_secret("GITHUB_READONLY_TOKEN")
@@ -126,7 +127,7 @@ def get_github_readonly_token() -> Optional[str]:
     return None
 
 
-def get_github_app_token() -> Optional[str]:
+def get_github_app_token() -> str | None:
     """Generate GitHub App installation token for container use.
 
     Uses the github-app-token.py script to generate a fresh installation token
@@ -162,7 +163,7 @@ def get_github_app_token() -> Optional[str]:
             [python_cmd, str(token_script), "--config-dir", str(Config.USER_CONFIG_DIR)],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         if result.returncode == 0:
@@ -210,16 +211,16 @@ def write_github_token_file(token: str) -> bool:
     # Ensure sharing directory exists
     Config.SHARING_DIR.mkdir(parents=True, exist_ok=True)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_at = now.timestamp() + validity_seconds
 
     data = {
         "token": token,
         "generated_at": now.isoformat(),
         "expires_at_unix": expires_at,
-        "expires_at": datetime.fromtimestamp(expires_at, timezone.utc).isoformat(),
+        "expires_at": datetime.fromtimestamp(expires_at, UTC).isoformat(),
         "generated_by": "jib-launcher",
-        "validity_seconds": validity_seconds
+        "validity_seconds": validity_seconds,
     }
 
     try:

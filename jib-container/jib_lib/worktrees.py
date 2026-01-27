@@ -11,10 +11,9 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
 
 from .config import Config, get_local_repos
-from .output import info, success, warn, get_quiet_mode
+from .output import get_quiet_mode, info, success, warn
 
 
 def get_default_branch(repo_path: Path) -> str:
@@ -31,7 +30,7 @@ def get_default_branch(repo_path: Path) -> str:
         ["git", "config", "--get", "init.defaultBranch"],
         cwd=repo_path,
         capture_output=True,
-        text=True
+        text=True,
     )
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout.strip()
@@ -41,7 +40,7 @@ def get_default_branch(repo_path: Path) -> str:
         ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
         cwd=repo_path,
         capture_output=True,
-        text=True
+        text=True,
     )
     if result.returncode == 0 and result.stdout.strip():
         # Format: refs/remotes/origin/main -> main
@@ -53,7 +52,7 @@ def get_default_branch(repo_path: Path) -> str:
             ["git", "rev-parse", "--verify", f"refs/heads/{branch}"],
             cwd=repo_path,
             capture_output=True,
-            text=True
+            text=True,
         )
         if result.returncode == 0:
             return branch
@@ -62,7 +61,7 @@ def get_default_branch(repo_path: Path) -> str:
     return "main"
 
 
-def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> Optional[int]:
+def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> int | None:
     """Acquire an exclusive lock for git operations on a repository.
 
     Git doesn't handle concurrent operations well. When multiple jib --exec
@@ -107,13 +106,13 @@ def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> Optional[int]:
             # Got the lock
             return fd
 
-        except (OSError, IOError) as e:
+        except OSError as e:
             if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK, errno.EACCES):
                 # Lock held by another process
                 elapsed = time.time() - start_time
                 if elapsed >= timeout:
                     warn(f"Timeout waiting for git lock on {repo_path.name}")
-                    if 'fd' in locals():
+                    if "fd" in locals():
                         os.close(fd)
                     return None
 
@@ -122,7 +121,7 @@ def _acquire_git_lock(repo_path: Path, timeout: float = 30.0) -> Optional[int]:
                 continue
             else:
                 # Other error
-                if 'fd' in locals():
+                if "fd" in locals():
                     os.close(fd)
                 return None
 
@@ -200,7 +199,7 @@ def create_worktrees(container_id: str) -> dict:
                 ["git", "worktree", "add", str(worktree_path), "-b", branch_name, default_branch],
                 cwd=repo_path,
                 capture_output=True,
-                text=True
+                text=True,
             )
 
             if result.returncode == 0:
@@ -266,7 +265,7 @@ def cleanup_worktrees(container_id: str) -> None:
     try:
         shutil.rmtree(worktree_dir)
         if not quiet:
-            info(f"  ✓ Removed worktree directory")
+            info("  ✓ Removed worktree directory")
     except Exception as e:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
@@ -286,14 +285,14 @@ def cleanup_worktrees(container_id: str) -> None:
                         warn(f"  ✗ Failed to remove admin dir {admin_dir}: {e}")
 
     # Also run git worktree prune as a fallback for any we missed
-    for repo_path in repos_to_clean.keys():
+    for repo_path in repos_to_clean:
         try:
             subprocess.run(
                 ["git", "worktree", "prune", "-v"],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
-                check=False  # Don't fail if prune has issues
+                check=False,  # Don't fail if prune has issues
             )
         except Exception:
             pass

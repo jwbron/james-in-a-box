@@ -9,12 +9,11 @@ import time
 from pathlib import Path
 
 from .config import (
-    Config,
     GATEWAY_CONTAINER_NAME,
     GATEWAY_IMAGE_NAME,
     GATEWAY_PORT,
 )
-from .output import info, success, warn, error
+from .output import error, info, success
 
 
 def is_gateway_running() -> bool:
@@ -26,17 +25,19 @@ def is_gateway_running() -> bool:
     result = subprocess.run(
         ["docker", "container", "inspect", "-f", "{{.State.Running}}", GATEWAY_CONTAINER_NAME],
         capture_output=True,
-        text=True
+        text=True,
     )
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
 def gateway_image_exists() -> bool:
     """Check if gateway Docker image exists."""
-    return subprocess.run(
-        ["docker", "image", "inspect", GATEWAY_IMAGE_NAME],
-        capture_output=True
-    ).returncode == 0
+    return (
+        subprocess.run(
+            ["docker", "image", "inspect", GATEWAY_IMAGE_NAME], capture_output=True
+        ).returncode
+        == 0
+    )
 
 
 def build_gateway_image() -> bool:
@@ -59,14 +60,9 @@ def build_gateway_image() -> bool:
 
     info("Building gateway sidecar image...")
     result = subprocess.run(
-        [
-            "docker", "build",
-            "-t", GATEWAY_IMAGE_NAME,
-            "-f", str(dockerfile_path),
-            str(repo_root)
-        ],
+        ["docker", "build", "-t", GATEWAY_IMAGE_NAME, "-f", str(dockerfile_path), str(repo_root)],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if result.returncode == 0:
@@ -88,8 +84,8 @@ def wait_for_gateway_health(timeout: int = 30) -> bool:
     Returns:
         True if gateway is healthy, False on timeout
     """
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     # Use container name for health check since we're on the same network
     # But during startup from host, we need to use localhost or check via docker exec
@@ -125,7 +121,7 @@ def start_gateway_container() -> bool:
     service_result = subprocess.run(
         ["systemctl", "--user", "is-active", "gateway-sidecar.service"],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     if service_result.returncode != 0:

@@ -8,25 +8,89 @@ with tests that use SourceFileLoader to import the jib module.
 """
 
 # Config module exports
+# Auth module exports
+from .auth import (
+    get_anthropic_api_key,
+    get_anthropic_auth_method,
+    get_github_app_token,
+    get_github_readonly_token,
+    get_github_token,
+    write_github_token_file,
+)
+
+# CLI module exports
+from .cli import main
 from .config import (
-    Colors,
-    Config,
     GATEWAY_CONTAINER_NAME,
     GATEWAY_IMAGE_NAME,
     GATEWAY_PORT,
     JIB_NETWORK_NAME,
-    get_platform,
+    Colors,
+    Config,
     get_local_repos,
+    get_platform,
+)
+
+# Container logging module exports
+from .container_logging import (
+    extract_task_id_from_command,
+    extract_thread_ts_from_task_file,
+    generate_container_id,
+    get_docker_log_config,
+    save_container_logs,
+    update_log_index,
+)
+
+# Docker module exports
+from .docker import (
+    BUILD_HASH_LABEL,
+    CONTAINER_LOGS_DIR,
+    build_image,
+    check_claude_update,
+    check_docker,
+    check_docker_permissions,
+    compute_build_hash,
+    create_dockerfile,
+    ensure_jib_network,
+    get_installed_claude_version,
+    get_latest_claude_version,
+    image_exists,
+    is_dangerous_dir,
+    should_rebuild_image,
+)
+
+# Gateway module exports
+from .gateway import (
+    build_gateway_image,
+    gateway_image_exists,
+    is_gateway_running,
+    start_gateway_container,
+    wait_for_gateway_health,
 )
 
 # Output module exports
 from .output import (
+    error,
+    get_quiet_mode,
     info,
+    set_quiet_mode,
     success,
     warn,
-    error,
-    set_quiet_mode,
-    get_quiet_mode,
+)
+
+# Runtime module exports
+from .runtime import (
+    exec_in_new_container,
+    run_claude,
+)
+
+# Setup flow module exports
+from .setup_flow import (
+    add_standard_mounts,
+    check_host_setup,
+    get_setup_script_path,
+    run_setup_script,
+    setup,
 )
 
 # Timing module exports
@@ -35,77 +99,13 @@ from .timing import (
     _host_timer,
 )
 
-# Auth module exports
-from .auth import (
-    get_anthropic_api_key,
-    get_anthropic_auth_method,
-    get_github_token,
-    get_github_readonly_token,
-    get_github_app_token,
-    write_github_token_file,
-)
-
-# Docker module exports
-from .docker import (
-    check_docker_permissions,
-    check_docker,
-    is_dangerous_dir,
-    create_dockerfile,
-    get_installed_claude_version,
-    get_latest_claude_version,
-    check_claude_update,
-    compute_build_hash,
-    should_rebuild_image,
-    build_image,
-    image_exists,
-    ensure_jib_network,
-    BUILD_HASH_LABEL,
-    CONTAINER_LOGS_DIR,
-)
-
-# Gateway module exports
-from .gateway import (
-    is_gateway_running,
-    gateway_image_exists,
-    build_gateway_image,
-    wait_for_gateway_health,
-    start_gateway_container,
-)
-
-# Container logging module exports
-from .container_logging import (
-    generate_container_id,
-    get_docker_log_config,
-    extract_task_id_from_command,
-    extract_thread_ts_from_task_file,
-    update_log_index,
-    save_container_logs,
-)
-
 # Worktrees module exports
 from .worktrees import (
-    get_default_branch,
-    create_worktrees,
     cleanup_worktrees,
+    create_worktrees,
+    get_default_branch,
 )
 
-# Setup flow module exports
-from .setup_flow import (
-    get_setup_script_path,
-    run_setup_script,
-    check_host_setup,
-    setup,
-    add_standard_mounts,
-)
-
-# Runtime module exports
-from .runtime import (
-    run_claude,
-    exec_in_new_container,
-)
-
-# CLI module exports
-from .cli import main
 
 # Version info (matches jib script)
 __version__ = "1.0.0"

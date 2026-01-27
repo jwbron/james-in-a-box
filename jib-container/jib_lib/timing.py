@@ -51,12 +51,12 @@ class StartupTimer:
     def to_json(self) -> str:
         """Serialize timings to JSON for passing to container."""
         import json
+
         if not self.enabled or not self.timings:
             return ""
-        return json.dumps({
-            "timings": self.timings,
-            "total_time": (time.perf_counter() - self.start_time) * 1000
-        })
+        return json.dumps(
+            {"timings": self.timings, "total_time": (time.perf_counter() - self.start_time) * 1000}
+        )
 
     def print_summary(self) -> None:
         """Print timing summary."""

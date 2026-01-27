@@ -12,11 +12,9 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
-from .config import Config, JIB_NETWORK_NAME
-from .output import info, success, warn, error, get_quiet_mode
-from .timing import _host_timer
+from .config import JIB_NETWORK_NAME, Config
+from .output import error, get_quiet_mode, info, success, warn
 
 
 # Default log directory for container logs
@@ -28,11 +26,7 @@ BUILD_HASH_LABEL = "org.jib.build-hash"
 
 def check_docker_permissions() -> bool:
     """Check if user has permission to run Docker commands"""
-    result = subprocess.run(
-        ["docker", "ps"],
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(["docker", "ps"], capture_output=True, text=True)
 
     if result.returncode == 0:
         return True
@@ -80,7 +74,7 @@ def check_docker() -> bool:
                 # Download installer
                 subprocess.run(
                     ["curl", "-fsSL", "https://get.docker.com", "-o", "/tmp/get-docker.sh"],
-                    check=True
+                    check=True,
                 )
                 # Run installer
                 subprocess.run(["sudo", "sh", "/tmp/get-docker.sh"], check=True)
@@ -91,7 +85,9 @@ def check_docker() -> bool:
 
                 success("Docker installed successfully!")
                 print()
-                warn("IMPORTANT: You need to log out and back in for group membership to take effect.")
+                warn(
+                    "IMPORTANT: You need to log out and back in for group membership to take effect."
+                )
                 print("After logging back in, run this script again.")
                 sys.exit(0)
             except Exception as e:
@@ -142,7 +138,7 @@ def _copy_directory_atomic(src: Path, dest: Path, name: str, quiet: bool = False
                 except FileNotFoundError:
                     # Another process already removed it - that's fine
                     pass
-                except OSError as e:
+                except OSError:
                     # Directory not empty (ENOTEMPTY) - another process is writing
                     # Clean up temp and retry
                     shutil.rmtree(temp_dir, ignore_errors=True)
@@ -179,7 +175,7 @@ def _copy_directory_atomic(src: Path, dest: Path, name: str, quiet: bool = False
                 continue
             warn(f"Failed to copy {name} directory after {max_retries} attempts: {e}")
             # Clean up temp if it exists
-            if 'temp_dir' in locals() and temp_dir.exists():
+            if "temp_dir" in locals() and temp_dir.exists():
                 shutil.rmtree(temp_dir, ignore_errors=True)
             return False
 
@@ -351,9 +347,18 @@ def get_installed_claude_version() -> str | None:
 
     try:
         result = subprocess.run(
-            ["docker", "run", "--rm", "--entrypoint", "cat",
-             Config.IMAGE_NAME, "/opt/claude/VERSION"],
-            capture_output=True, text=True, timeout=30
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--entrypoint",
+                "cat",
+                Config.IMAGE_NAME,
+                "/opt/claude/VERSION",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode == 0 and result.stdout.strip():
             # Version output is like "claude 2.1.7" - extract just the number
@@ -416,7 +421,7 @@ def _hash_file(path: Path, hasher) -> None:
         with open(path, "rb") as f:
             while chunk := f.read(8192):
                 hasher.update(chunk)
-    except (OSError, IOError):
+    except OSError:
         pass
 
 
@@ -517,7 +522,7 @@ def compute_build_hash() -> str:
     return hasher.hexdigest()
 
 
-def get_image_build_hash() -> Optional[str]:
+def get_image_build_hash() -> str | None:
     """Get the build hash stored in the Docker image label.
 
     Returns:
@@ -528,10 +533,17 @@ def get_image_build_hash() -> Optional[str]:
 
     try:
         result = subprocess.run(
-            ["docker", "image", "inspect", "--format",
-             f"{{{{index .Config.Labels \"{BUILD_HASH_LABEL}\"}}}}",
-             Config.IMAGE_NAME],
-            capture_output=True, text=True, timeout=10
+            [
+                "docker",
+                "image",
+                "inspect",
+                "--format",
+                f'{{{{index .Config.Labels "{BUILD_HASH_LABEL}"}}}}',
+                Config.IMAGE_NAME,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             hash_value = result.stdout.strip()
@@ -600,19 +612,26 @@ def build_image() -> bool:
 
     try:
         cmd = [
-            "docker", "build",
-            "--build-arg", f"USER_NAME={os.environ['USER']}",
-            "--build-arg", f"USER_UID={os.getuid()}",
-            "--build-arg", f"USER_GID={os.getgid()}",
-            "--label", f"{BUILD_HASH_LABEL}={build_hash}",
-            "-t", Config.IMAGE_NAME,
-            "-f", str(Config.DOCKERFILE),
-            str(Config.CONFIG_DIR)
+            "docker",
+            "build",
+            "--build-arg",
+            f"USER_NAME={os.environ['USER']}",
+            "--build-arg",
+            f"USER_UID={os.getuid()}",
+            "--build-arg",
+            f"USER_GID={os.getgid()}",
+            "--label",
+            f"{BUILD_HASH_LABEL}={build_hash}",
+            "-t",
+            Config.IMAGE_NAME,
+            "-f",
+            str(Config.DOCKERFILE),
+            str(Config.CONFIG_DIR),
         ]
 
         # Pass Claude version to bust cache if update available
         if claude_version:
-            cmd.insert(2, f"--build-arg")
+            cmd.insert(2, "--build-arg")
             cmd.insert(3, f"CLAUDE_CODE_VERSION={claude_version}")
 
         # In quiet mode, suppress Docker build output
@@ -636,10 +655,12 @@ def build_image() -> bool:
 
 def image_exists() -> bool:
     """Check if Docker image exists"""
-    return subprocess.run(
-        ["docker", "image", "inspect", Config.IMAGE_NAME],
-        capture_output=True
-    ).returncode == 0
+    return (
+        subprocess.run(
+            ["docker", "image", "inspect", Config.IMAGE_NAME], capture_output=True
+        ).returncode
+        == 0
+    )
 
 
 def ensure_jib_network() -> bool:
@@ -649,18 +670,13 @@ def ensure_jib_network() -> bool:
         True if network exists or was created, False on failure
     """
     # Check if network exists
-    result = subprocess.run(
-        ["docker", "network", "inspect", JIB_NETWORK_NAME],
-        capture_output=True
-    )
+    result = subprocess.run(["docker", "network", "inspect", JIB_NETWORK_NAME], capture_output=True)
     if result.returncode == 0:
         return True
 
     # Create the network
     result = subprocess.run(
-        ["docker", "network", "create", JIB_NETWORK_NAME],
-        capture_output=True,
-        text=True
+        ["docker", "network", "create", JIB_NETWORK_NAME], capture_output=True, text=True
     )
     if result.returncode == 0:
         info(f"Created Docker network: {JIB_NETWORK_NAME}")

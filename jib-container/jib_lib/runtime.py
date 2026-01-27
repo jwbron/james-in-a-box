@@ -6,35 +6,33 @@ This module handles running containers in interactive and exec modes.
 import atexit
 import os
 import subprocess
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
-
-from .config import (
-    Config,
-    JIB_NETWORK_NAME,
-    GATEWAY_CONTAINER_NAME,
-    GATEWAY_PORT,
-)
-from .output import info, success, warn, error, get_quiet_mode
-from .auth import get_anthropic_api_key, get_anthropic_auth_method
-from .docker import build_image, image_exists
-from .gateway import start_gateway_container
-from .container_logging import (
-    generate_container_id,
-    get_docker_log_config,
-    extract_task_id_from_command,
-    extract_thread_ts_from_task_file,
-    save_container_logs,
-)
-from .worktrees import create_worktrees, cleanup_worktrees
-from .setup_flow import setup, add_standard_mounts
-from .timing import _host_timer
 
 # Import statusbar for quiet mode
 from statusbar import status
+
+from .auth import get_anthropic_api_key, get_anthropic_auth_method
+from .config import (
+    GATEWAY_CONTAINER_NAME,
+    GATEWAY_PORT,
+    JIB_NETWORK_NAME,
+    Config,
+)
+from .container_logging import (
+    extract_task_id_from_command,
+    extract_thread_ts_from_task_file,
+    generate_container_id,
+    get_docker_log_config,
+    save_container_logs,
+)
+from .docker import build_image, image_exists
+from .gateway import start_gateway_container
+from .output import error, get_quiet_mode, info, success, warn
+from .setup_flow import add_standard_mounts, setup
+from .timing import _host_timer
+from .worktrees import cleanup_worktrees, create_worktrees
 
 
 def run_claude() -> bool:
@@ -66,6 +64,7 @@ def run_claude() -> bool:
 
         if not quiet:
             from .config import Colors
+
             print()
             print(f"{Colors.BOLD}Checking Claude Code authentication...{Colors.NC}")
 
@@ -74,7 +73,7 @@ def run_claude() -> bool:
                 print(f"  API key: {api_key[:12]}...{api_key[-4:]}")
             else:
                 warn("Anthropic API key not configured")
-                print(f"  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+                print("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
                 print(f"  Or save to: {Config.USER_CONFIG_DIR / 'anthropic-api-key'}")
                 print()
                 warn("Container will not be able to use Claude without an API key.")
@@ -169,7 +168,9 @@ def run_claude() -> bool:
                             git_container_path = f"/home/jib/.git-main/{repo_name}"
                             mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw"])
                             if not quiet:
-                                print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
+                                print(
+                                    f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)"
+                                )
                         else:
                             warn(f"Could not find git directory for {repo_name}: {main_git_path}")
                     else:
@@ -180,10 +181,10 @@ def run_claude() -> bool:
                 warn(f"Error reading .git file for {repo_name}: {e}")
 
     # Mount worktree base directory (used by both interactive and --exec modes)
-    worktree_base_container = f"/home/jib/.jib-worktrees"
+    worktree_base_container = "/home/jib/.jib-worktrees"
     mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw"])
     if not quiet:
-        print(f"  • ~/.jib-worktrees/ (worktree base directory)")
+        print("  • ~/.jib-worktrees/ (worktree base directory)")
 
     # Add standard mounts (sharing, context-sync)
     add_standard_mounts(mount_args, quiet=quiet)
@@ -195,16 +196,16 @@ def run_claude() -> bool:
     claude_json = home / ".claude.json"
 
     if claude_dir.is_dir():
-        container_claude_dir = f"/home/jib/.claude"
+        container_claude_dir = "/home/jib/.claude"
         mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
         if not quiet:
-            print(f"  • ~/.claude (Claude config directory)")
+            print("  • ~/.claude (Claude config directory)")
 
     if claude_json.is_file():
-        container_claude_json = f"/home/jib/.claude.json"
+        container_claude_json = "/home/jib/.claude.json"
         mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
         if not quiet:
-            print(f"  • ~/.claude.json (Claude settings)")
+            print("  • ~/.claude.json (Claude settings)")
 
     if not quiet:
         print()
@@ -212,30 +213,43 @@ def run_claude() -> bool:
 
     # Remove old container if exists (cleanup any previous runs)
     with _host_timer.phase("cleanup_old_container"):
-        subprocess.run(["docker", "rm", "-f", container_id],
-                      stdout=subprocess.DEVNULL,
-                      stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["docker", "rm", "-f", container_id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     # Build docker run command on jib-network (shared network with gateway sidecar)
     _host_timer.start_phase("build_docker_cmd")
     # jib-network allows container-to-container communication while isolating from host
     worktree_host_path = Config.WORKTREE_BASE / container_id
     cmd = [
-        "docker", "run",
+        "docker",
+        "run",
         "--rm",  # Auto-remove container after exit
-        "-it",   # Interactive with TTY
-        "--security-opt", "label=disable",  # Disable SELinux labeling for faster startup
-        "--name", container_id,
-        "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
-        "-e", f"RUNTIME_UID={os.getuid()}",
-        "-e", f"RUNTIME_GID={os.getgid()}",
-        "-e", f"CONTAINER_ID={container_id}",
-        "-e", f"JIB_QUIET={'1' if quiet else '0'}",
-        "-e", f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
-        "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+        "-it",  # Interactive with TTY
+        "--security-opt",
+        "label=disable",  # Disable SELinux labeling for faster startup
+        "--name",
+        container_id,
+        "--network",
+        JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
+        "-e",
+        f"RUNTIME_UID={os.getuid()}",
+        "-e",
+        f"RUNTIME_GID={os.getgid()}",
+        "-e",
+        f"CONTAINER_ID={container_id}",
+        "-e",
+        f"JIB_QUIET={'1' if quiet else '0'}",
+        "-e",
+        f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
+        "-e",
+        f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
         # Host worktree path - needed by git wrapper to translate container paths
         # Container sees /home/user/repos/X, but gateway needs ~/.jib-worktrees/<id>/X
-        "-e", f"JIB_WORKTREE_HOST_PATH={worktree_host_path}",
+        "-e",
+        f"JIB_WORKTREE_HOST_PATH={worktree_host_path}",
     ]
 
     # GitHub authentication is handled by the gateway sidecar
@@ -300,10 +314,10 @@ def run_claude() -> bool:
 
 
 def exec_in_new_container(
-    command: List[str],
+    command: list[str],
     timeout_minutes: int = 30,
-    task_id: Optional[str] = None,
-    thread_ts: Optional[str] = None,
+    task_id: str | None = None,
+    thread_ts: str | None = None,
     auth_mode: str = "host",
 ) -> bool:
     """Execute a command in a new ephemeral container with isolated worktrees.
@@ -443,14 +457,14 @@ def exec_in_new_container(
         claude_json = home / ".claude.json"
 
         if claude_dir.is_dir():
-            container_claude_dir = f"/home/jib/.claude"
+            container_claude_dir = "/home/jib/.claude"
             mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
-            print(f"  • ~/.claude (Claude config directory)")
+            print("  • ~/.claude (Claude config directory)")
 
         if claude_json.is_file():
-            container_claude_json = f"/home/jib/.claude.json"
+            container_claude_json = "/home/jib/.claude.json"
             mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
-            print(f"  • ~/.claude.json (Claude settings)")
+            print("  • ~/.claude.json (Claude settings)")
 
     print()
 
@@ -458,18 +472,28 @@ def exec_in_new_container(
     # Note: We don't use --rm so we can save logs before cleanup
     worktree_host_path = Config.WORKTREE_BASE / container_id
     cmd = [
-        "docker", "run",
-        "--security-opt", "label=disable",  # Disable SELinux labeling for faster startup
-        "--name", container_id,
-        "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
-        "-e", f"RUNTIME_UID={os.getuid()}",
-        "-e", f"RUNTIME_GID={os.getgid()}",
-        "-e", f"CONTAINER_ID={container_id}",
-        "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
-        "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+        "docker",
+        "run",
+        "--security-opt",
+        "label=disable",  # Disable SELinux labeling for faster startup
+        "--name",
+        container_id,
+        "--network",
+        JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
+        "-e",
+        f"RUNTIME_UID={os.getuid()}",
+        "-e",
+        f"RUNTIME_GID={os.getgid()}",
+        "-e",
+        f"CONTAINER_ID={container_id}",
+        "-e",
+        "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
+        "-e",
+        f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
         # Host worktree path - needed by git wrapper to translate container paths
         # Container sees /home/user/repos/X, but gateway needs ~/.jib-worktrees/<id>/X
-        "-e", f"JIB_WORKTREE_HOST_PATH={worktree_host_path}",
+        "-e",
+        f"JIB_WORKTREE_HOST_PATH={worktree_host_path}",
     ]
 
     # Add logging configuration for log persistence
@@ -524,7 +548,7 @@ def exec_in_new_container(
                 subprocess.run(
                     ["docker", "rm", "-f", container_id],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
                 )
             except Exception as e:
                 error(f"Failed to remove container: {e}")
@@ -537,16 +561,16 @@ def exec_in_new_container(
         print()
         error(f"Container execution timed out after {timeout_minutes} minutes")
         # Kill the container if it's still running
-        subprocess.run(["docker", "kill", container_id],
-                      stdout=subprocess.DEVNULL,
-                      stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["docker", "kill", container_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     except KeyboardInterrupt:
         print()
         warn("Interrupted by user")
         # Kill container on interrupt
-        subprocess.run(["docker", "kill", container_id],
-                      stdout=subprocess.DEVNULL,
-                      stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["docker", "kill", container_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     except Exception as e:
         error(f"Failed to run container: {e}")
     finally:

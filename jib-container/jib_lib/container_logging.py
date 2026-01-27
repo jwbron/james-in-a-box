@@ -4,6 +4,7 @@ This module handles saving container logs, correlation tracking,
 and log index management.
 """
 
+import contextlib
 import fcntl
 import json
 import os
@@ -11,10 +12,8 @@ import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
-from .config import Config
-from .output import info, warn, get_quiet_mode
+from .output import get_quiet_mode, info, warn
 
 
 # Default log directory for container logs
@@ -24,12 +23,13 @@ CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
 def generate_container_id() -> str:
     """Generate unique container ID based on timestamp and process ID"""
     import time
+
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     pid = os.getpid()
     return f"jib-{timestamp}-{pid}"
 
 
-def get_docker_log_config(container_id: str, task_id: Optional[str] = None) -> list:
+def get_docker_log_config(container_id: str, task_id: str | None = None) -> list:
     """Generate Docker logging configuration arguments.
 
     Uses the json-file logging driver with:
@@ -48,14 +48,18 @@ def get_docker_log_config(container_id: str, task_id: Optional[str] = None) -> l
     CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Log file path based on container ID
-    log_file = CONTAINER_LOGS_DIR / f"{container_id}.log"
+    CONTAINER_LOGS_DIR / f"{container_id}.log"
 
     log_args = [
-        "--log-driver", "json-file",
-        "--log-opt", "max-size=10m",
-        "--log-opt", "max-file=5",
+        "--log-driver",
+        "json-file",
+        "--log-opt",
+        "max-size=10m",
+        "--log-opt",
+        "max-file=5",
         # Add labels for correlation - these appear in docker inspect
-        "--label", f"jib.container_id={container_id}",
+        "--label",
+        f"jib.container_id={container_id}",
     ]
 
     if task_id:
@@ -64,7 +68,7 @@ def get_docker_log_config(container_id: str, task_id: Optional[str] = None) -> l
     return log_args
 
 
-def extract_task_id_from_command(command: List[str]) -> Optional[str]:
+def extract_task_id_from_command(command: list[str]) -> str | None:
     """Extract task ID from the command if it's processing a task file.
 
     Looks for patterns like:
@@ -87,7 +91,7 @@ def extract_task_id_from_command(command: List[str]) -> Optional[str]:
     return None
 
 
-def extract_thread_ts_from_task_file(task_file_path: str) -> Optional[str]:
+def extract_thread_ts_from_task_file(task_file_path: str) -> str | None:
     """Extract thread_ts from a task file's YAML frontmatter.
 
     Task files contain YAML frontmatter like:
@@ -127,9 +131,9 @@ def extract_thread_ts_from_task_file(task_file_path: str) -> Optional[str]:
 
 def update_log_index(
     container_id: str,
-    task_id: Optional[str] = None,
-    thread_ts: Optional[str] = None,
-    log_file: Optional[str] = None,
+    task_id: str | None = None,
+    thread_ts: str | None = None,
+    log_file: str | None = None,
 ) -> None:
     """Update the log index file with correlation information.
 
@@ -152,7 +156,7 @@ def update_log_index(
 
     # Use file locking to prevent concurrent modifications
     # Open in 'a+' mode to create file if it doesn't exist
-    with open(index_file, 'a+') as f:
+    with open(index_file, "a+") as f:
         # Acquire exclusive lock
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
@@ -163,10 +167,8 @@ def update_log_index(
             # Load existing index
             index = {"task_to_container": {}, "thread_to_task": {}, "entries": []}
             if content:
-                try:
+                with contextlib.suppress(Exception):
                     index = json.loads(content)
-                except Exception:
-                    pass
 
             # Update correlation maps
             if task_id:
@@ -199,9 +201,9 @@ def update_log_index(
 
 def save_container_logs(
     container_id: str,
-    task_id: Optional[str] = None,
-    thread_ts: Optional[str] = None,
-) -> Optional[Path]:
+    task_id: str | None = None,
+    thread_ts: str | None = None,
+) -> Path | None:
     """Save Docker container logs to persistent storage.
 
     Uses `docker logs` to capture all container output and saves it to
@@ -226,10 +228,7 @@ def save_container_logs(
     try:
         # Get container logs using docker logs command
         result = subprocess.run(
-            ["docker", "logs", container_id],
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["docker", "logs", container_id], capture_output=True, text=True, timeout=30
         )
 
         # Check log size before writing to prevent disk space exhaustion
@@ -239,9 +238,9 @@ def save_container_logs(
             warn(f"Container logs exceed {max_log_size / (1024 * 1024):.0f}MB, truncating...")
             # Truncate stderr/stdout proportionally
             if result.stdout:
-                result.stdout = result.stdout[:max_log_size // 2] + "\n\n[... truncated ...]\n"
+                result.stdout = result.stdout[: max_log_size // 2] + "\n\n[... truncated ...]\n"
             if result.stderr:
-                result.stderr = result.stderr[:max_log_size // 2] + "\n\n[... truncated ...]\n"
+                result.stderr = result.stderr[: max_log_size // 2] + "\n\n[... truncated ...]\n"
 
         # Write logs (both stdout and stderr)
         with open(log_file, "w") as f:

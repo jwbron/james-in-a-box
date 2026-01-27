@@ -6,17 +6,19 @@ integrate with the statusbar in quiet mode.
 
 import sys
 
-from .config import Colors
-
 # Import statusbar from parent directory
 # Add shared modules to path (relative to jib-container directory)
 from pathlib import Path
+
+from .config import Colors
+
+
 _SCRIPT_DIR = Path(__file__).parent.parent.resolve()
 _SHARED_DIR = _SCRIPT_DIR.parent / "shared"
 if _SHARED_DIR.exists() and str(_SHARED_DIR) not in sys.path:
     sys.path.insert(0, str(_SHARED_DIR))
 
-from statusbar import status, status_success, status_error, status_warn
+from statusbar import status, status_error, status_success, status_warn
 
 
 # Global quiet mode flag

@@ -6,21 +6,22 @@ and platform detection utilities.
 
 import os
 from pathlib import Path
-from typing import List
 
 
 class Colors:
     """ANSI color codes for terminal output"""
-    BLUE = '\033[0;34m'
-    GREEN = '\033[0;32m'
-    YELLOW = '\033[1;33m'
-    RED = '\033[0;31m'
-    BOLD = '\033[1m'
-    NC = '\033[0m'
+
+    BLUE = "\033[0;34m"
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    RED = "\033[0;31m"
+    BOLD = "\033[1m"
+    NC = "\033[0m"
 
 
 class Config:
     """Configuration paths and constants"""
+
     # Cache directory for Docker staging (XDG-compliant)
     # Respects XDG_CACHE_HOME if set
     _xdg_cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
@@ -34,7 +35,7 @@ class Config:
     CONTAINER_NAME = "jib"
     # Persistent directory for all shared data
     SHARING_DIR = Path.home() / ".jib-sharing"
-    TMP_DIR = SHARING_DIR / "tmp"      # Persistent tmp workspace
+    TMP_DIR = SHARING_DIR / "tmp"  # Persistent tmp workspace
     # Worktree base directory (ephemeral workspaces per container)
     WORKTREE_BASE = Path.home() / ".jib-worktrees"
 
@@ -64,6 +65,7 @@ GATEWAY_PORT = 9847
 def get_platform() -> str:
     """Detect platform: linux or macos"""
     import platform
+
     system = platform.system().lower()
     if system == "linux":
         return "linux"
@@ -74,7 +76,7 @@ def get_platform() -> str:
 
 # Import shared config module for get_local_repos
 # This ensures jib and gateway-sidecar use identical config parsing
-def get_local_repos() -> List[Path]:
+def get_local_repos() -> list[Path]:
     """Load local repository paths from configuration.
 
     Uses the shared jib_config module for consistent config parsing.
@@ -83,10 +85,12 @@ def get_local_repos() -> List[Path]:
     try:
         # Try to import from shared module
         import sys
+
         _script_dir = Path(__file__).parent.parent.resolve()
         if str(_script_dir) not in sys.path:
             sys.path.insert(0, str(_script_dir))
         from jib_config import get_local_repos as _get_local_repos
+
         return _get_local_repos()
     except ImportError:
         pass
@@ -96,6 +100,7 @@ def get_local_repos() -> List[Path]:
         return []
     try:
         import yaml
+
         with open(Config.REPOS_CONFIG_FILE) as f:
             config = yaml.safe_load(f) or {}
         local_repos_config = config.get("local_repos", {})

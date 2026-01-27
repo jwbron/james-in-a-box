@@ -5,17 +5,16 @@ This module contains the main() function and argument parser setup.
 
 import argparse
 import shutil
-import sys
-
-from .config import Config
-from .output import info, success, warn, error, set_quiet_mode
-from .docker import check_docker, check_docker_permissions
-from .setup_flow import check_host_setup, run_setup_script
-from .runtime import run_claude, exec_in_new_container
-from .timing import _host_timer
 
 # Import statusbar for initialization
 from statusbar import init_statusbar
+
+from .config import Config
+from .docker import check_docker, check_docker_permissions
+from .output import info, set_quiet_mode, success, warn
+from .runtime import exec_in_new_container, run_claude
+from .setup_flow import check_host_setup, run_setup_script
+from .timing import _host_timer
 
 
 def main():
@@ -36,45 +35,40 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
       Default timeout is 30 minutes, configurable via --timeout
       If setup is incomplete, jib will prompt to run setup automatically
       Default shows progress bar; use -v for verbose output
-        """
+        """,
     )
     parser.add_argument(
-        "--setup",
-        action="store_true",
-        help="Run full jib setup (services, config, Docker image)"
+        "--setup", action="store_true", help="Run full jib setup (services, config, Docker image)"
     )
-    parser.add_argument(
-        "--reset",
-        action="store_true",
-        help="Clear configuration and start over"
-    )
+    parser.add_argument("--reset", action="store_true", help="Clear configuration and start over")
     parser.add_argument(
         "--timeout",
         type=int,
         default=30,
         metavar="MINUTES",
-        help="Timeout in minutes for --exec commands (default: 30)"
+        help="Timeout in minutes for --exec commands (default: 30)",
     )
     parser.add_argument(
         "--auth",
         choices=["host", "api-key"],
         default="host",
-        help="Authentication method for --exec: 'host' mounts ~/.claude from host (default), 'api-key' passes ANTHROPIC_API_KEY env var"
+        help="Authentication method for --exec: 'host' mounts ~/.claude from host (default), 'api-key' passes ANTHROPIC_API_KEY env var",
     )
     parser.add_argument(
         "--exec",
         nargs=argparse.REMAINDER,
-        help="Execute a command in a new ephemeral container (automatic cleanup)"
+        help="Execute a command in a new ephemeral container (automatic cleanup)",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
-        help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)"
+        help="Verbose mode: show detailed output instead of progress bar (default: quiet with progress bar)",
     )
     parser.add_argument(
         "--time",
         action="store_true",
-        help="Show startup timing breakdown for debugging slow startup"
+        help="Show startup timing breakdown for debugging slow startup",
     )
 
     args = parser.parse_args()
