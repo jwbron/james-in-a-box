@@ -38,6 +38,8 @@ class Config:
     TMP_DIR = SHARING_DIR / "tmp"  # Persistent tmp workspace
     # Worktree base directory (ephemeral workspaces per container)
     WORKTREE_BASE = Path.home() / ".jib-worktrees"
+    # Local git objects directory (per-container, isolated from shared objects)
+    LOCAL_OBJECTS_BASE = Path.home() / ".jib-local-objects"
 
     # Note: Each container gets its own worktree to isolate changes
     # Host repos stay clean while containers work independently

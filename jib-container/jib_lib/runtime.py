@@ -35,6 +35,112 @@ from .timing import _host_timer
 from .worktrees import cleanup_worktrees, create_worktrees
 
 
+def _setup_git_isolation_mounts(
+    worktrees: dict,
+    container_id: str,
+    mount_args: list[str],
+    quiet: bool = False,
+) -> None:
+    """Configure git isolation mounts for a container.
+
+    This implements the Container Worktree Isolation ADR by mounting:
+    1. Container's worktree admin dir only (rw) - isolates git state
+    2. Container's local objects directory (rw) - for new commits
+    3. Shared objects directory (ro) - via alternates
+    4. Shared refs directory (ro) - visible refs
+    5. Common git directory (ro) - for commondir resolution
+
+    Args:
+        worktrees: Dict of repo_name -> {"worktree": path, "source": path}
+        container_id: Unique container identifier
+        mount_args: List to append mount arguments to
+        quiet: Suppress output
+    """
+    for repo_name, repo_info in worktrees.items():
+        worktree_path = repo_info["worktree"]
+        source_path = repo_info["source"]
+        container_path = f"/home/jib/repos/{repo_name}"
+        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
+        if not quiet:
+            print(f"  • ~/repos/{repo_name} (WORKTREE, isolated from host)")
+
+        # Mount isolated git components for worktree isolation
+        # ADR: Container Worktree Isolation - each container only sees its own git state
+        git_path = source_path / ".git"
+        main_git_path = None
+
+        if git_path.is_dir():
+            # Normal repo - .git is a directory
+            main_git_path = git_path
+        elif git_path.is_file():
+            # Host repo is a worktree - read .git file to find actual git directory
+            # Format is: "gitdir: /path/to/repo.git/worktrees/name"
+            try:
+                gitdir_content = git_path.read_text().strip()
+                if gitdir_content.startswith("gitdir:"):
+                    gitdir_path = Path(gitdir_content[7:].strip())
+                    # Navigate up from worktrees/<name> to the main .git directory
+                    # e.g., /path/.git/worktrees/foo -> /path/.git
+                    if "worktrees" in gitdir_path.parts:
+                        worktrees_idx = gitdir_path.parts.index("worktrees")
+                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
+                        if not main_git_path.is_dir():
+                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
+                            main_git_path = None
+                    else:
+                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
+                else:
+                    warn(f"Invalid .git file format for {repo_name}")
+            except Exception as e:
+                warn(f"Error reading .git file for {repo_name}: {e}")
+
+        if main_git_path:
+            # Worktree admin directory name matches the worktree directory name.
+            # This is guaranteed because create_worktrees() creates worktrees at
+            # ~/.jib-worktrees/<container-id>/<repo-name>/, and git uses the
+            # worktree directory basename as the admin dir name.
+            worktree_admin_name = repo_name
+
+            # 1. Mount ONLY this container's worktree admin dir (rw)
+            worktree_admin_path = main_git_path / "worktrees" / worktree_admin_name
+            if worktree_admin_path.is_dir():
+                mount_args.extend(
+                    ["-v", f"{worktree_admin_path}:/home/jib/.git-admin/{repo_name}:rw"]
+                )
+                if not quiet:
+                    print(f"  • ~/.git-admin/{repo_name} (worktree admin, isolated)")
+
+            # 2. Mount container's local objects directory (rw)
+            local_objects_path = Config.LOCAL_OBJECTS_BASE / container_id / repo_name
+            local_objects_path.mkdir(parents=True, exist_ok=True)
+            mount_args.extend(
+                ["-v", f"{local_objects_path}:/home/jib/.git-local-objects/{repo_name}:rw"]
+            )
+            if not quiet:
+                print(f"  • ~/.git-local-objects/{repo_name} (local objects, writable)")
+
+            # 3. Mount shared objects directory (ro)
+            shared_objects_path = main_git_path / "objects"
+            if shared_objects_path.is_dir():
+                mount_args.extend(
+                    ["-v", f"{shared_objects_path}:/home/jib/.git-objects/{repo_name}:ro"]
+                )
+                if not quiet:
+                    print(f"  • ~/.git-objects/{repo_name} (shared objects, read-only)")
+
+            # 4. Mount shared refs directory (ro)
+            shared_refs_path = main_git_path / "refs"
+            if shared_refs_path.is_dir():
+                mount_args.extend(["-v", f"{shared_refs_path}:/home/jib/.git-refs/{repo_name}:ro"])
+                if not quiet:
+                    print(f"  • ~/.git-refs/{repo_name} (shared refs, read-only)")
+
+            # 5. Mount common git directory for commondir resolution (ro)
+            mount_args.extend(["-v", f"{main_git_path}:/home/jib/.git-common/{repo_name}:ro"])
+            if not quiet:
+                print(f"  • ~/.git-common/{repo_name} (common git dir, read-only)")
+
+
 def run_claude() -> bool:
     """Run Claude Code CLI in the sandboxed container (interactive mode)"""
     quiet = get_quiet_mode()
@@ -134,51 +240,8 @@ def run_claude() -> bool:
         status("Configuring mounts...")
     mount_args = []
 
-    # Add worktree mounts for configured local repositories
-    # worktrees dict has structure: {repo_name: {"worktree": path, "source": path}}
-    for repo_name, repo_info in worktrees.items():
-        worktree_path = repo_info["worktree"]
-        source_path = repo_info["source"]
-        container_path = f"/home/jib/repos/{repo_name}"
-        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
-        if not quiet:
-            print(f"  • ~/repos/{repo_name} (WORKTREE, isolated from host)")
-
-        # Mount main repo .git directories (read-write) so worktrees can commit changes
-        git_path = source_path / ".git"
-        if git_path.is_dir():
-            # Normal repo - mount .git directory directly
-            git_container_path = f"/home/jib/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw"])
-            if not quiet:
-                print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
-        elif git_path.is_file():
-            # Host repo is a worktree - read .git file to find actual git directory
-            # Format is: "gitdir: /path/to/repo.git/worktrees/name"
-            try:
-                gitdir_content = git_path.read_text().strip()
-                if gitdir_content.startswith("gitdir:"):
-                    gitdir_path = Path(gitdir_content[7:].strip())
-                    # Navigate up from worktrees/<name> to the main .git directory
-                    # e.g., /path/.git/worktrees/foo -> /path/.git
-                    if "worktrees" in gitdir_path.parts:
-                        worktrees_idx = gitdir_path.parts.index("worktrees")
-                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
-                        if main_git_path.is_dir():
-                            git_container_path = f"/home/jib/.git-main/{repo_name}"
-                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw"])
-                            if not quiet:
-                                print(
-                                    f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)"
-                                )
-                        else:
-                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
-                    else:
-                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
-                else:
-                    warn(f"Invalid .git file format for {repo_name}")
-            except Exception as e:
-                warn(f"Error reading .git file for {repo_name}: {e}")
+    # Add worktree mounts with git isolation
+    _setup_git_isolation_mounts(worktrees, container_id, mount_args, quiet=quiet)
 
     # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = "/home/jib/.jib-worktrees"
@@ -410,43 +473,8 @@ def exec_in_new_container(
     # Build mount configuration dynamically (no mounts.conf file needed)
     mount_args = []
 
-    # Add worktree mounts for configured local repositories
-    # worktrees dict has structure: {repo_name: {"worktree": path, "source": path}}
-    for repo_name, repo_info in worktrees.items():
-        worktree_path = repo_info["worktree"]
-        source_path = repo_info["source"]
-        container_path = f"/home/jib/repos/{repo_name}"
-        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
-        print(f"  • ~/repos/{repo_name} (WORKTREE, isolated)")
-
-        # Mount main repo .git directories (read-write) so worktrees can commit changes
-        git_path = source_path / ".git"
-        if git_path.is_dir():
-            # Normal repo - mount .git directory directly
-            git_container_path = f"/home/jib/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw"])
-            print(f"  • ~/.git-main/{repo_name} (git metadata)")
-        elif git_path.is_file():
-            # Host repo is a worktree - read .git file to find actual git directory
-            try:
-                gitdir_content = git_path.read_text().strip()
-                if gitdir_content.startswith("gitdir:"):
-                    gitdir_path = Path(gitdir_content[7:].strip())
-                    if "worktrees" in gitdir_path.parts:
-                        worktrees_idx = gitdir_path.parts.index("worktrees")
-                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
-                        if main_git_path.is_dir():
-                            git_container_path = f"/home/jib/.git-main/{repo_name}"
-                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw"])
-                            print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
-                        else:
-                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
-                    else:
-                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
-                else:
-                    warn(f"Invalid .git file format for {repo_name}")
-            except Exception as e:
-                warn(f"Error reading .git file for {repo_name}: {e}")
+    # Add worktree mounts with git isolation
+    _setup_git_isolation_mounts(worktrees, container_id, mount_args, quiet=False)
 
     # Add standard mounts (sharing, context-sync)
     add_standard_mounts(mount_args, quiet=False)

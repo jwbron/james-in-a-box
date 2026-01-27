@@ -218,7 +218,33 @@ class Config:
 
     @property
     def git_main_dir(self) -> Path:
+        """Legacy path - kept for backwards compatibility during transition."""
         return self.user_home / ".git-main"
+
+    @property
+    def git_admin_dir(self) -> Path:
+        """Container's worktree admin directories (isolated per container)."""
+        return self.user_home / ".git-admin"
+
+    @property
+    def git_local_objects_dir(self) -> Path:
+        """Container's local objects directory (writable)."""
+        return self.user_home / ".git-local-objects"
+
+    @property
+    def git_shared_objects_dir(self) -> Path:
+        """Shared objects directory (read-only)."""
+        return self.user_home / ".git-objects"
+
+    @property
+    def git_shared_refs_dir(self) -> Path:
+        """Shared refs directory (read-only)."""
+        return self.user_home / ".git-refs"
+
+    @property
+    def git_common_dir(self) -> Path:
+        """Common git directory for commondir resolution (read-only)."""
+        return self.user_home / ".git-common"
 
     @property
     def claude_dir(self) -> Path:
@@ -536,27 +562,35 @@ def _fix_repo_config(repo_config: Path, logger: Logger) -> None:
 
 
 def setup_worktrees(config: Config, logger: Logger) -> bool:
-    """Configure git worktrees. Returns False if setup failed fatally."""
+    """Configure git worktrees with isolated git state.
+
+    This implements the Container Worktree Isolation ADR:
+    - Each container only sees its own worktree admin directory
+    - Objects are stored in a container-local directory with shared objects via alternates
+    - Refs and common git config are read-only from shared mounts
+
+    Returns False if setup failed fatally.
+    """
     if not config.repos_dir.exists():
         logger.warn("Repos workspace not found - check mount configuration")
         return True
 
-    # Check for worktrees
+    # Check for worktrees (repos with .git as a file, not directory)
     worktree_dirs = [d for d in config.repos_dir.iterdir() if (d / ".git").is_file()]
     if not worktree_dirs:
         return True
 
-    # Verify .git-main mount
-    if not config.git_main_dir.exists():
-        logger.error("FATAL: ~/.git-main not mounted but worktrees exist")
-        logger.error("  This means jib failed to mount the git directories.")
-        logger.error("  Container cannot start with broken git configuration.")
-        logger.error("")
-        logger.error("  Possible causes:")
-        logger.error("    - Docker mount failed")
-        logger.error("    - Host .git directories don't exist")
-        logger.error("    - Permission issues on host")
-        return False
+    # Check for isolated git mount structure (new architecture)
+    # If .git-admin exists, use isolated mode; otherwise fall back to legacy .git-main
+    use_isolated_mode = config.git_admin_dir.exists()
+
+    if not use_isolated_mode:
+        # Legacy mode - check for .git-main
+        if not config.git_main_dir.exists():
+            logger.error("FATAL: Neither ~/.git-admin nor ~/.git-main mounted but worktrees exist")
+            logger.error("  This means jib failed to mount the git directories.")
+            logger.error("  Container cannot start with broken git configuration.")
+            return False
 
     # Configure each worktree
     configured = 0
@@ -567,24 +601,83 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
         repo_name = repo_dir.name
         git_file = repo_dir / ".git"
 
-        # Read original gitdir path
-        content = git_file.read_text().strip()
-        original_gitdir = content.replace("gitdir: ", "")
-        worktree_admin = Path(original_gitdir).name
+        if use_isolated_mode:
+            # New isolated mode: point to .git-admin/<repo>
+            target_path = config.git_admin_dir / repo_name
 
-        # Build target path
-        target_path = config.git_main_dir / repo_name / "worktrees" / worktree_admin
+            if not target_path.is_dir():
+                logger.error(f"FATAL: Worktree admin dir doesn't exist for {repo_name}")
+                logger.error(f"  Expected: {target_path}")
+                failed += 1
+                failed_repos.append(repo_name)
+                continue
 
-        if target_path.is_dir():
+            # Update .git file to point to isolated admin dir
             git_file.write_text(f"gitdir: {target_path}\n")
             os.chown(git_file, config.runtime_uid, config.runtime_gid)
+
+            # Configure commondir to point to shared git directory
+            commondir_file = target_path / "commondir"
+            common_git_path = config.git_common_dir / repo_name
+            if common_git_path.exists():
+                commondir_file.write_text(f"{common_git_path}\n")
+                os.chown(commondir_file, config.runtime_uid, config.runtime_gid)
+
+            # Set up local objects with alternates to shared objects
+            local_objects_dir = config.git_local_objects_dir / repo_name
+            shared_objects_dir = config.git_shared_objects_dir / repo_name
+
+            if local_objects_dir.exists():
+                # Create alternates file to read from shared objects
+                alternates_dir = local_objects_dir / "info"
+                alternates_dir.mkdir(parents=True, exist_ok=True)
+                alternates_file = alternates_dir / "alternates"
+
+                if shared_objects_dir.exists():
+                    alternates_file.write_text(f"{shared_objects_dir}\n")
+                    os.chown(alternates_file, config.runtime_uid, config.runtime_gid)
+
+                # Fix ownership of local objects directory structure
+                for path in [local_objects_dir, alternates_dir]:
+                    if path.exists():
+                        os.chown(path, config.runtime_uid, config.runtime_gid)
+
+                # Update git config to use local objects directory
+                # This is done via the worktree admin's config
+                worktree_config = target_path / "config"
+                try:
+                    run_cmd_with_retry(
+                        [
+                            "git",
+                            "config",
+                            "-f",
+                            str(worktree_config),
+                            "core.worktree",
+                            str(repo_dir),
+                        ]
+                    )
+                except Exception:
+                    pass  # Non-fatal, git usually figures this out
+
             configured += 1
         else:
-            logger.error(f"FATAL: Worktree path doesn't exist for {repo_name}")
-            logger.error(f"  Expected: {target_path}")
-            logger.error(f"  Original: {original_gitdir}")
-            failed += 1
-            failed_repos.append(repo_name)
+            # Legacy mode: point to .git-main/<repo>/worktrees/<admin>
+            content = git_file.read_text().strip()
+            original_gitdir = content.replace("gitdir: ", "")
+            worktree_admin = Path(original_gitdir).name
+
+            target_path = config.git_main_dir / repo_name / "worktrees" / worktree_admin
+
+            if target_path.is_dir():
+                git_file.write_text(f"gitdir: {target_path}\n")
+                os.chown(git_file, config.runtime_uid, config.runtime_gid)
+                configured += 1
+            else:
+                logger.error(f"FATAL: Worktree path doesn't exist for {repo_name}")
+                logger.error(f"  Expected: {target_path}")
+                logger.error(f"  Original: {original_gitdir}")
+                failed += 1
+                failed_repos.append(repo_name)
 
     if failed > 0:
         logger.error("")
@@ -593,8 +686,12 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
         return False
 
     if configured > 0:
-        logger.success(f"Repo worktrees configured: {configured} repo(s)")
-        logger.info("  Git metadata mounted read-write from ~/.git-main/")
+        if use_isolated_mode:
+            logger.success(f"Repo worktrees configured: {configured} repo(s) (isolated mode)")
+            logger.info("  Each worktree has isolated git state")
+        else:
+            logger.success(f"Repo worktrees configured: {configured} repo(s) (legacy mode)")
+            logger.info("  Git metadata mounted read-write from ~/.git-main/")
 
     return True
 

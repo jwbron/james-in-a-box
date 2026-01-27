@@ -25,6 +25,7 @@ from jib_config import get_local_repos
 
 
 WORKTREE_BASE = Path.home() / ".jib-worktrees"
+LOCAL_OBJECTS_BASE = Path.home() / ".jib-local-objects"
 
 
 def log(message: str) -> None:
@@ -213,6 +214,16 @@ def cleanup_orphaned_worktrees() -> None:
             log("  Warning: Could not remove all files (permission denied)")
             log(f"  Manual cleanup may be needed: rm -rf {container_dir}")
 
+        # Also clean up local objects directory for this container
+        local_objects_dir = LOCAL_OBJECTS_BASE / container_id
+        if local_objects_dir.exists():
+            log(f"  Removing local objects directory: {local_objects_dir}")
+            try:
+                shutil.rmtree(local_objects_dir)
+                log("  Successfully removed local objects directory")
+            except PermissionError:
+                log("  Warning: Could not remove local objects dir (permission denied)")
+
         total_cleaned += 1
         log(f"  Cleaned up {worktrees_removed} worktree(s) for container {container_id}")
 
@@ -246,6 +257,51 @@ def prune_stale_worktree_references() -> None:
         log(f"Pruned stale references in {repos_pruned} repo(s)")
     else:
         log("No stale references found")
+
+
+def cleanup_orphaned_local_objects() -> None:
+    """Clean up local objects directories for containers that no longer exist.
+
+    This handles edge cases where local objects directories exist without
+    corresponding worktree directories (e.g., if worktree cleanup ran but
+    local objects cleanup failed).
+    """
+    log("Checking for orphaned local objects directories...")
+
+    if not LOCAL_OBJECTS_BASE.exists():
+        log(f"No local objects directory found at {LOCAL_OBJECTS_BASE}")
+        return
+
+    containers = get_docker_containers()
+    total_cleaned = 0
+
+    for container_dir in LOCAL_OBJECTS_BASE.glob("jib-*"):
+        if not container_dir.is_dir():
+            continue
+
+        container_id = container_dir.name
+
+        # Skip if container still exists
+        if container_id in containers:
+            continue
+
+        # Skip if worktree directory still exists (will be cleaned by worktree cleanup)
+        worktree_dir = WORKTREE_BASE / container_id
+        if worktree_dir.exists():
+            continue
+
+        log(f"Orphaned local objects found: {container_id}")
+        try:
+            shutil.rmtree(container_dir)
+            log(f"  Successfully removed {container_dir}")
+            total_cleaned += 1
+        except PermissionError:
+            log(f"  Warning: Could not remove {container_dir} (permission denied)")
+
+    if total_cleaned > 0:
+        log(f"Cleaned {total_cleaned} orphaned local objects director(ies)")
+    else:
+        log("No orphaned local objects directories found")
 
 
 def cleanup_orphaned_branches() -> None:
@@ -343,6 +399,7 @@ def cleanup_orphaned_branches() -> None:
 def main() -> None:
     """Run all cleanup tasks."""
     cleanup_orphaned_worktrees()
+    cleanup_orphaned_local_objects()
     prune_stale_worktree_references()
     cleanup_orphaned_branches()
 

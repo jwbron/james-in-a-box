@@ -1,8 +1,8 @@
 """
-Tests for host-services/utilities shell scripts.
+Tests for host-services/utilities scripts.
 
-Tests shell script functionality including:
-- worktree-watcher.sh: Cleans up orphaned git worktrees
+Tests script functionality including:
+- worktree-watcher.py: Cleans up orphaned git worktrees
 """
 
 import subprocess
@@ -14,22 +14,25 @@ import pytest
 
 
 class TestWorktreeWatcherSyntax:
-    """Tests for worktree-watcher.sh bash syntax."""
+    """Tests for worktree-watcher.py Python syntax."""
 
     def test_worktree_watcher_syntax_valid(self):
-        """Test that worktree-watcher.sh has valid bash syntax."""
+        """Test that worktree-watcher.py has valid Python syntax."""
         script_path = (
             Path(__file__).parent.parent.parent
             / "host-services"
             / "utilities"
             / "worktree-watcher"
-            / "worktree-watcher.sh"
+            / "worktree-watcher.py"
         )
 
         assert script_path.exists(), f"Script not found: {script_path}"
 
         result = subprocess.run(
-            ["bash", "-n", str(script_path)], check=False, capture_output=True, text=True
+            ["python3", "-m", "py_compile", str(script_path)],
+            check=False,
+            capture_output=True,
+            text=True,
         )
 
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
@@ -41,28 +44,31 @@ class TestWorktreeWatcherSyntax:
             / "host-services"
             / "utilities"
             / "worktree-watcher"
-            / "worktree-watcher.sh"
+            / "worktree-watcher.py"
         )
 
         content = script_path.read_text()
-        assert content.startswith("#!/bin/bash"), "Script should start with #!/bin/bash"
+        assert content.startswith("#!/usr/bin/env python3"), (
+            "Script should start with #!/usr/bin/env python3"
+        )
 
-    def test_worktree_watcher_uses_strict_mode(self):
-        """Test that script uses strict mode (set -u)."""
+    def test_worktree_watcher_is_executable(self):
+        """Test that script is executable."""
         script_path = (
             Path(__file__).parent.parent.parent
             / "host-services"
             / "utilities"
             / "worktree-watcher"
-            / "worktree-watcher.sh"
+            / "worktree-watcher.py"
         )
 
-        content = script_path.read_text()
-        assert "set -u" in content, "Script should use 'set -u' for undefined variable checking"
+        import os
+
+        assert os.access(script_path, os.X_OK), "Script should be executable"
 
 
 class TestWorktreeWatcherFunctionality:
-    """Tests for worktree-watcher.sh functionality."""
+    """Tests for worktree-watcher.py functionality."""
 
     def test_log_function_format(self):
         """Test that log messages follow expected format."""
@@ -80,11 +86,11 @@ class TestWorktreeWatcherFunctionality:
             / "host-services"
             / "utilities"
             / "worktree-watcher"
-            / "worktree-watcher.sh"
+            / "worktree-watcher.py"
         )
 
         content = script_path.read_text()
-        assert 'WORKTREE_BASE="$HOME/.jib-worktrees"' in content
+        assert 'WORKTREE_BASE = Path.home() / ".jib-worktrees"' in content
 
     def test_script_functions_defined(self):
         """Test that expected functions are defined in the script."""
@@ -93,26 +99,26 @@ class TestWorktreeWatcherFunctionality:
             / "host-services"
             / "utilities"
             / "worktree-watcher"
-            / "worktree-watcher.sh"
+            / "worktree-watcher.py"
         )
 
         content = script_path.read_text()
-        assert "cleanup_orphaned_worktrees()" in content
-        assert "prune_stale_worktree_references()" in content
-        assert "log()" in content
+        assert "def cleanup_orphaned_worktrees(" in content
+        assert "def prune_stale_worktree_references(" in content
+        assert "def log(" in content
 
-    def test_script_exits_successfully(self):
-        """Test that script ends with exit 0."""
+    def test_script_has_main(self):
+        """Test that script has a main entry point."""
         script_path = (
             Path(__file__).parent.parent.parent
             / "host-services"
             / "utilities"
             / "worktree-watcher"
-            / "worktree-watcher.sh"
+            / "worktree-watcher.py"
         )
 
         content = script_path.read_text()
-        assert content.strip().endswith("exit 0")
+        assert 'if __name__ == "__main__":' in content
 
 
 class TestSetupScripts:
@@ -148,38 +154,36 @@ class TestSetupScripts:
                 assert result.returncode == 0, f"Syntax error in {script.name}: {result.stderr}"
 
 
-class TestShellScriptBestPractices:
-    """Tests for shell script best practices."""
+class TestPythonScriptBestPractices:
+    """Tests for Python script best practices."""
 
-    def test_scripts_use_quoting(self):
-        """Test that scripts properly quote variables."""
-        script_paths = [
+    def test_worktree_watcher_has_type_hints(self):
+        """Test that worktree-watcher.py uses type hints."""
+        script_path = (
             Path(__file__).parent.parent.parent
             / "host-services"
             / "utilities"
             / "worktree-watcher"
-            / "worktree-watcher.sh",
-        ]
-
-        for script in script_paths:
-            content = script.read_text()
-            # Check for quoted variable usage (common pattern)
-            # Scripts should use "$VAR" not $VAR for safety
-            assert '"$' in content, f"{script.name} should use quoted variables"
-
-    def test_scripts_handle_errors(self):
-        """Test that scripts have error handling."""
-        worktree_script = (
-            Path(__file__).parent.parent.parent
-            / "host-services"
-            / "utilities"
-            / "worktree-watcher"
-            / "worktree-watcher.sh"
+            / "worktree-watcher.py"
         )
 
-        content = worktree_script.read_text()
-        # worktree-watcher uses || true for error handling
-        assert "|| true" in content or "2>/dev/null" in content
+        content = script_path.read_text()
+        # Check for type hints in function signatures
+        assert "-> None" in content or "-> bool" in content or "-> str" in content
+
+    def test_worktree_watcher_has_docstrings(self):
+        """Test that main functions have docstrings."""
+        script_path = (
+            Path(__file__).parent.parent.parent
+            / "host-services"
+            / "utilities"
+            / "worktree-watcher"
+            / "worktree-watcher.py"
+        )
+
+        content = script_path.read_text()
+        # Check that there are docstrings (triple quotes after function defs)
+        assert '"""' in content
 
 
 class TestNotificationFileFormat:

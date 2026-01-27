@@ -19,6 +19,7 @@ SECRETS_DIR="$HOME_DIR/.jib-gateway"
 REPOS_DIR="$HOME_DIR/repos"
 WORKTREES_DIR="$HOME_DIR/.jib-worktrees"
 GIT_MAIN_DIR="$HOME_DIR/.git-main"
+LOCAL_OBJECTS_DIR="$HOME_DIR/.jib-local-objects"
 
 # Verify required files exist
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -54,9 +55,15 @@ if [ -d "$WORKTREES_DIR" ]; then
 fi
 
 # Git main directory - mount at /home/jib/.git-main
-# Needs RW for git fetch to write FETCH_HEAD and update refs
+# Needs RW for git fetch (FETCH_HEAD, refs) and object sync after push
 if [ -d "$GIT_MAIN_DIR" ]; then
     MOUNTS+=(-v "$GIT_MAIN_DIR:$CONTAINER_HOME/.git-main:z")
+fi
+
+# Local objects directory - mount at /home/jib/.jib-local-objects
+# Used to read container-created objects for sync to shared store
+if [ -d "$LOCAL_OBJECTS_DIR" ]; then
+    MOUNTS+=(-v "$LOCAL_OBJECTS_DIR:$CONTAINER_HOME/.jib-local-objects:ro,z")
 fi
 
 # Dynamic git mounts from local_repos in repositories.yaml

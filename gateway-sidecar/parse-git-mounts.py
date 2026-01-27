@@ -49,7 +49,7 @@ def main():
 
             if git_dir.exists():
                 # Mount git directory to a known location
-                # Needs RW for git fetch to write FETCH_HEAD and update refs
+                # Needs RW for git fetch (FETCH_HEAD, refs) and object sync after push
                 container_git_path = f"{home}/.git-main/{repo_name}"
                 print(f"{git_dir}:{container_git_path}:z")
 

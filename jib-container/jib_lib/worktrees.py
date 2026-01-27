@@ -274,6 +274,16 @@ def cleanup_worktrees(container_id: str) -> None:
     except Exception as e:
         warn(f"  ✗ Failed to remove directory {worktree_dir}: {e}")
 
+    # Remove container's local objects directory (used for worktree isolation)
+    local_objects_dir = Config.LOCAL_OBJECTS_BASE / container_id
+    if local_objects_dir.exists():
+        try:
+            shutil.rmtree(local_objects_dir)
+            if not quiet:
+                info("  ✓ Removed local objects directory")
+        except Exception as e:
+            warn(f"  ✗ Failed to remove local objects dir {local_objects_dir}: {e}")
+
     # Forcibly remove worktree admin directories
     # Don't rely on git worktree prune - it fails when .git files are corrupted
     admin_dirs_removed = 0
