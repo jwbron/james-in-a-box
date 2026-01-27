@@ -814,12 +814,11 @@ def setup_claude(config: Config, logger: Logger) -> None:
     }
 
     # Read existing config if present
+    file_existed = user_state_file.exists()
     existing_config = {}
-    if user_state_file.exists():
-        try:
+    if file_existed:
+        with contextlib.suppress(json.JSONDecodeError, OSError):
             existing_config = json.loads(user_state_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass  # Will be overwritten with defaults
 
     # Check if required settings need updating
     needs_update = False
@@ -835,8 +834,7 @@ def setup_claude(config: Config, logger: Logger) -> None:
             existing_config[key] = value
 
     # Write back if changes needed
-    file_existed = user_state_file.exists()
-    if needs_update or not file_existed:
+    if needs_update:
         user_state_file.write_text(json.dumps(existing_config, indent=2))
         os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
         user_state_file.chmod(0o600)
