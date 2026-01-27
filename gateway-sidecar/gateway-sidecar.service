@@ -22,10 +22,11 @@ ExecStartPre=-/usr/bin/docker rm -f jib-gateway
 ExecStart=/bin/bash -c '/usr/bin/docker run --rm \
     --name jib-gateway \
     --network jib-network \
+    --security-opt label=disable \
     -p 9847:9847 \
-    -v "%h/.jib-gateway:/secrets:ro,z" \
-    -v "%h/repos:%h/repos:ro,z" \
-    -v "%h/.jib-worktrees:%h/.jib-worktrees:ro,z" \
+    -v "%h/.jib-gateway:/secrets:ro" \
+    -v "%h/repos:%h/repos:ro" \
+    -v "%h/.jib-worktrees:%h/.jib-worktrees:ro" \
     ${GIT_MOUNTS} \
     jib-gateway'
 
