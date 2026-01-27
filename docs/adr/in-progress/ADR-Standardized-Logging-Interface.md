@@ -363,9 +363,13 @@ Tool wrappers intercept calls to critical commands and:
 | Tool | Why Wrap | What to Capture |
 |------|----------|------------------|
 | `bd` | Track task state changes | Command, task_id, status changes |
-| `git` | Audit repository operations | Command, repo, branch, commit SHA |
-| `gh` | Track GitHub API usage | Command, repo, PR number, response |
 | `claude` | Capture model interactions | Prompt (summary), response, tokens, timing |
+
+**Note:** `git` and `gh` wrappers were originally planned but removed in January 2026.
+The gateway sidecar provides purpose-built `git_client.py` and `github_client.py` modules
+with security-specific validation (path traversal prevention, argument allowlists,
+credential management) that the generic logging wrappers couldn't provide. Services
+that need git/gh operations use subprocess directly with `get_logger()` for logging.
 
 ### Wrapper Implementation Pattern
 
@@ -373,23 +377,23 @@ Tool wrappers intercept calls to critical commands and:
 
 ```python
 # Usage in scripts
-from jib_logging.wrappers import git, bd, gh
+from jib_logging.wrappers import bd, claude
 
-# Instead of:
-# subprocess.run(["git", "push", "origin", "main"])
-
-# Use:
-result = git.push("origin", "main")
+# bd wrapper for beads task tracking
+result = bd.update("bd-abc123", status="done", notes="Completed task")
 # Automatically logs:
 # {
 #   "severity": "INFO",
-#   "message": "git push completed",
-#   "tool": "git",
-#   "command": ["git", "push", "origin", "main"],
+#   "message": "bd update completed",
+#   "tool": "bd",
+#   "command": ["bd", "update", "bd-abc123", "--status", "done", "--notes", "..."],
 #   "exit_code": 0,
-#   "duration_ms": 1234,
-#   "context": {"repository": "jwbron/james-in-a-box", "branch": "main"}
+#   "duration_ms": 45,
+#   "context": {"task_id": "bd-abc123"}
 # }
+
+# claude wrapper for Claude Code invocations
+result = claude.run("--print", "-p", "Explain this code")
 ```
 
 #### CLI Wrapper Binaries (Shell)
@@ -400,8 +404,6 @@ For transparent logging of shell commands (including those run by Claude Code ag
 
 **Available Commands:**
 - `jib-bd` - Drop-in replacement for `bd`
-- `jib-git` - Drop-in replacement for `git`
-- `jib-gh` - Drop-in replacement for `gh`
 - `jib-claude` - Drop-in replacement for `claude`
 
 **Setup Option 1: Shell Aliases**
@@ -409,8 +411,6 @@ For transparent logging of shell commands (including those run by Claude Code ag
 ```bash
 # In .bashrc or container setup
 alias bd='jib-bd'
-alias git='jib-git'
-alias gh='jib-gh'
 alias claude='jib-claude'
 
 # Or source the setup script
@@ -423,16 +423,15 @@ source ~/repos/james-in-a-box/shared/jib_logging/bin/setup-aliases.sh
 # Create symlinks earlier in PATH
 mkdir -p ~/.local/bin
 ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-bd ~/.local/bin/bd
-ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-git ~/.local/bin/git
-# ... etc
+ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-claude ~/.local/bin/claude
 ```
 
 **Setup Option 3: Direct Usage**
 
 ```bash
 # Use jib-* prefix directly
-jib-git status
 jib-bd --allow-stale list
+jib-claude --print -p "Explain this"
 ```
 
 **Environment Variables:**
@@ -462,40 +461,6 @@ The beads wrapper captures task lifecycle:
 }
 ```
 
-### git Wrapper
-
-The git wrapper captures repository operations:
-
-```json
-{
-  "severity": "INFO",
-  "message": "Git commit created",
-  "tool": "git",
-  "command": ["git", "commit", "-m", "Add feature X"],
-  "repository": "jwbron/james-in-a-box",
-  "branch": "feature/logging",
-  "commit_sha": "abc1234",
-  "files_changed": 5,
-  "duration_ms": 234
-}
-```
-
-### gh (GitHub CLI) Wrapper
-
-The gh wrapper captures API interactions:
-
-```json
-{
-  "severity": "INFO",
-  "message": "Pull request created",
-  "tool": "gh",
-  "command": ["gh", "pr", "create", "--title", "Add logging"],
-  "repository": "jwbron/james-in-a-box",
-  "pr_number": 125,
-  "pr_url": "https://github.com/jwbron/james-in-a-box/pull/125",
-  "duration_ms": 1567
-}
-```
 
 ## Model Output Capture
 
@@ -771,16 +736,22 @@ GROUP BY jsonPayload.tool
 - ✅ Source location tracking in all logs
 - ✅ Environment auto-detection (GCP/container/host)
 
-### Phase 2: Tool Wrappers ✅ COMPLETE
+### Phase 2: Tool Wrappers ✅ PARTIAL
 
 1. ✅ Implement `bd` wrapper (`shared/jib_logging/wrappers/bd.py`)
-2. ✅ Implement `git` wrapper (`shared/jib_logging/wrappers/git.py`)
-3. ✅ Implement `gh` wrapper (`shared/jib_logging/wrappers/gh.py`)
+2. ❌ ~~Implement `git` wrapper~~ - Removed (see note below)
+3. ❌ ~~Implement `gh` wrapper~~ - Removed (see note below)
 4. ✅ Implement `claude` wrapper (`shared/jib_logging/wrappers/claude.py`)
-5. ✅ Integration tests
+5. ✅ Integration tests (for bd, claude)
+
+**Note on git/gh wrappers:** These were implemented but never adopted by any production
+code. The gateway sidecar requires purpose-built clients (`git_client.py`, `github_client.py`)
+with security-specific validation (path traversal prevention, argument allowlists, credential
+management) that generic logging wrappers couldn't provide. The wrappers were removed in
+January 2026 to reduce dead code.
 
 **Enhancements Beyond Spec:**
-- ✅ CLI wrapper binaries (`shared/jib_logging/bin/jib-*`)
+- ✅ CLI wrapper binaries (`shared/jib_logging/bin/jib-bd`, `jib-claude`)
 - ✅ Shell alias setup script
 - ✅ Passthrough mode via environment variables
 - ✅ Base `ToolWrapper` class for extensibility
@@ -843,5 +814,5 @@ GCP-specific functionality (Cloud Logging output handler, log router configurati
 
 ---
 
-**Last Updated:** 2025-11-30
-**Status:** Implemented (Phases 1-4 Complete) - See [Implementation Review](./ADR-Standardized-Logging-Interface-IMPLEMENTATION-REVIEW.md)
+**Last Updated:** 2026-01-27
+**Status:** Implemented (Phases 1, 3-4 Complete; Phase 2 Partial) - See [Implementation Review](./ADR-Standardized-Logging-Interface-IMPLEMENTATION-REVIEW.md)
