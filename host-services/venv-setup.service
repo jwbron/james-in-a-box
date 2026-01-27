@@ -1,0 +1,17 @@
+[Unit]
+Description=JIB Host Services - Python venv setup
+Documentation=file://%h/repos/james-in-a-box/host-services/README.md
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/repos/james-in-a-box
+ExecStart=/usr/bin/make venv
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=venv-setup
+
+[Install]
+WantedBy=default.target
