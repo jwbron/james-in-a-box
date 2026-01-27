@@ -369,7 +369,9 @@ class TestSetupWorktrees:
 
         config = MagicMock()
         config.repos_dir = repos_dir
-        config.git_admin_dir = fake_home / ".git-admin-nonexistent"  # Doesn't exist (no isolated mode)
+        config.git_admin_dir = (
+            fake_home / ".git-admin-nonexistent"
+        )  # Doesn't exist (no isolated mode)
         config.git_main_dir = fake_home / ".git-main-nonexistent"  # Doesn't exist (no legacy mode)
 
         logger = entrypoint.Logger(quiet=False)

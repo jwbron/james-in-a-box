@@ -63,6 +63,7 @@ class TestWorktreeWatcherSyntax:
         )
 
         import os
+
         assert os.access(script_path, os.X_OK), "Script should be executable"
 
 
