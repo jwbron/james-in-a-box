@@ -1,5 +1,9 @@
 # Exclude workspace directories that shouldn't be copied into Docker image
 
+# Git directories (avoid permission issues and unnecessary context)
+.git
+**/.git/
+
 # Mobile app dependencies and build artifacts
 **/mobile/app/ios/Pods/
 **/mobile/app/ios/build/
