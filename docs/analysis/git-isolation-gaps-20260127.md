@@ -2,11 +2,13 @@
 
 **Date:** 2026-01-27
 **Related PRs:** #571 (ADR), #588 (dockerignore fix)
-**Status:** Investigation
+**Status:** Decision Made - Gateway-Based Commits
 
 ## Executive Summary
 
-The Container Worktree Isolation architecture (ADR in PR #571) is partially implemented. The mount structure is in place, but critical git configuration inside containers is missing, preventing local commits. Additionally, container path writes leak back to the host, breaking git commands on the host after containers exit. This document identifies the gaps and proposes solutions.
+The Container Worktree Isolation architecture (ADR in PR #571) is partially implemented. The mount structure is in place, but local commits don't work and container path writes leak back to the host.
+
+**Decision:** Route all git write operations through the gateway. This aligns with the security requirement that all repository-modifying operations must go through a controlled, auditable channel.
 
 ## Observed Behavior
 
@@ -14,12 +16,12 @@ When attempting to commit in a container:
 
 ```
 $ git commit -m "test"
-fatal: cannot lock ref 'HEAD': Unable to create 
-'/home/jib/.git-common/james-in-a-box/refs/heads/fix-host-services-venv-setup.lock': 
+fatal: cannot lock ref 'HEAD': Unable to create
+'/home/jib/.git-common/james-in-a-box/refs/heads/fix-host-services-venv-setup.lock':
 Read-only file system
 ```
 
-**Root Cause:** Git attempts to write ref locks to the read-only `.git-common` mount instead of the writable worktree admin directory.
+**Root Cause:** Git attempts to write ref locks to the read-only `.git-common` mount.
 
 When running git commands on the host after a container has run:
 
@@ -30,166 +32,213 @@ fatal: Invalid path '/home/jib': No such file or directory
 
 **Root Cause:** Container writes container-specific paths (`/home/jib/...`) to the host's worktree metadata files, which persist after container exit.
 
-## Current Mount Structure (Working)
+## Current Mount Structure
 
-The mounts are correctly configured:
+The mounts are configured but allow too much write access:
 
-| Mount Path | Source | Mode | Purpose |
-|------------|--------|------|---------|
-| `/home/jib/repos/X` | `~/.jib-worktrees/<id>/X` | rw | Working directory |
-| `/home/jib/.git-admin/X` | `~/.git/X/worktrees/<id>` | rw | Worktree admin |
-| `/home/jib/.git-local-objects/X` | Docker volume | rw | Local objects |
-| `/home/jib/.git-objects/X` | `~/.git/X/objects` | ro | Shared objects |
-| `/home/jib/.git-refs/X` | `~/.git/X/refs` | ro | Shared refs |
-| `/home/jib/.git-common/X` | `~/.git/X` | ro | Common git dir |
+| Mount Path | Source | Current Mode | Target Mode |
+|------------|--------|--------------|-------------|
+| `/home/jib/repos/X` | `~/.jib-worktrees/<id>/X` | rw | rw (unchanged) |
+| `/home/jib/.git-admin/X` | `~/.git/X/worktrees/<id>` | rw | **ro** |
+| `/home/jib/.git-local-objects/X` | Docker volume | rw | **remove** |
+| `/home/jib/.git-objects/X` | `~/.git/X/objects` | ro | ro (unchanged) |
+| `/home/jib/.git-refs/X` | `~/.git/X/refs` | ro | ro (unchanged) |
+| `/home/jib/.git-common/X` | `~/.git/X` | ro | ro (unchanged) |
 
-## Missing Configuration (Not Working)
+## Issues Identified
 
-### 1. Git Object Directory Not Configured
+### 1. Local Commits Don't Work
 
-**ADR Says:**
-> "Container's git config is updated: `objects = /home/jib/.git-local-objects/repo`"
+The original ADR assumed local commits would work with proper git configuration. Reality:
+- Ref locks can't be created (read-only mount)
+- Git configuration for local objects was never implemented
+- Ref redirection mechanism doesn't exist in git
 
-**Reality:**
+**Resolution:** Don't fix - route commits through gateway instead.
+
+### 2. Host Path Leakage
+
+Container writes `/home/jib/...` paths to host worktree metadata, breaking host git after container exit.
+
+**Resolution:** Make worktree admin mount read-only. Container doesn't need to write to it since commits go through gateway.
+
+### 3. Local Object Storage Unused
+
+Docker volumes for local objects were provisioned but never used (git config not set up).
+
+**Resolution:** Remove local object storage. Not needed with gateway commits.
+
+### 4. ADR Status Incorrect
+
+ADR says "Implemented" but implementation tasks are unchecked.
+
+**Resolution:** Update ADR with revision notice and correct status.
+
+## Decision: Gateway-Based Commits
+
+**Security Requirement:** All git write operations must go through the gateway for policy enforcement and audit trail.
+
+### Architecture
+
 ```
-$ git config --list | grep objects
-(no output)
+┌─────────────────────────────────────────────────────────────────┐
+│                         Container                                │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │ Edit files   │    │ git add      │    │ git commit   │      │
+│  │ (local rw)   │    │ (local)      │    │ (intercepted)│      │
+│  └──────────────┘    └──────────────┘    └──────┬───────┘      │
+│                                                  │               │
+└──────────────────────────────────────────────────┼───────────────┘
+                                                   │
+                                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         Gateway                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ POST /api/v1/git/commit                                   │  │
+│  │ - Policy check                                            │  │
+│  │ - Read staged changes from container worktree             │  │
+│  │ - Create commit on host                                   │  │
+│  │ - Return SHA                                              │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                                                   │
+                                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                          Host                                    │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │ Worktree     │    │ Objects      │    │ Refs         │      │
+│  │ (shared)     │    │ (shared)     │    │ (shared)     │      │
+│  └──────────────┘    └──────────────┘    └──────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-The alternates file exists and points to the shared objects, but git doesn't know to use the local objects directory for writes. Manual workaround requires:
+### Operations Matrix
+
+| Operation | Location | Notes |
+|-----------|----------|-------|
+| File editing | Container (local) | Working directory is rw |
+| `git status` | Container (local) | Read-only, works |
+| `git diff` | Container (local) | Read-only, works |
+| `git log` | Container (local) | Read-only, works |
+| `git add` | Container (local) | Updates index in working dir |
+| `git commit` | Gateway | Intercepted by git wrapper |
+| `git push` | Gateway | Already implemented |
+| `git fetch` | Gateway | Already implemented |
+
+## Implementation Plan
+
+### Phase 1: Fix Host Path Leakage (Immediate)
+**Goal:** Stop containers from corrupting host git state
+
+1. Change worktree admin mount from `rw` to `ro`
+2. Use relative paths in `commondir` file (`../..` instead of absolute)
+3. Remove container path writes from `entrypoint.py`
+
+**Files to modify:**
+- `jib-container/runtime.py` - mount mode change
+- `jib-container/entrypoint.py` - remove worktree metadata writes
+
+**Validation:**
+- Host git commands work after container exit
+- Container git read operations still work
+
+### Phase 2: Gateway Commit Endpoint (Core Feature)
+**Goal:** Enable commits from containers
+
+1. Add `POST /api/v1/git/commit` endpoint
+2. Read index from container's worktree
+3. Create commit on host using index
+4. Return commit SHA to container
+
+**Files to modify:**
+- `gateway-sidecar/main.go` - add endpoint
+- `gateway-sidecar/git.go` - commit logic
+
+**Validation:**
+- Commit from container creates proper commit on host
+- Commit visible in git log
+- Commit can be pushed
+
+### Phase 3: Git Wrapper Update
+**Goal:** Intercept `git commit` and route to gateway
+
+1. Update git wrapper to detect commit commands
+2. Extract message, author, and options
+3. Call gateway commit endpoint
+4. Return result to caller
+
+**Files to modify:**
+- `gateway-sidecar/wrappers/git-wrapper.sh` (or equivalent)
+
+**Validation:**
+- `git commit -m "msg"` works from container
+- Commit options (--amend, etc.) handled appropriately
+
+### Phase 4: Cleanup
+**Goal:** Remove unused infrastructure
+
+1. Remove local object volume provisioning
+2. Update ADR with final implementation status
+3. Close related beads
+
+**Files to modify:**
+- `jib-container/runtime.py` - remove volume creation
+- `docs/adr/implemented/ADR-Container-Worktree-Isolation.md` - update status
+
+## Current Workaround
+
+Until gateway commits are implemented, use GitHub API:
+
 ```bash
-export GIT_OBJECT_DIRECTORY=/home/jib/.git-local-objects/james-in-a-box
-export GIT_ALTERNATE_OBJECT_DIRECTORIES=/home/jib/.git-common/james-in-a-box/objects
+# Stage changes (for review)
+git add file.txt
+
+# View what would be committed
+git diff --cached
+
+# Commit via GitHub API
+gh api repos/OWNER/REPO/contents/path/to/file.txt \
+  -X PUT \
+  -f message="Commit message" \
+  -f content="$(base64 < file.txt)" \
+  -f sha="$(git rev-parse HEAD:path/to/file.txt)"
 ```
 
-### 2. Ref Updates Not Redirected
+**Limitations:**
+- One file per API call
+- No batched commits
+- Slower than local commits
 
-**ADR Says:**
-> "Git updates the ref (in the container's view, this writes to a path that maps back to the host)"
+## Test Cases
 
-**Reality:** No mechanism exists to redirect ref writes. Git attempts to write to `/home/jib/.git-common/X/refs/` which is read-only.
+### Phase 1 Tests
+- [ ] Host `git status` works after container exit
+- [ ] Host `git log` works after container exit
+- [ ] Container `git status` works (read-only)
+- [ ] Container `git log` works (read-only)
 
-The ADR's description of how this should work is incomplete:
-- Worktree HEAD is in `.git-admin` (writable) ✓
-- Branch locks are in worktree admin dir ✗ (git tries `.git-common/refs/`)
-- No ref redirection mechanism implemented
+### Phase 2 Tests
+- [ ] Gateway commit creates valid commit object
+- [ ] Commit author is set correctly
+- [ ] Commit message is preserved
+- [ ] Staged files are included in commit
+- [ ] Unstaged files are not included
 
-### 3. Host-Side Path Leakage (Breaks Host Git)
+### Phase 3 Tests
+- [ ] `git commit -m "msg"` routes to gateway
+- [ ] `git commit` (interactive) handled gracefully
+- [ ] Error messages propagate to container
 
-**Problem:** After a container runs, git commands fail on the host:
-
-```
-$ git branch
-fatal: Invalid path '/home/jib': No such file or directory
-```
-
-**Root Cause:** The container's `entrypoint.py` (`setup_worktrees()` function, lines 564-694) writes container paths to the host's worktree metadata files. These files are in `.git/worktrees/<name>/` which is mounted read-write from the host.
-
-The following files get corrupted with container paths:
-
-| File | Container writes | Should be |
-|------|------------------|-----------|
-| `commondir` | `/home/jib/.git-common/repo` | `../..` or absolute host path |
-| `config` | `worktree = /home/jib/repos/repo` | Host worktree path |
-| `gitdir` | `/home/jib/.git-admin/repo` | Host `.git` file path |
-
-**Why this persists:** The worktree admin directory is mounted `rw` so the container can update `HEAD`, `index`, etc. But the path updates leak back to the host and persist after the container exits.
-
-**Workaround:** Remove the corrupted worktree metadata:
-```bash
-rm -rf .git/worktrees/<worktree-name>
-```
-
-**Fix Options:**
-1. **Make worktree admin read-only** - but this breaks legitimate writes (HEAD, index)
-2. **Use relative paths** - `commondir: ../..` works from both perspectives
-3. **Restore paths on container exit** - add cleanup in signal handler
-4. **Copy instead of mount** - fully isolate the worktree admin directory
-
-### 4. Implementation Plan Unchecked
-
-The ADR's implementation plan shows all tasks unchecked:
-
-- [ ] Phase 1: Mount Configuration (mounts exist but not all config)
-- [ ] Phase 2: Container Initialization (git config for local objects)
-- [ ] Phase 3: Gateway Updates (object sync after push)
-- [ ] Phase 4: Cleanup Verification
-- [ ] Phase 5: Testing
-
-Yet the ADR status says "Implemented".
-
-## Consequences
-
-1. **Containers cannot make local commits** - all commits must go through GitHub API
-2. **Workaround required** - using `gh api` contents endpoint works but is slow
-3. **Gateway push won't work** - even if we could commit locally, push would fail without object sync
-4. **Host git breaks after container runs** - container paths leak into host worktree metadata, requiring manual cleanup
-
-## Proposed Solutions
-
-### Option A: Complete the ADR Implementation
-
-1. **Add git config during container initialization:**
-   ```bash
-   git config --local core.worktree /home/jib/repos/X
-   git config --local core.repositoryformatversion 1
-   git config --local extensions.worktreeConfig true
-   # Enable per-worktree config for objects
-   ```
-
-2. **Implement ref redirection:**
-   - Git worktrees normally update refs in the main `.git/refs/`
-   - Need to investigate if `extensions.refStorage` or similar can redirect
-   - May need gateway-based ref updates (like current push model)
-
-3. **Add gateway object sync:**
-   - After successful push, copy new objects from container volume to shared store
-   - This is documented in the ADR but not implemented
-
-### Option B: Gateway-Based Commits
-
-Route all commits through the gateway, similar to push:
-
-1. Container stages changes locally (git add works)
-2. Container sends commit request to gateway
-3. Gateway creates commit on host using container's staged changes
-4. Gateway returns commit SHA to container
-5. Container can then push normally
-
-**Pros:** Avoids complex git configuration, single source of truth
-**Cons:** More gateway code, slower commits, network dependency
-
-### Option C: Accept API-Based Workflow
-
-Document that containers should use GitHub API for commits:
-
-1. Stage changes locally (for review)
-2. Use `gh api repos/.../contents/...` to push file changes
-3. GitHub creates commits server-side
-
-**Pros:** Already working (used in PR #589)
-**Cons:** Slow, can't batch commits, loses local git history benefits
-
-## Recommendation
-
-**Short term:** Document Option C as current workaround
-**Medium term:** Implement Option B (gateway commits) for better UX
-**Long term:** Complete Option A if git configuration proves feasible
-
-## Test Cases Needed
-
-1. [ ] Local commit with proper git config (Option A)
-2. [ ] Gateway commit endpoint (Option B)
-3. [ ] Object visibility after gateway sync
-4. [ ] Concurrent commits from multiple containers
-5. [ ] Push after local commit
-6. [ ] Host git commands work after container exit (no path leakage)
+### Integration Tests
+- [ ] Full workflow: edit -> add -> commit -> push
+- [ ] Concurrent commits from multiple containers
+- [ ] Commit visibility across containers
 
 ## References
 
 - ADR: `docs/adr/implemented/ADR-Container-Worktree-Isolation.md`
-- PR #571: Container Worktree Isolation ADR
-- PR #588: Dockerignore fix (symptom of #571)
+- PR #571: Container Worktree Isolation ADR (merged)
+- PR #588: Dockerignore fix (merged)
 - PR #589: Example of API workaround
 
 ---
