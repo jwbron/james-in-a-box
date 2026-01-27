@@ -369,9 +369,7 @@ class TestParseGhApiArgs:
 
     def test_method_flag_short_equals_format(self):
         """Short method flag with = format is parsed correctly."""
-        path, method = github_client.parse_gh_api_args(
-            ["-X=POST", "repos/owner/repo/issues"]
-        )
+        path, method = github_client.parse_gh_api_args(["-X=POST", "repos/owner/repo/issues"])
         assert path == "repos/owner/repo/issues"
         assert method == "POST"
 
@@ -456,14 +454,12 @@ class TestParseGhApiArgs:
 
     def test_method_case_insensitive(self):
         """Method value is uppercased."""
-        path, method = github_client.parse_gh_api_args(["-X", "patch", "repos/owner/repo"])
+        _path, method = github_client.parse_gh_api_args(["-X", "patch", "repos/owner/repo"])
         assert method == "PATCH"
 
     def test_unknown_flags_skipped(self):
         """Unknown flags are skipped (defensive behavior)."""
-        path, method = github_client.parse_gh_api_args(
-            ["--unknown-flag", "repos/owner/repo/pulls"]
-        )
+        path, method = github_client.parse_gh_api_args(["--unknown-flag", "repos/owner/repo/pulls"])
         assert path == "repos/owner/repo/pulls"
         assert method == "GET"
 

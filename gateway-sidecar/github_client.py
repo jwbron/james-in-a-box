@@ -239,7 +239,7 @@ def parse_gh_api_args(args: list[str]) -> tuple[str | None, str]:
         # Check for combined flag=value format (e.g., --method=PATCH, -f=key=value)
         if "=" in arg and arg.startswith("-"):
             # Handle method specially
-            if arg.startswith("-X=") or arg.startswith("--method="):
+            if arg.startswith(("-X=", "--method=")):
                 method = arg.split("=", 1)[1].upper()
             i += 1
             continue
