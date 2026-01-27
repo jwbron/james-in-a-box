@@ -2,14 +2,16 @@
 
 ## Overview
 
-The `jib-container/jib` script has grown to 2936 lines and needs to be split into logical modules for maintainability. This plan breaks it into a package structure while preserving all functionality.
+The `jib-container/jib` script has grown to ~2850 lines and needs to be split into logical modules for maintainability. This plan breaks it into a package structure while preserving all functionality.
+
+**Note**: Line numbers in this document are approximate. PRs #576 and #577 removed multi-provider LLM support and migration scripts, reducing the script from 2936 to ~2846 lines. Line references may shift as the codebase evolves.
 
 ## Current State
 
 The jib script is a single monolithic Python file containing:
-- 2936 lines of code
-- 12+ distinct functional areas
-- Multiple classes and ~60 functions
+- ~2850 lines of code
+- 10+ distinct functional areas
+- Multiple classes and ~55 functions
 - Mixed concerns (config, auth, docker, git, runtime)
 
 ## Target Structure
@@ -22,7 +24,7 @@ jib-container/
     ├── cli.py                   # Argument parsing, main() (~150 lines)
     ├── config.py                # Config, Colors, constants (~100 lines)
     ├── output.py                # info/success/warn/error (~50 lines)
-    ├── auth.py                  # API keys, GitHub tokens (~260 lines)
+    ├── auth.py                  # API keys, GitHub tokens (~200 lines)
     ├── docker.py                # Image building, hash caching (~400 lines)
     ├── gateway.py               # Gateway sidecar management (~170 lines)
     ├── container_logging.py     # Log persistence, correlation (~280 lines)
@@ -87,16 +89,15 @@ Using `logging.py` would shadow Python's stdlib `logging` module, requiring care
 
 ### 5. `jib_lib/auth.py`
 **Purpose**: Authentication and API key management
-**Contents** (from lines 166-523):
+**Contents** (from lines ~166-460):
 - `get_anthropic_api_key()`
-- `get_google_api_key()`
-- `get_openai_api_key()`
-- `get_llm_provider()`
 - `get_anthropic_auth_method()`
 - `get_github_token()`
 - `get_github_readonly_token()`
 - `get_github_app_token()`
 - `write_github_token_file()`
+
+**Note**: Multi-provider functions (`get_google_api_key()`, `get_openai_api_key()`, `get_llm_provider()`) were removed in PR #576 as part of removing Claude Code Router and Gemini CLI support.
 
 **Dependencies**: `config.Config`, `output.warn`
 **Exports**: All auth functions
