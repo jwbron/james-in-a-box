@@ -360,6 +360,30 @@ class TestWorktreeSetup:
         gitdir_content = (admin_dir / "gitdir").read_text().strip()
         assert gitdir_content == "/home/jib/repos/test-repo"
 
+    def test_commondir_backup_created(self, container_env):
+        """Test that commondir.host-backup is created on setup."""
+        import entrypoint
+
+        admin_dir = container_env["admin_dir"]
+        original_commondir = (admin_dir / "commondir").read_text()
+
+        config = MagicMock()
+        config.repos_dir = container_env["repos_dir"]
+        config.git_admin_dir = container_env["git_admin_dir"]
+        config.git_common_dir = container_env["git_common_dir"]
+        config.git_main_dir = container_env["tmp_path"] / ".git-main"
+        config.runtime_uid = os.getuid()
+        config.runtime_gid = os.getgid()
+
+        logger = MagicMock()
+
+        with patch.object(entrypoint, "run_cmd_with_retry"):
+            result = entrypoint.setup_worktrees(config, logger)
+
+        assert result is True
+        assert (admin_dir / "commondir.host-backup").exists()
+        assert (admin_dir / "commondir.host-backup").read_text() == original_commondir
+
     def test_commondir_set_to_git_common(self, container_env):
         """Test that commondir is set to .git-common/{repo}."""
         import entrypoint
@@ -442,11 +466,13 @@ class TestCleanupOnExit:
         git_admin_dir = tmp_path / ".git-admin"
         git_admin_dir.mkdir()
 
-        # Create repo admin dir with backup
+        # Create repo admin dir with backups for both gitdir and commondir
         repo_admin = git_admin_dir / "test-repo"
         repo_admin.mkdir()
         (repo_admin / "gitdir").write_text("/home/jib/repos/test-repo\n")
         (repo_admin / "gitdir.host-backup").write_text("/host/original/path\n")
+        (repo_admin / "commondir").write_text("/home/jib/.git-common/test-repo\n")
+        (repo_admin / "commondir.host-backup").write_text("/host/original/.git\n")
 
         return {
             "tmp_path": tmp_path,
@@ -472,7 +498,7 @@ class TestCleanupOnExit:
         assert (repo_admin / "gitdir").read_text() == "/host/original/path\n"
 
     def test_backup_removed_after_restore(self, cleanup_env):
-        """Test that backup file is removed after successful restore."""
+        """Test that backup files are removed after successful restore."""
         import entrypoint
 
         repo_admin = cleanup_env["repo_admin"]
@@ -487,6 +513,24 @@ class TestCleanupOnExit:
         entrypoint.cleanup_on_exit(config, logger)
 
         assert not (repo_admin / "gitdir.host-backup").exists()
+        assert not (repo_admin / "commondir.host-backup").exists()
+
+    def test_commondir_restored_from_backup(self, cleanup_env):
+        """Test that commondir is restored from backup on cleanup."""
+        import entrypoint
+
+        repo_admin = cleanup_env["repo_admin"]
+
+        config = MagicMock()
+        config.git_admin_dir = cleanup_env["git_admin_dir"]
+        config.git_main_dir = cleanup_env["tmp_path"] / ".git-main"
+        config.quiet = True
+
+        logger = MagicMock()
+
+        entrypoint.cleanup_on_exit(config, logger)
+
+        assert (repo_admin / "commondir").read_text() == "/host/original/.git\n"
 
     def test_multiple_repos_cleaned(self, cleanup_env):
         """Test that multiple repos are cleaned up."""
@@ -494,11 +538,13 @@ class TestCleanupOnExit:
 
         git_admin_dir = cleanup_env["git_admin_dir"]
 
-        # Add second repo
+        # Add second repo with both gitdir and commondir backups
         repo2_admin = git_admin_dir / "repo-2"
         repo2_admin.mkdir()
         (repo2_admin / "gitdir").write_text("/home/jib/repos/repo-2\n")
         (repo2_admin / "gitdir.host-backup").write_text("/host/original/repo2\n")
+        (repo2_admin / "commondir").write_text("/home/jib/.git-common/repo-2\n")
+        (repo2_admin / "commondir.host-backup").write_text("/host/original/repo2/.git\n")
 
         config = MagicMock()
         config.git_admin_dir = git_admin_dir
@@ -509,13 +555,17 @@ class TestCleanupOnExit:
 
         entrypoint.cleanup_on_exit(config, logger)
 
-        # Both repos should be restored
+        # Both repos should have gitdir and commondir restored
         assert (cleanup_env["repo_admin"] / "gitdir").read_text() == "/host/original/path\n"
+        assert (cleanup_env["repo_admin"] / "commondir").read_text() == "/host/original/.git\n"
         assert (repo2_admin / "gitdir").read_text() == "/host/original/repo2\n"
+        assert (repo2_admin / "commondir").read_text() == "/host/original/repo2/.git\n"
 
-        # Both backups should be removed
+        # All backups should be removed
         assert not (cleanup_env["repo_admin"] / "gitdir.host-backup").exists()
+        assert not (cleanup_env["repo_admin"] / "commondir.host-backup").exists()
         assert not (repo2_admin / "gitdir.host-backup").exists()
+        assert not (repo2_admin / "commondir.host-backup").exists()
 
     def test_no_error_without_backup(self, cleanup_env):
         """Test that cleanup doesn't error if no backup exists."""
@@ -523,8 +573,9 @@ class TestCleanupOnExit:
 
         repo_admin = cleanup_env["repo_admin"]
 
-        # Remove backup
+        # Remove backups
         (repo_admin / "gitdir.host-backup").unlink()
+        (repo_admin / "commondir.host-backup").unlink()
 
         config = MagicMock()
         config.git_admin_dir = cleanup_env["git_admin_dir"]
@@ -536,8 +587,9 @@ class TestCleanupOnExit:
         # Should not raise
         entrypoint.cleanup_on_exit(config, logger)
 
-        # gitdir should be unchanged
+        # Files should be unchanged (no backup to restore from)
         assert (repo_admin / "gitdir").read_text() == "/home/jib/repos/test-repo\n"
+        assert (repo_admin / "commondir").read_text() == "/home/jib/.git-common/test-repo\n"
 
 
 class TestCleanupScript:
@@ -584,12 +636,14 @@ class TestCleanupScript:
         assert (git_dir / "gitdir").read_text() == "/container/path\n"
 
     def test_script_restores_backup(self, script_path, tmp_path, monkeypatch):
-        """Test that script restores gitdir from backup."""
+        """Test that script restores gitdir and commondir from backups."""
         # Create mock git directory structure
         git_dir = tmp_path / ".git" / "test-repo" / "worktrees" / "test-worktree"
         git_dir.mkdir(parents=True)
         (git_dir / "gitdir").write_text("/container/path\n")
         (git_dir / "gitdir.host-backup").write_text("/host/original/path\n")
+        (git_dir / "commondir").write_text("/home/jib/.git-common/test-repo\n")
+        (git_dir / "commondir.host-backup").write_text("../..\n")
 
         monkeypatch.setenv("HOME", str(tmp_path))
 
@@ -604,8 +658,12 @@ class TestCleanupScript:
         # gitdir should be restored
         assert (git_dir / "gitdir").read_text() == "/host/original/path\n"
 
-        # Backup should be removed
+        # commondir should be restored
+        assert (git_dir / "commondir").read_text() == "../..\n"
+
+        # Backups should be removed
         assert not (git_dir / "gitdir.host-backup").exists()
+        assert not (git_dir / "commondir.host-backup").exists()
 
     def test_script_no_backups(self, script_path, tmp_path, monkeypatch):
         """Test that script handles no backups gracefully."""

@@ -625,10 +625,19 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
             gitdir_file.write_text(f"/home/jib/repos/{repo_name}\n")
             os.chown(gitdir_file, config.runtime_uid, config.runtime_gid)
 
-            # Configure commondir to point to shared git directory
+            # Backup and rewrite commondir file for container-internal paths
+            # This prevents container paths from leaking to host metadata
+            commondir_file = target_path / "commondir"
+            commondir_backup = target_path / "commondir.host-backup"
+
+            if commondir_file.exists() and not commondir_backup.exists():
+                # Backup original host path (only if not already backed up)
+                shutil.copy2(commondir_file, commondir_backup)
+                os.chown(commondir_backup, config.runtime_uid, config.runtime_gid)
+
+            # Write container-internal path pointing to mounted git components
             # All shared git components (objects, refs, packed-refs, config, hooks)
             # are mounted under .git-common/{repo_name}/
-            commondir_file = target_path / "commondir"
             common_git_path = config.git_common_dir / repo_name
             commondir_file.write_text(f"{common_git_path}\n")
             os.chown(commondir_file, config.runtime_uid, config.runtime_gid)
@@ -1044,11 +1053,13 @@ def cleanup_on_exit(config: Config, logger: Logger) -> None:
         print("")
         print("Cleaning up on container exit...")
 
-    # Restore gitdir files from backups (prevent container paths from leaking to host)
+    # Restore gitdir and commondir files from backups (prevent container paths from leaking to host)
     if config.git_admin_dir.exists():
         for admin_dir in config.git_admin_dir.iterdir():
             if not admin_dir.is_dir():
                 continue
+
+            # Restore gitdir
             gitdir_backup = admin_dir / "gitdir.host-backup"
             gitdir_file = admin_dir / "gitdir"
             if gitdir_backup.exists():
@@ -1059,6 +1070,18 @@ def cleanup_on_exit(config: Config, logger: Logger) -> None:
                         print(f"  Restored gitdir for {admin_dir.name}")
                 except Exception as e:
                     print(f"WARNING: Failed to restore gitdir for {admin_dir.name}: {e}")
+
+            # Restore commondir
+            commondir_backup = admin_dir / "commondir.host-backup"
+            commondir_file = admin_dir / "commondir"
+            if commondir_backup.exists():
+                try:
+                    shutil.copy2(commondir_backup, commondir_file)
+                    commondir_backup.unlink()
+                    if not config.quiet:
+                        print(f"  Restored commondir for {admin_dir.name}")
+                except Exception as e:
+                    print(f"WARNING: Failed to restore commondir for {admin_dir.name}: {e}")
 
     # Check and clean git remote URLs
     if config.git_main_dir.exists():
