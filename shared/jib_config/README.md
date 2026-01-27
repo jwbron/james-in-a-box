@@ -98,6 +98,20 @@ Each config loads from multiple sources in priority order:
 3. **`~/.config/jib/config.yaml`** (for other settings)
 4. **Default values** (lowest priority)
 
+## Validation Script
+
+Validate your configuration after setup or when troubleshooting:
+
+```bash
+# Validate config files load correctly
+./scripts/validate-config.py
+
+# Also test API connectivity (Slack, GitHub, JIRA, Confluence)
+./scripts/validate-config.py --health
+```
+
+This script is automatically run after `setup.py` completes to verify secrets are valid.
+
 ## Health Checks
 
 Each config has a `health_check()` method that tests actual API connectivity:
