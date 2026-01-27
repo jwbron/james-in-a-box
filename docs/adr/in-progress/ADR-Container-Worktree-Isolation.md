@@ -13,10 +13,8 @@
 - [Problem Statement](#problem-statement)
 - [Decision](#decision)
 - [High-Level Design](#high-level-design)
-  - [Option A: Per-Container Git Directory Isolation](#option-a-per-container-git-directory-isolation)
-  - [Option B: Read-Only Mounts with Gateway-Only Writes](#option-b-read-only-mounts-with-gateway-only-writes)
-  - [Option C: UID Namespace Isolation](#option-c-uid-namespace-isolation)
 - [Recommended Approach](#recommended-approach)
+- [Test Results](#test-results)
 - [Implementation Plan](#implementation-plan)
 - [Consequences](#consequences)
 - [Alternatives Considered](#alternatives-considered)
@@ -34,16 +32,13 @@ Currently, git worktrees are used to give each container an isolated branch whil
 
 ```
 Host Machine
-├── ~/.git-main/                    # Shared git directories
+├── ~/.git-main/                    # Shared git directories (or ~/repos/repo/.git)
 │   └── james-in-a-box/
 │       ├── objects/                # Shared object database
 │       ├── refs/                   # Branch references
 │       └── worktrees/              # Worktree admin directories
-│           ├── james-in-a-box/     # Container 1's admin dir
-│           └── james-in-a-box2/    # Container 2's admin dir
-│
-├── ~/repos/james-in-a-box/         # Host's working copy
-│   └── .git → ~/.git-main/.../worktrees/james-in-a-box
+│           ├── jib-container-1/    # Container 1's admin dir
+│           └── jib-container-2/    # Container 2's admin dir
 │
 └── ~/.jib-worktrees/               # Container worktrees
     ├── jib-20260127-001/james-in-a-box/
@@ -52,7 +47,7 @@ Host Machine
 
 ### The Incident
 
-During a PR review session, Container A had a broken `.git` file pointing to a non-existent worktree admin directory (`james-in-a-box2`). When attempting to fix this, the agent modified the `.git` file to point to Container B's worktree admin directory (`james-in-a-box`).
+During a PR review session, Container A had a broken `.git` file pointing to a non-existent worktree admin directory. When attempting to fix this, the agent modified the `.git` file to point to Container B's worktree admin directory.
 
 This caused Container A to:
 - Operate on Container B's branch
@@ -62,11 +57,11 @@ This caused Container A to:
 ### Current Access Model
 
 Each container currently has read-write access to:
-- `/home/jib/repos/` - Repository working copies
-- `/home/jib/.git-main/` - Full git directory structure including ALL worktrees
+- `/home/jib/repos/` - Repository working copies (worktrees)
+- `/home/jib/.git-main/` - **Full git directory structure including ALL worktree admin directories**
 - `/home/jib/.jib-worktrees/` - All container worktree directories
 
-**The core issue:** Containers can access and modify other containers' git state.
+**The core issue:** Containers can access and modify other containers' git state because the entire `.git` directory (including all worktree admin dirs) is mounted to each container.
 
 ## Problem Statement
 
@@ -78,231 +73,177 @@ Multiple jib container instances share access to `~/.git-main/` which contains w
 
 ## Decision
 
-Implement **Option A: Per-Container Git Directory Isolation** as the primary solution, with elements of Option B for defense-in-depth.
+Implement **Mount-Restriction Isolation** - a simpler approach that preserves the existing worktree architecture but restricts what each container can see.
 
 ## High-Level Design
 
-### Option A: Per-Container Git Directory Isolation
+### Original Option A: Per-Container Git Directory Isolation (Rejected)
 
-Create a separate, complete git directory for each container that shares objects via alternates but has isolated refs and worktree state.
+The original proposal created separate, complete git directories for each container with shared objects via alternates. This was rejected because:
 
-```
-Host Machine (After Implementation)
-├── ~/.git-main/james-in-a-box/           # Master repository
-│   ├── objects/                          # Authoritative object store
-│   ├── refs/                             # Master refs
-│   └── (no worktrees/ directory)
-│
-├── ~/.jib-containers/
-│   ├── jib-20260127-001/
-│   │   └── git/james-in-a-box/           # Container 1's isolated .git
-│   │       ├── objects/info/alternates   # Points to master objects
-│   │       ├── refs/                     # Container 1's refs only
-│   │       └── HEAD                      # Container 1's HEAD
-│   │
-│   └── jib-20260127-002/
-│       └── git/james-in-a-box/           # Container 2's isolated .git
-│           ├── objects/info/alternates   # Points to master objects
-│           ├── refs/                     # Container 2's refs only
-│           └── HEAD                      # Container 2's HEAD
-```
+1. **Working copy inconsistency**: The ADR showed shared `~/repos/` mount but worktrees use isolated directories
+2. **`.git.{container_id}` naming bug**: Git only recognizes `.git`, not custom variants
+3. **Object sync complexity**: Requires non-trivial sync between container and master objects
+4. **Unnecessary complexity**: The simpler mount-restriction approach achieves the same isolation
 
-**Container Mount Strategy:**
+### Adopted Approach: Mount-Restriction Isolation
+
+Instead of creating new per-container git directories, restrict what the existing `.git` directory mounts to each container:
+
+**Current (Problematic):**
 ```bash
-# Container 1 only sees its own git directory
--v ~/.jib-containers/jib-001/git:/home/jib/.git-isolated:rw
--v ~/.git-main/james-in-a-box/objects:/home/jib/.git-objects:ro  # Shared objects (read-only)
--v ~/repos/james-in-a-box:/home/jib/repos/james-in-a-box:rw
+# Mounts ENTIRE .git directory - all containers see all worktree admin dirs
+-v ~/.git/repo:/home/jib/.git-main/repo:rw
+```
 
-# .git file in repo points to isolated directory
-echo "gitdir: /home/jib/.git-isolated/james-in-a-box" > .git
+**Proposed (Isolated):**
+```bash
+# Container 1 only sees its own worktree admin dir
+-v ~/.jib-worktrees/container-1/repo:/home/jib/repos/repo:rw          # Worktree working dir
+-v ~/.git/repo/worktrees/container-1:/home/jib/.git-admin/repo:rw     # ONLY this container's admin
+-v ~/.git/repo/objects:/home/jib/.git-objects/repo:ro                  # Shared objects (read-only)
+-v ~/.git/repo/refs:/home/jib/.git-refs/repo:ro                        # Shared refs (read-only)
 ```
 
 **Advantages:**
-- Complete isolation of git state between containers
-- Shared object database reduces disk usage
-- Read-only object mount prevents object corruption
-- No worktree admin directory confusion
-
-**Disadvantages:**
-- More complex setup during container creation
-- Need to sync refs from master when container starts
-- Slightly more disk usage for per-container refs
-
-### Option B: Read-Only Mounts with Gateway-Only Writes
-
-Make repository mounts read-only and route ALL git write operations through the gateway.
-
-```bash
-# Repository is read-only
--v ~/repos/james-in-a-box:/home/jib/repos/james-in-a-box:ro
-
-# Gateway handles all writes via API
-POST /api/v1/git/stage    # Stage files
-POST /api/v1/git/commit   # Create commits
-POST /api/v1/git/push     # Push to remote
-```
-
-**Advantages:**
-- Simpler mount structure
-- All writes go through auditable gateway
-- Easy to implement container-specific restrictions
-
-**Disadvantages:**
-- Significant gateway complexity increase
-- Performance overhead for every git operation
-- Need to handle all git commands (hundreds of subcommands)
-- User experience impact (git commands become API calls)
-
-### Option C: UID Namespace Isolation
-
-Use different UIDs per container with filesystem permissions.
-
-```bash
-# Container 1 runs as UID 10001
-# Container 2 runs as UID 10002
-
-# Each container's git directory owned by its UID
-chown -R 10001 ~/.jib-containers/jib-001/
-chown -R 10002 ~/.jib-containers/jib-002/
-```
-
-**Advantages:**
-- Kernel-enforced isolation
-- No changes to git workflow
-
-**Disadvantages:**
-- Complex UID management
-- Docker rootless mode complications
-- Shared object store permissions become complex
+- Preserves existing worktree architecture
+- Zero new directory structures
+- Zero object sync mechanisms
+- Simpler implementation
+- Each container can only see its own worktree admin directory
 
 ## Recommended Approach
 
-Implement **Option A** with the following modifications:
-
-1. **Per-container git directories** with shared objects via alternates
-2. **Read-only `.git` file** in the working copy (container cannot modify the gitdir pointer)
-3. **Container-specific mount** of only that container's git directory
-
 ### Mount Structure
 
-```bash
-docker run \
-  # Working copy - container can edit files
-  -v ~/repos/james-in-a-box:/home/jib/repos/james-in-a-box:rw \
+For each repository, mount:
 
-  # Container's isolated git directory
-  -v ~/.jib-containers/${CONTAINER_ID}/git/james-in-a-box:/home/jib/.git-container/james-in-a-box:rw \
+1. **Worktree working directory** (rw) - Container's isolated working copy
+2. **Worktree admin directory ONLY** (rw) - Just this container's admin dir, not all worktrees
+3. **Shared objects** (ro) - Read-only access to object database
+4. **Shared refs** (ro) - Read-only access to branch references
+5. **Essential config files** - Copy of git config
 
-  # Shared objects (read-only to prevent corruption)
-  -v ~/.git-main/james-in-a-box/objects:/home/jib/.git-shared-objects/james-in-a-box:ro \
+### Container `.git` File Update
 
-  # NO mount of ~/.git-main/ or other containers' directories
+Each container's worktree `.git` file must be updated to point to the container's mount path:
+
+```
+gitdir: /home/jib/.git-admin/repo
 ```
 
-### Initialization Flow
+This is done during container initialization.
 
-```python
-def create_container_git(container_id: str, repo: str):
-    """Create isolated git directory for container."""
+## Test Results
 
-    container_git = f"~/.jib-containers/{container_id}/git/{repo}"
-    master_git = f"~/.git-main/{repo}"
+The mount-restriction approach was tested on 2026-01-26 with positive results.
 
-    # 1. Create container's git directory structure
-    os.makedirs(f"{container_git}/objects/info")
-    os.makedirs(f"{container_git}/refs/heads")
-    os.makedirs(f"{container_git}/refs/remotes/origin")
+### Test 1: Basic Git Operations
 
-    # 2. Set up alternates to share objects
-    with open(f"{container_git}/objects/info/alternates", "w") as f:
-        f.write(f"{master_git}/objects\n")
+Created a simulated container view with restricted mounts. All git operations worked correctly:
 
-    # 3. Copy essential config
-    shutil.copy(f"{master_git}/config", container_git)
+```
+Test directory: /tmp/git-isolation-test-*
+✓ Created main repo
+✓ Created worktree
+✓ Created container-view mount structure
+✓ Updated .git file to point to restricted mount
 
-    # 4. Fetch latest refs from remote
-    run(f"git --git-dir={container_git} fetch origin main")
-
-    # 5. Create container's working branch
-    branch = f"jib-temp-{container_id}"
-    run(f"git --git-dir={container_git} branch {branch} origin/main")
-    run(f"git --git-dir={container_git} symbolic-ref HEAD refs/heads/{branch}")
-
-    # 6. Create .git file in working copy (will be read-only in container)
-    with open(f"~/repos/{repo}/.git.{container_id}", "w") as f:
-        f.write(f"gitdir: /home/jib/.git-container/{repo}\n")
+=== Testing git operations in container-view ===
+✓ git status works
+✓ git log works
+✓ git add works (staging)
+✓ git commit works
+✓ Commit visible in main repo
 ```
 
-### Gateway Sidecar Changes
+### Test 2: Cross-Container Isolation
 
-The gateway already handles git push operations. Additional changes:
+Created two simulated containers with separate restricted views:
 
-1. **Validate container identity**: Ensure push requests only affect the requesting container's branches
-2. **Object sync**: When container pushes, sync new objects to master repository
-3. **Ref sync**: Update master refs when container creates commits that should be visible
+```
+=== Test 1: Both containers can work independently ===
+✓ Container A committed
+✓ Container B committed
+
+=== Test 2: Commits visible from main repo ===
+✓ Container A's commit visible
+✓ Container B's commit visible
+
+=== Test 3: Cross-container isolation ===
+  Container A sees worktree admins: ['myrepo']      # ONLY its own
+  Container B sees worktree admins: ['myrepo1']     # ONLY its own
+✓ Container A can ONLY see its own admin dir
+✓ Container B can ONLY see its own admin dir
+
+Summary:
+- Each container can only see its own worktree admin directory
+- Objects and refs are shared (commits visible across containers)
+- Container A cannot access Container B's git state
+```
+
+### Key Findings
+
+1. **Git path resolution works**: Git correctly resolves the `.git` file to the restructured mount paths
+2. **Objects remain shared**: The alternates mechanism works - commits from one container are visible to others
+3. **Isolation is effective**: Each container only sees its own worktree admin directory
+4. **No new mechanisms needed**: The existing worktree architecture is preserved
 
 ## Implementation Plan
 
-### Phase 1: Infrastructure (PR 1)
-- [ ] Create `~/.jib-containers/` directory structure
-- [ ] Implement `create_container_git()` function in jib launcher
-- [ ] Update mount configuration in `jib` script
-- [ ] Add cleanup of container git directories on exit
+### Phase 1: Update Mount Configuration
+- [ ] Modify `runtime.py` to mount individual git components instead of entire `.git` directory
+- [ ] Mount only the container's specific worktree admin dir
+- [ ] Mount shared objects read-only
+- [ ] Mount shared refs read-only
+- [ ] Copy essential config files
 
-### Phase 2: Gateway Integration (PR 2)
-- [ ] Update gateway to sync objects from container git to master
-- [ ] Add container identity validation to push endpoint
-- [ ] Implement ref sync for pushed branches
+### Phase 2: Container Initialization
+- [ ] Update worktree `.git` file to point to container mount paths during initialization
+- [ ] Ensure `commondir` resolution works with new paths
 
-### Phase 3: Migration (PR 3)
-- [ ] Migrate existing worktree-based setup to new model
-- [ ] Update worktree-watcher to clean up new directory structure
-- [ ] Add migration script for existing containers
-
-### Phase 4: Validation (PR 4)
+### Phase 3: Testing
 - [ ] Add integration tests for container isolation
 - [ ] Test concurrent container operations
-- [ ] Test recovery from container crashes
+- [ ] Test cleanup still works correctly
 
 ## Consequences
 
 ### Positive
 - **Complete isolation**: Containers cannot access each other's git state
+- **Simple implementation**: Uses existing architecture with restricted mounts
+- **No object sync needed**: Shared object store continues to work
 - **Reduced accident risk**: No way to accidentally hijack another container's worktree
-- **Security improvement**: Prompt injection cannot affect other containers' git state
-- **Cleaner architecture**: No more worktree admin directory confusion
 
 ### Negative
-- **Increased complexity**: More moving parts in container setup
-- **Disk usage**: Small increase for per-container refs (negligible)
-- **Object sync overhead**: Gateway needs to sync objects between container and master
+- **More mount points**: Each repo needs 4-5 mounts instead of 2
+- **Path translation**: Container paths differ from host paths (already the case)
 
 ### Neutral
 - **Existing workflow preserved**: Git commands work the same from user perspective
-- **Gateway role expanded**: Gateway becomes more central to git operations
+- **Worktree cleanup unchanged**: Existing cleanup mechanisms still work
 
 ## Alternatives Considered
 
-### 1. Behavioral Controls Only
+### 1. Per-Container Git Directories (Original Option A)
+Create complete isolated git directories per container with alternates.
+
+**Rejected:** Unnecessarily complex. Mount-restriction achieves the same isolation with less code.
+
+### 2. Behavioral Controls Only
 Rely on CLAUDE.md instructions to tell agents not to modify other containers' files.
 
-**Rejected:** Not enforceable. The incident that prompted this ADR happened despite clear instructions.
+**Rejected:** Not enforceable. The incident that prompted this ADR happened despite instructions.
 
-### 2. Chroot/Jail per Container
-Use Linux namespaces to create completely isolated filesystem views.
+### 3. Read-Only Repository Mounts
+Make all repo mounts read-only and route writes through gateway.
 
-**Rejected:** Overly complex for this use case. Would require significant Docker configuration changes.
-
-### 3. Separate Clones per Container
-Give each container its own complete git clone.
-
-**Rejected:** Excessive disk usage. A full clone of james-in-a-box is ~500MB. With 10 concurrent containers, that's 5GB.
+**Rejected:** Significant gateway complexity. Performance overhead for every git operation.
 
 ### 4. Keep Current Architecture with Monitoring
 Add monitoring to detect cross-container access and alert.
 
-**Rejected:** Detection after the fact doesn't prevent the problem. Data loss or corruption may have already occurred.
+**Rejected:** Detection after the fact doesn't prevent data loss or corruption.
 
 ---
 
