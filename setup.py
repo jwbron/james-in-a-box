@@ -2110,6 +2110,49 @@ class MinimalSetup:
 
         return user_id if user_id else ""
 
+    def prompt_anthropic_auth(self) -> str:
+        """Prompt for Anthropic authentication method.
+
+        Returns:
+            'api_key' or 'oauth'
+        """
+        existing = self.existing_config.get("anthropic_auth_method", "api_key")
+
+        self.logger.header("Anthropic Authentication")
+        self.logger.info("Choose how to authenticate with Claude/Anthropic:")
+        self.logger.info("  1. API Key - Use ANTHROPIC_API_KEY environment variable")
+        self.logger.info("  2. OAuth - Use Claude Max/Pro subscription (browser login)")
+        self.logger.info("")
+
+        # In update mode, show existing and allow modification
+        if self.update_mode:
+            choice = self.prompter.prompt(
+                "Auth method (api_key/oauth)",
+                default=existing,
+                validator=lambda v: None
+                if v.lower() in ("api_key", "oauth")
+                else ValueError("Must be 'api_key' or 'oauth'"),
+            )
+            return choice.lower() if choice else existing
+
+        # Check if API key is already set
+        has_api_key = bool(self.existing_secrets.get("ANTHROPIC_API_KEY"))
+        if has_api_key:
+            self.logger.success("Anthropic API key found in secrets")
+            if not self.prompter.prompt_yes_no("Use API key authentication?", default=True):
+                return "oauth"
+            return "api_key"
+
+        # No API key - offer choice
+        choice = self.prompter.prompt(
+            "Auth method (api_key/oauth)",
+            default="oauth",
+            validator=lambda v: None
+            if v.lower() in ("api_key", "oauth")
+            else ValueError("Must be 'api_key' or 'oauth'"),
+        )
+        return choice.lower() if choice else "oauth"
+
     def run(self) -> bool:
         """Run the minimal setup flow.
 
@@ -2171,6 +2214,9 @@ class MinimalSetup:
             # 9. Local repositories (for volume mounts)
             local_repos = self.prompt_local_repos()
 
+            # 10. Anthropic authentication method
+            anthropic_auth_method = self.prompt_anthropic_auth()
+
             # Save configuration
             self.logger.header("Saving Configuration")
 
@@ -2189,6 +2235,8 @@ class MinimalSetup:
             config = {
                 "bot_name": bot_name,
                 "github_username": github_username,
+                # Anthropic auth method: 'api_key' or 'oauth'
+                "anthropic_auth_method": anthropic_auth_method,
                 # New nested slack section for SlackConfig.from_env()
                 "slack": {
                     "channel": slack_channel,

@@ -244,6 +244,34 @@ def get_llm_provider() -> str:
     return "anthropic"
 
 
+def get_anthropic_auth_method() -> str:
+    """
+    Get the Anthropic authentication method from environment or config file.
+
+    Returns:
+        Auth method: 'api_key' (default) or 'oauth'
+    """
+    # Check environment variable first
+    method = os.environ.get("ANTHROPIC_AUTH_METHOD", "").lower()
+    if method in ("api_key", "oauth"):
+        return method
+
+    # Check config.yaml
+    config_file = Config.USER_CONFIG_DIR / "config.yaml"
+    if config_file.exists():
+        try:
+            with open(config_file) as f:
+                config = yaml.safe_load(f) or {}
+                method = config.get("anthropic_auth_method", "").lower()
+                if method in ("api_key", "oauth"):
+                    return method
+        except Exception:
+            pass
+
+    # Default to api_key
+    return "api_key"
+
+
 class Config:
     """Configuration paths and constants"""
     # Cache directory for Docker staging (XDG-compliant)
@@ -2420,7 +2448,11 @@ def run_claude() -> bool:
     # Add LLM provider preference and API keys
     llm_provider = get_llm_provider()
     cmd.extend(["-e", f"LLM_PROVIDER={llm_provider}"])
-    
+
+    # Add Anthropic auth method (api_key or oauth)
+    anthropic_auth_method = get_anthropic_auth_method()
+    cmd.extend(["-e", f"ANTHROPIC_AUTH_METHOD={anthropic_auth_method}"])
+
     # Add provider-specific API keys
     google_api_key = get_google_api_key()
     openai_api_key = get_openai_api_key()
@@ -2672,6 +2704,10 @@ def exec_in_new_container(
     # Add LLM provider preference and API keys
     llm_provider = get_llm_provider()
     cmd.extend(["-e", f"LLM_PROVIDER={llm_provider}"])
+
+    # Add Anthropic auth method (api_key or oauth)
+    anthropic_auth_method = get_anthropic_auth_method()
+    cmd.extend(["-e", f"ANTHROPIC_AUTH_METHOD={anthropic_auth_method}"])
 
     # Add provider-specific API keys
     # Google and OpenAI keys are always passed (may be needed for other purposes)
