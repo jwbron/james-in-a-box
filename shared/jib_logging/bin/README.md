@@ -5,9 +5,11 @@ Drop-in replacements for common CLI tools that add automatic logging.
 ## Available Commands
 
 - `jib-bd` - Wraps the beads (bd) task tracking CLI
-- `jib-git` - Wraps git operations
-- `jib-gh` - Wraps the GitHub CLI (gh)
 - `jib-claude` - Wraps Claude Code CLI
+
+**Note:** `jib-git` and `jib-gh` wrappers were removed. The gateway sidecar provides
+purpose-built `git_client.py` and `github_client.py` modules with security-specific
+validation (path traversal prevention, argument allowlists, credential management).
 
 ## Usage
 
@@ -23,8 +25,6 @@ Then use the prefixed commands:
 
 ```bash
 jib-bd --allow-stale list
-jib-git status
-jib-gh pr list
 jib-claude -p "Hello"
 ```
 
@@ -36,8 +36,6 @@ symlinks that override the original commands:
 ```bash
 # In your .bashrc or container setup
 alias bd='jib-bd'
-alias git='jib-git'
-alias gh='jib-gh'
 alias claude='jib-claude'
 ```
 
@@ -54,8 +52,6 @@ Create a bin directory earlier in PATH with symlinks:
 ```bash
 mkdir -p ~/.local/bin
 ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-bd ~/.local/bin/bd
-ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-git ~/.local/bin/git
-ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-gh ~/.local/bin/gh
 ln -sf ~/repos/james-in-a-box/shared/jib_logging/bin/jib-claude ~/.local/bin/claude
 ```
 

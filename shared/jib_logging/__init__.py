@@ -24,9 +24,9 @@ Usage:
     bound.info("Processing step 2")
 
     # Tool wrappers (Phase 2)
-    from jib_logging.wrappers import bd, git, gh
+    from jib_logging.wrappers import bd, claude
 
-    result = git.push("origin", "main")
+    result = bd.update("bd-abc123", status="done", notes="Completed")
     # Automatically logs with timing and context
 
     # Model output capture (Phase 3)
@@ -43,7 +43,7 @@ Features:
     - OpenTelemetry trace context propagation
     - Beads task ID correlation
     - File handler with rotation support
-    - Tool wrappers for bd, git, gh, claude (Phase 2)
+    - Tool wrappers for bd, claude (Phase 2)
     - Model output capture with token tracking (Phase 3)
 """
 
