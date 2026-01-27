@@ -25,7 +25,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "jib-container"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "jib-container" / "jib_lib"))
 
 
-@pytest.mark.skip(reason="Cannot import runtime module - has relative imports requiring package installation")
+@pytest.mark.skip(
+    reason="Cannot import runtime module - has relative imports requiring package installation"
+)
 class TestMountStructure:
     """Tests for _setup_git_isolation_mounts in runtime.py."""
 
