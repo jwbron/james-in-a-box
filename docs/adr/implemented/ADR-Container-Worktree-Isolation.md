@@ -168,12 +168,28 @@ For each repository, mount (all read-only except working directory):
 # Complete mount structure for a container
 -v ~/.jib-worktrees/${CONTAINER}/repo:/home/jib/repos/repo:rw           # Working dir (rw for editing)
 -v ~/.git/repo/worktrees/${WORKTREE}:/home/jib/.git-admin/repo:ro       # Worktree admin (ro)
+-v ~/.git/repo/worktrees/${WORKTREE}/index:/home/jib/.git-admin/repo/index:rw  # Index (rw for staging)
 -v ~/.git/repo/objects:/home/jib/.git-objects/repo:ro                    # Shared objects (ro)
 -v ~/.git/repo/refs:/home/jib/.git-refs/repo:ro                          # Shared refs (ro)
 -v ~/.git/repo:/home/jib/.git-common/repo:ro                             # Common dir (ro)
 ```
 
 **Note:** Local object storage volumes are no longer needed since commits are created on the host.
+
+### Staging (`git add`) with Read-Only Admin Mount
+
+**Issue:** The index file lives in the worktree admin directory (`/home/jib/.git-admin/repo/index`). With the admin mount read-only, `git add` will fail.
+
+**Solution:** Mount the index file separately as read-write:
+
+```bash
+# Index file mounted separately for staging
+-v ~/.git/repo/worktrees/${WORKTREE}/index:/home/jib/.git-admin/repo/index:rw
+```
+
+This allows `git add` to work locally while keeping the rest of the admin directory read-only. The gateway reads this index when creating commits.
+
+**Alternative considered:** Route `git add` through gateway. Rejected due to latency impact on staging operations (which are frequent during development).
 
 ### Container `.git` File Update
 
@@ -217,6 +233,9 @@ POST /api/v1/git/commit
 
 **Gateway Actions:**
 1. Validate request (policy check)
+   - Reject `repo` or `worktree` containing path traversal sequences (`../`, absolute paths)
+   - Verify worktree belongs to requesting container (via container ID mapping)
+   - Sanitize commit message (escape shell metacharacters)
 2. Navigate to container's worktree on host
 3. Stage changes (git add) based on container's index
 4. Create commit with provided message
@@ -243,6 +262,22 @@ if command == "commit":
 else:
     # Pass through to gateway for other operations
 ```
+
+### Other Write Operations
+
+Beyond `commit`, other git write operations are handled as follows:
+
+| Operation | Handling | Rationale |
+|-----------|----------|-----------|
+| `git reset` | Route through gateway | Modifies refs and working tree |
+| `git reset --soft` | Route through gateway | Modifies HEAD ref |
+| `git checkout <branch>` | Route through gateway | Modifies HEAD and working tree |
+| `git checkout <file>` | Allow local (read-only refs) | Only modifies working tree from existing refs |
+| `git rebase` | Block | Requires interactive mode, complex ref manipulation |
+| `git merge` | Route through gateway | Modifies refs and may create commits |
+| `git stash` | Block | Creates refs, rarely needed in jib workflow |
+
+**Implementation:** The git wrapper intercepts these commands and either routes them to appropriate gateway endpoints or returns a helpful error message directing users to the supported workflow.
 
 ### Refs Strategy
 

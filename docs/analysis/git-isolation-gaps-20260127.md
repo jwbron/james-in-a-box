@@ -40,10 +40,13 @@ The mounts are configured but allow too much write access:
 |------------|--------|--------------|-------------|
 | `/home/jib/repos/X` | `~/.jib-worktrees/<id>/X` | rw | rw (unchanged) |
 | `/home/jib/.git-admin/X` | `~/.git/X/worktrees/<id>` | rw | **ro** |
+| `/home/jib/.git-admin/X/index` | `~/.git/X/worktrees/<id>/index` | (part of above) | **rw** (separate mount) |
 | `/home/jib/.git-local-objects/X` | Docker volume | rw | **remove** |
 | `/home/jib/.git-objects/X` | `~/.git/X/objects` | ro | ro (unchanged) |
 | `/home/jib/.git-refs/X` | `~/.git/X/refs` | ro | ro (unchanged) |
 | `/home/jib/.git-common/X` | `~/.git/X` | ro | ro (unchanged) |
+
+**Note:** The index file is mounted separately as rw to allow `git add` to work locally while keeping the rest of the admin directory read-only.
 
 ## Issues Identified
 
@@ -120,52 +123,69 @@ ADR says "Implemented" but implementation tasks are unchecked.
 | `git status` | Container (local) | Read-only, works |
 | `git diff` | Container (local) | Read-only, works |
 | `git log` | Container (local) | Read-only, works |
-| `git add` | Container (local) | Updates index in working dir |
+| `git add` | Container (local) | Index file mounted rw separately |
 | `git commit` | Gateway | Intercepted by git wrapper |
+| `git reset` | Gateway | Intercepted, routes to gateway |
+| `git checkout <branch>` | Gateway | Intercepted, routes to gateway |
+| `git checkout <file>` | Container (local) | Allowed - only modifies working tree |
+| `git rebase` | Blocked | Returns error with guidance |
+| `git merge` | Gateway | Intercepted, routes to gateway |
+| `git stash` | Blocked | Returns error with guidance |
 | `git push` | Gateway | Already implemented |
 | `git fetch` | Gateway | Already implemented |
 
 ## Implementation Plan
 
-### Phase 1: Fix Host Path Leakage (Immediate)
+**Note:** Phase numbering aligns with the ADR. Phase 1 (Mount Configuration) is already complete.
+
+### Phase 2: Fix Host Path Leakage (Immediate)
 **Goal:** Stop containers from corrupting host git state
 
-1. Change worktree admin mount from `rw` to `ro`
-2. Use relative paths in `commondir` file (`../..` instead of absolute)
-3. Remove container path writes from `entrypoint.py`
+1. Change worktree admin mount from `rw` to `ro` (except index file)
+2. Mount index file separately as `rw` for staging operations
+3. Use relative paths in `commondir` file (`../..` instead of absolute)
+4. Remove container path writes from `entrypoint.py`
 
 **Files to modify:**
-- `jib-container/runtime.py` - mount mode change
+- `jib-container/runtime.py` - mount mode change, add index mount
 - `jib-container/entrypoint.py` - remove worktree metadata writes
 
 **Validation:**
 - Host git commands work after container exit
 - Container git read operations still work
+- `git add` works in container (index is rw)
 
-### Phase 2: Gateway Commit Endpoint (Core Feature)
+### Phase 3: Gateway Commit Endpoint (Core Feature)
 **Goal:** Enable commits from containers
 
 1. Add `POST /api/v1/git/commit` endpoint
-2. Read index from container's worktree
-3. Create commit on host using index
-4. Return commit SHA to container
+2. Input validation:
+   - Reject repo/worktree containing path traversal sequences (`../`, absolute paths)
+   - Verify worktree belongs to requesting container (via container ID mapping)
+   - Sanitize commit message for shell safety
+3. Read index from container's worktree
+4. Create commit on host using index
+5. Return commit SHA to container
 
 **Files to modify:**
 - `gateway-sidecar/main.go` - add endpoint
-- `gateway-sidecar/git.go` - commit logic
+- `gateway-sidecar/git.go` - commit logic with input validation
 
 **Validation:**
 - Commit from container creates proper commit on host
 - Commit visible in git log
 - Commit can be pushed
+- Path traversal attempts are rejected
+- Cross-container commit attempts are rejected
 
-### Phase 3: Git Wrapper Update
+### Phase 4: Git Wrapper Update
 **Goal:** Intercept `git commit` and route to gateway
 
 1. Update git wrapper to detect commit commands
 2. Extract message, author, and options
 3. Call gateway commit endpoint
 4. Return result to caller
+5. Add handling for other write operations (reset, checkout, rebase, merge, stash)
 
 **Files to modify:**
 - `gateway-sidecar/wrappers/git-wrapper.sh` (or equivalent)
@@ -173,13 +193,15 @@ ADR says "Implemented" but implementation tasks are unchecked.
 **Validation:**
 - `git commit -m "msg"` works from container
 - Commit options (--amend, etc.) handled appropriately
+- Blocked operations return helpful error messages
 
-### Phase 4: Cleanup
-**Goal:** Remove unused infrastructure
+### Phase 5: Cleanup & Testing
+**Goal:** Remove unused infrastructure and verify end-to-end
 
 1. Remove local object volume provisioning
-2. Update ADR with final implementation status
-3. Close related beads
+2. Add integration tests for all phases
+3. Update ADR with final implementation status
+4. Close related beads
 
 **Files to modify:**
 - `jib-container/runtime.py` - remove volume creation
@@ -211,22 +233,34 @@ gh api repos/OWNER/REPO/contents/path/to/file.txt \
 
 ## Test Cases
 
-### Phase 1 Tests
+### Phase 2 Tests (Host Path Leakage Fix)
 - [ ] Host `git status` works after container exit
 - [ ] Host `git log` works after container exit
-- [ ] Container `git status` works (read-only)
-- [ ] Container `git log` works (read-only)
+- [ ] Container `git status` works (read-only admin)
+- [ ] Container `git log` works (read-only admin)
+- [ ] Container `git add` works (rw index mount)
 
-### Phase 2 Tests
+### Phase 3 Tests (Gateway Commit Endpoint)
 - [ ] Gateway commit creates valid commit object
 - [ ] Commit author is set correctly
 - [ ] Commit message is preserved
 - [ ] Staged files are included in commit
 - [ ] Unstaged files are not included
+- [ ] Path traversal in repo param rejected (`../other-repo`)
+- [ ] Path traversal in worktree param rejected (`../other-container`)
+- [ ] Absolute paths rejected
+- [ ] Cross-container commit attempts rejected (container A can't commit to container B's worktree)
+- [ ] Commit message with shell metacharacters handled safely
 
-### Phase 3 Tests
+### Phase 4 Tests (Git Wrapper Update)
 - [ ] `git commit -m "msg"` routes to gateway
-- [ ] `git commit` (interactive) handled gracefully
+- [ ] `git commit` (interactive) returns helpful error
+- [ ] `git reset --hard` routes to gateway
+- [ ] `git checkout <branch>` routes to gateway
+- [ ] `git checkout <file>` works locally
+- [ ] `git rebase` returns blocked error with guidance
+- [ ] `git merge` routes to gateway
+- [ ] `git stash` returns blocked error with guidance
 - [ ] Error messages propagate to container
 
 ### Integration Tests
