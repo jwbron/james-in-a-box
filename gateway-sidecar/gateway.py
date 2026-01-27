@@ -58,7 +58,6 @@ try:
         create_credential_helper,
         get_token_for_repo,
         git_cmd,
-        normalize_flag,
         validate_git_args,
         validate_repo_path,
     )
@@ -86,6 +85,7 @@ except ImportError:
         BLOCKED_GH_COMMANDS,
         READONLY_GH_COMMANDS,
         get_github_client,
+        parse_gh_api_args,
         validate_gh_api_path,
     )
     from policy import (
@@ -1089,12 +1089,16 @@ def gh_execute():
 
     # For 'gh api' commands, validate the path against allowlist
     if args and args[0] == "api" and len(args) > 1:
-        api_path = args[1]
-        method = "GET"
-        for i, arg in enumerate(args):
-            if arg in ("-X", "--method") and i + 1 < len(args):
-                method = args[i + 1].upper()
-                break
+        # Parse arguments to find the actual API path (skip flags like -X, --method, etc.)
+        api_path, method = parse_gh_api_args(args[1:])
+        if api_path is None:
+            audit_log(
+                "api_path_missing",
+                "gh_execute",
+                success=False,
+                details={"command_args": args},
+            )
+            return make_error("No API path provided in gh api command", status_code=400)
 
         path_valid, path_error = validate_gh_api_path(api_path, method)
         if not path_valid:
