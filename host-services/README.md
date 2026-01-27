@@ -6,6 +6,7 @@ This directory contains systemd services and timers that run on the host machine
 
 | Component | Type | Timer | Description |
 |-----------|------|-------|-------------|
+| venv-setup | oneshot | No | Ensures Python venv exists (dependency for Python services) |
 | slack-notifier | simple (long-running) | No | Sends Slack notifications |
 | slack-receiver | simple (long-running) | No | Receives Slack messages |
 | context-sync | oneshot | hourly | Syncs Confluence/JIRA context |
@@ -122,6 +123,8 @@ systemctl --user restart <service-name>
 
 ```
 host-services/
+├── venv-setup.service       # Python venv setup (oneshot dependency)
+├── venv-setup.sh            # Setup script for venv-setup service
 ├── analysis/
 │   ├── adr-researcher/      # Weekly ADR research
 │   ├── conversation-analyzer/# Weekly conversation analysis

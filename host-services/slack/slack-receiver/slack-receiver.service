@@ -1,8 +1,9 @@
 [Unit]
 Description=JIB Slack Receiver - Bidirectional Slack communication
 Documentation=file://%h/repos/james-in-a-box/host-services/slack/slack-receiver/README.md
-After=network-online.target
+After=network-online.target venv-setup.service
 Wants=network-online.target
+Requires=venv-setup.service
 OnFailure=service-failure-notify@%n.service
 
 [Service]

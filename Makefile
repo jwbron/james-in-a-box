@@ -249,8 +249,17 @@ lint-bin-symlinks:
 # Ensure venv exists and has dev dependencies
 venv:
 	@if [ ! -f "$(RUFF)" ]; then \
-		echo "==> Installing dev dependencies in host-services venv..."; \
-		cd host-services && uv pip install -e ".[dev]"; \
+		echo "==> Setting up host-services venv..."; \
+		if ! command -v uv >/dev/null 2>&1; then \
+			echo "ERROR: uv is not installed."; \
+			echo ""; \
+			echo "Install uv with:"; \
+			echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"; \
+			echo ""; \
+			echo "Or see: https://docs.astral.sh/uv/getting-started/installation/"; \
+			exit 1; \
+		fi; \
+		cd host-services && uv sync; \
 	else \
 		echo "Dev dependencies already installed."; \
 	fi
