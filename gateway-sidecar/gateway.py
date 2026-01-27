@@ -464,6 +464,17 @@ def git_push():
     if not repo_path:
         return make_error("Missing repo_path")
 
+    # Validate repo_path to prevent path traversal attacks
+    path_valid, path_error = validate_repo_path(repo_path)
+    if not path_valid:
+        audit_log(
+            "push_blocked",
+            "git_push",
+            success=False,
+            details={"repo_path": repo_path, "reason": path_error},
+        )
+        return make_error(path_error, status_code=403)
+
     # Get remote URL to determine repo
     try:
         result = subprocess.run(
@@ -588,9 +599,10 @@ elif [[ "$1" == *"Password"* ]]; then
 fi
 """
 
+    # Create temp file for credential helper
+    # Use try/finally to ensure cleanup even on exceptions
+    credential_helper_path = None
     try:
-        import tempfile
-
         # Create temp file with restrictive permissions BEFORE writing
         fd, credential_helper_path = tempfile.mkstemp(suffix=".sh", prefix="git-askpass-")
         try:
@@ -610,9 +622,6 @@ fi
             env=env,
             check=False,
         )
-
-        # Clean up immediately
-        os.unlink(credential_helper_path)
 
         if result.returncode == 0:
             audit_log(
@@ -658,6 +667,13 @@ fi
         return make_error("Push timed out", status_code=504)
     except Exception as e:
         return make_error(f"Push failed: {e}", status_code=500)
+    finally:
+        # Always clean up credential helper file
+        if credential_helper_path and os.path.exists(credential_helper_path):
+            try:
+                os.unlink(credential_helper_path)
+            except OSError:
+                pass  # Best effort cleanup
 
 
 @app.route("/api/v1/git/fetch", methods=["POST"])
