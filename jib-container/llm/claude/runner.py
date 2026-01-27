@@ -53,6 +53,10 @@ def _check_claude_version() -> str | None:
     return None
 
 
+# Perform version check at module import
+_claude_version = _check_claude_version()
+
+
 def _classify_error(returncode: int, stderr: str) -> str:
     """Map subprocess failure to error category.
 
