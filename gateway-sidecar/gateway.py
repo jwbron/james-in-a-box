@@ -79,7 +79,6 @@ except ImportError:
         create_credential_helper,
         get_token_for_repo,
         git_cmd,
-        normalize_flag,
         validate_git_args,
         validate_repo_path,
     )

@@ -95,7 +95,9 @@ class TestGitArgsValidation:
 
     def test_config_override_blocked(self):
         """-c flag (config override) is blocked."""
-        valid, error, _ = git_client.validate_git_args("fetch", ["-c", "protocol.file.allow=always"])
+        valid, error, _ = git_client.validate_git_args(
+            "fetch", ["-c", "protocol.file.allow=always"]
+        )
         assert valid is False
         assert "not allowed" in error
 
@@ -294,7 +296,9 @@ class TestGhApiPathValidation:
 
     def test_delete_method_blocked(self):
         """DELETE method is blocked."""
-        valid, error = github_client.validate_gh_api_path("repos/owner/repo/pulls/123", method="DELETE")
+        valid, error = github_client.validate_gh_api_path(
+            "repos/owner/repo/pulls/123", method="DELETE"
+        )
         assert valid is False
         assert "method" in error.lower()
 
@@ -312,7 +316,9 @@ class TestGhApiPathValidation:
 
     def test_patch_method_allowed(self):
         """PATCH method is allowed."""
-        valid, _error = github_client.validate_gh_api_path("repos/owner/repo/pulls/123", method="PATCH")
+        valid, _error = github_client.validate_gh_api_path(
+            "repos/owner/repo/pulls/123", method="PATCH"
+        )
         assert valid is True
 
     def test_pr_number_must_be_numeric(self):
