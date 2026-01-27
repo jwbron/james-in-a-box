@@ -234,11 +234,21 @@ The gateway sidecar is unaffected by this change because:
 
 2. **Path mapping:** When containers send requests with `/home/jib/repos/repo`, the gateway translates this to the host worktree path. This translation logic remains unchanged.
 
-3. **Refs visibility:** After gateway performs `git fetch`, refs are updated in `~/.git/repo/refs/` on the host. Containers see these updates through their read-only refs mount.
+3. **Fetch operations and object storage:** When the gateway performs `git fetch`, it executes on the host and writes downloaded objects directly to `~/.git/repo/objects/` (the shared object store). Containers see these new objects immediately through their read-only shared objects mount. No additional sync is needed for fetch—only for push (see below).
 
-4. **Object sync extension:** The gateway will be extended to copy newly-created objects from container local storage to the shared store after successful push. This happens host-side after the push completes.
+4. **Refs visibility:** After gateway performs `git fetch`, refs are updated in `~/.git/repo/refs/` on the host. Containers see these updates immediately through their read-only refs mount.
 
-5. **No code changes for core operations:** Gateway policy enforcement, authentication, and command execution remain identical.
+5. **Object sync extension:** The gateway will be extended to copy newly-created objects from container local storage to the shared store after successful push. This happens host-side after the push completes.
+
+6. **Object sync timing:** The gateway performs object sync as part of the push operation, before returning success to the container. The sequence is:
+   - Container sends push request to gateway
+   - Gateway executes `git push` on host (using container's worktree)
+   - Gateway copies new objects from container's local objects volume to shared store
+   - Gateway returns success to container
+
+   This ensures that when a push succeeds, the objects are already in the shared store and visible to other containers. There is no window where a push appears successful but objects are not yet synced.
+
+7. **No code changes for core operations:** Gateway policy enforcement, authentication, and command execution remain identical.
 
 ## Test Results
 
