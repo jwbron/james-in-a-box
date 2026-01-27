@@ -1413,6 +1413,44 @@ class MinimalSetup:
         if check_value not in check_choices:
             raise ValueError(error_msg)
 
+    def _validate_prefix(
+        self, value: str, prefix: str, error_msg: str, allow_empty: bool = False
+    ) -> None:
+        """Validate that value starts with the expected prefix.
+
+        Args:
+            value: The value to validate
+            prefix: Required prefix string
+            error_msg: Error message if validation fails
+            allow_empty: If True, empty values pass validation
+
+        Raises:
+            ValueError: If value doesn't start with prefix (unless empty and allow_empty)
+        """
+        if allow_empty and not value:
+            return
+        if not value.startswith(prefix):
+            raise ValueError(error_msg)
+
+    def _validate_first_char(
+        self, value: str, valid_chars: list[str], error_msg: str, allow_empty: bool = False
+    ) -> None:
+        """Validate that value starts with one of the valid characters.
+
+        Args:
+            value: The value to validate
+            valid_chars: List of valid first characters
+            error_msg: Error message if validation fails
+            allow_empty: If True, empty values pass validation
+
+        Raises:
+            ValueError: If first char not in valid_chars (unless empty and allow_empty)
+        """
+        if allow_empty and not value:
+            return
+        if not value or value[0] not in valid_chars:
+            raise ValueError(error_msg)
+
     def _mask_secret(self, secret: str, visible_chars: int = 8) -> str:
         """Mask a secret for display, showing only first few characters."""
         if not secret:
@@ -1525,9 +1563,9 @@ class MinimalSetup:
 
             new_token = self.prompter.prompt(
                 "GitHub Personal Access Token (ghp_...) [keep existing]",
-                validator=lambda t: None
-                if not t or t.startswith("ghp_")
-                else ValueError("Token must start with 'ghp_'"),
+                validator=lambda t: self._validate_prefix(
+                    t, "ghp_", "Token must start with 'ghp_'", allow_empty=True
+                ),
             )
             secrets["GITHUB_TOKEN"] = new_token if new_token else existing_token
 
@@ -1538,9 +1576,9 @@ class MinimalSetup:
                 self.logger.info("Required permissions: Contents (R), Pull requests (R)")
                 new_readonly = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...) [keep existing]",
-                    validator=lambda t: None
-                    if not t or t.startswith("ghp_")
-                    else ValueError("Token must start with 'ghp_'"),
+                    validator=lambda t: self._validate_prefix(
+                        t, "ghp_", "Token must start with 'ghp_'", allow_empty=True
+                    ),
                 )
                 secrets["GITHUB_READONLY_TOKEN"] = (
                     new_readonly if new_readonly else existing_readonly
@@ -1551,9 +1589,9 @@ class MinimalSetup:
                 self.logger.info("Required permissions: Contents (R), Pull requests (R)")
                 readonly_token = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...)",
-                    validator=lambda t: None
-                    if t.startswith("ghp_")
-                    else ValueError("Token must start with 'ghp_'"),
+                    validator=lambda t: self._validate_prefix(
+                        t, "ghp_", "Token must start with 'ghp_'"
+                    ),
                 )
                 if readonly_token:
                     secrets["GITHUB_READONLY_TOKEN"] = readonly_token
@@ -1648,9 +1686,9 @@ class MinimalSetup:
             token = self.prompter.prompt(
                 "GitHub Personal Access Token (ghp_...)",
                 required=True,
-                validator=lambda t: None
-                if t.startswith("ghp_")
-                else ValueError("Token must start with 'ghp_'"),
+                validator=lambda t: self._validate_prefix(
+                    t, "ghp_", "Token must start with 'ghp_'"
+                ),
             )
 
             secrets["GITHUB_TOKEN"] = token
@@ -1668,9 +1706,9 @@ class MinimalSetup:
                 self.logger.info("")
                 readonly_token = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...)",
-                    validator=lambda t: None
-                    if t.startswith("ghp_")
-                    else ValueError("Token must start with 'ghp_'"),
+                    validator=lambda t: self._validate_prefix(
+                        t, "ghp_", "Token must start with 'ghp_'"
+                    ),
                 )
                 if readonly_token:
                     secrets["GITHUB_READONLY_TOKEN"] = readonly_token
@@ -2065,9 +2103,9 @@ class MinimalSetup:
                 self.prompter.prompt(
                     "Slack channel ID (starts with D, C, or G)",
                     default=existing,
-                    validator=lambda c: None
-                    if not c or c[0] in ["D", "C", "G"]
-                    else ValueError("Channel ID must start with D, C, or G"),
+                    validator=lambda c: self._validate_first_char(
+                        c, ["D", "C", "G"], "Channel ID must start with D, C, or G", allow_empty=True
+                    ),
                 )
                 or existing
             )
@@ -2081,9 +2119,9 @@ class MinimalSetup:
 
         channel_id = self.prompter.prompt(
             "Slack channel ID (starts with D, C, or G)",
-            validator=lambda c: None
-            if c and c[0] in ["D", "C", "G"]
-            else ValueError("Channel ID must start with D, C, or G"),
+            validator=lambda c: self._validate_first_char(
+                c, ["D", "C", "G"], "Channel ID must start with D, C, or G"
+            ),
         )
 
         return channel_id if channel_id else ""
@@ -2099,9 +2137,9 @@ class MinimalSetup:
                 self.prompter.prompt(
                     "Your Slack user ID (starts with U)",
                     default=existing,
-                    validator=lambda u: None
-                    if not u or u.startswith("U")
-                    else ValueError("User ID must start with U"),
+                    validator=lambda u: self._validate_prefix(
+                        u, "U", "User ID must start with U", allow_empty=True
+                    ),
                 )
                 or existing
             )
@@ -2112,9 +2150,9 @@ class MinimalSetup:
 
         user_id = self.prompter.prompt(
             "Your Slack user ID (starts with U)",
-            validator=lambda u: None
-            if u and u.startswith("U")
-            else ValueError("User ID must start with U"),
+            validator=lambda u: self._validate_prefix(
+                u, "U", "User ID must start with U"
+            ),
         )
 
         return user_id if user_id else ""
