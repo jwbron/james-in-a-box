@@ -1406,7 +1406,7 @@ class MinimalSetup:
 
     def _validate_choice(
         self, value: str, valid_choices: list[str], error_msg: str, case_insensitive: bool = False
-    ):
+    ) -> None:
         """Validate value is one of the valid choices."""
         check_value = value.lower() if case_insensitive else value
         check_choices = [c.lower() for c in valid_choices] if case_insensitive else valid_choices
