@@ -104,21 +104,27 @@ def _setup_git_isolation_mounts(
             # 1. Mount ONLY this container's worktree admin dir (rw)
             worktree_admin_path = main_git_path / "worktrees" / worktree_admin_name
             if worktree_admin_path.is_dir():
-                mount_args.extend(["-v", f"{worktree_admin_path}:/home/jib/.git-admin/{repo_name}:rw"])
+                mount_args.extend(
+                    ["-v", f"{worktree_admin_path}:/home/jib/.git-admin/{repo_name}:rw"]
+                )
                 if not quiet:
                     print(f"  • ~/.git-admin/{repo_name} (worktree admin, isolated)")
 
             # 2. Mount container's local objects directory (rw)
             local_objects_path = Config.LOCAL_OBJECTS_BASE / container_id / repo_name
             local_objects_path.mkdir(parents=True, exist_ok=True)
-            mount_args.extend(["-v", f"{local_objects_path}:/home/jib/.git-local-objects/{repo_name}:rw"])
+            mount_args.extend(
+                ["-v", f"{local_objects_path}:/home/jib/.git-local-objects/{repo_name}:rw"]
+            )
             if not quiet:
                 print(f"  • ~/.git-local-objects/{repo_name} (local objects, writable)")
 
             # 3. Mount shared objects directory (ro)
             shared_objects_path = main_git_path / "objects"
             if shared_objects_path.is_dir():
-                mount_args.extend(["-v", f"{shared_objects_path}:/home/jib/.git-objects/{repo_name}:ro"])
+                mount_args.extend(
+                    ["-v", f"{shared_objects_path}:/home/jib/.git-objects/{repo_name}:ro"]
+                )
                 if not quiet:
                     print(f"  • ~/.git-objects/{repo_name} (shared objects, read-only)")
 
