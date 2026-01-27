@@ -449,11 +449,11 @@ class TestGetDefaultBranch:
 class TestBuildImage:
     """Tests for Docker image building."""
 
-    @patch("subprocess.run")
-    @patch.object(jib, "create_dockerfile")
-    @patch.object(jib, "check_claude_update", return_value=None)
-    @patch.object(jib, "should_rebuild_image", return_value=(True, "test"))
-    @patch.object(jib, "compute_build_hash", return_value="testhash123")
+    @patch("jib_lib.docker.subprocess.run")
+    @patch("jib_lib.docker.create_dockerfile")
+    @patch("jib_lib.docker.check_claude_update", return_value=None)
+    @patch("jib_lib.docker.should_rebuild_image", return_value=(True, "test"))
+    @patch("jib_lib.docker.compute_build_hash", return_value="testhash123")
     def test_build_image_success(
         self, mock_hash, mock_should, mock_update, mock_create, mock_run, monkeypatch
     ):
@@ -467,11 +467,11 @@ class TestBuildImage:
         assert result is True
         mock_create.assert_called_once()
 
-    @patch("subprocess.run")
-    @patch.object(jib, "create_dockerfile")
-    @patch.object(jib, "check_claude_update", return_value=None)
-    @patch.object(jib, "should_rebuild_image", return_value=(True, "test"))
-    @patch.object(jib, "compute_build_hash", return_value="testhash123")
+    @patch("jib_lib.docker.subprocess.run")
+    @patch("jib_lib.docker.create_dockerfile")
+    @patch("jib_lib.docker.check_claude_update", return_value=None)
+    @patch("jib_lib.docker.should_rebuild_image", return_value=(True, "test"))
+    @patch("jib_lib.docker.compute_build_hash", return_value="testhash123")
     def test_build_image_failure(
         self, mock_hash, mock_should, mock_update, mock_create, mock_run, capsys, monkeypatch
     ):
@@ -485,7 +485,7 @@ class TestBuildImage:
         captured = capsys.readouterr()
         assert "build failed" in captured.err.lower()
 
-    @patch.object(jib, "should_rebuild_image", return_value=(False, "build hash matches"))
+    @patch("jib_lib.docker.should_rebuild_image", return_value=(False, "build hash matches"))
     def test_build_image_skipped_when_hash_matches(self, mock_should):
         """Test that build is skipped when hash matches."""
         result = jib.build_image()

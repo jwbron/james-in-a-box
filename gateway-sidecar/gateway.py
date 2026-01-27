@@ -12,6 +12,7 @@ Security:
 
 Endpoints:
     POST /api/v1/git/push       - Push to remote (policy: branch_ownership or trusted_user)
+    POST /api/v1/git/fetch      - Fetch from remote (no policy - read operations allowed)
     POST /api/v1/gh/pr/create   - Create PR (policy: blocked in incognito mode)
     POST /api/v1/gh/pr/comment  - Comment on PR (policy: none - allowed on any PR)
     POST /api/v1/gh/pr/edit     - Edit PR (policy: pr_ownership)
@@ -52,14 +53,41 @@ from jib_logging import get_logger
 # Import gateway modules - try relative import first (module mode),
 # fall back to absolute import (standalone script mode in container)
 try:
-    from .github_client import get_github_client
+    from .git_client import (
+        cleanup_credential_helper,
+        create_credential_helper,
+        get_token_for_repo,
+        git_cmd,
+        validate_git_args,
+        validate_repo_path,
+    )
+    from .github_client import (
+        BLOCKED_GH_COMMANDS,
+        READONLY_GH_COMMANDS,
+        get_github_client,
+        validate_gh_api_path,
+    )
     from .policy import (
         extract_branch_from_refspec,
         extract_repo_from_remote,
         get_policy_engine,
     )
 except ImportError:
-    from github_client import get_github_client
+    from git_client import (
+        cleanup_credential_helper,
+        create_credential_helper,
+        get_token_for_repo,
+        git_cmd,
+        validate_git_args,
+        validate_repo_path,
+    )
+    from github_client import (
+        BLOCKED_GH_COMMANDS,
+        READONLY_GH_COMMANDS,
+        get_github_client,
+        parse_gh_api_args,
+        validate_gh_api_path,
+    )
     from policy import (
         extract_branch_from_refspec,
         extract_repo_from_remote,
@@ -71,7 +99,7 @@ except ImportError:
 _config_path = Path(__file__).parent.parent / "config"
 if _config_path.exists() and str(_config_path) not in sys.path:
     sys.path.insert(0, str(_config_path))
-from repo_config import get_auth_mode, get_incognito_config
+from repo_config import get_auth_mode
 
 
 logger = get_logger("gateway-sidecar")
@@ -81,19 +109,6 @@ app = Flask(__name__)
 # Configuration
 DEFAULT_HOST = os.environ.get("GATEWAY_HOST", "0.0.0.0")  # Listen on all interfaces by default
 DEFAULT_PORT = 9847
-GIT_CLI = "/usr/bin/git"
-
-
-def git_cmd(*args: str) -> list[str]:
-    """
-    Build a git command with safe.directory=* to allow operating on worktree paths.
-
-    The gateway runs on the host but operates on paths inside jib container worktrees
-    (e.g., ~/.jib-worktrees/<container-id>/repo). Git's ownership check would reject
-    these as "dubious ownership" without safe.directory=*.
-    """
-    return [GIT_CLI, "-c", "safe.directory=*", *args]
-
 
 # Container worktree isolation paths
 LOCAL_OBJECTS_BASE = Path("/home/jib/.jib-local-objects")
@@ -209,6 +224,7 @@ SECRET_FILE = Path.home() / ".config" / "jib" / "gateway-secret"
 # limit of 4,000/hr provides a safety buffer. See ADR-Internet-Tool-Access-Lockdown.
 RATE_LIMITS = {
     "git_push": 1000,
+    "git_fetch": 2000,  # Higher limit for read operations
     "gh_pr_create": 500,
     "gh_pr_comment": 2000,
     "gh_pr_edit": 500,
@@ -361,41 +377,6 @@ def require_rate_limit(operation: str):
     return decorator
 
 
-# Read-only gh commands that don't require ownership checks
-READONLY_GH_COMMANDS = frozenset(
-    {
-        "pr view",
-        "pr list",
-        "pr checks",
-        "pr diff",
-        "pr status",
-        "issue view",
-        "issue list",
-        "issue status",
-        "repo view",
-        "repo list",
-        "release view",
-        "release list",
-        "api",  # Read-only API calls (GET)
-        "auth status",
-        "config get",
-    }
-)
-
-# Blocked gh commands (dangerous operations)
-BLOCKED_GH_COMMANDS = frozenset(
-    {
-        "pr merge",  # Human must merge
-        "repo delete",
-        "repo archive",
-        "release delete",
-        "auth logout",
-        "auth login",
-        "config set",
-    }
-)
-
-
 def make_response(
     success: bool,
     message: str,
@@ -488,6 +469,17 @@ def git_push():
     if not repo_path:
         return make_error("Missing repo_path")
 
+    # Validate repo_path to prevent path traversal attacks
+    path_valid, path_error = validate_repo_path(repo_path)
+    if not path_valid:
+        audit_log(
+            "push_blocked",
+            "git_push",
+            success=False,
+            details={"repo_path": repo_path, "reason": path_error},
+        )
+        return make_error(path_error, status_code=403)
+
     # Get remote URL to determine repo
     try:
         result = subprocess.run(
@@ -531,7 +523,6 @@ def git_push():
 
     # Determine auth mode for this repo
     auth_mode = get_auth_mode(repo)
-    incognito_cfg = get_incognito_config() if auth_mode == "incognito" else {}
 
     # Check branch ownership policy (pass auth mode for relaxed policy in incognito)
     policy = get_policy_engine()
@@ -555,22 +546,10 @@ def git_push():
             details=policy_result.details,
         )
 
-    # Execute git push with authentication
-    github = get_github_client(mode=auth_mode)
-
-    # Get token based on auth mode
-    if auth_mode == "incognito":
-        token_str = github.get_incognito_token()
-        if not token_str:
-            return make_error(
-                "Incognito token not available. Set GITHUB_INCOGNITO_TOKEN environment variable.",
-                status_code=503,
-            )
-    else:
-        token = github.get_token()
-        if not token:
-            return make_error("GitHub token not available", status_code=503)
-        token_str = token.token
+    # Get authentication token using shared helper
+    token_str, auth_mode, token_error = get_token_for_repo(repo)
+    if not token_str:
+        return make_error(token_error, status_code=503)
 
     # Build push command with safe.directory for worktree paths
     push_args = ["push"]
@@ -579,51 +558,17 @@ def git_push():
     push_args.extend([remote, refspec] if refspec else [remote])
     cmd = git_cmd(*push_args)
 
-    # Configure git to use token via GIT_ASKPASS
-    # Create a secure credential helper using a file descriptor instead of temp file
-    env = os.environ.copy()
-    env["GIT_TERMINAL_PROMPT"] = "0"
-
-    # Use environment variable for credential helper to avoid temp file
-    # Git credential helper protocol: respond with username and password
-    env["GIT_USERNAME"] = "x-access-token"
-    env["GIT_PASSWORD"] = token_str
-
     # NOTE: Git author/committer info is set at COMMIT time, not push time.
     # For incognito mode, the user must configure their local git:
     #   git config user.name "Your Name"
     #   git config user.email "your@email.com"
-    # The incognito.git_name and incognito.git_email in repositories.yaml
-    # are for documentation purposes only - they don't affect commits.
     if auth_mode == "incognito":
-        logger.debug(
-            "Incognito mode push",
-            repo=repo,
-            incognito_user=incognito_cfg.get("github_user") if incognito_cfg else None,
-        )
+        logger.debug("Incognito mode push", repo=repo)
 
-    # Create inline credential helper script that reads from env
-    # This avoids writing token to disk
-    askpass_script = """#!/bin/bash
-if [[ "$1" == *"Username"* ]]; then
-    echo "$GIT_USERNAME"
-elif [[ "$1" == *"Password"* ]]; then
-    echo "$GIT_PASSWORD"
-fi
-"""
-
+    # Create credential helper and execute push
+    credential_helper_path = None
     try:
-        import tempfile
-
-        # Create temp file with restrictive permissions BEFORE writing
-        fd, credential_helper_path = tempfile.mkstemp(suffix=".sh", prefix="git-askpass-")
-        try:
-            os.fchmod(fd, 0o700)  # Set permissions on fd before writing
-            os.write(fd, askpass_script.encode())
-        finally:
-            os.close(fd)
-
-        env["GIT_ASKPASS"] = credential_helper_path
+        credential_helper_path, env = create_credential_helper(token_str, os.environ.copy())
 
         result = subprocess.run(
             cmd,
@@ -634,9 +579,6 @@ fi
             env=env,
             check=False,
         )
-
-        # Clean up immediately
-        os.unlink(credential_helper_path)
 
         if result.returncode == 0:
             # Sync objects from container's local store to shared store
@@ -688,6 +630,168 @@ fi
         return make_error("Push timed out", status_code=504)
     except Exception as e:
         return make_error(f"Push failed: {e}", status_code=500)
+    finally:
+        cleanup_credential_helper(credential_helper_path)
+
+
+@app.route("/api/v1/git/fetch", methods=["POST"])
+@require_auth
+@require_rate_limit("git_fetch")
+def git_fetch():
+    """
+    Handle git fetch requests.
+
+    Required because the container doesn't have direct access to GitHub tokens
+    (they are held by the gateway sidecar). This endpoint provides authenticated
+    fetch for git fetch, git ls-remote, and similar read operations.
+
+    Request body:
+        {
+            "repo_path": "/path/to/repo",
+            "remote": "origin",
+            "args": ["--tags"]  # optional additional args
+        }
+
+    For ls-remote:
+        {
+            "repo_path": "/path/to/repo",
+            "operation": "ls-remote",
+            "remote": "origin",
+            "args": ["HEAD"]  # optional refs to query
+        }
+    """
+    data = request.get_json()
+    if not data:
+        return make_error("Missing request body")
+
+    repo_path = data.get("repo_path")
+    remote = data.get("remote", "origin")
+    operation = data.get("operation", "fetch")  # fetch or ls-remote
+    extra_args = data.get("args", [])
+
+    if not repo_path:
+        return make_error("Missing repo_path")
+
+    # Validate repo_path to prevent path traversal attacks
+    path_valid, path_error = validate_repo_path(repo_path)
+    if not path_valid:
+        audit_log(
+            "fetch_blocked",
+            "git_fetch",
+            success=False,
+            details={"repo_path": repo_path, "reason": path_error},
+        )
+        return make_error(path_error, status_code=403)
+
+    if operation not in ("fetch", "ls-remote"):
+        return make_error(f"Unsupported operation: {operation}")
+
+    # Validate extra args against operation-specific allowlist
+    args_valid, args_error, validated_args = validate_git_args(operation, extra_args)
+    if not args_valid:
+        audit_log(
+            "fetch_blocked",
+            "git_fetch",
+            success=False,
+            details={"reason": args_error, "operation": operation},
+        )
+        return make_error(args_error, status_code=400)
+
+    # Get remote URL to determine repo
+    try:
+        result = subprocess.run(
+            git_cmd("remote", "get-url", remote),
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode != 0:
+            return make_error(f"Failed to get remote URL: {result.stderr}")
+        remote_url = result.stdout.strip()
+    except Exception as e:
+        return make_error(f"Failed to get remote URL: {e}")
+
+    # Extract repo from URL
+    repo = extract_repo_from_remote(remote_url)
+    if not repo:
+        return make_error(f"Could not parse repository from URL: {remote_url}")
+
+    # Get authentication token using shared helper
+    token_str, auth_mode, token_error = get_token_for_repo(repo)
+    if not token_str:
+        return make_error(token_error, status_code=503)
+
+    # Build command using validated args
+    if operation == "fetch":
+        # Don't include remote when --all is specified (fetches from all remotes)
+        if "--all" in validated_args:
+            cmd_args = ["fetch"] + validated_args
+        else:
+            cmd_args = ["fetch", remote] + validated_args
+    else:  # ls-remote
+        cmd_args = ["ls-remote", remote] + validated_args
+
+    cmd = git_cmd(*cmd_args)
+
+    # Create credential helper and execute operation
+    credential_helper_path = None
+    try:
+        credential_helper_path, env = create_credential_helper(token_str, os.environ.copy())
+
+        result = subprocess.run(
+            cmd,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+            check=False,
+        )
+
+        if result.returncode == 0:
+            audit_log(
+                f"{operation}_success",
+                f"git_{operation}",
+                success=True,
+                details={
+                    "repo": repo,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_success(
+                f"{operation.capitalize()} successful",
+                {
+                    "repo": repo,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "auth_mode": auth_mode,
+                },
+            )
+        else:
+            audit_log(
+                f"{operation}_failed",
+                f"git_{operation}",
+                success=False,
+                details={
+                    "repo": repo,
+                    "returncode": result.returncode,
+                    "auth_mode": auth_mode,
+                },
+            )
+            return make_error(
+                f"{operation.capitalize()} failed: {result.stderr}",
+                status_code=500,
+                details={"stdout": result.stdout, "stderr": result.stderr},
+            )
+
+    except subprocess.TimeoutExpired:
+        return make_error(f"{operation.capitalize()} timed out", status_code=504)
+    except Exception as e:
+        return make_error(f"{operation.capitalize()} failed: {e}", status_code=500)
+    finally:
+        cleanup_credential_helper(credential_helper_path)
 
 
 @app.route("/api/v1/gh/pr/create", methods=["POST"])
@@ -1087,10 +1191,34 @@ def gh_execute():
                 details={"command_args": args, "blocked_command": blocked},
             )
             return make_error(
-                f"Command '{blocked}' is not allowed through the gateway",
+                f"Command '{blocked}' is not allowed through the gateway. "
+                f"Allowed read-only commands: {', '.join(sorted(READONLY_GH_COMMANDS))}",
                 status_code=403,
                 details={"blocked_command": blocked, "command_args": args},
             )
+
+    # For 'gh api' commands, validate the path against allowlist
+    if args and args[0] == "api" and len(args) > 1:
+        # Parse arguments to find the actual API path (skip flags like -X, --method, etc.)
+        api_path, method = parse_gh_api_args(args[1:])
+        if api_path is None:
+            audit_log(
+                "api_path_missing",
+                "gh_execute",
+                success=False,
+                details={"command_args": args},
+            )
+            return make_error("No API path provided in gh api command", status_code=400)
+
+        path_valid, path_error = validate_gh_api_path(api_path, method)
+        if not path_valid:
+            audit_log(
+                "api_path_blocked",
+                "gh_execute",
+                success=False,
+                details={"api_path": api_path, "method": method, "reason": path_error},
+            )
+            return make_error(path_error, status_code=403)
 
     # Extract repo from args to determine auth mode
     # Look for --repo flag or -R shorthand
@@ -1149,11 +1277,11 @@ def main():
 
     # Validate incognito config if configured
     github = get_github_client()
-    is_valid, message = github.validate_incognito_config()
+    is_valid, validation_msg = github.validate_incognito_config()
     if not is_valid:
-        logger.warning("Incognito config validation failed", message=message)
+        logger.warning("Incognito config validation failed", reason=validation_msg)
     else:
-        logger.info("Incognito config", status=message)
+        logger.info("Incognito config", status=validation_msg)
 
     logger.info(
         "Starting Gateway Sidecar",

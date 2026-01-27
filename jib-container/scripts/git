@@ -6,9 +6,12 @@
 # This wrapper is placed in PATH and the real git is hidden to:
 # 1. Block remote URL modifications (URLs are managed by the host)
 # 2. Route git push through the gateway sidecar for policy enforcement
+# 3. Route git fetch/ls-remote through gateway for authentication
 #
 # Security: Requires gateway sidecar - fails closed if gateway unavailable.
-# Authentication is handled by the gateway sidecar which holds the GITHUB_TOKEN.
+# The container does not have direct access to GitHub tokens - they are held
+# by the gateway sidecar. All network operations (push, fetch, ls-remote)
+# are routed through the gateway for authentication.
 #
 
 # Real git binary - relocated to hidden path to prevent direct access
@@ -236,6 +239,106 @@ EOF
     fi
 }
 
+# Function to fetch via gateway
+# Args: operation remote work_dir extra_args...
+# operation: "fetch" or "ls-remote"
+fetch_via_gateway() {
+    local operation="$1"
+    local remote="$2"
+    local work_dir="${3:-}"
+    shift 3
+    local extra_args=("$@")
+    local container_path
+    local repo_path
+
+    # Use provided work_dir or current directory
+    if [ -n "$work_dir" ]; then
+        if [[ "$work_dir" != /* ]]; then
+            container_path="$(pwd)/$work_dir"
+        else
+            container_path="$work_dir"
+        fi
+    else
+        container_path=$(pwd)
+    fi
+
+    # Translate container path for gateway
+    repo_path=$(translate_path_for_gateway "$container_path")
+
+    # Get authentication secret
+    local secret
+    secret=$(get_gateway_secret)
+    if [ -z "$secret" ]; then
+        echo "ERROR: Gateway secret not available at $GATEWAY_SECRET_FILE" >&2
+        echo "The gateway sidecar must be running and properly configured." >&2
+        return 1
+    fi
+
+    # Build JSON payload using Python for proper escaping
+    local payload
+    payload=$(python3 -c "
+import json
+import sys
+args = sys.argv[4:] if len(sys.argv) > 4 else []
+print(json.dumps({
+    'repo_path': sys.argv[1],
+    'remote': sys.argv[2],
+    'operation': sys.argv[3],
+    'args': args
+}))
+" "$repo_path" "$remote" "$operation" "${extra_args[@]}")
+
+    # Call gateway with authentication
+    local response
+    local http_code
+    response=$(curl -s -w "\n%{http_code}" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $secret" \
+        -d "$payload" \
+        "${GATEWAY_URL}/api/v1/git/fetch" 2>&1)
+
+    # Split response and status code
+    http_code=$(echo "$response" | tail -n1)
+    response=$(echo "$response" | sed '$d')
+
+    # Parse response
+    local success
+    local message
+    success=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null)
+    message=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('message', 'Unknown error'))" 2>/dev/null)
+
+    if [ "$success" = "True" ]; then
+        # Show stdout/stderr from the operation
+        local stdout stderr
+        stdout=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', {}).get('stdout', ''))" 2>/dev/null)
+        stderr=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', {}).get('stderr', ''))" 2>/dev/null)
+        [ -n "$stdout" ] && echo "$stdout"
+        [ -n "$stderr" ] && echo "$stderr" >&2
+        return 0
+    else
+        # Show error message
+        echo "ERROR: $message" >&2
+
+        # Show details if available
+        local details
+        details=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stderr', '') if d else '')" 2>/dev/null)
+        [ -n "$details" ] && echo "$details" >&2
+
+        # Special handling for error codes
+        case "$http_code" in
+            401)
+                echo "Authentication failed - check gateway secret configuration" >&2
+                ;;
+            503)
+                echo "GitHub token not available - check gateway configuration" >&2
+                ;;
+        esac
+
+        return 1
+    fi
+}
+
 # Function to check if push target is HTTPS (we don't have SSH keys)
 # Args: remote [work_dir]
 check_push_remote() {
@@ -427,6 +530,248 @@ EOF
         push_via_gateway "$remote" "$refspec" "$force" "$git_work_dir"
         exit $?
         ;;
+    fetch)
+        # Route fetch through gateway for authentication
+        # git fetch [options] [remote] [refspec...]
+        remote="origin"
+        extra_args=()
+        skip_next=false
+        remote_seen=false
+
+        for arg in "${args_after_globals[@]}"; do
+            if $skip_next; then
+                extra_args+=("$arg")
+                skip_next=false
+                continue
+            fi
+
+            case "$arg" in
+                fetch)
+                    continue
+                    ;;
+                --depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs|--recurse-submodules-default|--submodule-prefix|--upload-pack|-o|--server-option|--negotiation-tip|--filter|--refmap)
+                    # These flags take an argument
+                    extra_args+=("$arg")
+                    skip_next=true
+                    ;;
+                -*)
+                    # Other flags
+                    extra_args+=("$arg")
+                    ;;
+                *)
+                    # First non-flag is remote, rest are refspecs
+                    if [ "$remote_seen" = "false" ]; then
+                        remote="$arg"
+                        remote_seen=true
+                    else
+                        extra_args+=("$arg")
+                    fi
+                    ;;
+            esac
+        done
+
+        # Gateway provides authentication for fetch operations
+        # Fall back to direct git only if gateway unavailable (may fail without credentials)
+        if ! check_gateway_available; then
+            # Try direct git - will work if credentials are configured locally
+            # or fail with authentication error for private repos
+            exec "$REAL_GIT" "$@"
+        fi
+
+        fetch_via_gateway "fetch" "$remote" "$git_work_dir" "${extra_args[@]}"
+        exit $?
+        ;;
+    ls-remote)
+        # Route ls-remote through gateway for authentication
+        # git ls-remote [options] [repository] [refs...]
+        remote="origin"
+        extra_args=()
+        skip_next=false
+        remote_seen=false
+
+        for arg in "${args_after_globals[@]}"; do
+            if $skip_next; then
+                extra_args+=("$arg")
+                skip_next=false
+                continue
+            fi
+
+            case "$arg" in
+                ls-remote)
+                    continue
+                    ;;
+                --upload-pack|-o|--server-option|--sort)
+                    # These flags take an argument
+                    extra_args+=("$arg")
+                    skip_next=true
+                    ;;
+                -*)
+                    # Other flags
+                    extra_args+=("$arg")
+                    ;;
+                *)
+                    # First non-flag is remote/repository, rest are refs
+                    if [ "$remote_seen" = "false" ]; then
+                        remote="$arg"
+                        remote_seen=true
+                    else
+                        extra_args+=("$arg")
+                    fi
+                    ;;
+            esac
+        done
+
+        # Gateway provides authentication for ls-remote operations
+        # Fall back to direct git only if gateway unavailable (may fail without credentials)
+        if ! check_gateway_available; then
+            # Try direct git - will work if credentials are configured locally
+            # or fail with authentication error for private repos
+            exec "$REAL_GIT" "$@"
+        fi
+
+        fetch_via_gateway "ls-remote" "$remote" "$git_work_dir" "${extra_args[@]}"
+        exit $?
+        ;;
+    pull)
+        # git pull = git fetch + git merge
+        # Route the fetch part through gateway, then merge locally
+        # git pull [options] [remote] [refspec]
+        remote="origin"
+        branch=""
+        fetch_args=()
+        merge_args=()
+        skip_next=false
+        prev_flag=""
+        remote_seen=false
+
+        for arg in "${args_after_globals[@]}"; do
+            if $skip_next; then
+                # Previous arg was a flag that takes a value
+                case "$prev_flag" in
+                    --depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs)
+                        fetch_args+=("$prev_flag" "$arg")
+                        ;;
+                    -s|--strategy|-X|--strategy-option)
+                        merge_args+=("$prev_flag" "$arg")
+                        ;;
+                    *)
+                        # Unknown flag with value, assume merge
+                        merge_args+=("$prev_flag" "$arg")
+                        ;;
+                esac
+                skip_next=false
+                continue
+            fi
+
+            case "$arg" in
+                pull)
+                    continue
+                    ;;
+                # Flags that take an argument
+                --depth|--deepen|--shallow-since|--shallow-exclude|-j|--jobs|-s|--strategy|-X|--strategy-option)
+                    prev_flag="$arg"
+                    skip_next=true
+                    ;;
+                # Merge-specific flags (no argument)
+                --rebase|--no-rebase|--ff|--no-ff|--ff-only|--squash|--no-squash|--commit|--no-commit|--edit|--no-edit|--autostash|--no-autostash)
+                    merge_args+=("$arg")
+                    ;;
+                # Fetch-specific flags (no argument)
+                --all|--tags|--prune|--no-tags|-f|--force|-k|--keep|-t|--update-head-ok|-q|--quiet|-v|--verbose|--progress|--no-progress)
+                    fetch_args+=("$arg")
+                    ;;
+                -*)
+                    # Unknown flag - assume it's for merge
+                    merge_args+=("$arg")
+                    ;;
+                *)
+                    # First non-flag is remote, second is branch
+                    if [ "$remote_seen" = "false" ]; then
+                        remote="$arg"
+                        remote_seen=true
+                    elif [ -z "$branch" ]; then
+                        branch="$arg"
+                    fi
+                    ;;
+            esac
+        done
+
+        # Gateway is REQUIRED for pull operations
+        if ! check_gateway_available; then
+            cat >&2 << 'EOF'
+
+================================================================================
+  GATEWAY SIDECAR NOT AVAILABLE
+================================================================================
+
+Cannot pull: The gateway sidecar is required but not reachable.
+
+The gateway holds GitHub credentials needed for fetch operations.
+Without it, pull operations cannot authenticate with the remote.
+
+Please ensure the gateway sidecar is running:
+  curl http://jib-gateway:9847/api/v1/health
+
+================================================================================
+
+EOF
+            exit 1
+        fi
+
+        # Step 1: Fetch via gateway
+        # If branch specified, fetch that specific ref
+        if [ -n "$branch" ]; then
+            if ! fetch_via_gateway "fetch" "$remote" "$git_work_dir" "${fetch_args[@]}" "$branch"; then
+                echo "ERROR: Fetch failed, aborting pull" >&2
+                exit 1
+            fi
+        else
+            if ! fetch_via_gateway "fetch" "$remote" "$git_work_dir" "${fetch_args[@]}"; then
+                echo "ERROR: Fetch failed, aborting pull" >&2
+                exit 1
+            fi
+        fi
+
+        # Step 2: Merge locally
+        # Determine what to merge
+        merge_target=""
+        if [ -n "$branch" ]; then
+            # User specified a branch, merge remote/branch
+            merge_target="$remote/$branch"
+        else
+            # Get current branch's upstream
+            # Use explicit if/else to handle paths with spaces correctly
+            if [ -n "$git_work_dir" ]; then
+                current_branch=$("$REAL_GIT" -C "$git_work_dir" branch --show-current 2>/dev/null)
+            else
+                current_branch=$("$REAL_GIT" branch --show-current 2>/dev/null)
+            fi
+            if [ -n "$current_branch" ]; then
+                # Try to get the upstream tracking branch
+                if [ -n "$git_work_dir" ]; then
+                    upstream=$("$REAL_GIT" -C "$git_work_dir" rev-parse --abbrev-ref "@{upstream}" 2>/dev/null)
+                else
+                    upstream=$("$REAL_GIT" rev-parse --abbrev-ref "@{upstream}" 2>/dev/null)
+                fi
+                if [ -n "$upstream" ]; then
+                    merge_target="$upstream"
+                else
+                    # No upstream configured, default to remote/current_branch
+                    merge_target="$remote/$current_branch"
+                fi
+            else
+                # Detached HEAD or no branch, try FETCH_HEAD
+                merge_target="FETCH_HEAD"
+            fi
+        fi
+
+        # Build merge command
+        merge_cmd=("$REAL_GIT")
+        [ -n "$git_work_dir" ] && merge_cmd+=("-C" "$git_work_dir")
+        merge_cmd+=("merge" "${merge_args[@]}" "$merge_target")
+
+        exec "${merge_cmd[@]}"
+        ;;
     remote)
         # Check for subcommands that modify remotes
         # Find subcmd in args_after_globals (skip 'remote' itself)
@@ -443,6 +788,42 @@ EOF
             fi
         done
         case "$subcmd" in
+            update)
+                # Convert 'git remote update' to 'git fetch --all' via gateway
+                # This provides authenticated access to all configured remotes
+                if ! check_gateway_available; then
+                    cat >&2 << 'EOF'
+
+================================================================================
+  GATEWAY SIDECAR NOT AVAILABLE
+================================================================================
+
+Cannot update remotes: The gateway sidecar is required but not reachable.
+
+The gateway holds GitHub credentials needed for remote operations.
+
+Please ensure the gateway sidecar is running:
+  curl http://jib-gateway:9847/api/v1/health
+
+================================================================================
+
+EOF
+                    exit 1
+                fi
+
+                # Extract any additional flags (like --prune)
+                update_args=()
+                for arg in "${args_after_globals[@]}"; do
+                    case "$arg" in
+                        remote|update) continue ;;
+                        --prune|-p) update_args+=("--prune") ;;
+                        *) ;;  # Ignore remote names for now, fetch --all gets all
+                    esac
+                done
+
+                fetch_via_gateway "fetch" "origin" "$git_work_dir" "--all" "${update_args[@]}"
+                exit $?
+                ;;
             set-url|add|remove|rm|rename|set-head|set-branches|prune)
                 show_remote_blocked_message
                 exit 1

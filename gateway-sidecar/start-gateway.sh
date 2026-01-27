@@ -49,14 +49,15 @@ if [ -d "$REPOS_DIR" ]; then
 fi
 
 # Worktrees directory - mount at /home/jib/.jib-worktrees
+# Needs RW for git fetch to update refs
 if [ -d "$WORKTREES_DIR" ]; then
-    MOUNTS+=(-v "$WORKTREES_DIR:$CONTAINER_HOME/.jib-worktrees:ro,z")
+    MOUNTS+=(-v "$WORKTREES_DIR:$CONTAINER_HOME/.jib-worktrees:z")
 fi
 
 # Git main directory - mount at /home/jib/.git-main
-# NOTE: read-write access needed for object sync after push
+# Needs RW for git fetch (FETCH_HEAD, refs) and object sync after push
 if [ -d "$GIT_MAIN_DIR" ]; then
-    MOUNTS+=(-v "$GIT_MAIN_DIR:$CONTAINER_HOME/.git-main:rw,z")
+    MOUNTS+=(-v "$GIT_MAIN_DIR:$CONTAINER_HOME/.git-main:z")
 fi
 
 # Local objects directory - mount at /home/jib/.jib-local-objects

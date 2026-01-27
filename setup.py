@@ -1404,6 +1404,53 @@ class MinimalSetup:
         if not token.startswith(prefix):
             raise ValueError(f"Token must start with '{prefix}'")
 
+    def _validate_choice(
+        self, value: str, valid_choices: list[str], error_msg: str, case_insensitive: bool = False
+    ) -> None:
+        """Validate value is one of the valid choices."""
+        check_value = value.lower() if case_insensitive else value
+        check_choices = [c.lower() for c in valid_choices] if case_insensitive else valid_choices
+        if check_value not in check_choices:
+            raise ValueError(error_msg)
+
+    def _validate_prefix(
+        self, value: str, prefix: str, error_msg: str, allow_empty: bool = False
+    ) -> None:
+        """Validate that value starts with the expected prefix.
+
+        Args:
+            value: The value to validate
+            prefix: Required prefix string
+            error_msg: Error message if validation fails
+            allow_empty: If True, empty values pass validation
+
+        Raises:
+            ValueError: If value doesn't start with prefix (unless empty and allow_empty)
+        """
+        if allow_empty and not value:
+            return
+        if not value.startswith(prefix):
+            raise ValueError(error_msg)
+
+    def _validate_first_char(
+        self, value: str, valid_chars: list[str], error_msg: str, allow_empty: bool = False
+    ) -> None:
+        """Validate that value starts with one of the valid characters.
+
+        Args:
+            value: The value to validate
+            valid_chars: List of valid first characters
+            error_msg: Error message if validation fails
+            allow_empty: If True, empty values pass validation
+
+        Raises:
+            ValueError: If first char not in valid_chars (unless empty and allow_empty)
+        """
+        if allow_empty and not value:
+            return
+        if not value or value[0] not in valid_chars:
+            raise ValueError(error_msg)
+
     def _mask_secret(self, secret: str, visible_chars: int = 8) -> str:
         """Mask a secret for display, showing only first few characters."""
         if not secret:
@@ -1516,9 +1563,9 @@ class MinimalSetup:
 
             new_token = self.prompter.prompt(
                 "GitHub Personal Access Token (ghp_...) [keep existing]",
-                validator=lambda t: None
-                if not t or t.startswith("ghp_")
-                else ValueError("Token must start with 'ghp_'"),
+                validator=lambda t: self._validate_prefix(
+                    t, "ghp_", "Token must start with 'ghp_'", allow_empty=True
+                ),
             )
             secrets["GITHUB_TOKEN"] = new_token if new_token else existing_token
 
@@ -1529,9 +1576,9 @@ class MinimalSetup:
                 self.logger.info("Required permissions: Contents (R), Pull requests (R)")
                 new_readonly = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...) [keep existing]",
-                    validator=lambda t: None
-                    if not t or t.startswith("ghp_")
-                    else ValueError("Token must start with 'ghp_'"),
+                    validator=lambda t: self._validate_prefix(
+                        t, "ghp_", "Token must start with 'ghp_'", allow_empty=True
+                    ),
                 )
                 secrets["GITHUB_READONLY_TOKEN"] = (
                     new_readonly if new_readonly else existing_readonly
@@ -1542,9 +1589,9 @@ class MinimalSetup:
                 self.logger.info("Required permissions: Contents (R), Pull requests (R)")
                 readonly_token = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...)",
-                    validator=lambda t: None
-                    if t.startswith("ghp_")
-                    else ValueError("Token must start with 'ghp_'"),
+                    validator=lambda t: self._validate_prefix(
+                        t, "ghp_", "Token must start with 'ghp_'"
+                    ),
                 )
                 if readonly_token:
                     secrets["GITHUB_READONLY_TOKEN"] = readonly_token
@@ -1582,7 +1629,7 @@ class MinimalSetup:
         choice = self.prompter.prompt(
             "Choose authentication method [1/2]",
             default="2",
-            validator=lambda c: None if c in ["1", "2"] else ValueError("Choose 1 or 2"),
+            validator=lambda c: self._validate_choice(c, ["1", "2"], "Choose 1 or 2"),
         )
 
         if choice == "1":
@@ -1639,9 +1686,9 @@ class MinimalSetup:
             token = self.prompter.prompt(
                 "GitHub Personal Access Token (ghp_...)",
                 required=True,
-                validator=lambda t: None
-                if t.startswith("ghp_")
-                else ValueError("Token must start with 'ghp_'"),
+                validator=lambda t: self._validate_prefix(
+                    t, "ghp_", "Token must start with 'ghp_'"
+                ),
             )
 
             secrets["GITHUB_TOKEN"] = token
@@ -1659,9 +1706,9 @@ class MinimalSetup:
                 self.logger.info("")
                 readonly_token = self.prompter.prompt(
                     "GitHub Read-Only Token (ghp_...)",
-                    validator=lambda t: None
-                    if t.startswith("ghp_")
-                    else ValueError("Token must start with 'ghp_'"),
+                    validator=lambda t: self._validate_prefix(
+                        t, "ghp_", "Token must start with 'ghp_'"
+                    ),
                 )
                 if readonly_token:
                     secrets["GITHUB_READONLY_TOKEN"] = readonly_token
@@ -2056,9 +2103,12 @@ class MinimalSetup:
                 self.prompter.prompt(
                     "Slack channel ID (starts with D, C, or G)",
                     default=existing,
-                    validator=lambda c: None
-                    if not c or c[0] in ["D", "C", "G"]
-                    else ValueError("Channel ID must start with D, C, or G"),
+                    validator=lambda c: self._validate_first_char(
+                        c,
+                        ["D", "C", "G"],
+                        "Channel ID must start with D, C, or G",
+                        allow_empty=True,
+                    ),
                 )
                 or existing
             )
@@ -2072,9 +2122,9 @@ class MinimalSetup:
 
         channel_id = self.prompter.prompt(
             "Slack channel ID (starts with D, C, or G)",
-            validator=lambda c: None
-            if c and c[0] in ["D", "C", "G"]
-            else ValueError("Channel ID must start with D, C, or G"),
+            validator=lambda c: self._validate_first_char(
+                c, ["D", "C", "G"], "Channel ID must start with D, C, or G"
+            ),
         )
 
         return channel_id if channel_id else ""
@@ -2090,9 +2140,9 @@ class MinimalSetup:
                 self.prompter.prompt(
                     "Your Slack user ID (starts with U)",
                     default=existing,
-                    validator=lambda u: None
-                    if not u or u.startswith("U")
-                    else ValueError("User ID must start with U"),
+                    validator=lambda u: self._validate_prefix(
+                        u, "U", "User ID must start with U", allow_empty=True
+                    ),
                 )
                 or existing
             )
@@ -2103,12 +2153,53 @@ class MinimalSetup:
 
         user_id = self.prompter.prompt(
             "Your Slack user ID (starts with U)",
-            validator=lambda u: None
-            if u and u.startswith("U")
-            else ValueError("User ID must start with U"),
+            validator=lambda u: self._validate_prefix(u, "U", "User ID must start with U"),
         )
 
         return user_id if user_id else ""
+
+    def prompt_anthropic_auth(self) -> str:
+        """Prompt for Anthropic authentication method.
+
+        Returns:
+            'api_key' or 'oauth'
+        """
+        existing = self.existing_config.get("anthropic_auth_method", "api_key")
+
+        self.logger.header("Anthropic Authentication")
+        self.logger.info("Choose how to authenticate with Claude/Anthropic:")
+        self.logger.info("  1. API Key - Use ANTHROPIC_API_KEY environment variable")
+        self.logger.info("  2. OAuth - Use Claude Max/Pro subscription (browser login)")
+        self.logger.info("")
+
+        # In update mode, show existing and allow modification
+        if self.update_mode:
+            choice = self.prompter.prompt(
+                "Auth method (api_key/oauth)",
+                default=existing,
+                validator=lambda v: self._validate_choice(
+                    v, ["api_key", "oauth"], "Must be 'api_key' or 'oauth'", case_insensitive=True
+                ),
+            )
+            return choice.lower() if choice else existing
+
+        # Check if API key is already set
+        has_api_key = bool(self.existing_secrets.get("ANTHROPIC_API_KEY"))
+        if has_api_key:
+            self.logger.success("Anthropic API key found in secrets")
+            if not self.prompter.prompt_yes_no("Use API key authentication?", default=True):
+                return "oauth"
+            return "api_key"
+
+        # No API key - offer choice
+        choice = self.prompter.prompt(
+            "Auth method (api_key/oauth)",
+            default="oauth",
+            validator=lambda v: self._validate_choice(
+                v, ["api_key", "oauth"], "Must be 'api_key' or 'oauth'", case_insensitive=True
+            ),
+        )
+        return choice.lower() if choice else "oauth"
 
     def run(self) -> bool:
         """Run the minimal setup flow.
@@ -2171,6 +2262,9 @@ class MinimalSetup:
             # 9. Local repositories (for volume mounts)
             local_repos = self.prompt_local_repos()
 
+            # 10. Anthropic authentication method
+            anthropic_auth_method = self.prompt_anthropic_auth()
+
             # Save configuration
             self.logger.header("Saving Configuration")
 
@@ -2189,6 +2283,8 @@ class MinimalSetup:
             config = {
                 "bot_name": bot_name,
                 "github_username": github_username,
+                # Anthropic auth method: 'api_key' or 'oauth'
+                "anthropic_auth_method": anthropic_auth_method,
                 # New nested slack section for SlackConfig.from_env()
                 "slack": {
                     "channel": slack_channel,
@@ -2324,6 +2420,26 @@ def main():
         success = full_setup.run()
 
     if success:
+        # Run configuration validation to verify secrets are valid
+        logger.info("\n" + "=" * 60)
+        logger.info("Validating configuration...")
+        logger.info("=" * 60)
+
+        validate_script = Path(__file__).parent / "scripts" / "validate-config.py"
+        if validate_script.exists():
+            result = subprocess.run(
+                [sys.executable, str(validate_script)],
+                capture_output=False,
+                check=False,
+            )
+            if result.returncode != 0:
+                logger.warning("Configuration validation found issues (see above)")
+                logger.info(
+                    "Run './scripts/validate-config.py --health' for API connectivity tests"
+                )
+        else:
+            logger.warning(f"Validation script not found: {validate_script}")
+
         logger.info("\n" + "=" * 60)
         logger.success("Setup completed successfully!")
         logger.info("=" * 60)

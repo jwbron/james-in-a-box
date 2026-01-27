@@ -1,4 +1,4 @@
-"""Shared result type for all LLM providers."""
+"""Result type for Claude Code agent invocations."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -6,9 +6,7 @@ from typing import Any
 
 @dataclass
 class AgentResult:
-    """Result of an agent invocation.
-
-    This is the common return type for all LLM providers (Claude, Gemini, etc.)
+    """Result of a Claude Code agent invocation.
 
     Attributes:
         success: True if agent completed successfully

@@ -22,8 +22,7 @@ Usage:
         print(f"Error: {result.error}")
 """
 
-from llm.claude.config import ClaudeConfig, Provider
-from llm.claude.router import RouterManager, get_router_config_path, is_router_configured
+from llm.claude.config import ClaudeConfig
 from llm.claude.runner import run_agent, run_agent_async
 
 # Re-export AgentResult from llm.result
@@ -34,10 +33,6 @@ __all__ = [
     "AgentResult",
     "ClaudeConfig",
     "ClaudeResult",
-    "Provider",
-    "RouterManager",
-    "get_router_config_path",
-    "is_router_configured",
     "run_agent",
     "run_agent_async",
 ]

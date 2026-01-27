@@ -1,5 +1,11 @@
 """
-GitHub Client - Wraps gh CLI with token management.
+GitHub Client - Wraps gh CLI with token management and command validation.
+
+Provides:
+- Token management (bot and incognito modes)
+- gh CLI command execution
+- Command validation (allowlist/blocklist)
+- API path validation
 
 Reads the GitHub App token from the shared token file (written by github-token-refresher)
 and executes gh CLI commands with proper authentication.
@@ -7,6 +13,7 @@ and executes gh CLI commands with proper authentication.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -45,6 +52,208 @@ GH_CLI = "/usr/bin/gh"
 
 # Incognito token from environment variable
 INCOGNITO_TOKEN_VAR = "GITHUB_INCOGNITO_TOKEN"
+
+
+# =============================================================================
+# gh Command Validation
+# =============================================================================
+
+# Read-only gh commands that don't require ownership checks
+READONLY_GH_COMMANDS = frozenset(
+    {
+        "pr view",
+        "pr list",
+        "pr checks",
+        "pr diff",
+        "pr status",
+        "issue view",
+        "issue list",
+        "issue status",
+        "repo view",
+        "repo list",
+        "release view",
+        "release list",
+        "api",  # Read-only API calls (GET)
+        "auth status",
+        "config get",
+    }
+)
+
+# Blocked gh commands (dangerous operations)
+BLOCKED_GH_COMMANDS = frozenset(
+    {
+        "pr merge",  # Human must merge
+        "repo delete",
+        "repo archive",
+        "release delete",
+        "auth logout",
+        "auth login",
+        "config set",
+    }
+)
+
+# Allowlist of gh api paths that are permitted
+# These patterns match GitHub API endpoints that are safe for read/write operations
+GH_API_ALLOWED_PATHS = [
+    # PR operations
+    re.compile(r"^repos/[^/]+/[^/]+/pulls$"),  # List PRs
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+$"),  # View PR
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/comments$"),  # PR comments
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews$"),  # PR reviews
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews/\d+$"),  # Specific review
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/reviews/\d+/comments$"),  # Review comments
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/requested_reviewers$"),  # Requested reviewers
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/files$"),  # PR files
+    re.compile(r"^repos/[^/]+/[^/]+/pulls/\d+/commits$"),  # PR commits
+    # Issue operations
+    re.compile(r"^repos/[^/]+/[^/]+/issues$"),  # List issues
+    re.compile(r"^repos/[^/]+/[^/]+/issues/\d+$"),  # View issue
+    re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/comments$"),  # Issue comments
+    re.compile(r"^repos/[^/]+/[^/]+/issues/\d+/labels$"),  # Issue labels
+    # Repository info
+    re.compile(r"^repos/[^/]+/[^/]+$"),  # Repo info
+    re.compile(r"^repos/[^/]+/[^/]+/branches$"),  # List branches
+    re.compile(r"^repos/[^/]+/[^/]+/branches/[^/]+$"),  # Branch info
+    re.compile(r"^repos/[^/]+/[^/]+/commits$"),  # List commits
+    re.compile(r"^repos/[^/]+/[^/]+/commits/[a-f0-9]+$"),  # Specific commit
+    re.compile(r"^repos/[^/]+/[^/]+/contents/.*$"),  # File contents
+    re.compile(r"^repos/[^/]+/[^/]+/git/refs.*$"),  # Git refs
+    re.compile(r"^repos/[^/]+/[^/]+/compare/.*$"),  # Compare commits
+    # User info
+    re.compile(r"^user$"),  # Current user
+    re.compile(r"^users/[^/]+$"),  # User info
+]
+
+
+def validate_gh_api_path(path: str, method: str = "GET") -> tuple[bool, str]:
+    """
+    Validate gh api path against allowlist.
+
+    Args:
+        path: The API path (e.g., "repos/owner/repo/pulls/123")
+        method: The HTTP method (GET, POST, etc.)
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Only GET, POST, PATCH allowed - no DELETE for safety
+    if method.upper() not in ("GET", "POST", "PATCH"):
+        return False, f"HTTP method '{method}' not allowed for gh api"
+
+    # Strip leading slash if present
+    path = path.lstrip("/")
+
+    # Check against allowed patterns
+    for pattern in GH_API_ALLOWED_PATHS:
+        if pattern.match(path):
+            return True, ""
+
+    return False, f"API path '{path}' not in allowlist"
+
+
+# gh api flags that take a value argument
+# These must be skipped when looking for the API path
+GH_API_FLAGS_WITH_VALUES = frozenset(
+    {
+        "-X",
+        "--method",
+        "-H",
+        "--header",
+        "-f",
+        "--field",
+        "-F",
+        "--raw-field",
+        "-q",
+        "--jq",
+        "-t",
+        "--template",
+        "-R",
+        "--repo",
+        "--input",
+        "--cache",
+        "--hostname",
+    }
+)
+
+# gh api flags that don't take a value (boolean flags)
+GH_API_FLAGS_NO_VALUE = frozenset(
+    {
+        "-p",
+        "--paginate",
+        "--slurp",
+        "-i",
+        "--include",
+        "--silent",
+        "--verbose",
+    }
+)
+
+
+def parse_gh_api_args(args: list[str]) -> tuple[str | None, str]:
+    """
+    Parse gh api command arguments to extract the API path and HTTP method.
+
+    The gh api command accepts various flags before the API path:
+        gh api -X PATCH repos/owner/repo/pulls/123 -f base=main
+        gh api --method POST -H "Accept: application/json" /repos/owner/repo/issues
+
+    This function properly skips flags and their values to find the actual API path.
+
+    Args:
+        args: The argument list after 'api' (e.g., ["-X", "PATCH", "repos/..."])
+
+    Returns:
+        Tuple of (api_path, http_method).
+        api_path is None if no path could be found.
+        http_method defaults to "GET" if not specified.
+    """
+    method = "GET"
+    api_path = None
+    i = 0
+
+    while i < len(args):
+        arg = args[i]
+
+        # Check for HTTP method flag
+        if arg in ("-X", "--method"):
+            if i + 1 < len(args):
+                method = args[i + 1].upper()
+                i += 2
+                continue
+            else:
+                # Flag without value - skip it
+                i += 1
+                continue
+
+        # Check for other flags that take values
+        if arg in GH_API_FLAGS_WITH_VALUES:
+            # Skip flag and its value
+            i += 2
+            continue
+
+        # Check for flags that don't take values
+        if arg in GH_API_FLAGS_NO_VALUE:
+            i += 1
+            continue
+
+        # Check for combined flag=value format (e.g., --method=PATCH, -f=key=value)
+        if "=" in arg and arg.startswith("-"):
+            # Handle method specially
+            if arg.startswith(("-X=", "--method=")):
+                method = arg.split("=", 1)[1].upper()
+            i += 1
+            continue
+
+        # Check for other flags we don't recognize (starts with -)
+        if arg.startswith("-"):
+            i += 1
+            continue
+
+        # This is a positional argument - should be the API path
+        api_path = arg
+        break
+
+    return api_path, method
 
 
 @dataclass

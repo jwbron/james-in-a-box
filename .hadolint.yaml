@@ -20,7 +20,7 @@ ignored:
   - DL3015
 
   # DL3016: Pin versions in npm
-  # We want latest versions for Claude Code, Gemini CLI, etc.
+  # We want latest versions for Claude Code
   - DL3016
 
   # DL3059: Multiple consecutive RUN instructions

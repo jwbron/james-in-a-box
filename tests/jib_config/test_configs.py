@@ -6,7 +6,7 @@ from jib_config.configs.confluence import ConfluenceConfig
 from jib_config.configs.gateway import GatewayConfig, RateLimitConfig
 from jib_config.configs.github import GitHubConfig
 from jib_config.configs.jira import JiraConfig
-from jib_config.configs.llm import LLMConfig, LLMProvider
+from jib_config.configs.llm import LLMConfig
 from jib_config.configs.slack import SlackConfig
 
 
@@ -175,7 +175,6 @@ class TestLLMConfig:
     def test_valid_anthropic_config(self):
         """Test valid Anthropic configuration."""
         config = LLMConfig(
-            provider=LLMProvider.ANTHROPIC,
             anthropic_api_key="sk-ant-api03-xxxxxxxxxxxxxxxxxxxxx",
         )
         result = config.validate()
@@ -183,38 +182,21 @@ class TestLLMConfig:
 
     def test_missing_anthropic_key(self):
         """Test validation fails with missing Anthropic key."""
-        config = LLMConfig(provider=LLMProvider.ANTHROPIC)
+        config = LLMConfig()
         result = config.validate()
         assert not result.is_valid
 
     def test_invalid_anthropic_key_prefix(self):
         """Test validation fails with invalid Anthropic key prefix."""
         config = LLMConfig(
-            provider=LLMProvider.ANTHROPIC,
             anthropic_api_key="invalid-key-format",
         )
-        result = config.validate()
-        assert not result.is_valid
-
-    def test_valid_google_config(self):
-        """Test valid Google configuration."""
-        config = LLMConfig(
-            provider=LLMProvider.GOOGLE,
-            google_api_key="AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxx",
-        )
-        result = config.validate()
-        assert result.is_valid
-
-    def test_missing_google_key(self):
-        """Test validation fails with missing Google key."""
-        config = LLMConfig(provider=LLMProvider.GOOGLE)
         result = config.validate()
         assert not result.is_valid
 
     def test_custom_base_url_warning(self):
         """Test warning when custom base URL is set."""
         config = LLMConfig(
-            provider=LLMProvider.ANTHROPIC,
             anthropic_api_key="sk-ant-api03-xxxxxxxxxxxxxxxxxxxxx",
             anthropic_base_url="https://custom.proxy.example.com",
         )
@@ -224,12 +206,10 @@ class TestLLMConfig:
 
     def test_from_env(self, monkeypatch):
         """Test loading from environment variables."""
-        monkeypatch.setenv("LLM_PROVIDER", "google")
-        monkeypatch.setenv("GOOGLE_API_KEY", "AIzaSy-test-key-123")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-test-key-123")
 
         config = LLMConfig.from_env()
-        assert config.provider == LLMProvider.GOOGLE
-        assert config.google_api_key == "AIzaSy-test-key-123"
+        assert config.anthropic_api_key == "sk-ant-api03-test-key-123"
 
 
 class TestConfluenceConfig:
@@ -478,7 +458,7 @@ class TestConfigHealthChecks:
 
     def test_llm_health_no_key(self):
         """Test LLM health check with no API key."""
-        config = LLMConfig(provider=LLMProvider.ANTHROPIC)
+        config = LLMConfig()
         result = config.health_check()
         assert not result.healthy
         assert "not configured" in result.message.lower()

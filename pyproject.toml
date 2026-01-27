@@ -76,6 +76,9 @@ unfixable = []
 # Scripts can have print statements
 "**/jib-tools/*.py" = ["T201"]
 "**/jib-tasks/**/*.py" = ["T201"]
+# jib CLI uses subprocess.run for fire-and-forget cleanup operations
+# SIM105: try-except-pass is more explicit than contextlib.suppress in CLI context
+"**/jib-container/jib" = ["PLW1510", "SIM105"]
 
 [tool.ruff.lint.isort]
 # Group imports

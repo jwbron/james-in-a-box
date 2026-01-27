@@ -49,9 +49,9 @@ def main():
 
             if git_dir.exists():
                 # Mount git directory to a known location
-                # NOTE: read-write access needed for object sync after push
+                # Needs RW for git fetch (FETCH_HEAD, refs) and object sync after push
                 container_git_path = f"{home}/.git-main/{repo_name}"
-                print(f"{git_dir}:{container_git_path}:rw,z")
+                print(f"{git_dir}:{container_git_path}:z")
 
     except Exception as e:
         print(f"Warning: Failed to parse git mounts: {e}", file=sys.stderr)

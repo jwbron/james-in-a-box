@@ -16,7 +16,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 mkdir -p "$SYSTEMD_DIR"
 
 # Make script executable
-chmod +x "$COMPONENT_DIR/worktree-watcher.sh"
+chmod +x "$COMPONENT_DIR/worktree-watcher.py"
 
 # Symlink service and timer files
 echo "Installing systemd service and timer..."

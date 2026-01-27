@@ -26,6 +26,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 
 # =============================================================================
@@ -183,13 +184,17 @@ class Config:
     quiet: bool = field(default_factory=lambda: os.environ.get("JIB_QUIET", "0") == "1")
 
     # LLM configuration
-    llm_provider: str = field(default_factory=lambda: os.environ.get("LLM_PROVIDER", "anthropic"))
-    google_api_key: str | None = field(default_factory=lambda: os.environ.get("GOOGLE_API_KEY"))
+    # Auth method: "api_key" (default) or "oauth"
+    # When oauth, don't warn about missing ANTHROPIC_API_KEY
+    anthropic_auth_method: str = field(
+        default_factory=lambda: os.environ.get("ANTHROPIC_AUTH_METHOD", "api_key").lower()
+    )
+
+    # Valid auth methods for validation
+    VALID_AUTH_METHODS: ClassVar[tuple[str, ...]] = ("api_key", "oauth")
     anthropic_api_key: str | None = field(
         default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY")
     )
-    openai_api_key: str | None = field(default_factory=lambda: os.environ.get("OPENAI_API_KEY"))
-    gemini_model: str | None = field(default_factory=lambda: os.environ.get("GEMINI_MODEL"))
 
     # GitHub tokens
     github_token: str | None = field(default_factory=lambda: os.environ.get("GITHUB_TOKEN"))
@@ -246,20 +251,8 @@ class Config:
         return self.user_home / ".claude"
 
     @property
-    def gemini_dir(self) -> Path:
-        return self.user_home / ".gemini"
-
-    @property
     def beads_dir(self) -> Path:
         return self.sharing_dir / "beads"
-
-    @property
-    def router_dir(self) -> Path:
-        return self.user_home / ".claude-code-router"
-
-    @property
-    def router_config(self) -> Path:
-        return self.router_dir / "config.json"
 
 
 # =============================================================================
@@ -756,7 +749,7 @@ def setup_sharing(config: Config, logger: Logger) -> None:
 
 
 def setup_agent_rules(config: Config, logger: Logger) -> None:
-    """Set up CLAUDE.md and GEMINI.md agent rules."""
+    """Set up CLAUDE.md agent rules."""
     rules_dir = Path("/opt/claude-rules")
     rules_order = [
         "mission.md",
@@ -792,21 +785,7 @@ def setup_agent_rules(config: Config, logger: Logger) -> None:
         repos_claude.symlink_to(claude_md)
         os.lchown(repos_claude, config.runtime_uid, config.runtime_gid)
 
-    # Create GEMINI.md as symlink to CLAUDE.md
-    gemini_md = config.user_home / "GEMINI.md"
-    if gemini_md.is_symlink():
-        gemini_md.unlink()
-    gemini_md.symlink_to(claude_md)
-    os.lchown(gemini_md, config.runtime_uid, config.runtime_gid)
-
-    if config.repos_dir.exists():
-        repos_gemini = config.repos_dir / "GEMINI.md"
-        if repos_gemini.is_symlink():
-            repos_gemini.unlink()
-        repos_gemini.symlink_to(claude_md)
-        os.lchown(repos_gemini, config.runtime_uid, config.runtime_gid)
-
-    logger.success("AI agent rules installed: ~/CLAUDE.md and ~/GEMINI.md (symlinked to ~/repos/)")
+    logger.success("AI agent rules installed: ~/CLAUDE.md (symlinked to ~/repos/)")
     logger.info(f"  Combined {len(rules_order)} rule files (index-based per LLM Doc ADR)")
     logger.info("  Note: Reference docs in ~/repos/james-in-a-box/docs/ (fetched on-demand)")
 
@@ -819,13 +798,22 @@ def setup_claude(config: Config, logger: Logger) -> None:
     (config.claude_dir / "hooks").mkdir(exist_ok=True)
     (config.user_home / ".config" / "claude-code").mkdir(parents=True, exist_ok=True)
 
-    # Check API key
-    if config.llm_provider == "anthropic":
-        if config.anthropic_api_key:
-            logger.success("Anthropic API key configured")
-        else:
-            logger.warn("ANTHROPIC_API_KEY not set")
-            logger.info("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+    # Check API key (only warn if using api_key auth method)
+    # Validate auth method
+    if config.anthropic_auth_method not in config.VALID_AUTH_METHODS:
+        logger.warn(
+            f"Invalid ANTHROPIC_AUTH_METHOD '{config.anthropic_auth_method}', "
+            f"expected one of: {', '.join(config.VALID_AUTH_METHODS)}"
+        )
+
+    if config.anthropic_api_key:
+        logger.success("Anthropic API key configured")
+    elif config.anthropic_auth_method == "oauth":
+        logger.success("Anthropic OAuth authentication enabled")
+    else:
+        logger.warn("ANTHROPIC_API_KEY not set")
+        logger.info("  Set via: export ANTHROPIC_API_KEY=sk-ant-...")
+        logger.info("  Or use OAuth: export ANTHROPIC_AUTH_METHOD=oauth")
 
     # Copy custom commands
     commands_src = Path("/usr/local/share/claude-commands")
@@ -890,18 +878,48 @@ def setup_claude(config: Config, logger: Logger) -> None:
     settings_file.write_text(json.dumps(settings, indent=2))
     os.chown(settings_file, config.runtime_uid, config.runtime_gid)
 
-    # Create ~/.claude.json user state to skip onboarding prompts
-    user_state = {
+    # Ensure ~/.claude.json has required settings to skip onboarding prompts
+    # The file may be bind-mounted from host, so we merge rather than overwrite
+    user_state_file = config.user_home / ".claude.json"
+    required_settings = {
         "hasCompletedOnboarding": True,
+        "autoUpdates": False,
+    }
+    # These are only set on new files, not forced on existing ones
+    default_settings = {
         "lastOnboardingVersion": "2.0.69",
         "numStartups": 1,
         "installMethod": "api_key",
-        "autoUpdates": False,
     }
-    user_state_file = config.user_home / ".claude.json"
-    user_state_file.write_text(json.dumps(user_state, indent=2))
-    os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
-    user_state_file.chmod(0o600)
+
+    # Read existing config if present
+    file_existed = user_state_file.exists()
+    existing_config = {}
+    if file_existed:
+        with contextlib.suppress(json.JSONDecodeError, OSError):
+            existing_config = json.loads(user_state_file.read_text())
+
+    # Check if required settings need updating
+    needs_update = False
+    for key, value in required_settings.items():
+        if existing_config.get(key) != value:
+            needs_update = True
+            existing_config[key] = value
+
+    # Add defaults only for missing keys
+    for key, value in default_settings.items():
+        if key not in existing_config:
+            needs_update = True
+            existing_config[key] = value
+
+    # Write back if changes needed
+    if needs_update:
+        user_state_file.write_text(json.dumps(existing_config, indent=2))
+        os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
+        user_state_file.chmod(0o600)
+        user_state_status = "created" if not file_existed else "updated"
+    else:
+        user_state_status = "unchanged"
 
     # Fix ownership
     chown_recursive(config.claude_dir, config.runtime_uid, config.runtime_gid)
@@ -911,203 +929,10 @@ def setup_claude(config: Config, logger: Logger) -> None:
     config.claude_dir.chmod(0o700)
 
     logger.success(f"Claude settings created: {settings_file}")
-    logger.success(f"Claude user state created: {user_state_file} (onboarding skipped)")
+    logger.success(f"Claude user state {user_state_status}: {user_state_file}")
     if not config.quiet:
         print(json.dumps(settings, indent=2))
         print()
-
-
-def setup_gemini(config: Config, logger: Logger) -> None:
-    """Set up Gemini CLI configuration."""
-    config.gemini_dir.mkdir(parents=True, exist_ok=True)
-    os.chown(config.gemini_dir, config.runtime_uid, config.runtime_gid)
-
-    # Check API key
-    if config.llm_provider in ("google", "gemini"):
-        if config.google_api_key:
-            logger.success("Google API key configured")
-        else:
-            logger.warn("GOOGLE_API_KEY not set")
-            logger.info("  Set via: export GOOGLE_API_KEY=AIza...")
-
-    # Configure API key in .env file
-    if config.google_api_key:
-        env_file = config.gemini_dir / ".env"
-        env_file.write_text(
-            f"# Auto-configured by jib entrypoint\nGEMINI_API_KEY={config.google_api_key}\n"
-        )
-        os.chown(env_file, config.runtime_uid, config.runtime_gid)
-        env_file.chmod(0o600)
-        logger.success("Gemini API key configured in ~/.gemini/.env")
-
-    # Configure settings
-    settings = {
-        "autoAccept": True,
-        "sandbox": False,
-        "hideBanner": True,
-        "usageStatisticsEnabled": False,
-    }
-
-    settings_file = config.gemini_dir / "settings.json"
-    settings_file.write_text(json.dumps(settings, indent=2))
-    os.chown(settings_file, config.runtime_uid, config.runtime_gid)
-    settings_file.chmod(0o600)
-
-    logger.success("Gemini CLI settings configured")
-
-
-def setup_router(config: Config, logger: Logger) -> None:
-    """Set up claude-code-router for multi-provider support."""
-    config.router_dir.mkdir(parents=True, exist_ok=True)
-    (config.router_dir / "plugins").mkdir(exist_ok=True)
-    (config.router_dir / "logs").mkdir(exist_ok=True)
-    chown_recursive(config.router_dir, config.runtime_uid, config.runtime_gid)
-
-    logger.info(f"LLM Provider: {config.llm_provider}")
-
-    # Build router config based on provider
-    if config.llm_provider in ("google", "gemini"):
-        if not config.google_api_key:
-            logger.warn("LLM_PROVIDER=google but GOOGLE_API_KEY not set")
-
-        router_config = {
-            "log": True,
-            "LOG_LEVEL": "debug",
-            "NON_INTERACTIVE_MODE": True,
-            "Providers": [
-                {
-                    "name": "gemini",
-                    "api_base_url": "https://generativelanguage.googleapis.com/v1beta/models/",
-                    "api_key": "$GOOGLE_API_KEY",
-                    "models": ["gemini-3-pro-preview"],
-                    "transformer": {"use": ["gemini"]},
-                }
-            ],
-            "Router": {"default": "gemini,gemini-3-pro-preview"},
-        }
-        logger.success("Router configured for Google Gemini 3 Pro")
-        logger.info(
-            "  Router logs: ~/.claude-code-router/logs/ and ~/.claude-code-router/claude-code-router.log"
-        )
-
-    elif config.llm_provider == "openai":
-        if not config.openai_api_key:
-            logger.warn("LLM_PROVIDER=openai but OPENAI_API_KEY not set")
-
-        router_config = {
-            "log": False,
-            "NON_INTERACTIVE_MODE": True,
-            "Providers": [
-                {
-                    "name": "openai",
-                    "api_base_url": "https://api.openai.com/v1/chat/completions",
-                    "api_key": "$OPENAI_API_KEY",
-                    "models": ["gpt-5.2"],
-                }
-            ],
-            "Router": {"default": "openai,gpt-5.2"},
-        }
-        logger.success("Router configured for OpenAI GPT-5.2")
-
-    else:  # anthropic (default)
-        if not config.anthropic_api_key:
-            logger.warn("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY not set")
-        else:
-            logger.success("Anthropic API key configured")
-
-        # Claude Code natively supports Anthropic via ANTHROPIC_API_KEY env var
-        # No router needed - just ensure the env var is set
-        logger.info("Using Claude Code directly with API key (no router)")
-        return
-
-    # Write config
-    config.router_config.write_text(json.dumps(router_config, indent=2))
-    os.chown(config.router_config, config.runtime_uid, config.runtime_gid)
-
-
-def start_router(config: Config, logger: Logger) -> int | None:
-    """Start claude-code-router and return its PID, or None if not needed."""
-    if not config.router_config.exists():
-        return None
-
-    logger.info(f"Router config: {config.router_config}")
-    if not config.quiet:
-        print(config.router_config.read_text())
-    logger.info("")
-
-    # Start the router in background
-    logger.info("Starting claude-code-router...")
-
-    router_log = Path("/tmp/claude-code-router.log")
-    with open(router_log, "w") as log_file:
-        proc = subprocess.Popen(
-            [
-                "gosu",
-                f"{config.runtime_uid}:{config.runtime_gid}",
-                "ccr",
-                "start",
-                "--port",
-                "3456",
-            ],
-            stdout=log_file,
-            stderr=log_file,
-        )
-
-    # Wait for router to be ready (up to 10 seconds)
-    for _ in range(20):
-        try:
-            # Check if port 3456 is listening
-            result = subprocess.run(
-                ["nc", "-z", "localhost", "3456"],
-                check=False,
-                capture_output=True,
-                timeout=1,
-            )
-            if result.returncode == 0:
-                logger.success(f"Router started (PID: {proc.pid}, port: 3456)")
-                break
-        except (subprocess.TimeoutExpired, Exception):
-            pass
-        time.sleep(0.5)
-    else:
-        logger.warn("Router may not be ready - check /tmp/claude-code-router.log")
-        with contextlib.suppress(Exception):
-            print(router_log.read_text())
-
-    # Get activation environment
-    logger.info("Activating router environment...")
-    try:
-        result = run_cmd(
-            ["ccr", "activate"],
-            as_user=(config.runtime_uid, config.runtime_gid),
-            capture=True,
-            check=False,
-        )
-        activate_output = result.stdout.strip()
-        logger.info("ccr activate output:")
-        print(activate_output)
-
-        # Parse and export environment variables
-        for line in activate_output.split("\n"):
-            line = line.strip()
-            if line.startswith("export "):
-                # Parse: export VAR=value or export VAR="value"
-                parts = line[7:].split("=", 1)
-                if len(parts) == 2:
-                    key = parts[0]
-                    value = parts[1].strip('"').strip("'")
-                    os.environ[key] = value
-
-        logger.info("")
-        logger.info("Environment after activation:")
-        logger.info(f"  ANTHROPIC_BASE_URL={os.environ.get('ANTHROPIC_BASE_URL', 'not set')}")
-        logger.info(
-            f"  ANTHROPIC_AUTH_TOKEN={'set' if os.environ.get('ANTHROPIC_AUTH_TOKEN') else 'not set'}"
-        )
-    except Exception as e:
-        logger.warn(f"Failed to activate router environment: {e}")
-
-    return proc.pid
 
 
 def setup_bashrc(config: Config, logger: Logger) -> None:
@@ -1259,11 +1084,7 @@ def cleanup_on_exit(config: Config, logger: Logger) -> None:
 
 
 def run_interactive(config: Config, logger: Logger) -> None:
-    """Launch interactive LLM session."""
-    # Start the router (timed phase)
-    with _startup_timer.phase("start_router"):
-        start_router(config, logger)
-
+    """Launch interactive Claude Code session."""
     logger.info("")
     logger.info("Analysis Pattern: Exec-based (triggered by host services)")
     logger.info("  - Context analysis: Triggered after context-sync")
@@ -1277,25 +1098,18 @@ def run_interactive(config: Config, logger: Logger) -> None:
     else:
         os.chdir(config.user_home)
 
-    # Build environment for LLM
+    # Build environment for Claude Code
     env = os.environ.copy()
     env.update(
         {
             "PYTHONPATH": "/opt/jib-runtime/jib-container:/opt/jib-runtime/shared",
-            "LLM_PROVIDER": config.llm_provider,
-            "GOOGLE_API_KEY": config.google_api_key or "",
-            "GEMINI_API_KEY": config.google_api_key or "",
-            "GEMINI_MODEL": config.gemini_model or "",
-            # Pass through router environment
-            "ANTHROPIC_BASE_URL": os.environ.get("ANTHROPIC_BASE_URL", ""),
-            "ANTHROPIC_AUTH_TOKEN": os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
             "NO_PROXY": os.environ.get("NO_PROXY", "127.0.0.1"),
             "DISABLE_TELEMETRY": os.environ.get("DISABLE_TELEMETRY", ""),
             "DISABLE_COST_WARNINGS": os.environ.get("DISABLE_COST_WARNINGS", ""),
         }
     )
 
-    logger.info(f"Launching LLM interactive mode (provider: {config.llm_provider})...")
+    logger.info("Launching Claude Code interactive mode...")
 
     # Print timing summary right before launching LLM
     _startup_timer.print_summary()
@@ -1317,21 +1131,6 @@ def run_interactive(config: Config, logger: Logger) -> None:
 def run_exec(config: Config, logger: Logger, args: list[str]) -> None:
     """Run a command in exec mode."""
     env = os.environ.copy()
-
-    if config.llm_provider in ("google", "gemini"):
-        # Gemini native mode - no router needed
-        logger.info("Exec mode with Gemini CLI environment")
-        env["GOOGLE_API_KEY"] = config.google_api_key or ""
-        env["GEMINI_API_KEY"] = config.google_api_key or ""
-    # Claude/OpenAI - start router for claude-agent-sdk compatibility
-    elif config.router_config.exists():
-        logger.info("Starting claude-code-router for exec mode...")
-        with _startup_timer.phase("start_router"):
-            start_router(config, logger)
-
-        # Pass through router environment
-        env["ANTHROPIC_BASE_URL"] = os.environ.get("ANTHROPIC_BASE_URL", "")
-        env["ANTHROPIC_AUTH_TOKEN"] = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 
     # Print timing summary before exec
     _startup_timer.print_summary()
@@ -1389,12 +1188,6 @@ def main() -> None:
 
     with _startup_timer.phase("setup_claude"):
         setup_claude(config, logger)
-
-    with _startup_timer.phase("setup_gemini"):
-        setup_gemini(config, logger)
-
-    with _startup_timer.phase("setup_router"):
-        setup_router(config, logger)
 
     with _startup_timer.phase("setup_bashrc"):
         setup_bashrc(config, logger)

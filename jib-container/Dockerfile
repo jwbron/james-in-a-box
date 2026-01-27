@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y \
     # Development
     strace ltrace gdb \
     # Other useful tools
-    jq tree watch tmux screen inotify-tools ripgrep \
+    jq tree watch tmux screen inotify-tools ripgrep shellcheck \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI (gh)
@@ -69,24 +69,6 @@ RUN pip3 install --no-cache-dir \
 # When running as root, the install script puts bd directly in /usr/local/bin
 RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \
     which bd
-
-# Install Node.js 20.x (required for npm packages: claude-code-router, gemini-cli)
-RUN mkdir -p /usr/share/keyrings && \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
-    apt-get update && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install claude-code-router for multi-provider support
-# Allows routing to OpenAI, Gemini, DeepSeek, etc. while using Claude Code tooling
-RUN npm install -g @musistudio/claude-code-router
-
-# Install Gemini CLI for native Google Gemini support
-# Bypasses claude-code-router for direct Gemini access (avoids thought_signature issues)
-# https://github.com/google-gemini/gemini-cli
-RUN npm install -g @google/gemini-cli || \
-    echo "Gemini CLI install may have failed - will be retried at runtime if needed"
 
 # Note: Claude authentication is mounted at runtime from ~/.jib/claude/ on host
 # This directory is shared across all containers for consistent authentication
@@ -175,8 +157,8 @@ ENTRYPOINT ["python3", "/usr/local/bin/entrypoint.py"]
 # The entrypoint script (entrypoint.py) handles:
 # - Adjusting jib user's UID/GID to match host user (for file permissions)
 # - Git configuration and worktree setup
-# - Claude Code router configuration (multi-provider support)
-# - Agent rules installation (CLAUDE.md, GEMINI.md)
+# - Claude Code configuration
+# - Agent rules installation (CLAUDE.md)
 # - Beads persistent memory initialization
 # - Interactive/exec mode handling
 # =============================================================================
