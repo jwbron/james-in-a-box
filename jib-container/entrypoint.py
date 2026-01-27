@@ -584,13 +584,12 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
     # If .git-admin exists, use isolated mode; otherwise fall back to legacy .git-main
     use_isolated_mode = config.git_admin_dir.exists()
 
-    if not use_isolated_mode:
-        # Legacy mode - check for .git-main
-        if not config.git_main_dir.exists():
-            logger.error("FATAL: Neither ~/.git-admin nor ~/.git-main mounted but worktrees exist")
-            logger.error("  This means jib failed to mount the git directories.")
-            logger.error("  Container cannot start with broken git configuration.")
-            return False
+    # Legacy mode - check for .git-main if .git-admin doesn't exist
+    if not use_isolated_mode and not config.git_main_dir.exists():
+        logger.error("FATAL: Neither ~/.git-admin nor ~/.git-main mounted but worktrees exist")
+        logger.error("  This means jib failed to mount the git directories.")
+        logger.error("  Container cannot start with broken git configuration.")
+        return False
 
     # Configure each worktree
     configured = 0
@@ -644,8 +643,9 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
 
                 # Update git config to use local objects directory
                 # This is done via the worktree admin's config
+                # Non-fatal if this fails - git usually figures it out
                 worktree_config = target_path / "config"
-                try:
+                with contextlib.suppress(Exception):
                     run_cmd_with_retry(
                         [
                             "git",
@@ -656,8 +656,6 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
                             str(repo_dir),
                         ]
                     )
-                except Exception:
-                    pass  # Non-fatal, git usually figures this out
 
             configured += 1
         else:

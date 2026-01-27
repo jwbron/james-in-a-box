@@ -42,6 +42,7 @@ def _check_claude_version() -> str | None:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         if result.returncode == 0:
             version = result.stdout.strip().split()[0] if result.stdout else None
