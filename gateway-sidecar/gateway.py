@@ -1039,11 +1039,11 @@ def main():
 
     # Validate incognito config if configured
     github = get_github_client()
-    is_valid, message = github.validate_incognito_config()
+    is_valid, validation_msg = github.validate_incognito_config()
     if not is_valid:
-        logger.warning("Incognito config validation failed", message=message)
+        logger.warning("Incognito config validation failed", reason=validation_msg)
     else:
-        logger.info("Incognito config", status=message)
+        logger.info("Incognito config", status=validation_msg)
 
     logger.info(
         "Starting Gateway Sidecar",
