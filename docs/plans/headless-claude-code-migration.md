@@ -95,6 +95,25 @@ RUN pip3 install --no-cache-dir \
 
 The comment "Never use --print flag which creates a restricted session" in `shared/jib_logging/wrappers/claude.py` is outdated. The `--print --dangerously-skip-permissions` combination works correctly.
 
+## Stream-JSON Format
+
+The `--output-format stream-json` emits newline-delimited JSON events. Example output:
+
+```json
+{"type":"system","subtype":"init","cwd":"/home/jib/repos","session_id":"abc123","tools":["Bash","Read","Write"]}
+{"type":"assistant","message":{"id":"msg_01X","type":"message","role":"assistant","content":[{"type":"text","text":"I'll fix that bug."}],"model":"claude-opus-4-20250514","usage":{"input_tokens":150,"output_tokens":25}}}
+{"type":"assistant","message":{"id":"msg_02Y","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu_01","name":"Read","input":{"file_path":"/app/main.py"}}],"model":"claude-opus-4-20250514"}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_01","content":"def main():..."}]}}
+{"type":"result","subtype":"success","total_cost_usd":0.012,"duration_ms":5432,"duration_api_ms":4890,"num_turns":3}
+```
+
+**Key event types**:
+- `{"type":"system","subtype":"init",...}` - Session init with model info
+- `{"type":"assistant","message":{...}}` - Claude's response with `model` and `usage`
+- `{"type":"result","subtype":"success"|"error",...}` - Final result
+
+**Model extraction**: The `model` field in assistant messages provides the actual model used. First assistant message is authoritative.
+
 ## Streaming Support
 
 **Current SDK**: Provides `on_output` callback, called for each text chunk
@@ -109,6 +128,8 @@ async for line in process.stdout:
 ```
 
 This preserves real-time log writing for long-running tasks (up to 2 hours).
+
+**Memory management**: Text is written to callback immediately, not accumulated. Only the final concatenated result is stored in `AgentResult.stdout`, limiting memory to the final response size (not all intermediate chunks).
 
 ## API Compatibility
 
@@ -131,9 +152,100 @@ Returns same `AgentResult`:
 - `error: str | None`
 - `metadata: dict | None` (includes model used)
 
+## Error Handling
+
+Subprocess error detection differs from SDK exceptions. The implementation maps exit codes and stderr patterns to structured errors:
+
+| Error Type | Detection Method | `AgentResult` Fields |
+|------------|------------------|----------------------|
+| **Success** | `returncode == 0` | `success=True` |
+| **API key invalid** | `returncode != 0`, stderr contains `invalid_api_key` or `authentication` | `error="Authentication failed"` |
+| **Rate limit** | `returncode != 0`, stderr contains `rate_limit` or `429` | `error="Rate limited"` |
+| **Model not found** | `returncode != 0`, stderr contains `model` and `not found` | `error="Model not available"` |
+| **Timeout** | `asyncio.TimeoutError` raised | `error="Timeout after {n}s"` |
+| **Permission denied** | `returncode != 0`, stderr contains `permission` | `error="Permission denied"` |
+| **Unknown error** | `returncode != 0`, no pattern match | `error=stderr[:500]` |
+
+**Implementation**:
+```python
+def _classify_error(returncode: int, stderr: str) -> str:
+    """Map subprocess failure to error category."""
+    stderr_lower = stderr.lower()
+    if "invalid_api_key" in stderr_lower or "authentication" in stderr_lower:
+        return "Authentication failed"
+    if "rate_limit" in stderr_lower or "429" in stderr_lower:
+        return "Rate limited"
+    if "model" in stderr_lower and "not found" in stderr_lower:
+        return "Model not available"
+    if "permission" in stderr_lower:
+        return "Permission denied"
+    return stderr[:500] if stderr else f"Exit code {returncode}"
+```
+
+## Process Cleanup
+
+Long-running tasks (up to 2 hours) require proper process lifecycle management to prevent orphan/zombie processes.
+
+**Timeout handling with graceful shutdown**:
+```python
+async def run_agent_async(..., timeout: int = 7200):
+    process = await asyncio.create_subprocess_exec(...)
+    try:
+        async with asyncio.timeout(timeout):
+            # Read output...
+            await process.wait()
+    except asyncio.TimeoutError:
+        # Graceful: SIGTERM first, allow 5s for cleanup
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            # Force kill if SIGTERM ignored
+            process.kill()
+            await process.wait()
+        raise
+```
+
+**Zombie prevention**:
+- Always call `process.wait()` after process exits (ensures kernel cleanup)
+- Use `finally` block to guarantee `wait()` even on exceptions
+- `asyncio.create_subprocess_exec` with proper context management
+
+**Parent process termination**:
+- Python subprocess module sets child processes to same process group
+- If parent is killed with SIGTERM/SIGKILL, child becomes orphan (adopted by init)
+- Mitigation: Claude Code CLI handles SIGTERM gracefully and exits
+- For catastrophic parent death: container restart cleans up orphans
+
+**Implementation skeleton**:
+```python
+async def run_agent_async(...):
+    process = None
+    try:
+        process = await asyncio.create_subprocess_exec(...)
+        async with asyncio.timeout(timeout):
+            # ... read output ...
+            await process.wait()
+    except asyncio.TimeoutError:
+        if process:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                process.kill()
+        raise TimeoutError(f"Agent timed out after {timeout}s")
+    finally:
+        if process and process.returncode is None:
+            process.kill()
+            await process.wait()
+```
+
 ## Verification Plan
 
-1. **Unit test**: Mock subprocess, verify stream-json parsing
+1. **Unit tests** (new file: `tests/test_runner.py`):
+   - Mock subprocess, verify stream-json parsing
+   - Test error classification for each error type
+   - Test timeout with SIGTERM/SIGKILL sequence
 2. **Integration test**: Run `incoming-processor.py` with test message
 3. **Timeout test**: Verify 2-hour timeout works correctly
 4. **Streaming test**: Verify `on_output` callback receives chunks
@@ -143,9 +255,18 @@ Returns same `AgentResult`:
 
 | Risk | Mitigation |
 |------|------------|
-| Stream-json format changes | Pin Claude Code version or add format detection |
-| Subprocess overhead | Negligible vs API latency |
-| Different error handling | Test error scenarios thoroughly |
+| Stream-json format changes | Add format detection: check for expected keys (`type`, `message`), log warning and fall back to raw stdout on parse failure |
+| Subprocess overhead | Negligible vs API latency (subprocess spawn ~10ms vs API ~1-10s) |
+| Different error handling | Error classification function with pattern matching (see Error Handling section above) |
+| Process orphans/zombies | Graceful SIGTERM → SIGKILL sequence with guaranteed `wait()` (see Process Cleanup section above) |
+| Memory for long tasks | Stream text to callback immediately; only final result stored |
+
+**Version compatibility**: Add startup check:
+```python
+def _check_claude_version():
+    result = subprocess.run(["claude", "--version"], capture_output=True, text=True)
+    # Log warning if version < minimum known-good version
+```
 
 ## Decisions
 
