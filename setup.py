@@ -2385,7 +2385,9 @@ def main():
             )
             if result.returncode != 0:
                 logger.warning("Configuration validation found issues (see above)")
-                logger.info("Run './scripts/validate-config.py --health' for API connectivity tests")
+                logger.info(
+                    "Run './scripts/validate-config.py --health' for API connectivity tests"
+                )
         else:
             logger.warning(f"Validation script not found: {validate_script}")
 
