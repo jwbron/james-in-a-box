@@ -11,6 +11,7 @@ Platform Support:
 
 import argparse
 import atexit
+import hashlib
 import json
 import os
 import shutil
@@ -1019,13 +1020,199 @@ def check_claude_update() -> str | None:
     return None
 
 
+# =============================================================================
+# Build Hash Caching (Skip unnecessary rebuilds)
+# =============================================================================
+
+# Label used to store build content hash on Docker image
+BUILD_HASH_LABEL = "org.jib.build-hash"
+
+
+def _hash_file(path: Path, hasher) -> None:
+    """Add a single file's content to the hasher."""
+    try:
+        with open(path, "rb") as f:
+            while chunk := f.read(8192):
+                hasher.update(chunk)
+    except (OSError, IOError):
+        pass
+
+
+def _hash_directory(path: Path, hasher) -> None:
+    """Recursively hash all files in a directory."""
+    if not path.exists():
+        return
+    for item in sorted(path.rglob("*")):
+        if item.is_file() and not item.name.startswith("."):
+            # Include relative path in hash to detect renames/moves
+            hasher.update(str(item.relative_to(path)).encode())
+            _hash_file(item, hasher)
+
+
+def compute_build_hash() -> str:
+    """Compute a SHA256 hash of all files that affect the Docker image build.
+
+    This includes:
+    - Dockerfile
+    - entrypoint.py
+    - docker-setup.py
+    - claude-commands/
+    - claude-rules/
+    - .claude/hooks/
+    - bin/, llm/, jib-tasks/, jib-tools/, scripts/
+    - shared/ (from repo root)
+    - pyproject.toml files
+    - Host-services files that get copied to container
+
+    Also includes the current user's UID/GID since these affect the build.
+
+    Returns:
+        Hex-encoded SHA256 hash string
+    """
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    hasher = hashlib.sha256()
+
+    # Include UID/GID in hash (affects build args)
+    hasher.update(f"uid={os.getuid()},gid={os.getgid()}".encode())
+
+    # Single files in jib-container/
+    single_files = [
+        script_dir / "Dockerfile",
+        script_dir / "entrypoint.py",
+        script_dir / "docker-setup.py",
+        script_dir / "pyproject.toml",
+    ]
+    for path in single_files:
+        if path.exists():
+            hasher.update(path.name.encode())
+            _hash_file(path, hasher)
+
+    # Directories in jib-container/
+    container_dirs = [
+        "claude-commands",
+        "claude-rules",
+        "bin",
+        "llm",
+        "jib-tasks",
+        "jib-tools",
+        "scripts",
+    ]
+    for dir_name in container_dirs:
+        dir_path = script_dir / dir_name
+        if dir_path.exists():
+            hasher.update(dir_name.encode())
+            _hash_directory(dir_path, hasher)
+
+    # .claude/hooks directory
+    hooks_path = script_dir / ".claude" / "hooks"
+    if hooks_path.exists():
+        hasher.update(b".claude/hooks")
+        _hash_directory(hooks_path, hasher)
+
+    # shared/ directory from repo root
+    shared_path = repo_root / "shared"
+    if shared_path.exists():
+        hasher.update(b"shared")
+        _hash_directory(shared_path, hasher)
+        # Include shared pyproject.toml
+        shared_pyproject = shared_path / "pyproject.toml"
+        if shared_pyproject.exists():
+            _hash_file(shared_pyproject, hasher)
+
+    # Host-services directories that get copied to container
+    host_services_src = repo_root / "host-services"
+    if host_services_src.exists():
+        container_runtime_services = [
+            "analysis/trace-collector",
+        ]
+        for service_path in container_runtime_services:
+            service_full_path = host_services_src / service_path
+            if service_full_path.exists():
+                hasher.update(f"host-services/{service_path}".encode())
+                _hash_directory(service_full_path, hasher)
+
+    return hasher.hexdigest()
+
+
+def get_image_build_hash() -> Optional[str]:
+    """Get the build hash stored in the Docker image label.
+
+    Returns:
+        Hash string if image exists and has the label, None otherwise
+    """
+    if not image_exists():
+        return None
+
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", "--format",
+             f"{{{{index .Config.Labels \"{BUILD_HASH_LABEL}\"}}}}",
+             Config.IMAGE_NAME],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            hash_value = result.stdout.strip()
+            # Docker returns empty string or "<no value>" if label doesn't exist
+            if hash_value and hash_value != "<no value>":
+                return hash_value
+        return None
+    except Exception:
+        return None
+
+
+def should_rebuild_image() -> tuple[bool, str]:
+    """Check if the Docker image needs to be rebuilt.
+
+    Returns:
+        Tuple of (should_rebuild, reason)
+    """
+    if not image_exists():
+        return True, "image does not exist"
+
+    current_hash = compute_build_hash()
+    stored_hash = get_image_build_hash()
+
+    if stored_hash is None:
+        return True, "no build hash stored (legacy image)"
+
+    if current_hash != stored_hash:
+        return True, "build files changed"
+
+    # Check for Claude Code updates (even if files haven't changed)
+    claude_version = check_claude_update()
+    if claude_version:
+        return True, f"Claude Code update available ({claude_version})"
+
+    return False, "build hash matches (skipping rebuild)"
+
+
 def build_image() -> bool:
-    """Build the Docker image (Docker's cache makes this fast when nothing changed)"""
-    # Always sync files to build context - Docker detects changes and rebuilds only what's needed
+    """Build the Docker image, skipping if nothing has changed.
+
+    Uses content hashing to detect when build files change. If the image
+    exists and its stored hash matches the current files, the build is
+    skipped entirely (~25 seconds saved).
+    """
+    # Check if rebuild is needed
+    needs_rebuild, reason = should_rebuild_image()
+
+    if not needs_rebuild:
+        if not _quiet_mode:
+            info(f"Docker image up-to-date: {reason}")
+        return True
+
+    if not _quiet_mode:
+        info(f"Building Docker image: {reason}")
+
+    # Sync files to build context
     create_dockerfile()
 
     # Check for Claude Code updates
     claude_version = check_claude_update()
+
+    # Compute the build hash to store as a label
+    build_hash = compute_build_hash()
 
     try:
         cmd = [
@@ -1033,6 +1220,7 @@ def build_image() -> bool:
             "--build-arg", f"USER_NAME={os.environ['USER']}",
             "--build-arg", f"USER_UID={os.getuid()}",
             "--build-arg", f"USER_GID={os.getgid()}",
+            "--label", f"{BUILD_HASH_LABEL}={build_hash}",
             "-t", Config.IMAGE_NAME,
             "-f", str(Config.DOCKERFILE),
             str(Config.CONFIG_DIR)
@@ -1868,10 +2056,9 @@ def setup() -> bool:
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
         context_container_path = f"/home/jib/context-sync"
-        # Add :z flag for SELinux systems
-        mounts.append(f"{context_sync_dir}:{context_container_path}:ro,z")
+        mounts.append(f"{context_sync_dir}:{context_container_path}:ro")
         print(f"  ✓ Context sources: {context_sync_dir}")
-        print(f"    Mounted as: ~/context-sync/ (read-only, SELinux relabeled)")
+        print(f"    Mounted as: ~/context-sync/ (read-only)")
 
         # Show available context sources
         subdirs = []
@@ -1901,10 +2088,9 @@ def setup() -> bool:
     Config.TMP_DIR.mkdir(parents=True, exist_ok=True)    # tmp/ inside sharing/
 
     sharing_container_path = f"/home/jib/sharing"
-    # Add :z flag for SELinux systems
-    mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z")
+    mounts.append(f"{Config.SHARING_DIR}:{sharing_container_path}:rw")
     print(f"  ✓ Sharing: {Config.SHARING_DIR}")
-    print(f"    Mounted as: ~/sharing/ (read-write, SELinux relabeled)")
+    print(f"    Mounted as: ~/sharing/ (read-write)")
     print(f"    Purpose: All persistent data")
     print(f"    - ~/sharing/tmp/           Persistent workspace (also at ~/tmp)")
     print(f"    - ~/sharing/context/       Context documents (@save-context)")
@@ -1976,9 +2162,8 @@ def setup() -> bool:
             else:
                 continue
 
-        # Add SELinux label for Fedora/RHEL compatibility
-        mounts.append(f"{mount_path}:{mode},z")
-        print(f"Added: {mount_path} ({mode}, SELinux relabeled)")
+        mounts.append(f"{mount_path}:{mode}")
+        print(f"Added: {mount_path} ({mode})")
 
     print()
     info("Summary of mounted directories:")
@@ -2015,7 +2200,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
     # Mount sharing directory (beads, notifications, incoming tasks, etc.)
     if Config.SHARING_DIR.exists():
         sharing_container_path = "/home/jib/sharing"
-        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw,z"])
+        mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw"])
         if not quiet:
             print(f"  • ~/sharing/ (beads, notifications, tasks)")
 
@@ -2023,7 +2208,7 @@ def add_standard_mounts(mount_args: List[str], quiet: bool = False) -> None:
     context_sync_dir = Path.home() / "context-sync"
     if context_sync_dir.exists():
         context_sync_container = "/home/jib/context-sync"
-        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro,z"])
+        mount_args.extend(["-v", f"{context_sync_dir}:{context_sync_container}:ro"])
         if not quiet:
             print(f"  • ~/context-sync/ (Confluence, JIRA - read-only)")
 
@@ -2129,7 +2314,7 @@ def run_claude() -> bool:
         worktree_path = repo_info["worktree"]
         source_path = repo_info["source"]
         container_path = f"/home/jib/repos/{repo_name}"
-        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
+        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
         if not _quiet_mode:
             print(f"  • ~/repos/{repo_name} (WORKTREE, isolated from host)")
 
@@ -2138,7 +2323,7 @@ def run_claude() -> bool:
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
             git_container_path = f"/home/jib/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
+            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw"])
             if not _quiet_mode:
                 print(f"  • ~/.git-main/{repo_name} (git metadata for worktree, read-write)")
         elif git_path.is_file():
@@ -2155,7 +2340,7 @@ def run_claude() -> bool:
                         main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
                         if main_git_path.is_dir():
                             git_container_path = f"/home/jib/.git-main/{repo_name}"
-                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
+                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw"])
                             if not _quiet_mode:
                                 print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
                         else:
@@ -2169,7 +2354,7 @@ def run_claude() -> bool:
 
     # Mount worktree base directory (used by both interactive and --exec modes)
     worktree_base_container = f"/home/jib/.jib-worktrees"
-    mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw,z"])
+    mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw"])
     if not _quiet_mode:
         print(f"  • ~/.jib-worktrees/ (worktree base directory)")
 
@@ -2184,13 +2369,13 @@ def run_claude() -> bool:
 
     if claude_dir.is_dir():
         container_claude_dir = f"/home/jib/.claude"
-        mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
+        mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
         if not _quiet_mode:
             print(f"  • ~/.claude (Claude config directory)")
 
     if claude_json.is_file():
         container_claude_json = f"/home/jib/.claude.json"
-        mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
+        mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
         if not _quiet_mode:
             print(f"  • ~/.claude.json (Claude settings)")
 
@@ -2212,6 +2397,7 @@ def run_claude() -> bool:
         "docker", "run",
         "--rm",  # Auto-remove container after exit
         "-it",   # Interactive with TTY
+        "--security-opt", "label=disable",  # Disable SELinux labeling for faster startup
         "--name", container_id,
         "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
                 "-e", f"RUNTIME_UID={os.getuid()}",
@@ -2398,7 +2584,7 @@ def exec_in_new_container(
         worktree_path = repo_info["worktree"]
         source_path = repo_info["source"]
         container_path = f"/home/jib/repos/{repo_name}"
-        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw,z"])
+        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
         print(f"  • ~/repos/{repo_name} (WORKTREE, isolated)")
 
         # Mount main repo .git directories (read-write) so worktrees can commit changes
@@ -2406,7 +2592,7 @@ def exec_in_new_container(
         if git_path.is_dir():
             # Normal repo - mount .git directory directly
             git_container_path = f"/home/jib/.git-main/{repo_name}"
-            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw,z"])
+            mount_args.extend(["-v", f"{git_path}:{git_container_path}:rw"])
             print(f"  • ~/.git-main/{repo_name} (git metadata)")
         elif git_path.is_file():
             # Host repo is a worktree - read .git file to find actual git directory
@@ -2419,7 +2605,7 @@ def exec_in_new_container(
                         main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
                         if main_git_path.is_dir():
                             git_container_path = f"/home/jib/.git-main/{repo_name}"
-                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw,z"])
+                            mount_args.extend(["-v", f"{main_git_path}:{git_container_path}:rw"])
                             print(f"  • ~/.git-main/{repo_name} (git metadata, from host worktree)")
                         else:
                             warn(f"Could not find git directory for {repo_name}: {main_git_path}")
@@ -2441,12 +2627,12 @@ def exec_in_new_container(
 
         if claude_dir.is_dir():
             container_claude_dir = f"/home/jib/.claude"
-            mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw,z"])
+            mount_args.extend(["-v", f"{claude_dir}:{container_claude_dir}:rw"])
             print(f"  • ~/.claude (Claude config directory)")
 
         if claude_json.is_file():
             container_claude_json = f"/home/jib/.claude.json"
-            mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw,z"])
+            mount_args.extend(["-v", f"{claude_json}:{container_claude_json}:rw"])
             print(f"  • ~/.claude.json (Claude settings)")
 
     print()
@@ -2456,6 +2642,7 @@ def exec_in_new_container(
     worktree_host_path = Config.WORKTREE_BASE / container_id
     cmd = [
         "docker", "run",
+        "--security-opt", "label=disable",  # Disable SELinux labeling for faster startup
         "--name", container_id,
         "--network", JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
                 "-e", f"RUNTIME_UID={os.getuid()}",
