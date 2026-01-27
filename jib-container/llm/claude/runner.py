@@ -185,10 +185,12 @@ async def run_agent_async(
     model = model or DEFAULT_MODEL
 
     # Build command
+    # Note: --verbose is required when using --output-format stream-json
     cmd = [
         "claude",
         "--print",
         "--dangerously-skip-permissions",
+        "--verbose",
         "--model",
         model,
         "--output-format",
