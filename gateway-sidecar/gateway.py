@@ -440,6 +440,10 @@ def normalize_flag(flag: str) -> str:
 
 # Allowlist of gh api paths that are permitted
 # These patterns match GitHub API endpoints that are safe for read/write operations
+#
+# TODO: This allowlist is defined but validate_gh_api_path() is not yet called
+# in gh_execute(). Wire it up to actually enforce path validation for 'gh api' calls.
+# See Phase 3b in docs/plans/gateway-remote-ops-expansion.md for the implementation plan.
 GH_API_ALLOWED_PATHS = [
     # PR operations
     re.compile(r"^repos/[^/]+/[^/]+/pulls$"),  # List PRs
@@ -1347,6 +1351,11 @@ def gh_execute():
 
     Policy: Filtered - only read-only operations allowed by default.
     Blocked commands return 403.
+
+    TODO: When a command is blocked or invalid, return a helpful error message
+    that lists what commands ARE supported. Currently we just say the command
+    is "not allowed" without guidance. Consider including READONLY_GH_COMMANDS
+    in the error response or documentation link.
     """
     data = request.get_json()
     if not data:
