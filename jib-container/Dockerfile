@@ -61,7 +61,6 @@ RUN chmod +x /tmp/docker-setup.py && \
 RUN pip3 install --no-cache-dir \
     pyyaml \
     requests \
-    claude-agent-sdk \
     cryptography \
     PyJWT
 

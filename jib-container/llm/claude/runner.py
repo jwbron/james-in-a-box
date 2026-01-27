@@ -1,14 +1,17 @@
 """
-Claude Agent SDK runner for non-interactive mode.
+Claude Code runner using headless mode (subprocess).
 
-This module provides functions for running Claude via the Agent SDK,
-which provides full access to tools and filesystem.
+This module provides functions for running Claude via the Claude Code CLI
+in headless mode (`claude --print`), which provides full access to tools
+and filesystem.
 
 Supports both synchronous and asynchronous execution with streaming output.
 """
 
 import asyncio
+import json
 import logging
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -20,9 +23,125 @@ logger = logging.getLogger(__name__)
 
 # Default model for jib-container agents
 # Using the alias 'opus' which maps to the latest Opus model (claude-opus-4-5-*)
-# Note: Claude may self-report a different model ID, but the API metadata shows
-# the actual model being used. Check the 'model' field in AssistantMessage.
 DEFAULT_MODEL = "opus"
+
+# Minimum known-good Claude Code version (for version check logging)
+MIN_CLAUDE_VERSION = "1.0.0"
+
+
+def _check_claude_version() -> str | None:
+    """Check Claude Code CLI version and log warning if too old.
+
+    Returns:
+        Version string if available, None otherwise.
+    """
+    try:
+        result = subprocess.run(
+            ["claude", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip().split()[0] if result.stdout else None
+            if version:
+                logger.debug(f"Claude Code version: {version}")
+                return version
+    except Exception as e:
+        logger.warning(f"Could not check Claude Code version: {e}")
+    return None
+
+
+def _classify_error(returncode: int, stderr: str) -> str:
+    """Map subprocess failure to error category.
+
+    Args:
+        returncode: Process exit code
+        stderr: Standard error output
+
+    Returns:
+        Human-readable error message
+    """
+    stderr_lower = stderr.lower()
+
+    if "invalid_api_key" in stderr_lower or "authentication" in stderr_lower:
+        return "Authentication failed"
+    if "rate_limit" in stderr_lower or "429" in stderr_lower:
+        return "Rate limited"
+    if "model" in stderr_lower and "not found" in stderr_lower:
+        return "Model not available"
+    if "permission" in stderr_lower:
+        return "Permission denied"
+
+    return stderr[:500] if stderr else f"Exit code {returncode}"
+
+
+def _extract_text_from_event(event: dict) -> str | None:
+    """Extract text content from a stream-json event.
+
+    Args:
+        event: Parsed JSON event from stream-json output
+
+    Returns:
+        Text content if present, None otherwise
+    """
+    event_type = event.get("type")
+
+    # Assistant message contains content blocks
+    if event_type == "assistant":
+        message = event.get("message", {})
+        content = message.get("content", [])
+        texts = []
+        for block in content:
+            block_type = block.get("type")
+            if block_type == "text":
+                text = block.get("text")
+                if text:
+                    texts.append(text)
+            elif block_type == "thinking":
+                thinking = block.get("thinking")
+                if thinking and thinking != "(no content)":
+                    texts.append(f"[Thinking: {thinking}]")
+        if texts:
+            return "\n".join(texts)
+
+    # Result message (final)
+    if event_type == "result":
+        result = event.get("result")
+        if result:
+            return result
+
+    return None
+
+
+def _extract_model_from_event(event: dict, current_model: str | None) -> str | None:
+    """Extract model information from a stream-json event.
+
+    Args:
+        event: Parsed JSON event
+        current_model: Previously extracted model (returned if no new info)
+
+    Returns:
+        Model ID string or None
+    """
+    event_type = event.get("type")
+
+    # System init contains resolved model
+    if event_type == "system" and event.get("subtype") == "init":
+        model = event.get("model")
+        if model:
+            logger.debug(f"Model from init event: {model}")
+            return model
+
+    # Assistant message has model in nested message
+    if event_type == "assistant":
+        message = event.get("message", {})
+        model = message.get("model")
+        if model and model != current_model:
+            logger.debug(f"Model from assistant event: {model}")
+            return model
+
+    return current_model
 
 
 async def run_agent_async(
@@ -34,7 +153,7 @@ async def run_agent_async(
     on_output: Callable[[str], None] | None = None,
     model: str | None = None,
 ) -> AgentResult:
-    """Run agent via Claude Agent SDK.
+    """Run agent via Claude Code CLI in headless mode.
 
     Args:
         prompt: The prompt to send to Claude
@@ -52,7 +171,7 @@ async def run_agent_async(
     Example:
         result = await run_agent_async(
             prompt="Fix the bug in main.py",
-            cwd=Path.home() / "khan" / "my-repo",
+            cwd=Path.home() / "repos" / "my-repo",
         )
         if result.success:
             print("Agent completed successfully")
@@ -61,74 +180,119 @@ async def run_agent_async(
     """
     config = config or ClaudeConfig()
     timeout = timeout or config.timeout
-    cwd = cwd or config.cwd
+    cwd_path = Path(cwd) if cwd else config.cwd
     model = model or DEFAULT_MODEL
 
-    try:
-        import claude_agent_sdk as sdk
-    except ImportError:
-        return AgentResult(
-            success=False,
-            stdout="",
-            stderr="",
-            returncode=-1,
-            error="Claude Agent SDK not installed. Run: pip install claude-agent-sdk",
-        )
+    # Build command
+    cmd = [
+        "claude",
+        "--print",
+        "--dangerously-skip-permissions",
+        "--model", model,
+        "--output-format", "stream-json",
+    ]
 
-    # Build SDK options
-    # IMPORTANT: setting_sources=[] prevents loading user settings from
-    # ~/.claude/settings.json which might override the model selection
-    options_kwargs = {
-        "cwd": str(cwd) if cwd else None,
-        "permission_mode": "bypassPermissions",
-        "model": model,
-        "setting_sources": [],  # Don't load user settings - use our explicit config
-    }
-
-    # Only set allowed_tools if explicitly configured
-    if config.allowed_tools:
-        options_kwargs["allowed_tools"] = config.allowed_tools
-
-    options = sdk.ClaudeAgentOptions(**options_kwargs)
-    logger.debug(f"SDK options: model={options.model}, setting_sources={options.setting_sources}")
+    logger.debug(f"Running: {' '.join(cmd)} (cwd={cwd_path})")
 
     stdout_parts: list[str] = []
-    actual_model: str | None = None  # Track the model reported by the API
+    stderr_parts: list[str] = []
+    actual_model: str | None = None
+    process = None
 
     try:
-        async with asyncio.timeout(timeout):
-            async for message in sdk.query(prompt=prompt, options=options):
-                # Extract actual model from init message or assistant messages
-                actual_model = _extract_model_info(message, actual_model)
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd_path) if cwd_path else None,
+        )
 
-                text = _extract_text(message)
-                if text:
-                    stdout_parts.append(text)
-                    if on_output:
-                        on_output(text)
+        # Send prompt via stdin and close
+        process.stdin.write(prompt.encode())
+        await process.stdin.drain()
+        process.stdin.close()
+        await process.stdin.wait_closed()
+
+        async with asyncio.timeout(timeout):
+            # Read stdout line by line (stream-json is newline-delimited)
+            async for line in process.stdout:
+                line_text = line.decode().strip()
+                if not line_text:
+                    continue
+
+                try:
+                    event = json.loads(line_text)
+
+                    # Extract model info
+                    actual_model = _extract_model_from_event(event, actual_model)
+
+                    # Extract text content
+                    text = _extract_text_from_event(event)
+                    if text:
+                        stdout_parts.append(text)
+                        if on_output:
+                            on_output(text)
+
+                except json.JSONDecodeError:
+                    # Non-JSON line (shouldn't happen with stream-json)
+                    logger.warning(f"Non-JSON line in output: {line_text[:100]}")
+
+            # Read any remaining stderr
+            stderr_data = await process.stderr.read()
+            if stderr_data:
+                stderr_parts.append(stderr_data.decode())
+
+            # Wait for process to complete
+            await process.wait()
 
         if actual_model:
             logger.info(f"Agent completed using model: {actual_model}")
 
-        return AgentResult(
-            success=True,
-            stdout="\n".join(stdout_parts),
-            stderr="",
-            returncode=0,
-            metadata={"model": actual_model} if actual_model else None,
-        )
+        if process.returncode == 0:
+            return AgentResult(
+                success=True,
+                stdout="\n".join(stdout_parts),
+                stderr="".join(stderr_parts),
+                returncode=0,
+                metadata={"model": actual_model} if actual_model else None,
+            )
+        else:
+            stderr_text = "".join(stderr_parts)
+            return AgentResult(
+                success=False,
+                stdout="\n".join(stdout_parts),
+                stderr=stderr_text,
+                returncode=process.returncode,
+                error=_classify_error(process.returncode, stderr_text),
+                metadata={"model": actual_model} if actual_model else None,
+            )
 
-    except TimeoutError:
+    except asyncio.TimeoutError:
+        # Graceful shutdown: SIGTERM first, then SIGKILL
+        if process:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+
         return AgentResult(
             success=False,
             stdout="\n".join(stdout_parts),
-            stderr="",
+            stderr="".join(stderr_parts),
             returncode=-1,
             error=f"Timed out after {timeout} seconds",
             metadata={"model": actual_model} if actual_model else None,
         )
 
     except Exception as e:
+        # Ensure process cleanup on any exception
+        if process and process.returncode is None:
+            process.kill()
+            await process.wait()
+
         return AgentResult(
             success=False,
             stdout="\n".join(stdout_parts),
@@ -137,6 +301,15 @@ async def run_agent_async(
             error=str(e),
             metadata={"model": actual_model} if actual_model else None,
         )
+
+    finally:
+        # Final cleanup to prevent zombies
+        if process and process.returncode is None:
+            process.kill()
+            try:
+                await process.wait()
+            except Exception:
+                pass
 
 
 def run_agent(
@@ -163,83 +336,3 @@ def run_agent(
             print(f"Model used: {result.metadata.get('model')}")
     """
     return asyncio.run(run_agent_async(prompt, model=model, **kwargs))
-
-
-def _extract_model_info(message, current_model: str | None) -> str | None:
-    """Extract model information from SDK messages.
-
-    The actual model used can be found in:
-    - SystemMessage (subtype='init'): data['model'] contains the resolved model ID
-    - AssistantMessage: model attribute contains the model ID
-
-    Args:
-        message: SDK message
-        current_model: Previously extracted model (returned if no new info)
-
-    Returns:
-        Model ID string or None
-    """
-    msg_class = type(message).__name__
-
-    # SystemMessage init contains the resolved model ID
-    if msg_class == "SystemMessage" and hasattr(message, "data") and isinstance(message.data, dict):
-        model = message.data.get("model")
-        if model:
-            logger.debug(f"Model from init message: {model}")
-            return model
-
-    # AssistantMessage has model attribute
-    if msg_class == "AssistantMessage" and hasattr(message, "model"):
-        model = message.model
-        if model and model != current_model:
-            logger.debug(f"Model from assistant message: {model}")
-            return model
-
-    return current_model
-
-
-def _extract_text(message) -> str | None:
-    """Extract text content from SDK message.
-
-    The SDK returns various message types:
-    - SystemMessage: init info (subtype='init')
-    - AssistantMessage: content is a list of blocks (TextBlock, ThinkingBlock, etc.)
-    - ResultMessage: has 'result' attribute
-    """
-    msg_class = type(message).__name__
-
-    # AssistantMessage: content is a list of content blocks
-    if msg_class == "AssistantMessage" and hasattr(message, "content"):
-        texts = []
-        for block in message.content:
-            block_class = type(block).__name__
-            # TextBlock has 'text' attribute
-            if block_class == "TextBlock" and hasattr(block, "text"):
-                texts.append(block.text)
-            # ThinkingBlock has 'thinking' attribute (usually "(no content)" or thought process)
-            # Skip "(no content)" thinking blocks
-            elif (
-                block_class == "ThinkingBlock"
-                and hasattr(block, "thinking")
-                and block.thinking
-                and block.thinking != "(no content)"
-            ):
-                texts.append(f"[Thinking: {block.thinking}]")
-        if texts:
-            return "\n".join(texts)
-
-    # ResultMessage: has 'result' attribute
-    if msg_class == "ResultMessage" and hasattr(message, "result") and message.result:
-        return message.result
-
-    # SystemMessage: skip (init info)
-    if msg_class == "SystemMessage":
-        return None
-
-    # Fallback for other message types with 'type' attribute
-    if hasattr(message, "type"):
-        msg_type = message.type
-        if msg_type == "text" and hasattr(message, "text"):
-            return message.text
-
-    return None
