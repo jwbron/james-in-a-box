@@ -13,6 +13,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+
 # Add shared module to path
 SCRIPT_DIR = Path(__file__).parent.resolve()
 JIB_REPO_DIR = SCRIPT_DIR.parent.parent.parent
@@ -21,6 +22,7 @@ if str(SHARED_DIR) not in sys.path:
     sys.path.insert(0, str(SHARED_DIR))
 
 from jib_config import get_local_repos
+
 
 WORKTREE_BASE = Path.home() / ".jib-worktrees"
 
@@ -100,8 +102,17 @@ def get_open_pr_branches(github_repo: str) -> set[str]:
     """Get set of branch names that have open PRs."""
     try:
         result = subprocess.run(
-            ["gh", "pr", "list", "--repo", github_repo, "--state", "open",
-             "--json", "number,headRefName"],
+            [
+                "gh",
+                "pr",
+                "list",
+                "--repo",
+                github_repo,
+                "--state",
+                "open",
+                "--json",
+                "number,headRefName",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -205,8 +216,10 @@ def cleanup_orphaned_worktrees() -> None:
         total_cleaned += 1
         log(f"  Cleaned up {worktrees_removed} worktree(s) for container {container_id}")
 
-    log(f"Cleanup complete: checked {total_checked} container(s), "
-        f"cleaned {total_cleaned} orphaned worktree(s)")
+    log(
+        f"Cleanup complete: checked {total_checked} container(s), "
+        f"cleaned {total_cleaned} orphaned worktree(s)"
+    )
 
 
 def prune_stale_worktree_references() -> None:
@@ -292,8 +305,10 @@ def cleanup_orphaned_branches() -> None:
 
             # Only delete if: no unmerged changes OR has an open PR
             if unmerged > 0 and not has_open_pr:
-                log(f"  Keeping branch {branch} in {repo.name}: "
-                    f"has {unmerged} unmerged commit(s) and no open PR")
+                log(
+                    f"  Keeping branch {branch} in {repo.name}: "
+                    f"has {unmerged} unmerged commit(s) and no open PR"
+                )
                 total_skipped += 1
                 continue
 
@@ -317,8 +332,10 @@ def cleanup_orphaned_branches() -> None:
             log(f"  Deleted {repo_deleted} branch(es) in {repo.name}")
 
     if total_deleted > 0 or total_skipped > 0:
-        log(f"Branch cleanup complete: deleted {total_deleted}, "
-            f"skipped {total_skipped} (have unmerged changes without PR)")
+        log(
+            f"Branch cleanup complete: deleted {total_deleted}, "
+            f"skipped {total_skipped} (have unmerged changes without PR)"
+        )
     else:
         log("No orphaned branches found")
 
