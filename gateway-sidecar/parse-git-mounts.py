@@ -49,8 +49,9 @@ def main():
 
             if git_dir.exists():
                 # Mount git directory to a known location
+                # Needs RW for git fetch to write FETCH_HEAD and update refs
                 container_git_path = f"{home}/.git-main/{repo_name}"
-                print(f"{git_dir}:{container_git_path}:ro,z")
+                print(f"{git_dir}:{container_git_path}:z")
 
     except Exception as e:
         print(f"Warning: Failed to parse git mounts: {e}", file=sys.stderr)

@@ -48,13 +48,15 @@ if [ -d "$REPOS_DIR" ]; then
 fi
 
 # Worktrees directory - mount at /home/jib/.jib-worktrees
+# Needs RW for git fetch to update refs
 if [ -d "$WORKTREES_DIR" ]; then
-    MOUNTS+=(-v "$WORKTREES_DIR:$CONTAINER_HOME/.jib-worktrees:ro,z")
+    MOUNTS+=(-v "$WORKTREES_DIR:$CONTAINER_HOME/.jib-worktrees:z")
 fi
 
 # Git main directory - mount at /home/jib/.git-main
+# Needs RW for git fetch to write FETCH_HEAD and update refs
 if [ -d "$GIT_MAIN_DIR" ]; then
-    MOUNTS+=(-v "$GIT_MAIN_DIR:$CONTAINER_HOME/.git-main:ro,z")
+    MOUNTS+=(-v "$GIT_MAIN_DIR:$CONTAINER_HOME/.git-main:z")
 fi
 
 # Dynamic git mounts from local_repos in repositories.yaml

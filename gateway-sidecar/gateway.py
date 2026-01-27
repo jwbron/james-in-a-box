@@ -615,7 +615,11 @@ def git_fetch():
 
     # Build command using validated args
     if operation == "fetch":
-        cmd_args = ["fetch", remote] + validated_args
+        # Don't include remote when --all is specified (fetches from all remotes)
+        if "--all" in validated_args:
+            cmd_args = ["fetch"] + validated_args
+        else:
+            cmd_args = ["fetch", remote] + validated_args
     else:  # ls-remote
         cmd_args = ["ls-remote", remote] + validated_args
 
