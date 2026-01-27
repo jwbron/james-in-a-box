@@ -509,6 +509,7 @@ def compute_build_hash() -> str:
     if host_services_src.exists():
         container_runtime_services = [
             "analysis/trace-collector",
+            "analysis/index-generator",
         ]
         for service_path in container_runtime_services:
             service_full_path = host_services_src / service_path
