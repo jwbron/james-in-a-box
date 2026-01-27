@@ -47,9 +47,6 @@ def get_docker_log_config(container_id: str, task_id: str | None = None) -> list
     # Ensure container logs directory exists
     CONTAINER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Log file path based on container ID
-    CONTAINER_LOGS_DIR / f"{container_id}.log"
-
     log_args = [
         "--log-driver",
         "json-file",

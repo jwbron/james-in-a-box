@@ -33,6 +33,7 @@ from .config import (
 
 # Container logging module exports
 from .container_logging import (
+    CONTAINER_LOGS_DIR,
     extract_task_id_from_command,
     extract_thread_ts_from_task_file,
     generate_container_id,
@@ -44,7 +45,6 @@ from .container_logging import (
 # Docker module exports
 from .docker import (
     BUILD_HASH_LABEL,
-    CONTAINER_LOGS_DIR,
     build_image,
     check_claude_update,
     check_docker,

@@ -17,9 +17,6 @@ from .config import JIB_NETWORK_NAME, Config
 from .output import error, get_quiet_mode, info, success, warn
 
 
-# Default log directory for container logs
-CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
-
 # Label used to store build content hash on Docker image
 BUILD_HASH_LABEL = "org.jib.build-hash"
 

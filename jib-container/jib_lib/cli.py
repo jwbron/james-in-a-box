@@ -94,7 +94,6 @@ Note: --exec spawns a new container for each execution (automatic cleanup with -
             shutil.rmtree(Config.CONFIG_DIR)
 
         # Ask about persistent directories
-        # Note: TOOLS_DIR doesn't exist in Config, but SHARING_DIR does
         if Config.SHARING_DIR.exists():
             print()
             warn("Persistent directories found:")
