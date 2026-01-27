@@ -105,6 +105,9 @@ from .docker import (
     ensure_jib_network as ensure_jib_network,
 )
 from .docker import (
+    get_force_rebuild as get_force_rebuild,
+)
+from .docker import (
     get_installed_claude_version as get_installed_claude_version,
 )
 from .docker import (
@@ -117,13 +120,10 @@ from .docker import (
     is_dangerous_dir as is_dangerous_dir,
 )
 from .docker import (
-    should_rebuild_image as should_rebuild_image,
-)
-from .docker import (
-    get_force_rebuild as get_force_rebuild,
-)
-from .docker import (
     set_force_rebuild as set_force_rebuild,
+)
+from .docker import (
+    should_rebuild_image as should_rebuild_image,
 )
 
 # Gateway module exports
