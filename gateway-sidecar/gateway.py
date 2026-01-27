@@ -133,10 +133,15 @@ def sync_objects_after_push(repo_path: str) -> dict[str, Any]:
     result: dict[str, Any] = {"synced": 0, "errors": []}
 
     # Parse repo_path to extract container_id and repo_name
-    # Format: /home/jib/.jib-worktrees/<container-id>/<repo-name>
+    # Container sends: /home/jib/repos/<repo-name>
+    # But this is actually mounted from: ~/.jib-worktrees/<container-id>/<repo-name>
+    # We need to resolve the path to get the actual underlying worktree path
     try:
         path = Path(repo_path)
-        parts = path.parts
+        # Resolve symlinks/mounts to get actual path
+        # /home/jib/repos/foo -> ~/.jib-worktrees/jib-xxx/foo
+        real_path = path.resolve()
+        parts = real_path.parts
         # Find index of .jib-worktrees
         if ".jib-worktrees" not in parts:
             logger.debug("Not a worktree path, skipping object sync", repo_path=repo_path)
