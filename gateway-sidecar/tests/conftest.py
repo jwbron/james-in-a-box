@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+
 # Tell pytest to ignore the parent __init__.py which has relative imports
 # that fail when pytest tries to import it directly
 collect_ignore = [str(Path(__file__).parent.parent / "__init__.py")]
