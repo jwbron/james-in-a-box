@@ -187,13 +187,19 @@ def sync_objects_after_push(repo_path: str) -> dict[str, Any]:
             target_subdir = shared_objects / subdir.name
             target_subdir.mkdir(exist_ok=True)
 
-            # Copy object files
+            # Copy object files (continue on errors to maximize sync)
             for obj_file in subdir.iterdir():
                 if obj_file.is_file():
                     target_file = target_subdir / obj_file.name
                     if not target_file.exists():
-                        shutil.copy2(obj_file, target_file)
-                        result["synced"] += 1
+                        try:
+                            shutil.copy2(obj_file, target_file)
+                            result["synced"] += 1
+                        except Exception as e:
+                            error_msg = f"Failed to copy {obj_file}: {e}"
+                            result["errors"].append(error_msg)
+                            logger.warning("Object copy failed", file=str(obj_file), error=str(e))
+                            continue
                         logger.debug(
                             "Synced object",
                             object_hash=f"{subdir.name}{obj_file.name}",
