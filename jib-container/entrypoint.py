@@ -818,18 +818,48 @@ def setup_claude(config: Config, logger: Logger) -> None:
     settings_file.write_text(json.dumps(settings, indent=2))
     os.chown(settings_file, config.runtime_uid, config.runtime_gid)
 
-    # Create ~/.claude.json user state to skip onboarding prompts
-    user_state = {
+    # Ensure ~/.claude.json has required settings to skip onboarding prompts
+    # The file may be bind-mounted from host, so we merge rather than overwrite
+    user_state_file = config.user_home / ".claude.json"
+    required_settings = {
         "hasCompletedOnboarding": True,
+        "autoUpdates": False,
+    }
+    # These are only set on new files, not forced on existing ones
+    default_settings = {
         "lastOnboardingVersion": "2.0.69",
         "numStartups": 1,
         "installMethod": "api_key",
-        "autoUpdates": False,
     }
-    user_state_file = config.user_home / ".claude.json"
-    user_state_file.write_text(json.dumps(user_state, indent=2))
-    os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
-    user_state_file.chmod(0o600)
+
+    # Read existing config if present
+    file_existed = user_state_file.exists()
+    existing_config = {}
+    if file_existed:
+        with contextlib.suppress(json.JSONDecodeError, OSError):
+            existing_config = json.loads(user_state_file.read_text())
+
+    # Check if required settings need updating
+    needs_update = False
+    for key, value in required_settings.items():
+        if existing_config.get(key) != value:
+            needs_update = True
+            existing_config[key] = value
+
+    # Add defaults only for missing keys
+    for key, value in default_settings.items():
+        if key not in existing_config:
+            needs_update = True
+            existing_config[key] = value
+
+    # Write back if changes needed
+    if needs_update:
+        user_state_file.write_text(json.dumps(existing_config, indent=2))
+        os.chown(user_state_file, config.runtime_uid, config.runtime_gid)
+        user_state_file.chmod(0o600)
+        user_state_status = "created" if not file_existed else "updated"
+    else:
+        user_state_status = "unchanged"
 
     # Fix ownership
     chown_recursive(config.claude_dir, config.runtime_uid, config.runtime_gid)
@@ -839,7 +869,7 @@ def setup_claude(config: Config, logger: Logger) -> None:
     config.claude_dir.chmod(0o700)
 
     logger.success(f"Claude settings created: {settings_file}")
-    logger.success(f"Claude user state created: {user_state_file} (onboarding skipped)")
+    logger.success(f"Claude user state {user_state_status}: {user_state_file}")
     if not config.quiet:
         print(json.dumps(settings, indent=2))
         print()
