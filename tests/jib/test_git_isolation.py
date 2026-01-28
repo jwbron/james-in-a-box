@@ -25,11 +25,72 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "jib-container"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "jib-container" / "jib_lib"))
 
 
-@pytest.mark.skip(
-    reason="Cannot import runtime module - has relative imports requiring package installation"
-)
+def _get_setup_git_isolation_mounts():
+    """Import _setup_git_isolation_mounts with mocked dependencies.
+
+    runtime.py has relative imports that fail when imported directly.
+    We use importlib to load it as part of the jib_lib package.
+    """
+    import importlib.util
+
+    # Path to the runtime module
+    runtime_path = Path(__file__).parent.parent.parent / "jib-container" / "jib_lib" / "runtime.py"
+
+    # Create mock modules for all dependencies before loading
+    mock_warn = MagicMock()
+
+    mock_modules = {
+        "statusbar": MagicMock(),
+        "jib_lib": MagicMock(),
+        "jib_lib.auth": MagicMock(),
+        "jib_lib.config": MagicMock(),
+        "jib_lib.container_logging": MagicMock(),
+        "jib_lib.docker": MagicMock(),
+        "jib_lib.gateway": MagicMock(),
+        "jib_lib.output": MagicMock(warn=mock_warn),
+        "jib_lib.setup_flow": MagicMock(),
+        "jib_lib.timing": MagicMock(),
+        "jib_lib.worktrees": MagicMock(),
+    }
+
+    # Pre-populate sys.modules with mocks
+    original_modules = {}
+    for name, mock in mock_modules.items():
+        if name in sys.modules:
+            original_modules[name] = sys.modules[name]
+        sys.modules[name] = mock
+
+    try:
+        # Load the module with package context
+        spec = importlib.util.spec_from_file_location(
+            "jib_lib.runtime",
+            runtime_path,
+            submodule_search_locations=[str(runtime_path.parent)]
+        )
+        module = importlib.util.module_from_spec(spec)
+        module.__package__ = "jib_lib"
+        sys.modules["jib_lib.runtime"] = module
+        spec.loader.exec_module(module)
+
+        return module._setup_git_isolation_mounts
+    finally:
+        # Restore original modules
+        for name in mock_modules:
+            if name in original_modules:
+                sys.modules[name] = original_modules[name]
+            elif name in sys.modules:
+                del sys.modules[name]
+        if "jib_lib.runtime" in sys.modules:
+            del sys.modules["jib_lib.runtime"]
+
+
 class TestMountStructure:
     """Tests for _setup_git_isolation_mounts in runtime.py."""
+
+    @pytest.fixture
+    def setup_git_isolation_mounts(self):
+        """Get the _setup_git_isolation_mounts function with mocked dependencies."""
+        return _get_setup_git_isolation_mounts()
 
     @pytest.fixture
     def git_repo(self, tmp_path):
@@ -69,10 +130,8 @@ class TestMountStructure:
             "worktree_path": worktree_path,
         }
 
-    def test_mount_args_include_worktree_admin(self, git_repo):
+    def test_mount_args_include_worktree_admin(self, git_repo, setup_git_isolation_mounts):
         """Test that mount args include worktree admin directory."""
-        from runtime import _setup_git_isolation_mounts
-
         worktrees = {
             "test-repo": {
                 "worktree": git_repo["worktree_path"],
@@ -81,7 +140,7 @@ class TestMountStructure:
         }
         mount_args = []
 
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Check worktree admin mount
         admin_mount = f"{git_repo['worktree_admin']}:/home/jib/.git-admin/test-repo:rw"
@@ -89,10 +148,8 @@ class TestMountStructure:
             f"Expected admin mount in {mount_args}"
         )
 
-    def test_mount_args_include_objects_rw(self, git_repo):
+    def test_mount_args_include_objects_rw(self, git_repo, setup_git_isolation_mounts):
         """Test that objects directory is mounted as rw."""
-        from runtime import _setup_git_isolation_mounts
-
         worktrees = {
             "test-repo": {
                 "worktree": git_repo["worktree_path"],
@@ -101,7 +158,7 @@ class TestMountStructure:
         }
         mount_args = []
 
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Check objects mount is rw
         objects_path = git_repo["git_dir"] / "objects"
@@ -110,10 +167,8 @@ class TestMountStructure:
             f"Expected objects mount in {mount_args}"
         )
 
-    def test_mount_args_include_refs_rw(self, git_repo):
+    def test_mount_args_include_refs_rw(self, git_repo, setup_git_isolation_mounts):
         """Test that refs directory is mounted as rw."""
-        from runtime import _setup_git_isolation_mounts
-
         worktrees = {
             "test-repo": {
                 "worktree": git_repo["worktree_path"],
@@ -122,17 +177,15 @@ class TestMountStructure:
         }
         mount_args = []
 
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Check refs mount is rw
         refs_path = git_repo["git_dir"] / "refs"
         refs_mount = f"{refs_path}:/home/jib/.git-common/test-repo/refs:rw"
         assert any(refs_mount in arg for arg in mount_args), f"Expected refs mount in {mount_args}"
 
-    def test_mount_args_include_packed_refs(self, git_repo):
+    def test_mount_args_include_packed_refs(self, git_repo, setup_git_isolation_mounts):
         """Test that packed-refs file is mounted when it exists."""
-        from runtime import _setup_git_isolation_mounts
-
         worktrees = {
             "test-repo": {
                 "worktree": git_repo["worktree_path"],
@@ -141,7 +194,7 @@ class TestMountStructure:
         }
         mount_args = []
 
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Check packed-refs mount
         packed_refs_path = git_repo["git_dir"] / "packed-refs"
@@ -150,10 +203,8 @@ class TestMountStructure:
             f"Expected packed-refs mount in {mount_args}"
         )
 
-    def test_mount_args_include_config_ro(self, git_repo):
+    def test_mount_args_include_config_ro(self, git_repo, setup_git_isolation_mounts):
         """Test that config file is mounted as ro."""
-        from runtime import _setup_git_isolation_mounts
-
         worktrees = {
             "test-repo": {
                 "worktree": git_repo["worktree_path"],
@@ -162,7 +213,7 @@ class TestMountStructure:
         }
         mount_args = []
 
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Check config mount is ro
         config_path = git_repo["git_dir"] / "config"
@@ -171,10 +222,8 @@ class TestMountStructure:
             f"Expected config mount in {mount_args}"
         )
 
-    def test_mount_args_include_hooks_ro(self, git_repo):
+    def test_mount_args_include_hooks_ro(self, git_repo, setup_git_isolation_mounts):
         """Test that hooks directory is mounted as ro."""
-        from runtime import _setup_git_isolation_mounts
-
         worktrees = {
             "test-repo": {
                 "worktree": git_repo["worktree_path"],
@@ -183,7 +232,7 @@ class TestMountStructure:
         }
         mount_args = []
 
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Check hooks mount is ro
         hooks_path = git_repo["git_dir"] / "hooks"
@@ -192,10 +241,8 @@ class TestMountStructure:
             f"Expected hooks mount in {mount_args}"
         )
 
-    def test_no_local_objects_mount(self, git_repo):
+    def test_no_local_objects_mount(self, git_repo, setup_git_isolation_mounts):
         """Test that local objects directory is NOT mounted (removed in new implementation)."""
-        from runtime import _setup_git_isolation_mounts
-
         worktrees = {
             "test-repo": {
                 "worktree": git_repo["worktree_path"],
@@ -204,16 +251,14 @@ class TestMountStructure:
         }
         mount_args = []
 
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Verify no local-objects mount
         mount_str = " ".join(mount_args)
         assert ".git-local-objects" not in mount_str, "Local objects mount should be removed"
 
-    def test_no_full_git_common_mount(self, git_repo):
+    def test_no_full_git_common_mount(self, git_repo, setup_git_isolation_mounts):
         """Test that full git-common directory is NOT mounted (replaced by individual mounts)."""
-        from runtime import _setup_git_isolation_mounts
-
         worktrees = {
             "test-repo": {
                 "worktree": git_repo["worktree_path"],
@@ -222,7 +267,7 @@ class TestMountStructure:
         }
         mount_args = []
 
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Verify no full git-common mount (should only have subdirectory mounts)
         git_common_full_mount = f"{git_repo['git_dir']}:/home/jib/.git-common/test-repo:ro"
@@ -230,10 +275,8 @@ class TestMountStructure:
             "Full git-common mount should be removed"
         )
 
-    def test_multiple_repos(self, tmp_path):
+    def test_multiple_repos(self, tmp_path, setup_git_isolation_mounts):
         """Test mount structure with multiple repositories."""
-        from runtime import _setup_git_isolation_mounts
-
         repos = {}
         worktrees = {}
 
@@ -258,7 +301,7 @@ class TestMountStructure:
             worktrees[repo_name] = {"worktree": worktree_path, "source": repo_path}
 
         mount_args = []
-        _setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
 
         # Verify both repos have their own mounts
         for repo_name in ["repo-a", "repo-b"]:
