@@ -579,11 +579,6 @@ def setup_claude(config: Config, logger: Logger) -> None:
                 print(f"    {hook.name}")
 
     # Create settings.json
-    # Use baked-in trace-collector from /opt/jib-runtime (not mounted repo)
-    # This ensures container uses the version that matches the image
-    trace_collector = Path(
-        "/opt/jib-runtime/host-services/analysis/trace-collector/hook_handler.py"
-    )
     beads_hook = config.claude_dir / "hooks/session-end.sh"
 
     settings = {
@@ -595,18 +590,9 @@ def setup_claude(config: Config, logger: Logger) -> None:
         "outputStyle": "default",
         "defaultModel": "opus",
         "hooks": {
-            "PostToolUse": [
-                {
-                    "matcher": ".*",
-                    "hooks": [
-                        {"type": "command", "command": f"python3 {trace_collector} post-tool-use"}
-                    ],
-                }
-            ],
             "SessionEnd": [
                 {
                     "hooks": [
-                        {"type": "command", "command": f"python3 {trace_collector} session-end"},
                         {"type": "command", "command": f"bash {beads_hook}"},
                     ]
                 }
@@ -740,40 +726,6 @@ def setup_beads(config: Config, logger: Logger) -> bool:
     logger.info("  Usage: bd --allow-stale create 'task description' --labels feature,important")
 
     return True
-
-
-def generate_docs_indexes(config: Config, logger: Logger) -> None:
-    """Generate documentation indexes."""
-    # Use baked-in index-generator from /opt/jib-runtime (not mounted repo)
-    # This ensures container uses the version that matches the image
-    index_generator = Path(
-        "/opt/jib-runtime/host-services/analysis/index-generator/index-generator.py"
-    )
-    jib_dir = config.repos_dir / "james-in-a-box"
-
-    if not index_generator.exists() or not jib_dir.exists():
-        return
-
-    logger.info("")
-    logger.info("Generating documentation indexes...")
-
-    try:
-        run_cmd(
-            [
-                "python3",
-                str(index_generator),
-                "--project",
-                str(jib_dir),
-                "--output",
-                str(jib_dir / "docs/generated"),
-            ],
-            as_user=(config.runtime_uid, config.runtime_gid),
-            capture=True,
-        )
-        logger.success("Documentation indexes generated")
-        logger.info("  Location: ~/repos/james-in-a-box/docs/generated/")
-    except Exception:
-        logger.warn("Documentation index generation failed (non-critical)")
 
 
 # =============================================================================
@@ -918,9 +870,6 @@ def main() -> None:
     with _startup_timer.phase("setup_beads"):
         if not setup_beads(config, logger):
             sys.exit(1)
-
-    with _startup_timer.phase("generate_docs_indexes"):
-        generate_docs_indexes(config, logger)
 
     # Run appropriate mode (timing summary is printed inside each mode)
     if len(sys.argv) == 1:
