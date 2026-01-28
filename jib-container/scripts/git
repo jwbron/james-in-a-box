@@ -205,8 +205,9 @@ push_via_gateway() {
     fi
 
     # Build JSON payload
-    local force_json="false"
-    [ "$force" = "true" ] && force_json="true"
+    # Use Python boolean literals (True/False) since this is interpolated into Python code
+    local force_json="False"
+    [ "$force" = "true" ] && force_json="True"
 
     local payload
     payload=$(python3 -c "
