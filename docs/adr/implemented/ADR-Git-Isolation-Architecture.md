@@ -412,6 +412,8 @@ The chosen approach provides:
 
 **Status:** Proposed extension
 
+> **Note on ADR location:** This section describes a proposed extension to the implemented Git Isolation architecture. It's included here rather than as a separate ADR because it builds directly on the existing gateway infrastructure and shares the same threat model. The core architecture (worktrees, gateway routing, credential isolation) is implemented; Private Repo Mode adds an optional policy layer on top.
+
 Private Repo Mode restricts jib to only interact with **private** GitHub repositories, preventing any interaction with public repositories.
 
 ### Motivation
@@ -443,6 +445,23 @@ def validate_repository_access(repo: str, operation: str) -> bool:
         return False
 
     return True  # private or internal repos allowed
+```
+
+### Visibility Cache Policy
+
+Repository visibility is cached to avoid excessive GitHub API calls:
+
+| Property | Value | Rationale |
+|----------|-------|-----------|
+| **TTL** | 60 seconds | Short enough to catch visibility changes; long enough to avoid API rate limits |
+| **Refresh** | On cache miss or expiry | No background refresh; checked synchronously on each operation |
+| **Invalidation** | Manual or restart | Can force refresh via gateway API if needed |
+
+**Security consideration:** A repository changing from private to public mid-session could theoretically allow one operation before the cache expires. The 60-second TTL limits this window. For maximum security, set TTL to 0 (no caching) at the cost of additional API calls.
+
+```python
+# Cache configuration
+VISIBILITY_CACHE_TTL_SECONDS = int(os.getenv("VISIBILITY_CACHE_TTL", "60"))
 ```
 
 ### Enforced Restrictions

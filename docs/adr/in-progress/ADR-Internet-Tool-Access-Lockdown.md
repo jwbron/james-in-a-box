@@ -366,7 +366,7 @@ The gateway maintains a strict allowlist of permitted domains:
 **Allowlist Properties:**
 - **Exhaustive:** Only listed domains are permitted; all others blocked
 - **Enforced at proxy:** Gateway proxy (Squid/Envoy) validates destination before forwarding
-- **TLS inspection:** HTTPS traffic inspected to verify destination domain (CONNECT method)
+- **SNI-based validation:** For HTTPS, the proxy inspects the Server Name Indication (SNI) in the TLS ClientHello to determine the destination domain. This does **not** require MITM CA certificates or decrypting traffic—the proxy simply reads the plaintext hostname from the CONNECT request and SNI extension, then either tunnels the connection or rejects it.
 - **No wildcards for arbitrary domains:** Each permitted domain explicitly listed
 
 ### What Gets Blocked
@@ -377,6 +377,19 @@ The gateway maintains a strict allowlist of permitted domains:
 | Web search | google.com, bing.com | Can't search web | Use GitHub search, local docs |
 | Documentation | docs.python.org | Can't fetch docs | Bundle offline docs in image |
 | Arbitrary APIs | any other endpoint | Can't exfiltrate data | **This is the security goal** |
+
+### Claude Code Built-in Tools
+
+**Important:** Phase 2 lockdown disables Claude Code's network-dependent tools:
+
+| Tool | Status | Reason |
+|------|--------|--------|
+| `WebFetch` | ❌ Blocked | Cannot reach arbitrary URLs |
+| `WebSearch` | ❌ Blocked | Cannot reach search engines |
+| `Bash` (curl, wget) | ❌ Blocked | Cannot reach arbitrary endpoints |
+| GitHub MCP tools | ✓ Works | Routed through gateway |
+
+This is an **expected and intentional limitation**. For tasks requiring web research, use supervised mode or pre-populate context before entering lockdown mode.
 
 ### Pre-installed Dependencies
 
@@ -434,9 +447,10 @@ The architecture prevents several classes of network breakout:
 
 | Attack Vector | Mitigation |
 |---------------|------------|
-| Direct IP connection | No route—internal network only |
+| Direct IP connection | No route—internal network only. Even if jib learns an IP from conversation context, it cannot connect because there's no route to external networks in the container's network namespace. |
 | DNS tunneling | No DNS servers configured |
-| Proxy bypass | No alternate route exists |
+| Proxy bypass | No alternate route exists; proxy is the only path out |
+| IP-based proxy bypass | Proxy validates destination hostname, not just IP. Direct IP requests without Host header are rejected. |
 | Container escape | Defense in depth; not in scope for network layer |
 
 ### Fallback: Supervised Mode
@@ -498,7 +512,7 @@ In supervised mode:
 4. **Supply chain via pre-installed packages:** Malicious packages could be bundled at build time
 
 **Mitigations for Phase 2 residual risks:**
-- GitHub: Audit logging of all operations; branch naming policies
+- GitHub exfiltration: Audit logging of all operations; branch naming policies. Note: GitHub's 256-character branch name limit constrains (but doesn't eliminate) the data bandwidth available through this vector. Commit messages and PR bodies have higher limits but are more visible in audit logs.
 - Claude API: Anthropic maintains usage logs; API calls are authenticated
 - Pre-installed packages: Use pinned versions, scan images with Trivy
 
