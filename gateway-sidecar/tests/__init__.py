@@ -1,1 +1,1 @@
-"""Tests for gateway-sidecar."""
+# Gateway sidecar tests
