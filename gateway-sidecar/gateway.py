@@ -489,9 +489,14 @@ def git_execute():
     if not path_valid:
         audit_log(
             "git_execute_blocked",
-            "git_execute",
+            operation,
             success=False,
-            details={"repo_path": repo_path, "operation": operation, "reason": path_error},
+            details={
+                "repo_path": repo_path,
+                "args": args,
+                "container_id": container_id,
+                "reason": path_error,
+            },
         )
         return make_error(path_error, status_code=403)
 
@@ -499,9 +504,14 @@ def git_execute():
     if operation not in GIT_ALLOWED_COMMANDS:
         audit_log(
             "git_execute_blocked",
-            "git_execute",
+            operation,
             success=False,
-            details={"operation": operation, "reason": "Operation not allowed"},
+            details={
+                "repo_path": repo_path,
+                "args": args,
+                "container_id": container_id,
+                "reason": "Operation not allowed",
+            },
         )
         return make_error(
             f"Operation '{operation}' not allowed. "
@@ -521,9 +531,14 @@ def git_execute():
     if not args_valid:
         audit_log(
             "git_execute_blocked",
-            "git_execute",
+            operation,
             success=False,
-            details={"operation": operation, "git_args": args, "reason": args_error},
+            details={
+                "repo_path": repo_path,
+                "args": args,
+                "container_id": container_id,
+                "reason": args_error,
+            },
         )
         return make_error(args_error, status_code=400)
 
@@ -546,9 +561,13 @@ def git_execute():
         if result.returncode == 0:
             audit_log(
                 "git_execute_success",
-                "git_execute",
+                operation,
                 success=True,
-                details={"operation": operation, "container_id": container_id},
+                details={
+                    "repo_path": repo_path,
+                    "args": validated_args,
+                    "container_id": container_id,
+                },
             )
             return make_success(
                 f"git {operation} successful",
@@ -561,12 +580,14 @@ def git_execute():
         else:
             audit_log(
                 "git_execute_failed",
-                "git_execute",
+                operation,
                 success=False,
                 details={
-                    "operation": operation,
+                    "repo_path": repo_path,
+                    "args": validated_args,
                     "returncode": result.returncode,
                     "container_id": container_id,
+                    "stderr": result.stderr[:500] if result.stderr else None,
                 },
             )
             return make_error(
