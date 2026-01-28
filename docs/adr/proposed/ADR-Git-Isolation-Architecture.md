@@ -624,12 +624,31 @@ GET /api/v1/worktree/list
 Add worktree path resolution:
 
 ```python
+import re
+
+def validate_identifier(value: str, name: str) -> None:
+    """Ensure identifier contains only safe characters.
+
+    Prevents path traversal attacks via container_id or repo_name containing '../'.
+    """
+    if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$', value):
+        raise ValueError(f"Invalid {name}: must be alphanumeric with ._- allowed")
+    if '..' in value:
+        raise ValueError(f"Invalid {name}: path traversal not allowed")
+
 def resolve_worktree_paths(container_id: str, repo_name: str) -> tuple[str, str]:
     """Map container ID to worktree paths.
 
     Returns:
         (work_tree_path, git_dir_path) for use with git --work-tree and --git-dir
+
+    Raises:
+        ValueError: If container_id or repo_name contain unsafe characters
     """
+    # Validate inputs to prevent path traversal
+    validate_identifier(container_id, "container_id")
+    validate_identifier(repo_name, "repo_name")
+
     work_tree = f"/workspace/worktrees/{container_id}/{repo_name}"
     git_dir = f"/workspace/repos/{repo_name}.git/worktrees/wt-{container_id}"
     return work_tree, git_dir
@@ -689,23 +708,53 @@ done
 
 # Read-only operations run locally (fast path)
 case "$cmd" in
-    status|diff|log|show|blame|branch|tag|remote|rev-parse|rev-list|\
+    status|diff|log|show|blame|rev-parse|rev-list|\
     ls-files|ls-tree|cat-file|describe|shortlog|grep|bisect|reflog|\
     for-each-ref|name-rev|merge-base|symbolic-ref)
         exec "$REAL_GIT" "$@"
         ;;
 esac
 
-# Write operations go through gateway
+# Commands that need subcommand/flag awareness
 case "$cmd" in
-    add|commit|checkout|reset|stash|merge|rebase|cherry-pick|revert|\
-    tag|clean|config|rm|mv|restore|switch)
-        # Route to gateway
-        route_to_gateway "$cmd" "$@"
+    branch)
+        # git branch -d/-D/-m/-M/-c/-C are write operations
+        case "$*" in
+            *-d*|*-D*|*-m*|*-M*|*-c*|*-C*|*--delete*|*--move*|*--copy*|*--edit-description*)
+                route_to_gateway "branch" "$@"
+                ;;
+            *)
+                exec "$REAL_GIT" "$@"  # Read-only: list, show current
+                ;;
+        esac
         ;;
-    push|fetch|pull|ls-remote)
-        # Already handled by existing gateway routing
-        # (keep existing implementation)
+    tag)
+        # git tag -d is a write operation; git tag (list) is read-only
+        case "$*" in
+            *-d*|*--delete*)
+                route_to_gateway "tag" "$@"
+                ;;
+            *)
+                # Creating tags also needs gateway (when args present beyond flags)
+                if echo "$*" | grep -qE '^tag\s+(-[alnsf]|--)*\s*[^-]'; then
+                    route_to_gateway "tag" "$@"
+                else
+                    exec "$REAL_GIT" "$@"  # Read-only: list tags
+                fi
+                ;;
+        esac
+        ;;
+    stash)
+        # git stash list/show are read-only
+        subcmd="${2:-push}"  # Default stash action is push
+        case "$subcmd" in
+            list|show)
+                exec "$REAL_GIT" "$@"
+                ;;
+            *)
+                route_to_gateway "stash" "$@"
+                ;;
+        esac
         ;;
     remote)
         # Check subcommand
@@ -720,8 +769,21 @@ case "$cmd" in
                 ;;
         esac
         ;;
+esac
+
+# Write operations go through gateway
+case "$cmd" in
+    add|commit|checkout|reset|merge|rebase|cherry-pick|revert|\
+    clean|config|rm|mv|restore|switch)
+        route_to_gateway "$cmd" "$@"
+        ;;
+    push|fetch|pull|ls-remote)
+        # Already handled by existing gateway routing
+        # (keep existing implementation)
+        ;;
     *)
-        # Unknown command - allow through (fail closed would break tooling)
+        # Unknown command - allow through but log for visibility
+        logger -t jib-git "Unknown git command passed through: $cmd" 2>/dev/null || true
         exec "$REAL_GIT" "$@"
         ;;
 esac
@@ -741,6 +803,10 @@ route_to_gateway() {
 
     local secret
     secret=$(get_gateway_secret)
+    if [ -z "$secret" ]; then
+        echo "ERROR: Gateway secret not available" >&2
+        return 1
+    fi
 
     # Build args array as JSON
     local args_json
@@ -761,23 +827,45 @@ print(json.dumps({
 }))
 ")
 
+    # Call gateway with timeout and error handling
     local response
-    response=$(curl -s -X POST \
+    local curl_exit_code
+    response=$(curl -s --connect-timeout 5 --max-time 60 -X POST \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $secret" \
         -d "$payload" \
-        "${GATEWAY_URL}/api/v1/git/${operation}")
+        "${GATEWAY_URL}/api/v1/git/${operation}" 2>&1)
+    curl_exit_code=$?
+
+    # Handle network failures
+    if [ $curl_exit_code -ne 0 ]; then
+        echo "ERROR: Gateway unavailable at ${GATEWAY_URL} (curl exit code: $curl_exit_code)" >&2
+        echo "Ensure the gateway sidecar is running: curl ${GATEWAY_URL}/api/v1/health" >&2
+        return 1
+    fi
+
+    # Handle empty response
+    if [ -z "$response" ]; then
+        echo "ERROR: Empty response from gateway" >&2
+        return 1
+    fi
 
     # Parse and display response
-    local success stdout stderr returncode
-    success=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success',False))")
+    local success
+    success=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success',False))" 2>/dev/null)
 
     if [ "$success" = "True" ]; then
-        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('stdout',''))"
-        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('stderr',''))" >&2
+        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('stdout',''))" 2>/dev/null
+        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('stderr',''))" >&2 2>/dev/null
         return 0
     else
-        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('message','Unknown error'))" >&2
+        local message
+        message=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('message','Unknown error'))" 2>/dev/null)
+        if [ -z "$message" ]; then
+            echo "ERROR: Invalid response from gateway: $response" >&2
+        else
+            echo "ERROR: $message" >&2
+        fi
         return 1
     fi
 }
@@ -827,6 +915,10 @@ class WorktreeManager:
         base_branch: str = "main"
     ) -> WorktreeInfo:
         """Create an isolated worktree for a container."""
+        # Validate inputs to prevent path traversal
+        validate_identifier(container_id, "container_id")
+        validate_identifier(repo_name, "repo_name")
+
         repo_git = REPOS_DIR / f"{repo_name}.git"
         if not repo_git.exists():
             raise ValueError(f"Repository not found: {repo_name}")
@@ -836,12 +928,30 @@ class WorktreeManager:
 
         worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
-        result = subprocess.run(
-            ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_branch],
+        # Check if branch already exists (from crashed session)
+        branch_exists = subprocess.run(
+            ["git", "rev-parse", "--verify", branch_name],
             cwd=repo_git,
             capture_output=True,
-            text=True,
-        )
+        ).returncode == 0
+
+        if branch_exists:
+            # Use existing branch instead of creating new one
+            result = subprocess.run(
+                ["git", "worktree", "add", str(worktree_path), branch_name],
+                cwd=repo_git,
+                capture_output=True,
+                text=True,
+            )
+        else:
+            # Create new branch from base
+            result = subprocess.run(
+                ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_branch],
+                cwd=repo_git,
+                capture_output=True,
+                text=True,
+            )
+
         if result.returncode != 0:
             raise RuntimeError(f"Failed to create worktree: {result.stderr}")
 
@@ -859,22 +969,70 @@ class WorktreeManager:
 
         return info
 
-    def remove_worktree(self, container_id: str, repo_name: str) -> None:
-        """Remove a container's worktree."""
+    def remove_worktree(
+        self,
+        container_id: str,
+        repo_name: str,
+        force: bool = False
+    ) -> dict:
+        """Remove a container's worktree.
+
+        Args:
+            container_id: Container identifier
+            repo_name: Repository name
+            force: If True, remove even with uncommitted changes
+
+        Returns:
+            dict with 'success', 'uncommitted_changes', 'warning' keys
+        """
         worktree_path = WORKTREES_DIR / container_id / repo_name
         repo_git = REPOS_DIR / f"{repo_name}.git"
+        result = {"success": False, "uncommitted_changes": False, "warning": None}
 
-        if worktree_path.exists():
-            subprocess.run(
-                ["git", "worktree", "remove", str(worktree_path), "--force"],
-                cwd=repo_git,
-                capture_output=True,
+        if not worktree_path.exists():
+            result["success"] = True
+            return result
+
+        # Check for uncommitted changes
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        has_changes = bool(status.stdout.strip())
+
+        if has_changes and not force:
+            result["uncommitted_changes"] = True
+            result["warning"] = (
+                f"Worktree has uncommitted changes. "
+                f"Use force=True to remove anyway, or commit/stash changes first."
             )
+            # Leave worktree intact - user must explicitly force or handle changes
+            return result
+
+        if has_changes:
+            # Log warning but proceed with removal
+            logger.warning(
+                "Removing worktree with uncommitted changes",
+                container_id=container_id,
+                repo=repo_name,
+            )
+            result["warning"] = "Worktree removed with uncommitted changes"
+
+        subprocess.run(
+            ["git", "worktree", "remove", str(worktree_path), "--force"],
+            cwd=repo_git,
+            capture_output=True,
+        )
 
         # Clean up container directory if empty
         container_dir = WORKTREES_DIR / container_id
         if container_dir.exists() and not any(container_dir.iterdir()):
             container_dir.rmdir()
+
+        result["success"] = True
+        return result
 
     def cleanup_orphaned_worktrees(self, active_containers: set[str]) -> int:
         """Remove worktrees for containers that no longer exist."""
@@ -1080,6 +1238,49 @@ def compare_local_vs_gateway():
    - [ ] Run integration tests
    - [ ] Run performance benchmarks
    - [ ] Test multi-container scenarios
+
+---
+
+## Design Decisions
+
+### Uncommitted Changes on Container Exit
+
+When a container exits, the worktree may contain uncommitted changes. The gateway handles this as follows:
+
+1. **Normal exit**: Gateway checks for uncommitted changes before removing worktree
+   - If changes exist, worktree is preserved and warning is logged
+   - User can reconnect or manually handle the changes
+   - Use `force=True` in delete API to remove anyway
+
+2. **Crash/force exit**: Orphaned worktrees are cleaned up on next gateway startup
+   - Uncommitted changes are logged as warnings before removal
+   - Branch remains (commits are preserved), only working directory is removed
+
+3. **Explicit cleanup**: User can call `DELETE /api/v1/worktree/{id}/{repo}?force=true`
+
+**Rationale**: Preserving uncommitted work by default prevents data loss. Orphaned cleanup uses force because there's no user session to prompt.
+
+### Multi-Repository Scenarios
+
+When a container works with multiple repositories, the gateway determines the target repo from the `repo_path` in the request:
+
+1. **Git wrapper** derives `repo_path` from `pwd` (current working directory)
+2. **Gateway** extracts repo name from the path: `/home/jib/repos/{repo_name}/...`
+3. **Path mapping** resolves to the correct worktree: `/workspace/worktrees/{container_id}/{repo_name}`
+
+Each repository has its own worktree, and commands are always executed in the context of the repo containing the current directory. The git wrapper automatically handles this—no special configuration needed for multi-repo containers.
+
+### Large File Handling
+
+For repositories with large files (or Git LFS):
+
+1. **`git add` of large files**: The gateway receives the file paths, not the file contents. Git reads files directly from the worktree filesystem (shared between container and gateway via volume mount).
+
+2. **No HTTP transfer of file contents**: Files are never sent over HTTP. The gateway executes `git add` which reads from the shared filesystem.
+
+3. **LFS support**: Git LFS operations that require network access (push/pull of LFS objects) go through the gateway for authentication, same as regular push/fetch.
+
+**Performance implication**: Large file `git add` has the same performance as local git—the gateway just orchestrates the command.
 
 ---
 
