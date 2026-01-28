@@ -138,8 +138,11 @@ def validate_repo_path(path: str) -> tuple[bool, str]:
         real_path = os.path.realpath(path)
 
         # Check if path is within allowed directories
+        # Normalize paths for comparison (ensure trailing slash for prefix matching)
         for allowed in ALLOWED_REPO_PATHS:
-            if real_path.startswith(allowed):
+            allowed_base = allowed.rstrip("/")
+            # Allow exact match (e.g., /home/jib/repos) or subpath (e.g., /home/jib/repos/foo)
+            if real_path == allowed_base or real_path.startswith(allowed_base + "/"):
                 return True, ""
 
         return False, f"repo_path must be within allowed directories: {ALLOWED_REPO_PATHS}"
