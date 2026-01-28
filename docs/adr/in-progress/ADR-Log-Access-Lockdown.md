@@ -39,11 +39,13 @@ This ADR extends the security principles established in [ADR-Internet-Tool-Acces
 
 The james-in-a-box system stores logs in several locations accessible from the host filesystem:
 
-| Path | Content | Current Access |
-|------|---------|----------------|
-| `~/.jib-sharing/container-logs/` | Container stdout/stderr (persistent) | Direct filesystem read |
-| `~/.jib-sharing/logs/` | Claude output streams (real-time) | Direct filesystem read |
-| `/var/log/jib/model_output/` | Full Claude responses (large files) | Direct filesystem read |
+| Path | Content | Source | Current Access |
+|------|---------|--------|----------------|
+| `~/.jib-sharing/container-logs/` | Container stdout/stderr (persistent) | `container_logging.py` | Direct filesystem read |
+| `~/.jib-sharing/logs/` | Claude output streams (real-time) | `jib_logging` library | Direct filesystem read |
+| `/var/log/jib/model_output/` | Full Claude responses (large files) | `model_capture.py` | Direct filesystem read |
+
+**Note:** The `/var/log/jib/model_output/` path is defined in `shared/jib_logging/model_capture.py:28` and stores full model responses for debugging and cost tracking. This directory is created on-demand when model capture is enabled.
 
 Currently, log access has **no gateway enforcement**:
 - The `jib-logs` utility reads logs directly without authentication
@@ -182,6 +184,28 @@ Specific requirements:
 4. **Authentication required** - Same Bearer token as git operations
 5. **Policy violations logged** - Denied access attempts are recorded
 
+### Container Identity Verification
+
+**How the gateway knows which container is making the request:**
+
+The gateway uses the existing authentication model established in [ADR-Git-Isolation-Architecture](../implemented/ADR-Git-Isolation-Architecture.md). Container identity is established at worktree creation time:
+
+1. **Worktree creation** (`jib --exec` or `jib --task`): The orchestrator creates a unique `container_id` and `task_id`, passing them to the gateway as part of the worktree registration.
+
+2. **Gateway session state**: The gateway maintains a mapping of authenticated sessions to their associated `container_id` and `task_id`. This is stored in memory and is authoritative.
+
+3. **Request validation**: When a container calls `/api/v1/logs/*`, the gateway extracts the session from the Bearer token and looks up the registered `container_id`/`task_id` for that session.
+
+4. **Header verification (defense in depth)**: The `X-Container-ID` and `X-Task-ID` headers are validated against the session's registered values. Mismatches result in 403 responses and audit log entries.
+
+**Why spoofing is not a meaningful attack vector:**
+- The Bearer token is cryptographically tied to the session
+- The session's identity claims are set by the orchestrator, not the container
+- Network isolation means only containers in the jib-network can reach the gateway
+- Containers cannot obtain other containers' Bearer tokens
+
+This model trusts the authenticated caller's session, with header validation as a defense-in-depth measure to detect bugs or misconfigurations rather than active attacks.
+
 ### Gateway Log API
 
 #### Endpoints
@@ -224,6 +248,35 @@ X-Task-ID: task-20260128-123456
   "reason": "Task does not belong to requesting container"
 }
 ```
+
+### Log Index Integrity
+
+The log index (`~/.jib-sharing/container-logs/log-index.json`) is critical for mapping `task_id` → `container_id`. This section defines integrity requirements:
+
+**Index Location and Ownership:**
+- The index is stored on the **host filesystem**, not in any container
+- Only the orchestrator (`jib` CLI on host) and gateway sidecar have write access
+- Containers cannot write to the index (filesystem not mounted)
+
+**Integrity Guarantees:**
+
+| Property | Mechanism |
+|----------|-----------|
+| Atomicity | File locking (`fcntl.LOCK_EX`) prevents concurrent modifications |
+| Consistency | Index updates happen only at container start/end (orchestrator) |
+| Availability | Gateway reads are fast (in-memory cache with file watch) |
+| Durability | JSON file persists across gateway restarts |
+
+**Failure Modes and Mitigations:**
+
+| Failure | Detection | Mitigation |
+|---------|-----------|------------|
+| Missing task in index | Gateway returns 404 for unknown tasks | Fail-closed: cannot access unindexed logs |
+| Corrupted index JSON | Parse error on gateway startup | Gateway falls back to rebuild from log file headers |
+| Index out of sync | Task exists in logs but not index | Gateway can optionally scan log directories periodically |
+| Index tampering (host compromise) | Outside threat model | If host is compromised, all security is compromised |
+
+**Implementation Note:** The current `container_logging.py:129-196` provides the atomic update mechanism. The gateway should load the index into memory at startup and use `inotify` (Linux) or polling to detect updates, avoiding file I/O on every request.
 
 ### Log Policy Engine
 
@@ -331,9 +384,12 @@ jib-logs --search "error"
 
 # New behavior (gateway-mediated):
 jib-logs --search "error"
-# Calls GET /api/v1/logs/search?pattern=error
-# Returns only logs for current container's tasks
+# 1. Calls is_in_container() (see Phase 3 for detection logic)
+# 2. If in container: calls GET /api/v1/logs/search?pattern=error
+# 3. Returns only logs for current container's tasks
 ```
+
+**Container Detection:** The CLI uses the `is_in_container()` function documented in Phase 3. Primary detection is via `JIB_CONTAINER=1` environment variable set by the orchestrator. Secondary detection checks for absence of `~/.jib-sharing/` (not mounted in container) or presence of `/.dockerenv`.
 
 For host-side usage (admin/debugging), the utility can continue with direct access, but should emit an audit log.
 
@@ -398,6 +454,29 @@ Layer 5: Network Isolation
 | Auditability | None | Full audit trail |
 | Cross-agent access | Unrestricted | Denied by default |
 | Debugging | Easy | Requires gateway access |
+
+### Performance Considerations
+
+Gateway-mediated log access introduces latency that may affect debugging workflows:
+
+**Expected Overhead:**
+
+| Operation | Direct FS | Gateway | Impact |
+|-----------|-----------|---------|--------|
+| Single log read | ~1ms | ~10-50ms | Minimal for single reads |
+| Log search (small) | ~50ms | ~100-200ms | Noticeable but acceptable |
+| Log search (large, 100MB+) | ~500ms | ~1-5s | May require pagination |
+| Streaming tail | N/A (inotify) | Deferred to Phase 4 | Significant workflow impact |
+
+**Mitigation Strategies:**
+
+1. **Gateway caching**: Cache recently-accessed log content in memory (TTL ~30s)
+2. **Pagination for search**: Return max 1000 results per request, with cursor-based pagination
+3. **Result limits**: Default `?limit=100` on list/search endpoints
+4. **Async search**: For large searches, return a search job ID and poll for results
+5. **Index pre-loading**: Gateway loads log index at startup, watches for updates via `inotify`
+
+**Real-time streaming (Phase 4 consideration):** The lack of `--tail` functionality will impact debugging. While deferred, this should be prioritized if user feedback indicates significant friction. WebSocket streaming through the gateway is technically feasible using the same authentication model.
 
 ## Alternatives Considered
 
@@ -467,10 +546,49 @@ Layer 5: Network Isolation
 
 ### Phase 3: Migration
 
-1. Update CLAUDE.md documentation
-2. Update any scripts that read logs directly
-3. Deprecation warnings for direct filesystem access from containers
-4. Monitor audit logs for unexpected access patterns
+**Detection Mechanism:** How does `jib-logs` know it's running in a container vs on the host?
+
+```python
+def is_in_container() -> bool:
+    """Detect if running inside a jib container."""
+    # Primary: Check for JIB_CONTAINER environment variable (set by orchestrator)
+    if os.environ.get("JIB_CONTAINER") == "1":
+        return True
+
+    # Secondary: Check for absence of ~/.jib-sharing/ (not mounted in container)
+    if not Path.home().joinpath(".jib-sharing").exists():
+        return True
+
+    # Tertiary: Check for /.dockerenv (standard Docker indicator)
+    if Path("/.dockerenv").exists():
+        return True
+
+    return False
+```
+
+**Migration Steps:**
+
+1. **Add environment detection** to `jib-logs`:
+   - Set `JIB_CONTAINER=1` in container environment (orchestrator change)
+   - Update `jib-logs` to check `is_in_container()` before filesystem access
+
+2. **Deprecation period** (2 weeks recommended):
+   - Log warning when direct filesystem access attempted from container
+   - `WARNING: Direct log access deprecated. Use gateway API. This will fail in v2.x.`
+   - Include documentation link in warning
+
+3. **Update CLAUDE.md documentation**:
+   - Document new log access patterns
+   - Remove any references to direct log file paths
+
+4. **Update dependent scripts**:
+   - Audit `~/repos/james-in-a-box/` for scripts reading from `~/.jib-sharing/`
+   - Update each to use `LogClient` when in container
+
+5. **Monitoring** (ongoing):
+   - Alert on gateway 403 responses for log access (may indicate missed migration)
+   - Track direct filesystem access attempts via audit logs
+   - Dashboard showing migration progress (gateway API calls vs filesystem attempts)
 
 ### Phase 4: Enhancements (Future)
 
