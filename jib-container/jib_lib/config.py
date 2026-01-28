@@ -58,31 +58,16 @@ class Config:
 # Gateway container constants (containerized gateway sidecar)
 GATEWAY_CONTAINER_NAME = "jib-gateway"
 GATEWAY_IMAGE_NAME = "jib-gateway"
-JIB_NETWORK_NAME = "jib-network"
 GATEWAY_PORT = 9847
 GATEWAY_PROXY_PORT = 3128
 
-# Phase 2: Network lockdown configuration
+# Network lockdown configuration
 # Dual-network architecture: jib-isolated (internal) + jib-external (for gateway)
+# jib container connects only to jib-isolated and routes all traffic through gateway proxy
 JIB_ISOLATED_NETWORK = "jib-isolated"
 JIB_EXTERNAL_NETWORK = "jib-external"
 JIB_CONTAINER_IP = "172.30.0.10"  # Fixed IP for jib container in isolated network
 GATEWAY_ISOLATED_IP = "172.30.0.2"  # Gateway IP in isolated network
-
-
-def get_network_mode() -> str:
-    """Get the current network mode from environment.
-
-    Returns:
-        'lockdown' for Phase 2 network isolation
-        'legacy' for Phase 1 single network mode (default)
-    """
-    return os.environ.get("JIB_NETWORK_MODE", "legacy").lower()
-
-
-def is_lockdown_mode() -> bool:
-    """Check if running in network lockdown mode (Phase 2)."""
-    return get_network_mode() == "lockdown"
 
 
 def get_platform() -> str:

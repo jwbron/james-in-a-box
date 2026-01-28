@@ -2,13 +2,11 @@
 # Dynamic startup script for gateway-sidecar
 # Generates container mounts at startup rather than relying on stale config files
 #
-# This script supports both Phase 1 (legacy) and Phase 2 (network lockdown) modes:
-# - Phase 1: Single jib-network, no proxy filtering
-# - Phase 2: Dual network (jib-isolated + jib-external), Squid proxy filtering
+# This script runs in network lockdown mode with dual network architecture:
+# - jib-isolated: Internal network for jib container (no external route)
+# - jib-external: Gateway's external network for filtered internet access
 #
-# Mode is controlled by JIB_NETWORK_MODE environment variable:
-# - "lockdown" = Phase 2 (network lockdown enabled)
-# - anything else = Phase 1 (legacy mode)
+# All network traffic from jib container is routed through Squid proxy for filtering.
 
 set -e
 
@@ -19,12 +17,7 @@ HOME_DIR="${HOME:-$(eval echo ~)}"
 # This is critical for path consistency between jib containers and gateway
 CONTAINER_HOME="/home/jib"
 
-# Network configuration
-# Phase 1: jib-network (single network, legacy)
-# Phase 2: jib-isolated + jib-external (dual network, lockdown)
-NETWORK_MODE="${JIB_NETWORK_MODE:-legacy}"
-
-# Network names and IPs for Phase 2
+# Network names and IPs for lockdown mode
 ISOLATED_NETWORK="jib-isolated"
 EXTERNAL_NETWORK="jib-external"
 GATEWAY_ISOLATED_IP="172.30.0.2"
@@ -123,126 +116,81 @@ ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
 # host paths to the jib launcher for Docker mount sources
 ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
 
-# Pass network mode to gateway (for conditional Squid startup)
-ENV_ARGS+=(-e "JIB_NETWORK_MODE=$NETWORK_MODE")
-
 # Pass incognito token if configured (for personal GitHub account attribution)
 if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
     ENV_ARGS+=(-e "GITHUB_INCOGNITO_TOKEN=$GITHUB_INCOGNITO_TOKEN")
 fi
 
 # =============================================================================
-# Network Configuration
-# =============================================================================
-
-run_phase1_legacy() {
-    # Phase 1: Single network (jib-network), no proxy filtering
-    echo "Starting gateway in Phase 1 (legacy) mode..."
-    echo "  Network: jib-network"
-    echo "  Proxy: disabled"
-
-    # Ensure jib-network exists
-    if ! docker network inspect jib-network &>/dev/null; then
-        echo "Creating jib-network..."
-        docker network create jib-network
-    fi
-
-    exec /usr/bin/docker run --rm \
-        --name jib-gateway \
-        --network jib-network \
-        --security-opt label=disable \
-        --user "$(id -u):$(id -g)" \
-        -p 9847:9847 \
-        "${ENV_ARGS[@]}" \
-        "${MOUNTS[@]}" \
-        jib-gateway
-}
-
-run_phase2_lockdown() {
-    # Phase 2: Dual network (jib-isolated + jib-external), Squid proxy filtering
-    echo "Starting gateway in Phase 2 (network lockdown) mode..."
-    echo "  Networks: $ISOLATED_NETWORK (internal) + $EXTERNAL_NETWORK (external)"
-    echo "  Gateway IPs: $GATEWAY_ISOLATED_IP (isolated), $GATEWAY_EXTERNAL_IP (external)"
-    echo "  Proxy: enabled (port 3128)"
-
-    # Verify networks exist
-    if ! docker network inspect "$ISOLATED_NETWORK" &>/dev/null; then
-        echo "ERROR: $ISOLATED_NETWORK network not found" >&2
-        echo "Run create-networks.sh first to set up Phase 2 networks" >&2
-        exit 1
-    fi
-    if ! docker network inspect "$EXTERNAL_NETWORK" &>/dev/null; then
-        echo "ERROR: $EXTERNAL_NETWORK network not found" >&2
-        echo "Run create-networks.sh first to set up Phase 2 networks" >&2
-        exit 1
-    fi
-
-    # Remove existing gateway container if present
-    docker rm -f jib-gateway 2>/dev/null || true
-
-    # Start gateway on isolated network first (with fixed IP)
-    echo "Starting gateway container on $ISOLATED_NETWORK..."
-    docker run -d \
-        --name jib-gateway \
-        --network "$ISOLATED_NETWORK" \
-        --ip "$GATEWAY_ISOLATED_IP" \
-        --security-opt label=disable \
-        --user "$(id -u):$(id -g)" \
-        -p 9847:9847 \
-        -p 3128:3128 \
-        "${ENV_ARGS[@]}" \
-        "${MOUNTS[@]}" \
-        jib-gateway
-
-    # Connect to external network (dual-homed)
-    echo "Connecting gateway to $EXTERNAL_NETWORK..."
-    docker network connect --ip "$GATEWAY_EXTERNAL_IP" "$EXTERNAL_NETWORK" jib-gateway
-
-    # Wait for gateway to be fully ready on both networks
-    # This prevents race conditions where Squid cannot resolve DNS
-    # for allowed domains during the window between container start
-    # and external network connection
-    echo "Waiting for gateway readiness..."
-    local max_wait=30
-    local elapsed=0
-    while [ $elapsed -lt $max_wait ]; do
-        if curl -s --max-time 2 "http://localhost:9847/api/v1/health" >/dev/null 2>&1; then
-            echo "Gateway health check passed"
-            break
-        fi
-        sleep 1
-        elapsed=$((elapsed + 1))
-        echo "  Waiting for gateway... ($elapsed/$max_wait)"
-    done
-
-    if [ $elapsed -ge $max_wait ]; then
-        echo "WARNING: Gateway health check timed out after $max_wait seconds"
-        echo "Gateway may not be fully ready. Check logs for errors."
-    fi
-
-    echo "Gateway started in lockdown mode (dual-homed)"
-    echo ""
-    echo "Container topology:"
-    echo "  jib container (172.30.0.10) -> gateway (172.30.0.2:3128) -> Internet (allowlisted)"
-    echo ""
-
-    # Follow logs (similar to exec behavior)
-    exec docker logs -f jib-gateway
-}
-
-# =============================================================================
 # Main Execution
 # =============================================================================
 
-echo "=== Gateway Sidecar Startup ==="
-echo "Mode: $NETWORK_MODE"
+echo "=== Gateway Sidecar Startup (Network Lockdown Mode) ==="
+echo "  Networks: $ISOLATED_NETWORK (internal) + $EXTERNAL_NETWORK (external)"
+echo "  Gateway IPs: $GATEWAY_ISOLATED_IP (isolated), $GATEWAY_EXTERNAL_IP (external)"
+echo "  Proxy: enabled (port 3128)"
 echo ""
 
-case "$NETWORK_MODE" in
-    lockdown)
-        run_phase2_lockdown
-        ;;
-    *)
-        run_phase1_legacy
-        ;;
-esac
+# Verify networks exist
+if ! docker network inspect "$ISOLATED_NETWORK" &>/dev/null; then
+    echo "ERROR: $ISOLATED_NETWORK network not found" >&2
+    echo "Run create-networks.sh first to set up the required networks" >&2
+    exit 1
+fi
+if ! docker network inspect "$EXTERNAL_NETWORK" &>/dev/null; then
+    echo "ERROR: $EXTERNAL_NETWORK network not found" >&2
+    echo "Run create-networks.sh first to set up the required networks" >&2
+    exit 1
+fi
+
+# Remove existing gateway container if present
+docker rm -f jib-gateway 2>/dev/null || true
+
+# Start gateway on isolated network first (with fixed IP)
+echo "Starting gateway container on $ISOLATED_NETWORK..."
+docker run -d \
+    --name jib-gateway \
+    --network "$ISOLATED_NETWORK" \
+    --ip "$GATEWAY_ISOLATED_IP" \
+    --security-opt label=disable \
+    --user "$(id -u):$(id -g)" \
+    -p 9847:9847 \
+    -p 3128:3128 \
+    "${ENV_ARGS[@]}" \
+    "${MOUNTS[@]}" \
+    jib-gateway
+
+# Connect to external network (dual-homed)
+echo "Connecting gateway to $EXTERNAL_NETWORK..."
+docker network connect --ip "$GATEWAY_EXTERNAL_IP" "$EXTERNAL_NETWORK" jib-gateway
+
+# Wait for gateway to be fully ready on both networks
+# This prevents race conditions where Squid cannot resolve DNS
+# for allowed domains during the window between container start
+# and external network connection
+echo "Waiting for gateway readiness..."
+max_wait=30
+elapsed=0
+while [ $elapsed -lt $max_wait ]; do
+    if curl -s --max-time 2 "http://localhost:9847/api/v1/health" >/dev/null 2>&1; then
+        echo "Gateway health check passed"
+        break
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+    echo "  Waiting for gateway... ($elapsed/$max_wait)"
+done
+
+if [ $elapsed -ge $max_wait ]; then
+    echo "WARNING: Gateway health check timed out after $max_wait seconds"
+    echo "Gateway may not be fully ready. Check logs for errors."
+fi
+
+echo "Gateway started in lockdown mode (dual-homed)"
+echo ""
+echo "Container topology:"
+echo "  jib container (172.30.0.10) -> gateway (172.30.0.2:3128) -> Internet (allowlisted)"
+echo ""
+
+# Follow logs (similar to exec behavior)
+exec docker logs -f jib-gateway

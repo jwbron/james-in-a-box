@@ -1,5 +1,5 @@
 #!/bin/bash
-# create-networks.sh - Create Docker networks for Phase 2 network lockdown
+# create-networks.sh - Create Docker networks for network lockdown
 #
 # This script creates the dual-network architecture for full network isolation:
 # - jib-isolated: Internal network (no external route) for jib container
@@ -71,7 +71,7 @@ create_network() {
 
 # Main execution
 main() {
-    echo "=== Phase 2 Network Setup ==="
+    echo "=== Network Lockdown Setup ==="
     echo ""
     echo "Creating dual-network architecture for full network isolation:"
     echo "  - jib-isolated ($JIB_ISOLATED_SUBNET): Internal network for jib container"

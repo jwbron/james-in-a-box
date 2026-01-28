@@ -711,25 +711,19 @@ def setup_beads(config: Config, logger: Logger) -> bool:
 
 
 def check_gateway_health(config: Config, logger: Logger) -> bool:
-    """Wait for gateway readiness before starting (Phase 2 lockdown mode).
+    """Wait for gateway readiness before starting.
 
     In network lockdown mode, the container cannot reach the internet directly.
     All traffic must go through the gateway's proxy. This function ensures
     the gateway and proxy are ready before the agent starts.
 
     Returns:
-        True if gateway is ready (or not in lockdown mode), False on timeout
+        True if gateway is ready, False on timeout
     """
     import requests
     from requests.exceptions import RequestException
 
-    # Check if we're in lockdown mode
-    network_mode = os.environ.get("JIB_NETWORK_MODE", "legacy")
-    if network_mode != "lockdown":
-        logger.info("Network mode: legacy (gateway health check skipped)")
-        return True
-
-    logger.info("Network mode: lockdown (Phase 2)")
+    logger.info("Network mode: lockdown")
     logger.info("Waiting for gateway readiness...")
 
     gateway_url = os.environ.get("GATEWAY_URL", "http://jib-gateway:9847")
@@ -922,12 +916,12 @@ def main() -> None:
         if not setup_beads(config, logger):
             sys.exit(1)
 
-    # Phase 2: Wait for gateway readiness in lockdown mode
+    # Wait for gateway readiness (network lockdown mode)
     with _startup_timer.phase("check_gateway"):
         if not check_gateway_health(config, logger):
             logger.error("")
             logger.error("Container startup aborted: gateway not ready.")
-            logger.error("Ensure the gateway sidecar is running with JIB_NETWORK_MODE=lockdown")
+            logger.error("Ensure the gateway sidecar is running.")
             sys.exit(1)
 
     # Run appropriate mode (timing summary is printed inside each mode)

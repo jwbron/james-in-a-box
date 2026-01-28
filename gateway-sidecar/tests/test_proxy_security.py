@@ -1,4 +1,4 @@
-"""Security tests for Phase 2 network lockdown proxy.
+"""Security tests for network lockdown proxy.
 
 These tests verify that the Squid proxy correctly:
 1. Allows access to allowlisted domains

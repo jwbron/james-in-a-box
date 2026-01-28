@@ -1,23 +1,17 @@
 # Sandboxed Environment
 
-You run in a sandboxed Docker container with network isolation. No SSH keys, cloud creds, or production access.
+You run in a sandboxed Docker container with network lockdown. No SSH keys, cloud creds, or production access.
 
-## Network Mode
+## Network Lockdown
 
-The container runs in one of two modes:
+Network traffic is routed through a filtering proxy. Only `api.anthropic.com` (Claude API) is allowed through the proxy.
 
-**Legacy Mode (Phase 1):** Outbound HTTP/HTTPS to any destination. You can access Claude API, GitHub, and download packages at runtime.
+**GitHub access** MUST go through the gateway sidecar's git/gh wrappers (not through the proxy). This ensures policy enforcement (branch ownership, merge blocking, etc.) cannot be bypassed.
 
-**Lockdown Mode (Phase 2):** Network traffic is routed through a filtering proxy. Only `api.anthropic.com` (Claude API) is allowed through the proxy.
-
-**GitHub access** in lockdown mode MUST go through the gateway sidecar's git/gh wrappers (not through the proxy). This ensures policy enforcement (branch ownership, merge blocking, etc.) cannot be bypassed.
-
-In lockdown mode, you CANNOT:
+You CANNOT:
 - Access PyPI, npm, or any package registry (dependencies are pre-installed)
 - Use web search or fetch arbitrary URLs
 - Access any website not on the allowlist
-
-Check `$JIB_NETWORK_MODE` to detect the current mode (`lockdown` or `legacy`).
 
 ## Capabilities
 
@@ -27,7 +21,7 @@ Check `$JIB_NETWORK_MODE` to detect the current mode (`lockdown` or `legacy`).
 
 ## Gateway Sidecar
 
-All git/gh operations are routed through the gateway sidecar (runs as `jib-gateway` container on the jib-network). The container does NOT have direct access to GitHub tokens - credentials are held by the gateway.
+All git/gh operations are routed through the gateway sidecar (runs as `jib-gateway` container on the jib-isolated network). The container does NOT have direct access to GitHub tokens - credentials are held by the gateway.
 
 **Policy enforcement:**
 - `git push`: Only to branches you own (jib-prefixed or has your open PR)
@@ -46,7 +40,7 @@ Use `git push origin <branch>` (HTTPS). Operations are authenticated by the gate
 
 If push fails:
 - Check `git remote -v` is HTTPS
-- Check gateway sidecar is running: `curl http://jib-gateway:9847/api/v1/health`
+- Check gateway sidecar is running: `curl http://gateway:9847/api/v1/health`
 - Ensure branch is jib-owned (jib-prefixed or has your open PR)
 
 ## File System
@@ -63,12 +57,10 @@ If push fails:
 - `discover-tests`, `@load-context`, `@save-context`, `@create-pr`
 - PostgreSQL and Redis start automatically
 
-## Adapting to Network Lockdown
-
-When in lockdown mode (`$JIB_NETWORK_MODE=lockdown`):
+## Working with Network Lockdown
 
 1. **Web search/fetch will fail** - Use local codebase search instead
 2. **Package installation fails** - All common dependencies are pre-installed; if you need a package that's missing, note it in your PR description
-3. **External URLs blocked** - GitHub and Claude API work; everything else returns HTTP 403
+3. **External URLs blocked** - Claude API works; GitHub access goes through gateway; everything else returns HTTP 403
 
 If a tool returns 403 Forbidden, acknowledge the limitation and proceed with local resources.

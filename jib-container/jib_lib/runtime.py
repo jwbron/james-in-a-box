@@ -26,11 +26,8 @@ from .config import (
     GATEWAY_PROXY_PORT,
     JIB_CONTAINER_IP,
     JIB_ISOLATED_NETWORK,
-    JIB_NETWORK_NAME,
     Config,
     get_local_repos,
-    get_network_mode,
-    is_lockdown_mode,
 )
 from .container_logging import (
     extract_task_id_from_command,
@@ -296,9 +293,21 @@ def run_claude() -> bool:
     # Build docker run command
     _host_timer.start_phase("build_docker_cmd")
 
-    # Determine network mode
-    network_mode = get_network_mode()
-    lockdown = is_lockdown_mode()
+    # Network lockdown mode: Connect to isolated network with fixed IP
+    # Container can only reach gateway, no direct internet access
+    #
+    # DNS Strategy: DNS is disabled (0.0.0.0) to prevent direct hostname
+    # resolution. This is intentional and works because:
+    # 1. HTTP clients (requests, httpx, curl) using HTTP_PROXY/HTTPS_PROXY
+    #    send CONNECT requests to the proxy with the hostname, and the
+    #    proxy (Squid) resolves DNS on behalf of the client.
+    # 2. Local hostnames (gateway, jib-gateway) are resolved via --add-host
+    #    which populates /etc/hosts.
+    # 3. NO_PROXY bypasses proxy for local connections to gateway.
+    #
+    # If a tool bypasses the proxy env vars, its requests will fail with
+    # DNS resolution errors - this is the intended "fail closed" behavior.
+    proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
 
     cmd = [
         "docker",
@@ -309,83 +318,45 @@ def run_claude() -> bool:
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
+        # Network lockdown: isolated network with fixed IP
+        "--network",
+        JIB_ISOLATED_NETWORK,
+        "--ip",
+        JIB_CONTAINER_IP,
+        # Disable DNS (no external DNS resolution - fail closed)
+        "--dns",
+        "0.0.0.0",
+        # Add gateway hostname for proxy and API access
+        "--add-host",
+        f"gateway:{GATEWAY_ISOLATED_IP}",
+        # Environment variables
+        "-e",
+        f"RUNTIME_UID={os.getuid()}",
+        "-e",
+        f"RUNTIME_GID={os.getgid()}",
+        "-e",
+        f"CONTAINER_ID={container_id}",
+        "-e",
+        f"JIB_QUIET={'1' if quiet else '0'}",
+        "-e",
+        f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
+        "-e",
+        f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+        # HTTP/HTTPS proxy environment variables for network lockdown
+        "-e",
+        f"HTTP_PROXY={proxy_url}",
+        "-e",
+        f"HTTPS_PROXY={proxy_url}",
+        "-e",
+        f"http_proxy={proxy_url}",
+        "-e",
+        f"https_proxy={proxy_url}",
+        # Bypass proxy for local connections
+        "-e",
+        "NO_PROXY=localhost,127.0.0.1,gateway",
+        "-e",
+        "no_proxy=localhost,127.0.0.1,gateway",
     ]
-
-    # Network configuration based on mode
-    if lockdown:
-        # Phase 2: Connect to isolated network with fixed IP
-        # Container can only reach gateway, no direct internet access
-        #
-        # DNS Strategy: DNS is disabled (0.0.0.0) to prevent direct hostname
-        # resolution. This is intentional and works because:
-        # 1. HTTP clients (requests, httpx, curl) using HTTP_PROXY/HTTPS_PROXY
-        #    send CONNECT requests to the proxy with the hostname, and the
-        #    proxy (Squid) resolves DNS on behalf of the client.
-        # 2. Local hostnames (gateway, jib-gateway) are resolved via --add-host
-        #    which populates /etc/hosts.
-        # 3. NO_PROXY bypasses proxy for local connections to gateway.
-        #
-        # If a tool bypasses the proxy env vars, its requests will fail with
-        # DNS resolution errors - this is the intended "fail closed" behavior.
-        cmd.extend(
-            [
-                "--network",
-                JIB_ISOLATED_NETWORK,
-                "--ip",
-                JIB_CONTAINER_IP,
-                # Disable DNS (no external DNS resolution - fail closed)
-                "--dns",
-                "0.0.0.0",
-                # Add gateway hostname for proxy and API access
-                "--add-host",
-                f"gateway:{GATEWAY_ISOLATED_IP}",
-            ]
-        )
-    else:
-        # Phase 1: Connect to shared jib-network (legacy mode)
-        cmd.extend(["--network", JIB_NETWORK_NAME])
-
-    # Common environment variables
-    cmd.extend(
-        [
-            "-e",
-            f"RUNTIME_UID={os.getuid()}",
-            "-e",
-            f"RUNTIME_GID={os.getgid()}",
-            "-e",
-            f"CONTAINER_ID={container_id}",
-            "-e",
-            f"JIB_QUIET={'1' if quiet else '0'}",
-            "-e",
-            f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
-            "-e",
-            f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-            "-e",
-            f"JIB_NETWORK_MODE={network_mode}",
-        ]
-    )
-
-    # Phase 2: Add proxy configuration for network lockdown
-    if lockdown:
-        proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
-        cmd.extend(
-            [
-                # HTTP/HTTPS proxy environment variables
-                "-e",
-                f"HTTP_PROXY={proxy_url}",
-                "-e",
-                f"HTTPS_PROXY={proxy_url}",
-                "-e",
-                f"http_proxy={proxy_url}",
-                "-e",
-                f"https_proxy={proxy_url}",
-                # Bypass proxy for local connections
-                "-e",
-                "NO_PROXY=localhost,127.0.0.1,gateway",
-                "-e",
-                "no_proxy=localhost,127.0.0.1,gateway",
-            ]
-        )
 
     # GitHub authentication is handled by the gateway sidecar
     # The container does NOT receive GITHUB_TOKEN - all git/gh operations
@@ -403,15 +374,10 @@ def run_claude() -> bool:
 
     if not quiet:
         info(f"Claude auth method: {anthropic_auth_method}")
-        if lockdown:
-            info("Network mode: LOCKDOWN (Phase 2 - isolated network, proxy filtering)")
-            print("  Container network: jib-isolated (172.30.0.x)")
-            print("  Container can: Access Claude API, GitHub (via allowlisted proxy)")
-            print("  Container cannot: Access any other websites, install packages at runtime")
-        else:
-            info("Network mode: Bridge (Phase 1 - isolated from host, outbound HTTP only)")
-            print("  Container can: Access Claude API, download packages")
-            print("  Container cannot: Access host services, accept inbound connections")
+        info("Network mode: LOCKDOWN (isolated network, proxy filtering)")
+        print("  Container network: jib-isolated (172.30.0.x)")
+        print("  Container can: Access Claude API, GitHub (via gateway sidecar)")
+        print("  Container cannot: Access any other websites, install packages at runtime")
         print()
 
     # Add mount arguments
@@ -570,9 +536,9 @@ def exec_in_new_container(
     # Build docker run command
     # Note: We don't use --rm so we can save logs before cleanup
 
-    # Determine network mode
-    network_mode = get_network_mode()
-    lockdown = is_lockdown_mode()
+    # Network lockdown mode: Connect to isolated network with fixed IP
+    # DNS is disabled to prevent direct hostname resolution (fail closed)
+    proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
 
     cmd = [
         "docker",
@@ -581,65 +547,41 @@ def exec_in_new_container(
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
+        # Network lockdown: isolated network with fixed IP
+        "--network",
+        JIB_ISOLATED_NETWORK,
+        "--ip",
+        JIB_CONTAINER_IP,
+        "--dns",
+        "0.0.0.0",  # Disable DNS (fail closed)
+        "--add-host",
+        f"gateway:{GATEWAY_ISOLATED_IP}",
+        # Environment variables
+        "-e",
+        f"RUNTIME_UID={os.getuid()}",
+        "-e",
+        f"RUNTIME_GID={os.getgid()}",
+        "-e",
+        f"CONTAINER_ID={container_id}",
+        "-e",
+        "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
+        "-e",
+        f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+        # HTTP/HTTPS proxy environment variables for network lockdown
+        "-e",
+        f"HTTP_PROXY={proxy_url}",
+        "-e",
+        f"HTTPS_PROXY={proxy_url}",
+        "-e",
+        f"http_proxy={proxy_url}",
+        "-e",
+        f"https_proxy={proxy_url}",
+        # Bypass proxy for local connections
+        "-e",
+        "NO_PROXY=localhost,127.0.0.1,gateway",
+        "-e",
+        "no_proxy=localhost,127.0.0.1,gateway",
     ]
-
-    # Network configuration based on mode
-    if lockdown:
-        # Phase 2: Connect to isolated network with fixed IP
-        # DNS is disabled - see interactive mode comments for rationale
-        cmd.extend(
-            [
-                "--network",
-                JIB_ISOLATED_NETWORK,
-                "--ip",
-                JIB_CONTAINER_IP,
-                "--dns",
-                "0.0.0.0",  # Disable DNS (fail closed - see above)
-                "--add-host",
-                f"gateway:{GATEWAY_ISOLATED_IP}",
-            ]
-        )
-    else:
-        # Phase 1: Connect to shared jib-network (legacy mode)
-        cmd.extend(["--network", JIB_NETWORK_NAME])
-
-    # Common environment variables
-    cmd.extend(
-        [
-            "-e",
-            f"RUNTIME_UID={os.getuid()}",
-            "-e",
-            f"RUNTIME_GID={os.getgid()}",
-            "-e",
-            f"CONTAINER_ID={container_id}",
-            "-e",
-            "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
-            "-e",
-            f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-            "-e",
-            f"JIB_NETWORK_MODE={network_mode}",
-        ]
-    )
-
-    # Phase 2: Add proxy configuration for network lockdown
-    if lockdown:
-        proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
-        cmd.extend(
-            [
-                "-e",
-                f"HTTP_PROXY={proxy_url}",
-                "-e",
-                f"HTTPS_PROXY={proxy_url}",
-                "-e",
-                f"http_proxy={proxy_url}",
-                "-e",
-                f"https_proxy={proxy_url}",
-                "-e",
-                "NO_PROXY=localhost,127.0.0.1,gateway",
-                "-e",
-                "no_proxy=localhost,127.0.0.1,gateway",
-            ]
-        )
 
     # Add logging configuration for log persistence
     log_config = get_docker_log_config(container_id, task_id)

@@ -1,9 +1,9 @@
-"""Proxy monitoring and audit logging for Phase 2 network lockdown.
+"""Proxy monitoring and audit logging for network lockdown.
 
 This module provides utilities for monitoring Squid proxy traffic and
 detecting anomalies that might indicate attempted policy violations.
 
-Reference: ADR-Internet-Tool-Access-Lockdown.md Phase 2 Security Analysis
+Reference: ADR-Internet-Tool-Access-Lockdown.md
 """
 
 import json
