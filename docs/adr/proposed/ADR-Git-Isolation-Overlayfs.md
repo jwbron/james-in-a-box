@@ -104,9 +104,33 @@ Container Request                    Gateway
 
 ### Container Setup
 1. Request arrives, gateway creates worktree: `git worktree add /workspace/worktrees/{id}/repo -b jib/{id}/work`
-2. Container mounts ONLY `/workspace/worktrees/{id}/repo/` (no .git access)
-3. Container can freely edit files in its working directory
+2. Container mounts the working directory with `.git` as read-only:
+   ```bash
+   docker run \
+     -v /workspace/worktrees/{id}/repo:/home/jib/repo:rw \
+     -v /workspace/worktrees/{id}/repo/.git:/home/jib/repo/.git:ro \
+     ...
+   ```
+3. Container can freely edit source files, but cannot modify `.git`
 4. All git operations go through gateway API
+
+### Why .git is Read-Only
+
+The worktree's `.git` is a file (not directory) containing:
+```
+gitdir: /workspace/repos/my-repo.git/worktrees/wt-{id}
+```
+
+**Security considerations:**
+- Container cannot modify `.git` to point elsewhere
+- The gitdir path points to worktree admin, which isn't mounted in container anyway
+- Even if container could read the path, it can't access it
+- Git wrapper ignores local `.git` entirely - routes all commands to gateway
+
+**Defense in depth:**
+- Read-only `.git` mount prevents tampering
+- Git wrapper doesn't use local git at all
+- Worktree admin directory not accessible to container
 
 ### Git Operations
 
