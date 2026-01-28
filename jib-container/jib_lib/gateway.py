@@ -94,6 +94,8 @@ def create_worktrees(
     container_id: str,
     repos: list[str],
     base_branch: str = "HEAD",
+    uid: int | None = None,
+    gid: int | None = None,
 ) -> tuple[bool, dict[str, str], list[str]]:
     """Request the gateway to create worktrees for a container.
 
@@ -101,20 +103,28 @@ def create_worktrees(
         container_id: Container identifier
         repos: List of repository names (or owner/repo format)
         base_branch: Branch to base worktrees on
+        uid: User ID to set worktree ownership to (for container user)
+        gid: Group ID to set worktree ownership to (for container user)
 
     Returns:
         Tuple of (success, worktrees_dict, errors_list)
         - worktrees_dict maps repo_name to worktree_path
         - errors_list contains any error messages
     """
+    request_data: dict[str, Any] = {
+        "container_id": container_id,
+        "repos": repos,
+        "base_branch": base_branch,
+    }
+    if uid is not None:
+        request_data["uid"] = uid
+    if gid is not None:
+        request_data["gid"] = gid
+
     success_flag, response = gateway_api_call(
         "/api/v1/worktree/create",
         method="POST",
-        data={
-            "container_id": container_id,
-            "repos": repos,
-            "base_branch": base_branch,
-        },
+        data=request_data,
     )
 
     if not success_flag:

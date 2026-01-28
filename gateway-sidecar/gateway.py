@@ -1291,7 +1291,9 @@ def worktree_create():
     Request body:
         {
             "container_id": "jib-xxx-yyy",
-            "repos": ["owner/repo1", "owner/repo2"]
+            "repos": ["owner/repo1", "owner/repo2"],
+            "uid": 1000,  // optional, defaults to 1000 (jib user)
+            "gid": 1000   // optional, defaults to 1000 (jib group)
         }
 
     Returns:
@@ -1313,11 +1315,20 @@ def worktree_create():
     container_id = data.get("container_id")
     repos = data.get("repos", [])
     base_branch = data.get("base_branch", "HEAD")
+    # UID/GID for worktree ownership (default: 1000 for jib user)
+    uid = data.get("uid")
+    gid = data.get("gid")
 
     if not container_id:
         return make_error("Missing container_id")
     if not repos:
         return make_error("Missing repos list")
+
+    # Validate uid/gid if provided
+    if uid is not None and (not isinstance(uid, int) or uid < 0):
+        return make_error("Invalid uid: must be a non-negative integer")
+    if gid is not None and (not isinstance(gid, int) or gid < 0):
+        return make_error("Invalid gid: must be a non-negative integer")
 
     manager = get_worktree_manager()
     worktrees = {}
@@ -1335,6 +1346,8 @@ def worktree_create():
                 repo_name=repo_name,
                 container_id=container_id,
                 base_branch=base_branch,
+                uid=uid,
+                gid=gid,
             )
             worktrees[repo_name] = str(info.worktree_path)
         except ValueError as e:
