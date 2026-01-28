@@ -1608,6 +1608,28 @@ def worktree_list():
 
 def main():
     """Run the gateway server."""
+    # Safety check: refuse to run as root to prevent permission issues
+    # When the gateway runs as root, git objects are created with root:root ownership,
+    # which breaks git operations on the host (permission denied on .git/objects).
+    if os.getuid() == 0:
+        print(
+            "ERROR: gateway-sidecar must not run as root.\n"
+            "\n"
+            "Running as root causes git objects to be created with root:root ownership,\n"
+            "which breaks git operations on the host with 'permission denied' errors.\n"
+            "\n"
+            "To fix this:\n"
+            "  1. Check the service file path in gateway-sidecar.service\n"
+            "  2. Ensure ExecStart points to the correct gateway.py location\n"
+            "  3. Restart the service: systemctl --user restart gateway-sidecar\n"
+            "  4. Verify the gateway is running as your user: ps aux | grep gateway\n"
+            "\n"
+            "If .git/objects already has root-owned files, fix with:\n"
+            "  sudo chown -R $(id -u):$(id -g) ~/repos/*/.git",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(description="Gateway Sidecar REST API")
     parser.add_argument(
         "--host",

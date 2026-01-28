@@ -162,3 +162,45 @@ gh pr merge 123  # ERROR: merge not supported
 ./host-services/gateway-sidecar/setup.sh
 systemctl --user enable --now gateway-sidecar
 ```
+
+## Troubleshooting
+
+### Permission denied on .git/objects
+
+**Symptom:**
+```
+error: insufficient permission for adding an object to repository database .git/objects
+fatal: failed to write object
+fatal: unpack-objects failed
+```
+
+**Cause:**
+The gateway-sidecar ran as root instead of your user. When this happens, git objects are created with `root:root` ownership, which prevents your user from writing to the repository.
+
+**Fix:**
+
+1. **Fix file ownership** - restore ownership of affected .git directories:
+   ```bash
+   sudo chown -R $(id -u):$(id -g) ~/repos/*/.git
+   ```
+
+2. **Verify/fix the service file** - ensure the ExecStart path in `gateway-sidecar.service` points to the correct `gateway.py` location. A common issue is the path becoming stale after updates:
+   ```bash
+   cat ~/.config/systemd/user/gateway-sidecar.service | grep ExecStart
+   # Should show the correct path to gateway.py
+   ```
+
+3. **Restart the service**:
+   ```bash
+   systemctl --user daemon-reload
+   systemctl --user restart gateway-sidecar
+   ```
+
+4. **Verify the gateway is running as your user** (not root):
+   ```bash
+   ps aux | grep gateway
+   # Should show your username, not root
+   ```
+
+**Prevention:**
+The gateway now includes a startup check that refuses to run as root and displays a helpful error message. If you see this error at startup, follow the steps above to fix the service configuration.
