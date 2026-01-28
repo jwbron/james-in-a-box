@@ -654,28 +654,190 @@ def resolve_worktree_paths(container_id: str, repo_name: str) -> tuple[str, str]
     return work_tree, git_dir
 ```
 
-#### 1.4 Add Request Validation
+#### 1.4 Extend Allowlist Validation
 
 **File**: `gateway-sidecar/git_client.py`
 
-Extend `validate_git_args()` for new operations:
+The gateway uses **explicit allowlists** for all git operations. Unknown flags are rejected by default—this is critical for security. Extend the existing `GIT_ALLOWED_COMMANDS` dictionary:
 
 ```python
-ALLOWED_GIT_ARGS = {
-    "add": ["--all", "-A", "--update", "-u", "--intent-to-add", "-N", "--force", "-f"],
-    "commit": ["--message", "-m", "--amend", "--no-edit", "--allow-empty", "--author"],
-    "checkout": ["--branch", "-b", "--force", "-f", "--track", "-t"],
-    "reset": ["--soft", "--mixed", "--hard", "--keep"],
-    "stash": ["push", "pop", "list", "drop", "apply", "--message", "-m"],
-    # ... etc
-}
+# Existing global blocklist (already in git_client.py)
+BLOCKED_GIT_FLAGS = [
+    "--upload-pack",   # Can specify arbitrary command
+    "--exec",          # Can specify arbitrary command
+    "-c",              # Config override (could disable security)
+    "--config",        # Config override
+    "--receive-pack",  # Arbitrary command execution
+]
 
-BLOCKED_GIT_ARGS = {
-    "reset": ["--hard"],  # Require explicit confirmation
-    "clean": ["-f", "-d"],  # Require explicit confirmation
-    "rebase": ["-i", "--interactive"],  # Requires TTY
+# Extend the per-operation allowlist (add to existing GIT_ALLOWED_COMMANDS)
+GIT_ALLOWED_COMMANDS = {
+    # ... existing fetch, ls-remote, push entries ...
+
+    "add": {
+        "allowed_flags": [
+            "--all", "-A",
+            "--update", "-u",
+            "--intent-to-add", "-N",
+            "--force", "-f",
+            "--verbose", "-v",
+            "--dry-run", "-n",
+            "--ignore-errors",
+            "--",  # Separator for paths
+        ],
+    },
+    "commit": {
+        "allowed_flags": [
+            "--message", "-m",
+            "--amend",
+            "--no-edit",
+            "--allow-empty",
+            "--allow-empty-message",
+            "--author",
+            "--date",
+            "--signoff", "-s",
+            "--no-verify", "-n",
+            "--verbose", "-v",
+            "--quiet", "-q",
+        ],
+    },
+    "checkout": {
+        "allowed_flags": [
+            "--branch", "-b",
+            "--force", "-f",
+            "--track", "-t",
+            "--no-track",
+            "--quiet", "-q",
+            "--",
+        ],
+    },
+    "reset": {
+        "allowed_flags": [
+            "--soft",
+            "--mixed",
+            "--hard",      # Allowed but requires confirmation (see below)
+            "--keep",
+            "--quiet", "-q",
+            "--",
+        ],
+        "requires_confirmation": ["--hard"],  # Extra validation
+    },
+    "stash": {
+        "allowed_flags": [
+            "push", "pop", "list", "show", "drop", "apply", "clear",
+            "--message", "-m",
+            "--keep-index", "-k",
+            "--include-untracked", "-u",
+            "--all", "-a",
+            "--quiet", "-q",
+            "--index",
+        ],
+    },
+    "merge": {
+        "allowed_flags": [
+            "--no-ff",
+            "--ff-only",
+            "--squash",
+            "--no-commit",
+            "--message", "-m",
+            "--verbose", "-v",
+            "--quiet", "-q",
+            "--abort",
+            "--continue",
+        ],
+    },
+    "rebase": {
+        "allowed_flags": [
+            "--onto",
+            "--continue",
+            "--abort",
+            "--skip",
+            "--quiet", "-q",
+            "--verbose", "-v",
+            # NOTE: -i/--interactive intentionally NOT allowed (requires TTY)
+        ],
+    },
+    "cherry-pick": {
+        "allowed_flags": [
+            "--no-commit", "-n",
+            "--mainline", "-m",
+            "--continue",
+            "--abort",
+            "--skip",
+            "--quiet",
+        ],
+    },
+    "revert": {
+        "allowed_flags": [
+            "--no-commit", "-n",
+            "--mainline", "-m",
+            "--continue",
+            "--abort",
+            "--skip",
+        ],
+    },
+    "branch": {
+        "allowed_flags": [
+            "--delete", "-d",
+            "--force", "-D",  # -D = -d --force
+            "--move", "-m",
+            "--copy", "-c",
+            "--list", "-l",
+            "--verbose", "-v",
+            "--quiet", "-q",
+            "--track", "-t",
+            "--no-track",
+            "--set-upstream-to", "-u",
+        ],
+    },
+    "tag": {
+        "allowed_flags": [
+            "--annotate", "-a",
+            "--sign", "-s",
+            "--message", "-m",
+            "--force", "-f",
+            "--delete", "-d",
+            "--list", "-l",
+            "--verify", "-v",
+        ],
+    },
+    "clean": {
+        "allowed_flags": [
+            "--force", "-f",
+            "--dry-run", "-n",
+            "-d",  # Remove directories
+            "-x",  # Remove ignored files too
+            "--quiet", "-q",
+        ],
+        "requires_confirmation": ["-f", "--force", "-x"],  # Destructive
+    },
+    "config": {
+        "allowed_flags": [
+            "--local",
+            "--get",
+            "--get-all",
+            "--list", "-l",
+            "--unset",
+            # NOTE: --global, --system intentionally NOT allowed
+        ],
+        "blocked_keys": [
+            "credential.*",      # Don't let container modify credentials
+            "core.hooksPath",    # Don't let container redirect hooks
+            "core.gitProxy",     # Don't let container set proxies
+            "http.proxy",
+            "https.proxy",
+        ],
+    },
 }
 ```
+
+**Security properties maintained:**
+
+1. **Unknown flags rejected by default** - `validate_git_args()` returns error for unlisted flags
+2. **Global blocklist still applies** - `--upload-pack`, `--exec`, `-c` always blocked
+3. **Per-operation allowlists** - Each operation has explicit list of permitted flags
+4. **Confirmation for destructive ops** - `reset --hard`, `clean -f` require explicit confirmation
+5. **Config key restrictions** - Block modification of credential and security-related config
 
 ### Phase 2: Update Git Wrapper
 
