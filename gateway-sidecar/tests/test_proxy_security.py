@@ -93,9 +93,7 @@ class TestIPBlockingACLs:
         """All IP blocking ACLs should have http_access deny rules."""
         content = squid_conf_path.read_text()
         for acl_name in EXPECTED_IP_BLOCKING_PATTERNS:
-            assert f"http_access deny {acl_name}" in content, (
-                f"Missing deny rule for {acl_name}"
-            )
+            assert f"http_access deny {acl_name}" in content, f"Missing deny rule for {acl_name}"
 
 
 class TestIPPatternMatching:
