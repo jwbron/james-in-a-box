@@ -425,6 +425,7 @@ class WorktreeManager:
             cwd=main_repo,
             capture_output=True,
             text=True,
+            check=False,
         )
         is_merged = branch_name in merge_check.stdout
 
@@ -434,6 +435,7 @@ class WorktreeManager:
                 cwd=main_repo,
                 capture_output=True,
                 text=True,
+                check=False,
             )
             return delete_result.returncode == 0
 
@@ -593,6 +595,7 @@ def get_active_docker_containers() -> set[str]:
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         if result.returncode == 0:
             return set(result.stdout.strip().split("\n")) - {""}
