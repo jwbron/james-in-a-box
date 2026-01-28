@@ -224,48 +224,45 @@ gitdir: /workspace/repos/my-repo.git/worktrees/my-repo
 | Operation | Where it runs | How |
 |-----------|---------------|-----|
 | Edit files | Container | Direct filesystem access |
-| `git status` | Container (local) | Read-only, low latency |
-| `git diff` | Container (local) | Read-only, low latency |
-| `git log` | Container (local) | Read-only, low latency |
+| `git status` | Gateway | `POST /api/v1/git/status` |
+| `git diff` | Gateway | `POST /api/v1/git/diff` |
+| `git log` | Gateway | `POST /api/v1/git/log` |
 | `git add` | Gateway | `POST /api/v1/git/add` |
 | `git commit` | Gateway | `POST /api/v1/git/commit` |
 | `git push` | Gateway | `POST /api/v1/git/push` (existing) |
 | `git fetch` | Gateway | `POST /api/v1/git/fetch` (existing) |
 | `gh` commands | Gateway | `POST /api/v1/gh/*` (existing) |
 
-**Local read-only optimization**: High-frequency operations (`status`, `diff`, `log`) run locally in the container for lower latency. The container has read-only access to `.git`, which is sufficient for these operations. Only write operations (`add`, `commit`, `push`) are routed through the gateway.
+**Why all git operations go through the gateway**: The container's `.git` file contains a `gitdir` path pointing to `/workspace/repos/...`, which is not mounted in the container. Git operations require access to the worktree admin directory (HEAD, index, config), which only the gateway has. The ~10% HTTP overhead is negligible compared to the architectural simplicity this provides.
 
 ### Git Wrapper in Container
 
-The git wrapper routes write operations through the gateway while allowing read-only operations locally:
+The git wrapper routes ALL git operations through the gateway:
 
 ```bash
 #!/bin/bash
 # /usr/bin/git wrapper in container
 
-# Read-only operations run locally for low latency
-case "$1" in
-  status|diff|log|show|blame|rev-parse|rev-list|\
-  ls-files|ls-tree|cat-file|describe|shortlog|grep|reflog|\
-  for-each-ref|name-rev|merge-base|symbolic-ref)
-    exec /usr/bin/git.real "$@"
-    ;;
-  branch|tag|stash)
-    # These need subcommand awareness - see full implementation in Phase 2
-    # branch (list) is read-only, branch -d is write
-    # tag (list) is read-only, tag -d or creating is write
-    # stash list/show is read-only, stash push/pop is write
-    ;;
-esac
+REAL_GIT=/opt/.jib-internal/git
+GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
 
-# Write operations go through gateway (operation-specific endpoints)
-# Example for git add:
-curl -s -X POST "http://gateway:9847/api/v1/git/add" \
-  --json "{
-    \"repo_path\": \"$(pwd)\",
-    \"files\": [\".\"]
-  }"
+# Parse the git command (first non-flag argument)
+cmd=""
+for arg in "$@"; do
+    case "$arg" in
+        -*) continue ;;
+        *)
+            cmd="$arg"
+            break
+            ;;
+    esac
+done
+
+# Route all git operations through gateway
+route_to_gateway "$cmd" "$@"
 ```
+
+**Note**: Unlike earlier drafts that proposed running read-only operations locally, ALL git operations must go through the gateway. This is because the container's `.git` file contains a `gitdir` path to `/workspace/repos/...`, which is not mounted in the container. The gateway has access to both the working directory and the worktree admin directory.
 
 ### Gateway Git Execution
 
@@ -464,11 +461,13 @@ This runs:
 **Estimated benchmarks** (to be validated with actual measurements):
 | Operation | Direct git | Via gateway | Overhead | Notes |
 |-----------|-----------|-------------|----------|-------|
-| git status | 50ms | 50ms | 0% | Runs locally |
-| git diff | 30ms | 30ms | 0% | Runs locally |
-| git log -10 | 20ms | 20ms | 0% | Runs locally |
+| git status | 50ms | 55ms | ~10% | Via gateway |
+| git diff | 30ms | 35ms | ~17% | Via gateway |
+| git log -10 | 20ms | 25ms | ~25% | Via gateway |
 | git commit | 100ms | 110ms | ~10% | Via gateway |
 | git add | 40ms | 45ms | ~12% | Via gateway |
+
+**Note**: All operations go through the gateway because the container lacks access to the worktree admin directory (HEAD, index, config). The HTTP overhead is small (~5-10ms per call) and acceptable given the architectural simplicity.
 
 ## Implementation Plan
 
@@ -555,13 +554,36 @@ Remove `sync_objects_after_push()` function (lines 122-274):
 Add new endpoints:
 
 ```python
+# Read operations (previously considered for local execution, but container
+# lacks access to worktree admin directory, so must go through gateway)
+POST /api/v1/git/status
+    Request: {"repo_path": "..."}
+    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
+
+POST /api/v1/git/diff
+    Request: {"repo_path": "...", "args": ["--cached", "file.txt"]}
+    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
+
+POST /api/v1/git/log
+    Request: {"repo_path": "...", "args": ["-10", "--oneline"]}
+    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
+
+POST /api/v1/git/show
+    Request: {"repo_path": "...", "args": ["HEAD"]}
+    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
+
+POST /api/v1/git/blame
+    Request: {"repo_path": "...", "args": ["file.txt"]}
+    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
+
+# Write operations
 POST /api/v1/git/add
     Request: {"repo_path": "...", "files": ["file1", "file2"] or ["."] for all}
-    Response: {"success": true, "stdout": "...", "stderr": "..."}
+    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
 
 POST /api/v1/git/commit
     Request: {"repo_path": "...", "message": "...", "author": "name <email>"}
-    Response: {"success": true, "commit_sha": "abc123", "stdout": "..."}
+    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0, "commit_sha": "abc123"}
 
 POST /api/v1/git/checkout
     Request: {"repo_path": "...", "target": "branch-or-ref", "create": false}
@@ -862,7 +884,7 @@ GIT_ALLOWED_COMMANDS = {
 
 ### Phase 2: Update Git Wrapper
 
-**Goal**: Container's git wrapper routes writes to gateway, runs reads locally.
+**Goal**: Container's git wrapper routes ALL operations through gateway.
 
 #### 2.1 Modify Git Wrapper Script
 
@@ -872,12 +894,61 @@ Replace current implementation with:
 
 ```bash
 #!/bin/bash
-# Git wrapper - routes write operations through gateway, reads run locally
+# Git wrapper - routes ALL git operations through gateway
+#
+# Why not run read-only operations locally?
+# The container's .git file contains: gitdir: /workspace/repos/repo.git/worktrees/...
+# This path is NOT mounted in the container, so git cannot access HEAD, index, etc.
+# Only the gateway has access to both the working directory and worktree admin.
 
 REAL_GIT=/opt/.jib-internal/git
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
+GATEWAY_SECRET_FILE="${GATEWAY_SECRET_FILE:-/run/secrets/gateway-secret}"
 
-# Parse command
+# Helper: Get the gateway authentication secret
+get_gateway_secret() {
+    if [ -f "$GATEWAY_SECRET_FILE" ]; then
+        cat "$GATEWAY_SECRET_FILE"
+    elif [ -n "$GATEWAY_SECRET" ]; then
+        echo "$GATEWAY_SECRET"
+    else
+        echo ""
+    fi
+}
+
+# Helper: Translate container path to gateway-understandable path
+# Container sees: /home/jib/repo or /home/jib/repos/<repo>
+# Gateway sees: /workspace/worktrees/<container_id>/<repo>
+translate_path_for_gateway() {
+    local container_path="$1"
+    local container_id="${CONTAINER_ID:-unknown}"
+
+    # Extract repo name from path
+    local repo_name
+    if [[ "$container_path" == /home/jib/repos/* ]]; then
+        repo_name=$(echo "$container_path" | sed 's|/home/jib/repos/||' | cut -d/ -f1)
+    elif [[ "$container_path" == /home/jib/repo* ]]; then
+        repo_name="repo"
+    else
+        repo_name=$(basename "$container_path")
+    fi
+
+    echo "/workspace/worktrees/${container_id}/${repo_name}"
+}
+
+# Helper: Extract subcommand from git remote arguments
+get_remote_subcommand() {
+    shift  # Skip 'remote'
+    for arg in "$@"; do
+        case "$arg" in
+            -*) continue ;;
+            *) echo "$arg"; return ;;
+        esac
+    done
+    echo ""
+}
+
+# Parse the git command (first non-flag argument)
 cmd=""
 for arg in "$@"; do
     case "$arg" in
@@ -889,87 +960,19 @@ for arg in "$@"; do
     esac
 done
 
-# Read-only operations run locally (fast path)
-case "$cmd" in
-    status|diff|log|show|blame|rev-parse|rev-list|\
-    ls-files|ls-tree|cat-file|describe|shortlog|grep|bisect|reflog|\
-    for-each-ref|name-rev|merge-base|symbolic-ref)
-        exec "$REAL_GIT" "$@"
-        ;;
-esac
+# Block remote modification commands
+if [ "$cmd" = "remote" ]; then
+    subcmd=$(get_remote_subcommand "$@")
+    case "$subcmd" in
+        add|remove|rm|rename|set-url|set-head|set-branches|prune)
+            echo "ERROR: Remote modification blocked" >&2
+            exit 1
+            ;;
+    esac
+fi
 
-# Commands that need subcommand/flag awareness
-case "$cmd" in
-    branch)
-        # git branch -d/-D/-m/-M/-c/-C are write operations
-        case "$*" in
-            *-d*|*-D*|*-m*|*-M*|*-c*|*-C*|*--delete*|*--move*|*--copy*|*--edit-description*)
-                route_to_gateway "branch" "$@"
-                ;;
-            *)
-                exec "$REAL_GIT" "$@"  # Read-only: list, show current
-                ;;
-        esac
-        ;;
-    tag)
-        # git tag -d is a write operation; git tag (list) is read-only
-        case "$*" in
-            *-d*|*--delete*)
-                route_to_gateway "tag" "$@"
-                ;;
-            *)
-                # Creating tags also needs gateway (when args present beyond flags)
-                if echo "$*" | grep -qE '^tag\s+(-[alnsf]|--)*\s*[^-]'; then
-                    route_to_gateway "tag" "$@"
-                else
-                    exec "$REAL_GIT" "$@"  # Read-only: list tags
-                fi
-                ;;
-        esac
-        ;;
-    stash)
-        # git stash list/show are read-only
-        subcmd="${2:-push}"  # Default stash action is push
-        case "$subcmd" in
-            list|show)
-                exec "$REAL_GIT" "$@"
-                ;;
-            *)
-                route_to_gateway "stash" "$@"
-                ;;
-        esac
-        ;;
-    remote)
-        # Check subcommand
-        subcmd=$(get_remote_subcommand "$@")
-        case "$subcmd" in
-            add|remove|rm|rename|set-url|set-head|set-branches|prune)
-                echo "ERROR: Remote modification blocked" >&2
-                exit 1
-                ;;
-            *)
-                exec "$REAL_GIT" "$@"
-                ;;
-        esac
-        ;;
-esac
-
-# Write operations go through gateway
-case "$cmd" in
-    add|commit|checkout|reset|merge|rebase|cherry-pick|revert|\
-    clean|config|rm|mv|restore|switch)
-        route_to_gateway "$cmd" "$@"
-        ;;
-    push|fetch|pull|ls-remote)
-        # Already handled by existing gateway routing
-        # (keep existing implementation)
-        ;;
-    *)
-        # Unknown command - allow through but log for visibility
-        logger -t jib-git "Unknown git command passed through: $cmd" 2>/dev/null || true
-        exec "$REAL_GIT" "$@"
-        ;;
-esac
+# Route all git operations through gateway
+route_to_gateway "$cmd" "$@"
 ```
 
 #### 2.2 Add Gateway Routing Function
@@ -1034,22 +1037,24 @@ print(json.dumps({
     fi
 
     # Parse and display response
-    local success
+    # Response format: {"success": bool, "stdout": "...", "stderr": "...", "returncode": int}
+    local success returncode
     success=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success',False))" 2>/dev/null)
+    returncode=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('returncode',1))" 2>/dev/null)
 
     if [ "$success" = "True" ]; then
-        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('stdout',''))" 2>/dev/null
-        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('stderr',''))" >&2 2>/dev/null
-        return 0
+        echo "$response" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('stdout',''),end='')" 2>/dev/null
+        echo "$response" | python3 -c "import sys,json; r=json.load(sys.stdin); s=r.get('stderr',''); print(s,end='') if s else None" >&2 2>/dev/null
+        return "${returncode:-0}"
     else
-        local message
-        message=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('message','Unknown error'))" 2>/dev/null)
-        if [ -z "$message" ]; then
+        local error_msg
+        error_msg=$(echo "$response" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('error') or r.get('stderr') or 'Unknown error')" 2>/dev/null)
+        if [ -z "$error_msg" ]; then
             echo "ERROR: Invalid response from gateway: $response" >&2
         else
-            echo "ERROR: $message" >&2
+            echo "ERROR: $error_msg" >&2
         fi
-        return 1
+        return "${returncode:-1}"
     fi
 }
 ```
@@ -1159,7 +1164,8 @@ class WorktreeManager:
         self,
         container_id: str,
         repo_name: str,
-        force: bool = False
+        force: bool = False,
+        delete_branch: bool = True
     ) -> dict:
         """Remove a container's worktree.
 
@@ -1167,13 +1173,15 @@ class WorktreeManager:
             container_id: Container identifier
             repo_name: Repository name
             force: If True, remove even with uncommitted changes
+            delete_branch: If True, delete the jib/{container_id}/work branch
 
         Returns:
-            dict with 'success', 'uncommitted_changes', 'warning' keys
+            dict with 'success', 'uncommitted_changes', 'warning', 'branch_deleted' keys
         """
         worktree_path = WORKTREES_DIR / container_id / repo_name
         repo_git = REPOS_DIR / f"{repo_name}.git"
-        result = {"success": False, "uncommitted_changes": False, "warning": None}
+        branch_name = f"jib/{container_id}/work"
+        result = {"success": False, "uncommitted_changes": False, "warning": None, "branch_deleted": False}
 
         if not worktree_path.exists():
             result["success"] = True
@@ -1206,11 +1214,37 @@ class WorktreeManager:
             )
             result["warning"] = "Worktree removed with uncommitted changes"
 
+        # Remove the worktree
         subprocess.run(
             ["git", "worktree", "remove", str(worktree_path), "--force"],
             cwd=repo_git,
             capture_output=True,
         )
+
+        # Delete the branch if requested and it has no unmerged commits
+        if delete_branch:
+            # Check if branch is fully merged into main/master
+            merge_check = subprocess.run(
+                ["git", "branch", "--merged", "HEAD", "--list", branch_name],
+                cwd=repo_git,
+                capture_output=True,
+                text=True,
+            )
+            is_merged = branch_name in merge_check.stdout
+
+            if is_merged or force:
+                delete_result = subprocess.run(
+                    ["git", "branch", "-D" if force else "-d", branch_name],
+                    cwd=repo_git,
+                    capture_output=True,
+                    text=True,
+                )
+                result["branch_deleted"] = delete_result.returncode == 0
+                if not result["branch_deleted"] and not force:
+                    result["warning"] = (
+                        result.get("warning", "") +
+                        f" Branch {branch_name} has unmerged commits and was not deleted."
+                    ).strip()
 
         # Clean up container directory if empty
         container_dir = WORKTREES_DIR / container_id
@@ -1247,12 +1281,17 @@ def startup_cleanup():
 
     manager = WorktreeManager()
 
-    # Get active containers from Docker
+    # Get RUNNING containers from Docker (not -a, which includes stopped)
+    # Worktrees for stopped containers should be cleaned up
     result = subprocess.run(
-        ["docker", "ps", "-a", "--format", "{{.Names}}"],
+        ["docker", "ps", "--format", "{{.Names}}"],
         capture_output=True, text=True
     )
     active_containers = set(result.stdout.strip().split("\n")) - {""}
+
+    # Note: On Cloud Run, there's no Docker daemon. Use alternative discovery:
+    # - Check /workspace/worktrees/* directories against known active sessions
+    # - Or use Cloud Run API to list active instances
 
     removed = manager.cleanup_orphaned_worktrees(active_containers)
     if removed > 0:
@@ -1642,6 +1681,10 @@ spec:
           env:
             - name: GATEWAY_URL
               value: "http://localhost:9847"
+            - name: CONTAINER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name  # Pod name as container ID
 
         # Gateway sidecar
         - name: gateway
