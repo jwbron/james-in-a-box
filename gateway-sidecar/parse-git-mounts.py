@@ -50,8 +50,9 @@ def main():
             if git_dir.exists():
                 # Mount git directory to a known location
                 # Needs RW for git fetch (FETCH_HEAD, refs) and object sync after push
+                # No :z flag - SELinux relabeling disabled via --security-opt label=disable
                 container_git_path = f"{home}/.git-main/{repo_name}"
-                print(f"{git_dir}:{container_git_path}:z")
+                print(f"{git_dir}:{container_git_path}")
 
     except Exception as e:
         print(f"Warning: Failed to parse git mounts: {e}", file=sys.stderr)

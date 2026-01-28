@@ -57,10 +57,9 @@ try:
         GIT_ALLOWED_COMMANDS,
         cleanup_credential_helper,
         create_credential_helper,
+        get_authenticated_remote_target,
         get_token_for_repo,
         git_cmd,
-        is_ssh_url,
-        ssh_url_to_https,
         validate_git_args,
         validate_repo_path,
     )
@@ -81,10 +80,9 @@ except ImportError:
         GIT_ALLOWED_COMMANDS,
         cleanup_credential_helper,
         create_credential_helper,
+        get_authenticated_remote_target,
         get_token_for_repo,
         git_cmd,
-        is_ssh_url,
-        ssh_url_to_https,
         validate_git_args,
         validate_repo_path,
     )
@@ -371,6 +369,7 @@ def git_push():
     remote = data.get("remote", "origin")
     refspec = data.get("refspec", "")
     force = data.get("force", False)
+    container_id = data.get("container_id")
 
     if not repo_path:
         return make_error("Missing repo_path")
@@ -386,11 +385,14 @@ def git_push():
         )
         return make_error(path_error, status_code=403)
 
+    # Map container path to worktree path if container_id is provided
+    exec_path = map_container_path_to_worktree(repo_path, container_id, "push")
+
     # Get remote URL to determine repo
     try:
         result = subprocess.run(
             git_cmd("remote", "get-url", remote),
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=10,
@@ -414,7 +416,7 @@ def git_push():
         try:
             result = subprocess.run(
                 git_cmd("branch", "--show-current"),
-                cwd=repo_path,
+                cwd=exec_path,
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -458,10 +460,9 @@ def git_push():
         return make_error(token_error, status_code=503)
 
     # Build push command with safe.directory for worktree paths
-    # If remote URL is SSH, convert to HTTPS since gateway uses token auth
-    push_target = remote
-    if is_ssh_url(remote_url):
-        push_target = ssh_url_to_https(remote_url)
+    # Convert SSH URLs to HTTPS since gateway uses token auth
+    push_target = get_authenticated_remote_target(remote, remote_url)
+    if push_target != remote:
         logger.debug(
             "Converting SSH URL to HTTPS for push",
             original_url=remote_url,
@@ -487,7 +488,7 @@ def git_push():
 
         result = subprocess.run(
             cmd,
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -621,9 +622,12 @@ def git_execute():
             "git_execute_blocked",
             "git_execute",
             success=False,
-            details={"operation": operation, "args": args, "reason": args_error},
+            details={"operation": operation, "git_args": args, "reason": args_error},
         )
         return make_error(args_error, status_code=400)
+
+    # Map container path to worktree path if container_id is provided
+    exec_path = map_container_path_to_worktree(repo_path, container_id, operation)
 
     # Build command
     cmd = git_cmd(operation, *validated_args)
@@ -631,7 +635,7 @@ def git_execute():
     try:
         result = subprocess.run(
             cmd,
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -714,6 +718,7 @@ def git_fetch():
     remote = data.get("remote", "origin")
     operation = data.get("operation", "fetch")  # fetch or ls-remote
     extra_args = data.get("args", [])
+    container_id = data.get("container_id")
 
     if not repo_path:
         return make_error("Missing repo_path")
@@ -743,11 +748,14 @@ def git_fetch():
         )
         return make_error(args_error, status_code=400)
 
+    # Map container path to worktree path if container_id is provided
+    exec_path = map_container_path_to_worktree(repo_path, container_id, operation)
+
     # Get remote URL to determine repo
     try:
         result = subprocess.run(
             git_cmd("remote", "get-url", remote),
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=10,
@@ -769,15 +777,24 @@ def git_fetch():
     if not token_str:
         return make_error(token_error, status_code=503)
 
+    # Convert SSH URLs to HTTPS since gateway uses token auth
+    fetch_target = get_authenticated_remote_target(remote, remote_url)
+    if fetch_target != remote:
+        logger.debug(
+            f"Converting SSH URL to HTTPS for {operation}",
+            original_url=remote_url,
+            https_url=fetch_target,
+        )
+
     # Build command using validated args
     if operation == "fetch":
         # Don't include remote when --all is specified (fetches from all remotes)
         if "--all" in validated_args:
             cmd_args = ["fetch"] + validated_args
         else:
-            cmd_args = ["fetch", remote] + validated_args
+            cmd_args = ["fetch", fetch_target] + validated_args
     else:  # ls-remote
-        cmd_args = ["ls-remote", remote] + validated_args
+        cmd_args = ["ls-remote", fetch_target] + validated_args
 
     cmd = git_cmd(*cmd_args)
 
@@ -788,7 +805,7 @@ def git_fetch():
 
         result = subprocess.run(
             cmd,
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -1319,6 +1336,52 @@ def get_worktree_manager() -> WorktreeManager:
     if _worktree_manager is None:
         _worktree_manager = WorktreeManager()
     return _worktree_manager
+
+
+def map_container_path_to_worktree(
+    repo_path: str, container_id: str | None, operation: str = "git"
+) -> str:
+    """
+    Map a container's repo path to the corresponding worktree path.
+
+    Container sends paths like /home/jib/repos/{repo}, but the gateway needs
+    to run git in the worktree at /home/jib/.jib-worktrees/{container_id}/{repo}.
+
+    Args:
+        repo_path: The path sent by the container (e.g., /home/jib/repos/myrepo)
+        container_id: The container's unique identifier
+        operation: Name of the operation for logging purposes
+
+    Returns:
+        The worktree path if mapping succeeds, otherwise the original repo_path.
+    """
+    if not container_id:
+        return repo_path
+
+    repo_name = os.path.basename(repo_path.rstrip("/"))
+    if not repo_name:
+        return repo_path
+
+    manager = get_worktree_manager()
+    try:
+        worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
+        if worktree_path.exists():
+            logger.debug(
+                f"Mapped container path to worktree for {operation}",
+                container_path=repo_path,
+                worktree_path=str(worktree_path),
+                container_id=container_id,
+            )
+            return str(worktree_path)
+    except ValueError as e:
+        logger.warning(
+            f"Failed to map container path to worktree for {operation}",
+            error=str(e),
+            container_id=container_id,
+            repo_name=repo_name,
+        )
+
+    return repo_path
 
 
 @app.route("/api/v1/worktree/create", methods=["POST"])

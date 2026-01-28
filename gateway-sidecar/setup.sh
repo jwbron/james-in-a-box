@@ -249,7 +249,7 @@ print_summary() {
     echo ""
     echo "Incognito mode (optional):"
     echo "  To use a personal GitHub account instead of the bot:"
-    echo "  1. Create ~/.config/secrets.env with:"
+    echo "  1. Create ~/.config/jib/secrets.env with:"
     echo "     GITHUB_INCOGNITO_TOKEN=ghp_your_personal_access_token"
     echo "  2. Configure github_user in ~/.config/jib/repositories.yaml"
     echo "  3. Restart the gateway: systemctl --user restart $SERVICE_NAME"
