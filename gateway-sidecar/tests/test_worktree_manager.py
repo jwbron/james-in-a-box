@@ -166,9 +166,9 @@ class TestWorktreeManager:
 
     def test_get_worktree_paths_invalid_identifiers(self, manager):
         """Invalid identifiers should raise ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="container_id"):
             manager.get_worktree_paths("../evil", "repo")
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="repo_name"):
             manager.get_worktree_paths("container", "../evil")
 
     def test_cleanup_orphaned_worktrees_with_active_container(self, manager, temp_dirs):

@@ -650,7 +650,30 @@ case "$cmd" in
     # ==========================================================================
     # Local operations - route through gateway execute endpoint
     # ==========================================================================
-    status|log|diff|show|branch|rev-parse|config)
+    config)
+        # Config command - check if it's a global operation
+        extra_args=()
+        is_global=false
+        for arg in "${args_after_globals[@]}"; do
+            [ "$arg" = "$cmd" ] && continue
+            if [ "$arg" = "--global" ]; then
+                is_global=true
+            fi
+            extra_args+=("$arg")
+        done
+
+        if $is_global; then
+            # Global config operations don't need gateway - use real git
+            # These operate on ~/.gitconfig, not on any repo
+            exec "$REAL_GIT" config "${extra_args[@]}"
+        else
+            # Repo-level config goes through gateway
+            execute_via_gateway "$cmd" "$git_work_dir" "${extra_args[@]}"
+            exit $?
+        fi
+        ;;
+
+    status|log|diff|show|branch|rev-parse)
         # Read operations
         extra_args=()
         for arg in "${args_after_globals[@]}"; do
