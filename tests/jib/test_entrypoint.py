@@ -85,7 +85,6 @@ class TestConfig:
         """Test all derived path properties - all under /home/jib."""
         config = entrypoint.Config()
 
-        assert config.git_main_dir == Path("/home/jib/.git-main")
         assert config.claude_dir == Path("/home/jib/.claude")
         assert config.beads_dir == Path("/home/jib/sharing/beads")
 
@@ -316,70 +315,6 @@ class TestFixRepoConfig:
         calls = mock_run_cmd.call_args_list
         set_url_calls = [c for c in calls if "https://github.com/owner/repo.git" in str(c)]
         assert len(set_url_calls) == 1
-
-
-class TestSetupWorktrees:
-    """Tests for the setup_worktrees function."""
-
-    def test_returns_true_if_repos_dir_missing(self, temp_dir, monkeypatch):
-        """Test that function returns True if repos directory doesn't exist."""
-        # Create a fake home dir structure where repos doesn't exist
-        fake_home = temp_dir / "home" / "testuser"
-        fake_home.mkdir(parents=True)
-        monkeypatch.setenv("RUNTIME_USER", "testuser")
-
-        # Create a mock config that uses the temp paths
-        config = MagicMock()
-        config.repos_dir = fake_home / "repos"  # Doesn't exist
-        config.git_main_dir = fake_home / ".git-main"
-        config.git_admin_dir = fake_home / ".git-admin"  # Doesn't exist (legacy mode)
-
-        logger = entrypoint.Logger(quiet=True)
-        result = entrypoint.setup_worktrees(config, logger)
-
-        assert result is True
-
-    def test_returns_true_if_no_worktrees(self, temp_dir, monkeypatch):
-        """Test that function returns True if no worktrees exist."""
-        fake_home = temp_dir / "home" / "testuser"
-        fake_home.mkdir(parents=True)
-        repos_dir = fake_home / "repos"
-        repos_dir.mkdir()
-
-        config = MagicMock()
-        config.repos_dir = repos_dir
-        config.git_main_dir = fake_home / ".git-main"
-        config.git_admin_dir = fake_home / ".git-admin"  # Doesn't exist (legacy mode)
-
-        logger = entrypoint.Logger(quiet=True)
-        result = entrypoint.setup_worktrees(config, logger)
-
-        assert result is True
-
-    def test_returns_false_if_git_dirs_missing(self, temp_dir, monkeypatch, capsys):
-        """Test that function returns False if both .git-admin and .git-main are missing but worktrees exist."""
-        fake_home = temp_dir / "home" / "testuser"
-        fake_home.mkdir(parents=True)
-
-        repos_dir = fake_home / "repos"
-        repos_dir.mkdir()
-        repo_dir = repos_dir / "repo"
-        repo_dir.mkdir()
-        (repo_dir / ".git").write_text("gitdir: /original/path")
-
-        config = MagicMock()
-        config.repos_dir = repos_dir
-        config.git_admin_dir = (
-            fake_home / ".git-admin-nonexistent"
-        )  # Doesn't exist (no isolated mode)
-        config.git_main_dir = fake_home / ".git-main-nonexistent"  # Doesn't exist (no legacy mode)
-
-        logger = entrypoint.Logger(quiet=False)
-        result = entrypoint.setup_worktrees(config, logger)
-
-        assert result is False
-        captured = capsys.readouterr()
-        assert "FATAL" in captured.err
 
 
 class TestSetupSharing:
