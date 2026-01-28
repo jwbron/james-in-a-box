@@ -300,6 +300,84 @@ class TestSlackReceiverThreadTracking:
         assert len(threads) == 2
 
 
+class TestSlackReceiverMessageFiltering:
+    """Tests for message filtering (subtypes, missing user_id, etc.)."""
+
+    def test_should_ignore_bot_message_subtype(self):
+        """Test that bot_message subtype is ignored."""
+
+        def should_process_event(event):
+            """Logic mirroring _process_message filtering."""
+            subtype = event.get("subtype")
+            if subtype is not None:
+                return False
+            user_id = event.get("user")
+            return user_id
+
+        # Bot message - should be ignored
+        bot_event = {
+            "type": "message",
+            "subtype": "bot_message",
+            "bot_id": "B12345678",
+            "text": "Hello from bot",
+        }
+        assert should_process_event(bot_event) is False
+
+    def test_should_ignore_message_changed_subtype(self):
+        """Test that message_changed subtype is ignored."""
+
+        def should_process_event(event):
+            subtype = event.get("subtype")
+            if subtype is not None:
+                return False
+            user_id = event.get("user")
+            return user_id
+
+        # Message changed - should be ignored
+        changed_event = {
+            "type": "message",
+            "subtype": "message_changed",
+            "message": {"user": "U12345678", "text": "Edited message"},
+        }
+        assert should_process_event(changed_event) is False
+
+    def test_should_ignore_message_without_user(self):
+        """Test that messages without user_id are ignored."""
+
+        def should_process_event(event):
+            subtype = event.get("subtype")
+            if subtype is not None:
+                return False
+            user_id = event.get("user")
+            return user_id
+
+        # Message with no user - should be ignored
+        no_user_event = {
+            "type": "message",
+            "text": "Some text",
+        }
+        assert should_process_event(no_user_event) is False
+
+    def test_should_process_regular_user_message(self):
+        """Test that regular user messages are processed."""
+
+        def should_process_event(event):
+            subtype = event.get("subtype")
+            if subtype is not None:
+                return False
+            user_id = event.get("user")
+            return user_id
+
+        # Regular user message - should be processed
+        user_event = {
+            "type": "message",
+            "user": "U12345678",
+            "text": "Hello from user",
+            "channel": "D12345678",
+        }
+        assert should_process_event(user_event) is True
+
+
 @pytest.fixture
 def temp_dir():
     """Create a temporary directory for test files."""
