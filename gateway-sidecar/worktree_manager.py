@@ -283,9 +283,7 @@ class WorktreeManager:
         try:
             os.chown(path, uid, gid)
         except OSError as e:
-            raise RuntimeError(
-                f"Failed to chown {path} to {uid}:{gid}: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to chown {path} to {uid}:{gid}: {e}") from e
 
     def _chown_recursive(self, path: Path, uid: int, gid: int) -> None:
         """
@@ -308,13 +306,9 @@ class WorktreeManager:
             )
             if result.returncode != 0:
                 error_msg = result.stderr.decode() if result.stderr else "unknown error"
-                raise RuntimeError(
-                    f"Failed to chown {path} to {uid}:{gid}: {error_msg}"
-                )
+                raise RuntimeError(f"Failed to chown {path} to {uid}:{gid}: {error_msg}")
         except subprocess.SubprocessError as e:
-            raise RuntimeError(
-                f"Failed to chown {path} to {uid}:{gid}: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to chown {path} to {uid}:{gid}: {e}") from e
 
     def _find_worktree_git_dir(self, main_repo: Path, worktree_path: Path) -> Path:
         """
