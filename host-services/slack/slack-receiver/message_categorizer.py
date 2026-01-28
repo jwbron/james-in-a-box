@@ -126,45 +126,6 @@ HOST_FUNCTIONS = {
             "lines": "Number of log lines (default: 50)",
         },
     },
-    # Analysis tools (host-side scripts)
-    "run_beads_analyzer": {
-        "description": "Run the Beads task tracking analyzer to check task health metrics",
-        "triggers": ["analyze beads", "beads health", "task metrics", "beads report"],
-        "parameters": {
-            "days": "Number of days to analyze (default: 7)",
-            "force": "Force run even if recently run (default: false)",
-        },
-    },
-    "run_github_watcher": {
-        "description": "Run the GitHub watcher to check for PR comments, check failures, review requests",
-        "triggers": ["check github", "github watch", "check PRs", "PR status"],
-        "parameters": {},
-    },
-    "run_feature_analyzer": {
-        "description": "Sync documentation with implemented ADRs",
-        "triggers": ["sync docs", "feature analyzer", "update features"],
-        "parameters": {"adr_path": "Path to specific ADR file (optional)"},
-    },
-    "run_index_generator": {
-        "description": "Generate machine-readable codebase indexes",
-        "triggers": ["generate index", "update index", "reindex codebase"],
-        "parameters": {},
-    },
-    "run_doc_generator": {
-        "description": "Generate documentation from code patterns",
-        "triggers": ["generate docs", "update docs", "create documentation"],
-        "parameters": {},
-    },
-    "run_inefficiency_report": {
-        "description": "Generate weekly inefficiency report from conversation analysis",
-        "triggers": ["inefficiency report", "weekly report", "analyze conversations"],
-        "parameters": {},
-    },
-    "run_spec_enricher": {
-        "description": "Enrich task specs with relevant documentation links",
-        "triggers": ["enrich spec", "add doc links"],
-        "parameters": {"spec_path": "Path to spec file"},
-    },
     # Help - NOTE: triggers should be explicit requests for help with the BOT
     # itself, not requests that happen to contain the word "help"
     "show_help": {
