@@ -233,9 +233,8 @@ bd --allow-stale update <task-id> --status closed
 
 See these files for working examples:
 
-- **Direct integration**: `jib-container/jib-tasks/github/pr-reviewer.py` - Uses `PRContextManager` class
-- **Direct integration**: `jib-container/jib-tasks/github/comment-responder.py` - Uses `PRContextManager` class
 - **Prompt-based**: `jib-container/jib-tasks/slack/incoming-processor.py` - Includes beads in Claude prompts
+- **Prompt-based**: `jib-container/jib-tasks/github/github-processor.py` - Instructions in Claude prompt
 
 ## Context ID Conventions
 
@@ -291,13 +290,9 @@ labels = [
 
 | Script | Integration | Notes |
 |--------|-------------|-------|
-| `github/pr-reviewer.py` | Direct | PRContextManager class |
-| `github/comment-responder.py` | Direct | PRContextManager class |
 | `slack/incoming-processor.py` | Prompt-based | Instructions in Claude prompt |
 | `github/github-processor.py` | Prompt-based | Instructions in Claude prompt |
-| `github/pr-analyzer.py` | None | Should add direct integration |
 | `jira/jira-processor.py` | None | Should add direct integration |
-| `confluence/confluence-processor.py` | None | Should add direct integration |
 
 ## Best Practices
 

@@ -30,9 +30,9 @@ The jib system consists of multiple components across host and container environ
 
 | Component Type | Location | Examples |
 |----------------|----------|----------|
-| Host services | `host-services/` | github-watcher, slack-receiver, context-sync |
-| Container scripts | `jib-container/` | jib CLI, PR helpers, discovery tools |
-| Analysis tools | `host-services/analysis/` | codebase-analyzer, conversation-analyzer |
+| Host services | `host-services/` | slack-receiver, slack-notifier, context-sync |
+| Container scripts | `jib-container/` | jib CLI, github-processor, incoming-processor |
+| Utilities | `host-services/utilities/` | github-token-refresher |
 
 Currently, all components use `print()` statements for output with inconsistent formatting:
 - No structured data format
@@ -44,7 +44,7 @@ Currently, all components use `print()` statements for output with inconsistent 
 ### Current State
 
 ```python
-# Current pattern (github-watcher.py)
+# Current pattern (before migration)
 print(f"  gh command failed: {' '.join(args)}")
 print(f"  stderr: {e.stderr}")
 print(f"  Invoking jib: {task_type} for {context.get('repository', 'unknown')}")
@@ -149,7 +149,7 @@ export OTEL_SEMCONV_STABILITY_OPT_IN=genai
 export OTEL_PROPAGATORS=tracecontext,baggage
 
 # Set service identification
-export OTEL_SERVICE_NAME=jib-github-watcher
+export OTEL_SERVICE_NAME=jib-slack-receiver
 export OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production
 ```
 
@@ -300,8 +300,8 @@ All log entries include these fields:
   "timestamp": "2025-11-28T12:34:56.789Z",
   "severity": "INFO",
   "message": "Human-readable message",
-  "service": "github-watcher",
-  "component": "pr_checker",
+  "service": "slack-receiver",
+  "component": "message_handler",
   "environment": "container",
 
   "traceId": "0af7651916cd43dd8448eb211c80319c",
@@ -588,7 +588,7 @@ In GCP Cloud Run, logs automatically flow to Cloud Logging when written to stdou
 # The library auto-detects environment
 from jib_logging import get_logger
 
-logger = get_logger("github-watcher")
+logger = get_logger("slack-receiver")
 
 # Same code works in both environments:
 logger.info("Processing PR", pr_number=123, repository="jwbron/james-in-a-box")
@@ -771,17 +771,13 @@ January 2026 to reduce dead code.
 
 ### Phase 4: Migration ✅ EXTENSIVE ADOPTION
 
-**Services Migrated (10+):**
-1. ✅ github-watcher (`host-services/analysis/github-watcher/`)
-2. ✅ slack-receiver (`host-services/slack/slack-receiver/`)
-3. ✅ slack-notifier (`host-services/slack/slack-notifier/`)
-4. ✅ context-sync (`host-services/sync/context-sync/`)
-5. ✅ conversation-analyzer (`host-services/analysis/conversation-analyzer/`)
-6. ✅ incoming-processor (`jib-container/jib-tasks/slack/`)
-7. ✅ pr-reviewer (`jib-container/jib-tasks/github/`)
-8. ✅ comment-responder (`jib-container/jib-tasks/github/`)
-9. ✅ mcp-token-watcher (`jib-container/scripts/`)
-10. ✅ github-token-refresher (`host-services/utilities/`)
+**Services Using Standardized Logging:**
+1. ✅ slack-receiver (`host-services/slack/slack-receiver/`)
+2. ✅ slack-notifier (`host-services/slack/slack-notifier/`)
+3. ✅ context-sync (`host-services/sync/context-sync/`)
+4. ✅ incoming-processor (`jib-container/jib-tasks/slack/`)
+5. ✅ github-processor (`jib-container/jib-tasks/github/`)
+6. ✅ github-token-refresher (`host-services/utilities/`)
 
 **Documentation:**
 - ✅ Code examples in all wrapper modules

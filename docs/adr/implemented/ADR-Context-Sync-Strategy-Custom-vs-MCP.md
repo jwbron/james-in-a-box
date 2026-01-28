@@ -39,9 +39,7 @@
 - JIRA: Hourly (systemd timer) - **pending MCP migration**
 - GitHub: Real-time via MCP (custom sync removed)
 
-**Post-Sync Analysis (Active):**
-- host-services/analysis/github-watcher/github-watcher.py: Monitors PRs, CI failures, review comments (1,292 LOC)
-- Analysis jobs: ADR researcher, PR reviewer, conversation analyzer
+**Note:** As of January 2026, automated analysis features (github-watcher, pr-reviewer, etc.) have been removed to refocus on guided autonomous development. GitHub operations are now on-demand via Slack commands.
 
 ## Context
 

@@ -1,6 +1,6 @@
 # Reference Documentation
 
-Quick reference guides and troubleshooting.
+Quick reference guides for james-in-a-box.
 
 ## Available References
 
@@ -24,18 +24,13 @@ Common Slack operations and commands.
 - Troubleshooting connection issues
 - Managing channels and tokens
 
-### [Engineering Culture](engineering-culture.md)
-Engineering culture standards template for L3-L4 behavioral expectations.
-
-**Information about:**
-- L3-L4 (Senior Software Engineer) behavioral expectations
-- Problem solving, communication, and collaboration standards
-- Engineering principles (customizable for your organization)
+### [Log Persistence](log-persistence.md)
+Container log persistence and correlation.
 
 ## Common Issues
 
 **Slack not receiving notifications:**
-1. Check service: `bin/systemctl --user status`
+1. Check service: `systemctl --user status slack-notifier`
 2. Verify token: Check logs for authentication errors
 3. Test manually: Write file to `~/.jib-sharing/notifications/`
 
@@ -45,10 +40,10 @@ Engineering culture standards template for L3-L4 behavioral expectations.
 3. Verify PATH: `which claude`
 
 **Container issues:**
-1. Rebuild: `./jib --reset`
+1. Rebuild: `bin/jib --rebuild`
 2. Check Docker: `docker ps`
-3. View logs: `docker logs jib`
+3. View logs: `docker logs jib-claude -f`
 
 ## See Also
-- [User Guide](../user-guide/)
-- [Troubleshooting](../../README.md#troubleshooting)
+- [Setup Guides](../setup/)
+- [Architecture](../architecture/)

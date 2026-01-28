@@ -95,12 +95,7 @@ Note: Volume mounts are configured dynamically from `repositories.yaml`.
 | slack-notifier | Claude → You notifications | Included in main setup |
 | slack-receiver | You → Claude messages | Included in main setup |
 | context-sync | Confluence/JIRA sync | Included in main setup |
-| github-watcher | GitHub PR/issue monitoring | Included in main setup |
 | github-token-refresher | Auto-refresh GitHub App tokens | Included in main setup |
-| worktree-watcher | Cleanup orphaned worktrees | Included in main setup |
-| conversation-analyzer | Daily conversation analysis | Included in main setup |
-| doc-generator | Weekly documentation updates | Included (optional enable) |
-| index-generator | Codebase indexing | Included (optional enable) |
 
 ## Updating Configuration
 
