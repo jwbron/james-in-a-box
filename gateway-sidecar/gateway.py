@@ -58,6 +58,8 @@ try:
         create_credential_helper,
         get_token_for_repo,
         git_cmd,
+        is_ssh_url,
+        ssh_url_to_https,
         validate_git_args,
         validate_repo_path,
     )
@@ -78,6 +80,8 @@ except ImportError:
         create_credential_helper,
         get_token_for_repo,
         git_cmd,
+        is_ssh_url,
+        ssh_url_to_https,
         validate_git_args,
         validate_repo_path,
     )
@@ -563,10 +567,19 @@ def git_push():
         return make_error(token_error, status_code=503)
 
     # Build push command with safe.directory for worktree paths
+    # If remote URL is SSH, convert to HTTPS since gateway uses token auth
+    push_target = remote
+    if is_ssh_url(remote_url):
+        push_target = ssh_url_to_https(remote_url)
+        logger.debug(
+            "Converting SSH URL to HTTPS for push",
+            original_url=remote_url,
+            https_url=push_target,
+        )
     push_args = ["push"]
     if force:
         push_args.append("--force")
-    push_args.extend([remote, refspec] if refspec else [remote])
+    push_args.extend([push_target, refspec] if refspec else [push_target])
     cmd = git_cmd(*push_args)
 
     # NOTE: Git author/committer info is set at COMMIT time, not push time.

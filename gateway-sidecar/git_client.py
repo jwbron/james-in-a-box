@@ -51,6 +51,40 @@ def git_cmd(*args: str) -> list[str]:
     return [GIT_CLI, "-c", "safe.directory=*", *args]
 
 
+def ssh_url_to_https(url: str) -> str:
+    """
+    Convert SSH git URL to HTTPS URL.
+
+    The gateway doesn't have SSH keys - it uses HTTPS with token auth.
+    This converts SSH URLs so pushes work via HTTPS authentication.
+
+    Supports:
+    - git@github.com:owner/repo.git -> https://github.com/owner/repo.git
+    - ssh://git@github.com/owner/repo.git -> https://github.com/owner/repo.git
+
+    Returns the original URL if it's already HTTPS or doesn't match SSH patterns.
+    """
+    import re
+
+    # Pattern 1: git@github.com:owner/repo.git
+    match = re.match(r"^git@github\.com:(.+?)(?:\.git)?$", url)
+    if match:
+        return f"https://github.com/{match.group(1)}.git"
+
+    # Pattern 2: ssh://git@github.com/owner/repo.git
+    match = re.match(r"^ssh://git@github\.com/(.+?)(?:\.git)?$", url)
+    if match:
+        return f"https://github.com/{match.group(1)}.git"
+
+    # Already HTTPS or unknown format - return as-is
+    return url
+
+
+def is_ssh_url(url: str) -> bool:
+    """Check if a URL is an SSH git URL."""
+    return url.startswith("git@") or url.startswith("ssh://")
+
+
 # =============================================================================
 # Path Validation
 # =============================================================================
