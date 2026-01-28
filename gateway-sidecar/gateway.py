@@ -1430,6 +1430,12 @@ def worktree_create():
     if not repos:
         return make_error("Missing repos list")
 
+    # Validate uid/gid if provided
+    if uid is not None and (not isinstance(uid, int) or uid < 0):
+        return make_error("Invalid uid: must be a non-negative integer")
+    if gid is not None and (not isinstance(gid, int) or gid < 0):
+        return make_error("Invalid gid: must be a non-negative integer")
+
     manager = get_worktree_manager()
     worktrees = {}
     errors = []

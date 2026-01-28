@@ -12,6 +12,7 @@ to mount only the working directory (with .git shadowed by tmpfs). All git
 operations then route through the gateway API.
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -151,6 +152,13 @@ class WorktreeManager:
             uid = 1000
         if gid is None:
             gid = 1000
+
+        # Validate uid/gid are positive integers
+        if not isinstance(uid, int) or uid < 0:
+            raise ValueError(f"Invalid uid: must be a non-negative integer, got {uid!r}")
+        if not isinstance(gid, int) or gid < 0:
+            raise ValueError(f"Invalid gid: must be a non-negative integer, got {gid!r}")
+
         # Validate inputs to prevent path traversal
         validate_identifier(container_id, "container_id")
         validate_identifier(repo_name, "repo_name")
@@ -231,8 +239,8 @@ class WorktreeManager:
 
         # Set ownership so the container user can write to the worktree
         self._chown_recursive(worktree_path, uid, gid)
-        # Also ensure the container directory is writable
-        self._chown_recursive(worktree_path.parent, uid, gid)
+        # Also ensure the container directory itself is writable (non-recursive)
+        self._chown_single(worktree_path.parent, uid, gid)
 
         # Find the actual git dir (git names it based on worktree basename)
         git_dir = self._find_worktree_git_dir(main_repo, worktree_path)
@@ -260,6 +268,25 @@ class WorktreeManager:
 
         return info
 
+    def _chown_single(self, path: Path, uid: int, gid: int) -> None:
+        """
+        Change ownership of a single file or directory (non-recursive).
+
+        Args:
+            path: Path to change ownership of
+            uid: User ID to set
+            gid: Group ID to set
+
+        Raises:
+            RuntimeError: If chown fails
+        """
+        try:
+            os.chown(path, uid, gid)
+        except OSError as e:
+            raise RuntimeError(
+                f"Failed to chown {path} to {uid}:{gid}: {e}"
+            ) from e
+
     def _chown_recursive(self, path: Path, uid: int, gid: int) -> None:
         """
         Recursively change ownership of a directory.
@@ -268,22 +295,26 @@ class WorktreeManager:
             path: Path to change ownership of
             uid: User ID to set
             gid: Group ID to set
+
+        Raises:
+            RuntimeError: If chown fails
         """
         try:
             # Use chown -R for efficiency on large directories
-            subprocess.run(
+            result = subprocess.run(
                 ["chown", "-R", f"{uid}:{gid}", str(path)],
                 capture_output=True,
-                check=True,
+                check=False,
             )
-        except subprocess.CalledProcessError as e:
-            logger.warning(
-                "Failed to chown worktree",
-                path=str(path),
-                uid=uid,
-                gid=gid,
-                error=e.stderr.decode() if e.stderr else str(e),
-            )
+            if result.returncode != 0:
+                error_msg = result.stderr.decode() if result.stderr else "unknown error"
+                raise RuntimeError(
+                    f"Failed to chown {path} to {uid}:{gid}: {error_msg}"
+                )
+        except subprocess.SubprocessError as e:
+            raise RuntimeError(
+                f"Failed to chown {path} to {uid}:{gid}: {e}"
+            ) from e
 
     def _find_worktree_git_dir(self, main_repo: Path, worktree_path: Path) -> Path:
         """
