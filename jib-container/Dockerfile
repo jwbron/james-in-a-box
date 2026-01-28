@@ -89,11 +89,6 @@ RUN mkdir -p /opt/claude-rules
 COPY claude-rules/*.md /opt/claude-rules/
 RUN chmod 644 /opt/claude-rules/*.md
 
-# Copy Claude hooks directory
-RUN mkdir -p /opt/claude-hooks
-COPY .claude/hooks/ /opt/claude-hooks/
-RUN chmod 755 /opt/claude-hooks/*.sh 2>/dev/null || true
-
 # Copy jib-container runtime scripts and tools to /opt/jib-runtime
 # This provides container-resident executables available in PATH
 # The bin/ directory contains symlinks to all executables
