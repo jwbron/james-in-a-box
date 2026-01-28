@@ -1,7 +1,7 @@
 # ADR: Git Isolation Architecture for Autonomous AI Agents
 
-**Status:** Implemented
-**Date:** 2026-01-27
+**Status:** Implemented (core), Private Repo Mode proposed
+**Date:** 2026-01-27 (core), 2026-01-28 (Private Repo Mode)
 **Supersedes:** ADR-Container-Worktree-Isolation
 
 ---
@@ -17,6 +17,7 @@ This document describes how we safely allow multiple AI agent containers to work
 - **No credential exposure**: Agents never see GitHub tokens or SSH keys
 - **Enforced code review**: Agents cannot merge their own PRs—humans must review and merge
 - **Crash-safe**: System recovers cleanly if an agent container crashes
+- **Private Repo Mode** (optional): Restricts agent to private repositories only
 
 ---
 
@@ -404,6 +405,92 @@ The chosen approach provides:
 - **Efficient storage** (worktrees share git objects)
 - **Fast workspace creation** (O(1) via git worktree)
 - **Clean crash recovery** (gateway manages all state)
+
+---
+
+## Private Repo Mode
+
+**Status:** Proposed extension
+
+Private Repo Mode restricts jib to only interact with **private** GitHub repositories, preventing any interaction with public repositories.
+
+### Motivation
+
+When operating on sensitive codebases, there's risk of:
+1. **Accidental code sharing:** Agent might reference or copy code to a public repository
+2. **Data leakage via forks:** Agent could fork a private repo to a public destination
+3. **Cross-contamination:** Agent might mix private code with public dependencies
+
+Private Repo Mode addresses these risks by ensuring jib can only see and modify private repositories.
+
+### Design
+
+The gateway enforces repository visibility at the policy layer:
+
+```python
+# Gateway policy check for all git operations
+def validate_repository_access(repo: str, operation: str) -> bool:
+    """
+    In Private Repo Mode, only allow access to private repositories.
+    """
+    if not PRIVATE_REPO_MODE_ENABLED:
+        return True  # Standard mode: all repos allowed
+
+    visibility = get_repo_visibility(repo)  # GitHub API call, cached
+
+    if visibility == "public":
+        log.warning(f"Blocked {operation} on public repo: {repo}")
+        return False
+
+    return True  # private or internal repos allowed
+```
+
+### Enforced Restrictions
+
+| Operation | Public Repo | Private Repo |
+|-----------|-------------|--------------|
+| `git clone` | ❌ Blocked | ✓ Allowed |
+| `git fetch` | ❌ Blocked | ✓ Allowed |
+| `git push` | ❌ Blocked | ✓ Allowed |
+| `gh pr create` | ❌ Blocked | ✓ Allowed |
+| `gh issue view` | ❌ Blocked | ✓ Allowed |
+| `gh repo fork` | ❌ Blocked (either direction) | ✓ Allowed (to private only) |
+
+### Configuration
+
+Private Repo Mode is enabled via environment variable in the gateway:
+
+```yaml
+# docker-compose.yml
+services:
+  gateway-sidecar:
+    environment:
+      - PRIVATE_REPO_MODE=true
+```
+
+### Edge Cases
+
+**Forking:**
+- Fork from private → private: ✓ Allowed
+- Fork from private → public: ❌ Blocked
+- Fork from public → anywhere: ❌ Blocked
+
+**Upstream references:**
+- If a private repo has a public upstream, fetch from upstream is blocked
+- Agent must work only with the private fork
+
+**Organization visibility:**
+- GitHub "internal" repositories (visible within org) are treated as private
+- Only "public" visibility is blocked
+
+### Implementation Checklist
+
+- [ ] Add `PRIVATE_REPO_MODE` environment variable
+- [ ] Add `get_repo_visibility()` function with caching
+- [ ] Add policy check to all repository operations
+- [ ] Add audit logging for blocked public repo access
+- [ ] Test with mixed public/private repo scenarios
+- [ ] Document supervised mode override for public repo access
 
 ---
 

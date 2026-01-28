@@ -5,7 +5,8 @@
 **Contributors:** James Wiesebron, Claude (AI Pair Programming)
 **Informed:** Engineering teams
 **Proposed:** November 2025
-**Status:** Proposed
+**Updated:** January 2026
+**Status:** In Progress
 
 ## Table of Contents
 
@@ -71,10 +72,11 @@ The existing ADR documents a "trust but verify" model:
 - Tool access lockdown for authenticated operations (git push, gh, etc.)
 - Audit logging for all network traffic
 - Credential isolation (no credentials in jib container)
+- **Full network lockdown** (Phase 2): Route all traffic through gateway with strict allowlist
 
-**Out of Scope:**
-- Internet domain allowlisting/blocking (too difficult to maintain while allowing web search and package installation)
-- DNS-level filtering (can revisit if threat model changes)
+**Phased Rollout:**
+- **Phase 1 (Implemented):** Gateway sidecar for git/gh operations, credential isolation
+- **Phase 2 (Planned):** Full network lockdown - only Anthropic APIs and GitHub allowed
 
 ## Problem Statement
 
@@ -253,6 +255,222 @@ The jib container uses `git` and `gh` CLI wrappers that:
 - Send Slack notifications for key operations
 - Pass through read-only operations unchanged
 
+## Phase 2: Full Network Lockdown
+
+Phase 1 established credential isolation and gateway-mediated git operations. Phase 2 extends this to **complete network isolation**: jib can only reach the gateway sidecar, and the gateway enforces a strict allowlist of external destinations.
+
+### Motivation
+
+The current architecture (Phase 1) still allows jib to reach arbitrary internet endpoints:
+- Web search could be used for data exfiltration
+- Package installation could pull malicious dependencies
+- Any HTTP endpoint could receive exfiltrated code or secrets
+
+For truly unsupervised operation with `--dangerously-skip-permissions`, we need infrastructure-level guarantees that jib cannot communicate with unauthorized endpoints.
+
+### Design: Complete Traffic Isolation
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Docker Network (jib-network)                       │
+│                                                                               │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                        jib container (ISOLATED)                         │  │
+│  │                                                                         │  │
+│  │  Network: jib-isolated (no external connectivity)                       │  │
+│  │                                                                         │  │
+│  │  Can reach ONLY:                                                        │  │
+│  │  - gateway-sidecar (via internal network)                              │  │
+│  │                                                                         │  │
+│  │  CANNOT reach:                                                          │  │
+│  │  - Internet (no default route)                                         │  │
+│  │  - DNS servers (no external DNS)                                       │  │
+│  │                                                                         │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                              │                                                │
+│                              │ Internal network only                          │
+│                              ▼                                                │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │                     gateway-sidecar (GATEKEEPER)                        │  │
+│  │                                                                         │  │
+│  │  Networks: jib-isolated + external                                      │  │
+│  │                                                                         │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐   │  │
+│  │  │  HTTPS Proxy (squid or envoy)                                   │   │  │
+│  │  │                                                                 │   │  │
+│  │  │  ALLOWLIST (strictly enforced):                                 │   │  │
+│  │  │  ✓ api.anthropic.com          (Claude API)                      │   │  │
+│  │  │  ✓ api.github.com             (GitHub API)                      │   │  │
+│  │  │  ✓ github.com                 (git operations)                  │   │  │
+│  │  │  ✓ *.githubusercontent.com   (GitHub raw content)              │   │  │
+│  │  │                                                                 │   │  │
+│  │  │  BLOCKED (everything else):                                     │   │  │
+│  │  │  ✗ pypi.org, npmjs.com        (no package installs)             │   │  │
+│  │  │  ✗ google.com, bing.com       (no web search)                   │   │  │
+│  │  │  ✗ *.com, *.io, etc           (no arbitrary endpoints)          │   │  │
+│  │  └─────────────────────────────────────────────────────────────────┘   │  │
+│  │                                                                         │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐   │  │
+│  │  │  Git/GH REST API (existing Phase 1 implementation)              │   │  │
+│  │  └─────────────────────────────────────────────────────────────────┘   │  │
+│  │                                                                         │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                              │                                                │
+│                              │ Allowlisted destinations only                  │
+│                              ▼                                                │
+│                       ┌─────────────┐                                        │
+│                       │  Internet   │                                        │
+│                       │  (filtered) │                                        │
+│                       └─────────────┘                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Network Isolation Implementation
+
+**Docker Network Configuration:**
+
+```yaml
+# docker-compose.yml
+networks:
+  jib-isolated:
+    internal: true  # No external connectivity
+  external:
+    # Standard bridge network with internet access
+
+services:
+  jib:
+    networks:
+      - jib-isolated  # ONLY internal network
+    # No default route to internet
+    # All traffic must go through gateway
+
+  gateway-sidecar:
+    networks:
+      - jib-isolated  # Can receive from jib
+      - external      # Can reach internet
+```
+
+**Key property:** Docker's `internal: true` network has no gateway to the outside world. jib physically cannot route packets to the internet—there's no route in its network namespace.
+
+### Domain Allowlist
+
+The gateway maintains a strict allowlist of permitted domains:
+
+| Domain | Purpose | Required For |
+|--------|---------|--------------|
+| `api.anthropic.com` | Claude API | Claude Code operation |
+| `api.github.com` | GitHub REST API | PR creation, issue management |
+| `github.com` | Git operations | Push, fetch, clone |
+| `*.githubusercontent.com` | GitHub raw content | File downloads, avatars |
+
+**Allowlist Properties:**
+- **Exhaustive:** Only listed domains are permitted; all others blocked
+- **Enforced at proxy:** Gateway proxy (Squid/Envoy) validates destination before forwarding
+- **TLS inspection:** HTTPS traffic inspected to verify destination domain (CONNECT method)
+- **No wildcards for arbitrary domains:** Each permitted domain explicitly listed
+
+### What Gets Blocked
+
+| Category | Examples | Impact | Mitigation |
+|----------|----------|--------|------------|
+| Package managers | pypi.org, npmjs.com | Can't install new packages | Pre-install required packages in image |
+| Web search | google.com, bing.com | Can't search web | Use GitHub search, local docs |
+| Documentation | docs.python.org | Can't fetch docs | Bundle offline docs in image |
+| Arbitrary APIs | any other endpoint | Can't exfiltrate data | **This is the security goal** |
+
+### Pre-installed Dependencies
+
+Since jib cannot install packages at runtime, the container image must include all required dependencies:
+
+**Python packages:** Pre-installed via `requirements.txt` during image build
+**Node packages:** Pre-installed via `package.json` during image build
+**System tools:** Installed via Dockerfile
+
+**Image build process:**
+```dockerfile
+# All dependencies installed at build time
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY package.json package-lock.json /app/
+RUN npm ci
+
+# Runtime: jib cannot reach package repositories
+```
+
+### DNS Resolution
+
+jib cannot perform external DNS lookups:
+
+```yaml
+# jib container
+dns: []  # No DNS servers configured
+extra_hosts:
+  - "gateway:172.18.0.2"  # Static entry for gateway
+```
+
+The gateway sidecar handles DNS for allowlisted destinations internally.
+
+### Proxy Configuration
+
+jib routes all HTTP/HTTPS traffic through the gateway proxy:
+
+```bash
+# Environment variables in jib container
+HTTP_PROXY=http://gateway:3128
+HTTPS_PROXY=http://gateway:3128
+NO_PROXY=localhost,127.0.0.1,gateway
+```
+
+**Proxy behavior:**
+1. jib sends CONNECT request to gateway for HTTPS destinations
+2. Gateway checks destination against allowlist
+3. If allowed: Gateway establishes tunnel to destination
+4. If blocked: Gateway returns 403 Forbidden
+
+### Breakout Prevention
+
+The architecture prevents several classes of network breakout:
+
+| Attack Vector | Mitigation |
+|---------------|------------|
+| Direct IP connection | No route—internal network only |
+| DNS tunneling | No DNS servers configured |
+| Proxy bypass | No alternate route exists |
+| Container escape | Defense in depth; not in scope for network layer |
+
+### Fallback: Supervised Mode
+
+For tasks requiring web access (research, package updates), jib can operate in **supervised mode**:
+
+```yaml
+# docker-compose.supervised.yml override
+services:
+  jib:
+    networks:
+      - jib-isolated
+      - external  # Adds external network access
+    environment:
+      - JIB_MODE=supervised
+```
+
+In supervised mode:
+- Full internet access available
+- Human must actively monitor session
+- Intended for interactive work, not autonomous operation
+
+### Implementation Checklist
+
+- [ ] Create `jib-isolated` internal Docker network
+- [ ] Configure gateway Squid proxy with domain allowlist
+- [ ] Remove external network from jib container
+- [ ] Add static DNS entry for gateway in jib
+- [ ] Pre-install all required packages in image
+- [ ] Test Claude API connectivity through proxy
+- [ ] Test GitHub operations through proxy
+- [ ] Verify blocked domains return 403
+- [ ] Document supervised mode override
+
 ## Security Analysis
 
 ### Threat Model
@@ -268,9 +486,21 @@ The jib container uses `git` and `gh` CLI wrappers that:
 
 ### What This Does NOT Prevent
 
+**Phase 1 residual risks:**
 1. **Data exfiltration to allowed endpoints**: Agent can send data to any website (logged but not blocked)
 2. **Malicious code in PRs**: Agent can still write malicious code (human review required)
 3. **Social engineering via Slack**: Agent could attempt to manipulate human via messages
+
+**Phase 2 residual risks** (after full lockdown):
+1. **Exfiltration via GitHub:** Agent could encode data in branch names, commit messages, or PR descriptions
+2. **Exfiltration via Claude API:** Agent could encode data in prompts (addressed by Anthropic's logging)
+3. **Malicious code in PRs:** Same as Phase 1—human review required
+4. **Supply chain via pre-installed packages:** Malicious packages could be bundled at build time
+
+**Mitigations for Phase 2 residual risks:**
+- GitHub: Audit logging of all operations; branch naming policies
+- Claude API: Anthropic maintains usage logs; API calls are authenticated
+- Pre-installed packages: Use pinned versions, scan images with Trivy
 
 ### Rate Limiting
 
@@ -418,13 +648,14 @@ Layer 6: Human Review
 
 **Pros:**
 - Strong data exfiltration prevention
+- Infrastructure-enforced security (cannot be bypassed by instructions)
 
 **Cons:**
 - Breaks web search (needs access to search engines and results)
 - Breaks package installation (many CDN domains)
-- Constant maintenance as services change
+- Requires pre-installing all dependencies in image
 
-**Rejected:** Too restrictive for practical use; jib needs web access
+**Decision:** Initially rejected as too restrictive. **Reconsidered for Phase 2** after evaluating the risk profile for unsupervised autonomous operation. For `--dangerously-skip-permissions` mode, the security benefits outweigh the operational constraints. Web search and package installation can be addressed through pre-installed dependencies and supervised mode fallback
 
 ## MCP Considerations
 
@@ -488,6 +719,6 @@ Detailed implementation examples including:
 
 ---
 
-**Last Updated:** 2026-01-21
-**Next Review:** 2026-02-21 (Monthly)
-**Status:** Proposed
+**Last Updated:** 2026-01-28
+**Next Review:** 2026-02-28 (Monthly)
+**Status:** In Progress (Phase 1 implemented, Phase 2 planned)
