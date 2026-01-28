@@ -183,6 +183,9 @@ class WorktreeManager:
                 repo=repo_name,
                 path=str(worktree_path),
             )
+            # Ensure ownership is correct (may have been created with different uid/gid)
+            self._chown_recursive(worktree_path, uid, gid)
+            self._chown_single(worktree_path.parent, uid, gid)
             # Return info about existing worktree
             return WorktreeInfo(
                 container_id=container_id,
