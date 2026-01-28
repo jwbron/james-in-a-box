@@ -188,36 +188,32 @@ Container Request                    Gateway
 
 ### Container Setup
 1. Request arrives, gateway creates worktree: `git worktree add /workspace/worktrees/{id}/repo -b jib/{id}/work`
-2. Container mounts the working directory with `.git` as read-only:
+2. Container mounts only the working directory files (excluding `.git`):
    ```bash
    docker run \
      -v /workspace/worktrees/{id}/repo:/home/jib/repo:rw \
-     -v /workspace/worktrees/{id}/repo/.git:/home/jib/repo/.git:ro \
+     --mount type=tmpfs,destination=/home/jib/repo/.git \
      ...
    ```
-   **Note on mount order**: Docker processes `-v` flags left-to-right. The parent directory must be mounted first, then the more specific `.git` mount overlays it. This order ensures `.git` ends up read-only within the read-write parent.
-3. Container can freely edit source files, but cannot modify `.git`
-4. All git operations go through gateway API
+   The tmpfs mount shadows the `.git` file from the host, so the container sees an empty `.git` directory. This prevents any local git operations from succeeding—they must go through the gateway.
+3. Container can freely edit source files
+4. All git operations go through gateway API (container has no git metadata)
 
-### Why .git is Read-Only
+### Why .git is Not Mounted
 
-The worktree's `.git` is a file (not directory) containing:
-```
-gitdir: /workspace/repos/my-repo.git/worktrees/my-repo
-```
+The container does not have access to any git metadata:
+
+1. **The `.git` file would be useless anyway**: It contains `gitdir: /workspace/repos/...` pointing to a path not mounted in the container
+2. **Simpler security model**: No git metadata = no possibility of git-based attacks from within container
+3. **Enforces gateway routing**: All git operations must go through the gateway—there's no fallback
 
 **Note on git worktree naming**: Git names worktree admin directories based on the basename of the worktree path. For `/workspace/worktrees/abc123/my-repo`, git creates `.git/worktrees/my-repo`. If multiple worktrees have the same basename, git appends a number (e.g., `my-repo-1`).
 
-**Security considerations:**
-- Container cannot modify `.git` to point elsewhere
-- The gitdir path points to worktree admin, which isn't mounted in container anyway
-- Even if container could read the path, it can't access it
-- Git wrapper routes write operations to gateway; read-only operations use local `.git`
-
-**Defense in depth:**
-- Read-only `.git` mount prevents tampering
-- Git wrapper routes write operations through gateway
-- Worktree admin directory not accessible to container
+**Security properties:**
+- Container cannot read or modify any git metadata
+- Container cannot discover worktree admin paths
+- Container cannot bypass gateway for git operations
+- Git wrapper routes all operations through gateway API
 
 ### Git Operations
 
@@ -262,7 +258,10 @@ done
 route_to_gateway "$cmd" "$@"
 ```
 
-**Note**: Unlike earlier drafts that proposed running read-only operations locally, ALL git operations must go through the gateway. This is because the container's `.git` file contains a `gitdir` path to `/workspace/repos/...`, which is not mounted in the container. The gateway has access to both the working directory and the worktree admin directory.
+**Note**: The container has no `.git` metadata at all (it's shadowed by a tmpfs mount). This means:
+1. Any git command run without the wrapper would fail with "not a git repository"
+2. The wrapper is the only way to perform git operations
+3. All operations are routed through the gateway, which has access to both the working directory and the worktree admin directory
 
 ### Gateway Git Execution
 
@@ -374,12 +373,14 @@ docker run -d --name gateway \
 # Start jib container (after gateway creates worktree)
 docker run -it --name jib-abc123 \
   -v /workspace/worktrees/abc123/my-repo:/home/jib/repo:rw \
-  -v /workspace/worktrees/abc123/my-repo/.git:/home/jib/repo/.git:ro \
+  --mount type=tmpfs,destination=/home/jib/repo/.git \
   -e CONTAINER_ID=abc123 \
   -e GATEWAY_URL=http://gateway:9847 \
   --network jib-network \
   jib
 ```
+
+**Note**: The tmpfs mount shadows the host's `.git` file, so the container has no git metadata. All git operations must go through the gateway.
 
 ### Cloud Run Deployment
 
@@ -896,10 +897,10 @@ Replace current implementation with:
 #!/bin/bash
 # Git wrapper - routes ALL git operations through gateway
 #
-# Why not run read-only operations locally?
-# The container's .git file contains: gitdir: /workspace/repos/repo.git/worktrees/...
-# This path is NOT mounted in the container, so git cannot access HEAD, index, etc.
-# Only the gateway has access to both the working directory and worktree admin.
+# The container has NO .git metadata (it's shadowed by a tmpfs mount).
+# Without this wrapper, 'git' commands would fail with "not a git repository".
+# All operations must go through the gateway, which has access to both
+# the working directory and the worktree admin directory.
 
 REAL_GIT=/opt/.jib-internal/git
 GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
@@ -1317,10 +1318,11 @@ response = requests.post(f"{gateway_url}/api/v1/worktree/create", json={
 })
 worktree_path = response.json()["worktree_path"]
 
-# Mount worktree into container
+# Mount worktree into container (excluding .git via tmpfs shadow)
 docker_args.extend([
     "-v", f"{worktree_path}:/home/jib/repos/{repo_name}:rw",
-    "-v", f"{worktree_path}/.git:/home/jib/repos/{repo_name}/.git:ro",
+    "--mount", f"type=tmpfs,destination=/home/jib/repos/{repo_name}/.git",
+    "-e", f"CONTAINER_ID={container_id}",
 ])
 ```
 
