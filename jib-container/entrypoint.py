@@ -361,8 +361,10 @@ def setup_environment(config: Config) -> None:
     # Beads directory
     os.environ["BEADS_DIR"] = str(config.beads_dir / ".beads")
 
-    # Git editor - use 'true' (no-op) for non-interactive rebase/merge continue
-    # This allows git rebase --continue to work without an interactive editor
+    # Git editor - use 'true' (no-op) for non-interactive environment
+    # This allows git rebase --continue to work without an interactive editor.
+    # Side effects: git commit without -m creates empty messages, git rebase -i
+    # applies default picks. This is intentional for autonomous operation.
     os.environ["GIT_EDITOR"] = "true"
 
 

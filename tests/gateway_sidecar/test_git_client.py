@@ -9,7 +9,13 @@ gateway_path = Path(__file__).parent.parent.parent / "gateway-sidecar"
 if str(gateway_path) not in sys.path:
     sys.path.insert(0, str(gateway_path))
 
-from git_client import get_authenticated_remote_target, is_ssh_url, ssh_url_to_https
+from git_client import (
+    GIT_ALLOWED_COMMANDS,
+    get_authenticated_remote_target,
+    is_ssh_url,
+    ssh_url_to_https,
+    validate_git_args,
+)
 
 
 class TestIsSshUrl:
@@ -114,3 +120,52 @@ class TestGetAuthenticatedRemoteTarget:
             "my-custom-remote", "git@github.com:owner/repo.git"
         )
         assert result == "https://github.com/owner/repo.git"
+
+
+class TestGitAllowedCommands:
+    """Tests for GIT_ALLOWED_COMMANDS and validate_git_args."""
+
+    def test_new_operations_in_allowlist(self):
+        """Verify new operations (rm, mv, blame, reflog, describe) are in allowlist."""
+        new_ops = ["rm", "mv", "blame", "reflog", "describe"]
+        for op in new_ops:
+            assert op in GIT_ALLOWED_COMMANDS, f"{op} should be in allowed commands"
+
+    def test_rm_validates_common_flags(self):
+        """git rm accepts common flags."""
+        valid, err, _ = validate_git_args("rm", ["--cached", "file.txt"])
+        assert valid, f"git rm --cached should be valid: {err}"
+
+        valid, err, _ = validate_git_args("rm", ["-r", "--dry-run", "dir/"])
+        assert valid, f"git rm -r --dry-run should be valid: {err}"
+
+    def test_mv_validates_common_flags(self):
+        """git mv accepts common flags."""
+        valid, err, _ = validate_git_args("mv", ["-f", "old.py", "new.py"])
+        assert valid, f"git mv -f should be valid: {err}"
+
+    def test_blame_validates_common_flags(self):
+        """git blame accepts common flags."""
+        valid, err, _ = validate_git_args("blame", ["-L", "1,10", "file.py"])
+        assert valid, f"git blame -L should be valid: {err}"
+
+    def test_reflog_validates_common_flags(self):
+        """git reflog accepts common flags (use --max-count, not -n)."""
+        valid, err, _ = validate_git_args("reflog", ["--oneline", "--max-count", "10"])
+        assert valid, f"git reflog --max-count should be valid: {err}"
+
+    def test_reflog_rejects_n_flag(self):
+        """git reflog rejects -n flag (normalized to --dry-run globally)."""
+        valid, err, _ = validate_git_args("reflog", ["-n", "10"])
+        assert not valid, "-n should be rejected for reflog (normalized to --dry-run)"
+
+    def test_describe_validates_common_flags(self):
+        """git describe accepts common flags."""
+        valid, err, _ = validate_git_args("describe", ["--tags", "--always"])
+        assert valid, f"git describe --tags --always should be valid: {err}"
+
+    def test_blocked_flags_rejected(self):
+        """Dangerous flags are rejected for all operations."""
+        for op in ["rm", "mv", "blame"]:
+            valid, err, _ = validate_git_args(op, ["--exec=evil"])
+            assert not valid, f"--exec should be rejected for {op}"

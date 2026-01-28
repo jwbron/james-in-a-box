@@ -601,7 +601,8 @@ GIT_ALLOWED_COMMANDS = {
             "--format",
             "--oneline",
             "--max-count",
-            "-n",  # Short for --max-count (note: globally normalized to --dry-run, so use --max-count)
+            # Note: -n is NOT included because FLAG_NORMALIZATION maps -n → --dry-run globally.
+            # Users should use --max-count=N instead.
         ],
     },
     "describe": {
