@@ -1,22 +1,23 @@
 """Tests for worktree_manager.py."""
 
-import pytest
+import shutil
 import sys
 import tempfile
-import shutil
-import subprocess
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from worktree_manager import (
     WorktreeInfo,
-    WorktreeRemovalResult,
     WorktreeManager,
-    validate_identifier,
+    WorktreeRemovalResult,
     get_active_docker_containers,
+    validate_identifier,
 )
 
 
@@ -115,8 +116,8 @@ class TestWorktreeManager:
         worktree_base, repos_base = temp_dirs
         # Remove to test creation
         shutil.rmtree(worktree_base)
-        
-        manager = WorktreeManager(worktree_base=worktree_base, repos_base=repos_base)
+
+        WorktreeManager(worktree_base=worktree_base, repos_base=repos_base)
         assert worktree_base.exists()
 
     def test_create_worktree_invalid_container_id(self, manager):
@@ -157,9 +158,9 @@ class TestWorktreeManager:
     def test_get_worktree_paths(self, manager, temp_dirs):
         """get_worktree_paths should return correct paths."""
         worktree_base, repos_base = temp_dirs
-        
+
         wt_path, repo_path = manager.get_worktree_paths("container-123", "myrepo")
-        
+
         assert wt_path == worktree_base / "container-123" / "myrepo"
         assert repo_path == repos_base / "myrepo"
 
@@ -173,30 +174,30 @@ class TestWorktreeManager:
     def test_cleanup_orphaned_worktrees_with_active_container(self, manager, temp_dirs):
         """Active containers should not be cleaned up."""
         worktree_base, _ = temp_dirs
-        
+
         # Create a fake worktree directory
         container_dir = worktree_base / "active-container"
         container_dir.mkdir(parents=True)
         (container_dir / "repo").mkdir()
-        
+
         # Cleanup with this container marked as active
         removed = manager.cleanup_orphaned_worktrees({"active-container"})
-        
+
         assert removed == 0
         assert container_dir.exists()
 
     def test_cleanup_orphaned_worktrees_removes_inactive(self, manager, temp_dirs):
         """Inactive container worktrees should be cleaned up."""
         worktree_base, _ = temp_dirs
-        
+
         # Create a fake worktree directory
         container_dir = worktree_base / "orphaned-container"
         container_dir.mkdir(parents=True)
         (container_dir / "repo").mkdir()
-        
+
         # Cleanup with no active containers
         removed = manager.cleanup_orphaned_worktrees(set())
-        
+
         # Should have attempted cleanup (may fail since it's not a real worktree)
         assert removed >= 0
 
@@ -204,44 +205,38 @@ class TestWorktreeManager:
 class TestGetActiveDockerContainers:
     """Tests for get_active_docker_containers helper."""
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_returns_container_names(self, mock_run):
         """Should return set of container names."""
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="container1\ncontainer2\njib-123\n"
-        )
-        
+        mock_run.return_value = MagicMock(returncode=0, stdout="container1\ncontainer2\njib-123\n")
+
         result = get_active_docker_containers()
-        
+
         assert result == {"container1", "container2", "jib-123"}
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_handles_empty_output(self, mock_run):
         """Should handle empty output."""
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=""
-        )
-        
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+
         result = get_active_docker_containers()
-        
+
         assert result == set()
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_handles_docker_failure(self, mock_run):
         """Should handle docker command failure."""
         mock_run.return_value = MagicMock(returncode=1, stdout="")
-        
+
         result = get_active_docker_containers()
-        
+
         assert result == set()
 
-    @patch('subprocess.run', side_effect=FileNotFoundError)
+    @patch("subprocess.run", side_effect=FileNotFoundError)
     def test_handles_docker_not_installed(self, mock_run):
         """Should handle docker not being installed."""
         result = get_active_docker_containers()
-        
+
         assert result == set()
 
 

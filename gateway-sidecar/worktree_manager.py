@@ -12,21 +12,23 @@ to mount only the working directory (with .git shadowed by tmpfs). All git
 operations then route through the gateway API.
 """
 
-import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
 
 # Add shared directory to path for jib_logging
 import sys
+from dataclasses import dataclass
+from pathlib import Path
+
 
 _shared_path = Path(__file__).parent.parent.parent / "shared"
 if _shared_path.exists():
     sys.path.insert(0, str(_shared_path))
+import contextlib
+
 from jib_logging import get_logger
+
 
 # Import git_cmd helper
 try:
@@ -51,7 +53,7 @@ class WorktreeInfo:
     branch: str
     worktree_path: Path
     git_dir: Path  # Path to worktree admin directory in .git/worktrees/
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
 
 @dataclass
@@ -61,8 +63,8 @@ class WorktreeRemovalResult:
     success: bool
     uncommitted_changes: bool = False
     branch_deleted: bool = False
-    warning: Optional[str] = None
-    error: Optional[str] = None
+    warning: str | None = None
+    error: str | None = None
 
 
 def validate_identifier(value: str, name: str) -> None:
@@ -100,8 +102,8 @@ class WorktreeManager:
 
     def __init__(
         self,
-        worktree_base: Optional[Path] = None,
-        repos_base: Optional[Path] = None,
+        worktree_base: Path | None = None,
+        repos_base: Path | None = None,
     ):
         """
         Initialize the worktree manager.
@@ -364,9 +366,7 @@ class WorktreeManager:
 
             # Delete the branch if requested
             if delete_branch:
-                result.branch_deleted = self._delete_worktree_branch(
-                    main_repo, branch_name, force
-                )
+                result.branch_deleted = self._delete_worktree_branch(main_repo, branch_name, force)
                 if not result.branch_deleted and not force:
                     result.warning = (
                         (result.warning or "")
@@ -379,17 +379,13 @@ class WorktreeManager:
         # Clean up container directory if empty
         container_dir = self.worktree_base / container_id
         if container_dir.exists() and not any(container_dir.iterdir()):
-            try:
+            with contextlib.suppress(OSError):
                 container_dir.rmdir()
-            except OSError:
-                pass
 
         # Remove from memory tracking
         if container_id in self._active_worktrees:
             self._active_worktrees[container_id] = [
-                wt
-                for wt in self._active_worktrees[container_id]
-                if wt.repo_name != repo_name
+                wt for wt in self._active_worktrees[container_id] if wt.repo_name != repo_name
             ]
             if not self._active_worktrees[container_id]:
                 del self._active_worktrees[container_id]
@@ -405,9 +401,7 @@ class WorktreeManager:
         result.success = True
         return result
 
-    def _delete_worktree_branch(
-        self, main_repo: Path, branch_name: str, force: bool
-    ) -> bool:
+    def _delete_worktree_branch(self, main_repo: Path, branch_name: str, force: bool) -> bool:
         """
         Delete a worktree branch if it's safe to do so.
 
@@ -531,9 +525,7 @@ class WorktreeManager:
             # Remove each worktree
             for worktree in list(container_dir.iterdir()):
                 if worktree.is_dir():
-                    result = self.remove_worktree(
-                        container_id, worktree.name, force=True
-                    )
+                    result = self.remove_worktree(container_id, worktree.name, force=True)
                     if result.success:
                         removed += 1
                     else:
@@ -557,9 +549,7 @@ class WorktreeManager:
 
         return removed
 
-    def get_worktree_paths(
-        self, container_id: str, repo_name: str
-    ) -> tuple[Path, Path]:
+    def get_worktree_paths(self, container_id: str, repo_name: str) -> tuple[Path, Path]:
         """
         Get worktree paths for path mapping.
 

@@ -9,16 +9,11 @@ The gateway-managed worktree architecture:
 - Gateway handles worktree cleanup when containers exit
 """
 
-import atexit
-import json
 import os
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
-from urllib.request import Request, urlopen
-from urllib.error import URLError
 
 # Import statusbar for quiet mode
 from statusbar import status
@@ -42,7 +37,6 @@ from .docker import build_image, image_exists
 from .gateway import (
     create_worktrees,
     delete_worktrees,
-    get_gateway_secret,
     start_gateway_container,
 )
 from .output import error, get_quiet_mode, info, success, warn
@@ -124,9 +118,7 @@ def _setup_repo_mounts(
 
         # Shadow .git with tmpfs to prevent local git operations
         # This forces all git operations through the gateway
-        mount_args.extend([
-            "--mount", f"type=tmpfs,destination={container_path}/.git"
-        ])
+        mount_args.extend(["--mount", f"type=tmpfs,destination={container_path}/.git"])
 
         repos[repo_name] = repo_path
 
@@ -143,7 +135,7 @@ def _cleanup_worktrees(container_id: str, force: bool = True) -> None:
         force: Force removal even with uncommitted changes
     """
     try:
-        success_flag, deleted, errors = delete_worktrees(container_id, force=force)
+        _success_flag, _deleted, errors = delete_worktrees(container_id, force=force)
         if errors:
             for err in errors:
                 warn(f"Worktree cleanup warning: {err}")

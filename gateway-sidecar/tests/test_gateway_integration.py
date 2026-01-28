@@ -3,11 +3,13 @@
 These tests require a running gateway server or mock the Flask app.
 """
 
-import pytest
-import sys
 import json
+import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -95,7 +97,7 @@ class TestGitExecuteEndpoint:
             stdout="## main",
             stderr="",
         )
-        
+
         response = client.post(
             "/api/v1/git/execute",
             headers={"Authorization": "Bearer test-secret"},
@@ -105,7 +107,7 @@ class TestGitExecuteEndpoint:
                 "args": ["--porcelain"],
             },
         )
-        
+
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is True
@@ -121,7 +123,7 @@ class TestGitExecuteEndpoint:
                 "operation": "clone",  # Not in allowlist
             },
         )
-        
+
         assert response.status_code == 403
         data = json.loads(response.data)
         assert "not allowed" in data["message"].lower()
@@ -138,7 +140,7 @@ class TestGitExecuteEndpoint:
                     "operation": op,
                 },
             )
-            
+
             assert response.status_code == 400
             data = json.loads(response.data)
             assert "dedicated endpoint" in data["message"].lower()
@@ -219,12 +221,12 @@ class TestWorktreeListEndpoint:
         mock_manager.return_value.list_worktrees.return_value = [
             {"container_id": "jib-123", "repos": [{"name": "myrepo", "path": "/path"}]}
         ]
-        
+
         response = client.get(
             "/api/v1/worktree/list",
             headers={"Authorization": "Bearer test-secret"},
         )
-        
+
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data["success"] is True
@@ -240,7 +242,6 @@ class TestRateLimiting:
         """Rate limits should be enforced."""
         # This is a simplified test - full rate limit testing would require
         # making many requests within the time window
-        pass
 
 
 class TestPathValidation:
@@ -257,7 +258,7 @@ class TestPathValidation:
                 "operation": "status",
             },
         )
-        
+
         assert response.status_code == 403
         data = json.loads(response.data)
         assert "allowed directories" in data["message"].lower()

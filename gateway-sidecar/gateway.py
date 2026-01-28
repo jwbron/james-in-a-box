@@ -1476,13 +1476,12 @@ def worktree_delete():
                 deleted.append(repo_name)
                 if result.warning:
                     warnings.append(f"{repo_name}: {result.warning}")
+            elif result.uncommitted_changes and not force:
+                errors.append(f"{repo_name}: has uncommitted changes (use force=true)")
+            elif result.error:
+                errors.append(f"{repo_name}: {result.error}")
             else:
-                if result.uncommitted_changes and not force:
-                    errors.append(f"{repo_name}: has uncommitted changes (use force=true)")
-                elif result.error:
-                    errors.append(f"{repo_name}: {result.error}")
-                else:
-                    errors.append(f"{repo_name}: removal failed")
+                errors.append(f"{repo_name}: removal failed")
         except Exception as e:
             errors.append(f"{repo_name}: unexpected error - {e}")
 

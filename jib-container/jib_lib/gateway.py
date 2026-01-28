@@ -9,7 +9,7 @@ import secrets
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -49,7 +49,7 @@ def get_gateway_secret() -> str:
 def gateway_api_call(
     endpoint: str,
     method: str = "GET",
-    data: Optional[dict[str, Any]] = None,
+    data: dict[str, Any] | None = None,
     timeout: int = 30,
 ) -> tuple[bool, dict[str, Any]]:
     """Make an authenticated API call to the gateway.

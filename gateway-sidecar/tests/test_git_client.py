@@ -1,20 +1,22 @@
 """Tests for git_client.py validation functions."""
 
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
+
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from git_client import (
-    validate_repo_path,
-    validate_git_args,
-    normalize_flag,
-    ssh_url_to_https,
-    is_ssh_url,
     BLOCKED_GIT_FLAGS,
     GIT_ALLOWED_COMMANDS,
+    is_ssh_url,
+    normalize_flag,
+    ssh_url_to_https,
+    validate_git_args,
+    validate_repo_path,
 )
 
 
@@ -29,7 +31,7 @@ class TestValidateRepoPath:
 
     def test_none_path_rejected(self):
         """None path should be rejected."""
-        valid, error = validate_repo_path(None)
+        valid, _error = validate_repo_path(None)
         assert not valid
 
     def test_allowed_path_accepted(self):
@@ -88,43 +90,43 @@ class TestValidateGitArgs:
 
     def test_allowed_flag_accepted(self):
         """Allowed flags should be accepted."""
-        valid, error, normalized = validate_git_args("status", ["--porcelain"])
+        valid, _error, normalized = validate_git_args("status", ["--porcelain"])
         assert valid
         assert "--porcelain" in normalized
 
     def test_blocked_flag_rejected(self):
         """Blocked flags should be rejected."""
-        valid, error, normalized = validate_git_args("fetch", ["--upload-pack=/bin/sh"])
+        valid, error, _normalized = validate_git_args("fetch", ["--upload-pack=/bin/sh"])
         assert not valid
         assert "not allowed" in error.lower()
 
     def test_unknown_flag_rejected(self):
         """Unknown flags should be rejected (allowlist approach)."""
-        valid, error, normalized = validate_git_args("status", ["--malicious"])
+        valid, error, _normalized = validate_git_args("status", ["--malicious"])
         assert not valid
         assert "not allowed" in error.lower()
 
     def test_config_override_blocked(self):
         """Config override flags should be blocked."""
-        valid, error, normalized = validate_git_args("fetch", ["-c", "core.sshCommand=evil"])
+        valid, error, _normalized = validate_git_args("fetch", ["-c", "core.sshCommand=evil"])
         assert not valid
         assert "not allowed" in error.lower()
 
     def test_non_flag_args_passed_through(self):
         """Non-flag arguments should pass through."""
-        valid, error, normalized = validate_git_args("log", ["-n", "5", "main"])
+        valid, _error, normalized = validate_git_args("log", ["-n", "5", "main"])
         assert valid
         assert "main" in normalized
 
     def test_unknown_operation_rejected(self):
         """Unknown operations should be rejected."""
-        valid, error, normalized = validate_git_args("fake-command", [])
+        valid, error, _normalized = validate_git_args("fake-command", [])
         assert not valid
         assert "unknown operation" in error.lower()
 
     def test_nested_structure_rejected(self):
         """Nested data structures in args should be rejected."""
-        valid, error, normalized = validate_git_args("status", [["nested", "list"]])
+        valid, error, _normalized = validate_git_args("status", [["nested", "list"]])
         assert not valid
         assert "invalid argument type" in error.lower()
 
