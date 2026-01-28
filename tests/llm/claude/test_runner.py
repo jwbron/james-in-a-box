@@ -121,7 +121,7 @@ class TestReadLinesUnbuffered:
 
         # Split into multiple chunks
         chunks = [
-            large_line[: _READ_CHUNK_SIZE],
+            large_line[:_READ_CHUNK_SIZE],
             large_line[_READ_CHUNK_SIZE:],
             b"",
         ]
