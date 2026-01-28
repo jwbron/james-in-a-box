@@ -195,6 +195,7 @@ Container Request                    Gateway
      -v /workspace/worktrees/{id}/repo/.git:/home/jib/repo/.git:ro \
      ...
    ```
+   **Note on mount order**: Docker processes `-v` flags left-to-right. The parent directory must be mounted first, then the more specific `.git` mount overlays it. This order ensures `.git` ends up read-only within the read-write parent.
 3. Container can freely edit source files, but cannot modify `.git`
 4. All git operations go through gateway API
 
@@ -209,11 +210,11 @@ gitdir: /workspace/repos/my-repo.git/worktrees/wt-{id}
 - Container cannot modify `.git` to point elsewhere
 - The gitdir path points to worktree admin, which isn't mounted in container anyway
 - Even if container could read the path, it can't access it
-- Git wrapper ignores local `.git` entirely - routes all commands to gateway
+- Git wrapper routes write operations to gateway; read-only operations use local `.git`
 
 **Defense in depth:**
 - Read-only `.git` mount prevents tampering
-- Git wrapper doesn't use local git at all
+- Git wrapper routes write operations through gateway
 - Worktree admin directory not accessible to container
 
 ### Git Operations
@@ -221,23 +222,33 @@ gitdir: /workspace/repos/my-repo.git/worktrees/wt-{id}
 | Operation | Where it runs | How |
 |-----------|---------------|-----|
 | Edit files | Container | Direct filesystem access |
-| `git status` | Gateway | `POST /api/v1/git/status` |
-| `git diff` | Gateway | `POST /api/v1/git/diff` |
+| `git status` | Container (local) | Read-only, low latency |
+| `git diff` | Container (local) | Read-only, low latency |
+| `git log` | Container (local) | Read-only, low latency |
 | `git add` | Gateway | `POST /api/v1/git/add` |
 | `git commit` | Gateway | `POST /api/v1/git/commit` |
-| `git log` | Gateway | `POST /api/v1/git/log` |
 | `git push` | Gateway | `POST /api/v1/git/push` (existing) |
 | `git fetch` | Gateway | `POST /api/v1/git/fetch` (existing) |
 | `gh` commands | Gateway | `POST /api/v1/gh/*` (existing) |
 
+**Local read-only optimization**: High-frequency operations (`status`, `diff`, `log`) run locally in the container for lower latency. The container has read-only access to `.git`, which is sufficient for these operations. Only write operations (`add`, `commit`, `push`) are routed through the gateway.
+
 ### Git Wrapper in Container
 
-The existing git wrapper is extended to route ALL operations:
+The git wrapper routes write operations through the gateway while allowing read-only operations locally:
 
 ```bash
 #!/bin/bash
 # /usr/bin/git wrapper in container
 
+# Read-only operations run locally for low latency
+case "$1" in
+  status|diff|log|show|blame|branch|tag)
+    exec /usr/bin/git.real "$@"
+    ;;
+esac
+
+# Write operations go through gateway
 curl -s -X POST http://gateway:9847/api/v1/git \
   --json "{
     \"container_id\": \"$CONTAINER_ID\",
@@ -248,7 +259,7 @@ curl -s -X POST http://gateway:9847/api/v1/git \
 
 ### Gateway Git Execution
 
-Gateway receives git commands and executes them with proper context:
+Gateway receives git commands and executes them in the correct worktree context:
 
 ```python
 @app.route("/api/v1/git", methods=["POST"])
@@ -256,15 +267,24 @@ def git_operation():
     data = request.json
     container_id = data["container_id"]
     args = data["args"]
+    repo_name = data.get("repo", "my-repo")
 
-    # Map container path to gateway's view
-    work_tree = f"/workspace/{container_id}/repo"
-    git_dir = "/workspace/git-data/repo.git"
+    # Map container ID to worktree paths
+    # Container's working dir: /workspace/worktrees/{id}/{repo}/
+    # Worktree's git admin:    /workspace/repos/{repo}.git/worktrees/wt-{id}/
+    work_tree = f"/workspace/worktrees/{container_id}/{repo_name}"
+    git_dir = f"/workspace/repos/{repo_name}.git/worktrees/wt-{container_id}"
 
-    # Execute with explicit paths
+    # Verify worktree exists (security check)
+    if not os.path.isdir(git_dir):
+        return jsonify({"error": f"No worktree for container {container_id}"}), 404
+
+    # Execute git command in worktree context
     result = subprocess.run(
         ["git", f"--work-tree={work_tree}", f"--git-dir={git_dir}"] + args,
-        capture_output=True, text=True
+        capture_output=True,
+        text=True,
+        cwd=work_tree
     )
 
     return jsonify({
@@ -382,10 +402,32 @@ spec:
 | Issue | Worktree approach (PR #590) | Gateway-managed |
 |-------|----------------------------|-----------------|
 | Host git breaks | Yes (path rewriting) | No (host not affected) |
-| Crash recovery | Cleanup script needed | Nothing to clean up |
+| Crash recovery | Cleanup script needed | Periodic worktree cleanup |
 | Multi-container | Complex worktree setup | Simple directory per container |
 | Cloud deployment | Needs different architecture | Same architecture |
 | Implementation | Complex entrypoint logic | Simple wrapper + gateway routes |
+
+## Gateway Crash Recovery
+
+If the gateway crashes or restarts, orphaned worktrees may accumulate. The gateway implements cleanup on startup:
+
+```python
+def cleanup_orphaned_worktrees():
+    """Remove worktrees for containers that no longer exist."""
+    worktrees = list_worktrees()  # git worktree list
+    active_containers = get_active_containers()  # From container runtime
+
+    for wt in worktrees:
+        container_id = extract_container_id(wt.path)
+        if container_id and container_id not in active_containers:
+            git_worktree_remove(wt.path, force=True)
+            shutil.rmtree(wt.path, ignore_errors=True)
+```
+
+This runs:
+- On gateway startup
+- Periodically (e.g., every hour)
+- When container count drops (scale-down event)
 
 ## Performance Considerations
 
@@ -401,37 +443,39 @@ spec:
 2. Caching: Gateway caches status/diff for rapid re-queries
 3. Streaming: Large outputs (log, diff) streamed back
 
-**Benchmark** (to be validated):
-| Operation | Direct git | Via gateway | Overhead |
-|-----------|-----------|-------------|----------|
-| git status | 50ms | 55ms | 10% |
-| git diff | 30ms | 35ms | 17% |
-| git commit | 100ms | 110ms | 10% |
-| git log -10 | 20ms | 25ms | 25% |
+**Estimated benchmarks** (to be validated with actual measurements):
+| Operation | Direct git | Via gateway | Overhead | Notes |
+|-----------|-----------|-------------|----------|-------|
+| git status | 50ms | 50ms | 0% | Runs locally |
+| git diff | 30ms | 30ms | 0% | Runs locally |
+| git log -10 | 20ms | 20ms | 0% | Runs locally |
+| git commit | 100ms | 110ms | ~10% | Via gateway |
+| git add | 40ms | 45ms | ~12% | Via gateway |
 
 ## Implementation Plan
 
-### Phase 1: Extend Gateway API (Week 1)
-1. Add routes for: status, diff, add, commit, log, show, blame
-2. Implement container-id to path mapping
+### Phase 1: Extend Gateway API
+1. Add routes for: add, commit, checkout, reset, stash
+2. Implement container-id to worktree path mapping
 3. Add request validation and error handling
 
-### Phase 2: Update Git Wrapper (Week 1)
-1. Modify container's git wrapper to route all commands
-2. Handle streaming output for large responses
-3. Add local caching for repeated reads
+### Phase 2: Update Git Wrapper
+1. Modify container's git wrapper to route write operations to gateway
+2. Allow read-only operations (status, diff, log) to run locally
+3. Handle streaming output for large responses
 
-### Phase 3: Multi-Container Support (Week 2)
-1. Implement per-container working directories
+### Phase 3: Multi-Container Support
+1. Implement per-container working directories via worktrees
 2. Add container registration/cleanup in gateway
 3. Branch ownership enforcement
+4. Orphaned worktree cleanup on gateway startup
 
-### Phase 4: Testing (Week 2)
+### Phase 4: Testing
 1. Unit tests for all gateway git routes
 2. Integration tests with multiple containers
-3. Performance benchmarks
+3. Performance benchmarks comparing local vs gateway operations
 
-### Phase 5: Cloud Run Deployment (Week 3)
+### Phase 5: Cloud Run Deployment
 1. Create Cloud Run service configuration
 2. Implement checkpoint/restore for persistence
 3. End-to-end testing on Cloud Run
@@ -446,197 +490,43 @@ spec:
 
 ---
 
-# Option 2: Overlayfs Isolation (Local-only Alternative)
+# Appendix A: Alternatives Considered
 
-For local deployments where overlayfs is available and maximum git performance is required.
+## Overlayfs Isolation (Rejected)
 
-## Context
+**Concept**: Use overlayfs to give each container a copy-on-write view of repositories. Host sees base layer, container sees modifications in upper layer.
 
-PR #590 implemented git worktree isolation to allow multiple jib containers to work on the same repository without affecting each other. The implementation modifies git metadata files (`gitdir`, `commondir`) in shared bind-mounted directories to use container-internal paths.
+**Why rejected**:
+- Doesn't work on Cloud Run (no overlayfs support)
+- Requires different architecture per environment
+- Needs privileged container setup or pre-created overlays on host
+- More complex gateway integration (dynamic overlay mounts)
 
-This approach has fundamental limitations discovered in PR #594:
+**When it might be useful**: Local-only deployments requiring maximum git performance where the gateway HTTP overhead is unacceptable. Could be implemented as an optional optimization.
 
-1. **Host git operations break** while any container is running (paths like `/home/jib/...` don't exist on host)
-2. **Crash recovery required** - if a container exits abnormally, host git operations remain broken until manual cleanup
-3. **Gateway complexity** - the gateway sidecar needs additional mounts to access the rewritten paths
+## Git Bundle Checkpointing (Rejected)
 
-## Requirements
+**Concept**: Store git state as bundles in Cloud Storage, download/restore on container start.
 
-The git isolation solution must support:
+**Why rejected**:
+- Different architecture from local deployment
+- Adds latency on startup and during checkpoints
+- Complex state synchronization
 
-1. **N containers simultaneously** - arbitrary number of jib containers on the same repos
-2. **Container isolation** - modifications in one container don't affect others
-3. **Host isolation** - container modifications don't affect host git operations
-4. **Gateway access** - sidecar can perform git/gh operations for any container
-5. **No cleanup required** - host should work correctly regardless of container state
+## Path Rewriting (PR #590) (Rejected)
 
-## Problem Analysis
+**Concept**: Rewrite git metadata paths (`gitdir`, `commondir`) to container-internal paths.
 
-### Why Path Rewriting Fails
-
-Git stores paths in metadata files that must resolve correctly for whoever reads them:
-
-| File | Container writes | Host expects |
-|------|-----------------|--------------|
-| `gitdir` | `/home/jib/repos/{repo}` | `/home/user/khan/{repo}` |
-| `commondir` | `/home/jib/.git-common/{repo}` | `/home/user/.git/{repo}` |
-
-With different mount namespaces, the same absolute path cannot work for both host and container. The current approach of rewriting paths creates a mutually exclusive situation: either host works OR container works, not both.
-
-### Alternatives Considered
-
-| Approach | Why it doesn't work |
-|----------|---------------------|
-| Relative paths | Mount structures differ; relative paths resolve to different locations |
-| Environment variables | `GIT_COMMON_DIR` exists but `gitdir` has no env var equivalent |
-| Host-side symlinks | Requires root, path mapping per-repo, potential user conflicts |
-| Cleanup scripts | Only helps after container exits; doesn't solve simultaneous access |
-
-## Proposed Solution: Overlayfs Isolation
-
-Use overlayfs to give each container a copy-on-write view of repositories and git data.
-
-### Architecture
-
-```
-Host filesystem (always untouched):
-├── ~/khan/{repo}/                    # Working directories
-└── ~/.git/{repo}/                    # Git data (objects, refs, config, etc.)
-
-Per-container overlay:
-├── ~/.jib-overlays/{container-id}/
-│   ├── upper/                        # Container's writes land here
-│   │   ├── repos/{repo}/             # Modified working files
-│   │   └── git/{repo}/               # Modified git metadata
-│   └── work/                         # Overlayfs workdir (required)
-
-Container mount structure:
-└── /home/jib/
-    ├── repos/{repo}                  # overlayfs: lower=host repo, upper=container-specific
-    └── .git/{repo}                   # overlayfs: lower=host git, upper=container-specific
-```
-
-### How It Works
-
-1. **Container startup**: Create overlayfs mounts combining host directories (lower/read-only) with container-specific upper directories
-2. **Container reads**: Served from host filesystem (lower layer)
-3. **Container writes**: Go to container's upper layer only
-4. **Host operations**: Always see the original files (lower layer)
-5. **Other containers**: Each has its own upper layer, isolated from others
-6. **Container exit**: Discard upper layer (or optionally merge changes back)
-
-### Gateway Access
-
-The gateway sidecar needs to access container-created git objects for push operations. Options:
-
-**Option A: Mount container overlays in gateway**
-- Gateway mounts each active container's merged overlayfs view
-- Can read new commits/refs directly
-- Requires dynamic mount management as containers start/stop
-
-**Option B: Shared objects staging area**
-- Containers write new git objects to a shared staging directory
-- Gateway reads from staging, pushes to remote
-- Simpler mount structure, but requires object copying
-
-**Option C: Container packages objects in push request**
-- Container bundles new objects (e.g., via `git bundle`) when requesting push
-- Gateway receives objects directly, no special mounts needed
-- Higher latency for large pushes
-
-**Recommendation**: Option A for simplicity and performance. Gateway can use a configuration file or API to discover active container overlays.
-
-### Mount Configuration
-
-Container startup would use mounts like:
-
-```bash
-# Create overlay directories
-mkdir -p ~/.jib-overlays/${CONTAINER_ID}/{upper/repos,upper/git,work}
-
-# For each repo:
-mount -t overlay overlay \
-  -o lowerdir=${HOME}/khan/${repo},upperdir=${OVERLAY}/upper/repos/${repo},workdir=${OVERLAY}/work/repos/${repo} \
-  /home/jib/repos/${repo}
-
-mount -t overlay overlay \
-  -o lowerdir=${HOME}/.git/${repo},upperdir=${OVERLAY}/upper/git/${repo},workdir=${OVERLAY}/work/git/${repo} \
-  /home/jib/.git/${repo}
-```
-
-Note: This requires either:
-- Running container setup with privileges to create overlay mounts, OR
-- Pre-creating overlays on host before container start (preferred for security)
-
-### Container Exit Handling
-
-| Scenario | Action |
-|----------|--------|
-| Clean exit, no changes to keep | Delete upper layer directory |
-| Clean exit, want to persist changes | Merge upper layer to host (explicit command) |
-| Crash/kill | Upper layer remains; can be inspected or deleted |
-| Host cleanup | Simply `rm -rf ~/.jib-overlays/{container-id}` |
-
-No git metadata corruption possible since host files are never modified.
-
-## Comparison with Current Approach
-
-| Aspect | Current (PR #590) | Overlayfs |
-|--------|-------------------|-----------|
-| Host git while container runs | Broken | Works |
-| Multi-container isolation | Partial (worktrees) | Complete (separate overlays) |
-| Crash recovery | Manual script needed | Delete directory |
-| Implementation complexity | Medium | Higher (overlay setup) |
-| Disk usage | Low (shared objects) | Medium (CoW, mostly shared) |
-| Gateway access | Needs path translation | Mount merged view |
-| Privilege requirements | None | Overlay mount (can be pre-created) |
-
-## Implementation Plan
-
-### Phase 1: Core Overlay Infrastructure
-1. Create overlay mount helper script for host
-2. Modify `jib` launcher to set up overlays before container start
-3. Update container entrypoint to expect overlay mounts (remove path rewriting)
-4. Test basic git operations in container
-
-### Phase 2: Gateway Integration
-1. Implement container overlay discovery in gateway
-2. Mount active container overlays in gateway container
-3. Update push/fetch to use overlay paths
-4. Test multi-container scenarios
-
-### Phase 3: Lifecycle Management
-1. Implement overlay cleanup on container exit
-2. Add optional "persist changes" command
-3. Add host-side cleanup utility for orphaned overlays
-4. Update documentation
-
-## Migration
-
-The overlayfs approach can coexist with the current worktree approach during transition:
-
-1. New containers use overlayfs
-2. Existing worktree-based sessions continue to work
-3. Eventually deprecate worktree path rewriting
-
-## Risks and Mitigations
-
-| Risk | Mitigation |
-|------|------------|
-| Overlayfs not available | Check kernel support; fall back to current approach |
-| Privilege escalation via overlay | Pre-create overlays on host with correct permissions |
-| Disk space from many overlays | Implement aggressive cleanup; monitor usage |
-| Performance overhead | CoW is generally fast; benchmark critical paths |
-
-## Decision
-
-Adopt overlayfs-based isolation to replace the path-rewriting approach from PR #590. This provides true isolation between containers and host while maintaining gateway access for remote operations.
+**Why rejected**:
+- Host git operations break while containers run
+- Crash recovery requires cleanup scripts
+- Path conflicts are inherent—container and host paths cannot both be valid
 
 ---
 
-# Appendix: Cloud Deployment (Cloud Run)
+# Appendix B: Cloud Deployment (Cloud Run)
 
-The overlayfs approach works for local/VM deployments where we control the host. Cloud Run (and similar serverless platforms) requires a different architecture due to fundamental constraints.
+Gateway-managed worktrees work on Cloud Run with the same architecture. The only difference is the volume backend.
 
 ## Cloud Run Constraints
 
