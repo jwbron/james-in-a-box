@@ -149,6 +149,7 @@ Note: Data exfiltration via arbitrary endpoints is acknowledged as a residual ri
 2. **jib cannot merge PRs** - Gateway API doesn't expose merge operation.
 3. **All traffic is auditable** - Everything goes through gateway proxy.
 4. **Credentials never enter jib** - GITHUB_TOKEN only exists in gateway.
+5. **GitHub domains excluded from proxy allowlist** - All GitHub access must go through the gateway sidecar's git/gh wrappers. This ensures policy enforcement (branch ownership, merge blocking) cannot be bypassed by direct API calls through the proxy.
 
 ### Gateway REST API
 

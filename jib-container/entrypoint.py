@@ -746,16 +746,17 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
                 raise RequestException("Gateway not ready")
 
             # Check proxy connectivity by testing an allowed domain
-            # Use proxies dict to route through gateway proxy
+            # GitHub domains are intentionally excluded from proxy allowlist
+            # so we test api.anthropic.com which IS allowed
             proxies = {"http": proxy_url, "https": proxy_url}
             api_response = requests.get(
-                "https://api.github.com/",
+                "https://api.anthropic.com/",
                 proxies=proxies,
                 timeout=10,
                 verify=True,
             )
-            # GitHub returns 200 for unauthenticated, 401 for bad auth
-            # Either means the proxy is working
+            # Anthropic returns 401 without valid API key, which proves proxy works
+            # 403 might be rate-limited, 200 means unexpected success
             if api_response.status_code in (200, 401, 403):
                 logger.success("Gateway ready (API + proxy verified)")
                 return True
