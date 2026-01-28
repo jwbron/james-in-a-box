@@ -493,7 +493,7 @@ def git_execute():
             success=False,
             details={
                 "repo_path": repo_path,
-                "args": args,
+                "git_args": args,
                 "container_id": container_id,
                 "reason": path_error,
             },
@@ -508,7 +508,7 @@ def git_execute():
             success=False,
             details={
                 "repo_path": repo_path,
-                "args": args,
+                "git_args": args,
                 "container_id": container_id,
                 "reason": "Operation not allowed",
             },
@@ -535,7 +535,7 @@ def git_execute():
             success=False,
             details={
                 "repo_path": repo_path,
-                "args": args,
+                "git_args": args,
                 "container_id": container_id,
                 "reason": args_error,
             },
@@ -565,7 +565,7 @@ def git_execute():
                 success=True,
                 details={
                     "repo_path": repo_path,
-                    "args": validated_args,
+                    "git_args": validated_args,
                     "container_id": container_id,
                 },
             )
@@ -584,7 +584,7 @@ def git_execute():
                 success=False,
                 details={
                     "repo_path": repo_path,
-                    "args": validated_args,
+                    "git_args": validated_args,
                     "returncode": result.returncode,
                     "container_id": container_id,
                     "stderr": result.stderr[:500] if result.stderr else None,
