@@ -112,6 +112,36 @@ app = Flask(__name__)
 DEFAULT_HOST = os.environ.get("GATEWAY_HOST", "0.0.0.0")  # Listen on all interfaces by default
 DEFAULT_PORT = 9847
 
+# Host home directory for path translation
+# The gateway container uses /home/jib internally, but needs to return
+# host paths to the jib launcher for Docker mount sources
+HOST_HOME = os.environ.get("HOST_HOME", "")
+CONTAINER_HOME = "/home/jib"
+
+
+def translate_to_host_path(container_path: str) -> str:
+    """
+    Translate a container path to the corresponding host path.
+
+    The gateway runs with paths like /home/jib/.jib-worktrees/...
+    but the jib launcher needs host paths like /home/user/.jib-worktrees/...
+    for Docker mount sources.
+
+    Args:
+        container_path: Path inside the gateway container
+
+    Returns:
+        The corresponding host path, or original path if translation not possible
+    """
+    if not HOST_HOME:
+        # No host home configured - return as-is (may cause mount issues)
+        return container_path
+
+    if container_path.startswith(CONTAINER_HOME):
+        return container_path.replace(CONTAINER_HOME, HOST_HOME, 1)
+
+    return container_path
+
 
 # Authentication - shared secret from environment
 GATEWAY_SECRET = os.environ.get("JIB_GATEWAY_SECRET", "")
@@ -1370,7 +1400,8 @@ def worktree_create():
                 uid=uid,
                 gid=gid,
             )
-            worktrees[repo_name] = str(info.worktree_path)
+            # Translate container path to host path for jib launcher mount sources
+            worktrees[repo_name] = translate_to_host_path(str(info.worktree_path))
         except ValueError as e:
             errors.append(f"{repo_name}: {e}")
         except RuntimeError as e:
