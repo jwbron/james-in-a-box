@@ -295,30 +295,46 @@ class WorktreeManager:
         """
         Change ownership of a single file or directory (non-recursive).
 
+        When running as non-root (e.g., gateway with --user flag), chown will fail
+        if trying to change to a different user. This is OK because files will
+        already be owned by the current user.
+
         Args:
             path: Path to change ownership of
             uid: User ID to set
             gid: Group ID to set
-
-        Raises:
-            RuntimeError: If chown fails
         """
         try:
             os.chown(path, uid, gid)
+        except PermissionError:
+            # Running as non-root, can't chown - files already owned by current user
+            logger.debug(
+                "Skipping chown (running as non-root)",
+                path=str(path),
+                target_uid=uid,
+                target_gid=gid,
+            )
         except OSError as e:
-            raise RuntimeError(f"Failed to chown {path} to {uid}:{gid}: {e}") from e
+            logger.warning(
+                "Failed to chown",
+                path=str(path),
+                target_uid=uid,
+                target_gid=gid,
+                error=str(e),
+            )
 
     def _chown_recursive(self, path: Path, uid: int, gid: int) -> None:
         """
         Recursively change ownership of a directory.
 
+        When running as non-root (e.g., gateway with --user flag), chown will fail
+        if trying to change to a different user. This is OK because files will
+        already be owned by the current user.
+
         Args:
             path: Path to change ownership of
             uid: User ID to set
             gid: Group ID to set
-
-        Raises:
-            RuntimeError: If chown fails
         """
         try:
             # Use chown -R for efficiency on large directories
@@ -329,9 +345,30 @@ class WorktreeManager:
             )
             if result.returncode != 0:
                 error_msg = result.stderr.decode() if result.stderr else "unknown error"
-                raise RuntimeError(f"Failed to chown {path} to {uid}:{gid}: {error_msg}")
+                # Check if this is a permission error (running as non-root)
+                if "Operation not permitted" in error_msg or "Permission denied" in error_msg:
+                    logger.debug(
+                        "Skipping recursive chown (running as non-root)",
+                        path=str(path),
+                        target_uid=uid,
+                        target_gid=gid,
+                    )
+                else:
+                    logger.warning(
+                        "Failed to chown recursively",
+                        path=str(path),
+                        target_uid=uid,
+                        target_gid=gid,
+                        error=error_msg,
+                    )
         except subprocess.SubprocessError as e:
-            raise RuntimeError(f"Failed to chown {path} to {uid}:{gid}: {e}") from e
+            logger.warning(
+                "Failed to run chown command",
+                path=str(path),
+                target_uid=uid,
+                target_gid=gid,
+                error=str(e),
+            )
 
     def _find_worktree_git_dir(self, main_repo: Path, worktree_path: Path) -> Path:
         """

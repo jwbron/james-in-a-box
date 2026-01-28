@@ -114,10 +114,12 @@ fi
 
 # Run the container
 # --security-opt label=disable: Skip SELinux relabeling (major performance improvement)
+# --user: Run as host user so git objects are owned correctly (fixes permission issues)
 exec /usr/bin/docker run --rm \
     --name jib-gateway \
     --network jib-network \
     --security-opt label=disable \
+    --user "$(id -u):$(id -g)" \
     -p 9847:9847 \
     "${ENV_ARGS[@]}" \
     "${MOUNTS[@]}" \
