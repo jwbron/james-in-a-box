@@ -235,7 +235,7 @@ POST /api/slack/thread-reply
 
 ### Message Queue Design
 
-The gateway maintains an internal message queue that replaces the file-based system:
+The gateway maintains a persistent message queue that replaces the file-based system:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -268,6 +268,184 @@ The gateway maintains an internal message queue that replaces the file-based sys
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Message Queue Persistence and Recovery
+
+**Persistence Strategy: SQLite with WAL Mode**
+
+The gateway uses SQLite (write-ahead logging) for message queue persistence. This provides:
+- **Durability**: Messages survive gateway restarts
+- **Simplicity**: No external database dependencies
+- **Performance**: WAL mode allows concurrent reads during writes
+
+```sql
+-- Message queue schema
+CREATE TABLE messages (
+    id TEXT PRIMARY KEY,
+    task_id TEXT,
+    thread_ts TEXT,
+    user_id TEXT,
+    user_name TEXT,
+    text TEXT,
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    delivered_at TIMESTAMP,
+    acked_at TIMESTAMP,
+    status TEXT CHECK(status IN ('pending', 'delivered', 'acked', 'failed')) DEFAULT 'pending',
+    retry_count INTEGER DEFAULT 0
+);
+
+CREATE TABLE thread_mappings (
+    task_id TEXT PRIMARY KEY,
+    thread_ts TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_messages_task_status ON messages(task_id, status);
+CREATE INDEX idx_messages_thread ON messages(thread_ts);
+```
+
+**Delivery Guarantees: At-Least-Once**
+
+Messages are guaranteed to be delivered at least once. Containers must handle potential duplicates:
+
+| State | Message Status | Gateway Behavior |
+|-------|---------------|------------------|
+| Received from Slack | `pending` | Persisted to SQLite before ACK to Slack |
+| Delivered to container | `delivered` | Marked delivered, retained until ACK |
+| ACKed by container | `acked` | Retained for audit, excluded from queries |
+| Container disconnected | `delivered` | Re-delivered on reconnect |
+| Delivery failed | `failed` | Moved to dead letter queue after 3 retries |
+
+**Gateway Restart Recovery:**
+
+```
+1. Gateway starts up
+2. Load all messages with status='pending' or status='delivered'
+3. Resume Slack Socket Mode connection
+4. For messages delivered before shutdown:
+   - If container still active: Re-deliver (idempotent)
+   - If container gone: Keep pending until new container claims task
+5. Resume processing new incoming messages
+```
+
+**Dead Letter Queue (DLQ):**
+
+Messages that fail delivery after 3 attempts are moved to the DLQ:
+
+```sql
+CREATE TABLE dead_letter_queue (
+    id TEXT PRIMARY KEY,
+    original_message_id TEXT REFERENCES messages(id),
+    task_id TEXT,
+    failure_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+DLQ messages generate alerts and require manual intervention:
+- Available via admin API: `GET /internal/dlq`
+- Can be replayed: `POST /internal/dlq/{id}/replay`
+- Automatically purged after 7 days
+
+**Queue Overflow Handling:**
+
+| Condition | Threshold | Action |
+|-----------|-----------|--------|
+| Messages per task | 1,000 | Reject new messages, alert |
+| Total pending messages | 10,000 | Apply backpressure to Slack ingestion |
+| SQLite file size | 1 GB | Archive old messages, alert |
+
+Backpressure is applied by slowing Socket Mode ACKs, causing Slack to retry later.
+
+### Thread Mapping Integrity
+
+The thread mapping (`task_id ↔ thread_ts`) is critical for security. This section specifies its lifecycle and immutability constraints.
+
+**Mapping Lifecycle:**
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                     Thread Mapping Lifecycle                                │
+│                                                                            │
+│  ┌─────────────┐    ┌──────────────┐    ┌─────────────┐    ┌────────────┐ │
+│  │   Created   │───►│   Active     │───►│   Closed    │───►│  Archived  │ │
+│  │             │    │              │    │             │    │            │ │
+│  │ On first    │    │ Messages     │    │ Task done,  │    │ Purged     │ │
+│  │ message in  │    │ routed via   │    │ mapping     │    │ after 90   │ │
+│  │ new thread  │    │ this mapping │    │ locked      │    │ days       │ │
+│  └─────────────┘    └──────────────┘    └─────────────┘    └────────────┘ │
+│                                                                            │
+│  State transitions:                                                        │
+│  - Created→Active: Automatic on first message delivery                     │
+│  - Active→Closed: When container ACKs task completion                      │
+│  - Closed→Archived: Background job after 90-day retention                  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Mapping Creation Rules:**
+
+| Trigger | Mapping Created By | Validation |
+|---------|-------------------|------------|
+| New Slack thread mentioning @jib | Gateway (on message receipt) | Thread must not already be mapped |
+| Orchestrator starts task for thread | Orchestrator (via internal API) | Orchestrator provides both task_id and thread_ts |
+| Container requests messages for new task | Rejected | Container cannot create mappings |
+
+**Immutability Constraints:**
+
+Once created, a thread mapping has the following immutability guarantees:
+
+```sql
+-- thread_ts is immutable after creation
+-- Enforced via trigger
+CREATE TRIGGER prevent_thread_ts_update
+    BEFORE UPDATE OF thread_ts ON thread_mappings
+    BEGIN
+        SELECT RAISE(ABORT, 'thread_ts is immutable');
+    END;
+
+-- task_id is immutable after creation
+CREATE TRIGGER prevent_task_id_update
+    BEFORE UPDATE OF task_id ON thread_mappings
+    BEGIN
+        SELECT RAISE(ABORT, 'task_id is immutable');
+    END;
+```
+
+| Property | Immutable | Rationale |
+|----------|-----------|-----------|
+| task_id | Yes | Prevents task hijacking |
+| thread_ts | Yes | Prevents thread redirects |
+| created_at | Yes | Audit integrity |
+| status | No | Lifecycle transitions allowed |
+| updated_at | No | Tracks last activity |
+
+**Collision Prevention:**
+
+```python
+def create_mapping(task_id: str, thread_ts: str, created_by: str) -> ThreadMapping:
+    # Check for existing mappings
+    existing_task = get_mapping_by_task(task_id)
+    existing_thread = get_mapping_by_thread(thread_ts)
+
+    if existing_task:
+        raise MappingConflict(f"task_id {task_id} already mapped to thread {existing_task.thread_ts}")
+
+    if existing_thread:
+        raise MappingConflict(f"thread_ts {thread_ts} already mapped to task {existing_thread.task_id}")
+
+    # Create mapping atomically
+    return db.execute("""
+        INSERT INTO thread_mappings (task_id, thread_ts, created_by)
+        VALUES (?, ?, ?)
+    """, (task_id, thread_ts, created_by))
+```
+
+**Security implications:**
+- A thread can only map to one task (prevents message leakage)
+- A task can only map to one thread (prevents impersonation)
+- Only the orchestrator and gateway can create mappings (containers cannot)
+- Closed mappings remain readable for audit but reject new messages
+
 ### Task-Scoped Access Control
 
 **Key security property**: Agent can only access messages for its current task.
@@ -288,6 +466,90 @@ def get_messages(container_id: str, task_id: str) -> list[Message]:
 2. Gateway maintains mapping: `container_id → authorized_task_ids`
 3. API requests include container identity (via shared secret from ADR-Tool-Access-Lockdown)
 4. Gateway validates container is authorized before returning messages
+
+### Container Identity Verification
+
+**Current approach: Shared Secret**
+
+Per [ADR-Internet-Tool-Access-Lockdown](./ADR-Internet-Tool-Access-Lockdown.md), containers authenticate to the gateway using a shared secret injected at container startup:
+
+```
+Authorization: Bearer <shared-secret>
+```
+
+This is sufficient for Slack operations because:
+- Both git and Slack operations flow through the same gateway
+- The threat model assumes a trusted Docker network (containers cannot sniff traffic)
+- The shared secret is generated per-session and never persisted
+
+**Future consideration: mTLS**
+
+The parent ADR mentions mTLS as a future enhancement for production deployments. For Slack operations specifically:
+
+| Factor | Shared Secret | mTLS |
+|--------|--------------|------|
+| Implementation complexity | Low | High (PKI management) |
+| Identity strength | Session-bound token | Cryptographic certificate |
+| Replay protection | Relies on HTTPS | Built-in via TLS handshake |
+| Suitable for | Local Docker deployment | GCP Cloud Run, multi-tenant |
+
+**Recommendation:** Shared secret is acceptable for current single-tenant Docker deployment. If moving to:
+- **GCP Cloud Run**: Implement mTLS using Cloud Run's native service identity
+- **Multi-tenant deployment**: Implement mTLS with per-tenant certificates
+
+This decision can be deferred to Phase 4 or a separate ADR focused on production hardening.
+
+### Task Authorization Bootstrapping
+
+**Registration Protocol:**
+
+The orchestrator-to-gateway registration uses a secure channel to prevent task_id spoofing:
+
+```
+┌────────────────┐     ┌────────────────┐     ┌────────────────┐
+│  Orchestrator  │     │    Gateway     │     │  jib Container │
+└───────┬────────┘     └───────┬────────┘     └───────┬────────┘
+        │                      │                      │
+        │ 1. Register container │                      │
+        │ POST /internal/register                      │
+        │ {container_id, task_id, ttl}                │
+        │─────────────────────►│                      │
+        │                      │                      │
+        │ 2. Return registration token                │
+        │◄─────────────────────│                      │
+        │                      │                      │
+        │ 3. Start container   │                      │
+        │ with shared secret + │                      │
+        │ registration token   │                      │
+        │──────────────────────────────────────────►│
+        │                      │                      │
+        │                      │ 4. First API call   │
+        │                      │ includes registration│
+        │                      │ token + shared secret│
+        │                      │◄─────────────────────│
+        │                      │                      │
+        │                      │ 5. Validate token   │
+        │                      │ Activate mapping    │
+        │                      │─────────────────────►│
+        │                      │                      │
+```
+
+**Security properties:**
+- **Deny-by-default**: Containers cannot access any messages until registration is confirmed
+- **Time-bound mappings**: Registrations include TTL (default: 4 hours); expired mappings are automatically revoked
+- **Secure channel**: Orchestrator-to-gateway registration uses a separate admin secret not available to containers
+- **One-time activation**: Registration token is single-use; gateway rejects replays
+- **No task_id guessing**: Container only knows its own task_id; cannot enumerate other active tasks
+
+**Race condition prevention:**
+- Gateway queues messages for unregistered task_ids (30-minute retention)
+- Container retries with exponential backoff if gateway returns "registration pending"
+- Orchestrator waits for gateway ACK before starting container
+
+**Handling container restarts:**
+- If a container restarts with the same task_id, orchestrator issues new registration
+- Gateway recognizes the task_id and extends the mapping to the new container_id
+- Previous container_id authorization is immediately revoked
 
 ### Audit Log Specification
 
@@ -315,7 +577,153 @@ All Slack operations produce structured audit logs:
 }
 ```
 
+**Audit Log Retention:**
+
+Consistent with [ADR-Internet-Tool-Access-Lockdown](./ADR-Internet-Tool-Access-Lockdown.md), Slack audit logs follow the same retention policy:
+
+| Log Type | Retention | Storage |
+|----------|-----------|---------|
+| Gateway audit logs (Slack + git) | 90 days | Local JSON files, rotated daily |
+| Message content | 30 days | SQLite (message queue) |
+| Thread mappings | 90 days after closure | SQLite (thread_mappings) |
+| Dead letter queue | 7 days | SQLite (dlq) |
+
+No regulatory requirements specific to Slack differ from git operations. If compliance requirements change (e.g., SOC 2 audit trail), retention can be extended.
+
+### Error Response Format
+
+Gateway API errors follow the same format as git gateway operations for consistency:
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Rate limit exceeded for send_message operation",
+    "details": {
+      "limit": "30/minute",
+      "retry_after_seconds": 45
+    }
+  },
+  "request_id": "req-abc123",
+  "timestamp": "2026-01-28T21:30:00.123Z"
+}
+```
+
+**Error Codes:**
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `UNAUTHORIZED` | 401 | Invalid or missing shared secret |
+| `TASK_NOT_AUTHORIZED` | 403 | Container not registered for task_id |
+| `RATE_LIMIT_EXCEEDED` | 429 | Rate limit exceeded (includes retry_after) |
+| `THREAD_NOT_FOUND` | 404 | thread_ts does not exist or is not mapped |
+| `VALIDATION_ERROR` | 400 | Request body failed schema validation |
+| `SLACK_API_ERROR` | 502 | Upstream Slack API returned error |
+| `INTERNAL_ERROR` | 500 | Unexpected gateway error |
+
+### Message Schema Validation
+
+Incoming and outgoing messages are validated against JSON schemas. Schema definitions will be stored in:
+
+```
+gateway/
+  schemas/
+    slack_message_incoming.json
+    slack_message_outgoing.json
+    slack_thread_reply.json
+```
+
+**Example schema (outgoing message):**
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["task_id", "text"],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "^task-[0-9]{8}-[0-9]{6}$"
+    },
+    "thread_ts": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "markdown": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+Schema validation errors return a `VALIDATION_ERROR` response with details about the failing field.
+
 ## Security Analysis
+
+### Slack API Token Scope
+
+The gateway requires the following Slack Bot Token scopes:
+
+| Scope | Required | Purpose | Over-permissioning Risk |
+|-------|----------|---------|------------------------|
+| `chat:write` | Yes | Send messages to threads | Can message any accessible channel |
+| `channels:history` | Yes | Read messages in public channels | Can read all public channel history |
+| `groups:history` | Conditional | Read messages in private channels | Only if private channels needed |
+| `im:history` | No | Read direct messages | Not required; reject DM interactions |
+| `users:read` | Yes | Resolve user IDs to names | Read-only, low risk |
+| `app_mentions:read` | Yes | Receive @mentions via Socket Mode | Event subscription only |
+| `connections:write` | Yes | Establish Socket Mode connection | Required for real-time events |
+
+**Minimizing Token Permissions:**
+
+Unlike GitHub where the gateway explicitly blocks `gh pr merge`, Slack's API doesn't provide operation-level granularity within scopes. The gateway implements additional restrictions:
+
+```python
+# Gateway-enforced restrictions beyond token scopes
+SLACK_RESTRICTIONS = {
+    # Channel restrictions
+    "allowed_channel_types": ["public_channel"],  # No DMs or private channels
+    "blocked_channels": [],  # Admin-configurable blocklist
+
+    # Message restrictions
+    "max_message_length": 4000,  # Slack's limit
+    "blocked_patterns": [],  # No content filtering by default
+
+    # User restrictions
+    "blocked_users": [],  # Admin-configurable blocklist
+}
+
+def validate_outgoing_message(message: SlackMessage) -> bool:
+    # Enforce channel type restriction
+    if message.channel_type not in SLACK_RESTRICTIONS["allowed_channel_types"]:
+        raise PolicyViolation("DMs and private channels not allowed")
+
+    # Enforce channel blocklist
+    if message.channel_id in SLACK_RESTRICTIONS["blocked_channels"]:
+        raise PolicyViolation(f"Channel {message.channel_id} is blocked")
+
+    return True
+```
+
+**Token Scope Rationale:**
+
+| Why Not Narrower | Explanation |
+|------------------|-------------|
+| `chat:write` instead of `chat:write.public` | Need to write to threads started by users in any channel type the bot is added to |
+| `channels:history` required | Must fetch thread context for replies; cannot rely solely on Socket Mode events |
+
+**Token Security:**
+- Token stored only in gateway container
+- Token never logged (sensitive field masking)
+- Token rotation supported via config reload (no gateway restart required)
+- Separate user token not used; only bot token
 
 ### Threat Model
 
@@ -347,13 +755,53 @@ Layer 6: Human Review
 
 ### Rate Limiting
 
-Gateway enforces rate limits to prevent abuse:
+Gateway enforces multi-level rate limits to prevent abuse:
+
+**Per-Task Rate Limits:**
 
 | Operation | Limit | Rationale |
 |-----------|-------|-----------|
 | Send message | 1/second, 30/minute | Prevent spam |
 | Fetch messages | 10/second | Prevent polling abuse |
 | Thread history | 1/minute per thread | Expensive operation |
+
+**Aggregate Rate Limits (Bypass Prevention):**
+
+To prevent rate limit bypass via task proliferation, the gateway also enforces aggregate limits:
+
+| Scope | Operation | Limit | Rationale |
+|-------|-----------|-------|-----------|
+| Per-container | Send message | 60/minute | Limits total output regardless of task count |
+| Per-container | New task registration | 10/hour | Prevents task_id enumeration attacks |
+| Per-thread | Send message | 30/minute | Prevents thread bombing even across tasks |
+| Global | Send message | 120/minute | Backstop for system-wide abuse |
+| Global | Fetch messages | 1000/second | Protect gateway under load |
+
+**Rate Limit Enforcement:**
+
+```python
+def check_rate_limit(container_id: str, task_id: str, thread_ts: str, operation: str) -> bool:
+    # Check all applicable rate limits in order
+    checks = [
+        (f"task:{task_id}:{operation}", TASK_LIMITS[operation]),
+        (f"container:{container_id}:{operation}", CONTAINER_LIMITS[operation]),
+        (f"thread:{thread_ts}:{operation}", THREAD_LIMITS[operation]),
+        (f"global:{operation}", GLOBAL_LIMITS[operation]),
+    ]
+
+    for key, limit in checks:
+        if not rate_limiter.check(key, limit):
+            audit_log.record(
+                event="rate_limit_exceeded",
+                container_id=container_id,
+                task_id=task_id,
+                limit_key=key
+            )
+            return False
+    return True
+```
+
+Rate limit state is stored in Redis (or in-memory with persistence) to survive gateway restarts.
 
 ## Consequences
 
@@ -480,14 +928,39 @@ Gateway enforces rate limits to prevent abuse:
 4. Update orchestrator to not pass file paths
 5. Remove file-based fallback code
 
-**Preserved:**
-- `~/sharing/logs/` for debugging
-- `~/sharing/tracking/` for beads state
+**`~/sharing/` Directory Migration Plan:**
+
+| Subdirectory | Current Use | Post-Migration | Rationale |
+|--------------|-------------|----------------|-----------|
+| `~/sharing/incoming/` | Slack task files | **Removed** | Replaced by gateway API |
+| `~/sharing/responses/` | Response capture | **Removed** | Replaced by gateway API |
+| `~/sharing/notifications/` | Outbound notifications | **Removed** | Replaced by gateway API |
+| `~/sharing/logs/` | Debug logs | **Preserved** | Non-Slack; useful for debugging |
+| `~/sharing/tracking/` | Beads state | **Preserved** | Non-Slack; beads persistence |
+| `~/sharing/context/` | Context sync data | **Preserved** | Non-Slack; load/save context |
+
+**CLAUDE.md Update Required:**
+
+The current CLAUDE.md references to be updated in Phase 3:
+
+```diff
+# Current references that will break:
+- ~/sharing/incoming/     # Remove: tasks come via gateway API
+- ~/sharing/responses/    # Remove: responses go via gateway API
+- ~/sharing/notifications/  # Remove: use notification library (API-backed)
+
+# References that remain valid:
+  ~/sharing/logs/         # Preserved: debugging
+  ~/sharing/tracking/     # Preserved: beads state (non-Slack)
+```
+
+A CLAUDE.md update will be included in the Phase 3 implementation PR.
 
 **Deliverables:**
 - Container has no Slack file access
 - All Slack communication via gateway
 - Full audit trail
+- CLAUDE.md updated to reflect new paths
 
 ### Phase 4: Task Authorization
 
