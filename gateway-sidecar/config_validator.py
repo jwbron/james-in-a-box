@@ -4,8 +4,13 @@ Validates all required configuration at startup to fail fast with clear errors.
 This validates the network lockdown implementation.
 
 Reference: ADR-Internet-Tool-Access-Lockdown.md
+
+TODO(PR-631): Add validation that PUBLIC_REPO_ONLY_MODE is enabled when
+ALLOW_ALL_NETWORK is true. This ensures security invariant: open network
+access requires public-repo-only repository access.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -109,12 +114,63 @@ def validate_network_lockdown_mode() -> bool:
     return squid_conf and domains_file and squid_cert
 
 
+def is_allow_all_network_mode() -> bool:
+    """Check if allow-all-network mode is enabled.
+
+    Returns:
+        True if ALLOW_ALL_NETWORK is set to true/1
+    """
+    value = os.environ.get("ALLOW_ALL_NETWORK", "false").lower().strip()
+    return value in ("true", "1")
+
+
+def validate_allow_all_network_mode() -> list[str]:
+    """Validate configuration for allow-all-network mode.
+
+    When ALLOW_ALL_NETWORK is enabled, we need additional safety checks.
+
+    TODO(PR-631): Once PR #631 implements PUBLIC_REPO_ONLY_MODE, this function
+    should verify that PUBLIC_REPO_ONLY_MODE=true when ALLOW_ALL_NETWORK=true.
+    This ensures the security invariant: open network = public repos only.
+
+    Returns:
+        List of warning messages (empty if all checks pass)
+    """
+    warnings: list[str] = []
+
+    if not is_allow_all_network_mode():
+        return warnings
+
+    # Check that squid-allow-all.conf exists
+    allow_all_conf = Path("/etc/squid/squid-allow-all.conf")
+    if not allow_all_conf.is_file():
+        warnings.append(
+            "ALLOW_ALL_NETWORK is enabled but squid-allow-all.conf not found\n"
+            "  The gateway may not allow all network traffic as expected"
+        )
+
+    # TODO(PR-631): Add check for PUBLIC_REPO_ONLY_MODE here
+    # if not os.environ.get("PUBLIC_REPO_ONLY_MODE", "").lower() in ("true", "1"):
+    #     warnings.append(
+    #         "ALLOW_ALL_NETWORK is enabled but PUBLIC_REPO_ONLY_MODE is not set\n"
+    #         "  This configuration allows access to private repos with open network\n"
+    #         "  Set PUBLIC_REPO_ONLY_MODE=true for secure operation"
+    #     )
+
+    return warnings
+
+
 if __name__ == "__main__":
     try:
         validate_config()
         print("Configuration validation passed")
 
-        if validate_network_lockdown_mode():
+        if is_allow_all_network_mode():
+            print("Network mode: ALLOW_ALL_NETWORK (all domains permitted)")
+            warnings = validate_allow_all_network_mode()
+            for warning in warnings:
+                print(f"WARNING: {warning}")
+        elif validate_network_lockdown_mode():
             print("Network lockdown mode: READY")
         else:
             print("WARNING: Network lockdown components missing")

@@ -111,6 +111,13 @@ fi
 # Build environment variable arguments
 ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
 
+# Pass ALLOW_ALL_NETWORK mode if set
+# TODO(PR-631): When ALLOW_ALL_NETWORK is enabled, also set PUBLIC_REPO_ONLY_MODE=true
+# to ensure only public repositories are accessible with open network access.
+if [ -n "${ALLOW_ALL_NETWORK:-}" ]; then
+    ENV_ARGS+=(-e "ALLOW_ALL_NETWORK=$ALLOW_ALL_NETWORK")
+fi
+
 # Pass host home directory for path translation in API responses
 # The gateway runs with CONTAINER_HOME=/home/jib but needs to return
 # host paths to the jib launcher for Docker mount sources
@@ -125,7 +132,13 @@ fi
 # Main Execution
 # =============================================================================
 
-echo "=== Gateway Sidecar Startup (Network Lockdown Mode) ==="
+# Determine and display network mode
+if [ "${ALLOW_ALL_NETWORK:-false}" = "true" ] || [ "${ALLOW_ALL_NETWORK:-0}" = "1" ]; then
+    echo "=== Gateway Sidecar Startup (Allow All Network Mode) ==="
+    echo "  WARNING: All network traffic allowed. Only public repos should be accessible."
+else
+    echo "=== Gateway Sidecar Startup (Network Lockdown Mode) ==="
+fi
 echo "  Networks: $ISOLATED_NETWORK (internal) + $EXTERNAL_NETWORK (external)"
 echo "  Gateway IPs: $GATEWAY_ISOLATED_IP (isolated), $GATEWAY_EXTERNAL_IP (external)"
 echo "  Proxy: enabled (port 3128)"

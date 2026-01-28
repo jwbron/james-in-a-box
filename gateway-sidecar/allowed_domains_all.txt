@@ -1,0 +1,18 @@
+# Allow all network traffic mode
+# This file permits all domain access through the proxy
+#
+# SECURITY WARNING: When this mode is enabled:
+# - The jib container can access ANY internet destination
+# - Only public repositories should be accessible (not private)
+# - Private Repo Mode enforcement is handled separately at the gateway API layer
+#
+# This mode is intended for scenarios where broad internet access is needed
+# but repository access should still be restricted to public repos only.
+#
+# Reference: ADR-Internet-Tool-Access-Lockdown.md
+#
+# The wildcard domain ".any" with regex matching allows all hostnames
+
+# Wildcard - allow all domains
+# Squid uses regex matching with dstdom_regex ACL type for wildcards
+# This is configured in squid-allow-all.conf
