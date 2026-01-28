@@ -143,6 +143,16 @@ def _setup_git_isolation_mounts(
                 if not quiet:
                     print(f"  • ~/.git-common/{repo_name}/packed-refs (packed refs, writable)")
 
+            # 4b. Mount logs directory (rw) - for reflogs
+            # Git writes reflogs when updating refs, needs this in commondir
+            logs_path = main_git_path / "logs"
+            if logs_path.is_dir():
+                mount_args.extend(
+                    ["-v", f"{logs_path}:/home/jib/.git-common/{repo_name}/logs:rw"]
+                )
+                if not quiet:
+                    print(f"  • ~/.git-common/{repo_name}/logs (reflogs, writable)")
+
             # 5. Mount config file (ro) - shared configuration
             config_path = main_git_path / "config"
             if config_path.exists():

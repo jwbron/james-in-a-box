@@ -1186,6 +1186,9 @@ def gh_execute():
 
     args = data.get("args", [])
     cwd = data.get("cwd")
+    # Repo passed from container - container can detect repo from worktree,
+    # but gateway can't (different git structure)
+    payload_repo = data.get("repo")
 
     if not args:
         return make_error("Missing args")
@@ -1234,10 +1237,19 @@ def gh_execute():
     # Extract repo from args to determine auth mode
     # Look for --repo flag or -R shorthand
     repo = None
+    has_repo_flag = False
     for i, arg in enumerate(args):
         if arg in ("--repo", "-R") and i + 1 < len(args):
             repo = args[i + 1]
+            has_repo_flag = True
             break
+
+    # If no --repo in args but container passed repo in payload, inject it
+    # This is needed because the gateway can't auto-detect repo from worktree structure
+    if not has_repo_flag and payload_repo:
+        repo = payload_repo
+        # Inject --repo into args so gh command uses it
+        args = ["--repo", payload_repo] + list(args)
 
     # Determine auth mode (default to bot if repo not specified)
     auth_mode = get_auth_mode(repo) if repo else "bot"
