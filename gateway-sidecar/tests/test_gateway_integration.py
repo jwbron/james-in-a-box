@@ -284,7 +284,10 @@ class TestPathValidation:
         assert response.status_code == 400
         data = json.loads(response.data)
         # Should get a clear error message
-        assert "not a git repository" in data["message"].lower() or "not itself a git repository" in data["message"].lower()
+        assert (
+            "not a git repository" in data["message"].lower()
+            or "not itself a git repository" in data["message"].lower()
+        )
         # Should include a hint
         assert data.get("data", {}).get("hint") is not None
 
