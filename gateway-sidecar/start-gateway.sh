@@ -14,6 +14,16 @@ HOME_DIR="${HOME:-$(eval echo ~)}"
 # This is critical for path consistency between jib containers and gateway
 CONTAINER_HOME="/home/jib"
 
+# Load secrets from secrets.env if it exists
+# This file contains sensitive environment variables like GITHUB_INCOGNITO_TOKEN
+SECRETS_ENV_FILE="$HOME_DIR/.config/secrets.env"
+if [ -f "$SECRETS_ENV_FILE" ]; then
+    # shellcheck source=/dev/null
+    set -a  # Automatically export all variables
+    source "$SECRETS_ENV_FILE"
+    set +a
+fi
+
 CONFIG_FILE="$HOME_DIR/.config/jib/repositories.yaml"
 SECRETS_DIR="$HOME_DIR/.jib-gateway"
 REPOS_DIR="$HOME_DIR/repos"
@@ -88,11 +98,19 @@ if command -v python3 &> /dev/null; then
     done <<< "$GIT_MOUNTS_OUTPUT"
 fi
 
+# Build environment variable arguments
+ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
+
+# Pass incognito token if configured (for personal GitHub account attribution)
+if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
+    ENV_ARGS+=(-e "GITHUB_INCOGNITO_TOKEN=$GITHUB_INCOGNITO_TOKEN")
+fi
+
 # Run the container
 exec /usr/bin/docker run --rm \
     --name jib-gateway \
     --network jib-network \
     -p 9847:9847 \
-    -e JIB_REPO_CONFIG=/config/repositories.yaml \
+    "${ENV_ARGS[@]}" \
     "${MOUNTS[@]}" \
     jib-gateway
