@@ -13,7 +13,7 @@ import contextlib
 import json
 import logging
 import subprocess
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 from llm.claude.config import ClaudeConfig
@@ -28,6 +28,9 @@ DEFAULT_MODEL = "opus"
 
 # Minimum known-good Claude Code version (for version check logging)
 MIN_CLAUDE_VERSION = "1.0.0"
+
+# Read chunk size for stream processing (1MB chunks allow handling large outputs)
+_READ_CHUNK_SIZE = 1024 * 1024
 
 
 def _check_claude_version() -> str | None:
@@ -150,6 +153,49 @@ def _extract_model_from_event(event: dict, current_model: str | None) -> str | N
     return current_model
 
 
+async def _read_lines_unbuffered(
+    stream: asyncio.StreamReader,
+) -> AsyncIterator[bytes]:
+    """Read lines from a stream without the default 64KB buffer limit.
+
+    Python's asyncio StreamReader has a default limit of 64KB per line.
+    When Claude Code outputs large JSON events (e.g., thinking blocks with
+    extensive content), a single line can exceed this limit, causing:
+    "Separator is found, but chunk is longer than limit"
+
+    This function reads in chunks and manually splits on newlines, allowing
+    arbitrarily large lines to be processed.
+
+    Args:
+        stream: The asyncio StreamReader to read from.
+
+    Yields:
+        Complete lines as bytes (without trailing newline).
+    """
+    buffer = b""
+
+    while True:
+        # Read chunks without line-length restrictions
+        try:
+            chunk = await stream.read(_READ_CHUNK_SIZE)
+        except Exception as e:
+            logger.warning(f"Error reading stream chunk: {e}")
+            break
+
+        if not chunk:
+            # End of stream - yield any remaining buffer content
+            if buffer:
+                yield buffer
+            break
+
+        buffer += chunk
+
+        # Extract complete lines from buffer
+        while b"\n" in buffer:
+            line, buffer = buffer.split(b"\n", 1)
+            yield line
+
+
 async def run_agent_async(
     prompt: str,
     *,
@@ -225,8 +271,11 @@ async def run_agent_async(
         await process.stdin.wait_closed()
 
         async with asyncio.timeout(timeout):
-            # Read stdout line by line (stream-json is newline-delimited)
-            async for line in process.stdout:
+            # Read stdout using chunk-based reader to handle large JSON lines.
+            # The default asyncio line iteration has a 64KB limit per line,
+            # which can be exceeded by Claude's stream-json output containing
+            # large thinking blocks or text content.
+            async for line in _read_lines_unbuffered(process.stdout):
                 line_text = line.decode().strip()
                 if not line_text:
                     continue
