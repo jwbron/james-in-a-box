@@ -116,6 +116,13 @@ ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
 # host paths to the jib launcher for Docker mount sources
 ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
 
+# Pass ALLOW_ALL_NETWORK mode if set
+# TODO(PR-631): When ALLOW_ALL_NETWORK is enabled, also set PUBLIC_REPO_ONLY_MODE=true
+# to ensure only public repositories are accessible with open network access.
+if [ -n "${ALLOW_ALL_NETWORK:-}" ]; then
+    ENV_ARGS+=(-e "ALLOW_ALL_NETWORK=$ALLOW_ALL_NETWORK")
+fi
+
 # Pass incognito token if configured (for personal GitHub account attribution)
 if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
     ENV_ARGS+=(-e "GITHUB_INCOGNITO_TOKEN=$GITHUB_INCOGNITO_TOKEN")

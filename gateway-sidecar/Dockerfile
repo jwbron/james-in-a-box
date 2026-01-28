@@ -40,10 +40,13 @@ COPY shared/jib_config/ ./jib_config/
 # Copy config module (repo_config needed by github_client for incognito mode)
 COPY config/repo_config.py /config/
 
-# Copy Squid configuration for Phase 2 network lockdown
+# Copy Squid configuration for network lockdown
+# Default squid.conf is the restrictive allowlist-based config
+# squid-allow-all.conf is used when ALLOW_ALL_NETWORK=true
 COPY gateway-sidecar/squid.conf /etc/squid/squid.conf
+COPY gateway-sidecar/squid-allow-all.conf /etc/squid/squid-allow-all.conf
 COPY gateway-sidecar/allowed_domains.txt /etc/squid/allowed_domains.txt
-RUN chmod 644 /etc/squid/squid.conf /etc/squid/allowed_domains.txt
+RUN chmod 644 /etc/squid/squid.conf /etc/squid/squid-allow-all.conf /etc/squid/allowed_domains.txt
 
 # Copy config validator for startup checks
 COPY gateway-sidecar/config_validator.py ./config_validator.py

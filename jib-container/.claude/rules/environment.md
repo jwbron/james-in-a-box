@@ -2,16 +2,28 @@
 
 You run in a sandboxed Docker container with network lockdown. No SSH keys, cloud creds, or production access.
 
-## Network Lockdown
+## Network Modes
 
-Network traffic is routed through a filtering proxy. Only `api.anthropic.com` (Claude API) is allowed through the proxy.
+Network traffic is routed through a filtering proxy. The gateway supports two modes:
 
-**GitHub access** MUST go through the gateway sidecar's git/gh wrappers (not through the proxy). This ensures policy enforcement (branch ownership, merge blocking, etc.) cannot be bypassed.
+### Default (Network Lockdown)
+Only `api.anthropic.com` (Claude API) is allowed through the proxy.
 
 You CANNOT:
 - Access PyPI, npm, or any package registry (dependencies are pre-installed)
 - Use web search or fetch arbitrary URLs
 - Access any website not on the allowlist
+
+### Allow All Network Mode (`ALLOW_ALL_NETWORK=true`)
+All network traffic is permitted through the proxy, but repository access is restricted to **public repos only**.
+
+In this mode:
+- Web search and fetch work normally
+- You CAN access PyPI, npm, and package registries
+- You CAN access arbitrary URLs
+- You CANNOT access private repositories (only public repos allowed)
+
+**GitHub access** MUST go through the gateway sidecar's git/gh wrappers (not through the proxy). This ensures policy enforcement (branch ownership, merge blocking, etc.) cannot be bypassed.
 
 ## Capabilities
 
