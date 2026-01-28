@@ -147,9 +147,7 @@ def _setup_git_isolation_mounts(
             # Git writes reflogs when updating refs, needs this in commondir
             logs_path = main_git_path / "logs"
             if logs_path.is_dir():
-                mount_args.extend(
-                    ["-v", f"{logs_path}:/home/jib/.git-common/{repo_name}/logs:rw"]
-                )
+                mount_args.extend(["-v", f"{logs_path}:/home/jib/.git-common/{repo_name}/logs:rw"])
                 if not quiet:
                     print(f"  • ~/.git-common/{repo_name}/logs (reflogs, writable)")
 

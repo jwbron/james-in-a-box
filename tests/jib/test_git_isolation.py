@@ -62,9 +62,7 @@ def _get_setup_git_isolation_mounts():
     try:
         # Load the module with package context
         spec = importlib.util.spec_from_file_location(
-            "jib_lib.runtime",
-            runtime_path,
-            submodule_search_locations=[str(runtime_path.parent)]
+            "jib_lib.runtime", runtime_path, submodule_search_locations=[str(runtime_path.parent)]
         )
         module = importlib.util.module_from_spec(spec)
         module.__package__ = "jib_lib"
@@ -218,9 +216,7 @@ class TestMountStructure:
         # Check logs mount is rw
         logs_path = git_repo["git_dir"] / "logs"
         logs_mount = f"{logs_path}:/home/jib/.git-common/test-repo/logs:rw"
-        assert any(logs_mount in arg for arg in mount_args), (
-            f"Expected logs mount in {mount_args}"
-        )
+        assert any(logs_mount in arg for arg in mount_args), f"Expected logs mount in {mount_args}"
 
     def test_mount_args_include_config_ro(self, git_repo, setup_git_isolation_mounts):
         """Test that config file is mounted as ro."""
