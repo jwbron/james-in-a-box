@@ -530,72 +530,1649 @@ Gateway-mediated log access introduces latency that may affect debugging workflo
 
 ## Implementation Plan
 
+This section provides detailed implementation guidance for each phase, including specific files to modify, code structures, testing strategies, and acceptance criteria.
+
+---
+
 ### Phase 1: Gateway Log Endpoints
 
-1. Add log access endpoints to `gateway.py`
-2. Implement log policy engine in `policy.py`
-3. Add audit logging for log access
-4. Unit tests for policy enforcement
+**Objective:** Add API endpoints to the gateway sidecar for controlled log access with policy enforcement and audit logging.
+
+**Duration estimate:** N/A (no time estimates)
+
+#### Task 1.1: Create Log Index Reader
+
+**File:** `gateway-sidecar/log_index.py` (new file)
+
+**Purpose:** Read and cache the log index maintained by `container_logging.py` for fast task→container lookups.
+
+```python
+# gateway-sidecar/log_index.py
+"""Log index reader for gateway-mediated log access."""
+
+import json
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from threading import Lock
+from typing import Any
+
+from jib_logging import get_logger
+
+logger = get_logger("gateway-sidecar.log_index")
+
+# Default paths (configurable via environment)
+DEFAULT_LOG_INDEX_PATH = Path.home() / ".jib-sharing" / "container-logs" / "log-index.json"
+DEFAULT_CONTAINER_LOGS_DIR = Path.home() / ".jib-sharing" / "container-logs"
+DEFAULT_CLAUDE_LOGS_DIR = Path.home() / ".jib-sharing" / "logs"
+DEFAULT_MODEL_OUTPUT_DIR = Path("/var/log/jib/model_output")
+
+
+@dataclass
+class LogEntry:
+    """A single log entry from the index."""
+    container_id: str
+    task_id: str | None
+    thread_ts: str | None
+    log_file: str | None
+    timestamp: str
+
+
+class LogIndex:
+    """Thread-safe log index reader with caching."""
+
+    def __init__(self, index_path: Path | None = None):
+        self._index_path = index_path or DEFAULT_LOG_INDEX_PATH
+        self._cache: dict[str, Any] | None = None
+        self._cache_mtime: float = 0
+        self._lock = Lock()
+
+    def _load_index(self) -> dict[str, Any]:
+        """Load index from file, using cache if file unchanged."""
+        if not self._index_path.exists():
+            return {"task_to_container": {}, "thread_to_task": {}, "entries": []}
+
+        try:
+            mtime = self._index_path.stat().st_mtime
+            with self._lock:
+                if self._cache is not None and mtime == self._cache_mtime:
+                    return self._cache
+
+            with open(self._index_path) as f:
+                data = json.load(f)
+
+            with self._lock:
+                self._cache = data
+                self._cache_mtime = mtime
+
+            return data
+        except Exception as e:
+            logger.warning(f"Failed to load log index: {e}")
+            return {"task_to_container": {}, "thread_to_task": {}, "entries": []}
+
+    def get_container_for_task(self, task_id: str) -> str | None:
+        """Look up the container ID that owns a task."""
+        index = self._load_index()
+        return index.get("task_to_container", {}).get(task_id)
+
+    def get_task_for_thread(self, thread_ts: str) -> str | None:
+        """Look up the task ID for a Slack thread."""
+        index = self._load_index()
+        return index.get("thread_to_task", {}).get(thread_ts)
+
+    def list_entries(
+        self,
+        container_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[LogEntry]:
+        """List log entries, optionally filtered by container."""
+        index = self._load_index()
+        entries = index.get("entries", [])
+
+        if container_id:
+            entries = [e for e in entries if e.get("container_id") == container_id]
+
+        # Return newest first
+        entries = list(reversed(entries))
+        return [
+            LogEntry(
+                container_id=e.get("container_id", ""),
+                task_id=e.get("task_id"),
+                thread_ts=e.get("thread_ts"),
+                log_file=e.get("log_file"),
+                timestamp=e.get("timestamp", ""),
+            )
+            for e in entries[offset : offset + limit]
+        ]
+
+
+# Singleton instance
+_log_index: LogIndex | None = None
+
+
+def get_log_index() -> LogIndex:
+    """Get the singleton LogIndex instance."""
+    global _log_index
+    if _log_index is None:
+        _log_index = LogIndex()
+    return _log_index
+```
+
+**Acceptance criteria:**
+- [ ] Index loads correctly from `~/.jib-sharing/container-logs/log-index.json`
+- [ ] Caching works (file only re-read when mtime changes)
+- [ ] Thread-safe for concurrent access
+- [ ] Returns empty data gracefully when index doesn't exist
+
+---
+
+#### Task 1.2: Create Log Policy Engine
+
+**File:** `gateway-sidecar/log_policy.py` (new file)
+
+**Purpose:** Enforce access control rules for log requests.
+
+```python
+# gateway-sidecar/log_policy.py
+"""Log access policy enforcement."""
+
+from dataclasses import dataclass
+from typing import Any
+
+from jib_logging import get_logger
+
+# Import from local modules
+try:
+    from .log_index import get_log_index
+except ImportError:
+    from log_index import get_log_index
+
+logger = get_logger("gateway-sidecar.log_policy")
+
+
+@dataclass
+class LogPolicyResult:
+    """Result of a log access policy check."""
+    allowed: bool
+    reason: str
+    details: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for API response."""
+        result = {"allowed": self.allowed, "reason": self.reason}
+        if self.details:
+            result["details"] = self.details
+        return result
+
+
+class LogPolicy:
+    """Log access policy enforcement."""
+
+    def __init__(self):
+        self._log_index = get_log_index()
+
+    def check_task_access(
+        self,
+        requester_container_id: str,
+        requester_task_id: str | None,
+        target_task_id: str,
+    ) -> LogPolicyResult:
+        """Check if requester can access logs for target task.
+
+        Access is allowed if:
+        1. The requester's container owns the target task
+        2. The requester's task_id matches the target task_id
+        """
+        # Look up task's owner container
+        owner_container = self._log_index.get_container_for_task(target_task_id)
+
+        if owner_container is None:
+            return LogPolicyResult(
+                allowed=False,
+                reason="Task not found in log index",
+                details={"target_task_id": target_task_id},
+            )
+
+        # Check ownership by container
+        if owner_container == requester_container_id:
+            return LogPolicyResult(
+                allowed=True,
+                reason="Owner access (container match)",
+            )
+
+        # Check ownership by task identity
+        if requester_task_id and requester_task_id == target_task_id:
+            return LogPolicyResult(
+                allowed=True,
+                reason="Owner access (task identity match)",
+            )
+
+        return LogPolicyResult(
+            allowed=False,
+            reason="Cross-container log access denied",
+            details={
+                "requester_container": requester_container_id,
+                "owner_container": owner_container,
+                "target_task_id": target_task_id,
+            },
+        )
+
+    def check_container_access(
+        self,
+        requester_container_id: str,
+        target_container_id: str,
+    ) -> LogPolicyResult:
+        """Check if requester can access logs for target container.
+
+        Access is allowed only if requester == target (self-access).
+        """
+        if requester_container_id == target_container_id:
+            return LogPolicyResult(
+                allowed=True,
+                reason="Self-access (container identity match)",
+            )
+
+        return LogPolicyResult(
+            allowed=False,
+            reason="Cross-container log access denied",
+            details={
+                "requester_container": requester_container_id,
+                "target_container": target_container_id,
+            },
+        )
+
+    def check_search_access(
+        self,
+        requester_container_id: str,
+        scope: str,
+    ) -> LogPolicyResult:
+        """Check if requester can perform a log search.
+
+        Searches are always scoped to the requester's own logs.
+        The 'scope' parameter is validated but currently only 'self' is allowed.
+        """
+        if scope != "self":
+            return LogPolicyResult(
+                allowed=False,
+                reason="Invalid search scope",
+                details={"scope": scope, "allowed_scopes": ["self"]},
+            )
+
+        return LogPolicyResult(
+            allowed=True,
+            reason="Search allowed (self scope)",
+        )
+
+
+# Singleton instance
+_log_policy: LogPolicy | None = None
+
+
+def get_log_policy() -> LogPolicy:
+    """Get the singleton LogPolicy instance."""
+    global _log_policy
+    if _log_policy is None:
+        _log_policy = LogPolicy()
+    return _log_policy
+```
+
+**Acceptance criteria:**
+- [ ] Task access check correctly validates ownership
+- [ ] Container access check allows self-access only
+- [ ] Search access enforces 'self' scope
+- [ ] Policy results include meaningful reasons and details
+
+---
+
+#### Task 1.3: Create Log Reader Module
+
+**File:** `gateway-sidecar/log_reader.py` (new file)
+
+**Purpose:** Read log file content from the filesystem with size limits and pagination.
+
+```python
+# gateway-sidecar/log_reader.py
+"""Log file reading utilities for gateway."""
+
+import os
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterator
+
+from jib_logging import get_logger
+
+try:
+    from .log_index import (
+        DEFAULT_CONTAINER_LOGS_DIR,
+        DEFAULT_CLAUDE_LOGS_DIR,
+        DEFAULT_MODEL_OUTPUT_DIR,
+        get_log_index,
+    )
+except ImportError:
+    from log_index import (
+        DEFAULT_CONTAINER_LOGS_DIR,
+        DEFAULT_CLAUDE_LOGS_DIR,
+        DEFAULT_MODEL_OUTPUT_DIR,
+        get_log_index,
+    )
+
+logger = get_logger("gateway-sidecar.log_reader")
+
+# Limits
+MAX_LOG_LINES = 10000  # Maximum lines to return
+MAX_LOG_SIZE_BYTES = 50 * 1024 * 1024  # 50MB max file size to read
+MAX_SEARCH_RESULTS = 1000  # Maximum search results
+
+
+@dataclass
+class LogContent:
+    """Log content with metadata."""
+    task_id: str | None
+    container_id: str | None
+    log_file: str | None
+    content: str
+    lines: int
+    truncated: bool
+    size_bytes: int
+
+
+@dataclass
+class SearchResult:
+    """A single search result."""
+    log_file: str
+    line_number: int
+    content: str
+    task_id: str | None
+    container_id: str | None
+
+
+def read_task_logs(task_id: str, max_lines: int = 1000) -> LogContent | None:
+    """Read logs for a specific task.
+
+    Looks for:
+    1. Symlink at {task_id}.log -> {container_id}.log
+    2. Container log with task_id content
+    3. Claude output log at ~/.jib-sharing/logs/{task_id}.log
+    """
+    # Try symlink first
+    symlink_path = DEFAULT_CONTAINER_LOGS_DIR / f"{task_id}.log"
+    if symlink_path.exists():
+        return _read_log_file(symlink_path, task_id=task_id, max_lines=max_lines)
+
+    # Look up container from index
+    log_index = get_log_index()
+    container_id = log_index.get_container_for_task(task_id)
+    if container_id:
+        container_log = DEFAULT_CONTAINER_LOGS_DIR / f"{container_id}.log"
+        if container_log.exists():
+            return _read_log_file(
+                container_log, task_id=task_id, container_id=container_id, max_lines=max_lines
+            )
+
+    # Try Claude output log
+    claude_log = DEFAULT_CLAUDE_LOGS_DIR / f"{task_id}.log"
+    if claude_log.exists():
+        return _read_log_file(claude_log, task_id=task_id, max_lines=max_lines)
+
+    return None
+
+
+def read_container_logs(container_id: str, max_lines: int = 1000) -> LogContent | None:
+    """Read logs for a specific container."""
+    container_log = DEFAULT_CONTAINER_LOGS_DIR / f"{container_id}.log"
+    if container_log.exists():
+        return _read_log_file(container_log, container_id=container_id, max_lines=max_lines)
+    return None
+
+
+def read_model_output(task_id: str) -> LogContent | None:
+    """Read model output for a specific task."""
+    # Model output files are named by task_id
+    model_output_path = DEFAULT_MODEL_OUTPUT_DIR / f"{task_id}.json"
+    if model_output_path.exists():
+        return _read_log_file(model_output_path, task_id=task_id, max_lines=MAX_LOG_LINES)
+
+    # Also check for .log extension
+    model_output_path = DEFAULT_MODEL_OUTPUT_DIR / f"{task_id}.log"
+    if model_output_path.exists():
+        return _read_log_file(model_output_path, task_id=task_id, max_lines=MAX_LOG_LINES)
+
+    return None
+
+
+def search_logs(
+    pattern: str,
+    container_id: str,
+    max_results: int = 100,
+) -> list[SearchResult]:
+    """Search logs for a pattern, scoped to a specific container.
+
+    Only searches logs belonging to the specified container.
+    """
+    results: list[SearchResult] = []
+    regex = re.compile(pattern, re.IGNORECASE)
+
+    # Get all tasks for this container from the index
+    log_index = get_log_index()
+    container_entries = log_index.list_entries(container_id=container_id, limit=1000)
+
+    searched_files: set[str] = set()
+
+    for entry in container_entries:
+        if len(results) >= max_results:
+            break
+
+        if not entry.log_file or entry.log_file in searched_files:
+            continue
+
+        searched_files.add(entry.log_file)
+        log_path = Path(entry.log_file)
+
+        if not log_path.exists():
+            continue
+
+        try:
+            file_size = log_path.stat().st_size
+            if file_size > MAX_LOG_SIZE_BYTES:
+                logger.warning(f"Skipping large log file: {log_path} ({file_size} bytes)")
+                continue
+
+            with open(log_path) as f:
+                for line_num, line in enumerate(f, 1):
+                    if regex.search(line):
+                        results.append(
+                            SearchResult(
+                                log_file=str(log_path),
+                                line_number=line_num,
+                                content=line.rstrip()[:500],  # Truncate long lines
+                                task_id=entry.task_id,
+                                container_id=entry.container_id,
+                            )
+                        )
+                        if len(results) >= max_results:
+                            break
+        except Exception as e:
+            logger.warning(f"Error searching log file {log_path}: {e}")
+
+    return results
+
+
+def _read_log_file(
+    path: Path,
+    task_id: str | None = None,
+    container_id: str | None = None,
+    max_lines: int = 1000,
+) -> LogContent:
+    """Read a log file with size limits."""
+    # Resolve symlinks
+    actual_path = path.resolve() if path.is_symlink() else path
+
+    file_size = actual_path.stat().st_size
+    truncated = False
+
+    if file_size > MAX_LOG_SIZE_BYTES:
+        logger.warning(f"Log file exceeds size limit: {actual_path} ({file_size} bytes)")
+        truncated = True
+
+    lines: list[str] = []
+    try:
+        with open(actual_path) as f:
+            for i, line in enumerate(f):
+                if i >= max_lines:
+                    truncated = True
+                    break
+                lines.append(line)
+    except Exception as e:
+        logger.error(f"Error reading log file {actual_path}: {e}")
+        return LogContent(
+            task_id=task_id,
+            container_id=container_id,
+            log_file=str(actual_path),
+            content=f"Error reading log file: {e}",
+            lines=0,
+            truncated=False,
+            size_bytes=0,
+        )
+
+    return LogContent(
+        task_id=task_id,
+        container_id=container_id,
+        log_file=str(actual_path),
+        content="".join(lines),
+        lines=len(lines),
+        truncated=truncated,
+        size_bytes=file_size,
+    )
+```
+
+**Acceptance criteria:**
+- [ ] Task logs read correctly (symlink and direct file)
+- [ ] Container logs read correctly
+- [ ] Model output read correctly
+- [ ] Search works with regex patterns
+- [ ] Size limits enforced
+- [ ] Truncation handled gracefully
+
+---
+
+#### Task 1.4: Add Log Endpoints to Gateway
+
+**File:** `gateway-sidecar/gateway.py` (modify existing)
+
+**Changes:** Add log access endpoints following the existing pattern.
+
+**Add imports at top of file:**
+```python
+# Add to imports section
+try:
+    from .log_index import get_log_index
+    from .log_policy import get_log_policy
+    from .log_reader import (
+        read_task_logs,
+        read_container_logs,
+        read_model_output,
+        search_logs,
+    )
+except ImportError:
+    from log_index import get_log_index
+    from log_policy import get_log_policy
+    from log_reader import (
+        read_task_logs,
+        read_container_logs,
+        read_model_output,
+        search_logs,
+    )
+```
+
+**Add endpoints (after existing git/gh endpoints):**
+```python
+# ============================================================================
+# LOG ACCESS ENDPOINTS
+# ============================================================================
+
+
+def _extract_requester_identity(
+    headers: dict[str, str]
+) -> tuple[str | None, str | None]:
+    """Extract container_id and task_id from request headers.
+
+    In the full implementation, these are validated against session state.
+    For now, we trust the headers (defense-in-depth).
+    """
+    container_id = headers.get("X-Container-ID")
+    task_id = headers.get("X-Task-ID")
+    return container_id, task_id
+
+
+@app.route("/api/v1/logs/list", methods=["GET"])
+@require_auth
+def logs_list():
+    """List recent log entries for the requester's container."""
+    container_id, task_id = _extract_requester_identity(dict(request.headers))
+
+    if not container_id:
+        audit_log("log_access", "list", success=False, details={"error": "missing_container_id"})
+        return make_error("Missing X-Container-ID header", 400)
+
+    limit = min(int(request.args.get("limit", 50)), 100)
+    offset = int(request.args.get("offset", 0))
+
+    log_index = get_log_index()
+    entries = log_index.list_entries(container_id=container_id, limit=limit, offset=offset)
+
+    audit_log(
+        "log_access",
+        "list",
+        success=True,
+        details={"container_id": container_id, "count": len(entries)},
+    )
+
+    return make_success(
+        message=f"Found {len(entries)} log entries",
+        data={
+            "entries": [
+                {
+                    "container_id": e.container_id,
+                    "task_id": e.task_id,
+                    "thread_ts": e.thread_ts,
+                    "log_file": e.log_file,
+                    "timestamp": e.timestamp,
+                }
+                for e in entries
+            ],
+            "limit": limit,
+            "offset": offset,
+        },
+    )
+
+
+@app.route("/api/v1/logs/task/<task_id>", methods=["GET"])
+@require_auth
+def logs_task(task_id: str):
+    """Get logs for a specific task."""
+    container_id, requester_task_id = _extract_requester_identity(dict(request.headers))
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "read_task",
+            success=False,
+            details={"error": "missing_container_id", "target_task_id": task_id},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    # Policy check
+    log_policy = get_log_policy()
+    policy_result = log_policy.check_task_access(
+        requester_container_id=container_id,
+        requester_task_id=requester_task_id,
+        target_task_id=task_id,
+    )
+
+    if not policy_result.allowed:
+        audit_log(
+            "log_access",
+            "read_task",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "policy_reason": policy_result.reason,
+            },
+        )
+        return make_error(policy_result.reason, 403, policy_result.details)
+
+    # Read logs
+    max_lines = min(int(request.args.get("lines", 1000)), 10000)
+    log_content = read_task_logs(task_id, max_lines=max_lines)
+
+    if log_content is None:
+        audit_log(
+            "log_access",
+            "read_task",
+            success=False,
+            details={"container_id": container_id, "target_task_id": task_id, "error": "not_found"},
+        )
+        return make_error(f"No logs found for task {task_id}", 404)
+
+    audit_log(
+        "log_access",
+        "read_task",
+        success=True,
+        details={
+            "container_id": container_id,
+            "target_task_id": task_id,
+            "lines": log_content.lines,
+            "truncated": log_content.truncated,
+        },
+    )
+
+    return make_success(
+        message=f"Retrieved logs for task {task_id}",
+        data={
+            "task_id": log_content.task_id,
+            "container_id": log_content.container_id,
+            "log_file": log_content.log_file,
+            "content": log_content.content,
+            "lines": log_content.lines,
+            "truncated": log_content.truncated,
+        },
+    )
+
+
+@app.route("/api/v1/logs/container/<target_container_id>", methods=["GET"])
+@require_auth
+def logs_container(target_container_id: str):
+    """Get logs for a specific container (self-access only)."""
+    container_id, task_id = _extract_requester_identity(dict(request.headers))
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "read_container",
+            success=False,
+            details={"error": "missing_container_id", "target_container": target_container_id},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    # Policy check
+    log_policy = get_log_policy()
+    policy_result = log_policy.check_container_access(
+        requester_container_id=container_id,
+        target_container_id=target_container_id,
+    )
+
+    if not policy_result.allowed:
+        audit_log(
+            "log_access",
+            "read_container",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_container": target_container_id,
+                "policy_reason": policy_result.reason,
+            },
+        )
+        return make_error(policy_result.reason, 403, policy_result.details)
+
+    # Read logs
+    max_lines = min(int(request.args.get("lines", 1000)), 10000)
+    log_content = read_container_logs(target_container_id, max_lines=max_lines)
+
+    if log_content is None:
+        audit_log(
+            "log_access",
+            "read_container",
+            success=False,
+            details={"container_id": container_id, "error": "not_found"},
+        )
+        return make_error(f"No logs found for container {target_container_id}", 404)
+
+    audit_log(
+        "log_access",
+        "read_container",
+        success=True,
+        details={"container_id": container_id, "lines": log_content.lines},
+    )
+
+    return make_success(
+        message=f"Retrieved logs for container {target_container_id}",
+        data={
+            "container_id": log_content.container_id,
+            "log_file": log_content.log_file,
+            "content": log_content.content,
+            "lines": log_content.lines,
+            "truncated": log_content.truncated,
+        },
+    )
+
+
+@app.route("/api/v1/logs/search", methods=["GET"])
+@require_auth
+def logs_search():
+    """Search logs with a pattern (scoped to requester's logs)."""
+    container_id, task_id = _extract_requester_identity(dict(request.headers))
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "search",
+            success=False,
+            details={"error": "missing_container_id"},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    pattern = request.args.get("pattern")
+    if not pattern:
+        return make_error("Missing 'pattern' query parameter", 400)
+
+    scope = request.args.get("scope", "self")
+    max_results = min(int(request.args.get("limit", 100)), 1000)
+
+    # Policy check
+    log_policy = get_log_policy()
+    policy_result = log_policy.check_search_access(
+        requester_container_id=container_id,
+        scope=scope,
+    )
+
+    if not policy_result.allowed:
+        audit_log(
+            "log_access",
+            "search",
+            success=False,
+            details={
+                "container_id": container_id,
+                "pattern": pattern,
+                "policy_reason": policy_result.reason,
+            },
+        )
+        return make_error(policy_result.reason, 403, policy_result.details)
+
+    # Perform search
+    try:
+        results = search_logs(
+            pattern=pattern,
+            container_id=container_id,
+            max_results=max_results,
+        )
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return make_error(f"Search failed: {e}", 500)
+
+    audit_log(
+        "log_access",
+        "search",
+        success=True,
+        details={
+            "container_id": container_id,
+            "pattern": pattern,
+            "results_count": len(results),
+        },
+    )
+
+    return make_success(
+        message=f"Found {len(results)} matches",
+        data={
+            "pattern": pattern,
+            "scope": scope,
+            "results": [
+                {
+                    "log_file": r.log_file,
+                    "line_number": r.line_number,
+                    "content": r.content,
+                    "task_id": r.task_id,
+                    "container_id": r.container_id,
+                }
+                for r in results
+            ],
+            "limit": max_results,
+            "truncated": len(results) == max_results,
+        },
+    )
+
+
+@app.route("/api/v1/logs/model/<task_id>", methods=["GET"])
+@require_auth
+def logs_model(task_id: str):
+    """Get model output for a specific task."""
+    container_id, requester_task_id = _extract_requester_identity(dict(request.headers))
+
+    if not container_id:
+        audit_log(
+            "log_access",
+            "read_model",
+            success=False,
+            details={"error": "missing_container_id", "target_task_id": task_id},
+        )
+        return make_error("Missing X-Container-ID header", 400)
+
+    # Policy check (same as task access)
+    log_policy = get_log_policy()
+    policy_result = log_policy.check_task_access(
+        requester_container_id=container_id,
+        requester_task_id=requester_task_id,
+        target_task_id=task_id,
+    )
+
+    if not policy_result.allowed:
+        audit_log(
+            "log_access",
+            "read_model",
+            success=False,
+            details={
+                "container_id": container_id,
+                "target_task_id": task_id,
+                "policy_reason": policy_result.reason,
+            },
+        )
+        return make_error(policy_result.reason, 403, policy_result.details)
+
+    # Read model output
+    log_content = read_model_output(task_id)
+
+    if log_content is None:
+        audit_log(
+            "log_access",
+            "read_model",
+            success=False,
+            details={"container_id": container_id, "target_task_id": task_id, "error": "not_found"},
+        )
+        return make_error(f"No model output found for task {task_id}", 404)
+
+    audit_log(
+        "log_access",
+        "read_model",
+        success=True,
+        details={
+            "container_id": container_id,
+            "target_task_id": task_id,
+            "size_bytes": log_content.size_bytes,
+        },
+    )
+
+    return make_success(
+        message=f"Retrieved model output for task {task_id}",
+        data={
+            "task_id": task_id,
+            "log_file": log_content.log_file,
+            "content": log_content.content,
+            "size_bytes": log_content.size_bytes,
+            "truncated": log_content.truncated,
+        },
+    )
+```
+
+**Acceptance criteria:**
+- [ ] All 5 endpoints implemented: `/list`, `/task/<id>`, `/container/<id>`, `/search`, `/model/<id>`
+- [ ] All endpoints require authentication
+- [ ] Policy enforcement returns 403 with meaningful error messages
+- [ ] Audit logging for all operations (success and failure)
+- [ ] Query parameters validated with sensible limits
+
+---
+
+#### Task 1.5: Unit Tests for Log Access
+
+**File:** `gateway-sidecar/tests/test_log_endpoints.py` (new file)
+
+**Test coverage requirements:**
+- [ ] Test log index loading and caching
+- [ ] Test policy enforcement (allow owner, deny cross-container)
+- [ ] Test each endpoint with valid and invalid requests
+- [ ] Test authentication requirement
+- [ ] Test rate limits and size limits
+- [ ] Test edge cases (missing files, corrupted index)
+
+**Sample test structure:**
+```python
+# gateway-sidecar/tests/test_log_endpoints.py
+"""Tests for log access endpoints."""
+
+import json
+import pytest
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+# Import test fixtures from existing tests
+from .conftest import client, auth_headers
+
+
+class TestLogPolicy:
+    """Tests for log access policy enforcement."""
+
+    def test_task_access_allowed_for_owner(self):
+        """Owner can access their own task's logs."""
+        ...
+
+    def test_task_access_denied_for_non_owner(self):
+        """Non-owner cannot access other's task logs."""
+        ...
+
+    def test_container_access_self_only(self):
+        """Container can only access its own logs."""
+        ...
+
+    def test_search_scope_enforced(self):
+        """Search is scoped to requester's logs only."""
+        ...
+
+
+class TestLogEndpoints:
+    """Tests for log API endpoints."""
+
+    def test_logs_list_requires_auth(self, client):
+        """List endpoint requires authentication."""
+        ...
+
+    def test_logs_list_returns_own_logs(self, client, auth_headers):
+        """List returns only requester's logs."""
+        ...
+
+    def test_logs_task_policy_enforcement(self, client, auth_headers):
+        """Task endpoint enforces ownership policy."""
+        ...
+
+    def test_logs_search_scoped(self, client, auth_headers):
+        """Search is scoped to own logs."""
+        ...
+
+    def test_logs_model_requires_ownership(self, client, auth_headers):
+        """Model output requires task ownership."""
+        ...
+```
+
+**Acceptance criteria:**
+- [ ] >80% code coverage for new log modules
+- [ ] All policy edge cases tested
+- [ ] Integration with existing test infrastructure
+
+---
 
 ### Phase 2: Container Isolation
 
-1. Remove `~/.jib-sharing/` from container mounts (Docker Compose)
-2. Update `jib-logs` utility to use gateway API when in container
-3. Create `LogClient` Python module for programmatic access
-4. Integration tests for end-to-end log access
+**Objective:** Remove log directories from container mounts and create client library for gateway access.
 
-### Phase 3: Migration
+#### Task 2.1: Modify Container Mount Configuration
 
-**Detection Mechanism:** How does `jib-logs` know it's running in a container vs on the host?
+**File:** `jib-container/jib_lib/setup_flow.py` (modify)
 
+**Changes:**
+1. Create selective mount for `~/.jib-sharing/` that excludes log directories
+2. Add `JIB_CONTAINER=1` environment variable
+
+**Current code (line ~376-379):**
+```python
+# Mount sharing directory (beads, notifications, incoming tasks, etc.)
+if Config.SHARING_DIR.exists():
+    sharing_container_path = "/home/jib/sharing"
+    mount_args.extend(["-v", f"{Config.SHARING_DIR}:{sharing_container_path}:rw"])
+```
+
+**New code:**
+```python
+# Mount sharing directory components selectively (security: exclude log directories)
+if Config.SHARING_DIR.exists():
+    sharing_container_path = "/home/jib/sharing"
+
+    # Mount specific subdirectories instead of entire ~/.jib-sharing/
+    # This excludes container-logs/ and logs/ for security
+    sharing_subdirs = [
+        "incoming",        # Task files from Slack
+        "responses",       # Outgoing responses
+        "notifications",   # Notification files
+        "context",         # Context save/load
+        "tmp",             # Temporary files
+    ]
+
+    for subdir in sharing_subdirs:
+        host_path = Config.SHARING_DIR / subdir
+        container_path = f"{sharing_container_path}/{subdir}"
+        if host_path.exists():
+            mount_args.extend(["-v", f"{host_path}:{container_path}:rw"])
+        else:
+            # Create the directory if it doesn't exist
+            host_path.mkdir(parents=True, exist_ok=True)
+            mount_args.extend(["-v", f"{host_path}:{container_path}:rw"])
+
+    # Mount beads directory (read-write for task tracking)
+    beads_path = Config.SHARING_DIR / "beads"
+    if beads_path.exists():
+        mount_args.extend(["-v", f"{beads_path}:/home/jib/beads:rw"])
+
+    if not quiet:
+        print("  • ~/sharing/ (beads, notifications, tasks) [logs excluded for security]")
+```
+
+**Also add JIB_CONTAINER environment variable in runtime.py:**
+
+**File:** `jib-container/jib_lib/runtime.py` (modify)
+
+Find where environment variables are set and add:
+```python
+# Add to container environment variables
+env_args.extend(["-e", "JIB_CONTAINER=1"])
+```
+
+**Acceptance criteria:**
+- [ ] Log directories (`container-logs/`, `logs/`) not mounted in container
+- [ ] Beads, notifications, incoming tasks still accessible
+- [ ] `JIB_CONTAINER=1` set in container environment
+- [ ] Existing functionality (beads, Slack tasks) still works
+
+---
+
+#### Task 2.2: Create LogClient Python Module
+
+**File:** `shared/jib_logging/log_client.py` (new file)
+
+**Purpose:** Python client for containers to access logs via gateway API.
+
+```python
+# shared/jib_logging/log_client.py
+"""Log client for gateway-mediated log access.
+
+Use this client from within containers to access logs via the gateway API.
+Direct filesystem access to logs is not available in containers.
+
+Usage:
+    from jib_logging import LogClient
+
+    client = LogClient()
+    logs = client.get_task_logs("task-20260128-123456")
+    print(logs.content)
+
+    results = client.search("error", limit=10)
+    for entry in results:
+        print(f"{entry.line_number}: {entry.content}")
+"""
+
+import json
+import os
+from dataclasses import dataclass
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+
+@dataclass
+class LogContent:
+    """Log content returned from gateway."""
+    task_id: str | None
+    container_id: str | None
+    log_file: str | None
+    content: str
+    lines: int
+    truncated: bool
+
+
+@dataclass
+class LogEntry:
+    """A log entry from the list endpoint."""
+    container_id: str
+    task_id: str | None
+    thread_ts: str | None
+    log_file: str | None
+    timestamp: str
+
+
+@dataclass
+class SearchResult:
+    """A single search result."""
+    log_file: str
+    line_number: int
+    content: str
+    task_id: str | None
+    container_id: str | None
+
+
+class LogClientError(Exception):
+    """Error from log client operations."""
+    def __init__(self, message: str, status_code: int | None = None, details: dict | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.details = details
+
+
+class LogClient:
+    """Client for accessing logs via gateway API.
+
+    Automatically reads configuration from environment variables:
+    - GATEWAY_URL: Gateway base URL (default: http://jib-gateway:9847)
+    - JIB_GATEWAY_SECRET: Authentication secret
+    - JIB_CONTAINER_ID: Current container ID (set by orchestrator)
+    - JIB_TASK_ID: Current task ID (if applicable)
+    """
+
+    def __init__(
+        self,
+        gateway_url: str | None = None,
+        auth_secret: str | None = None,
+        container_id: str | None = None,
+        task_id: str | None = None,
+    ):
+        self.gateway_url = gateway_url or os.environ.get(
+            "GATEWAY_URL", "http://jib-gateway:9847"
+        )
+        self.auth_secret = auth_secret or os.environ.get("JIB_GATEWAY_SECRET", "")
+        self.container_id = container_id or os.environ.get("JIB_CONTAINER_ID", "")
+        self.task_id = task_id or os.environ.get("JIB_TASK_ID")
+
+        if not self.auth_secret:
+            raise LogClientError("JIB_GATEWAY_SECRET not set")
+        if not self.container_id:
+            raise LogClientError("JIB_CONTAINER_ID not set")
+
+    def _make_request(
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Make authenticated request to gateway."""
+        url = f"{self.gateway_url}{endpoint}"
+        if params:
+            query = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
+            url = f"{url}?{query}"
+
+        headers = {
+            "Authorization": f"Bearer {self.auth_secret}",
+            "X-Container-ID": self.container_id,
+            "Content-Type": "application/json",
+        }
+        if self.task_id:
+            headers["X-Task-ID"] = self.task_id
+
+        request = Request(url, headers=headers, method="GET")
+
+        try:
+            with urlopen(request, timeout=30) as response:
+                data = json.loads(response.read().decode())
+                return data
+        except HTTPError as e:
+            body = e.read().decode()
+            try:
+                error_data = json.loads(body)
+                raise LogClientError(
+                    error_data.get("message", str(e)),
+                    status_code=e.code,
+                    details=error_data.get("details"),
+                )
+            except json.JSONDecodeError:
+                raise LogClientError(str(e), status_code=e.code)
+        except URLError as e:
+            raise LogClientError(f"Connection error: {e}")
+
+    def list_logs(self, limit: int = 50, offset: int = 0) -> list[LogEntry]:
+        """List recent log entries for this container."""
+        response = self._make_request(
+            "/api/v1/logs/list",
+            params={"limit": limit, "offset": offset},
+        )
+        return [
+            LogEntry(
+                container_id=e["container_id"],
+                task_id=e.get("task_id"),
+                thread_ts=e.get("thread_ts"),
+                log_file=e.get("log_file"),
+                timestamp=e["timestamp"],
+            )
+            for e in response.get("data", {}).get("entries", [])
+        ]
+
+    def get_task_logs(self, task_id: str, max_lines: int = 1000) -> LogContent:
+        """Get logs for a specific task."""
+        response = self._make_request(
+            f"/api/v1/logs/task/{task_id}",
+            params={"lines": max_lines},
+        )
+        data = response.get("data", {})
+        return LogContent(
+            task_id=data.get("task_id"),
+            container_id=data.get("container_id"),
+            log_file=data.get("log_file"),
+            content=data.get("content", ""),
+            lines=data.get("lines", 0),
+            truncated=data.get("truncated", False),
+        )
+
+    def get_container_logs(self, max_lines: int = 1000) -> LogContent:
+        """Get logs for this container."""
+        response = self._make_request(
+            f"/api/v1/logs/container/{self.container_id}",
+            params={"lines": max_lines},
+        )
+        data = response.get("data", {})
+        return LogContent(
+            task_id=data.get("task_id"),
+            container_id=data.get("container_id"),
+            log_file=data.get("log_file"),
+            content=data.get("content", ""),
+            lines=data.get("lines", 0),
+            truncated=data.get("truncated", False),
+        )
+
+    def search(self, pattern: str, limit: int = 100) -> list[SearchResult]:
+        """Search logs for a pattern."""
+        response = self._make_request(
+            "/api/v1/logs/search",
+            params={"pattern": pattern, "limit": limit, "scope": "self"},
+        )
+        return [
+            SearchResult(
+                log_file=r["log_file"],
+                line_number=r["line_number"],
+                content=r["content"],
+                task_id=r.get("task_id"),
+                container_id=r.get("container_id"),
+            )
+            for r in response.get("data", {}).get("results", [])
+        ]
+
+    def get_model_output(self, task_id: str) -> LogContent:
+        """Get model output for a specific task."""
+        response = self._make_request(f"/api/v1/logs/model/{task_id}")
+        data = response.get("data", {})
+        return LogContent(
+            task_id=data.get("task_id"),
+            container_id=data.get("container_id"),
+            log_file=data.get("log_file"),
+            content=data.get("content", ""),
+            lines=data.get("lines", 0),
+            truncated=data.get("truncated", False),
+        )
+```
+
+**Also add to `shared/jib_logging/__init__.py`:**
+```python
+from .log_client import LogClient, LogClientError, LogContent, LogEntry, SearchResult
+```
+
+**Acceptance criteria:**
+- [ ] Client works from within container
+- [ ] All endpoints accessible via client methods
+- [ ] Proper error handling with meaningful messages
+- [ ] Environment variable configuration
+
+---
+
+#### Task 2.3: Update jib-logs Utility
+
+**File:** `host-services/utilities/jib-logs/jib-logs` (modify)
+
+**Changes:** Add container detection and gateway routing.
+
+**Add at top of file (after imports):**
 ```python
 def is_in_container() -> bool:
     """Detect if running inside a jib container."""
-    # Primary: Check for JIB_CONTAINER environment variable (set by orchestrator)
+    # Primary: Check for JIB_CONTAINER environment variable
     if os.environ.get("JIB_CONTAINER") == "1":
         return True
 
-    # Secondary: Check for absence of ~/.jib-sharing/ (not mounted in container)
+    # Secondary: Check for absence of ~/.jib-sharing/
     if not Path.home().joinpath(".jib-sharing").exists():
         return True
 
-    # Tertiary: Check for /.dockerenv (standard Docker indicator)
+    # Tertiary: Check for /.dockerenv
     if Path("/.dockerenv").exists():
         return True
 
     return False
+
+
+def use_gateway_api() -> bool:
+    """Check if we should use gateway API for log access."""
+    # In container: always use gateway
+    if is_in_container():
+        return True
+
+    # On host: use filesystem directly
+    return False
 ```
 
-**Migration Steps:**
+**Modify main() to route through gateway when in container:**
+```python
+def main():
+    # ... existing argument parsing ...
 
-1. **Add environment detection** to `jib-logs`:
-   - Set `JIB_CONTAINER=1` in container environment (orchestrator change)
-   - Update `jib-logs` to check `is_in_container()` before filesystem access
+    if use_gateway_api():
+        # Route through gateway API
+        try:
+            from jib_logging import LogClient
+            client = LogClient()
 
-2. **Deprecation period** (2 weeks recommended):
-   - Log warning when direct filesystem access attempted from container
-   - `WARNING: Direct log access deprecated. Use gateway API. This will fail in v2.x.`
-   - Include documentation link in warning
+            if args.task_id:
+                logs = client.get_task_logs(args.task_id)
+                print(logs.content)
+            elif args.search:
+                results = client.search(args.search, limit=args.limit or 100)
+                for r in results:
+                    print(f"{r.log_file}:{r.line_number}: {r.content}")
+            else:
+                entries = client.list_logs(limit=args.limit or 20)
+                for e in entries:
+                    print(f"{e.timestamp} {e.task_id or e.container_id}")
+        except Exception as e:
+            print(f"Error accessing logs via gateway: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Existing direct filesystem logic
+        # ... keep existing implementation ...
+```
 
-3. **Update CLAUDE.md documentation**:
-   - Document new log access patterns
-   - Remove any references to direct log file paths
+**Acceptance criteria:**
+- [ ] In container: uses gateway API
+- [ ] On host: uses filesystem directly
+- [ ] Same CLI interface in both modes
+- [ ] Helpful error messages when gateway unavailable
 
-4. **Update dependent scripts**:
-   - Audit `~/repos/james-in-a-box/` for scripts reading from `~/.jib-sharing/`
-   - Update each to use `LogClient` when in container
+---
 
-5. **Monitoring** (ongoing):
-   - Alert on gateway 403 responses for log access (may indicate missed migration)
-   - Track direct filesystem access attempts via audit logs
-   - Dashboard showing migration progress (gateway API calls vs filesystem attempts)
+#### Task 2.4: Integration Tests
+
+**File:** `gateway-sidecar/tests/test_log_integration.py` (new file)
+
+**Test scenarios:**
+- [ ] Container can access own logs via gateway
+- [ ] Container cannot access other container's logs (403)
+- [ ] Search scoped to own logs
+- [ ] jib-logs utility works in container mode
+- [ ] jib-logs utility works on host
+- [ ] LogClient error handling
+
+**Acceptance criteria:**
+- [ ] End-to-end tests pass in container environment
+- [ ] Tests verify policy enforcement
+- [ ] Tests cover error scenarios
+
+---
+
+### Phase 3: Migration
+
+**Objective:** Migrate existing tools and documentation to use gateway-mediated log access.
+
+#### Task 3.1: Add Environment Variables to Orchestrator
+
+**File:** `jib-container/jib_lib/runtime.py` (modify)
+
+**Changes:** Add container identity environment variables.
+
+```python
+# In _build_docker_command() or equivalent function, add:
+env_args.extend([
+    "-e", "JIB_CONTAINER=1",
+    "-e", f"JIB_CONTAINER_ID={container_id}",
+])
+
+# If task_id is available:
+if task_id:
+    env_args.extend(["-e", f"JIB_TASK_ID={task_id}"])
+```
+
+**Acceptance criteria:**
+- [ ] `JIB_CONTAINER=1` set in all containers
+- [ ] `JIB_CONTAINER_ID` set to container's unique ID
+- [ ] `JIB_TASK_ID` set when processing a task
+
+---
+
+#### Task 3.2: Audit Dependent Scripts
+
+**Files to audit (identified via grep):**
+
+| File | Current Usage | Migration Needed |
+|------|---------------|------------------|
+| `slack-receiver/host_command_handler.py` | Reads task files | No (host-side) |
+| `slack-notifier/slack-notifier.py` | Writes responses | No (host-side) |
+| `jib-logs/jib-logs` | Reads logs | Yes (done in 2.3) |
+| `shared/jib_config/configs/github.py` | Config path | No (not log access) |
+| `jib-container/entrypoint.py` | Path references | Review |
+| `docs/*` | Documentation | Update paths |
+
+**Task:** Review each file and update if needed to use LogClient when in container.
+
+**Acceptance criteria:**
+- [ ] All scripts using log paths audited
+- [ ] Container-side scripts updated to use LogClient
+- [ ] Host-side scripts unchanged (direct access OK)
+
+---
+
+#### Task 3.3: Update CLAUDE.md Documentation
+
+**File:** `CLAUDE.md` (in container image)
+
+**Changes:**
+- Remove references to direct log file paths
+- Document LogClient usage
+- Update jib-logs examples
+
+**Add section:**
+```markdown
+## Accessing Logs
+
+Logs are accessed via the gateway sidecar for security. Direct filesystem access
+to log directories is not available in containers.
+
+### Using LogClient (Python)
+
+```python
+from jib_logging import LogClient
+
+client = LogClient()
+
+# Get logs for a task
+logs = client.get_task_logs("task-20260128-123456")
+print(logs.content)
+
+# Search logs
+results = client.search("error", limit=50)
+for r in results:
+    print(f"{r.line_number}: {r.content}")
+
+# List recent logs
+entries = client.list_logs(limit=20)
+```
+
+### Using jib-logs CLI
+
+```bash
+# View logs for a task
+jib-logs task-20260128-123456
+
+# Search logs
+jib-logs --search "error"
+
+# List recent logs
+jib-logs
+```
+
+**Note:** The `--tail` option is not yet available in gateway mode. Real-time log
+streaming will be added in a future phase.
+```
+
+**Acceptance criteria:**
+- [ ] CLAUDE.md updated with new log access patterns
+- [ ] Old direct-path references removed
+- [ ] Examples work in container
+
+---
+
+#### Task 3.4: Deprecation Warnings (Optional)
+
+**File:** `host-services/utilities/jib-logs/jib-logs`
+
+**Changes:** Add deprecation warning for direct access attempts from container.
+
+```python
+# During migration period, warn about direct access
+if is_in_container() and Path.home().joinpath(".jib-sharing").exists():
+    print(
+        "WARNING: Direct log access from container is deprecated. "
+        "Update to use gateway API (jib-logs or LogClient). "
+        "Direct access will be removed in v2.x.",
+        file=sys.stderr,
+    )
+```
+
+**Acceptance criteria:**
+- [ ] Warning emitted for deprecated access patterns
+- [ ] Warning includes migration guidance
+- [ ] Does not break existing functionality
+
+---
+
+#### Task 3.5: Monitoring and Alerting
+
+**Files:** Gateway audit logs, monitoring configuration
+
+**Changes:**
+- Add metrics for log access operations
+- Alert on elevated 403 rates (may indicate migration issues)
+- Dashboard for log access patterns
+
+**Metrics to track:**
+- `gateway.logs.access.success` - Successful log access by operation type
+- `gateway.logs.access.denied` - Policy denials by reason
+- `gateway.logs.access.latency` - Response time distribution
+- `gateway.logs.direct_access.attempts` - Direct filesystem attempts (during migration)
+
+**Acceptance criteria:**
+- [ ] Audit logs capture all log access
+- [ ] Metrics exportable for monitoring
+- [ ] Alert thresholds defined
+
+---
 
 ### Phase 4: Enhancements (Future)
 
-1. Real-time log streaming via WebSocket
-2. Role-based access for admin/debugging scenarios
-3. Log retention policies via gateway
-4. Log search indexing for better performance
+**Objective:** Add advanced features for improved usability and security.
+
+#### Task 4.1: Real-time Log Streaming (WebSocket)
+
+**Priority:** High (debugging workflow impact)
+
+**Design:**
+- New endpoint: `GET /api/v1/logs/stream/<task_id>`
+- Upgrade to WebSocket connection
+- Same policy enforcement as read access
+- Server-side: use `inotify` to detect new log content
+- Client-side: update LogClient with `stream_logs()` method
+
+**Implementation notes:**
+- Flask-SocketIO or similar for WebSocket support
+- Consider chunking for large log output
+- Heartbeat to detect disconnections
+
+---
+
+#### Task 4.2: Role-Based Access Control
+
+**Priority:** Medium (admin debugging scenarios)
+
+**Design:**
+- Add admin role for cross-container log access
+- Separate authentication mechanism (not container token)
+- Audit all admin access with elevated logging
+
+**Implementation notes:**
+- Admin token stored securely (not in container)
+- Time-limited access sessions
+- Requires human approval for access
+
+---
+
+#### Task 4.3: Log Retention Policies
+
+**Priority:** Low (operational)
+
+**Design:**
+- Gateway API for log cleanup: `POST /api/v1/logs/cleanup`
+- Policy-based retention (by age, by task status)
+- Audit trail for deletions
+
+---
+
+#### Task 4.4: Search Indexing
+
+**Priority:** Low (performance optimization)
+
+**Design:**
+- Background indexer for log content
+- Full-text search with better performance
+- Index updates on log writes
+
+---
+
+## Implementation Checklist Summary
+
+### Phase 1: Gateway Log Endpoints
+- [ ] Task 1.1: Create `log_index.py`
+- [ ] Task 1.2: Create `log_policy.py`
+- [ ] Task 1.3: Create `log_reader.py`
+- [ ] Task 1.4: Add endpoints to `gateway.py`
+- [ ] Task 1.5: Unit tests for log access
+
+### Phase 2: Container Isolation
+- [ ] Task 2.1: Modify container mounts (selective ~/.jib-sharing/)
+- [ ] Task 2.2: Create `LogClient` module
+- [ ] Task 2.3: Update `jib-logs` utility
+- [ ] Task 2.4: Integration tests
+
+### Phase 3: Migration
+- [ ] Task 3.1: Add environment variables to orchestrator
+- [ ] Task 3.2: Audit dependent scripts
+- [ ] Task 3.3: Update CLAUDE.md documentation
+- [ ] Task 3.4: Deprecation warnings (optional)
+- [ ] Task 3.5: Monitoring and alerting
+
+### Phase 4: Enhancements (Future)
+- [ ] Task 4.1: Real-time log streaming (WebSocket)
+- [ ] Task 4.2: Role-based access control
+- [ ] Task 4.3: Log retention policies
+- [ ] Task 4.4: Search indexing
 
 ## Related ADRs
 
