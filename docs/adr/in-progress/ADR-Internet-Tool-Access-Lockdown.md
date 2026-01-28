@@ -274,20 +274,18 @@ The jib container uses `git` and `gh` CLI wrappers that:
 
 ### Rate Limiting
 
-The gateway implements rate limiting to stay under GitHub API limits (5,000 requests/hour for authenticated users, 5,000-15,000 for GitHub App installations):
+The gateway delegates rate limiting to GitHub rather than implementing its own layer.
 
-| Endpoint | Rate Limit | Window | Rationale |
-|----------|------------|--------|-----------|
-| `/api/git/push` | 1,000 requests | 1 hour | Well under GitHub limits |
-| `/api/gh/pr/create` | 500 requests | 1 hour | Well under GitHub limits |
-| `/api/gh/pr/comment` | 2,000 requests | 1 hour | Comments are frequent operations |
-| `/api/gh/pr/close` | 500 requests | 1 hour | Match PR creation limit |
-| All endpoints combined | 4,000 requests | 1 hour | Stay under GitHub's 5,000/hr limit |
+**Rationale:**
+- GitHub enforces its own rate limits (5,000 requests/hour for authenticated users, 5,000-15,000 for GitHub App installations)
+- The container is already authenticated via shared secret and trusted
+- Gateway-level rate limiting caused false positives during legitimate high-velocity work (e.g., git fetch operations during active development)
+- Maintaining a separate rate limiting layer adds complexity without meaningful security benefit
 
-**Rate limit exceeded behavior:**
-- Return HTTP 429 Too Many Requests
-- Include `Retry-After` header
-- Log the rate limit event with full context
+**Observability:**
+- The gateway logs warnings when GitHub returns rate limit errors (HTTP 403 with rate limit message)
+- GitHub's `X-RateLimit-*` response headers indicate remaining quota
+- If rate limiting issues emerge, per-operation logging can be added to track request patterns
 
 ### Audit Log Specification
 
@@ -312,8 +310,7 @@ All gateway operations produce structured audit logs in JSON format:
   },
   "policy_checks": {
     "force_push_blocked": false,
-    "protected_branch_blocked": false,
-    "rate_limit_remaining": 28
+    "protected_branch_blocked": false
   }
 }
 ```
@@ -322,8 +319,8 @@ All gateway operations produce structured audit logs in JSON format:
 
 **Alert triggers:**
 - Any denied operation (policy violation)
-- Rate limit exceeded
 - Authentication failure
+- GitHub rate limit errors (HTTP 403 from GitHub API)
 - Unusual patterns (e.g., >10 PRs in 10 minutes)
 
 ### Supply Chain Considerations

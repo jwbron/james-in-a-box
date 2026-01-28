@@ -8,7 +8,6 @@ The gateway holds GitHub credentials and enforces ownership policies.
 Security:
     - Authentication via shared secret (JIB_GATEWAY_SECRET)
     - Listens on all interfaces (containers access via host.docker.internal)
-    - Rate limiting per operation type
 
 Endpoints:
     POST /api/v1/git/push       - Push to remote (policy: branch_ownership or trusted_user)
@@ -30,9 +29,6 @@ import os
 import secrets
 import subprocess
 import sys
-import time
-from collections import defaultdict
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -121,45 +117,6 @@ DEFAULT_PORT = 9847
 GATEWAY_SECRET = os.environ.get("JIB_GATEWAY_SECRET", "")
 SECRET_FILE = Path.home() / ".config" / "jib" / "gateway-secret"
 
-# Rate limiting configuration (per hour)
-# These limits are set high to support jib's high-velocity workflow while staying
-# below GitHub's 5,000 requests/hour limit for authenticated users. The combined
-# limit of 4,000/hr provides a safety buffer. See ADR-Internet-Tool-Access-Lockdown.
-RATE_LIMITS = {
-    "git_push": 1000,
-    "git_fetch": 2000,  # Higher limit for read operations
-    "gh_pr_create": 500,
-    "gh_pr_comment": 2000,
-    "gh_pr_edit": 500,
-    "gh_pr_close": 500,
-    "gh_execute": 2000,
-    "worktree": 500,  # Worktree lifecycle operations
-    "combined": 4000,
-}
-
-
-@dataclass
-class RateLimitState:
-    """Track rate limit state for an operation."""
-
-    requests: list[float] = field(default_factory=list)
-
-    def count_recent(self, window_seconds: int = 3600) -> int:
-        """Count requests within the time window."""
-        now = time.time()
-        cutoff = now - window_seconds
-        # Clean old entries
-        self.requests = [t for t in self.requests if t > cutoff]
-        return len(self.requests)
-
-    def record(self) -> None:
-        """Record a new request."""
-        self.requests.append(time.time())
-
-
-# Global rate limit tracking
-_rate_limits: dict[str, RateLimitState] = defaultdict(RateLimitState)
-
 
 def get_gateway_secret() -> str:
     """Get the gateway secret from environment or file."""
@@ -208,38 +165,6 @@ def check_auth() -> tuple[bool, str]:
     return False, "Invalid authorization token"
 
 
-def check_rate_limit(operation: str) -> tuple[bool, str]:
-    """
-    Check if operation is within rate limits.
-
-    Returns:
-        Tuple of (is_allowed, error_message)
-    """
-    # Check operation-specific limit
-    op_limit = RATE_LIMITS.get(operation, 100)
-    op_state = _rate_limits[operation]
-    op_count = op_state.count_recent()
-
-    if op_count >= op_limit:
-        return False, f"Rate limit exceeded for {operation}: {op_count}/{op_limit} per hour"
-
-    # Check combined limit
-    combined_state = _rate_limits["combined"]
-    combined_count = combined_state.count_recent()
-
-    if combined_count >= RATE_LIMITS["combined"]:
-        return (
-            False,
-            f"Combined rate limit exceeded: {combined_count}/{RATE_LIMITS['combined']} per hour",
-        )
-
-    # Record the request
-    op_state.record()
-    combined_state.record()
-
-    return True, ""
-
-
 def require_auth(f):
     """Decorator to require authentication for an endpoint."""
 
@@ -257,28 +182,6 @@ def require_auth(f):
         return f(*args, **kwargs)
 
     return decorated
-
-
-def require_rate_limit(operation: str):
-    """Decorator to enforce rate limiting for an endpoint."""
-
-    def decorator(f):
-        @functools.wraps(f)
-        def decorated(*args, **kwargs):
-            is_allowed, error = check_rate_limit(operation)
-            if not is_allowed:
-                logger.warning(
-                    "Rate limit exceeded",
-                    operation=operation,
-                    endpoint=request.path,
-                    source_ip=request.remote_addr,
-                )
-                return make_error(error, status_code=429)
-            return f(*args, **kwargs)
-
-        return decorated
-
-    return decorator
 
 
 def make_response(
@@ -346,7 +249,6 @@ def health_check():
 
 @app.route("/api/v1/git/push", methods=["POST"])
 @require_auth
-@require_rate_limit("git_push")
 def git_push():
     """
     Handle git push requests.
@@ -546,7 +448,6 @@ def git_push():
 
 @app.route("/api/v1/git/execute", methods=["POST"])
 @require_auth
-@require_rate_limit("git_fetch")  # Use fetch rate limit for general git ops
 def git_execute():
     """
     Execute a git command in the gateway's worktree.
@@ -686,7 +587,6 @@ def git_execute():
 
 @app.route("/api/v1/git/fetch", methods=["POST"])
 @require_auth
-@require_rate_limit("git_fetch")
 def git_fetch():
     """
     Handle git fetch requests.
@@ -859,7 +759,6 @@ def git_fetch():
 
 @app.route("/api/v1/gh/pr/create", methods=["POST"])
 @require_auth
-@require_rate_limit("gh_pr_create")
 def gh_pr_create():
     """
     Create a pull request.
@@ -977,7 +876,6 @@ def gh_pr_create():
 
 @app.route("/api/v1/gh/pr/comment", methods=["POST"])
 @require_auth
-@require_rate_limit("gh_pr_comment")
 def gh_pr_comment():
     """
     Add a comment to a PR.
@@ -1062,7 +960,6 @@ def gh_pr_comment():
 
 @app.route("/api/v1/gh/pr/edit", methods=["POST"])
 @require_auth
-@require_rate_limit("gh_pr_edit")
 def gh_pr_edit():
     """
     Edit a PR title or body.
@@ -1145,7 +1042,6 @@ def gh_pr_edit():
 
 @app.route("/api/v1/gh/pr/close", methods=["POST"])
 @require_auth
-@require_rate_limit("gh_pr_close")
 def gh_pr_close():
     """
     Close a PR.
@@ -1218,7 +1114,6 @@ def gh_pr_close():
 
 @app.route("/api/v1/gh/execute", methods=["POST"])
 @require_auth
-@require_rate_limit("gh_execute")
 def gh_execute():
     """
     Execute a generic gh command.
@@ -1386,7 +1281,6 @@ def map_container_path_to_worktree(
 
 @app.route("/api/v1/worktree/create", methods=["POST"])
 @require_auth
-@require_rate_limit("worktree")
 def worktree_create():
     """
     Create worktrees for a container.
@@ -1479,7 +1373,6 @@ def worktree_create():
 
 @app.route("/api/v1/worktree/delete", methods=["POST"])
 @require_auth
-@require_rate_limit("worktree")
 def worktree_delete():
     """
     Delete worktrees for a container.
@@ -1574,7 +1467,6 @@ def worktree_delete():
 
 @app.route("/api/v1/worktree/list", methods=["GET"])
 @require_auth
-@require_rate_limit("worktree")
 def worktree_list():
     """
     List all active worktrees.
@@ -1636,7 +1528,6 @@ def main():
         port=args.port,
         debug=args.debug,
         auth_enabled=True,
-        rate_limiting_enabled=True,
     )
 
     # Run with production server in production, debug server in debug mode
