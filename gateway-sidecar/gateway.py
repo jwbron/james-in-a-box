@@ -1290,11 +1290,12 @@ def map_container_path_to_worktree(
     """
     Map a container's repo path to the corresponding worktree path.
 
-    Container sends paths like /home/jib/repos/{repo}, but the gateway needs
-    to run git in the worktree at /home/jib/.jib-worktrees/{container_id}/{repo}.
+    Container sends paths like /home/jib/repos/{repo} or subdirectories like
+    /home/jib/repos/{repo}/src/foo, but the gateway needs to run git in the
+    worktree at /home/jib/.jib-worktrees/{container_id}/{repo}[/subdir].
 
     Args:
-        repo_path: The path sent by the container (e.g., /home/jib/repos/myrepo)
+        repo_path: The path sent by the container (e.g., /home/jib/repos/myrepo/src)
         container_id: The container's unique identifier
         operation: Name of the operation for logging purposes
 
@@ -1304,7 +1305,24 @@ def map_container_path_to_worktree(
     if not container_id:
         return repo_path
 
-    repo_name = os.path.basename(repo_path.rstrip("/"))
+    # Extract repo name and any subdirectory from paths like:
+    # /home/jib/repos/myrepo -> repo_name=myrepo, subdir=""
+    # /home/jib/repos/myrepo/src/foo -> repo_name=myrepo, subdir="src/foo"
+    repos_prefix = "/home/jib/repos/"
+    if not repo_path.startswith(repos_prefix):
+        return repo_path
+
+    # Get the path relative to /home/jib/repos/
+    relative_path = repo_path[len(repos_prefix):].rstrip("/")
+    if not relative_path:
+        # Path is exactly /home/jib/repos/ - not a repo
+        return repo_path
+
+    # Split into repo name and subdirectory
+    parts = relative_path.split("/", 1)
+    repo_name = parts[0]
+    subdir = parts[1] if len(parts) > 1 else ""
+
     if not repo_name:
         return repo_path
 
@@ -1312,15 +1330,17 @@ def map_container_path_to_worktree(
     try:
         worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
         if worktree_path.exists():
+            # Append subdirectory if present
+            final_path = worktree_path / subdir if subdir else worktree_path
             logger.debug(
                 f"Mapped container path to worktree for {operation}",
                 container_path=repo_path,
-                worktree_path=str(worktree_path),
+                worktree_path=str(final_path),
                 container_id=container_id,
             )
-            return str(worktree_path)
+            return str(final_path)
     except ValueError as e:
-        logger.warning(
+        logger.debug(
             f"Failed to map container path to worktree for {operation}",
             error=str(e),
             container_id=container_id,
