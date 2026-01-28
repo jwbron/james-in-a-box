@@ -31,21 +31,21 @@ from jib_logging import get_logger
 
 # Import using try/except for both module and standalone script mode
 try:
-    from .repo_visibility import get_repo_visibility, is_repo_private
+    from .error_messages import get_error_message
     from .repo_parser import (
         RepoInfo,
         extract_repo_from_request,
         parse_owner_repo,
     )
-    from .error_messages import get_error_message
+    from .repo_visibility import get_repo_visibility, is_repo_private
 except ImportError:
-    from repo_visibility import get_repo_visibility, is_repo_private
+    from error_messages import get_error_message
     from repo_parser import (
         RepoInfo,
         extract_repo_from_request,
         parse_owner_repo,
     )
-    from error_messages import get_error_message
+    from repo_visibility import get_repo_visibility
 
 
 logger = get_logger("gateway-sidecar.private-repo-policy")

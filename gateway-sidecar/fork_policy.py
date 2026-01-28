@@ -26,15 +26,14 @@ from jib_logging import get_logger
 
 # Import using try/except for both module and standalone script mode
 try:
-    from .repo_visibility import get_repo_visibility, VisibilityType
-    from .repo_parser import RepoInfo, parse_owner_repo
-    from .private_repo_policy import is_private_repo_mode_enabled
     from .error_messages import get_error_message
+    from .private_repo_policy import is_private_repo_mode_enabled
+    from .repo_parser import RepoInfo, parse_owner_repo
+    from .repo_visibility import VisibilityType, get_repo_visibility
 except ImportError:
-    from repo_visibility import get_repo_visibility, VisibilityType
-    from repo_parser import RepoInfo, parse_owner_repo
-    from private_repo_policy import is_private_repo_mode_enabled
     from error_messages import get_error_message
+    from private_repo_policy import is_private_repo_mode_enabled
+    from repo_visibility import get_repo_visibility
 
 
 logger = get_logger("gateway-sidecar.fork-policy")

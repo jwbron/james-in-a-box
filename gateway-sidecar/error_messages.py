@@ -10,7 +10,6 @@ These messages are designed to be helpful for AI agents that may need
 to adjust their behavior based on policy restrictions.
 """
 
-
 # Error message templates for Private Repo Mode
 PRIVATE_REPO_ERROR_MESSAGES = {
     # General visibility errors
@@ -101,9 +100,7 @@ def get_error_message(
     }
 
     # Get template
-    template = PRIVATE_REPO_ERROR_MESSAGES.get(
-        error_type, PRIVATE_REPO_ERROR_MESSAGES["default"]
-    )
+    template = PRIVATE_REPO_ERROR_MESSAGES.get(error_type, PRIVATE_REPO_ERROR_MESSAGES["default"])
 
     # Format with substitutions
     try:

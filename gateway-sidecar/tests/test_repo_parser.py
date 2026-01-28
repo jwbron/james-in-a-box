@@ -2,15 +2,13 @@
 Tests for repo_parser module.
 """
 
-import pytest
-
 # Import from conftest-loaded module
 from repo_parser import (
     RepoInfo,
-    parse_github_url,
-    parse_owner_repo,
     is_github_url,
     normalize_repo_name,
+    parse_github_url,
+    parse_owner_repo,
 )
 
 

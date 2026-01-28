@@ -3,22 +3,17 @@ Tests for repo_visibility module.
 """
 
 import os
-import json
-import tempfile
-from unittest.mock import patch, MagicMock
-from pathlib import Path
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 # Import from conftest-loaded module
 from repo_visibility import (
-    CachedVisibility,
-    RepoVisibilityChecker,
-    get_visibility_checker,
-    get_repo_visibility,
-    is_repo_private,
     DEFAULT_VISIBILITY_CACHE_TTL_READ,
     DEFAULT_VISIBILITY_CACHE_TTL_WRITE,
+    CachedVisibility,
+    RepoVisibilityChecker,
+    get_repo_visibility,
+    get_visibility_checker,
+    is_repo_private,
 )
 
 

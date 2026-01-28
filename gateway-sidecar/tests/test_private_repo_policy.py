@@ -3,18 +3,16 @@ Tests for private_repo_policy module.
 """
 
 import os
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import patch
 
 # Import from conftest-loaded module
 from private_repo_policy import (
-    PrivateRepoPolicyResult,
-    PrivateRepoPolicy,
-    is_private_repo_mode_enabled,
-    get_private_repo_policy,
-    check_private_repo_access,
     PRIVATE_REPO_MODE_VAR,
+    PrivateRepoPolicy,
+    PrivateRepoPolicyResult,
+    check_private_repo_access,
+    get_private_repo_policy,
+    is_private_repo_mode_enabled,
 )
 
 
