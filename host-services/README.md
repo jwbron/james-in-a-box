@@ -10,14 +10,7 @@ This directory contains systemd services and timers that run on the host machine
 | slack-notifier | simple (long-running) | No | Sends Slack notifications |
 | slack-receiver | simple (long-running) | No | Receives Slack messages |
 | context-sync | oneshot | hourly | Syncs Confluence/JIRA context |
-| github-watcher | oneshot | 5min | Monitors GitHub for activity |
-| worktree-watcher | oneshot | 15min | Cleans orphaned git worktrees |
 | github-token-refresher | simple (long-running) | No | Refreshes GitHub App tokens |
-| feature-analyzer-watcher | oneshot | 15min | Detects newly implemented ADRs |
-| conversation-analyzer | oneshot | weekly | Analyzes conversation patterns |
-| adr-researcher | oneshot | weekly | Researches ADR topics |
-| doc-generator | oneshot | weekly | Generates documentation |
-| index-generator | oneshot | weekly | Generates doc index |
 
 ## Systemd Standards
 
@@ -104,7 +97,7 @@ All `setup.sh` scripts should:
 
 ```bash
 # View all JIB timers
-systemctl --user list-timers | grep -E "(context|github|worktree|conversation|adr|doc|index)"
+systemctl --user list-timers | grep -E "(context)"
 
 # Check service status
 systemctl --user status <service-name>
@@ -125,14 +118,6 @@ systemctl --user restart <service-name>
 host-services/
 ├── venv-setup.service       # Python venv setup (oneshot dependency)
 ├── venv-setup.sh            # Setup script for venv-setup service
-├── analysis/
-│   ├── adr-researcher/      # Weekly ADR research
-│   ├── conversation-analyzer/# Weekly conversation analysis
-│   ├── doc-generator/       # Documentation generation
-│   ├── feature-analyzer/    # ADR detection & doc sync (15min)
-│   ├── github-watcher/      # GitHub activity monitor
-│   ├── index-generator/     # Doc index generation
-│   └── spec-enricher/       # Spec enrichment (no systemd)
 ├── slack/
 │   ├── slack-notifier/      # Outbound Slack messages
 │   └── slack-receiver/      # Inbound Slack messages
@@ -140,5 +125,6 @@ host-services/
 │   └── context-sync/        # Confluence/JIRA sync
 └── utilities/
     ├── github-token-refresher/  # Token management
-    └── worktree-watcher/        # Git worktree cleanup
+    ├── jib-logs/                # Log viewer utility
+    └── service-failure-notify/  # Service failure notifications
 ```

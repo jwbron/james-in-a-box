@@ -6,13 +6,11 @@ This directory contains detailed documentation for each major feature category i
 
 | Category | Description | Key Scripts |
 |----------|-------------|-------------|
-| [Communication](communication.md) | Bidirectional Slack integration for human-agent co... | `slack-notifier`, `slack-receiver` |
-| [Context Management](context-management.md) | External knowledge synchronization and persistent ... | `context-sync`, `beads` |
-| [GitHub Integration](github-integration.md) | Automated PR monitoring, code reviews, and CI/CD f... | `github-watcher`, `pr-reviewer` |
-| [Self-Improvement System](self-improvement.md) | LLM efficiency analysis, inefficiency detection, a... | `trace-collector`, `inefficiency-detector` |
-| [Documentation System](documentation-system.md) | Automated documentation generation, sync, and main... | `feature-analyzer`, `doc-generator` |
-| [Custom Commands](container-infrastructure.md) | Part of container infrastructure - slash commands ... | - |
-| [Utilities](utilities.md) | Helper tools, maintenance scripts, and supporting ... | `worktree-watcher`, `test discovery` |
+| [Communication](communication.md) | Bidirectional Slack integration for human-agent communication | `slack-notifier`, `slack-receiver` |
+| [Context Management](context-management.md) | External knowledge synchronization and persistent task tracking | `context-sync`, `beads` |
+| [GitHub Integration](github-integration.md) | GitHub command handling and PR workflows | `github-processor` |
+| [Container Infrastructure](container-infrastructure.md) | Container management, custom commands, rules | `jib` |
+| [Utilities](utilities.md) | Helper tools, maintenance scripts, and supporting services | `discover-tests` |
 
 ## How to Use These Docs
 
@@ -24,18 +22,6 @@ This directory contains detailed documentation for each major feature category i
    - Links to detailed documentation
 3. **Extending a feature**: Check the linked source files and ADRs for implementation details
 
-## Auto-Generation
-
-These documents are maintained by the Feature Analyzer:
-
-```bash
-# Regenerate all feature docs
-feature-analyzer generate-feature-docs
-
-# Update after changes
-feature-analyzer full-repo --repo-root ~/repos/james-in-a-box
-```
-
 ## Related Documentation
 
 - [FEATURES.md](../FEATURES.md) - Complete feature-to-source mapping
@@ -44,4 +30,4 @@ feature-analyzer full-repo --repo-root ~/repos/james-in-a-box
 
 ---
 
-*Last updated: 2025-12-02*
+*Last updated: 2026-01-28*

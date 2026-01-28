@@ -1,8 +1,8 @@
 # james-in-a-box (jib)
 
-**Collaborative Development Tooling for LLM-Powered Software Engineering**
+**Guided Autonomous Development Tooling for LLM-Powered Software Engineering**
 
-jib is a suite of tools designed to enable collaborative software development between humans and LLM agents. Built as the reference implementation for the [Collaborative Development Framework](https://github.com/jwbron/collaborative-development-framework), it provides the infrastructure needed to run autonomous coding agents in sandboxed environments with human oversight.
+jib is a suite of tools designed to enable guided autonomous software development between humans and LLM agents. Built as the reference implementation for the [Collaborative Development Framework](https://github.com/jwbron/collaborative-development-framework), it provides the infrastructure needed to run autonomous coding agents in sandboxed environments with human oversight.
 
 > **Developed with and for the [Collaborative Development Framework](https://github.com/jwbron/collaborative-development-framework)** - a methodology for human-AI collaborative software development.
 
@@ -12,7 +12,6 @@ jib is a suite of tools designed to enable collaborative software development be
 
 - **Expect breaking changes**: APIs, configurations, and workflows may change without notice
 - **Active bugs**: Known and unknown issues exist throughout the codebase
-- **Experimental features**: Many analyzers and automation systems are works in progress
 - **Limited documentation**: Some features may be undocumented or have outdated docs
 
 **Use at your own risk in production environments.**
@@ -22,8 +21,7 @@ jib is a suite of tools designed to enable collaborative software development be
 jib provides infrastructure for LLM agents to:
 
 - **Develop features**: Implement code changes with tests and documentation
-- **Review PRs**: Automatically review team pull requests
-- **Maintain docs**: Keep documentation synchronized with code
+- **Handle tasks**: Receive work via Slack and execute autonomously
 - **Track work**: Persistent task memory across container sessions
 - **Communicate**: Bidirectional Slack messaging for async workflows
 
@@ -34,25 +32,19 @@ jib provides infrastructure for LLM agents to:
 | **jib container** | Sandboxed Docker environment running Claude Code |
 | **Gateway sidecar** | Policy enforcement for git/gh operations (credential isolation) |
 | **Slack services** | Bidirectional messaging for human-agent communication |
-| **GitHub watcher** | Monitors PRs for comments, failures, review requests |
 | **Context sync** | Pulls Confluence/JIRA documentation for agent context |
 | **Beads** | Git-backed persistent task tracking |
-| **Analyzers** | Experimental code analysis and self-improvement tools |
 
 ## Feature Overview
 
-jib includes 53 top-level features across these categories:
+jib includes 25 top-level features across these categories:
 
 - **Communication**: Slack notifier/receiver, container notifications
 - **Context Management**: Confluence/JIRA sync, Beads task tracking
-- **GitHub Integration**: PR reviews, comment responses, CI failure analysis
-- **Self-Improvement**: LLM trace collection, inefficiency detection (experimental)
-- **Documentation**: ADR research, feature analysis, doc generation (experimental)
-- **Container Infrastructure**: Docker sandbox, worktree isolation
+- **GitHub Integration**: Command handling, PR workflows
+- **Container Infrastructure**: Docker sandbox, custom commands, rules
 
 For the complete feature list with implementation status, see [docs/FEATURES.md](docs/FEATURES.md).
-
-**Note**: Features in the Self-Improvement and Documentation sections are experimental and may produce inconsistent results.
 
 ## Platform Requirements
 
@@ -145,10 +137,8 @@ After setup, configuration is stored in:
 │  ├── gateway-sidecar           (git/gh policy enforcement)  │
 │  ├── slack-notifier.service    (notifications → Slack)      │
 │  ├── slack-receiver.service    (Slack → container tasks)    │
-│  ├── github-watcher.timer      (PR monitoring)              │
 │  ├── context-sync.timer        (Confluence/JIRA sync)       │
-│  ├── github-token-refresher    (credential management)      │
-│  └── worktree-watcher.timer    (cleanup)                    │
+│  └── github-token-refresher    (credential management)      │
 └─────────────────────────────────────────────────────────────┘
                           ↕
 ┌─────────────────────────────────────────────────────────────┐
@@ -215,11 +205,10 @@ jib follows the Collaborative Development Framework's operating model:
 ```bash
 # Check service status
 systemctl --user status slack-notifier slack-receiver
-systemctl --user list-timers | grep -E 'github|context|worktree'
+systemctl --user list-timers | grep context
 
 # View logs
 journalctl --user -u slack-notifier -f
-journalctl --user -u github-watcher -f
 
 # Restart services
 systemctl --user restart slack-notifier slack-receiver
