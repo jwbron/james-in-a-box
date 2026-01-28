@@ -552,6 +552,74 @@ GIT_ALLOWED_COMMANDS = {
             "-X",
         ],
     },
+    "rm": {
+        "allowed_flags": [
+            "--force",
+            "--dry-run",
+            "--cached",
+            "--quiet",
+            "-f",
+            "-n",
+            "-r",
+            "-q",
+        ],
+    },
+    "mv": {
+        "allowed_flags": [
+            "--force",
+            "--dry-run",
+            "--verbose",
+            "-f",
+            "-n",
+            "-v",
+            "-k",
+        ],
+    },
+    "blame": {
+        "allowed_flags": [
+            "--line-porcelain",
+            "--porcelain",
+            "--incremental",
+            "--show-stats",
+            "--show-name",
+            "--show-number",
+            "--show-email",
+            "-L",
+            "-l",
+            "-t",
+            "-w",
+            "-e",
+            "-n",
+            "-s",
+            "-f",
+        ],
+    },
+    "reflog": {
+        "allowed_flags": [
+            "--all",
+            "--date",
+            "--format",
+            "--oneline",
+            "--max-count",
+            # Note: -n is NOT included because FLAG_NORMALIZATION maps -n → --dry-run globally.
+            # Users should use --max-count=N instead.
+        ],
+    },
+    "describe": {
+        "allowed_flags": [
+            "--tags",
+            "--all",
+            "--long",
+            "--abbrev",
+            "--always",
+            "--dirty",
+            "--broken",
+            "--match",
+            "--exclude",
+            "--first-parent",
+            "--contains",
+        ],
+    },
     "config": {
         "allowed_flags": [
             "--get",

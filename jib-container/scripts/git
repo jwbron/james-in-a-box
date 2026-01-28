@@ -166,10 +166,12 @@ print(json.dumps({
         # Show error message
         echo "ERROR: $message" >&2
 
-        # Show details if available
-        local details
-        details=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stderr', '') if d else '')" 2>/dev/null)
-        [ -n "$details" ] && echo "$details" >&2
+        # Show stdout and stderr from failed command (git merge conflicts often write to stdout)
+        local stdout stderr
+        stdout=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stdout', '') if d else '')" 2>/dev/null)
+        stderr=$(echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin).get('data', {}); print(d.get('stderr', '') if d else '')" 2>/dev/null)
+        [ -n "$stdout" ] && echo "$stdout" >&2
+        [ -n "$stderr" ] && echo "$stderr" >&2
 
         # Special handling for error codes
         case "$http_code" in

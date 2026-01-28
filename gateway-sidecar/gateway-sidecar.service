@@ -16,7 +16,7 @@ ExecStartPre=-/usr/bin/docker rm -f jib-gateway
 
 # Run container via startup script that generates mounts dynamically
 # This ensures mounts are always current, even if setup.py hasn't been re-run
-ExecStart=%h/khan/james-in-a-box/gateway-sidecar/start-gateway.sh
+ExecStart=%h/repos/james-in-a-box/gateway-sidecar/start-gateway.sh
 
 ExecStop=/usr/bin/docker stop jib-gateway
 
