@@ -1313,7 +1313,7 @@ def map_container_path_to_worktree(
         return repo_path
 
     # Get the path relative to /home/jib/repos/
-    relative_path = repo_path[len(repos_prefix):].rstrip("/")
+    relative_path = repo_path[len(repos_prefix) :].rstrip("/")
     if not relative_path:
         # Path is exactly /home/jib/repos/ - not a repo
         return repo_path
