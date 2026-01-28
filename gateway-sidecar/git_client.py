@@ -279,8 +279,9 @@ GIT_ALLOWED_COMMANDS = {
             "--merges",
             "--first-parent",
             "--reverse",
-            "-n",
             "--max-count",
+            # Note: -n is NOT included because FLAG_NORMALIZATION maps -n → --dry-run globally.
+            # Users should use --max-count=N or -3 (numeric shorthand) instead.
             "--since",
             "--until",
             "--author",
@@ -714,13 +715,13 @@ def validate_git_args(operation: str, args: list[str]) -> tuple[bool, str, list[
     Returns:
         Tuple of (is_valid, error_message, normalized_args)
     """
-    if not args:
-        return True, "", []
-
-    # Get operation config
+    # Validate operation first (before checking args)
     op_config = GIT_ALLOWED_COMMANDS.get(operation)
     if not op_config:
         return False, f"Unknown operation: {operation}", []
+
+    if not args:
+        return True, "", []
 
     allowed_flags = set(op_config["allowed_flags"])
     normalized = []

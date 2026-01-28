@@ -85,10 +85,11 @@ def validate_identifier(value: str, name: str) -> None:
     """
     if not value:
         raise ValueError(f"Invalid {name}: cannot be empty")
-    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$", value):
-        raise ValueError(f"Invalid {name}: must be alphanumeric with ._- allowed")
+    # Check path traversal first for specific error message
     if ".." in value:
         raise ValueError(f"Invalid {name}: path traversal not allowed")
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$", value):
+        raise ValueError(f"Invalid {name}: must be alphanumeric with ._- allowed")
 
 
 class WorktreeManager:
