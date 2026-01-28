@@ -179,6 +179,7 @@ class WorktreeManager:
                 git_cmd("rev-parse", "--verify", branch_name),
                 cwd=main_repo,
                 capture_output=True,
+                check=False,
             ).returncode
             == 0
         )
@@ -195,6 +196,7 @@ class WorktreeManager:
                 cwd=main_repo,
                 capture_output=True,
                 text=True,
+                check=False,
             )
         else:
             # Create new branch from base
@@ -210,6 +212,7 @@ class WorktreeManager:
                 cwd=main_repo,
                 capture_output=True,
                 text=True,
+                check=False,
             )
 
         if result.returncode != 0:
@@ -319,6 +322,7 @@ class WorktreeManager:
                 cwd=worktree_path,
                 capture_output=True,
                 text=True,
+                check=False,
             )
             has_changes = bool(status.stdout.strip())
 
@@ -345,6 +349,7 @@ class WorktreeManager:
                 cwd=main_repo,
                 capture_output=True,
                 text=True,
+                check=False,
             )
 
             if remove_result.returncode != 0:
@@ -362,6 +367,7 @@ class WorktreeManager:
                 git_cmd("worktree", "prune"),
                 cwd=main_repo,
                 capture_output=True,
+                check=False,
             )
 
             # Delete the branch if requested
