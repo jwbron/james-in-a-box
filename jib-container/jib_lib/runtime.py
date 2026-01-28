@@ -127,7 +127,12 @@ def _setup_repo_mounts(
             # Worktree: .git is a file
             git_path = Path(worktrees[repo_name]) / ".git"
             if git_path.exists() and git_path.is_file():
-                mount_args.extend(["--mount", f"type=bind,source=/dev/null,destination={container_path}/.git,readonly"])
+                mount_args.extend(
+                    [
+                        "--mount",
+                        f"type=bind,source=/dev/null,destination={container_path}/.git,readonly",
+                    ]
+                )
             else:
                 # Fallback to tmpfs if it's somehow a directory
                 mount_args.extend(["--mount", f"type=tmpfs,destination={container_path}/.git"])
