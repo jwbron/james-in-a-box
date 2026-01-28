@@ -579,8 +579,6 @@ def setup_claude(config: Config, logger: Logger) -> None:
                 print(f"    {hook.name}")
 
     # Create settings.json
-    beads_hook = config.claude_dir / "hooks/session-end.sh"
-
     settings = {
         "alwaysThinkingEnabled": True,
         "defaultPermissionMode": "bypassPermissions",
@@ -589,15 +587,6 @@ def setup_claude(config: Config, logger: Logger) -> None:
         "autoUpdate": False,
         "outputStyle": "default",
         "defaultModel": "opus",
-        "hooks": {
-            "SessionEnd": [
-                {
-                    "hooks": [
-                        {"type": "command", "command": f"bash {beads_hook}"},
-                    ]
-                }
-            ],
-        },
     }
 
     settings_file = config.claude_dir / "settings.json"
