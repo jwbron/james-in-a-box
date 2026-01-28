@@ -17,8 +17,10 @@ RUN apt-get update && apt-get install -y \
 
 # Generate self-signed certificate for Squid SSL bump (peek/splice, not MITM)
 # This certificate is used only to inspect the SNI field, not to decrypt traffic
+# Using 10-year validity (3650 days) since this is internal-only and doesn't
+# require the security properties of short-lived certificates (no chain of trust)
 RUN mkdir -p /etc/squid/ssl /var/log/squid /var/spool/squid && \
-    openssl req -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 \
+    openssl req -new -newkey rsa:2048 -sha256 -days 3650 -nodes -x509 \
         -subj "/CN=jib-gateway-proxy/O=jib/C=US" \
         -keyout /etc/squid/squid-ca.pem \
         -out /etc/squid/squid-ca.pem && \

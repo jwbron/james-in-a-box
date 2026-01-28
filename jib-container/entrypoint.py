@@ -742,9 +742,11 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     while elapsed < timeout:
         try:
             # Check gateway API health
+            # Bypass proxy for this local check - gateway is accessed directly
             health_response = requests.get(
                 f"{gateway_url}/api/v1/health",
                 timeout=5,
+                proxies={"http": None, "https": None},
             )
             if health_response.status_code != 200:
                 raise RequestException("Gateway not ready")

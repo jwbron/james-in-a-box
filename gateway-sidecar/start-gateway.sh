@@ -198,6 +198,28 @@ run_phase2_lockdown() {
     echo "Connecting gateway to $EXTERNAL_NETWORK..."
     docker network connect --ip "$GATEWAY_EXTERNAL_IP" "$EXTERNAL_NETWORK" jib-gateway
 
+    # Wait for gateway to be fully ready on both networks
+    # This prevents race conditions where Squid cannot resolve DNS
+    # for allowed domains during the window between container start
+    # and external network connection
+    echo "Waiting for gateway readiness..."
+    local max_wait=30
+    local elapsed=0
+    while [ $elapsed -lt $max_wait ]; do
+        if curl -s --max-time 2 "http://localhost:9847/api/v1/health" >/dev/null 2>&1; then
+            echo "Gateway health check passed"
+            break
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+        echo "  Waiting for gateway... ($elapsed/$max_wait)"
+    done
+
+    if [ $elapsed -ge $max_wait ]; then
+        echo "WARNING: Gateway health check timed out after $max_wait seconds"
+        echo "Gateway may not be fully ready. Check logs for errors."
+    fi
+
     echo "Gateway started in lockdown mode (dual-homed)"
     echo ""
     echo "Container topology:"

@@ -315,13 +315,25 @@ def run_claude() -> bool:
     if lockdown:
         # Phase 2: Connect to isolated network with fixed IP
         # Container can only reach gateway, no direct internet access
+        #
+        # DNS Strategy: DNS is disabled (0.0.0.0) to prevent direct hostname
+        # resolution. This is intentional and works because:
+        # 1. HTTP clients (requests, httpx, curl) using HTTP_PROXY/HTTPS_PROXY
+        #    send CONNECT requests to the proxy with the hostname, and the
+        #    proxy (Squid) resolves DNS on behalf of the client.
+        # 2. Local hostnames (gateway, jib-gateway) are resolved via --add-host
+        #    which populates /etc/hosts.
+        # 3. NO_PROXY bypasses proxy for local connections to gateway.
+        #
+        # If a tool bypasses the proxy env vars, its requests will fail with
+        # DNS resolution errors - this is the intended "fail closed" behavior.
         cmd.extend(
             [
                 "--network",
                 JIB_ISOLATED_NETWORK,
                 "--ip",
                 JIB_CONTAINER_IP,
-                # Disable DNS (no external DNS resolution)
+                # Disable DNS (no external DNS resolution - fail closed)
                 "--dns",
                 "0.0.0.0",
                 # Add gateway hostname for proxy and API access
@@ -574,6 +586,7 @@ def exec_in_new_container(
     # Network configuration based on mode
     if lockdown:
         # Phase 2: Connect to isolated network with fixed IP
+        # DNS is disabled - see interactive mode comments for rationale
         cmd.extend(
             [
                 "--network",
@@ -581,7 +594,7 @@ def exec_in_new_container(
                 "--ip",
                 JIB_CONTAINER_IP,
                 "--dns",
-                "0.0.0.0",  # Disable DNS
+                "0.0.0.0",  # Disable DNS (fail closed - see above)
                 "--add-host",
                 f"gateway:{GATEWAY_ISOLATED_IP}",
             ]

@@ -37,9 +37,22 @@ NETWORK_LOCKDOWN_MODE="${JIB_NETWORK_MODE:-}"
 start_squid() {
     echo "Starting Squid proxy for network lockdown..."
 
-    # Ensure log directory exists and has correct permissions
+    # Ensure log and spool directories exist and are writable
+    # Note: We may not have permission to chown (running as non-root), so we
+    # check writability directly and configure Squid to run with current user.
     mkdir -p /var/log/squid /var/spool/squid
-    chown -R proxy:proxy /var/log/squid /var/spool/squid 2>/dev/null || true
+
+    # Try to set ownership for squid's preferred user, but don't fail if we can't
+    if chown -R proxy:proxy /var/log/squid /var/spool/squid 2>/dev/null; then
+        echo "  Log directories owned by proxy:proxy"
+    else
+        # Running as non-root - verify directories are writable
+        if [ -w /var/log/squid ] && [ -w /var/spool/squid ]; then
+            echo "  Log directories writable by current user ($(id -un))"
+        else
+            echo "WARNING: Log directories may not be writable - Squid logging may fail"
+        fi
+    fi
 
     # Initialize cache directories if needed
     if [ ! -d "/var/spool/squid/00" ]; then

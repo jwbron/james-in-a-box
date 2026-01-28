@@ -18,6 +18,10 @@ codeload.github.com
 uploads.github.com
 avatars.githubusercontent.com
 user-images.githubusercontent.com
+# Additional GitHub domains for complete functionality
+github.githubassets.com
+media.githubusercontent.com
+gist.githubusercontent.com
 
 # Note: PyPI, npm, and other package managers are intentionally NOT included
 # All dependencies must be pre-installed in the Docker image
