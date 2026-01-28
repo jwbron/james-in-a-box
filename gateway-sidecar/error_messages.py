@@ -8,9 +8,43 @@ Provides clear, actionable error messages that explain:
 
 These messages are designed to be helpful for AI agents that may need
 to adjust their behavior based on policy restrictions.
+
+Security Note:
+    In production environments, detailed error messages may leak information
+    about repository existence and visibility. Set VERBOSE_ERRORS=false to
+    use generic messages that don't reveal repository details.
 """
 
-# Error message templates for Private Repo Mode
+import os
+
+
+# Environment variable to control error verbosity
+# In production, set to "false" to prevent information leakage
+VERBOSE_ERRORS_VAR = "VERBOSE_ERRORS"
+
+
+def _is_verbose_errors() -> bool:
+    """Check if verbose error messages are enabled."""
+    value = os.environ.get(VERBOSE_ERRORS_VAR, "true").lower().strip()
+    return value in ("true", "1", "yes")
+
+# Generic error messages for production (non-verbose mode)
+# These don't reveal repository names or visibility status
+GENERIC_ERROR_MESSAGES = {
+    "visibility_unknown": "Operation blocked by policy. Could not verify target.",
+    "push_public": "Operation blocked by policy.",
+    "fetch_public": "Operation blocked by policy.",
+    "clone_public": "Operation blocked by policy.",
+    "pr_create_public": "Operation blocked by policy.",
+    "pr_comment_public": "Operation blocked by policy.",
+    "issue_public": "Operation blocked by policy.",
+    "fork_from_public": "Fork operation blocked by policy.",
+    "fork_to_public": "Fork operation blocked by policy.",
+    "gh_execute_public": "Operation blocked by policy.",
+    "default": "Operation blocked by Private Repo Mode policy.",
+}
+
+# Error message templates for Private Repo Mode (verbose mode)
 PRIVATE_REPO_ERROR_MESSAGES = {
     # General visibility errors
     "visibility_unknown": (
@@ -81,17 +115,25 @@ def get_error_message(
     """
     Get a user-friendly error message for a policy violation.
 
+    In non-verbose mode (VERBOSE_ERRORS=false), returns generic messages
+    that don't reveal repository names or visibility status, preventing
+    information leakage in production environments.
+
     Args:
         error_type: Type of error (e.g., 'push_public', 'visibility_unknown')
-        repo: Repository name for substitution
+        repo: Repository name for substitution (only used in verbose mode)
         operation: Operation name for substitution
-        hint: Additional hint text
+        hint: Additional hint text (only used in verbose mode)
         **kwargs: Additional substitution variables
 
     Returns:
         Formatted error message
     """
-    # Build substitution dict
+    # In non-verbose mode, return generic messages that don't leak info
+    if not _is_verbose_errors():
+        return GENERIC_ERROR_MESSAGES.get(error_type, GENERIC_ERROR_MESSAGES["default"])
+
+    # Build substitution dict for verbose mode
     subs = {
         "repo": repo or "unknown",
         "operation": operation or "operation",
