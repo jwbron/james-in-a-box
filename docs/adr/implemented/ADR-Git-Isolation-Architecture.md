@@ -1,6 +1,6 @@
 # ADR: Git Isolation Architecture
 
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-01-27
 **Supersedes:** ADR-Container-Worktree-Isolation
 **Related PRs:** #590, #592, #594
@@ -1405,7 +1405,7 @@ def compare_local_vs_gateway():
 3. **Phase 1: Deploy gateway updates**
    - [ ] Add new git operation endpoints
    - [ ] Add worktree lifecycle endpoints
-   - [ ] Add path mapping logic
+   - [x] Add path mapping logic
    - [ ] Deploy and test gateway
 
 4. **Phase 2: Update container**

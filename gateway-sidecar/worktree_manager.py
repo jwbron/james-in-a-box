@@ -39,9 +39,11 @@ except ImportError:
 
 logger = get_logger("gateway-sidecar.worktree-manager")
 
-# Default paths - can be overridden for testing
-WORKTREE_BASE_DIR = Path.home() / ".jib-worktrees"
-REPOS_BASE_DIR = Path.home() / "repos"
+# Default paths - hardcoded to /home/jib to match container mounts
+# The gateway container runs as root but mounts are at /home/jib/*
+# (see start-gateway.sh CONTAINER_HOME and git_client.py ALLOWED_REPO_PATHS)
+WORKTREE_BASE_DIR = Path("/home/jib/.jib-worktrees")
+REPOS_BASE_DIR = Path("/home/jib/repos")
 
 
 @dataclass

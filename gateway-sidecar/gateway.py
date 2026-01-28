@@ -369,6 +369,7 @@ def git_push():
     remote = data.get("remote", "origin")
     refspec = data.get("refspec", "")
     force = data.get("force", False)
+    container_id = data.get("container_id")
 
     if not repo_path:
         return make_error("Missing repo_path")
@@ -384,11 +385,31 @@ def git_push():
         )
         return make_error(path_error, status_code=403)
 
+    # Map container path to worktree path if container_id is provided
+    exec_path = repo_path
+    if container_id:
+        repo_name = os.path.basename(repo_path.rstrip("/"))
+        if repo_name:
+            manager = get_worktree_manager()
+            try:
+                worktree_path, _main_repo = manager.get_worktree_paths(
+                    container_id, repo_name
+                )
+                if worktree_path.exists():
+                    exec_path = str(worktree_path)
+                    logger.debug(
+                        "Mapped container path to worktree for push",
+                        container_path=repo_path,
+                        worktree_path=exec_path,
+                    )
+            except ValueError:
+                pass  # Fall through to use original repo_path
+
     # Get remote URL to determine repo
     try:
         result = subprocess.run(
             git_cmd("remote", "get-url", remote),
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=10,
@@ -412,7 +433,7 @@ def git_push():
         try:
             result = subprocess.run(
                 git_cmd("branch", "--show-current"),
-                cwd=repo_path,
+                cwd=exec_path,
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -484,7 +505,7 @@ def git_push():
 
         result = subprocess.run(
             cmd,
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -622,13 +643,44 @@ def git_execute():
         )
         return make_error(args_error, status_code=400)
 
+    # Map container path to worktree path if container_id is provided
+    # Container sends /home/jib/repos/{repo}, gateway runs in worktree at
+    # /home/jib/.jib-worktrees/{container_id}/{repo}
+    exec_path = repo_path
+    if container_id:
+        # Extract repo name from container path
+        # e.g., /home/jib/repos/james-in-a-box -> james-in-a-box
+        repo_name = os.path.basename(repo_path.rstrip("/"))
+        if repo_name:
+            manager = get_worktree_manager()
+            try:
+                worktree_path, _main_repo = manager.get_worktree_paths(
+                    container_id, repo_name
+                )
+                if worktree_path.exists():
+                    exec_path = str(worktree_path)
+                    logger.debug(
+                        "Mapped container path to worktree",
+                        container_path=repo_path,
+                        worktree_path=exec_path,
+                        container_id=container_id,
+                    )
+            except ValueError as e:
+                logger.warning(
+                    "Failed to map container path to worktree",
+                    error=str(e),
+                    container_id=container_id,
+                    repo_name=repo_name,
+                )
+                # Fall through to use original repo_path
+
     # Build command
     cmd = git_cmd(operation, *validated_args)
 
     try:
         result = subprocess.run(
             cmd,
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -711,6 +763,7 @@ def git_fetch():
     remote = data.get("remote", "origin")
     operation = data.get("operation", "fetch")  # fetch or ls-remote
     extra_args = data.get("args", [])
+    container_id = data.get("container_id")
 
     if not repo_path:
         return make_error("Missing repo_path")
@@ -740,11 +793,31 @@ def git_fetch():
         )
         return make_error(args_error, status_code=400)
 
+    # Map container path to worktree path if container_id is provided
+    exec_path = repo_path
+    if container_id:
+        repo_name = os.path.basename(repo_path.rstrip("/"))
+        if repo_name:
+            manager = get_worktree_manager()
+            try:
+                worktree_path, _main_repo = manager.get_worktree_paths(
+                    container_id, repo_name
+                )
+                if worktree_path.exists():
+                    exec_path = str(worktree_path)
+                    logger.debug(
+                        f"Mapped container path to worktree for {operation}",
+                        container_path=repo_path,
+                        worktree_path=exec_path,
+                    )
+            except ValueError:
+                pass  # Fall through to use original repo_path
+
     # Get remote URL to determine repo
     try:
         result = subprocess.run(
             git_cmd("remote", "get-url", remote),
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=10,
@@ -794,7 +867,7 @@ def git_fetch():
 
         result = subprocess.run(
             cmd,
-            cwd=repo_path,
+            cwd=exec_path,
             capture_output=True,
             text=True,
             timeout=120,

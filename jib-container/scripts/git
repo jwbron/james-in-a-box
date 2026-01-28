@@ -215,7 +215,8 @@ print(json.dumps({
     'repo_path': '$repo_path',
     'remote': '$remote',
     'refspec': '$refspec',
-    'force': $force_json
+    'force': $force_json,
+    'container_id': '$CONTAINER_ID'
 }))
 ")
 
@@ -302,12 +303,14 @@ fetch_via_gateway() {
     payload=$(python3 -c "
 import json
 import sys
+import os
 args = sys.argv[4:] if len(sys.argv) > 4 else []
 print(json.dumps({
     'repo_path': sys.argv[1],
     'remote': sys.argv[2],
     'operation': sys.argv[3],
-    'args': args
+    'args': args,
+    'container_id': os.environ.get('CONTAINER_ID', '')
 }))
 " "$repo_path" "$remote" "$operation" "${extra_args[@]}")
 

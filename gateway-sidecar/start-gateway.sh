@@ -16,7 +16,7 @@ CONTAINER_HOME="/home/jib"
 
 # Load secrets from secrets.env if it exists
 # This file contains sensitive environment variables like GITHUB_INCOGNITO_TOKEN
-SECRETS_ENV_FILE="$HOME_DIR/.config/secrets.env"
+SECRETS_ENV_FILE="$HOME_DIR/.config/jib/secrets.env"
 if [ -f "$SECRETS_ENV_FILE" ]; then
     # shellcheck source=/dev/null
     set -a  # Automatically export all variables
@@ -54,8 +54,9 @@ MOUNTS+=(-v "$CONFIG_FILE:/config/repositories.yaml:ro,z")
 MOUNTS+=(-v "$SECRETS_DIR:/secrets:ro,z")
 
 # Repos directory - mount at /home/jib/repos to match container paths
+# Needs RW for git worktree add (writes to .git/worktrees/)
 if [ -d "$REPOS_DIR" ]; then
-    MOUNTS+=(-v "$REPOS_DIR:$CONTAINER_HOME/repos:ro,z")
+    MOUNTS+=(-v "$REPOS_DIR:$CONTAINER_HOME/repos:z")
 fi
 
 # Worktrees directory - mount at /home/jib/.jib-worktrees
