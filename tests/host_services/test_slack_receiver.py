@@ -312,9 +312,7 @@ class TestSlackReceiverMessageFiltering:
             if subtype is not None:
                 return False
             user_id = event.get("user")
-            if not user_id:
-                return False
-            return True
+            return user_id
 
         # Bot message - should be ignored
         bot_event = {
@@ -333,9 +331,7 @@ class TestSlackReceiverMessageFiltering:
             if subtype is not None:
                 return False
             user_id = event.get("user")
-            if not user_id:
-                return False
-            return True
+            return user_id
 
         # Message changed - should be ignored
         changed_event = {
@@ -353,9 +349,7 @@ class TestSlackReceiverMessageFiltering:
             if subtype is not None:
                 return False
             user_id = event.get("user")
-            if not user_id:
-                return False
-            return True
+            return user_id
 
         # Message with no user - should be ignored
         no_user_event = {
@@ -372,9 +366,7 @@ class TestSlackReceiverMessageFiltering:
             if subtype is not None:
                 return False
             user_id = event.get("user")
-            if not user_id:
-                return False
-            return True
+            return user_id
 
         # Regular user message - should be processed
         user_event = {
