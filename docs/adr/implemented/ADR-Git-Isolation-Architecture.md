@@ -20,30 +20,11 @@ This document describes how we safely allow multiple AI agent containers to work
 
 ---
 
-## Glossary
+## Motivation
 
-| Term | Definition |
-|------|------------|
-| **Agent container** | A Docker container running an AI coding agent (e.g., Claude) |
-| **Gateway sidecar** | A trusted service that handles git operations requiring credentials or policy enforcement |
-| **Worktree** | A git feature allowing multiple working directories to share one repository's history |
-| **Working directory** | The folder containing actual source code files the agent edits |
-| **Git metadata** | Internal git files (`.git/` directory) containing commit history, staging area, and configuration |
+During development, we discovered that behavioral controls (instructions telling agents not to access other workspaces) are insufficient. A container with a corrupted `.git` pointer could be directed to another container's workspace, allowing it to operate on the wrong branch, see another agent's staged changes, or commit to the wrong branch.
 
----
-
-## Background: The Security Incident
-
-During routine operations, we discovered a critical isolation failure. An agent (Container A) had a corrupted `.git` file that pointed to a non-existent directory. When attempting self-repair, the agent modified this file to point to another agent's (Container B) git metadata directory.
-
-**The result:**
-- Container A operated on Container B's branch
-- Container A saw Container B's staged changes and commit history
-- Container A could have committed to the wrong branch, corrupting Container B's work
-
-**Root cause:** Both containers had access to the parent directory containing all worktree metadata. A container could modify its `.git` pointer file to access any other container's workspace.
-
-This incident demonstrated that behavioral controls (instructions telling agents not to access other workspaces) are insufficient. We needed architectural enforcement.
+This architecture enforces isolation at the filesystem level—containers simply cannot see other workspaces or git metadata, regardless of instructions or configuration.
 
 ---
 
@@ -286,11 +267,22 @@ The gateway implements an explicit allowlist. Operations not on this list are re
 | `git push --force` to others' branches | Could destroy others' work |
 | `git config --global` | Could affect other agents |
 | `git remote add/remove` | Could redirect pushes |
-| Any operation with `--exec` or `-c` flags | Command injection risk |
+
+### Blocked Flags
+
+The gateway blocks dangerous flags across all operations:
+
+| Flag | Risk |
+|------|------|
+| `--exec`, `-c` | Command injection via config/scripts |
+| `--upload-pack`, `--receive-pack` | Arbitrary command execution on fetch/push |
+| `--config`, `-c` | Runtime config override |
+| `--no-verify` | Skip hooks (defense in depth) |
+| `--git-dir`, `--work-tree` | Path traversal outside sandbox |
 
 ### Flag Validation
 
-Each operation has an explicit list of allowed flags. Unknown flags are rejected:
+Each operation has an explicit allowlist of permitted flags. Unknown flags are rejected:
 
 ```python
 # Example: 'git commit' allowed flags
@@ -304,7 +296,6 @@ Each operation has an explicit list of allowed flags. Unknown flags are rejected
         "--verbose", "-v",
         "--quiet", "-q",
     ],
-    # Blocked: --no-verify (skip hooks), -c (config override)
 }
 ```
 
