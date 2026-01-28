@@ -120,6 +120,39 @@ ALLOWED_REPO_PATHS = [
     "/repos/",  # Legacy path
 ]
 
+# Directories that contain repos but are NOT repos themselves
+# Git operations in these directories are expected to fail
+REPOS_PARENT_DIRECTORIES = [
+    "/home/jib/repos",
+    "/home/jib/.jib-worktrees",
+    "/repos",
+]
+
+
+def is_repos_parent_directory(path: str) -> bool:
+    """
+    Check if a path is a "repos parent" directory - a directory that contains
+    repos but is not itself a git repository.
+
+    Git operations like `rev-parse` are commonly run to detect if a directory
+    is a repo. When run in these parent directories, they are expected to fail.
+    This function helps identify such cases to avoid noisy warning logs.
+
+    Args:
+        path: The path to check
+
+    Returns:
+        True if the path is a repos parent directory (not an actual repo)
+    """
+    if not path:
+        return False
+
+    try:
+        real_path = os.path.realpath(path).rstrip("/")
+        return any(real_path == parent_dir.rstrip("/") for parent_dir in REPOS_PARENT_DIRECTORIES)
+    except Exception:
+        return False
+
 
 def validate_repo_path(path: str) -> tuple[bool, str]:
     """

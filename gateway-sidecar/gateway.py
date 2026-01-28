@@ -56,6 +56,7 @@ try:
         get_authenticated_remote_target,
         get_token_for_repo,
         git_cmd,
+        is_repos_parent_directory,
         validate_git_args,
         validate_repo_path,
     )
@@ -79,6 +80,7 @@ except ImportError:
         get_authenticated_remote_target,
         get_token_for_repo,
         git_cmd,
+        is_repos_parent_directory,
         validate_git_args,
         validate_repo_path,
     )
@@ -530,6 +532,28 @@ def git_execute():
         )
         return make_error(path_error, status_code=403)
 
+    # Check if this is a "repos parent" directory (contains repos but isn't one)
+    # Git operations in these directories are expected to fail - this is commonly
+    # caused by tools like Claude Code running `git rev-parse` to detect if they're
+    # in a repo. Return a clear error without logging a warning (since this is
+    # expected behavior, not an error condition).
+    if is_repos_parent_directory(repo_path):
+        logger.debug(
+            "Git operation in repos parent directory",
+            operation=operation,
+            repo_path=repo_path,
+            container_id=container_id,
+        )
+        return make_error(
+            f"Path '{repo_path}' is a directory containing repositories, not a git repository. "
+            "Run git commands from within a specific repository directory.",
+            status_code=400,
+            details={
+                "hint": "This directory contains repositories but is not itself a git repository.",
+                "repo_path": repo_path,
+            },
+        )
+
     # Validate operation is in allowlist
     if operation not in GIT_ALLOWED_COMMANDS:
         audit_log(
@@ -608,18 +632,37 @@ def git_execute():
                 },
             )
         else:
-            audit_log(
-                "git_execute_failed",
-                operation,
-                success=False,
-                details={
-                    "repo_path": repo_path,
-                    "git_args": validated_args,
-                    "returncode": result.returncode,
-                    "container_id": container_id,
-                    "stderr": result.stderr[:500] if result.stderr else None,
-                },
+            # Check if this is an expected failure (e.g., repo detection queries)
+            # These happen when tools check if a directory is a git repo
+            is_expected_failure = result.stderr and (
+                "not a git repository" in result.stderr
+                or "not inside a git repository" in result.stderr
             )
+
+            if is_expected_failure:
+                # Log at debug level for expected failures - these are typically
+                # from tools probing to detect if they're in a git repo
+                logger.debug(
+                    "Git operation failed (expected - not a git repository)",
+                    operation=operation,
+                    repo_path=repo_path,
+                    container_id=container_id,
+                )
+            else:
+                # Log at warning level for unexpected failures
+                audit_log(
+                    "git_execute_failed",
+                    operation,
+                    success=False,
+                    details={
+                        "repo_path": repo_path,
+                        "git_args": validated_args,
+                        "returncode": result.returncode,
+                        "container_id": container_id,
+                        "stderr": result.stderr[:500] if result.stderr else None,
+                    },
+                )
+
             return make_error(
                 f"git {operation} failed",
                 status_code=500,
