@@ -7,52 +7,106 @@
 
 ---
 
-# Option 1: Gateway-Managed Git (Recommended)
+# Option 1: Gateway-Managed Worktrees (Recommended)
 
-The simplest architecture: containers have read-only git access, all writes go through the gateway.
+The simplest architecture: gateway manages git worktrees, containers only see their working directory.
+
+## Key Design Goals
+
+1. **Fast workspace creation** - New container/request gets isolated workspace in milliseconds
+2. **Efficient storage** - All worktrees share git objects (no file duplication)
+3. **True isolation** - Containers can't see or affect each other
+4. **No path conflicts** - Containers never touch git metadata
+5. **Same architecture everywhere** - Works on local, VM, and Cloud Run
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│                         Shared Volume                               │
-│                                                                     │
-│  /workspace/{container-id}/                                         │
-│  └── repo/                    ← Container's working directory (RW)  │
-│                                                                     │
-│  /workspace/git-data/                                               │
-│  └── repo.git/                ← Shared git data (gateway-managed)   │
-│      ├── objects/                                                   │
-│      ├── refs/                                                      │
-│      └── ...                                                        │
-└────────────────────────────────────────────────────────────────────┘
-              │                              │
-              ▼                              ▼
-┌──────────────────────────┐    ┌──────────────────────────┐
-│     jib container        │    │    gateway sidecar       │
-│                          │    │                          │
-│  Mounts:                 │    │  Mounts:                 │
-│  - /workspace/{id}/repo  │    │  - /workspace/ (all)     │
-│    as READ-WRITE         │    │    as READ-WRITE         │
-│                          │    │                          │
-│  Can do:                 │    │  Manages:                │
-│  - Edit source files     │    │  - All git operations    │
-│  - Read git (via gateway)│    │  - Per-container state   │
-│                          │    │  - Push/fetch to GitHub  │
-│  Cannot do:              │    │                          │
-│  - Direct git writes     │    │                          │
-└──────────────────────────┘    └──────────────────────────┘
-              │                              ▲
-              │         HTTP API             │
-              └──────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            Shared Volume                                 │
+│                                                                          │
+│  /workspace/                                                             │
+│  ├── repos/                                                              │
+│  │   └── my-repo.git/              ← Main repo (bare or .git directory) │
+│  │       ├── objects/               ← Shared objects (all worktrees)    │
+│  │       ├── refs/                  ← Shared refs                       │
+│  │       └── worktrees/             ← Worktree admin (gateway-managed)  │
+│  │           ├── wt-abc123/         ← Metadata for worktree abc123      │
+│  │           └── wt-def456/         ← Metadata for worktree def456      │
+│  │                                                                       │
+│  └── worktrees/                     ← Working directories                │
+│      ├── abc123/                                                         │
+│      │   └── my-repo/               ← Container abc123's working dir    │
+│      └── def456/                                                         │
+│          └── my-repo/               ← Container def456's working dir    │
+└─────────────────────────────────────────────────────────────────────────┘
+                    │                              │
+                    ▼                              ▼
+     ┌──────────────────────────┐    ┌──────────────────────────┐
+     │     jib container        │    │    gateway sidecar       │
+     │                          │    │                          │
+     │  Mounts ONLY:            │    │  Mounts ALL:             │
+     │  /workspace/worktrees/   │    │  /workspace/             │
+     │    {id}/my-repo/         │    │                          │
+     │                          │    │  Manages:                │
+     │  Can do:                 │    │  - Worktree lifecycle    │
+     │  - Edit source files     │    │  - All git operations    │
+     │                          │    │  - Push/fetch to GitHub  │
+     │  Cannot do:              │    │                          │
+     │  - See other worktrees   │    │                          │
+     │  - Access .git metadata  │    │                          │
+     └──────────────────────────┘    └──────────────────────────┘
+                    │                              ▲
+                    │           HTTP API           │
+                    └──────────────────────────────┘
 ```
 
 ## How It Works
 
+### Worktree Lifecycle (Gateway-Managed)
+
+```
+Container Request                    Gateway
+       │                                │
+       │  POST /api/v1/worktree/create  │
+       │  {repo: "my-repo", id: "abc"}  │
+       │───────────────────────────────►│
+       │                                │
+       │                    ┌───────────┴───────────┐
+       │                    │ git worktree add      │
+       │                    │   /workspace/worktrees│
+       │                    │   /abc/my-repo        │
+       │                    │   -b jib/abc/work     │
+       │                    └───────────┬───────────┘
+       │                                │
+       │  {path: "/workspace/worktrees/ │
+       │   abc/my-repo", branch: "..."}│
+       │◄───────────────────────────────│
+       │                                │
+      ... container does work ...       │
+       │                                │
+       │  POST /api/v1/worktree/delete  │
+       │  {id: "abc"}                   │
+       │───────────────────────────────►│
+       │                                │
+       │                    ┌───────────┴───────────┐
+       │                    │ git worktree remove   │
+       │                    │   /workspace/worktrees│
+       │                    │   /abc/my-repo        │
+       │                    └───────────┬───────────┘
+       │                                │
+```
+
+**Worktree creation is fast** because:
+- No file copying - git just creates metadata + checks out files
+- Objects are shared via hardlinks/reflinks when possible
+- Branch creation is O(1)
+
 ### Container Setup
-1. Each container gets its own working directory: `/workspace/{container-id}/repo/`
-2. Container can freely edit files in its working directory
-3. Container has NO direct access to `.git` - all git operations via gateway API
+1. Request arrives, gateway creates worktree: `git worktree add /workspace/worktrees/{id}/repo -b jib/{id}/work`
+2. Container mounts ONLY `/workspace/worktrees/{id}/repo/` (no .git access)
+3. Container can freely edit files in its working directory
+4. All git operations go through gateway API
 
 ### Git Operations
 
@@ -114,28 +168,53 @@ def git_operation():
 
 ## Multi-Container Isolation
 
-Each container has its own working directory but shares git object storage:
+Each container gets its own git worktree, sharing the object store:
 
 ```
 /workspace/
-├── container-abc123/
-│   └── repo/           # Container 1's working files
-├── container-def456/
-│   └── repo/           # Container 2's working files
-└── git-data/
-    └── repo.git/       # Shared: objects, refs, config
+├── repos/
+│   └── my-repo.git/
+│       ├── objects/          # Shared across ALL worktrees
+│       ├── refs/             # Shared refs
+│       ├── HEAD              # Main repo HEAD
+│       └── worktrees/        # Worktree admin directories
+│           ├── wt-abc123/
+│           │   ├── HEAD      # abc123's HEAD (jib/abc123/work)
+│           │   ├── index     # abc123's staging area
+│           │   └── gitdir    # Points to working dir
+│           └── wt-def456/
+│               ├── HEAD      # def456's HEAD (jib/def456/work)
+│               ├── index     # def456's staging area
+│               └── gitdir
+│
+└── worktrees/                # Working directories (what containers see)
+    ├── abc123/
+    │   └── my-repo/          # Container abc123 mounts THIS
+    │       ├── src/
+    │       └── .git          # File pointing to worktree admin
+    └── def456/
+        └── my-repo/          # Container def456 mounts THIS
+            ├── src/
+            └── .git
 ```
 
 **Isolation guarantees:**
+- Each worktree has its own HEAD, index (staging area), and working directory
 - Containers can't see each other's uncommitted changes
-- Containers can work on different branches
-- All containers share the same commit history (efficient)
-- Gateway ensures atomic operations (no corruption)
+- Containers can work on different branches simultaneously
+- All containers share commit history and objects (efficient storage)
+- Gateway manages worktree admin directories - containers never touch them
 
 **Branch management:**
-- Each container works on its own branch (e.g., `jib/{container-id}/work`)
-- Gateway enforces branch ownership
+- Worktree creation automatically creates a branch: `jib/{id}/work`
+- Gateway enforces one worktree per branch (git requirement)
 - Merges happen through PRs (human review)
+
+**Why this avoids PR #590's problems:**
+- Container only mounts the working directory, not the worktree admin
+- Gateway manages gitdir/commondir paths - they're never exposed to container
+- No path rewriting needed - gateway controls all paths
+- Host can run git operations on main repo while containers use worktrees
 
 ## Deployment: Local vs Cloud Run
 
