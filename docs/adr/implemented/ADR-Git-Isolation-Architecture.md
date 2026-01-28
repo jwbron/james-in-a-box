@@ -449,19 +449,40 @@ def validate_repository_access(repo: str, operation: str) -> bool:
 
 ### Visibility Cache Policy
 
-Repository visibility is cached to avoid excessive GitHub API calls:
+Repository visibility is cached to avoid excessive GitHub API calls. A **two-tier caching strategy** balances security and performance:
+
+| Operation Type | TTL | Rationale |
+|----------------|-----|-----------|
+| **Read operations** (fetch, clone, ls-remote) | 60 seconds | Lower risk; brief window acceptable |
+| **Write operations** (push, pr create) | 0 seconds | Higher risk; always verify before writes |
 
 | Property | Value | Rationale |
 |----------|-------|-----------|
-| **TTL** | 60 seconds | Short enough to catch visibility changes; long enough to avoid API rate limits |
+| **Read TTL** | 60 seconds | Short enough to catch visibility changes; long enough to avoid API rate limits |
+| **Write TTL** | 0 seconds (always check) | Critical operations should never use stale visibility data |
 | **Refresh** | On cache miss or expiry | No background refresh; checked synchronously on each operation |
 | **Invalidation** | Manual or restart | Can force refresh via gateway API if needed |
 
-**Security consideration:** A repository changing from private to public mid-session could theoretically allow one operation before the cache expires. The 60-second TTL limits this window. For maximum security, set TTL to 0 (no caching) at the cost of additional API calls.
+**Security consideration:** A repository changing from private to public mid-session could theoretically allow one read operation before the cache expires. The 60-second read TTL limits this window. Write operations always verify visibility in real-time, eliminating this risk for the most critical operations.
 
 ```python
 # Cache configuration
-VISIBILITY_CACHE_TTL_SECONDS = int(os.getenv("VISIBILITY_CACHE_TTL", "60"))
+VISIBILITY_CACHE_TTL_READ = int(os.getenv("VISIBILITY_CACHE_TTL_READ", "60"))
+VISIBILITY_CACHE_TTL_WRITE = int(os.getenv("VISIBILITY_CACHE_TTL_WRITE", "0"))
+
+def get_repo_visibility(owner: str, repo: str, for_write: bool = False) -> str:
+    """Get repository visibility with tiered caching.
+
+    Args:
+        owner: Repository owner
+        repo: Repository name
+        for_write: If True, use write TTL (stricter caching)
+
+    Returns:
+        'public', 'private', or 'internal'
+    """
+    ttl = VISIBILITY_CACHE_TTL_WRITE if for_write else VISIBILITY_CACHE_TTL_READ
+    # ... caching logic with appropriate TTL ...
 ```
 
 ### Enforced Restrictions
@@ -925,12 +946,222 @@ def gh_pr_create():
 | `POST /api/v1/gh/pr/comment` | `validate_repo_path_access` | Checks target repo |
 | `POST /api/v1/gh/pr/edit` | `validate_repo_path_access` | Checks target repo |
 | `POST /api/v1/gh/pr/close` | `validate_repo_path_access` | Checks target repo |
-| `POST /api/v1/gh/issue/create` | `validate_repo_path_access` | Checks target repo |
-| `POST /api/v1/gh/issue/comment` | `validate_repo_path_access` | Checks target repo |
-| `POST /api/v1/gh/execute` | Custom parsing | Extract repo from command args |
+| `POST /api/v1/gh/issue/create` | `validate_repo_path_access` | Via gh/execute (see Note) |
+| `POST /api/v1/gh/issue/comment` | `validate_repo_path_access` | Via gh/execute (see Note) |
+
+**Note on Issue Endpoints:** Issue operations (`gh issue create`, `gh issue comment`, etc.) are routed through the generic `/api/v1/gh/execute` endpoint rather than dedicated issue endpoints. The visibility check is applied within the execute handler by extracting the repository from command arguments or the current working directory context. This design keeps the gateway API surface minimal while supporting the full range of `gh` CLI operations.
+| `POST /api/v1/gh/execute` | Custom parsing | Extract repo from command args (see 4.1, 4.2) |
+| `POST /api/v1/gh/api` | `validate_gh_api_path` | Extract repo from API path (see 4.3) |
 | `GET /api/v1/health` | None | Health check, no repo access |
 
+##### 4.1 URL Argument Parsing for gh Commands
+
+Commands like `gh pr view https://github.com/owner/repo/pull/123` include repository URLs as arguments. The gateway parses these to extract and validate the target repository:
+
+```python
+# gateway-sidecar/url_argument_parser.py
+"""Parse repository URLs from gh command arguments."""
+
+import re
+from typing import Optional
+from repo_parser import RepoIdentifier
+
+
+# GitHub URL patterns that may appear in command arguments
+GITHUB_URL_PATTERNS = [
+    # PR/Issue URLs: https://github.com/owner/repo/pull/123
+    re.compile(r"https?://github\.com/([^/]+)/([^/]+)/(?:pull|issues)/\d+"),
+    # Repo URLs: https://github.com/owner/repo
+    re.compile(r"https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/.*)?$"),
+]
+
+
+def extract_repo_from_args(args: list[str]) -> Optional[RepoIdentifier]:
+    """Extract repository identifier from command arguments.
+
+    Scans arguments for GitHub URLs and extracts owner/repo.
+
+    Args:
+        args: Command arguments to scan
+
+    Returns:
+        RepoIdentifier if found, None otherwise
+    """
+    for arg in args:
+        for pattern in GITHUB_URL_PATTERNS:
+            match = pattern.match(arg)
+            if match:
+                owner, repo = match.groups()
+                # Clean up repo name (remove trailing slashes, etc.)
+                repo = repo.rstrip("/")
+                return RepoIdentifier(owner=owner, repo=repo, full_name=f"{owner}/{repo}")
+
+    return None
+```
+
+##### 4.2 gh/execute Visibility Check Integration
+
+```python
+# In gateway.py - Updated gh/execute handler
+
+@app.route("/api/v1/gh/execute", methods=["POST"])
+def gh_execute():
+    """Handle generic gh CLI commands with visibility checks."""
+    data = request.get_json()
+    command = data.get("command", "")
+    args = data.get("args", [])
+
+    # Extract repo from URL arguments (e.g., gh pr view https://...)
+    repo_from_url = extract_repo_from_args(args)
+    if repo_from_url:
+        allowed, error = check_repo_access(repo_from_url, f"gh {command}")
+        if not allowed:
+            return jsonify({"error": error, "policy": "private_repo_mode"}), 403
+
+    # ... rest of existing code ...
+```
+
+##### 4.3 gh api Path Validation
+
+Raw `gh api` calls to repository endpoints require visibility validation:
+
+```python
+# gateway-sidecar/gh_api_validator.py
+"""Validate gh api paths for Private Repo Mode."""
+
+import re
+from typing import Optional, Tuple
+from repo_parser import RepoIdentifier
+from private_repo_policy import check_repo_access
+
+
+# Patterns for API paths that reference repositories
+REPO_API_PATTERNS = [
+    # /repos/{owner}/{repo}[/...]
+    re.compile(r"^/?repos/([^/]+)/([^/]+)(?:/.*)?$"),
+    # /orgs/{org}/repos - lists repos, not specific to one
+    # /user/repos - lists user's repos
+]
+
+
+def validate_gh_api_path(path: str, method: str = "GET") -> Tuple[bool, Optional[str]]:
+    """Validate gh api path against Private Repo Mode policy.
+
+    Args:
+        path: API path (e.g., 'repos/owner/repo/pulls')
+        method: HTTP method (GET, POST, etc.)
+
+    Returns:
+        Tuple of (allowed, error_message)
+    """
+    for pattern in REPO_API_PATTERNS:
+        match = pattern.match(path)
+        if match:
+            owner, repo = match.groups()
+            repo_id = RepoIdentifier(owner=owner, repo=repo, full_name=f"{owner}/{repo}")
+            return check_repo_access(repo_id, f"gh api {method} {path}")
+
+    # Non-repo paths (e.g., /user, /orgs) - allow
+    return True, None
+```
+
+**Note:** This validation is applied when Private Repo Mode is enabled. Without it, all API paths are allowed (subject to the existing allowlist).
+
 #### 5. Fork Handling
+
+##### 5.1 Integration with gh/execute Endpoint
+
+Fork commands via `gh repo fork` go through the `/api/v1/gh/execute` endpoint. The gateway intercepts and validates fork operations by parsing the command arguments:
+
+```python
+# gateway-sidecar/gh_execute_handler.py (excerpt)
+"""Handler for gh/execute that intercepts fork commands."""
+
+import shlex
+from typing import Optional, Tuple
+
+from fork_policy import validate_fork_operation
+from repo_parser import parse_repo_url
+
+
+def handle_gh_execute(command: str, args: list[str]) -> Tuple[bool, Optional[str]]:
+    """Handle gh execute requests, intercepting fork commands.
+
+    Fork commands are identified and validated through fork_policy.
+    Other commands pass through with standard visibility checks.
+    """
+    # Detect fork command: gh repo fork [<repository>] [flags]
+    if command == "repo" and args and args[0] == "fork":
+        return _handle_fork_command(args[1:])
+
+    # Detect fork via full command string parsing
+    full_args = [command] + args
+    if "repo" in full_args and "fork" in full_args:
+        fork_idx = full_args.index("fork")
+        return _handle_fork_command(full_args[fork_idx + 1:])
+
+    # Non-fork commands: apply standard visibility checks
+    return True, None
+
+
+def _handle_fork_command(fork_args: list[str]) -> Tuple[bool, Optional[str]]:
+    """Parse and validate gh repo fork arguments.
+
+    Usage: gh repo fork [<repository>] [-- <gitflags>...]
+    Flags:
+        --clone              Clone the fork
+        --org <string>       Create fork in organization
+        --fork-name <name>   Rename the fork
+        --remote             Add remote for fork
+
+    Args:
+        fork_args: Arguments after 'gh repo fork'
+
+    Returns:
+        Tuple of (allowed, error_message)
+    """
+    source_repo = None
+    target_org = None
+
+    i = 0
+    while i < len(fork_args):
+        arg = fork_args[i]
+
+        # Stop at git flags separator
+        if arg == "--":
+            break
+
+        # Parse --org flag
+        if arg == "--org" and i + 1 < len(fork_args):
+            target_org = fork_args[i + 1]
+            i += 2
+            continue
+
+        # Skip other flags
+        if arg.startswith("-"):
+            # Handle flags with values
+            if arg in ("--fork-name", "--remote-name") and i + 1 < len(fork_args):
+                i += 2
+            else:
+                i += 1
+            continue
+
+        # Positional argument is the source repo
+        if source_repo is None:
+            source_repo = arg
+
+        i += 1
+
+    # If no source repo specified, gh uses current directory's repo
+    # The caller should provide this context
+    if source_repo is None:
+        # Will be filled in by caller from current repo context
+        return True, None
+
+    return validate_fork_operation(source_repo, target_org=target_org)
+```
+
+##### 5.2 Fork Policy Implementation
 
 ```python
 # gateway-sidecar/fork_policy.py

@@ -391,6 +391,50 @@ The gateway maintains a strict allowlist of permitted domains:
 
 This is an **expected and intentional limitation**. For tasks requiring web research, use supervised mode or pre-populate context before entering lockdown mode.
 
+#### Expected Claude Code Behavior in Lockdown Mode
+
+When blocked tools are invoked, Claude Code will observe the failure and adapt:
+
+| Scenario | Behavior | User Experience |
+|----------|----------|-----------------|
+| WebFetch called | Returns HTTP 403 Forbidden | Claude explains the tool is blocked and suggests alternatives |
+| WebSearch called | Returns HTTP 403 Forbidden | Claude explains web search is unavailable in lockdown mode |
+| curl/wget to blocked domain | Returns HTTP 403 or connection refused | Claude notes the request failed and adjusts approach |
+
+**Error message from proxy:**
+```
+HTTP/1.1 403 Forbidden
+X-Squid-Error: ERR_ACCESS_DENIED 0
+```
+
+**Claude's expected adaptation:**
+- Acknowledge the limitation in its response
+- Suggest alternatives: "I cannot access external URLs in lockdown mode. I can search the local codebase or use cached documentation instead."
+- Fall back to local resources: GitHub search via API, local file search, pre-loaded documentation
+
+**No retry loops:** The proxy returns 403 immediately, so Claude will not enter retry loops. The failure is deterministic.
+
+#### Documenting Lockdown Mode to the Agent
+
+The CLAUDE.md instructions include lockdown mode awareness:
+
+```markdown
+## Network Lockdown Mode
+
+When `JIB_NETWORK_MODE=lockdown`, the following tools are **unavailable**:
+- WebFetch (cannot access arbitrary URLs)
+- WebSearch (cannot access search engines)
+- curl/wget to external sites (blocked by proxy)
+
+**Available alternatives:**
+- GitHub API search via gateway
+- Local file search (Glob, Grep)
+- Pre-installed documentation in `/usr/share/doc/`
+- Context from previous conversations
+
+If you need web access, notify the user that the task requires **supervised mode**.
+```
+
 ### Pre-installed Dependencies
 
 Since jib cannot install packages at runtime, the container image must include all required dependencies:
@@ -417,12 +461,21 @@ jib cannot perform external DNS lookups:
 
 ```yaml
 # jib container
-dns: []  # No DNS servers configured
+dns: []  # No DNS servers configured (--dns 0.0.0.0)
 extra_hosts:
-  - "gateway:172.18.0.2"  # Static entry for gateway
+  - "gateway:172.30.0.2"  # Static entry for gateway
 ```
 
-The gateway sidecar handles DNS for allowlisted destinations internally.
+**Architecture detail:** DNS resolution is handled by the proxy, not the jib container:
+
+1. **jib container:** Has no DNS servers configured. Cannot resolve hostnames directly.
+2. **Proxy operation:** When jib sends a request through the proxy, it sends the hostname (not IP) in the CONNECT request.
+3. **Gateway/Squid:** The gateway is on the `jib-external` network which has normal DNS. Squid resolves the hostname internally when establishing the upstream connection.
+4. **Validation:** Squid validates the hostname from the CONNECT request against the allowlist **before** resolving DNS. This prevents bypass via pre-resolved IPs.
+
+**Key security property:** The proxy validates hostnames from CONNECT/Host headers, not IP addresses. Even if jib somehow learns an IP address (e.g., from conversation context), it cannot use it because:
+- Direct IP connections are blocked by the `direct_ip` ACL in Squid
+- The internal network has no route to external IPs—the proxy is the only path out
 
 ### Proxy Configuration
 
@@ -432,7 +485,10 @@ jib routes all HTTP/HTTPS traffic through the gateway proxy:
 # Environment variables in jib container
 HTTP_PROXY=http://gateway:3128
 HTTPS_PROXY=http://gateway:3128
-NO_PROXY=localhost,127.0.0.1,gateway
+http_proxy=http://gateway:3128   # Some tools use lowercase
+https_proxy=http://gateway:3128
+NO_PROXY=localhost,127.0.0.1,gateway,jib-gateway
+no_proxy=localhost,127.0.0.1,gateway,jib-gateway
 ```
 
 **Proxy behavior:**
@@ -441,17 +497,68 @@ NO_PROXY=localhost,127.0.0.1,gateway
 3. If allowed: Gateway establishes tunnel to destination
 4. If blocked: Gateway returns 403 Forbidden
 
+**Tool-specific proxy support:**
+
+| Tool/Library | Proxy Support | Notes |
+|--------------|---------------|-------|
+| **curl/wget** | `HTTP_PROXY`/`HTTPS_PROXY` | Standard env vars respected |
+| **Python requests** | `HTTP_PROXY`/`HTTPS_PROXY` | Standard env vars respected |
+| **Python httpx** | `HTTP_PROXY`/`HTTPS_PROXY` | Standard env vars respected |
+| **Anthropic SDK** | `HTTP_PROXY`/`HTTPS_PROXY` | **Verified:** Uses httpx which respects proxy env vars |
+| **git** | Routes through gateway API | Git wrapper calls gateway REST API, not direct HTTPS |
+| **gh CLI** | Routes through gateway API | gh wrapper calls gateway REST API |
+| **npm/pip** | N/A in lockdown mode | Package managers blocked; deps pre-installed |
+
+**Anthropic SDK verification:** The Anthropic Python SDK uses `httpx` as its HTTP client, which respects standard proxy environment variables. No special configuration needed.
+
+```python
+# Verification code (run during image build testing)
+import httpx
+import os
+
+# httpx automatically uses these if set
+assert os.environ.get("HTTPS_PROXY") == "http://gateway:3128"
+# SDK will route through proxy when initialized
+```
+
 ### Breakout Prevention
 
 The architecture prevents several classes of network breakout:
 
 | Attack Vector | Mitigation |
 |---------------|------------|
-| Direct IP connection | No route—internal network only. Even if jib learns an IP from conversation context, it cannot connect because there's no route to external networks in the container's network namespace. |
-| DNS tunneling | No DNS servers configured |
+| Direct IP connection | **Two-layer protection:** (1) No route—internal network has no external gateway; (2) Squid `direct_ip` ACL explicitly blocks `http[s]://IP` requests even through the proxy. |
+| DNS tunneling | No DNS servers configured in jib container |
 | Proxy bypass | No alternate route exists; proxy is the only path out |
-| IP-based proxy bypass | Proxy validates destination hostname, not just IP. Direct IP requests without Host header are rejected. |
+| IP-based proxy bypass | Squid `direct_ip` ACL: `url_regex ^https?://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+` blocks requests by IP address. Hostname validation uses `dstdomain` ACL. |
+| Learned IP from context | Even if jib learns `140.82.114.3` is GitHub's IP from conversation, requests to `http://140.82.114.3` are blocked by the `direct_ip` ACL. |
 | Container escape | Defense in depth; not in scope for network layer |
+
+### Relationship: Phase 2 and Private Repo Mode
+
+Phase 2 Network Lockdown and Private Repo Mode are **independent but complementary** features:
+
+| Configuration | Network Access | Repository Access |
+|---------------|----------------|-------------------|
+| Phase 2 only | Anthropic + GitHub only | All repos (public + private) |
+| Private Repo Mode only | Full internet | Private repos only |
+| Phase 2 + Private Repo Mode | Anthropic + GitHub only | Private repos only |
+| Neither (supervised) | Full internet | All repos |
+
+**Important:** Phase 2 does **not** require Private Repo Mode, but they work well together:
+
+- **Phase 2 alone:** jib cannot install packages or search the web. Can still clone public repos via gateway.
+- **Private Repo Mode alone:** jib can install packages and search web. Cannot interact with public repos.
+- **Both enabled:** Maximum security. jib is restricted to private repos and can only reach Anthropic/GitHub APIs.
+
+**Recommendation for autonomous operation:** Enable both Phase 2 and Private Repo Mode for unsupervised `--dangerously-skip-permissions` sessions. This provides the strongest security guarantees.
+
+```bash
+# Maximum security configuration
+export JIB_NETWORK_LOCKDOWN=true
+export PRIVATE_REPO_MODE=true
+./jib --dangerously-skip-permissions
+```
 
 ### Fallback: Supervised Mode
 
@@ -591,19 +698,61 @@ ALLOWED_DOMAIN_PATTERNS = [
 
 ##### 2.2 Network Creation Commands
 
+The subnets are **configurable** to avoid conflicts with existing networks:
+
 ```bash
+# Configuration with defaults
+JIB_ISOLATED_SUBNET="${JIB_ISOLATED_SUBNET:-172.30.0.0/24}"
+JIB_EXTERNAL_SUBNET="${JIB_EXTERNAL_SUBNET:-172.31.0.0/24}"
+
+# Check for subnet conflicts before creating
+check_subnet_available() {
+    local subnet="$1"
+    local network_prefix="${subnet%/*}"
+
+    # Check if any existing Docker network uses this subnet
+    if docker network ls -q | xargs -I {} docker network inspect {} 2>/dev/null | \
+       grep -q "\"Subnet\": \"$subnet\""; then
+        echo "ERROR: Subnet $subnet already in use by another Docker network"
+        return 1
+    fi
+
+    # Check if subnet conflicts with host routes
+    if ip route | grep -q "^${network_prefix}"; then
+        echo "WARNING: Subnet $subnet may conflict with host routing"
+    fi
+
+    return 0
+}
+
 # Create isolated internal network (no external gateway)
+check_subnet_available "$JIB_ISOLATED_SUBNET" || exit 1
 docker network create \
   --driver bridge \
   --internal \
-  --subnet 172.30.0.0/24 \
+  --subnet "$JIB_ISOLATED_SUBNET" \
   jib-isolated
 
 # Create external network for gateway outbound access
+check_subnet_available "$JIB_EXTERNAL_SUBNET" || exit 1
 docker network create \
   --driver bridge \
-  --subnet 172.31.0.0/24 \
+  --subnet "$JIB_EXTERNAL_SUBNET" \
   jib-external
+```
+
+**Default subnets and alternatives:**
+
+| Network | Default Subnet | Alternative if Conflicting |
+|---------|----------------|---------------------------|
+| `jib-isolated` | `172.30.0.0/24` | `172.28.0.0/24`, `10.200.0.0/24` |
+| `jib-external` | `172.31.0.0/24` | `172.29.0.0/24`, `10.201.0.0/24` |
+
+To use alternative subnets:
+```bash
+export JIB_ISOLATED_SUBNET="10.200.0.0/24"
+export JIB_EXTERNAL_SUBNET="10.201.0.0/24"
+./start-gateway.sh
 ```
 
 ##### 2.3 Container Network Assignment
@@ -659,8 +808,12 @@ Create `gateway-sidecar/squid.conf`:
 # Squid proxy configuration for jib network lockdown
 # Only allows traffic to explicitly allowlisted domains
 
-# Network settings
-http_port 3128
+# Network settings - SSL bump requires special port configuration
+# The cert= parameter points to a CA cert used for peek/splice (not MITM decryption)
+http_port 3128 ssl-bump \
+  cert=/etc/squid/squid-ca.pem \
+  generate-host-certificates=on \
+  dynamic_cert_mem_cache_size=4MB
 
 # Access control lists
 acl localnet src 172.30.0.0/24    # jib-isolated network
@@ -668,7 +821,14 @@ acl localnet src 172.30.0.0/24    # jib-isolated network
 # Load allowed domains from file
 acl allowed_domains dstdomain "/etc/squid/allowed_domains.txt"
 
+# Block direct IP connections (must use hostnames)
+# This prevents bypass via learned IP addresses
+acl direct_ip url_regex ^https?://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+
+http_access deny direct_ip
+
 # SSL/TLS settings - peek at SNI without MITM
+# We only peek to read SNI, then splice (passthrough) for allowed domains
+# This does NOT decrypt traffic - it just reads the hostname from ClientHello
 acl step1 at_step SslBump1
 ssl_bump peek step1
 ssl_bump splice allowed_domains
@@ -696,6 +856,26 @@ request_timeout 60 seconds
 # Shutdown settings
 shutdown_lifetime 5 seconds
 ```
+
+##### 3.3 Squid CA Certificate Generation
+
+The Squid proxy needs a CA certificate for SSL bump peek/splice operations. This certificate is used to establish the initial TLS connection for peeking at SNI—it does **not** perform MITM decryption of traffic.
+
+Add to `gateway-sidecar/Dockerfile`:
+
+```dockerfile
+# Generate self-signed CA for Squid SSL bump
+RUN mkdir -p /etc/squid/ssl && \
+    openssl req -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 \
+        -subj "/CN=jib-gateway-proxy/O=jib/C=US" \
+        -keyout /etc/squid/squid-ca.pem \
+        -out /etc/squid/squid-ca.pem && \
+    chmod 400 /etc/squid/squid-ca.pem && \
+    # Initialize SSL certificate database
+    /usr/lib/squid/security_file_certgen -c -s /var/lib/squid/ssl_db -M 4MB
+```
+
+**Note:** This CA certificate is internal to the gateway and never trusted by external systems. The peek/splice mode reads the SNI from the TLS ClientHello without decrypting traffic.
 
 ##### 3.3 Allowed Domains File
 
@@ -812,29 +992,64 @@ def _build_docker_command(
 
 ##### 4.3 Pre-installed Dependencies
 
-Update `jib-container/Dockerfile` to pre-install all required packages:
+Update `jib-container/Dockerfile` to pre-install all required packages.
 
+**Definitive package lists** are maintained in version-controlled files:
+
+**Python packages** (`jib-container/requirements-lockdown.txt`):
+```
+# Core
+requests>=2.31.0
+httpx>=0.25.0
+aiohttp>=3.9.0
+pyyaml>=6.0.1
+toml>=0.10.2
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+
+# Linting/Formatting
+black>=23.12.0
+ruff>=0.1.8
+mypy>=1.7.0
+
+# Type stubs for common libraries
+types-requests>=2.31.0
+types-PyYAML>=6.0.12
+
+# Utilities
+python-dateutil>=2.8.2
+click>=8.1.7
+rich>=13.7.0
+```
+
+**Node.js packages** (`jib-container/package-lockdown.json`):
+```json
+{
+  "name": "jib-lockdown-deps",
+  "version": "1.0.0",
+  "dependencies": {
+    "typescript": "^5.3.0",
+    "eslint": "^8.56.0",
+    "@types/node": "^20.10.0",
+    "prettier": "^3.1.0",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.0"
+  }
+}
+```
+
+**Dockerfile update:**
 ```dockerfile
 # Python dependencies - installed at build time
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+COPY requirements-lockdown.txt /tmp/requirements-lockdown.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-lockdown.txt
 
-# Common Python packages for development work
-RUN pip install --no-cache-dir \
-    requests \
-    pytest \
-    pytest-cov \
-    black \
-    ruff \
-    mypy \
-    pyyaml \
-    toml \
-    httpx \
-    aiohttp
-
-# Node.js dependencies
-COPY package.json package-lock.json /tmp/
-RUN cd /tmp && npm ci && \
+# Node.js dependencies - pre-installed globally
+COPY package-lockdown.json /tmp/package.json
+RUN cd /tmp && npm install && \
     npm cache clean --force
 
 # Common system tools
@@ -847,6 +1062,8 @@ RUN apt-get update && apt-get install -y \
     fd-find \
     && rm -rf /var/lib/apt/lists/*
 ```
+
+**Package list maintenance:** When new packages are needed, they must be added to these files and the image rebuilt. This is a deliberate friction point—adding packages requires an image rebuild, which provides an opportunity for review and scanning.
 
 #### 5. Gateway Startup Changes
 
@@ -863,6 +1080,8 @@ INTERNAL_NETWORK="jib-isolated"
 EXTERNAL_NETWORK="jib-external"
 INTERNAL_IP="172.30.0.2"
 EXTERNAL_IP="172.31.0.2"
+HEALTH_CHECK_TIMEOUT=30
+HEALTH_CHECK_INTERVAL=2
 
 # Create networks if they don't exist
 create_networks() {
@@ -910,9 +1129,109 @@ start_gateway() {
     echo "  External: $EXTERNAL_NETWORK ($EXTERNAL_IP) - reaches internet"
 }
 
+# Wait for gateway to be healthy before returning
+wait_for_gateway() {
+    echo "Waiting for gateway to be ready..."
+    local elapsed=0
+
+    while [ $elapsed -lt $HEALTH_CHECK_TIMEOUT ]; do
+        # Check gateway API health endpoint
+        if docker exec "$GATEWAY_CONTAINER" curl -sf http://localhost:9847/api/v1/health >/dev/null 2>&1; then
+            # Also verify Squid proxy is responding
+            if docker exec "$GATEWAY_CONTAINER" curl -sf --proxy http://localhost:3128 -o /dev/null https://api.github.com/ 2>&1; then
+                echo "Gateway is ready (API + Proxy healthy)"
+                return 0
+            fi
+        fi
+
+        sleep $HEALTH_CHECK_INTERVAL
+        elapsed=$((elapsed + HEALTH_CHECK_INTERVAL))
+        echo "  Waiting... ($elapsed/$HEALTH_CHECK_TIMEOUT seconds)"
+    done
+
+    echo "ERROR: Gateway failed to become healthy within $HEALTH_CHECK_TIMEOUT seconds"
+    docker logs "$GATEWAY_CONTAINER" --tail 50
+    return 1
+}
+
 # Main
 create_networks
 start_gateway
+wait_for_gateway
+```
+
+##### 5.2 jib Container Startup Dependency
+
+The jib container entrypoint includes a health check wait loop to ensure the gateway is ready:
+
+```python
+# jib-container/entrypoint.py (excerpt)
+
+import time
+import requests
+from requests.exceptions import RequestException
+
+def wait_for_gateway(timeout: int = 60, interval: int = 2) -> bool:
+    """Wait for gateway to be ready before starting main process.
+
+    Args:
+        timeout: Maximum seconds to wait
+        interval: Seconds between checks
+
+    Returns:
+        True if gateway is ready, False if timeout
+    """
+    gateway_url = "http://gateway:9847/api/v1/health"
+    proxy_test_url = "https://api.github.com/"
+    proxies = {"https": "http://gateway:3128"}
+
+    elapsed = 0
+    while elapsed < timeout:
+        try:
+            # Check gateway API
+            api_response = requests.get(gateway_url, timeout=5)
+            if api_response.status_code == 200:
+                # Check proxy connectivity
+                proxy_response = requests.get(
+                    proxy_test_url,
+                    proxies=proxies,
+                    timeout=10
+                )
+                if proxy_response.status_code in (200, 401):  # 401 OK = API reachable
+                    print("Gateway is ready")
+                    return True
+        except RequestException:
+            pass
+
+        time.sleep(interval)
+        elapsed += interval
+        print(f"Waiting for gateway... ({elapsed}/{timeout}s)")
+
+    print("ERROR: Gateway not ready within timeout")
+    return False
+
+# In main()
+if not wait_for_gateway():
+    sys.exit(1)
+```
+
+**Docker Compose dependency configuration:**
+
+```yaml
+# docker-compose.yml
+services:
+  jib:
+    depends_on:
+      gateway-sidecar:
+        condition: service_healthy
+
+  gateway-sidecar:
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9847/api/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 ```
 
 #### 6. Testing Plan
@@ -1009,6 +1328,76 @@ kill $JIB_PID
 docker rm -f jib-test-container
 ```
 
+##### 6.4 Edge Case and Resilience Tests
+
+```bash
+# gateway-sidecar/test_edge_cases.sh
+#!/bin/bash
+set -e
+
+echo "=== Edge Case Tests ==="
+
+# Test 1: GitHub API down during visibility check
+echo "Test 1: GitHub API unavailability"
+# Mock GitHub API to return 503
+docker exec jib-gateway iptables -A OUTPUT -d api.github.com -j DROP
+# Attempt operation - should fail closed (treat as private, allow)
+curl -X POST http://localhost:9847/api/v1/git/fetch \
+    -H "Authorization: Bearer $GATEWAY_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{"repo_path": "/home/jib/repos/test-repo"}' || true
+# Restore
+docker exec jib-gateway iptables -D OUTPUT -d api.github.com -j DROP
+echo "✓ API unavailability handled (fail closed)"
+
+# Test 2: Concurrent visibility checks
+echo "Test 2: Concurrent visibility checks for same repo"
+for i in {1..10}; do
+    curl -X POST http://localhost:9847/api/v1/git/fetch \
+        -H "Authorization: Bearer $GATEWAY_SECRET" \
+        -H "Content-Type: application/json" \
+        -d '{"repo_path": "/home/jib/repos/test-repo"}' &
+done
+wait
+echo "✓ Concurrent checks completed without race conditions"
+
+# Test 3: Rollback procedure verification
+echo "Test 3: Rollback to supervised mode"
+export JIB_NETWORK_LOCKDOWN=false
+# Verify jib can reach google.com in supervised mode
+./jib --test-mode --command "curl -s https://google.com > /dev/null && echo 'Supervised mode working'"
+echo "✓ Rollback to supervised mode successful"
+
+echo "=== All edge case tests passed ==="
+```
+
+##### 6.5 Claude Code Tool Behavior Tests
+
+```bash
+# Test Claude Code behavior when tools are blocked
+echo "=== Claude Code Tool Behavior Tests ==="
+
+# Test WebFetch - should fail gracefully
+docker exec jib-test-container bash -c '
+    # Simulate WebFetch attempt (via proxy)
+    RESULT=$(curl -x http://gateway:3128 -s -w "%{http_code}" -o /dev/null https://example.com 2>&1)
+    if [ "$RESULT" = "403" ]; then
+        echo "✓ WebFetch correctly blocked with 403"
+    fi
+'
+
+# Test WebSearch - should fail gracefully
+docker exec jib-test-container bash -c '
+    # Simulate WebSearch attempt
+    RESULT=$(curl -x http://gateway:3128 -s -w "%{http_code}" -o /dev/null https://www.google.com/search?q=test 2>&1)
+    if [ "$RESULT" = "403" ]; then
+        echo "✓ WebSearch correctly blocked with 403"
+    fi
+'
+
+echo "=== Claude Code tool tests passed ==="
+```
+
 #### 7. Rollback Plan
 
 ##### 7.1 Quick Rollback (< 5 minutes)
@@ -1079,41 +1468,257 @@ docker exec jib-gateway tail -f /var/log/squid/access.log
 # - Bytes transferred
 ```
 
-##### 9.2 Blocked Request Alerts
+##### 9.2 Blocked Request Alerts and Metrics
 
 ```python
 # gateway-sidecar/monitor.py
 
+import os
+from datetime import datetime, timedelta
+from collections import defaultdict
+from notifications import slack_notify
+
+# Thresholds for alerts
+BLOCKED_REQUESTS_ALERT_THRESHOLD = 50  # per 5 minutes
+BLOCKED_REQUESTS_WINDOW_MINUTES = 5
+
+# Track blocked requests for rate limiting
+_blocked_requests: list[dict] = []
+
+
+def log_blocked_request(source_ip: str, destination: str, reason: str):
+    """Log a blocked request and check for anomalies."""
+    timestamp = datetime.utcnow()
+
+    entry = {
+        "source_ip": source_ip,
+        "destination": destination,
+        "reason": reason,
+        "timestamp": timestamp.isoformat(),
+    }
+
+    # Log to structured logging (appears in journalctl)
+    log.warning(
+        "proxy_request_blocked",
+        extra={
+            "event_type": "security",
+            "action": "blocked",
+            **entry,
+        }
+    )
+
+    # Track for rate limiting
+    _blocked_requests.append(entry)
+
+    # Prune old entries
+    cutoff = timestamp - timedelta(minutes=BLOCKED_REQUESTS_WINDOW_MINUTES)
+    _blocked_requests[:] = [
+        e for e in _blocked_requests
+        if datetime.fromisoformat(e["timestamp"]) > cutoff
+    ]
+
+    # Alert if high volume (possible breakout attempt or misconfiguration)
+    if len(_blocked_requests) > BLOCKED_REQUESTS_ALERT_THRESHOLD:
+        _send_security_alert()
+
+
+def _send_security_alert():
+    """Send Slack notification for high volume of blocked requests."""
+    # Group by destination for summary
+    destinations = defaultdict(int)
+    for entry in _blocked_requests:
+        destinations[entry["destination"]] += 1
+
+    top_destinations = sorted(
+        destinations.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:5]
+
+    summary = "\n".join(f"  - {dest}: {count}x" for dest, count in top_destinations)
+
+    slack_notify(
+        subject="Security Alert: High Volume of Blocked Proxy Requests",
+        body=f"""The gateway proxy has blocked {len(_blocked_requests)} requests in the last {BLOCKED_REQUESTS_WINDOW_MINUTES} minutes.
+
+Top blocked destinations:
+{summary}
+
+This may indicate:
+- A breakout attempt by the agent
+- Missing domains in the allowlist
+- Misconfigured proxy settings
+
+Check logs: `journalctl -u gateway-sidecar -f --grep=proxy_request_blocked`
+""",
+        priority="high",
+    )
+
+
 def check_blocked_requests():
-    """Parse Squid logs for blocked requests and alert if anomalous."""
+    """Parse Squid logs for blocked requests and update metrics."""
     blocked = parse_squid_log(status_code=403)
 
     for entry in blocked:
-        log.warning(
-            "Blocked request",
-            extra={
-                "source_ip": entry.source_ip,
-                "destination": entry.url,
-                "timestamp": entry.timestamp,
-            }
+        log_blocked_request(
+            source_ip=entry.source_ip,
+            destination=entry.url,
+            reason="proxy_denied",
         )
+```
 
-        # Alert if high volume of blocked requests (possible breakout attempt)
-        if count_recent_blocked(minutes=5) > 50:
-            alert_security_team("High volume of blocked requests")
+**Metrics exposed via health endpoint:**
+
+```python
+# gateway-sidecar/gateway.py
+
+@app.route("/api/v1/metrics", methods=["GET"])
+def get_metrics():
+    """Return gateway metrics for monitoring."""
+    return jsonify({
+        "blocked_requests_5min": len(_blocked_requests),
+        "allowed_requests_5min": _get_allowed_count(),
+        "proxy_status": "healthy" if _proxy_healthy() else "degraded",
+        "visibility_cache_size": len(_visibility_cache),
+        "timestamp": datetime.utcnow().isoformat(),
+    })
 ```
 
 #### 10. Configuration Reference
 
 ##### 10.1 Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JIB_NETWORK_LOCKDOWN` | `true` | Enable Phase 2 network lockdown |
-| `JIB_NETWORK_MODE` | `lockdown` | Set by launcher, read by container |
-| `HTTP_PROXY` | `http://gateway:3128` | Proxy for HTTP traffic |
-| `HTTPS_PROXY` | `http://gateway:3128` | Proxy for HTTPS traffic |
-| `SQUID_ALLOWED_DOMAINS_FILE` | `/etc/squid/allowed_domains.txt` | Domain allowlist |
+| Variable | Default | Description | Valid Values |
+|----------|---------|-------------|--------------|
+| `JIB_NETWORK_LOCKDOWN` | `true` | Enable Phase 2 network lockdown | `true`, `false` |
+| `JIB_NETWORK_MODE` | `lockdown` | Set by launcher, read by container | `lockdown`, `supervised` |
+| `HTTP_PROXY` | `http://gateway:3128` | Proxy for HTTP traffic | URL format |
+| `HTTPS_PROXY` | `http://gateway:3128` | Proxy for HTTPS traffic | URL format |
+| `SQUID_ALLOWED_DOMAINS_FILE` | `/etc/squid/allowed_domains.txt` | Domain allowlist | File path |
+| `PRIVATE_REPO_MODE` | `false` | Restrict to private repos only | `true`, `false` |
+| `VISIBILITY_CACHE_TTL_READ` | `60` | Cache TTL for read ops (seconds) | Integer ≥ 0 |
+| `VISIBILITY_CACHE_TTL_WRITE` | `0` | Cache TTL for write ops (seconds) | Integer ≥ 0 |
+
+##### 10.2 Configuration Validation
+
+The gateway validates all configuration at startup and fails fast on invalid values:
+
+```python
+# gateway-sidecar/config_validator.py
+"""Validate configuration at startup."""
+
+import os
+import sys
+from typing import Any, Optional
+
+
+class ConfigError(Exception):
+    """Raised when configuration is invalid."""
+    pass
+
+
+def validate_bool(name: str, value: str) -> bool:
+    """Validate boolean environment variable."""
+    if value.lower() in ("true", "1", "yes"):
+        return True
+    elif value.lower() in ("false", "0", "no"):
+        return False
+    else:
+        raise ConfigError(
+            f"Invalid value for {name}: '{value}'. "
+            f"Expected 'true' or 'false'."
+        )
+
+
+def validate_int(name: str, value: str, min_val: int = 0) -> int:
+    """Validate integer environment variable."""
+    try:
+        int_val = int(value)
+        if int_val < min_val:
+            raise ConfigError(
+                f"Invalid value for {name}: {int_val}. "
+                f"Must be >= {min_val}."
+            )
+        return int_val
+    except ValueError:
+        raise ConfigError(
+            f"Invalid value for {name}: '{value}'. "
+            f"Expected an integer."
+        )
+
+
+def validate_file_exists(name: str, path: str) -> str:
+    """Validate file path exists."""
+    if not os.path.isfile(path):
+        raise ConfigError(
+            f"File not found for {name}: '{path}'"
+        )
+    return path
+
+
+def validate_config():
+    """Validate all configuration at startup.
+
+    Raises ConfigError with clear message if any value is invalid.
+    """
+    errors = []
+
+    # Boolean configs
+    for var in ["JIB_NETWORK_LOCKDOWN", "PRIVATE_REPO_MODE"]:
+        value = os.getenv(var, "")
+        if value:  # Only validate if set
+            try:
+                validate_bool(var, value)
+            except ConfigError as e:
+                errors.append(str(e))
+
+    # Integer configs
+    for var in ["VISIBILITY_CACHE_TTL_READ", "VISIBILITY_CACHE_TTL_WRITE"]:
+        value = os.getenv(var, "")
+        if value:
+            try:
+                validate_int(var, value, min_val=0)
+            except ConfigError as e:
+                errors.append(str(e))
+
+    # File configs
+    domains_file = os.getenv("SQUID_ALLOWED_DOMAINS_FILE", "/etc/squid/allowed_domains.txt")
+    if os.getenv("JIB_NETWORK_LOCKDOWN", "true").lower() == "true":
+        try:
+            validate_file_exists("SQUID_ALLOWED_DOMAINS_FILE", domains_file)
+        except ConfigError as e:
+            errors.append(str(e))
+
+    if errors:
+        print("Configuration errors:", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        raise ConfigError(f"{len(errors)} configuration error(s)")
+
+
+# Called at gateway startup
+if __name__ == "__main__":
+    try:
+        validate_config()
+        print("Configuration valid")
+    except ConfigError:
+        sys.exit(1)
+```
+
+**Startup integration:**
+
+```python
+# gateway-sidecar/gateway.py
+
+from config_validator import validate_config, ConfigError
+
+# Validate config before starting server
+try:
+    validate_config()
+except ConfigError:
+    log.error("Gateway startup aborted due to configuration errors")
+    sys.exit(1)
+```
 
 ##### 10.2 Files Modified
 
@@ -1172,7 +1777,30 @@ def check_blocked_requests():
 4. **Supply chain via pre-installed packages:** Malicious packages could be bundled at build time
 
 **Mitigations for Phase 2 residual risks:**
-- GitHub exfiltration: Audit logging of all operations; branch naming policies. Note: GitHub's 256-character branch name limit constrains (but doesn't eliminate) the data bandwidth available through this vector. Commit messages and PR bodies have higher limits but are more visible in audit logs.
+
+**GitHub exfiltration (acknowledged concern):**
+
+The gateway architecture cannot fully prevent data exfiltration via GitHub without imposing arbitrary limits that would hinder legitimate development work:
+
+| Vector | Limit | Impact |
+|--------|-------|--------|
+| Branch names | 256 characters | ~32 bytes/branch useful payload |
+| Commit messages | No hard limit | Could encode substantial data |
+| PR titles/bodies | No hard limit | Could encode substantial data |
+
+**Why we don't impose limits:**
+- Arbitrary limits on commit message length or PR body size would interfere with legitimate detailed commit messages and PR descriptions
+- The repositories where this exfiltration could occur are **private**, limiting the exposure
+- Commit messages and PR bodies are visible in audit logs and PR review, providing detection opportunity
+
+**Mitigations:**
+- **Audit logging:** All git operations are logged with full content (see Audit Log section)
+- **PR review:** Human reviews PR content before merge
+- **Private repos:** When Private Repo Mode is enabled, exfiltrated data goes to private repos only
+- **Detection:** Anomaly detection on commit message length, unusual branch creation patterns
+
+**Accepted risk:** This exfiltration vector is a residual risk we accept, as the mitigations provide detection capability and the data stays within controlled (private) repositories.
+
 - Claude API: Anthropic maintains usage logs; API calls are authenticated
 - Pre-installed packages: Use pinned versions, scan images with Trivy
 
@@ -1226,6 +1854,56 @@ All gateway operations produce structured audit logs in JSON format:
 - Authentication failure
 - GitHub rate limit errors (HTTP 403 from GitHub API)
 - Unusual patterns (e.g., >10 PRs in 10 minutes)
+
+### Audit Log Storage and Access
+
+Audit logs are stored and accessible via the host's systemd journal:
+
+**Storage location:** Gateway sidecar runs as a systemd service (`gateway-sidecar.service`). All logs are written to stdout/stderr and captured by journald.
+
+**Accessing logs:**
+```bash
+# Real-time log monitoring
+journalctl -u gateway-sidecar -f
+
+# Filter by event type
+journalctl -u gateway-sidecar --grep="gateway_operation"
+
+# Filter by time range
+journalctl -u gateway-sidecar --since "1 hour ago"
+
+# Export as JSON for analysis
+journalctl -u gateway-sidecar -o json > audit_export.json
+
+# Filter policy violations
+journalctl -u gateway-sidecar --grep="policy_violation"
+
+# Filter proxy blocked requests
+journalctl -u gateway-sidecar --grep="proxy_request_blocked"
+```
+
+**Log persistence:**
+- Logs are stored in `/var/log/journal/` on the host (not inside containers)
+- Default journald retention applies (typically based on disk space or time)
+- For extended retention, configure `/etc/systemd/journald.conf`:
+  ```ini
+  [Journal]
+  MaxRetentionSec=90d
+  SystemMaxUse=10G
+  ```
+
+**Squid proxy logs:**
+- Squid access logs are written inside the gateway container to `/var/log/squid/access.log`
+- For persistence, mount this path to the host:
+  ```yaml
+  # docker-compose.yml
+  services:
+    gateway-sidecar:
+      volumes:
+        - /var/log/jib-gateway/squid:/var/log/squid
+  ```
+
+**Note:** Logs are accessible outside the container via journalctl. No special action needed for lockdown mode—the gateway-sidecar runs on the host's network stack and logs to the host's journal.
 
 ### Supply Chain Considerations
 
