@@ -280,7 +280,7 @@ Process this task now."""
 
     claude_result = run_agent(
         prompt=prompt,
-        cwd=Path.home() / "khan",  # Start in khan directory
+        cwd=Path.home() / "repos",  # Start in repos directory
     )
     logger.info("Claude completed", return_code=claude_result.returncode, task_id=original_task_id)
     if claude_result.stderr:
@@ -691,7 +691,7 @@ Process this response now."""
 
     claude_result = run_agent(
         prompt=prompt,
-        cwd=Path.home() / "khan",  # Start in khan directory
+        cwd=Path.home() / "repos",  # Start in repos directory
     )
     logger.info(
         "Claude completed", return_code=claude_result.returncode, task_id=task_id_for_search
