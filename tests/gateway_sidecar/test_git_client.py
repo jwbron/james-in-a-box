@@ -3,7 +3,6 @@
 import sys
 from pathlib import Path
 
-import pytest
 
 # Add gateway-sidecar to path for imports
 gateway_path = Path(__file__).parent.parent.parent / "gateway-sidecar"

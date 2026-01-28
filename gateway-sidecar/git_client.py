@@ -82,7 +82,7 @@ def ssh_url_to_https(url: str) -> str:
 
 def is_ssh_url(url: str) -> bool:
     """Check if a URL is an SSH git URL."""
-    return url.startswith("git@") or url.startswith("ssh://")
+    return url.startswith(("git@", "ssh://"))
 
 
 # =============================================================================
