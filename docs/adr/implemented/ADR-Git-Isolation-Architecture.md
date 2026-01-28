@@ -1574,6 +1574,319 @@ def log_private_repo_policy_event(
 - [x] tmpfs mount shadowing for .git
 - [ ] Batch operation endpoint (optimization)
 - [ ] Cloud Run checkpoint/restore
+- [ ] Full git/gh binary removal from container (proposed, see below)
+
+---
+
+## Proposed Enhancement: Full Binary Removal
+
+**Status:** Proposed (implementation plan complete, pending execution)
+
+### Motivation
+
+The current architecture relocates the real `git` and `gh` binaries to `/opt/.jib-internal/` and uses wrapper scripts at `/usr/bin/`. While effective, an attacker who gains code execution could potentially:
+
+1. Call the relocated binaries directly at `/opt/.jib-internal/git`
+2. Bypass the wrappers via environment manipulation (e.g., `LD_PRELOAD`)
+3. Use the binaries to perform unauthorized operations
+
+Fully removing the binaries from the container eliminates these attack vectors entirely.
+
+### Current State
+
+```
+Container:
+  /usr/bin/git  →  symlink to wrapper script (/opt/jib-runtime/jib-container/scripts/git)
+  /usr/bin/gh   →  symlink to wrapper script (/opt/jib-runtime/jib-container/scripts/gh)
+  /opt/.jib-internal/git  ←  Real git binary (~3.5MB) - retained
+  /opt/.jib-internal/gh   ←  Real gh binary (~35MB) - retained
+```
+
+### Proposed State
+
+```
+Container:
+  /usr/bin/git  →  wrapper script (pure HTTP client, no git binary dependency)
+  /usr/bin/gh   →  wrapper script (pure HTTP client, no gh binary dependency)
+  (No real git/gh binaries exist in the container)
+```
+
+### Code Analysis
+
+#### gh Binary (Line 15 of `jib-container/scripts/gh`)
+
+**Current code:**
+```bash
+REAL_GH=/opt/.jib-internal/gh
+```
+
+**Usage in wrapper:** The `REAL_GH` variable is **declared but never used**. All `gh` commands are routed through `execute_via_gateway()` which makes HTTP calls to the gateway sidecar. The gh wrapper is already a pure HTTP client.
+
+**Verdict:** ✅ gh binary can be removed with zero code changes (only cosmetic cleanup to remove the unused variable)
+
+#### git Binary (Lines 17, 674 of `jib-container/scripts/git`)
+
+**Current code:**
+```bash
+REAL_GIT=/opt/.jib-internal/git  # Line 17
+```
+
+**Usage in wrapper (Line 674):**
+```bash
+if $is_global; then
+    # Global config operations don't need gateway - use real git
+    # These operate on ~/.gitconfig, not on any repo
+    exec "$REAL_GIT" config "${extra_args[@]}"
+```
+
+**Analysis:** The only use of the real git binary is for `git config --global` operations. This handles commands like:
+- `git config --global user.name "Name"`
+- `git config --global user.email "email@example.com"`
+- `git config --global core.editor "vim"`
+
+**Verdict:** ✅ git binary can be removed with minor changes to handle global config differently
+
+### Security Benefits
+
+1. **Defense in depth:** Even if wrappers are bypassed, there's literally no binary to exploit
+2. **Reduced attack surface:** Eliminates ~40MB of potentially exploitable binaries
+3. **Smaller container image:** Reduces image size by ~40MB
+4. **Clearer security audit:** "No git binary exists" is easier to verify than "git is shadowed"
+5. **Principle of least privilege:** Container truly cannot perform direct git operations
+
+### Implementation Plan
+
+#### Phase 1: Remove gh Binary (Zero Risk)
+
+**Files to modify:**
+
+1. `jib-container/Dockerfile` (lines 33-38, 104-111):
+   - Remove gh installation OR
+   - Keep installation but don't relocate (wrapper doesn't need it)
+
+   **Recommended approach:** Keep gh installed (some tools check for `gh --version`) but remove the relocation step. The wrapper intercepts all calls anyway.
+
+2. `jib-container/scripts/gh` (line 15):
+   - Remove unused `REAL_GH=/opt/.jib-internal/gh` declaration (cosmetic)
+
+**Testing:**
+- Run full test suite
+- Verify `gh pr create`, `gh pr view`, `gh api` work correctly
+- Verify `gh --version` returns meaningful response (wrapper can synthesize this)
+
+**Risk:** None - the variable is already unused
+
+#### Phase 2: Remove git Binary (Low Risk)
+
+**Files to modify:**
+
+1. `jib-container/scripts/git` (lines 17, 658-679):
+   - Remove `REAL_GIT` declaration
+   - Modify `git config --global` handling
+
+**Global config handling options:**
+
+| Option | Pros | Cons | Recommended |
+|--------|------|------|-------------|
+| **A. Edit ~/.gitconfig directly** | Simple, no gateway changes | Requires Python/sed in wrapper | ✅ Yes |
+| **B. Route through gateway** | Centralizes all git | Gateway complexity, overkill | No |
+| **C. Pre-configure in Dockerfile** | Zero runtime handling | Not flexible | Partial |
+| **D. Block global config** | Simplest | May break some tools | No |
+
+**Recommended approach: Option A + C combined**
+
+Pre-configure common settings in Dockerfile:
+```dockerfile
+# Pre-configure git globals (no git binary needed at runtime)
+RUN git config --system init.defaultBranch main && \
+    git config --system core.editor "nano" && \
+    git config --system color.ui auto
+```
+
+Handle remaining global config in wrapper by editing `~/.gitconfig` directly:
+```bash
+handle_global_config() {
+    local args=("$@")
+
+    # Parse: git config --global [--get|--unset|key] [value]
+    local operation="set"
+    local key=""
+    local value=""
+
+    for arg in "${args[@]}"; do
+        case "$arg" in
+            --global) continue ;;
+            --get) operation="get" ;;
+            --unset) operation="unset" ;;
+            --list) operation="list" ;;
+            -*)  ;;
+            *)
+                if [ -z "$key" ]; then
+                    key="$arg"
+                else
+                    value="$arg"
+                fi
+                ;;
+        esac
+    done
+
+    local config_file="$HOME/.gitconfig"
+
+    case "$operation" in
+        list)
+            [ -f "$config_file" ] && cat "$config_file"
+            ;;
+        get)
+            # Use Python to parse INI-style config
+            python3 -c "
+import configparser
+import sys
+c = configparser.ConfigParser()
+c.read('$config_file')
+section, key = '$key'.rsplit('.', 1)
+try:
+    print(c.get(section, key))
+except:
+    sys.exit(1)
+"
+            ;;
+        set)
+            # Use Python to write INI-style config
+            python3 -c "
+import configparser
+import os
+c = configparser.ConfigParser()
+c.read('$config_file')
+section, key = '$key'.rsplit('.', 1)
+if section not in c:
+    c.add_section(section)
+c.set(section, key, '$value')
+with open('$config_file', 'w') as f:
+    c.write(f)
+"
+            ;;
+        unset)
+            python3 -c "
+import configparser
+c = configparser.ConfigParser()
+c.read('$config_file')
+section, key = '$key'.rsplit('.', 1)
+try:
+    c.remove_option(section, key)
+    with open('$config_file', 'w') as f:
+        c.write(f)
+except:
+    pass
+"
+            ;;
+    esac
+}
+```
+
+2. `jib-container/Dockerfile` (lines 104-111):
+   - Remove git binary relocation step
+
+**Testing:**
+- Run full test suite
+- Test `git config --global user.name "Test"`
+- Test `git config --global --get user.name`
+- Test `git config --global --list`
+- Verify Claude Code works correctly (extensive git user)
+
+**Risk:** Low - only affects global config operations
+
+#### Phase 3: Clean Dockerfile (Optional)
+
+**Alternative approach:** Instead of installing git/gh and relocating, don't install them at all in the container. Only install the minimal dependencies for the wrapper scripts (curl, python3).
+
+**Considerations:**
+- Some tools probe for `git` existence via `which git` - wrapper handles this
+- `git --version` needs synthetic response - add to wrapper
+- Tab completion would break - acceptable for non-interactive containers
+
+**Dockerfile changes:**
+```dockerfile
+# DON'T install git/gh binaries - all operations via gateway
+# RUN apt-get install -y git  # REMOVED
+# RUN apt-get install -y gh   # REMOVED
+
+# Instead, just ensure wrapper scripts are in place
+COPY scripts/git /usr/bin/git
+COPY scripts/gh /usr/bin/gh
+RUN chmod +x /usr/bin/git /usr/bin/gh
+```
+
+**Risk:** Medium - requires thorough testing with all tools
+
+### Compatibility Considerations
+
+| Concern | Impact | Mitigation |
+|---------|--------|------------|
+| Tools checking `which git` | Low | Wrapper exists at `/usr/bin/git`, resolves correctly |
+| Tools checking `git --version` | Low | Add synthetic version response to wrapper |
+| Tab completion | None | Non-interactive containers don't need completion |
+| Claude Code | Low | Already works with wrapper; extensive testing confirms |
+| Git subcommands via alias | None | Aliases would call wrapper anyway |
+
+### Rollback Plan
+
+If issues arise post-deployment:
+
+1. Revert Dockerfile changes to restore binary relocation
+2. Push hotfix to container registry
+3. Restart affected containers
+
+No data loss possible - all git state is in gateway-managed worktrees.
+
+### Implementation Checklist
+
+#### Phase 1: gh Binary Removal
+- [ ] Update Dockerfile to skip gh binary relocation
+- [ ] Remove `REAL_GH` declaration from `jib-container/scripts/gh`
+- [ ] Add `gh --version` synthetic response to wrapper
+- [ ] Run test suite
+- [ ] Manual testing of gh commands
+- [ ] Deploy to staging environment
+- [ ] Monitor for 24 hours
+- [ ] Deploy to production
+
+#### Phase 2: git Binary Removal
+- [ ] Update `jib-container/scripts/git` to handle global config via direct file editing
+- [ ] Pre-configure common git settings in Dockerfile
+- [ ] Update Dockerfile to skip git binary relocation
+- [ ] Add `git --version` synthetic response to wrapper
+- [ ] Run test suite (including Claude Code integration)
+- [ ] Manual testing of git config commands
+- [ ] Deploy to staging environment
+- [ ] Monitor for 48 hours (longer due to higher risk)
+- [ ] Deploy to production
+
+#### Phase 3: Full Removal (Optional)
+- [ ] Modify Dockerfile to not install git/gh at all
+- [ ] Ensure wrapper scripts are self-contained
+- [ ] Update base image selection if needed
+- [ ] Full regression testing
+- [ ] Deploy with canary rollout
+
+### Files to Modify Summary
+
+| File | Phase | Changes |
+|------|-------|---------|
+| `jib-container/Dockerfile` | 1, 2, 3 | Remove binary relocation, optionally remove installation |
+| `jib-container/scripts/gh` | 1 | Remove unused REAL_GH, add version response |
+| `jib-container/scripts/git` | 2 | Replace global config handling, add version response |
+
+### Security Audit Points
+
+After implementation, verify:
+
+1. ✅ No git binary at `/opt/.jib-internal/git`
+2. ✅ No gh binary at `/opt/.jib-internal/gh`
+3. ✅ `which git` returns `/usr/bin/git` (the wrapper)
+4. ✅ `ldd /usr/bin/git` fails (it's a script, not binary)
+5. ✅ `find / -name "git" -type f -executable 2>/dev/null` returns nothing except wrapper
+6. ✅ All git operations still route through gateway correctly
+7. ✅ Gateway audit logs show all operations
 
 ---
 
