@@ -257,66 +257,6 @@ class TestSetupEnvironment:
         assert "/home/jib/.local/bin" in os.environ["PATH"]
 
 
-class TestFixRepoConfig:
-    """Tests for the _fix_repo_config function."""
-
-    @patch.object(entrypoint, "run_cmd")
-    def test_sets_git_identity(self, mock_run_cmd):
-        """Test that git identity is set in repo config."""
-        mock_run_cmd.return_value = MagicMock(returncode=1, stdout="")
-
-        logger = entrypoint.Logger(quiet=True)
-        entrypoint._fix_repo_config(Path("/test/config"), logger)
-
-        # Check that user.name and user.email were set
-        calls = mock_run_cmd.call_args_list
-        name_call = [c for c in calls if "user.name" in str(c)]
-        email_call = [c for c in calls if "user.email" in str(c)]
-        assert len(name_call) == 1
-        assert len(email_call) == 1
-
-    @patch.object(entrypoint, "run_cmd")
-    def test_cleans_token_from_url(self, mock_run_cmd, capsys):
-        """Test that tokens are stripped from git remote URLs."""
-        # First two calls set identity, third gets URL with token
-        mock_run_cmd.side_effect = [
-            MagicMock(returncode=0),  # set user.name
-            MagicMock(returncode=0),  # set user.email
-            MagicMock(
-                returncode=0, stdout="https://x-access-token:ghp_xxx@github.com/owner/repo.git"
-            ),  # get URL
-            MagicMock(returncode=0),  # set cleaned URL
-        ]
-
-        logger = entrypoint.Logger(quiet=False)
-        entrypoint._fix_repo_config(Path("/test/config"), logger)
-
-        # Check that the URL was cleaned
-        calls = mock_run_cmd.call_args_list
-        set_url_calls = [
-            c for c in calls if "remote.origin.url" in str(c) and "https://github.com" in str(c)
-        ]
-        assert len(set_url_calls) == 1
-
-    @patch.object(entrypoint, "run_cmd")
-    def test_converts_ssh_to_https(self, mock_run_cmd, capsys):
-        """Test that SSH URLs are converted to HTTPS."""
-        mock_run_cmd.side_effect = [
-            MagicMock(returncode=0),  # set user.name
-            MagicMock(returncode=0),  # set user.email
-            MagicMock(returncode=0, stdout="git@github.com:owner/repo.git"),  # get URL
-            MagicMock(returncode=0),  # set HTTPS URL
-        ]
-
-        logger = entrypoint.Logger(quiet=False)
-        entrypoint._fix_repo_config(Path("/test/config"), logger)
-
-        # Check that URL was converted to HTTPS
-        calls = mock_run_cmd.call_args_list
-        set_url_calls = [c for c in calls if "https://github.com/owner/repo.git" in str(c)]
-        assert len(set_url_calls) == 1
-
-
 class TestSetupSharing:
     """Tests for the setup_sharing function."""
 
