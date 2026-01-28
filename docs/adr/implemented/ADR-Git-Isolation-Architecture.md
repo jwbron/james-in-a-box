@@ -1,1833 +1,431 @@
-# ADR: Git Isolation Architecture
+# ADR: Git Isolation Architecture for Autonomous AI Agents
 
 **Status:** Implemented
 **Date:** 2026-01-27
 **Supersedes:** ADR-Container-Worktree-Isolation
-**Related PRs:** #590, #592, #594
 
 ---
 
-## Context
+## Executive Summary
 
-### The Original Problem
+This document describes how we safely allow multiple AI agent containers to work on the same git repositories simultaneously, without risking cross-contamination or unauthorized access.
 
-PR #590 implemented git worktree isolation to allow multiple jib containers to work on the same repository without affecting each other. The implementation modified git metadata files (`gitdir`, `commondir`) in shared bind-mounted directories to use container-internal paths (e.g., `/home/jib/.git-admin/repo`).
+**The core security guarantee**: An AI agent can only see and modify its own isolated workspace. It cannot access other agents' work, cannot directly push to remote repositories, and cannot see credentials. All git operations that touch the network or affect shared state go through a trusted gateway that enforces access policies.
 
-This approach had fundamental problems discovered in PR #594:
-
-1. **Host git operations break** while any container is running - host sees container paths that don't exist
-2. **Crash recovery required** - if container exits abnormally, corrupted paths persist on host
-3. **Complex mount structure** - required `.git-admin`, `.git-common`, and multiple bind mounts
-4. **Path conflicts are inherent** - container paths and host paths cannot both be valid simultaneously
-
-### Requirements Evolution
-
-Initial requirements:
-- Multiple containers can work on the same repo without affecting each other
-- Gateway sidecar can access repos for push/fetch operations
-
-Additional requirements discovered during analysis:
-- **Host git must work** while containers are running
-- **Same architecture** for local and Cloud Run deployments
-- **Fast workspace creation** for new containers/requests (milliseconds, not file copies)
-- **Single repo** with isolated workspaces, not full clones per container
-
-### Approaches Considered
-
-**1. Overlayfs isolation (local only)**
-- Each container gets copy-on-write view of repo via overlayfs
-- Host sees base layer, container sees modifications in upper layer
-- Problem: Doesn't work on Cloud Run (no overlayfs), requires different architecture per environment
-
-**2. Git bundle checkpointing (Cloud Run)**
-- Store git state as bundles in Cloud Storage
-- Download/restore on container start, checkpoint periodically
-- Problem: Different architecture from local, adds complexity and latency
-
-**3. Cleanup scripts for crash recovery**
-- Run scripts to restore host paths from backups after container crash
-- Problem: Doesn't solve the fundamental issue - host git still broken while container runs
-
-**4. Gateway-managed git (all operations via HTTP)**
-- Route ALL git operations through gateway sidecar
-- Container only edits files, never touches git metadata
-- Initially rejected in PR #590 for performance concerns (~10% HTTP overhead)
-- Reconsidered: overhead is negligible, and it eliminates all path conflict issues
-
-**5. Gateway-managed worktrees (chosen approach)**
-- Combine worktrees (fast creation, shared objects) with gateway management
-- Gateway creates/manages worktrees, handles all git operations
-- Container mounts only working directory with `.git` read-only
-- Same architecture works on local, VM, and Cloud Run
-
-### Why Gateway-Managed Worktrees?
-
-The key insight: **use git's native worktree feature for isolation, but have the gateway manage it**.
-
-- Worktrees provide fast workspace creation (O(1) - just metadata)
-- Worktrees share git objects (efficient storage)
-- Gateway managing worktrees means containers never touch git metadata
-- No path rewriting needed - gateway controls all paths internally
-- Same architecture works everywhere - only the volume backend changes
+**Key properties:**
+- **Complete isolation**: Each agent gets its own branch and working directory
+- **No credential exposure**: Agents never see GitHub tokens or SSH keys
+- **Enforced code review**: Agents cannot merge their own PRs—humans must review and merge
+- **Crash-safe**: System recovers cleanly if an agent container crashes
 
 ---
 
-## Decision
+## Motivation
 
-Adopt **gateway-managed worktrees** as the git isolation architecture:
+This document implements the git-specific aspects of [ADR-Internet-Tool-Access-Lockdown](../in-progress/ADR-Internet-Tool-Access-Lockdown.md), which establishes the core principle: **behavioral controls are insufficient for AI agent security**. Instructions can be bypassed by prompt injection, model drift, or adversarial inputs. Security must be enforced at the infrastructure level.
 
-1. **Gateway manages worktree lifecycle** - creates, deletes, and operates on worktrees
-2. **All git operations go through gateway** - container's git wrapper routes to gateway API
-3. **Container mounts only working directory** - with `.git` file as read-only
-4. **Worktree admin directories not exposed** - gateway manages internally
-5. **Same architecture for all deployments** - local, VM, Cloud Run
+For git operations, this means:
+- **Credential isolation**: Agents cannot push directly—no credentials exist in the container
+- **Filesystem isolation**: Agents cannot access other agents' workspaces—they don't exist in the container's view
+- **Gateway enforcement**: All git operations go through a policy-enforcing gateway
 
-This approach:
-- Eliminates path conflicts (container never sees git metadata paths)
-- Allows host git to work while containers run
-- Provides fast workspace creation via worktrees
-- Simplifies the mount structure (one directory per container)
-- Works identically across deployment environments
+This document focuses on the specific challenge of **multi-agent git isolation**: how multiple agents can work on the same repository simultaneously without cross-contamination.
 
 ---
 
-# Implementation: Gateway-Managed Worktrees
+## Threat Model
 
-The simplest architecture: gateway manages git worktrees, containers only see their working directory.
+### Threats Addressed
 
-## Key Design Goals
+| Threat | Mitigation |
+|--------|------------|
+| Agent accesses another agent's workspace | Filesystem isolation—other workspaces don't exist in container's view |
+| Agent pushes to unauthorized branches | Gateway enforces branch ownership policy |
+| Agent pushes malicious code directly to main | Gateway blocks direct pushes to protected branches; PRs require human review |
+| Agent discovers or exfiltrates credentials | Credentials only exist in gateway; container never sees them |
+| Agent modifies git config to bypass security | Container has no access to git metadata; config is gateway-controlled |
+| Agent escapes via git hooks or filters | No hooks/filters in container; only gateway executes git commands |
+| Crashed container corrupts shared state | Gateway cleans up orphaned workspaces on startup |
 
-1. **Fast workspace creation** - New container/request gets isolated workspace in milliseconds
-2. **Efficient storage** - All worktrees share git objects (no file duplication)
-3. **True isolation** - Containers can't see or affect each other
-4. **No path conflicts** - Containers never touch git metadata
-5. **Same architecture everywhere** - Works on local, VM, and Cloud Run
+### Explicit Non-Goals
 
-## Architecture
+This architecture does **not** protect against:
+- Malicious agents with root access to the container (defense in depth via container sandboxing)
+- Network-level attacks between containers (addressed by network policies)
+- Compromise of the gateway itself (gateway runs with minimal attack surface)
 
-**Note on paths**: The diagram below uses `/workspace/` as a conceptual root. In the actual implementation:
-- Main repos: `~/repos/{repo}` (standard git repos, not bare)
-- Worktrees: `~/.jib-worktrees/{container_id}/{repo}`
-- Worktree admin: `~/repos/{repo}/.git/worktrees/{repo}`
+---
+
+## Security Model
+
+### Principle: Complete Metadata Isolation
+
+The fundamental security property is that **agents never touch git metadata**. The container mounts only the working directory (source files), with the `.git` path shadowed by an empty tmpfs:
+
+```
+Container filesystem view:
+/home/jib/repos/my-repo/
+├── src/                 ← Agent can edit these files
+├── tests/               ← Agent can edit these files
+├── README.md            ← Agent can edit this file
+└── .git/                ← Empty directory (tmpfs shadow)
+```
+
+Without git metadata, the agent cannot:
+- Discover where the repository came from
+- See commit history directly
+- Modify the staging area directly
+- Change branch pointers
+- Execute git hooks
+- Access other worktrees
+
+### Principle: Gateway as Security Boundary
+
+All git operations that require metadata access go through the gateway:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Agent Container (Untrusted)                  │
+│                                                                 │
+│   The agent runs 'git status', which invokes the git wrapper    │
+│                              │                                   │
+│                              ▼                                   │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  Git Wrapper Script                                     │   │
+│   │  - Intercepts all git commands                          │   │
+│   │  - Cannot bypass (no git metadata = native git fails)   │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                              │                                   │
+└──────────────────────────────│───────────────────────────────────┘
+                               │ HTTP API call
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     Gateway Sidecar (Trusted)                    │
+│                                                                 │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  Request Validation                                     │   │
+│   │  - Verify container identity                            │   │
+│   │  - Check operation against allowlist                    │   │
+│   │  - Validate flags (block dangerous options)             │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                              │                                   │
+│                              ▼                                   │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  Policy Enforcement                                     │   │
+│   │  - Branch ownership: only push to agent's own branches  │   │
+│   │  - Protected branches: block direct push to main        │   │
+│   │  - Merge blocking: agents cannot merge PRs              │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                              │                                   │
+│                              ▼                                   │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │  Git Execution                                          │   │
+│   │  - Execute in correct worktree context                  │   │
+│   │  - Inject credentials for network operations            │   │
+│   │  - Return sanitized output to container                 │   │
+│   └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Security Properties
+
+1. **Filesystem isolation**: Containers cannot see other containers' working directories
+2. **Metadata isolation**: Containers have no access to git metadata (`.git/` contents)
+3. **Credential isolation**: GitHub tokens exist only in the gateway, never in containers
+4. **Operation allowlist**: Gateway only permits known-safe git operations and flags
+5. **Branch ownership**: Containers can only push to branches they created
+6. **Merge prevention**: Containers cannot merge PRs—humans must review and merge
+7. **Audit trail**: All git operations are logged through the gateway
+
+---
+
+## Architecture Overview
+
+### System Components
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                            Shared Volume                                 │
+│                            Shared Storage                                │
 │                                                                          │
-│  ~/repos/                           ← Main repositories                  │
-│  └── my-repo/                       ← Main repo (standard git repo)      │
+│  /repos/                              ← Main repositories                │
+│  └── my-repo/                         ← Standard git repo                │
 │      └── .git/                                                           │
-│          ├── objects/               ← Shared objects (all worktrees)     │
-│          ├── refs/                  ← Shared refs                        │
-│          └── worktrees/             ← Worktree admin (gateway-managed)   │
-│              ├── my-repo/           ← Metadata for container abc123      │
-│              └── my-repo-1/         ← Metadata for container def456      │
+│          ├── objects/                 ← Shared objects (all worktrees)   │
+│          ├── refs/                    ← Shared refs                      │
+│          └── worktrees/               ← Worktree metadata (gateway only) │
+│              ├── agent-abc123/        ← Metadata for agent abc123        │
+│              └── agent-def456/        ← Metadata for agent def456        │
 │                                                                          │
-│  ~/.jib-worktrees/                  ← Working directories                │
-│      ├── jib-abc123/                                                     │
-│      │   └── my-repo/               ← Container abc123's working dir     │
-│      └── jib-def456/                                                     │
-│          └── my-repo/               ← Container def456's working dir     │
+│  /worktrees/                          ← Working directories              │
+│      ├── agent-abc123/                                                   │
+│      │   └── my-repo/                 ← Agent abc123's working dir       │
+│      └── agent-def456/                                                   │
+│          └── my-repo/                 ← Agent def456's working dir       │
 └─────────────────────────────────────────────────────────────────────────┘
                     │                              │
                     ▼                              ▼
      ┌──────────────────────────┐    ┌──────────────────────────┐
-     │     jib container        │    │    gateway sidecar       │
+     │   Agent Container        │    │   Gateway Sidecar        │
      │                          │    │                          │
      │  Mounts ONLY:            │    │  Has access to:          │
-     │  ~/.jib-worktrees/       │    │  ~/repos/                │
-     │    {id}/my-repo/         │    │  ~/.jib-worktrees/       │
-     │  → /home/jib/repos/...   │    │                          │
+     │  /worktrees/abc123/      │    │  /repos/                 │
+     │    my-repo/              │    │  /worktrees/             │
+     │  → /home/jib/repos/      │    │                          │
      │                          │    │  Manages:                │
      │  Can do:                 │    │  - Worktree lifecycle    │
      │  - Edit source files     │    │  - All git operations    │
      │                          │    │  - Push/fetch to GitHub  │
-     │  Cannot do:              │    │                          │
+     │  Cannot do:              │    │  - Policy enforcement    │
      │  - See other worktrees   │    │                          │
      │  - Access .git metadata  │    │                          │
+     │  - See credentials       │    │                          │
      └──────────────────────────┘    └──────────────────────────┘
                     │                              ▲
                     │           HTTP API           │
                     └──────────────────────────────┘
 ```
 
-## How It Works
-
-### Worktree Lifecycle (Gateway-Managed)
+### Container Lifecycle
 
 ```
-Container Request                    Gateway
-       │                                │
-       │  POST /api/v1/worktree/create  │
-       │  {repo: "my-repo", id: "abc"}  │
-       │───────────────────────────────►│
-       │                                │
-       │                    ┌───────────┴───────────┐
-       │                    │ git worktree add      │
-       │                    │   /workspace/worktrees│
-       │                    │   /abc/my-repo        │
-       │                    │   -b jib/abc/work     │
-       │                    └───────────┬───────────┘
-       │                                │
-       │  {path: "/workspace/worktrees/ │
-       │   abc/my-repo", branch: "..."}│
-       │◄───────────────────────────────│
-       │                                │
-      ... container does work ...       │
-       │                                │
-       │  DELETE /api/v1/worktree/      │
-       │         abc/my-repo            │
-       │───────────────────────────────►│
-       │                                │
-       │                    ┌───────────┴───────────┐
-       │                    │ git worktree remove   │
-       │                    │   /workspace/worktrees│
-       │                    │   /abc/my-repo        │
-       │                    └───────────┬───────────┘
-       │                                │
+1. Agent Startup
+   ┌──────────────────────────────────────────────────────────────────┐
+   │  Gateway receives request to create workspace for agent-abc123   │
+   │                              │                                   │
+   │                              ▼                                   │
+   │  git worktree add /worktrees/abc123/my-repo -b agent/abc123/work │
+   │                              │                                   │
+   │                              ▼                                   │
+   │  Return worktree path to orchestrator                            │
+   └──────────────────────────────────────────────────────────────────┘
+
+2. Container Launch
+   ┌──────────────────────────────────────────────────────────────────┐
+   │  docker run                                                      │
+   │    -v /worktrees/abc123/my-repo:/home/jib/repos/my-repo:rw      │
+   │    --mount type=tmpfs,destination=/home/jib/repos/my-repo/.git   │
+   │    -e CONTAINER_ID=abc123                                        │
+   │    agent-image                                                   │
+   │                                                                  │
+   │  The tmpfs mount shadows .git, giving agent no git metadata      │
+   └──────────────────────────────────────────────────────────────────┘
+
+3. Normal Operation
+   ┌──────────────────────────────────────────────────────────────────┐
+   │  Agent edits files directly in /home/jib/repos/my-repo/         │
+   │  Agent runs 'git add', 'git commit' → routed through gateway    │
+   │  Agent runs 'git push' → gateway authenticates and pushes       │
+   │  Agent runs 'gh pr create' → gateway handles API call           │
+   └──────────────────────────────────────────────────────────────────┘
+
+4. Container Shutdown
+   ┌──────────────────────────────────────────────────────────────────┐
+   │  Gateway receives cleanup request                                │
+   │                              │                                   │
+   │                              ▼                                   │
+   │  Check for uncommitted changes (warn if present)                 │
+   │                              │                                   │
+   │                              ▼                                   │
+   │  git worktree remove /worktrees/abc123/my-repo                  │
+   └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Worktree creation is fast** because:
-- No file copying - git just creates metadata + checks out files
-- Objects are shared via hardlinks/reflinks when possible
-- Branch creation is O(1)
+### Multi-Agent Isolation
 
-### Container Setup
-1. Request arrives, gateway creates worktree: `git worktree add /workspace/worktrees/{id}/repo -b jib/{id}/work`
-2. Container mounts only the working directory files (excluding `.git`):
-   ```bash
-   docker run \
-     -v /workspace/worktrees/{id}/repo:/home/jib/repo:rw \
-     --mount type=tmpfs,destination=/home/jib/repo/.git \
-     ...
-   ```
-   The tmpfs mount shadows the `.git` file from the host, so the container sees an empty `.git` directory. This prevents any local git operations from succeeding—they must go through the gateway.
-3. Container can freely edit source files
-4. All git operations go through gateway API (container has no git metadata)
+Each agent works on its own isolated branch with its own staging area:
 
-### Why .git is Not Mounted
+| Agent | Working Directory | Branch | Index (Staging) |
+|-------|-------------------|--------|-----------------|
+| abc123 | `/worktrees/abc123/my-repo/` | `agent/abc123/work` | Isolated |
+| def456 | `/worktrees/def456/my-repo/` | `agent/def456/work` | Isolated |
 
-The container does not have access to any git metadata:
+**Guarantees:**
+- Agents cannot see each other's uncommitted changes
+- Agents can work on different branches simultaneously
+- All agents share commit history and git objects (efficient storage)
+- Gateway manages worktree metadata—agents never touch it
 
-1. **The `.git` file would be useless anyway**: It contains `gitdir: /workspace/repos/...` pointing to a path not mounted in the container
-2. **Simpler security model**: No git metadata = no possibility of git-based attacks from within container
-3. **Enforces gateway routing**: All git operations must go through the gateway—there's no fallback
+---
 
-**Note on git worktree naming**: Git names worktree admin directories based on the basename of the worktree path. For `/workspace/worktrees/abc123/my-repo`, git creates `.git/worktrees/my-repo`. If multiple worktrees have the same basename, git appends a number (e.g., `my-repo-1`).
+## Gateway Operations
 
-**Security properties:**
-- Container cannot read or modify any git metadata
-- Container cannot discover worktree admin paths
-- Container cannot bypass gateway for git operations
-- Git wrapper routes all operations through gateway API
+### Allowed Git Operations
 
-### Git Operations
+The gateway implements an explicit allowlist. Operations not on this list are rejected.
 
-| Operation | Where it runs | How |
-|-----------|---------------|-----|
-| Edit files | Container | Direct filesystem access |
-| `git status` | Gateway | `POST /api/v1/git/execute` with `operation: "status"` |
-| `git diff` | Gateway | `POST /api/v1/git/execute` with `operation: "diff"` |
-| `git log` | Gateway | `POST /api/v1/git/execute` with `operation: "log"` |
-| `git add` | Gateway | `POST /api/v1/git/execute` with `operation: "add"` |
-| `git commit` | Gateway | `POST /api/v1/git/execute` with `operation: "commit"` |
-| `git push` | Gateway | `POST /api/v1/git/push` (dedicated endpoint for network ops) |
-| `git fetch` | Gateway | `POST /api/v1/git/fetch` (dedicated endpoint for network ops) |
-| `gh` commands | Gateway | `POST /api/v1/gh/*` (existing) |
+| Category | Operations | Notes |
+|----------|------------|-------|
+| Read | `status`, `diff`, `log`, `show`, `blame`, `branch --list` | Informational only |
+| Stage | `add`, `reset` (non-destructive modes) | Modify staging area |
+| Commit | `commit` | Create commits |
+| Branch | `checkout`, `switch`, `branch` (create/delete own branches) | Branch management |
+| Network | `push`, `fetch`, `pull` | Credentials injected by gateway |
+| GitHub | `gh pr create`, `gh pr comment`, `gh issue` | API calls via gateway |
 
-**Why all git operations go through the gateway**: The container's `.git` file contains a `gitdir` path pointing to `/workspace/repos/...`, which is not mounted in the container. Git operations require access to the worktree admin directory (HEAD, index, config), which only the gateway has. The ~10% HTTP overhead is negligible compared to the architectural simplicity this provides.
+### Blocked Operations
 
-### Git Wrapper in Container
+| Operation | Why Blocked |
+|-----------|-------------|
+| `git merge` to protected branches | Must go through PR review |
+| `gh pr merge` | Human must review and merge |
+| `git push --force` to others' branches | Could destroy others' work |
+| `git config --global` | Could affect other agents |
+| `git remote add/remove` | Could redirect pushes |
 
-The git wrapper routes ALL git operations through the gateway:
+### Blocked Flags
 
-```bash
-#!/bin/bash
-# /usr/bin/git wrapper in container
+The gateway blocks dangerous flags across all operations:
 
-REAL_GIT=/opt/.jib-internal/git
-GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
+| Flag | Risk |
+|------|------|
+| `--exec`, `-c` | Command injection via config/scripts |
+| `--upload-pack`, `--receive-pack` | Arbitrary command execution on fetch/push |
+| `--config`, `-c` | Runtime config override |
+| `--no-verify` | Skip hooks (defense in depth) |
+| `--git-dir`, `--work-tree` | Path traversal outside sandbox |
 
-# Parse the git command (first non-flag argument)
-cmd=""
-for arg in "$@"; do
-    case "$arg" in
-        -*) continue ;;
-        *)
-            cmd="$arg"
-            break
-            ;;
-    esac
-done
+### Flag Validation
 
-# Route all git operations through gateway
-route_to_gateway "$cmd" "$@"
-```
-
-**Note**: The container has no `.git` metadata at all (it's shadowed by a tmpfs mount). This means:
-1. Any git command run without the wrapper would fail with "not a git repository"
-2. The wrapper is the only way to perform git operations
-3. All operations are routed through the gateway, which has access to both the working directory and the worktree admin directory
-
-### Gateway Git Execution
-
-Gateway receives git commands via a unified endpoint and executes them in the correct worktree context:
+Each operation has an explicit allowlist of permitted flags. Unknown flags are rejected:
 
 ```python
-@app.route("/api/v1/git/execute", methods=["POST"])
-def git_execute():
-    """Execute a git command in the gateway's worktree."""
-    data = request.json
-    repo_path = data["repo_path"]
-    operation = data["operation"]  # e.g., "add", "status", "commit"
-    args = data.get("args", [])
-
-    # Validate operation against allowlist
-    if operation not in GIT_ALLOWED_COMMANDS:
-        return jsonify({"error": f"Operation not allowed: {operation}"}), 403
-
-    # Validate args against operation-specific allowlist
-    args_valid, args_error, validated_args = validate_git_args(operation, args)
-    if not args_valid:
-        return jsonify({"error": args_error}), 400
-
-    # Execute git command in worktree context
-    cmd = git_cmd(operation, *validated_args)
-    result = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True)
-
-    return jsonify({
-        "success": result.returncode == 0,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "returncode": result.returncode
-    })
+# Example: 'git commit' allowed flags
+"commit": {
+    "allowed_flags": [
+        "--message", "-m",
+        "--amend",          # Only own recent commits
+        "--allow-empty",
+        "--author",
+        "--signoff", "-s",
+        "--verbose", "-v",
+        "--quiet", "-q",
+    ],
+}
 ```
 
-**Note**: Network operations (`push`, `fetch`, `ls-remote`) use dedicated endpoints for credential handling.
+---
 
-## Multi-Container Isolation
+## Deployment Scenarios
 
-Each container gets its own git worktree, sharing the object store:
+The architecture works identically across deployment environments:
 
-```
-/workspace/
-├── repos/
-│   └── my-repo.git/
-│       ├── objects/          # Shared across ALL worktrees
-│       ├── refs/             # Shared refs
-│       ├── HEAD              # Main repo HEAD
-│       └── worktrees/        # Worktree admin directories
-│           ├── my-repo/      # Admin for first worktree (abc123)
-│           │   ├── HEAD      # abc123's HEAD (jib/abc123/work)
-│           │   ├── index     # abc123's staging area
-│           │   └── gitdir    # Points to working dir
-│           └── my-repo-1/    # Admin for second worktree (def456)
-│               ├── HEAD      # def456's HEAD (jib/def456/work)
-│               ├── index     # def456's staging area
-│               └── gitdir
-│
-└── worktrees/                # Working directories (what containers see)
-    ├── abc123/
-    │   └── my-repo/          # Container abc123 mounts THIS
-    │       ├── src/
-    │       └── .git          # File pointing to worktree admin
-    └── def456/
-        └── my-repo/          # Container def456 mounts THIS
-            ├── src/
-            └── .git
-```
-
-**Isolation guarantees:**
-- Each worktree has its own HEAD, index (staging area), and working directory
-- Containers can't see each other's uncommitted changes
-- Containers can work on different branches simultaneously
-- All containers share commit history and objects (efficient storage)
-- Gateway manages worktree admin directories - containers never touch them
-
-**Branch management:**
-- Worktree creation automatically creates a branch: `jib/{id}/work`
-- Gateway enforces one worktree per branch (git requirement)
-- Merges happen through PRs (human review)
-
-**Why this avoids PR #590's problems:**
-- Container only mounts the working directory, not the worktree admin
-- Gateway manages gitdir/commondir paths - they're never exposed to container
-- No path rewriting needed - gateway controls all paths
-- Host can run git operations on main repo while containers use worktrees
-
-## Deployment: Local vs Cloud Run
-
-The architecture is **identical** for both:
-
-| Aspect | Local | Cloud Run |
-|--------|-------|-----------|
-| Shared volume | Docker bind mounts | emptyDir or GCS FUSE |
-| Gateway communication | localhost / Docker network | localhost (sidecar) |
-| Container startup | Clone once, reuse | Clone or restore checkpoint |
+| Aspect | Local (Docker) | Cloud (Cloud Run) |
+|--------|----------------|-------------------|
+| Shared storage | Docker bind mounts | emptyDir or GCS FUSE |
+| Gateway communication | Docker network | localhost (sidecar) |
+| Container startup | Gateway creates worktree | Same |
+| Credential storage | Local files | Secret Manager |
 | Persistence | Host filesystem | GCS checkpoint (optional) |
 
-### Local Deployment
+### Cloud Run Specifics
 
-```bash
-# Start gateway
-docker run -d --name gateway \
-  -v /workspace:/workspace \
-  jib-gateway
+On Cloud Run, containers are stateless and can be preempted. Additional considerations:
 
-# Start jib container (after gateway creates worktree)
-docker run -it --name jib-abc123 \
-  -v /workspace/worktrees/abc123/my-repo:/home/jib/repo:rw \
-  --mount type=tmpfs,destination=/home/jib/repo/.git \
-  -e CONTAINER_ID=abc123 \
-  -e GATEWAY_URL=http://gateway:9847 \
-  --network jib-network \
-  jib
-```
+1. **Git state checkpointing**: Periodically save git bundles to Cloud Storage
+2. **Session affinity**: Route requests for one session to the same instance
+3. **Startup recovery**: Restore from checkpoint if container was preempted
 
-**Note**: The tmpfs mount shadows the host's `.git` file, so the container has no git metadata. All git operations must go through the gateway.
+---
 
-### Cloud Run Deployment
+## Crash Recovery
 
-```yaml
-apiVersion: serving.knative.dev/v1
-kind: Service
-spec:
-  template:
-    spec:
-      containers:
-        - name: jib
-          image: jib:latest
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-          env:
-            - name: GATEWAY_URL
-              value: "http://localhost:9847"
-        - name: gateway
-          image: jib-gateway:latest
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-      volumes:
-        - name: workspace
-          emptyDir:
-            medium: Memory
-            sizeLimit: 2Gi
-```
+If an agent container crashes without cleanup:
 
-**Note**: On Cloud Run, both containers mount the full `/workspace` volume. The gateway creates worktrees on startup, and the jib container accesses them at `/workspace/worktrees/{id}/{repo}`. This differs from local deployment where we can use more granular Docker bind mounts.
-
-## Advantages Over Previous Approaches
-
-| Issue | Worktree approach (PR #590) | Gateway-managed |
-|-------|----------------------------|-----------------|
-| Host git breaks | Yes (path rewriting) | No (host not affected) |
-| Crash recovery | Cleanup script needed | Startup worktree cleanup |
-| Multi-container | Complex worktree setup | Simple directory per container |
-| Cloud deployment | Needs different architecture | Same architecture |
-| Implementation | Complex entrypoint logic | Simple wrapper + gateway routes |
-
-## Gateway Crash Recovery
-
-If the gateway crashes or restarts, orphaned worktrees may accumulate. The gateway implements cleanup on startup:
+1. **On next gateway startup**: Gateway scans for orphaned worktrees
+2. **Orphan detection**: Compare worktree list against active containers
+3. **Cleanup**: Remove worktrees for containers that no longer exist
+4. **Branch preservation**: Committed work is preserved; only working directory removed
 
 ```python
 def cleanup_orphaned_worktrees():
     """Remove worktrees for containers that no longer exist."""
-    worktrees = list_worktrees()  # git worktree list
-    active_containers = get_active_containers()  # From container runtime
+    worktrees = list_all_worktrees()
+    active_containers = get_active_containers()
 
-    for wt in worktrees:
-        container_id = extract_container_id(wt.path)
-        if container_id and container_id not in active_containers:
-            git_worktree_remove(wt.path, force=True)
-            shutil.rmtree(wt.path, ignore_errors=True)
+    for worktree in worktrees:
+        container_id = extract_container_id(worktree.path)
+        if container_id not in active_containers:
+            # Log warning if uncommitted changes
+            if has_uncommitted_changes(worktree.path):
+                log.warning(f"Removing worktree with uncommitted changes: {container_id}")
+            remove_worktree(worktree.path, force=True)
 ```
 
-This runs:
-- On gateway startup (implemented)
-- When containers are deleted via the `/api/v1/worktree/delete` endpoint (implemented)
-
-**Note**: Periodic cleanup (e.g., hourly) is not currently implemented. Startup cleanup handles the common case of crashed containers. Periodic cleanup could be added if orphaned worktrees become a problem in practice, but the current implementation should be sufficient since:
-1. Normal container exit triggers explicit cleanup via the delete endpoint
-2. Gateway restarts (which trigger startup cleanup) are infrequent but catch accumulated orphans
-3. The jib launcher's `finally` block ensures cleanup even on keyboard interrupt
+---
 
 ## Performance Considerations
 
-**Concern**: Every git command goes over HTTP - is this slow?
+**Concern:** All git operations go over HTTP—is this slow?
 
-**Analysis**:
-- Local HTTP latency: ~0.1-1ms
+**Analysis:**
+- Local HTTP latency: ~0.1-1ms per request
 - Typical `git status`: 10-100ms (I/O bound)
-- Overhead: <10% for most operations
+- HTTP overhead: <10% for most operations
 
-**Optimizations if needed**:
-1. Batch operations: `POST /api/v1/git/batch` for multiple commands
-2. Caching: Gateway caches status/diff for rapid re-queries
-3. Streaming: Large outputs (log, diff) streamed back
+**Benchmarks (estimated):**
 
-**Estimated benchmarks** (to be validated with actual measurements):
-| Operation | Direct git | Via gateway | Overhead | Notes |
-|-----------|-----------|-------------|----------|-------|
-| git status | 50ms | 55ms | ~10% | Via gateway |
-| git diff | 30ms | 35ms | ~17% | Via gateway |
-| git log -10 | 20ms | 25ms | ~25% | Via gateway |
-| git commit | 100ms | 110ms | ~10% | Via gateway |
-| git add | 40ms | 45ms | ~12% | Via gateway |
+| Operation | Direct Git | Via Gateway | Overhead |
+|-----------|-----------|-------------|----------|
+| git status | 50ms | 55ms | ~10% |
+| git diff | 30ms | 35ms | ~17% |
+| git commit | 100ms | 110ms | ~10% |
 
-**Note**: All operations go through the gateway because the container lacks access to the worktree admin directory (HEAD, index, config). The HTTP overhead is small (~5-10ms per call) and acceptable given the architectural simplicity.
-
-## Implementation Plan
-
-### Phase 0: Remove PR #590/#592 Path Rewriting
-
-**Goal**: Undo the path rewriting approach and remove obsolete worktree management code.
-
-#### 0.1 Remove Path Rewriting from Container Entrypoint
-
-**File**: `jib-container/entrypoint.py`
-
-Remove the `setup_worktrees()` function (lines 557-696) which:
-- Rewrites `.git` files to point to `.git-admin/<repo>`
-- Backs up and rewrites `gitdir` file from host path to container path
-- Backs up and rewrites `commondir` file to `.git-common/<repo>/`
-- Sets `core.worktree` in git config
-
-Remove the `cleanup_on_exit()` restoration logic (lines 1048-1121) which:
-- Restores `gitdir` and `commondir` from `.host-backup` files
-- This cleanup is only needed because of path rewriting
-
-**Simplify to**: Container sees repo mounted at `/home/jib/repo` with `.git` as read-only file. No path manipulation needed. (For multi-repo scenarios, use `/home/jib/repos/<repo>`.)
-
-#### 0.2 Remove Host Worktree Management
-
-**Files to remove/simplify**:
-
-1. **`jib-container/jib_lib/worktrees.py`** - Remove entirely
-   - `create_worktrees()` - No longer needed; gateway manages worktrees
-   - `cleanup_worktrees()` - No longer needed; gateway handles cleanup
-   - File-based locking (`_acquire_git_lock`, `_release_git_lock`) - Gateway serializes operations
-
-2. **`host-services/utilities/worktree-watcher/`** - Deprecated (removal deferred)
-   - `worktree-watcher.py` - No longer needed; gateway cleans up orphaned worktrees on startup
-   - `worktree-watcher.service` - Systemd service (can be disabled)
-   - `worktree-watcher.timer` - Systemd timer (can be disabled)
-   - **Note**: This service is superseded by gateway startup cleanup but remains in the codebase
-     for backward compatibility. It can be safely disabled or removed in a future cleanup PR.
-
-3. **`scripts/jib-cleanup-worktree`** - Remove
-   - Manual restoration script no longer needed
-
-#### 0.3 Simplify jib Launcher
-
-**Files**:
-- `jib-container/jib_lib/runtime.py` - Update `run_claude()` and `exec_in_new_container()`
-- `jib-container/jib_lib/docker.py` - Update mount configuration
-
-Remove calls to:
-- `create_worktrees(container_id)` on startup
-- `cleanup_worktrees(container_id)` on shutdown
-
-Replace with:
-- Request worktree creation from gateway API on startup
-- Request worktree deletion from gateway API on shutdown
-
-#### 0.4 Remove Mount Complexity
-
-**Files**: Docker run configuration, compose files
-
-Remove mounts for:
-- `~/.git-admin/<repo>` → `/home/jib/.git-admin/<repo>`
-- `~/.git-common/<repo>` → `/home/jib/.git-common/<repo>`
-- `~/.jib-local-objects/<id>/<repo>` → local objects
-
-Simplify to:
-- Gateway creates worktree at `/workspace/worktrees/<id>/<repo>`
-- Container mounts only the working directory with `.git` read-only
-
-#### 0.5 Remove Object Sync from Gateway
-
-**File**: `gateway-sidecar/gateway.py`
-
-Remove `sync_objects_after_push()` function (lines 122-274):
-- This was needed because containers had local object stores
-- With gateway-managed worktrees, objects are in the shared repo
-
-### Phase 1: Extend Gateway API for Write Operations
-
-**Goal**: Gateway handles all git write operations; container runs reads locally.
-
-#### 1.1 Add Unified Git Execute Endpoint
-
-**File**: `gateway-sidecar/gateway.py`
-
-Add a unified endpoint for all local git operations:
-
-```python
-POST /api/v1/git/execute
-    Request: {
-        "repo_path": "/home/jib/repos/myrepo",
-        "operation": "status|add|commit|log|diff|show|...",
-        "args": ["--porcelain"],  # optional operation-specific args
-        "container_id": "jib-xxx"  # for path mapping
-    }
-    Response: {
-        "success": true,
-        "message": "git status successful",
-        "data": {
-            "stdout": "...",
-            "stderr": "...",
-            "returncode": 0
-        }
-    }
-
-Supported operations:
-- Read: status, diff, log, show, blame, branch (list), tag (list), rev-parse
-- Write: add, commit, checkout, switch, reset, restore, stash, merge, rebase,
-         cherry-pick, revert, branch (create/delete), tag (create/delete),
-         clean, config
-
-Network operations (push, fetch, ls-remote) use dedicated endpoints for
-credential handling.
-```
-
-**Design rationale**: A unified endpoint with operation parameter reduces code duplication and provides consistent validation, logging, and error handling. Each operation's allowed flags are validated against an explicit allowlist.
-
-#### 1.2 Add Worktree Lifecycle Endpoints
-
-**File**: `gateway-sidecar/gateway.py`
-
-```python
-POST /api/v1/worktree/create
-    Request: {"repo": "repo-name", "container_id": "jib-xxx", "base_branch": "main"}
-    Actions:
-      1. git worktree add /workspace/worktrees/<id>/<repo> -b jib/<id>/work <base>
-      2. Return worktree path for container to mount
-    Response: {"success": true, "worktree_path": "/workspace/worktrees/..."}
-
-DELETE /api/v1/worktree/<container_id>/<repo>
-    Actions:
-      1. git worktree remove /workspace/worktrees/<id>/<repo>
-      2. Delete working directory
-      3. Optionally delete branch if no unmerged commits
-    Response: {"success": true}
-
-GET /api/v1/worktree/list
-    Response: {"worktrees": [{"container_id": "...", "repo": "...", "branch": "..."}]}
-```
-
-#### 1.3 Implement Path Mapping in Gateway
-
-**File**: `gateway-sidecar/git_client.py`
-
-Add worktree path resolution:
-
-```python
-import re
-
-def validate_identifier(value: str, name: str) -> None:
-    """Ensure identifier contains only safe characters.
-
-    Prevents path traversal attacks via container_id or repo_name containing '../'.
-    """
-    if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$', value):
-        raise ValueError(f"Invalid {name}: must be alphanumeric with ._- allowed")
-    if '..' in value:
-        raise ValueError(f"Invalid {name}: path traversal not allowed")
-
-def resolve_worktree_paths(container_id: str, repo_name: str) -> tuple[str, str]:
-    """Map container ID to worktree paths.
-
-    Returns:
-        (work_tree_path, git_dir_path) for use with git --work-tree and --git-dir
-
-    Raises:
-        ValueError: If container_id or repo_name contain unsafe characters
-    """
-    # Validate inputs to prevent path traversal
-    validate_identifier(container_id, "container_id")
-    validate_identifier(repo_name, "repo_name")
-
-    work_tree = f"/workspace/worktrees/{container_id}/{repo_name}"
-    # Note: git names worktree admin dirs by basename; we track the mapping
-    git_dir = f"/workspace/repos/{repo_name}.git/worktrees/{repo_name}"
-    return work_tree, git_dir
-```
-
-#### 1.4 Extend Allowlist Validation
-
-**File**: `gateway-sidecar/git_client.py`
-
-The gateway uses **explicit allowlists** for all git operations. Unknown flags are rejected by default—this is critical for security. Extend the existing `GIT_ALLOWED_COMMANDS` dictionary:
-
-```python
-# Existing global blocklist (already in git_client.py)
-BLOCKED_GIT_FLAGS = [
-    "--upload-pack",   # Can specify arbitrary command
-    "--exec",          # Can specify arbitrary command
-    "-c",              # Config override (could disable security)
-    "--config",        # Config override
-    "--receive-pack",  # Arbitrary command execution
-]
-
-# Extend the per-operation allowlist (add to existing GIT_ALLOWED_COMMANDS)
-GIT_ALLOWED_COMMANDS = {
-    # ... existing fetch, ls-remote, push entries ...
-
-    "add": {
-        "allowed_flags": [
-            "--all", "-A",
-            "--update", "-u",
-            "--intent-to-add", "-N",
-            "--force", "-f",
-            "--verbose", "-v",
-            "--dry-run", "-n",
-            "--ignore-errors",
-            "--",  # Separator for paths
-        ],
-    },
-    "commit": {
-        "allowed_flags": [
-            "--message", "-m",
-            "--amend",
-            "--no-edit",
-            "--allow-empty",
-            "--allow-empty-message",
-            "--author",
-            "--date",
-            "--signoff", "-s",
-            "--no-verify", "-n",
-            "--verbose", "-v",
-            "--quiet", "-q",
-        ],
-    },
-    "checkout": {
-        "allowed_flags": [
-            "--branch", "-b",
-            "--force", "-f",
-            "--track", "-t",
-            "--no-track",
-            "--quiet", "-q",
-            "--",
-        ],
-    },
-    "reset": {
-        "allowed_flags": [
-            "--soft",
-            "--mixed",
-            "--hard",      # Allowed but requires confirmation (see below)
-            "--keep",
-            "--quiet", "-q",
-            "--",
-        ],
-        "requires_confirmation": ["--hard"],  # Extra validation
-    },
-    "stash": {
-        "allowed_flags": [
-            "push", "pop", "list", "show", "drop", "apply", "clear",
-            "--message", "-m",
-            "--keep-index", "-k",
-            "--include-untracked", "-u",
-            "--all", "-a",
-            "--quiet", "-q",
-            "--index",
-        ],
-    },
-    "merge": {
-        "allowed_flags": [
-            "--no-ff",
-            "--ff-only",
-            "--squash",
-            "--no-commit",
-            "--message", "-m",
-            "--verbose", "-v",
-            "--quiet", "-q",
-            "--abort",
-            "--continue",
-        ],
-    },
-    "rebase": {
-        "allowed_flags": [
-            "--onto",
-            "--continue",
-            "--abort",
-            "--skip",
-            "--quiet", "-q",
-            "--verbose", "-v",
-            # NOTE: -i/--interactive intentionally NOT allowed (requires TTY)
-        ],
-    },
-    "cherry-pick": {
-        "allowed_flags": [
-            "--no-commit", "-n",
-            "--mainline", "-m",
-            "--continue",
-            "--abort",
-            "--skip",
-            "--quiet",
-        ],
-    },
-    "revert": {
-        "allowed_flags": [
-            "--no-commit", "-n",
-            "--mainline", "-m",
-            "--continue",
-            "--abort",
-            "--skip",
-        ],
-    },
-    "branch": {
-        "allowed_flags": [
-            "--delete", "-d",
-            "--force", "-D",  # -D = -d --force
-            "--move", "-m",
-            "--copy", "-c",
-            "--list", "-l",
-            "--verbose", "-v",
-            "--quiet", "-q",
-            "--track", "-t",
-            "--no-track",
-            "--set-upstream-to", "-u",
-        ],
-    },
-    "tag": {
-        "allowed_flags": [
-            "--annotate", "-a",
-            "--sign", "-s",
-            "--message", "-m",
-            "--force", "-f",
-            "--delete", "-d",
-            "--list", "-l",
-            "--verify", "-v",
-        ],
-    },
-    "clean": {
-        "allowed_flags": [
-            "--force", "-f",
-            "--dry-run", "-n",
-            "-d",  # Remove directories
-            "-x",  # Remove ignored files too
-            "--quiet", "-q",
-        ],
-        "requires_confirmation": ["-f", "--force", "-x"],  # Destructive
-    },
-    "config": {
-        "allowed_flags": [
-            "--local",
-            "--get",
-            "--get-all",
-            "--list", "-l",
-            "--unset",
-            # NOTE: --global, --system intentionally NOT allowed
-        ],
-        "blocked_keys": [
-            "credential.*",      # Don't let container modify credentials
-            "core.hooksPath",    # Don't let container redirect hooks
-            "core.gitProxy",     # Don't let container set proxies
-            "http.proxy",
-            "https.proxy",
-        ],
-    },
-}
-```
-
-**Security properties maintained:**
-
-1. **Unknown flags rejected by default** - `validate_git_args()` returns error for unlisted flags
-2. **Global blocklist still applies** - `--upload-pack`, `--exec`, `-c` always blocked
-3. **Per-operation allowlists** - Each operation has explicit list of permitted flags
-4. **Confirmation for destructive ops** - `reset --hard`, `clean -f` require explicit confirmation
-5. **Config key restrictions** - Block modification of credential and security-related config
-
-### Phase 2: Update Git Wrapper
-
-**Goal**: Container's git wrapper routes ALL operations through gateway.
-
-#### 2.1 Modify Git Wrapper Script
-
-**File**: `jib-container/scripts/git`
-
-Replace current implementation with:
-
-```bash
-#!/bin/bash
-# Git wrapper - routes ALL git operations through gateway
-#
-# The container has NO .git metadata (it's shadowed by a tmpfs mount).
-# Without this wrapper, 'git' commands would fail with "not a git repository".
-# All operations must go through the gateway, which has access to both
-# the working directory and the worktree admin directory.
-
-REAL_GIT=/opt/.jib-internal/git
-GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
-GATEWAY_SECRET_FILE="${GATEWAY_SECRET_FILE:-/run/secrets/gateway-secret}"
-
-# Helper: Get the gateway authentication secret
-get_gateway_secret() {
-    if [ -f "$GATEWAY_SECRET_FILE" ]; then
-        cat "$GATEWAY_SECRET_FILE"
-    elif [ -n "$GATEWAY_SECRET" ]; then
-        echo "$GATEWAY_SECRET"
-    else
-        echo ""
-    fi
-}
-
-# Helper: Translate container path to gateway-understandable path
-# Container sees: /home/jib/repo or /home/jib/repos/<repo>
-# Gateway sees: /workspace/worktrees/<container_id>/<repo>
-translate_path_for_gateway() {
-    local container_path="$1"
-    local container_id="${CONTAINER_ID:-unknown}"
-
-    # Extract repo name from path
-    local repo_name
-    if [[ "$container_path" == /home/jib/repos/* ]]; then
-        repo_name=$(echo "$container_path" | sed 's|/home/jib/repos/||' | cut -d/ -f1)
-    elif [[ "$container_path" == /home/jib/repo* ]]; then
-        repo_name="repo"
-    else
-        repo_name=$(basename "$container_path")
-    fi
-
-    echo "/workspace/worktrees/${container_id}/${repo_name}"
-}
-
-# Helper: Extract subcommand from git remote arguments
-get_remote_subcommand() {
-    shift  # Skip 'remote'
-    for arg in "$@"; do
-        case "$arg" in
-            -*) continue ;;
-            *) echo "$arg"; return ;;
-        esac
-    done
-    echo ""
-}
-
-# Parse the git command (first non-flag argument)
-cmd=""
-for arg in "$@"; do
-    case "$arg" in
-        -*) continue ;;
-        *)
-            cmd="$arg"
-            break
-            ;;
-    esac
-done
-
-# Block remote modification commands
-if [ "$cmd" = "remote" ]; then
-    subcmd=$(get_remote_subcommand "$@")
-    case "$subcmd" in
-        add|remove|rm|rename|set-url|set-head|set-branches|prune)
-            echo "ERROR: Remote modification blocked" >&2
-            exit 1
-            ;;
-    esac
-fi
-
-# Route all git operations through gateway
-route_to_gateway "$cmd" "$@"
-```
-
-#### 2.2 Add Gateway Routing Function
-
-**File**: `jib-container/scripts/git`
-
-```bash
-route_to_gateway() {
-    local operation="$1"
-    shift
-
-    local repo_path
-    repo_path=$(translate_path_for_gateway "$(pwd)")
-
-    local secret
-    secret=$(get_gateway_secret)
-    if [ -z "$secret" ]; then
-        echo "ERROR: Gateway secret not available" >&2
-        return 1
-    fi
-
-    # Build args array as JSON
-    local args_json
-    args_json=$(printf '%s\n' "$@" | python3 -c "
-import sys, json
-args = [line.strip() for line in sys.stdin if line.strip()]
-print(json.dumps(args))
-")
-
-    local payload
-    payload=$(python3 -c "
-import json
-print(json.dumps({
-    'repo_path': '$repo_path',
-    'operation': '$operation',
-    'args': $args_json,
-    'cwd': '$(pwd)'
-}))
-")
-
-    # Call gateway with timeout and error handling
-    local response
-    local curl_exit_code
-    response=$(curl -s --connect-timeout 5 --max-time 60 -X POST \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $secret" \
-        -d "$payload" \
-        "${GATEWAY_URL}/api/v1/git/${operation}" 2>&1)
-    curl_exit_code=$?
-
-    # Handle network failures
-    if [ $curl_exit_code -ne 0 ]; then
-        echo "ERROR: Gateway unavailable at ${GATEWAY_URL} (curl exit code: $curl_exit_code)" >&2
-        echo "Ensure the gateway sidecar is running: curl ${GATEWAY_URL}/api/v1/health" >&2
-        return 1
-    fi
-
-    # Handle empty response
-    if [ -z "$response" ]; then
-        echo "ERROR: Empty response from gateway" >&2
-        return 1
-    fi
-
-    # Parse and display response
-    # Response format: {"success": bool, "stdout": "...", "stderr": "...", "returncode": int}
-    local success returncode
-    success=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success',False))" 2>/dev/null)
-    returncode=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('returncode',1))" 2>/dev/null)
-
-    if [ "$success" = "True" ]; then
-        echo "$response" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('stdout',''),end='')" 2>/dev/null
-        echo "$response" | python3 -c "import sys,json; r=json.load(sys.stdin); s=r.get('stderr',''); print(s,end='') if s else None" >&2 2>/dev/null
-        return "${returncode:-0}"
-    else
-        local error_msg
-        error_msg=$(echo "$response" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('error') or r.get('stderr') or 'Unknown error')" 2>/dev/null)
-        if [ -z "$error_msg" ]; then
-            echo "ERROR: Invalid response from gateway: $response" >&2
-        else
-            echo "ERROR: $error_msg" >&2
-        fi
-        return "${returncode:-1}"
-    fi
-}
-```
-
-### Phase 3: Gateway-Managed Worktree Lifecycle
-
-**Goal**: Gateway creates/manages worktrees; containers only mount working directories.
-
-#### 3.1 Worktree Manager Module
-
-**New file**: `gateway-sidecar/worktree_manager.py`
-
-```python
-"""Manages git worktrees for container isolation."""
-
-import os
-import shutil
-import subprocess
-from pathlib import Path
-from dataclasses import dataclass
-from typing import Optional
-
-WORKSPACE_ROOT = Path("/workspace")
-REPOS_DIR = WORKSPACE_ROOT / "repos"
-WORKTREES_DIR = WORKSPACE_ROOT / "worktrees"
-
-
-@dataclass
-class WorktreeInfo:
-    container_id: str
-    repo_name: str
-    branch: str
-    worktree_path: Path
-    git_dir: Path
-
-
-class WorktreeManager:
-    def __init__(self):
-        WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
-        self._active_worktrees: dict[str, list[WorktreeInfo]] = {}
-
-    def create_worktree(
-        self,
-        repo_name: str,
-        container_id: str,
-        base_branch: str = "main"
-    ) -> WorktreeInfo:
-        """Create an isolated worktree for a container."""
-        # Validate inputs to prevent path traversal
-        validate_identifier(container_id, "container_id")
-        validate_identifier(repo_name, "repo_name")
-
-        repo_git = REPOS_DIR / f"{repo_name}.git"
-        if not repo_git.exists():
-            raise ValueError(f"Repository not found: {repo_name}")
-
-        worktree_path = WORKTREES_DIR / container_id / repo_name
-        branch_name = f"jib/{container_id}/work"
-
-        worktree_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Check if branch already exists (from crashed session)
-        branch_exists = subprocess.run(
-            ["git", "rev-parse", "--verify", branch_name],
-            cwd=repo_git,
-            capture_output=True,
-        ).returncode == 0
-
-        if branch_exists:
-            # Use existing branch instead of creating new one
-            result = subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), branch_name],
-                cwd=repo_git,
-                capture_output=True,
-                text=True,
-            )
-        else:
-            # Create new branch from base
-            result = subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_branch],
-                cwd=repo_git,
-                capture_output=True,
-                text=True,
-            )
-
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to create worktree: {result.stderr}")
-
-        # Note: git names the worktree admin dir by the basename of worktree_path
-        # For /workspace/worktrees/{id}/{repo}, git creates .git/worktrees/{repo}
-        # We look up the actual path after creation
-        info = WorktreeInfo(
-            container_id=container_id,
-            repo_name=repo_name,
-            branch=branch_name,
-            worktree_path=worktree_path,
-            git_dir=repo_git / "worktrees" / repo_name,  # May have suffix if duplicate
-        )
-
-        if container_id not in self._active_worktrees:
-            self._active_worktrees[container_id] = []
-        self._active_worktrees[container_id].append(info)
-
-        return info
-
-    def remove_worktree(
-        self,
-        container_id: str,
-        repo_name: str,
-        force: bool = False,
-        delete_branch: bool = True
-    ) -> dict:
-        """Remove a container's worktree.
-
-        Args:
-            container_id: Container identifier
-            repo_name: Repository name
-            force: If True, remove even with uncommitted changes
-            delete_branch: If True, delete the jib/{container_id}/work branch
-
-        Returns:
-            dict with 'success', 'uncommitted_changes', 'warning', 'branch_deleted' keys
-        """
-        worktree_path = WORKTREES_DIR / container_id / repo_name
-        repo_git = REPOS_DIR / f"{repo_name}.git"
-        branch_name = f"jib/{container_id}/work"
-        result = {"success": False, "uncommitted_changes": False, "warning": None, "branch_deleted": False}
-
-        if not worktree_path.exists():
-            result["success"] = True
-            return result
-
-        # Check for uncommitted changes
-        status = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=worktree_path,
-            capture_output=True,
-            text=True,
-        )
-        has_changes = bool(status.stdout.strip())
-
-        if has_changes and not force:
-            result["uncommitted_changes"] = True
-            result["warning"] = (
-                f"Worktree has uncommitted changes. "
-                f"Use force=True to remove anyway, or commit/stash changes first."
-            )
-            # Leave worktree intact - user must explicitly force or handle changes
-            return result
-
-        if has_changes:
-            # Log warning but proceed with removal
-            logger.warning(
-                "Removing worktree with uncommitted changes",
-                container_id=container_id,
-                repo=repo_name,
-            )
-            result["warning"] = "Worktree removed with uncommitted changes"
-
-        # Remove the worktree
-        subprocess.run(
-            ["git", "worktree", "remove", str(worktree_path), "--force"],
-            cwd=repo_git,
-            capture_output=True,
-        )
-
-        # Delete the branch if requested and it has no unmerged commits
-        if delete_branch:
-            # Check if branch is fully merged into main/master
-            merge_check = subprocess.run(
-                ["git", "branch", "--merged", "HEAD", "--list", branch_name],
-                cwd=repo_git,
-                capture_output=True,
-                text=True,
-            )
-            is_merged = branch_name in merge_check.stdout
-
-            if is_merged or force:
-                delete_result = subprocess.run(
-                    ["git", "branch", "-D" if force else "-d", branch_name],
-                    cwd=repo_git,
-                    capture_output=True,
-                    text=True,
-                )
-                result["branch_deleted"] = delete_result.returncode == 0
-                if not result["branch_deleted"] and not force:
-                    result["warning"] = (
-                        result.get("warning", "") +
-                        f" Branch {branch_name} has unmerged commits and was not deleted."
-                    ).strip()
-
-        # Clean up container directory if empty
-        container_dir = WORKTREES_DIR / container_id
-        if container_dir.exists() and not any(container_dir.iterdir()):
-            container_dir.rmdir()
-
-        result["success"] = True
-        return result
-
-    def cleanup_orphaned_worktrees(self, active_containers: set[str]) -> int:
-        """Remove worktrees for containers that no longer exist."""
-        removed = 0
-        for container_dir in WORKTREES_DIR.glob("jib-*"):
-            if not container_dir.is_dir():
-                continue
-            container_id = container_dir.name
-            if container_id not in active_containers:
-                for worktree in container_dir.iterdir():
-                    if worktree.is_dir():
-                        self.remove_worktree(container_id, worktree.name)
-                        removed += 1
-                shutil.rmtree(container_dir, ignore_errors=True)
-        return removed
-```
-
-#### 3.2 Integrate Cleanup on Gateway Startup
-
-**File**: `gateway-sidecar/gateway.py`
-
-```python
-def startup_cleanup():
-    """Clean up orphaned worktrees on gateway startup."""
-    from worktree_manager import WorktreeManager
-
-    manager = WorktreeManager()
-
-    # Get RUNNING containers from Docker (not -a, which includes stopped)
-    # Worktrees for stopped containers should be cleaned up
-    result = subprocess.run(
-        ["docker", "ps", "--format", "{{.Names}}"],
-        capture_output=True, text=True
-    )
-    active_containers = set(result.stdout.strip().split("\n")) - {""}
-
-    # Note: On Cloud Run, there's no Docker daemon. Use alternative discovery:
-    # - Check /workspace/worktrees/* directories against known active sessions
-    # - Or use Cloud Run API to list active instances
-
-    removed = manager.cleanup_orphaned_worktrees(active_containers)
-    if removed > 0:
-        logger.info(f"Cleaned up {removed} orphaned worktree(s)")
-
-# Call on startup
-startup_cleanup()
-```
-
-#### 3.3 Update jib Launcher Integration
-
-**Files** (new code to add):
-- `jib-container/jib_lib/runtime.py` - Add gateway worktree API calls
-- `jib-container/jib_lib/docker.py` - Update mount configuration for worktree paths
-
-On container start:
-```python
-# Request worktree creation from gateway
-response = requests.post(f"{gateway_url}/api/v1/worktree/create", json={
-    "repo": repo_name,
-    "container_id": container_id,
-    "base_branch": "main"
-})
-worktree_path = response.json()["worktree_path"]
-
-# Mount worktree into container (excluding .git via tmpfs shadow)
-docker_args.extend([
-    "-v", f"{worktree_path}:/home/jib/repos/{repo_name}:rw",
-    "--mount", f"type=tmpfs,destination=/home/jib/repos/{repo_name}/.git",
-    "-e", f"CONTAINER_ID={container_id}",
-])
-```
-
-On container stop:
-```python
-# Request worktree cleanup from gateway
-requests.delete(f"{gateway_url}/api/v1/worktree/{container_id}/{repo_name}")
-```
-
-### Phase 4: Testing
-
-**Goal**: Comprehensive testing of the new architecture.
-
-#### 4.1 Unit Tests for Gateway Git Operations
-
-**New file**: `gateway-sidecar/tests/test_git_operations.py`
-
-```python
-def test_git_add_single_file():
-    """Test adding a single file via gateway."""
-
-def test_git_add_all():
-    """Test adding all files via gateway."""
-
-def test_git_commit_with_message():
-    """Test creating a commit."""
-
-def test_git_commit_author_attribution():
-    """Verify commits are attributed to jib."""
-
-def test_git_checkout_branch():
-    """Test switching branches."""
-
-def test_git_checkout_create_branch():
-    """Test creating and switching to new branch."""
-
-def test_git_reset_soft():
-    """Test soft reset."""
-
-def test_git_reset_hard_blocked():
-    """Verify hard reset requires confirmation."""
-
-def test_git_stash_push_pop():
-    """Test stash operations."""
-```
-
-#### 4.2 Unit Tests for Worktree Manager
-
-**New file**: `gateway-sidecar/tests/test_worktree_manager.py`
-
-```python
-def test_create_worktree():
-    """Test worktree creation."""
-
-def test_create_worktree_idempotent():
-    """Creating same worktree twice should fail gracefully."""
-
-def test_remove_worktree():
-    """Test worktree removal."""
-
-def test_cleanup_orphaned_worktrees():
-    """Test orphaned worktree cleanup."""
-
-def test_worktree_isolation():
-    """Verify changes in one worktree don't affect others."""
-```
-
-#### 4.3 Integration Tests
-
-**New file**: `gateway-sidecar/tests/test_integration.py`
-
-```python
-def test_container_git_workflow():
-    """Test complete workflow: clone, edit, add, commit, push."""
-
-def test_multi_container_isolation():
-    """Test two containers working on same repo don't interfere."""
-
-def test_container_crash_recovery():
-    """Test worktree cleanup after container crash."""
-
-def test_read_operations_local():
-    """Verify status/diff/log run locally (check latency)."""
-
-def test_write_operations_gateway():
-    """Verify add/commit route through gateway."""
-```
-
-#### 4.4 Performance Benchmarks
-
-**New file**: `gateway-sidecar/tests/test_performance.py`
-
-```python
-def benchmark_git_status_local():
-    """Benchmark local git status latency."""
-
-def benchmark_git_commit_gateway():
-    """Benchmark commit via gateway."""
-
-def benchmark_worktree_creation():
-    """Benchmark worktree creation time (target: <100ms)."""
-
-def compare_local_vs_gateway():
-    """Compare latency of local vs gateway operations."""
-```
-
-### Migration Checklist
-
-1. **Preparation**
-   - [ ] Ensure all active containers are stopped
-   - [ ] Back up any work on jib-temp-* branches
-   - [ ] Stop worktree-watcher systemd timer
-
-2. **Phase 0: Remove old code**
-   - [ ] Remove `setup_worktrees()` from entrypoint.py
-   - [ ] Remove `cleanup_on_exit()` restoration logic
-   - [ ] Remove `jib_lib/worktrees.py`
-   - [ ] Remove `host-services/utilities/worktree-watcher/`
-   - [ ] Remove `scripts/jib-cleanup-worktree`
-   - [ ] Remove `sync_objects_after_push()` from gateway.py
-   - [ ] Update docker mounts to remove .git-admin, .git-common
-
-3. **Phase 1: Deploy gateway updates**
-   - [ ] Add new git operation endpoints
-   - [ ] Add worktree lifecycle endpoints
-   - [x] Add path mapping logic
-   - [ ] Deploy and test gateway
-
-4. **Phase 2: Update container**
-   - [ ] Update git wrapper script
-   - [ ] Rebuild container image
-   - [ ] Test read operations run locally
-   - [ ] Test write operations route to gateway
-
-5. **Phase 3: Enable worktree management**
-   - [ ] Update jib launcher to use gateway worktree API
-   - [ ] Test worktree creation/deletion
-   - [ ] Test orphaned worktree cleanup
-
-6. **Phase 4: Validation**
-   - [ ] Run all unit tests
-   - [ ] Run integration tests
-   - [ ] Run performance benchmarks
-   - [ ] Test multi-container scenarios
+The overhead is acceptable given the security benefits. Optimizations (batching, caching) can be added if needed.
 
 ---
 
-## Design Decisions
+## Why This Design?
 
-### Uncommitted Changes on Container Exit
+### Alternatives Considered
 
-When a container exits, the worktree may contain uncommitted changes. The gateway handles this as follows:
+**1. Behavioral controls only**
+- Rely on instructions telling agents not to access other workspaces
+- **Rejected:** The security incident proved this insufficient
 
-1. **Normal exit**: Gateway checks for uncommitted changes before removing worktree
-   - If changes exist, worktree is preserved and warning is logged
-   - User can reconnect or manually handle the changes
-   - Use `force=True` in delete API to remove anyway
+**2. Mount restriction isolation (previous approach)**
+- Each container mounts only its own worktree admin directory
+- Local git operations run in container
+- **Rejected:** Required complex path rewriting; host git broken while containers run
 
-2. **Crash/force exit**: Orphaned worktrees are cleaned up on next gateway startup
-   - Uncommitted changes are logged as warnings before removal
-   - Branch remains (commits are preserved), only working directory is removed
+**3. Overlayfs isolation**
+- Each container gets copy-on-write view via overlayfs
+- **Rejected:** Doesn't work on Cloud Run; different architecture per environment
 
-3. **Explicit cleanup**: User can call `DELETE /api/v1/worktree/{id}/{repo}?force=true`
+**4. Full clone per container**
+- Each container gets complete independent clone
+- **Rejected:** Wasteful storage; complex sync requirements
 
-**Rationale**: Preserving uncommitted work by default prevents data loss. Orphaned cleanup uses force because there's no user session to prompt.
+### Why Gateway-Managed Worktrees?
 
-### Multi-Repository Scenarios
-
-When a container works with multiple repositories, the gateway determines the target repo from the `repo_path` in the request:
-
-1. **Git wrapper** derives `repo_path` from `pwd` (current working directory)
-2. **Gateway** extracts repo name from the path: `/home/jib/repos/{repo_name}/...`
-3. **Path mapping** resolves to the correct worktree: `/workspace/worktrees/{container_id}/{repo_name}`
-
-Each repository has its own worktree, and commands are always executed in the context of the repo containing the current directory. The git wrapper automatically handles this—no special configuration needed for multi-repo containers.
-
-### Large File Handling
-
-For repositories with large files (or Git LFS):
-
-1. **`git add` of large files**: The gateway receives the file paths, not the file contents. Git reads files directly from the worktree filesystem (shared between container and gateway via volume mount).
-
-2. **No HTTP transfer of file contents**: Files are never sent over HTTP. The gateway executes `git add` which reads from the shared filesystem.
-
-3. **LFS support**: Git LFS operations that require network access (push/pull of LFS objects) go through the gateway for authentication, same as regular push/fetch.
-
-**Performance implication**: Large file `git add` has the same performance as local git—the gateway just orchestrates the command.
+The chosen approach provides:
+- **Uniform architecture** across local and cloud deployments
+- **Simple security model** (no git metadata in container = no git-based attacks)
+- **Efficient storage** (worktrees share git objects)
+- **Fast workspace creation** (O(1) via git worktree)
+- **Clean crash recovery** (gateway manages all state)
 
 ---
 
-# Appendix A: Alternatives Considered
+## Implementation Status
 
-## Overlayfs Isolation (Rejected)
-
-**Concept**: Use overlayfs to give each container a copy-on-write view of repositories. Host sees base layer, container sees modifications in upper layer.
-
-**Why rejected**:
-- Doesn't work on Cloud Run (no overlayfs support)
-- Requires different architecture per environment
-- Needs privileged container setup or pre-created overlays on host
-- More complex gateway integration (dynamic overlay mounts)
-
-**When it might be useful**: Local-only deployments requiring maximum git performance where the gateway HTTP overhead is unacceptable. Could be implemented as an optional optimization.
-
-## Git Bundle Checkpointing (Rejected)
-
-**Concept**: Store git state as bundles in Cloud Storage, download/restore on container start.
-
-**Why rejected**:
-- Different architecture from local deployment
-- Adds latency on startup and during checkpoints
-- Complex state synchronization
-
-## Path Rewriting (PR #590) (Rejected)
-
-**Concept**: Rewrite git metadata paths (`gitdir`, `commondir`) to container-internal paths.
-
-**Why rejected**:
-- Host git operations break while containers run
-- Crash recovery requires cleanup scripts
-- Path conflicts are inherent—container and host paths cannot both be valid
+- [x] Gateway-managed worktree creation/deletion
+- [x] Git command routing through gateway API
+- [x] Operation and flag allowlist validation
+- [x] Branch ownership policy enforcement
+- [x] Orphaned worktree cleanup on startup
+- [x] tmpfs mount shadowing for .git
+- [ ] Batch operation endpoint (optimization)
+- [ ] Cloud Run checkpoint/restore
 
 ---
-
-# Appendix B: Cloud Deployment (Cloud Run)
-
-Gateway-managed worktrees work on Cloud Run with the same architecture. The only difference is the volume backend.
-
-## Cloud Run Constraints
-
-| Constraint | Impact |
-|------------|--------|
-| No overlayfs | Can't use kernel-level CoW isolation |
-| Stateless containers | No persistent local disk; containers killed anytime |
-| Restricted privileges | Can't mount filesystems, limited syscalls |
-| Auto-scaling | Multiple instances may work on same repo |
-| Cold starts | Need fast startup; can't clone large repos each time |
-| Max request timeout | 60 min (configurable); long tasks may be interrupted |
-
-## Architecture for Cloud Run
-
-### Overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Cloud Run Service                         │
-│  ┌─────────────────────┐      ┌─────────────────────────────┐   │
-│  │    jib container    │      │    gateway sidecar          │   │
-│  │                     │      │                             │   │
-│  │  - Claude Code      │◄────►│  - Git push/fetch           │   │
-│  │  - Local git ops    │ HTTP │  - GitHub API (gh)          │   │
-│  │  - Work on /workspace      │  - Credential management    │   │
-│  │                     │      │                             │   │
-│  └─────────┬───────────┘      └──────────────┬──────────────┘   │
-│            │                                  │                  │
-│            ▼                                  ▼                  │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │              Shared Volume (in-memory or GCS FUSE)          ││
-│  │                        /workspace                            ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     External Storage                             │
-│                                                                  │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌──────────────┐ │
-│  │  Cloud Storage  │    │     GitHub      │    │Secret Manager│ │
-│  │                 │    │                 │    │              │ │
-│  │  - Git bundles  │    │  - Source of    │    │  - GitHub    │ │
-│  │  - Checkpoints  │    │    truth        │    │    tokens    │ │
-│  │  - Work state   │    │  - Push target  │    │  - API keys  │ │
-│  └─────────────────┘    └─────────────────┘    └──────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Git State Management
-
-Since Cloud Run lacks persistent local storage, git state must be externalized:
-
-**Option A: Clone-on-demand (Simple but slow)**
-```
-Startup:
-1. Clone repo from GitHub (shallow for speed)
-2. Work in /workspace
-
-Shutdown/Push:
-1. Gateway pushes to GitHub
-2. State lost on container termination
-```
-
-Pros: Simple, always fresh
-Cons: Slow cold start, work lost if container dies before push
-
-**Option B: Git Bundle Checkpointing (Recommended)**
-```
-Startup:
-1. Check Cloud Storage for existing bundle for this session
-2. If exists: download and unbundle
-3. If not: shallow clone from GitHub
-4. Create initial checkpoint
-
-During work:
-1. Periodic checkpoints: create bundle, upload to GCS
-2. Checkpoint on every commit (or batch of commits)
-
-Push:
-1. Gateway creates bundle of unpushed commits
-2. Pushes to GitHub
-3. Updates checkpoint in GCS
-
-Recovery (new instance for same session):
-1. Download latest bundle from GCS
-2. Unbundle and continue
-```
-
-Pros: Durable, fast recovery, handles container preemption
-Cons: Checkpoint overhead, GCS costs
-
-**Option C: Persistent Volume (If available)**
-```
-Cloud Run now supports:
-- Cloud Storage FUSE (GCS mounted as filesystem)
-- Filestore (NFS)
-
-Mount persistent volume at /workspace:
-1. Git repo lives on persistent storage
-2. Multiple instances need locking (see Multi-Instance section)
-```
-
-Pros: Simpler mental model, persistent
-Cons: GCS FUSE has performance limitations for git; Filestore is expensive
-
-### Sidecar Communication
-
-Cloud Run multi-container pods share:
-- Network namespace (localhost works)
-- Mounted volumes
-
-```yaml
-# cloud-run-service.yaml
-apiVersion: serving.knative.dev/v1
-kind: Service
-metadata:
-  name: jib-worker
-spec:
-  template:
-    spec:
-      containers:
-        # Main jib container
-        - name: jib
-          image: gcr.io/project/jib:latest
-          ports:
-            - containerPort: 8080
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-          env:
-            - name: GATEWAY_URL
-              value: "http://localhost:9847"
-            - name: CONTAINER_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name  # Pod name as container ID
-
-        # Gateway sidecar
-        - name: gateway
-          image: gcr.io/project/jib-gateway:latest
-          ports:
-            - containerPort: 9847
-          volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-          env:
-            - name: GITHUB_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: github-token
-                  key: token
-
-      volumes:
-        - name: workspace
-          emptyDir:
-            medium: Memory  # Or use GCS FUSE
-            sizeLimit: 2Gi
-```
-
-### Push/Fetch Flow
-
-```
-┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-│     jib     │         │   gateway   │         │   GitHub    │
-└──────┬──────┘         └──────┬──────┘         └──────┬──────┘
-       │                       │                       │
-       │  POST /git/push       │                       │
-       │  {repo_path, branch}  │                       │
-       │──────────────────────►│                       │
-       │                       │                       │
-       │                       │  Read git objects     │
-       │                       │  from /workspace      │
-       │                       │◄─────────────────────►│
-       │                       │                       │
-       │                       │  git push (HTTPS)     │
-       │                       │──────────────────────►│
-       │                       │                       │
-       │                       │  Create checkpoint    │
-       │                       │  bundle, upload GCS   │
-       │                       │─────────────┐         │
-       │                       │             │         │
-       │                       │◄────────────┘         │
-       │                       │                       │
-       │  {success, sha}       │                       │
-       │◄──────────────────────│                       │
-       │                       │                       │
-```
-
-### Multi-Instance Coordination
-
-If auto-scaling creates multiple instances for the same session:
-
-**Problem**: Two instances modifying same repo = corruption
-
-**Solutions**:
-
-1. **Session affinity**: Route all requests for a session to same instance
-   ```yaml
-   sessionAffinity: true  # Cloud Run supports this
-   ```
-
-2. **Distributed locking**: Use Cloud Storage or Firestore for locks
-   ```
-   Before git operation:
-   1. Acquire lock: gs://jib-locks/{session-id}/{repo}
-   2. Perform operation
-   3. Release lock
-   ```
-
-3. **Single instance mode**: Set max instances to 1 for jib workers
-   ```yaml
-   autoscaling.knative.dev/maxScale: "1"
-   ```
-
-**Recommendation**: Start with single instance mode; add locking if scale needed.
-
-### Secrets Management
-
-```
-┌─────────────────────────────────────────────┐
-│              Secret Manager                  │
-│                                             │
-│  github-token     → Gateway env             │
-│  anthropic-key    → jib container env       │
-│  gateway-secret   → Shared for auth         │
-└─────────────────────────────────────────────┘
-```
-
-Cloud Run natively integrates with Secret Manager:
-```yaml
-env:
-  - name: GITHUB_TOKEN
-    valueFrom:
-      secretKeyRef:
-        name: github-token
-        key: latest
-```
-
-### Container Lifecycle
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Cloud Run Instance Lifecycle                  │
-│                                                                  │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐  │
-│  │  COLD    │───►│  INIT    │───►│  RUNNING │───►│ SHUTDOWN │  │
-│  │  START   │    │          │    │          │    │          │  │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘  │
-│       │              │                │               │         │
-│       ▼              ▼                ▼               ▼         │
-│  Check for      Download         Normal ops      Checkpoint     │
-│  existing       bundle or        + periodic      + cleanup      │
-│  session        clone repo       checkpoints                    │
-│                                                                  │
-│  PREEMPTION (can happen anytime):                               │
-│  - Container killed without shutdown signal                      │
-│  - Recovery: next instance loads from last checkpoint           │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Implementation Changes for Cloud Run
-
-| Component | Local/VM | Cloud Run |
-|-----------|----------|-----------|
-| Git storage | Gateway-managed worktrees on host | GCS bundles + emptyDir |
-| Gateway communication | Unix socket or localhost | localhost (shared network) |
-| Secrets | Local files | Secret Manager |
-| Persistence | Host filesystem | GCS checkpoints |
-| Multi-container | Separate Docker containers | Sidecar in same pod |
-| Startup | Gateway creates worktree | Download/clone + create worktree |
-| Cleanup | Gateway removes worktree | Delete GCS checkpoint |
-
-### Cost Considerations
-
-| Resource | Estimate |
-|----------|----------|
-| Cloud Run (CPU/memory) | ~$0.00002/vCPU-second |
-| Cloud Storage | ~$0.02/GB/month + operations |
-| Secret Manager | ~$0.03/10k access operations |
-| Egress | ~$0.12/GB (after free tier) |
-
-For a typical session (1 hour, 2 vCPU, 4GB RAM):
-- Compute: ~$0.15
-- Storage: negligible
-- Total: ~$0.15-0.20/session
-
-### Hybrid Architecture
-
-For organizations with both local and cloud deployments:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Unified jib Architecture                     │
-│                                                                  │
-│  ┌─────────────────────────────┐  ┌───────────────────────────┐ │
-│  │      Local Deployment       │  │    Cloud Run Deployment   │ │
-│  │                             │  │                           │ │
-│  │  - Overlayfs isolation      │  │  - GCS bundle isolation   │ │
-│  │  - Host gateway sidecar     │  │  - Pod gateway sidecar    │ │
-│  │  - Systemd lifecycle        │  │  - Knative lifecycle      │ │
-│  │                             │  │                           │ │
-│  └──────────────┬──────────────┘  └─────────────┬─────────────┘ │
-│                 │                               │               │
-│                 ▼                               ▼               │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │              Common Gateway API + Protocol                  ││
-│  │                                                             ││
-│  │  POST /api/v1/git/push                                      ││
-│  │  POST /api/v1/git/fetch                                     ││
-│  │  POST /api/v1/gh/*                                          ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-The gateway API remains the same; only the isolation mechanism differs.
 
 ## References
 
-- PR #590: Original worktree isolation implementation
-- PR #592: Fixes for #590 (logs mount, SSH URLs)
-- PR #594: Documents path leakage issues
-- [Overlayfs documentation](https://docs.kernel.org/filesystems/overlayfs.html)
+- [Git Worktrees Documentation](https://git-scm.com/docs/git-worktree)
+- [Docker Bind Mounts](https://docs.docker.com/storage/bind-mounts/)
+- [Cloud Run Multi-Container](https://cloud.google.com/run/docs/deploying#sidecars)
+
+---
+
+*This document describes the git isolation architecture for the james-in-a-box autonomous agent system. For questions or contributions, see the project repository.*
