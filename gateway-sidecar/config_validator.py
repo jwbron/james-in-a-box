@@ -71,9 +71,7 @@ def validate_config() -> None:
         try:
             with open(domains_file) as f:
                 domains = [
-                    line.strip()
-                    for line in f
-                    if line.strip() and not line.strip().startswith("#")
+                    line.strip() for line in f if line.strip() and not line.strip().startswith("#")
                 ]
             if not domains:
                 errors.append(
