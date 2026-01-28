@@ -28,6 +28,7 @@ def _is_verbose_errors() -> bool:
     value = os.environ.get(VERBOSE_ERRORS_VAR, "true").lower().strip()
     return value in ("true", "1", "yes")
 
+
 # Generic error messages for production (non-verbose mode)
 # These don't reveal repository names or visibility status
 GENERIC_ERROR_MESSAGES = {
