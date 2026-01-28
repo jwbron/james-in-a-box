@@ -766,6 +766,13 @@ class SlackReceiver:
 
     def _process_message(self, event: dict[str, Any]):
         """Process incoming message event."""
+        # Ignore message subtypes (bot_message, message_changed, message_deleted, etc.)
+        # We only want to process regular user messages
+        subtype = event.get("subtype")
+        if subtype is not None:
+            self.logger.debug("Ignoring message subtype", subtype=subtype)
+            return
+
         # Extract event data
         user_id = event.get("user")
         channel = event.get("channel")
@@ -775,6 +782,11 @@ class SlackReceiver:
 
         # For threading: use thread_ts if already in a thread, otherwise use message_ts to start a new thread
         reply_thread_ts = thread_ts or message_ts
+
+        # Ignore messages without a user ID (shouldn't happen after subtype filter, but be safe)
+        if not user_id:
+            self.logger.debug("Ignoring message without user_id")
+            return
 
         # Ignore messages from the bot itself
         if user_id == self.bot_user_id:
