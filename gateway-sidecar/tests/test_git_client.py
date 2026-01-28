@@ -130,6 +130,38 @@ class TestValidateGitArgs:
         assert not valid
         assert "invalid argument type" in error.lower()
 
+    def test_numeric_flag_for_log(self):
+        """Numeric flags like -3 should be allowed for git log."""
+        valid, _error, normalized = validate_git_args("log", ["-3", "--oneline"])
+        assert valid
+        assert "--max-count=3" in normalized
+        assert "--oneline" in normalized
+
+    def test_numeric_flag_for_log_larger_number(self):
+        """Larger numeric flags like -10 should work."""
+        valid, _error, normalized = validate_git_args("log", ["-10"])
+        assert valid
+        assert "--max-count=10" in normalized
+
+    def test_numeric_flag_rejected_for_non_log(self):
+        """Numeric flags should be rejected for operations other than log."""
+        valid, error, _normalized = validate_git_args("status", ["-3"])
+        assert not valid
+        assert "numeric flag" in error.lower()
+
+    def test_double_dash_separator_allowed(self):
+        """The -- separator should be allowed for any operation."""
+        valid, _error, normalized = validate_git_args("checkout", ["--", "file.txt"])
+        assert valid
+        assert "--" in normalized
+        assert "file.txt" in normalized
+
+    def test_double_dash_with_log(self):
+        """The -- separator should work with log operation."""
+        valid, _error, normalized = validate_git_args("log", ["--oneline", "--", "path/to/file"])
+        assert valid
+        assert "--" in normalized
+
 
 class TestGitAllowedCommands:
     """Tests for the allowed commands configuration."""

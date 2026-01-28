@@ -9,6 +9,7 @@ Provides:
 
 import contextlib
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -588,6 +589,27 @@ def validate_git_args(operation: str, args: list[str]) -> tuple[bool, str, list[
             normalized.append(arg)
             i += 1
             continue
+
+        # Allow '--' separator (used to separate flags from pathspecs)
+        if arg == "--":
+            normalized.append(arg)
+            i += 1
+            continue
+
+        # Handle numeric flags like -3, -10 (shorthand for --max-count=N)
+        # These are only valid for 'log' operation
+        if re.match(r"^-\d+$", arg):
+            if operation == "log" and "--max-count" in allowed_flags:
+                # Convert -N to --max-count=N for consistency
+                normalized.append(f"--max-count={arg[1:]}")
+                i += 1
+                continue
+            else:
+                return (
+                    False,
+                    f"Numeric flag '{arg}' is not allowed for git {operation}",
+                    [],
+                )
 
         # Normalize short flags to long form
         normalized_flag = normalize_flag(arg)
