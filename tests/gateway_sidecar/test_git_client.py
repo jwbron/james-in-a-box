@@ -85,37 +85,27 @@ class TestGetAuthenticatedRemoteTarget:
 
     def test_ssh_url_returns_https(self):
         """SSH URLs are converted to HTTPS."""
-        result = get_authenticated_remote_target(
-            "origin", "git@github.com:owner/repo.git"
-        )
+        result = get_authenticated_remote_target("origin", "git@github.com:owner/repo.git")
         assert result == "https://github.com/owner/repo.git"
 
     def test_ssh_protocol_returns_https(self):
         """ssh:// URLs are converted to HTTPS."""
-        result = get_authenticated_remote_target(
-            "origin", "ssh://git@github.com/owner/repo.git"
-        )
+        result = get_authenticated_remote_target("origin", "ssh://git@github.com/owner/repo.git")
         assert result == "https://github.com/owner/repo.git"
 
     def test_https_url_returns_remote_name(self):
         """HTTPS URLs return the remote name (no conversion needed)."""
-        result = get_authenticated_remote_target(
-            "origin", "https://github.com/owner/repo.git"
-        )
+        result = get_authenticated_remote_target("origin", "https://github.com/owner/repo.git")
         assert result == "origin"
 
     def test_http_url_returns_remote_name(self):
         """HTTP URLs return the remote name."""
-        result = get_authenticated_remote_target(
-            "upstream", "http://github.com/owner/repo.git"
-        )
+        result = get_authenticated_remote_target("upstream", "http://github.com/owner/repo.git")
         assert result == "upstream"
 
     def test_custom_remote_name_returned_for_https(self):
         """Custom remote names are preserved for HTTPS URLs."""
-        result = get_authenticated_remote_target(
-            "my-remote", "https://github.com/owner/repo.git"
-        )
+        result = get_authenticated_remote_target("my-remote", "https://github.com/owner/repo.git")
         assert result == "my-remote"
 
     def test_ssh_url_ignores_remote_name(self):
