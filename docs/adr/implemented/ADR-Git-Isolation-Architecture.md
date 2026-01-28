@@ -22,9 +22,14 @@ This document describes how we safely allow multiple AI agent containers to work
 
 ## Motivation
 
-During development, we discovered that behavioral controls (instructions telling agents not to access other workspaces) are insufficient. A container with a corrupted `.git` pointer could be directed to another container's workspace, allowing it to operate on the wrong branch, see another agent's staged changes, or commit to the wrong branch.
+This document implements the git-specific aspects of [ADR-Internet-Tool-Access-Lockdown](../in-progress/ADR-Internet-Tool-Access-Lockdown.md), which establishes the core principle: **behavioral controls are insufficient for AI agent security**. Instructions can be bypassed by prompt injection, model drift, or adversarial inputs. Security must be enforced at the infrastructure level.
 
-This architecture enforces isolation at the filesystem level—containers simply cannot see other workspaces or git metadata, regardless of instructions or configuration.
+For git operations, this means:
+- **Credential isolation**: Agents cannot push directly—no credentials exist in the container
+- **Filesystem isolation**: Agents cannot access other agents' workspaces—they don't exist in the container's view
+- **Gateway enforcement**: All git operations go through a policy-enforcing gateway
+
+This document focuses on the specific challenge of **multi-agent git isolation**: how multiple agents can work on the same repository simultaneously without cross-contamination.
 
 ---
 
