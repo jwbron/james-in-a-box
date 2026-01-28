@@ -82,8 +82,10 @@ def _setup_repo_mounts(
         return repos
 
     if use_gateway_worktrees:
-        # Request gateway to create worktrees
-        wt_success, worktrees, wt_errors = create_worktrees(container_id, repo_names)
+        # Request gateway to create worktrees with correct ownership
+        wt_success, worktrees, wt_errors = create_worktrees(
+            container_id, repo_names, uid=os.getuid(), gid=os.getgid()
+        )
 
         if wt_errors and not quiet:
             for err in wt_errors:

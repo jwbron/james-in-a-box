@@ -12,6 +12,7 @@ to mount only the working directory (with .git shadowed by tmpfs). All git
 operations then route through the gateway API.
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -126,6 +127,8 @@ class WorktreeManager:
         repo_name: str,
         container_id: str,
         base_branch: str = "HEAD",
+        uid: int | None = None,
+        gid: int | None = None,
     ) -> WorktreeInfo:
         """
         Create an isolated worktree for a container.
@@ -134,6 +137,8 @@ class WorktreeManager:
             repo_name: Name of the repository
             container_id: Container identifier (e.g., 'jib-xxx-yyy')
             base_branch: Branch or ref to base the worktree on (default: HEAD)
+            uid: User ID to set ownership to (default: 1000)
+            gid: Group ID to set ownership to (default: 1000)
 
         Returns:
             WorktreeInfo with paths and branch information
@@ -142,6 +147,11 @@ class WorktreeManager:
             ValueError: If inputs are invalid or repo not found
             RuntimeError: If worktree creation fails
         """
+        # Default to jib user (1000:1000) if not specified
+        if uid is None:
+            uid = 1000
+        if gid is None:
+            gid = 1000
         # Validate inputs to prevent path traversal
         validate_identifier(container_id, "container_id")
         validate_identifier(repo_name, "repo_name")
@@ -220,6 +230,11 @@ class WorktreeManager:
         if result.returncode != 0:
             raise RuntimeError(f"Failed to create worktree: {result.stderr}")
 
+        # Set ownership so the container user can write to the worktree
+        self._chown_recursive(worktree_path, uid, gid)
+        # Also ensure the container directory is writable
+        self._chown_recursive(worktree_path.parent, uid, gid)
+
         # Find the actual git dir (git names it based on worktree basename)
         git_dir = self._find_worktree_git_dir(main_repo, worktree_path)
 
@@ -245,6 +260,31 @@ class WorktreeManager:
         )
 
         return info
+
+    def _chown_recursive(self, path: Path, uid: int, gid: int) -> None:
+        """
+        Recursively change ownership of a directory.
+
+        Args:
+            path: Path to change ownership of
+            uid: User ID to set
+            gid: Group ID to set
+        """
+        try:
+            # Use chown -R for efficiency on large directories
+            subprocess.run(
+                ["chown", "-R", f"{uid}:{gid}", str(path)],
+                capture_output=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.warning(
+                "Failed to chown worktree",
+                path=str(path),
+                uid=uid,
+                gid=gid,
+                error=e.stderr.decode() if e.stderr else str(e),
+            )
 
     def _find_worktree_git_dir(self, main_repo: Path, worktree_path: Path) -> Path:
         """

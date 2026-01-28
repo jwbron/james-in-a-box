@@ -1397,7 +1397,9 @@ def worktree_create():
     Request body:
         {
             "container_id": "jib-xxx-yyy",
-            "repos": ["owner/repo1", "owner/repo2"]
+            "repos": ["owner/repo1", "owner/repo2"],
+            "uid": 1000,  // optional, defaults to 1000 (jib user)
+            "gid": 1000   // optional, defaults to 1000 (jib group)
         }
 
     Returns:
@@ -1419,6 +1421,9 @@ def worktree_create():
     container_id = data.get("container_id")
     repos = data.get("repos", [])
     base_branch = data.get("base_branch", "HEAD")
+    # UID/GID for worktree ownership (default: 1000 for jib user)
+    uid = data.get("uid")
+    gid = data.get("gid")
 
     if not container_id:
         return make_error("Missing container_id")
@@ -1441,6 +1446,8 @@ def worktree_create():
                 repo_name=repo_name,
                 container_id=container_id,
                 base_branch=base_branch,
+                uid=uid,
+                gid=gid,
             )
             worktrees[repo_name] = str(info.worktree_path)
         except ValueError as e:
