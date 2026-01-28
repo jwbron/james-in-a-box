@@ -12,7 +12,6 @@ to mount only the working directory (with .git shadowed by tmpfs). All git
 operations then route through the gateway API.
 """
 
-import os
 import re
 import shutil
 import subprocess
