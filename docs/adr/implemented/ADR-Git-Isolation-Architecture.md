@@ -1574,6 +1574,86 @@ def log_private_repo_policy_event(
 - [x] tmpfs mount shadowing for .git
 - [ ] Batch operation endpoint (optimization)
 - [ ] Cloud Run checkpoint/restore
+- [ ] Full git/gh binary removal from container (proposed)
+
+---
+
+## Proposed Enhancement: Full Binary Removal
+
+**Status:** Proposed (analysis complete, pending implementation)
+
+### Motivation
+
+The current architecture relocates the real `git` and `gh` binaries to `/opt/.jib-internal/` and uses wrapper scripts at `/usr/bin/`. While effective, an attacker who gains code execution could potentially:
+1. Call the relocated binaries directly
+2. Bypass the wrappers via environment manipulation (e.g., `LD_PRELOAD`)
+
+Fully removing the binaries from the container eliminates these attack vectors.
+
+### Current State
+
+```
+Container:
+  /usr/bin/git  →  symlink to wrapper script
+  /usr/bin/gh   →  symlink to wrapper script
+  /opt/.jib-internal/git  ←  Real git binary (retained)
+  /opt/.jib-internal/gh   ←  Real gh binary (retained)
+```
+
+### Proposed State
+
+```
+Container:
+  /usr/bin/git  →  wrapper script (no binary to fall back to)
+  /usr/bin/gh   →  wrapper script (no binary to fall back to)
+  (No real git/gh binaries exist in container)
+```
+
+### Analysis
+
+**gh binary:** Can be removed immediately. The current wrapper routes ALL commands through the gateway. The `REAL_GH` variable exists but is never used.
+
+**git binary:** Can be removed with minor wrapper changes:
+- The only current use of the real binary is for `git config --global`
+- Options:
+  1. Pre-configure common settings in Dockerfile
+  2. Have the wrapper edit `~/.gitconfig` directly
+  3. Route through gateway (adds complexity)
+  4. Block global config (simplest, may affect some tools)
+
+### Security Benefits
+
+1. **Defense in depth:** Even if wrappers are bypassed, there's no binary to exploit
+2. **Smaller attack surface:** Eliminates ~40MB of potentially exploitable code
+3. **Clearer audit:** "No git binary" is easier to verify than "git is shadowed"
+4. **Principle of least privilege:** Container truly cannot perform direct git operations
+
+### Implementation Plan
+
+**Phase 1: Remove gh binary**
+- Remove `/opt/.jib-internal/gh` from Dockerfile
+- Remove `REAL_GH` variable from wrapper (cosmetic cleanup)
+- Risk: None (wrapper already handles all cases)
+
+**Phase 2: Remove git binary**
+- Audit all `git config --global` usage
+- Update wrapper to handle global config without the binary
+- Pre-configure common git settings in Dockerfile
+- Remove `/opt/.jib-internal/git` from Dockerfile
+- Risk: Low (requires testing with various tools)
+
+**Phase 3 (Alternative): Don't install git/gh at all**
+- Instead of installing and relocating, simply don't install
+- Cleaner Dockerfile, fewer moving parts
+- Requires wrapper to handle version queries synthetically
+
+### Compatibility Considerations
+
+1. **Tools checking for git:** The wrapper intercepts `which git` and version checks
+2. **Tab completion:** Would break, but non-critical in non-interactive containers
+3. **Claude Code:** Uses git extensively; current wrapper handles this
+
+This enhancement complements Private Repo Mode by further restricting what actions are possible within the container.
 
 ---
 
