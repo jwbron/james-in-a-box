@@ -12,10 +12,32 @@ Security Properties:
 - FAIL CLOSED: If visibility cannot be determined, treat as public (deny access)
 - Per-operation checking: Every operation validates the target repository
 - Audit logging: All policy decisions are logged
+- Thread-safe: Global instances use double-checked locking
+
+Known Limitations (TOCTOU):
+    There is an inherent Time-of-Check-Time-of-Use (TOCTOU) window between when
+    visibility is checked and when the actual Git/GitHub operation executes.
+
+    Implications:
+    - A repository's visibility could change between check and operation
+    - For read operations: 60-second cache means visibility changes may not be
+      detected immediately (acceptable for performance)
+    - For write operations: No caching (TTL=0) minimizes but doesn't eliminate
+      the window
+
+    Mitigations:
+    - Write operations always verify visibility (no caching)
+    - The gateway verifies again at operation time where possible
+    - Audit logging captures all decisions for forensic analysis
+    - Repository visibility changes are rare in practice
+
+    This is a documented architectural limitation. For higher security
+    requirements, consider additional controls at the Git server level.
 """
 
 import os
 import sys
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -361,15 +383,19 @@ class PrivateRepoPolicy:
         )
 
 
-# Global policy instance
+# Global policy instance with thread-safe initialization
 _policy: PrivateRepoPolicy | None = None
+_policy_lock = threading.Lock()
 
 
 def get_private_repo_policy() -> PrivateRepoPolicy:
-    """Get the global private repo policy instance."""
+    """Get the global private repo policy instance (thread-safe)."""
     global _policy
     if _policy is None:
-        _policy = PrivateRepoPolicy()
+        with _policy_lock:
+            # Double-checked locking pattern
+            if _policy is None:
+                _policy = PrivateRepoPolicy()
     return _policy
 
 

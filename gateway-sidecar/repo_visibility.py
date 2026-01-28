@@ -43,6 +43,9 @@ DEFAULT_VISIBILITY_CACHE_TTL_WRITE = 0
 # Type alias for visibility values
 VisibilityType = Literal["public", "private", "internal"]
 
+# Valid visibility values for validation
+VALID_VISIBILITIES: frozenset[str] = frozenset({"public", "private", "internal"})
+
 
 @dataclass
 class CachedVisibility:
@@ -116,12 +119,25 @@ class RepoVisibilityChecker:
         """
         Get GitHub token for API calls.
 
+        Tries sources in order:
+        1. GITHUB_TOKEN environment variable
+        2. Token file (JSON format from github-token-refresher)
+
         Returns:
             Token string or None if not available
+
+        Note:
+            Logs which source the token was obtained from (without logging
+            the token itself) to aid debugging authentication issues.
         """
         # Try environment variable first
         token = os.environ.get("GITHUB_TOKEN", "").strip()
         if token:
+            logger.debug(
+                "Using GitHub token from environment variable",
+                source="GITHUB_TOKEN",
+                token_length=len(token),
+            )
             return token
 
         # Try token file (JSON format from github-token-refresher)
@@ -130,10 +146,34 @@ class RepoVisibilityChecker:
                 import json
 
                 data = json.loads(self._token_file.read_text())
-                return data.get("token", "")
-            except (json.JSONDecodeError, KeyError, OSError):
-                pass
+                token = data.get("token", "")
+                if token:
+                    logger.debug(
+                        "Using GitHub token from token file",
+                        source="token_file",
+                        token_file=str(self._token_file),
+                        token_length=len(token),
+                    )
+                    return token
+                else:
+                    logger.warning(
+                        "Token file exists but contains no token",
+                        token_file=str(self._token_file),
+                    )
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Failed to parse token file as JSON",
+                    token_file=str(self._token_file),
+                    error=str(e),
+                )
+            except OSError as e:
+                logger.warning(
+                    "Failed to read token file",
+                    token_file=str(self._token_file),
+                    error=str(e),
+                )
 
+        logger.debug("No GitHub token available from any source")
         return None
 
     def _fetch_visibility(self, owner: str, repo: str) -> VisibilityType | None:
@@ -165,6 +205,18 @@ class RepoVisibilityChecker:
             if response.status_code == 200:
                 data = response.json()
                 visibility = data.get("visibility", "public")
+
+                # Validate visibility value to prevent cache poisoning
+                if visibility not in VALID_VISIBILITIES:
+                    logger.warning(
+                        "Invalid visibility value from GitHub API",
+                        owner=owner,
+                        repo=repo,
+                        visibility=visibility,
+                        valid_values=list(VALID_VISIBILITIES),
+                    )
+                    return None
+
                 logger.debug(
                     "Fetched repository visibility",
                     owner=owner,
@@ -309,15 +361,19 @@ class RepoVisibilityChecker:
             self._cache.pop(cache_key, None)
 
 
-# Global visibility checker instance
+# Global visibility checker instance with thread-safe initialization
 _checker: RepoVisibilityChecker | None = None
+_checker_lock = threading.Lock()
 
 
 def get_visibility_checker() -> RepoVisibilityChecker:
-    """Get the global visibility checker instance."""
+    """Get the global visibility checker instance (thread-safe)."""
     global _checker
     if _checker is None:
-        _checker = RepoVisibilityChecker()
+        with _checker_lock:
+            # Double-checked locking pattern
+            if _checker is None:
+                _checker = RepoVisibilityChecker()
     return _checker
 
 

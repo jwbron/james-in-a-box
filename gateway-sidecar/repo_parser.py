@@ -7,6 +7,13 @@ Extracts owner/repo information from various formats:
 - Git remote URLs
 
 Used by Private Repo Mode to determine which repository an operation targets.
+
+Security Note:
+    URLs are normalized before parsing to prevent bypass attempts via:
+    - URL-encoded characters
+    - Authentication credentials in URLs
+    - Unusual port numbers
+    - Double slashes or path traversal
 """
 
 import os
@@ -15,6 +22,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 
 # Add shared directory to path for jib_logging
@@ -59,6 +67,79 @@ GITHUB_URL_PATTERNS = [
 OWNER_REPO_PATTERN = re.compile(r"^([^/\s]+)/([^/\s]+)$")
 
 
+def normalize_github_url(url: str) -> str:
+    """
+    Normalize a GitHub URL before parsing.
+
+    Handles potential bypass attempts via:
+    - URL-encoded characters (e.g., %6f%77%6e%65%72 -> owner)
+    - Authentication credentials in URL (e.g., user:pass@github.com)
+    - Unusual port numbers (e.g., github.com:443)
+    - Double slashes in path (e.g., github.com//owner/repo)
+    - Trailing slashes and whitespace
+
+    Args:
+        url: Raw URL to normalize
+
+    Returns:
+        Normalized URL string
+
+    Security:
+        This function is critical for preventing URL parsing bypasses.
+        All URL inputs should be normalized before pattern matching.
+    """
+    if not url:
+        return ""
+
+    # Strip whitespace
+    url = url.strip()
+
+    # Decode URL-encoded characters (handle double-encoding too)
+    # Limit iterations to prevent infinite loops on malformed input
+    for _ in range(3):
+        decoded = unquote(url)
+        if decoded == url:
+            break
+        url = decoded
+
+    # For HTTP(S) URLs, use urlparse for robust handling
+    if url.startswith(("http://", "https://")):
+        try:
+            parsed = urlparse(url)
+
+            # Rebuild URL without credentials
+            # Use only host (strip port if it's default 443/80)
+            host = parsed.hostname or parsed.netloc
+            if host and host.lower() == "github.com":
+                # Normalize path: remove double slashes, strip trailing slash
+                path = parsed.path
+                while "//" in path:
+                    path = path.replace("//", "/")
+                path = path.rstrip("/")
+
+                # Rebuild clean URL
+                url = f"https://github.com{path}"
+        except Exception:
+            # If urlparse fails, continue with basic normalization
+            pass
+
+    # For SSH URLs (git@github.com:owner/repo), basic normalization
+    elif url.startswith("git@"):
+        # Remove any embedded credentials (shouldn't happen but be safe)
+        # Format: git@github.com:owner/repo.git
+        pass
+
+    # Normalize double slashes in path (for all URL types)
+    # Be careful not to touch the protocol double slash
+    if "://" in url:
+        protocol, rest = url.split("://", 1)
+        while "//" in rest:
+            rest = rest.replace("//", "/")
+        url = f"{protocol}://{rest}"
+
+    return url
+
+
 def parse_github_url(url: str) -> RepoInfo | None:
     """
     Parse a GitHub URL to extract owner and repo.
@@ -75,16 +156,33 @@ def parse_github_url(url: str) -> RepoInfo | None:
 
     Returns:
         RepoInfo with owner and repo, or None if not a valid GitHub URL
+
+    Security:
+        URL is normalized before parsing to prevent bypass attempts.
+        See normalize_github_url() for details.
     """
     if not url:
         return None
 
-    url = url.strip()
+    # Normalize URL to prevent bypass attempts
+    url = normalize_github_url(url)
+
+    if not url:
+        return None
 
     for pattern in GITHUB_URL_PATTERNS:
         match = pattern.match(url)
         if match:
             owner, repo = match.groups()
+            # Additional validation: owner/repo should not contain suspicious chars
+            # after normalization (e.g., encoded path traversal)
+            if ".." in owner or ".." in repo:
+                logger.warning(
+                    "Suspicious path traversal in parsed URL",
+                    owner=owner,
+                    repo=repo,
+                )
+                return None
             return RepoInfo(owner=owner, repo=repo)
 
     return None

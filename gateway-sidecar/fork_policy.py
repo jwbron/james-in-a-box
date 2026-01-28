@@ -11,6 +11,7 @@ This ensures that private code cannot be exposed via forking operations.
 """
 
 import sys
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -305,15 +306,19 @@ class ForkPolicy:
         )
 
 
-# Global policy instance
+# Global policy instance with thread-safe initialization
 _fork_policy: ForkPolicy | None = None
+_fork_policy_lock = threading.Lock()
 
 
 def get_fork_policy() -> ForkPolicy:
-    """Get the global fork policy instance."""
+    """Get the global fork policy instance (thread-safe)."""
     global _fork_policy
     if _fork_policy is None:
-        _fork_policy = ForkPolicy()
+        with _fork_policy_lock:
+            # Double-checked locking pattern
+            if _fork_policy is None:
+                _fork_policy = ForkPolicy()
     return _fork_policy
 
 
