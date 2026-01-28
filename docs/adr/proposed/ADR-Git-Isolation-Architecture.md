@@ -115,8 +115,8 @@ The simplest architecture: gateway manages git worktrees, containers only see th
 │  │       ├── objects/               ← Shared objects (all worktrees)    │
 │  │       ├── refs/                  ← Shared refs                       │
 │  │       └── worktrees/             ← Worktree admin (gateway-managed)  │
-│  │           ├── wt-abc123/         ← Metadata for worktree abc123      │
-│  │           └── wt-def456/         ← Metadata for worktree def456      │
+│  │           ├── my-repo/           ← Metadata for container abc123     │
+│  │           └── my-repo-1/         ← Metadata for container def456     │
 │  │                                                                       │
 │  └── worktrees/                     ← Working directories                │
 │      ├── abc123/                                                         │
@@ -169,8 +169,8 @@ Container Request                    Gateway
        │                                │
       ... container does work ...       │
        │                                │
-       │  POST /api/v1/worktree/delete  │
-       │  {id: "abc"}                   │
+       │  DELETE /api/v1/worktree/      │
+       │         abc/my-repo            │
        │───────────────────────────────►│
        │                                │
        │                    ┌───────────┴───────────┐
@@ -203,8 +203,10 @@ Container Request                    Gateway
 
 The worktree's `.git` is a file (not directory) containing:
 ```
-gitdir: /workspace/repos/my-repo.git/worktrees/wt-{id}
+gitdir: /workspace/repos/my-repo.git/worktrees/my-repo
 ```
+
+**Note on git worktree naming**: Git names worktree admin directories based on the basename of the worktree path. For `/workspace/worktrees/abc123/my-repo`, git creates `.git/worktrees/my-repo`. If multiple worktrees have the same basename, git appends a number (e.g., `my-repo-1`).
 
 **Security considerations:**
 - Container cannot modify `.git` to point elsewhere
@@ -243,54 +245,63 @@ The git wrapper routes write operations through the gateway while allowing read-
 
 # Read-only operations run locally for low latency
 case "$1" in
-  status|diff|log|show|blame|branch|tag)
+  status|diff|log|show|blame|rev-parse|rev-list|\
+  ls-files|ls-tree|cat-file|describe|shortlog|grep|reflog|\
+  for-each-ref|name-rev|merge-base|symbolic-ref)
     exec /usr/bin/git.real "$@"
+    ;;
+  branch|tag|stash)
+    # These need subcommand awareness - see full implementation in Phase 2
+    # branch (list) is read-only, branch -d is write
+    # tag (list) is read-only, tag -d or creating is write
+    # stash list/show is read-only, stash push/pop is write
     ;;
 esac
 
-# Write operations go through gateway
-curl -s -X POST http://gateway:9847/api/v1/git \
+# Write operations go through gateway (operation-specific endpoints)
+# Example for git add:
+curl -s -X POST "http://gateway:9847/api/v1/git/add" \
   --json "{
-    \"container_id\": \"$CONTAINER_ID\",
-    \"args\": $(printf '%s\n' "$@" | jq -R . | jq -s .),
-    \"cwd\": \"$(pwd)\"
+    \"repo_path\": \"$(pwd)\",
+    \"files\": [\".\"]
   }"
 ```
 
 ### Gateway Git Execution
 
-Gateway receives git commands and executes them in the correct worktree context:
+Gateway receives git commands via operation-specific endpoints and executes them in the correct worktree context:
 
 ```python
-@app.route("/api/v1/git", methods=["POST"])
-def git_operation():
+@app.route("/api/v1/git/add", methods=["POST"])
+def git_add():
     data = request.json
-    container_id = data["container_id"]
-    args = data["args"]
-    repo_name = data.get("repo", "my-repo")
+    repo_path = data["repo_path"]
+    files = data.get("files", ["."])
 
-    # Map container ID to worktree paths
-    # Container's working dir: /workspace/worktrees/{id}/{repo}/
-    # Worktree's git admin:    /workspace/repos/{repo}.git/worktrees/wt-{id}/
+    # Extract container_id and repo_name from repo_path
+    # Container path: /home/jib/repo -> maps to /workspace/worktrees/{id}/{repo}
+    container_id, repo_name = resolve_container_from_path(repo_path)
+
+    # Map to worktree paths
     work_tree = f"/workspace/worktrees/{container_id}/{repo_name}"
-    git_dir = f"/workspace/repos/{repo_name}.git/worktrees/wt-{container_id}"
+    git_dir = f"/workspace/repos/{repo_name}.git/worktrees/{repo_name}"
 
     # Verify worktree exists (security check)
     if not os.path.isdir(git_dir):
         return jsonify({"error": f"No worktree for container {container_id}"}), 404
 
-    # Execute git command in worktree context
+    # Execute git add in worktree context
     result = subprocess.run(
-        ["git", f"--work-tree={work_tree}", f"--git-dir={git_dir}"] + args,
+        ["git", f"--work-tree={work_tree}", f"--git-dir={git_dir}", "add"] + files,
         capture_output=True,
         text=True,
         cwd=work_tree
     )
 
     return jsonify({
+        "success": result.returncode == 0,
         "stdout": result.stdout,
-        "stderr": result.stderr,
-        "returncode": result.returncode
+        "stderr": result.stderr
     })
 ```
 
@@ -306,11 +317,11 @@ Each container gets its own git worktree, sharing the object store:
 │       ├── refs/             # Shared refs
 │       ├── HEAD              # Main repo HEAD
 │       └── worktrees/        # Worktree admin directories
-│           ├── wt-abc123/
+│           ├── my-repo/      # Admin for first worktree (abc123)
 │           │   ├── HEAD      # abc123's HEAD (jib/abc123/work)
 │           │   ├── index     # abc123's staging area
 │           │   └── gitdir    # Points to working dir
-│           └── wt-def456/
+│           └── my-repo-1/    # Admin for second worktree (def456)
 │               ├── HEAD      # def456's HEAD (jib/def456/work)
 │               ├── index     # def456's staging area
 │               └── gitdir
@@ -360,12 +371,13 @@ The architecture is **identical** for both:
 ```bash
 # Start gateway
 docker run -d --name gateway \
-  -v ~/workspace:/workspace \
+  -v /workspace:/workspace \
   jib-gateway
 
-# Start jib container
+# Start jib container (after gateway creates worktree)
 docker run -it --name jib-abc123 \
-  -v ~/workspace/abc123/repo:/home/jib/repo \
+  -v /workspace/worktrees/abc123/my-repo:/home/jib/repo:rw \
+  -v /workspace/worktrees/abc123/my-repo/.git:/home/jib/repo/.git:ro \
   -e CONTAINER_ID=abc123 \
   -e GATEWAY_URL=http://gateway:9847 \
   --network jib-network \
@@ -385,8 +397,10 @@ spec:
           image: jib:latest
           volumeMounts:
             - name: workspace
-              mountPath: /home/jib/repo
-              subPath: "$(CONTAINER_ID)/repo"
+              mountPath: /workspace
+          env:
+            - name: GATEWAY_URL
+              value: "http://localhost:9847"
         - name: gateway
           image: jib-gateway:latest
           volumeMounts:
@@ -394,8 +408,12 @@ spec:
               mountPath: /workspace
       volumes:
         - name: workspace
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
 ```
+
+**Note**: On Cloud Run, both containers mount the full `/workspace` volume. The gateway creates worktrees on startup, and the jib container accesses them at `/workspace/worktrees/{id}/{repo}`. This differs from local deployment where we can use more granular Docker bind mounts.
 
 ## Advantages Over Previous Approaches
 
@@ -472,7 +490,7 @@ Remove the `cleanup_on_exit()` restoration logic (lines 1048-1121) which:
 - Restores `gitdir` and `commondir` from `.host-backup` files
 - This cleanup is only needed because of path rewriting
 
-**Simplify to**: Container sees repos mounted at `/home/jib/repos/<repo>` with `.git` as read-only file. No path manipulation needed.
+**Simplify to**: Container sees repo mounted at `/home/jib/repo` with `.git` as read-only file. No path manipulation needed. (For multi-repo scenarios, use `/home/jib/repos/<repo>`.)
 
 #### 0.2 Remove Host Worktree Management
 
@@ -652,7 +670,8 @@ def resolve_worktree_paths(container_id: str, repo_name: str) -> tuple[str, str]
     validate_identifier(repo_name, "repo_name")
 
     work_tree = f"/workspace/worktrees/{container_id}/{repo_name}"
-    git_dir = f"/workspace/repos/{repo_name}.git/worktrees/wt-{container_id}"
+    # Note: git names worktree admin dirs by basename; we track the mapping
+    git_dir = f"/workspace/repos/{repo_name}.git/worktrees/{repo_name}"
     return work_tree, git_dir
 ```
 
@@ -1119,12 +1138,15 @@ class WorktreeManager:
         if result.returncode != 0:
             raise RuntimeError(f"Failed to create worktree: {result.stderr}")
 
+        # Note: git names the worktree admin dir by the basename of worktree_path
+        # For /workspace/worktrees/{id}/{repo}, git creates .git/worktrees/{repo}
+        # We look up the actual path after creation
         info = WorktreeInfo(
             container_id=container_id,
             repo_name=repo_name,
             branch=branch_name,
             worktree_path=worktree_path,
-            git_dir=repo_git / "worktrees" / f"wt-{container_id}",
+            git_dir=repo_git / "worktrees" / repo_name,  # May have suffix if duplicate
         )
 
         if container_id not in self._active_worktrees:
@@ -1748,13 +1770,13 @@ env:
 
 | Component | Local/VM | Cloud Run |
 |-----------|----------|-----------|
-| Git storage | Overlayfs on host | GCS bundles + emptyDir |
+| Git storage | Gateway-managed worktrees on host | GCS bundles + emptyDir |
 | Gateway communication | Unix socket or localhost | localhost (shared network) |
 | Secrets | Local files | Secret Manager |
 | Persistence | Host filesystem | GCS checkpoints |
 | Multi-container | Separate Docker containers | Sidecar in same pod |
-| Startup | Mount overlays | Download/clone |
-| Cleanup | Delete overlay dir | Delete GCS checkpoint |
+| Startup | Gateway creates worktree | Download/clone + create worktree |
+| Cleanup | Gateway removes worktree | Delete GCS checkpoint |
 
 ### Cost Considerations
 
