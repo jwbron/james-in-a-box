@@ -428,17 +428,27 @@ execute_via_gateway() {
     # Translate container path to host path for gateway
     cwd=$(translate_path_for_gateway "$container_cwd")
 
+    # Detect repo from container context (the gateway can't auto-detect it)
+    # This runs git in the container where the worktree structure is available
+    local repo
+    repo=$(get_repo)
+
     # Build JSON payload using Python for proper escaping
+    # Include repo so gateway can inject --repo if needed
     local payload
     payload=$(python3 -c "
 import json
 import sys
-args = sys.argv[2:]
-print(json.dumps({
+args = sys.argv[3:]
+data = {
     'args': args,
     'cwd': sys.argv[1]
-}))
-" "$cwd" "${ARGS[@]}")
+}
+# Include repo if detected (gateway will inject --repo if not in args)
+if sys.argv[2]:
+    data['repo'] = sys.argv[2]
+print(json.dumps(data))
+" "$cwd" "$repo" "${ARGS[@]}")
 
     call_gateway "/api/v1/gh/execute" "$payload"
 }

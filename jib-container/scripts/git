@@ -339,7 +339,8 @@ print(json.dumps({
     fi
 }
 
-# Function to check if push target is HTTPS (we don't have SSH keys)
+# Function to check if push target remote exists
+# Note: SSH URLs are automatically converted to HTTPS by the gateway sidecar
 # Args: remote [work_dir]
 check_push_remote() {
     local remote="${1:-origin}"
@@ -360,29 +361,8 @@ check_push_remote() {
         return 1
     fi
 
-    # Check if it's SSH - we can't push via SSH (no keys in container)
-    if [[ "$url" == git@* ]] || [[ "$url" == ssh://* ]]; then
-        cat >&2 << EOF
-
-================================================================================
-  SSH PUSH NOT SUPPORTED
-================================================================================
-
-Remote '$remote' uses SSH: $url
-
-This container doesn't have SSH keys. To push, you have two options:
-
-1. Change the remote URL on the HOST to HTTPS:
-   git remote set-url $remote https://github.com/OWNER/REPO.git
-
-2. Or push from the host machine directly
-
-================================================================================
-
-EOF
-        return 1
-    fi
-
+    # SSH URLs are handled by the gateway - it converts them to HTTPS automatically
+    # No need to block here anymore
     return 0
 }
 

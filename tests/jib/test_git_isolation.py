@@ -62,9 +62,7 @@ def _get_setup_git_isolation_mounts():
     try:
         # Load the module with package context
         spec = importlib.util.spec_from_file_location(
-            "jib_lib.runtime",
-            runtime_path,
-            submodule_search_locations=[str(runtime_path.parent)]
+            "jib_lib.runtime", runtime_path, submodule_search_locations=[str(runtime_path.parent)]
         )
         module = importlib.util.module_from_spec(spec)
         module.__package__ = "jib_lib"
@@ -103,6 +101,7 @@ class TestMountStructure:
         # Create git directory structure
         (git_dir / "objects").mkdir()
         (git_dir / "refs" / "heads").mkdir(parents=True)
+        (git_dir / "logs" / "refs" / "heads").mkdir(parents=True)
         (git_dir / "hooks").mkdir()
         (git_dir / "worktrees").mkdir()
         (git_dir / "config").write_text("[core]\n\trepositoryformatversion = 0\n")
@@ -201,6 +200,23 @@ class TestMountStructure:
         assert any(packed_refs_mount in arg for arg in mount_args), (
             f"Expected packed-refs mount in {mount_args}"
         )
+
+    def test_mount_args_include_logs_rw(self, git_repo, setup_git_isolation_mounts):
+        """Test that logs directory is mounted as rw for reflogs."""
+        worktrees = {
+            "test-repo": {
+                "worktree": git_repo["worktree_path"],
+                "source": git_repo["repo_path"],
+            }
+        }
+        mount_args = []
+
+        setup_git_isolation_mounts(worktrees, "test-container", mount_args, quiet=True)
+
+        # Check logs mount is rw
+        logs_path = git_repo["git_dir"] / "logs"
+        logs_mount = f"{logs_path}:/home/jib/.git-common/test-repo/logs:rw"
+        assert any(logs_mount in arg for arg in mount_args), f"Expected logs mount in {mount_args}"
 
     def test_mount_args_include_config_ro(self, git_repo, setup_git_isolation_mounts):
         """Test that config file is mounted as ro."""

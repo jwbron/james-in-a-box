@@ -58,6 +58,8 @@ try:
         create_credential_helper,
         get_token_for_repo,
         git_cmd,
+        is_ssh_url,
+        ssh_url_to_https,
         validate_git_args,
         validate_repo_path,
     )
@@ -78,6 +80,8 @@ except ImportError:
         create_credential_helper,
         get_token_for_repo,
         git_cmd,
+        is_ssh_url,
+        ssh_url_to_https,
         validate_git_args,
         validate_repo_path,
     )
@@ -563,10 +567,19 @@ def git_push():
         return make_error(token_error, status_code=503)
 
     # Build push command with safe.directory for worktree paths
+    # If remote URL is SSH, convert to HTTPS since gateway uses token auth
+    push_target = remote
+    if is_ssh_url(remote_url):
+        push_target = ssh_url_to_https(remote_url)
+        logger.debug(
+            "Converting SSH URL to HTTPS for push",
+            original_url=remote_url,
+            https_url=push_target,
+        )
     push_args = ["push"]
     if force:
         push_args.append("--force")
-    push_args.extend([remote, refspec] if refspec else [remote])
+    push_args.extend([push_target, refspec] if refspec else [push_target])
     cmd = git_cmd(*push_args)
 
     # NOTE: Git author/committer info is set at COMMIT time, not push time.
@@ -1186,6 +1199,9 @@ def gh_execute():
 
     args = data.get("args", [])
     cwd = data.get("cwd")
+    # Repo passed from container - container can detect repo from worktree,
+    # but gateway can't (different git structure)
+    payload_repo = data.get("repo")
 
     if not args:
         return make_error("Missing args")
@@ -1234,10 +1250,19 @@ def gh_execute():
     # Extract repo from args to determine auth mode
     # Look for --repo flag or -R shorthand
     repo = None
+    has_repo_flag = False
     for i, arg in enumerate(args):
         if arg in ("--repo", "-R") and i + 1 < len(args):
             repo = args[i + 1]
+            has_repo_flag = True
             break
+
+    # If no --repo in args but container passed repo in payload, inject it
+    # This is needed because the gateway can't auto-detect repo from worktree structure
+    if not has_repo_flag and payload_repo:
+        repo = payload_repo
+        # Inject --repo into args so gh command uses it
+        args = ["--repo", payload_repo] + list(args)
 
     # Determine auth mode (default to bot if repo not specified)
     auth_mode = get_auth_mode(repo) if repo else "bot"
