@@ -70,6 +70,13 @@ RUN pip3 install --no-cache-dir \
     flask \
     waitress
 
+# Phase 2 Network Lockdown: Pre-install all Python dependencies
+# In lockdown mode, the container cannot access PyPI at runtime.
+# All commonly-needed packages must be pre-installed here.
+COPY requirements-lockdown.txt /tmp/requirements-lockdown.txt
+RUN pip3 install --no-cache-dir -r /tmp/requirements-lockdown.txt && \
+    rm /tmp/requirements-lockdown.txt
+
 # Install beads llm issue tracker
 # When running as root, the install script puts bd directly in /usr/local/bin
 RUN curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash && \

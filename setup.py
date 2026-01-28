@@ -662,10 +662,6 @@ class ServiceManager:
     # LLM-based services that use tokens (opt-in)
     LLM_SERVICES = [
         "context-sync.timer",
-        "github-watcher.timer",
-        "beads-analyzer.timer",
-        "jib-doc-generator.timer",
-        "adr-researcher.timer",
     ]
 
     # Mapping of service names to their setup script paths
@@ -679,10 +675,6 @@ class ServiceManager:
         "gateway-sidecar.service": "gateway-sidecar/setup.sh",
         "context-sync.timer": "host-services/sync/context-sync/setup.sh",
         "context-sync.service": "host-services/sync/context-sync/setup.sh",
-        "github-watcher.timer": "host-services/analysis/github-watcher/setup.sh",
-        "beads-analyzer.timer": "host-services/analysis/beads-analyzer/setup.sh",
-        "jib-doc-generator.timer": "host-services/analysis/doc-generator/setup.sh",
-        "adr-researcher.timer": "host-services/analysis/adr-researcher/setup.sh",
     }
 
     def __init__(self, logger: SetupLogger):

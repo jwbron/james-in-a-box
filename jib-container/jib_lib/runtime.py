@@ -21,8 +21,11 @@ from statusbar import status
 from .auth import get_anthropic_api_key, get_anthropic_auth_method
 from .config import (
     GATEWAY_CONTAINER_NAME,
+    GATEWAY_ISOLATED_IP,
     GATEWAY_PORT,
-    JIB_NETWORK_NAME,
+    GATEWAY_PROXY_PORT,
+    JIB_CONTAINER_IP,
+    JIB_ISOLATED_NETWORK,
     Config,
     get_local_repos,
 )
@@ -287,9 +290,25 @@ def run_claude() -> bool:
             check=False,
         )
 
-    # Build docker run command on jib-network (shared network with gateway sidecar)
+    # Build docker run command
     _host_timer.start_phase("build_docker_cmd")
-    # jib-network allows container-to-container communication while isolating from host
+
+    # Network lockdown mode: Connect to isolated network with fixed IP
+    # Container can only reach gateway, no direct internet access
+    #
+    # DNS Strategy: DNS is disabled (0.0.0.0) to prevent direct hostname
+    # resolution. This is intentional and works because:
+    # 1. HTTP clients (requests, httpx, curl) using HTTP_PROXY/HTTPS_PROXY
+    #    send CONNECT requests to the proxy with the hostname, and the
+    #    proxy (Squid) resolves DNS on behalf of the client.
+    # 2. Local hostnames (gateway, jib-gateway) are resolved via --add-host
+    #    which populates /etc/hosts.
+    # 3. NO_PROXY bypasses proxy for local connections to gateway.
+    #
+    # If a tool bypasses the proxy env vars, its requests will fail with
+    # DNS resolution errors - this is the intended "fail closed" behavior.
+    proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
+
     cmd = [
         "docker",
         "run",
@@ -299,8 +318,18 @@ def run_claude() -> bool:
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
+        # Network lockdown: isolated network with fixed IP
         "--network",
-        JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
+        JIB_ISOLATED_NETWORK,
+        "--ip",
+        JIB_CONTAINER_IP,
+        # Disable DNS (no external DNS resolution - fail closed)
+        "--dns",
+        "0.0.0.0",
+        # Add gateway hostname for proxy and API access
+        "--add-host",
+        f"gateway:{GATEWAY_ISOLATED_IP}",
+        # Environment variables
         "-e",
         f"RUNTIME_UID={os.getuid()}",
         "-e",
@@ -313,6 +342,20 @@ def run_claude() -> bool:
         f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
         "-e",
         f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+        # HTTP/HTTPS proxy environment variables for network lockdown
+        "-e",
+        f"HTTP_PROXY={proxy_url}",
+        "-e",
+        f"HTTPS_PROXY={proxy_url}",
+        "-e",
+        f"http_proxy={proxy_url}",
+        "-e",
+        f"https_proxy={proxy_url}",
+        # Bypass proxy for local connections
+        "-e",
+        "NO_PROXY=localhost,127.0.0.1,gateway",
+        "-e",
+        "no_proxy=localhost,127.0.0.1,gateway",
     ]
 
     # GitHub authentication is handled by the gateway sidecar
@@ -331,9 +374,10 @@ def run_claude() -> bool:
 
     if not quiet:
         info(f"Claude auth method: {anthropic_auth_method}")
-        info("Network mode: Bridge (isolated from host, outbound HTTP only)")
-        print("  Container can: Access Claude API, download packages")
-        print("  Container cannot: Access host services, accept inbound connections")
+        info("Network mode: LOCKDOWN (isolated network, proxy filtering)")
+        print("  Container network: jib-isolated (172.30.0.x)")
+        print("  Container can: Access Claude API, GitHub (via gateway sidecar)")
+        print("  Container cannot: Access any other websites, install packages at runtime")
         print()
 
     # Add mount arguments
@@ -489,8 +533,13 @@ def exec_in_new_container(
 
     print()
 
-    # Build docker run command on jib-network (shared network with gateway sidecar)
+    # Build docker run command
     # Note: We don't use --rm so we can save logs before cleanup
+
+    # Network lockdown mode: Connect to isolated network with fixed IP
+    # DNS is disabled to prevent direct hostname resolution (fail closed)
+    proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
+
     cmd = [
         "docker",
         "run",
@@ -498,8 +547,16 @@ def exec_in_new_container(
         "label=disable",  # Disable SELinux labeling for faster startup
         "--name",
         container_id,
+        # Network lockdown: isolated network with fixed IP
         "--network",
-        JIB_NETWORK_NAME,  # Connect to jib-network for gateway access
+        JIB_ISOLATED_NETWORK,
+        "--ip",
+        JIB_CONTAINER_IP,
+        "--dns",
+        "0.0.0.0",  # Disable DNS (fail closed)
+        "--add-host",
+        f"gateway:{GATEWAY_ISOLATED_IP}",
+        # Environment variables
         "-e",
         f"RUNTIME_UID={os.getuid()}",
         "-e",
@@ -507,9 +564,23 @@ def exec_in_new_container(
         "-e",
         f"CONTAINER_ID={container_id}",
         "-e",
-        "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
+        "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
         "-e",
         f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+        # HTTP/HTTPS proxy environment variables for network lockdown
+        "-e",
+        f"HTTP_PROXY={proxy_url}",
+        "-e",
+        f"HTTPS_PROXY={proxy_url}",
+        "-e",
+        f"http_proxy={proxy_url}",
+        "-e",
+        f"https_proxy={proxy_url}",
+        # Bypass proxy for local connections
+        "-e",
+        "NO_PROXY=localhost,127.0.0.1,gateway",
+        "-e",
+        "no_proxy=localhost,127.0.0.1,gateway",
     ]
 
     # Add logging configuration for log persistence
