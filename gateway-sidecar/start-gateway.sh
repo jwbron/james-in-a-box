@@ -48,33 +48,33 @@ fi
 MOUNTS=()
 
 # Config file mount (required for repo_config.py)
-MOUNTS+=(-v "$CONFIG_FILE:/config/repositories.yaml:ro,z")
+MOUNTS+=(-v "$CONFIG_FILE:/config/repositories.yaml:ro")
 
 # Secrets directory (contains .github-token and gateway-secret)
-MOUNTS+=(-v "$SECRETS_DIR:/secrets:ro,z")
+MOUNTS+=(-v "$SECRETS_DIR:/secrets:ro")
 
 # Repos directory - mount at /home/jib/repos to match container paths
 # Needs RW for git worktree add (writes to .git/worktrees/)
 if [ -d "$REPOS_DIR" ]; then
-    MOUNTS+=(-v "$REPOS_DIR:$CONTAINER_HOME/repos:z")
+    MOUNTS+=(-v "$REPOS_DIR:$CONTAINER_HOME/repos")
 fi
 
 # Worktrees directory - mount at /home/jib/.jib-worktrees
 # Needs RW for git fetch to update refs
 if [ -d "$WORKTREES_DIR" ]; then
-    MOUNTS+=(-v "$WORKTREES_DIR:$CONTAINER_HOME/.jib-worktrees:z")
+    MOUNTS+=(-v "$WORKTREES_DIR:$CONTAINER_HOME/.jib-worktrees")
 fi
 
 # Git main directory - mount at /home/jib/.git-main
 # Needs RW for git fetch (FETCH_HEAD, refs) and object sync after push
 if [ -d "$GIT_MAIN_DIR" ]; then
-    MOUNTS+=(-v "$GIT_MAIN_DIR:$CONTAINER_HOME/.git-main:z")
+    MOUNTS+=(-v "$GIT_MAIN_DIR:$CONTAINER_HOME/.git-main")
 fi
 
 # Local objects directory - mount at /home/jib/.jib-local-objects
 # Used to read container-created objects for sync to shared store
 if [ -d "$LOCAL_OBJECTS_DIR" ]; then
-    MOUNTS+=(-v "$LOCAL_OBJECTS_DIR:$CONTAINER_HOME/.jib-local-objects:ro,z")
+    MOUNTS+=(-v "$LOCAL_OBJECTS_DIR:$CONTAINER_HOME/.jib-local-objects:ro")
 fi
 
 # Dynamic git mounts from local_repos in repositories.yaml
@@ -108,9 +108,11 @@ if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
 fi
 
 # Run the container
+# --security-opt label=disable: Skip SELinux relabeling (major performance improvement)
 exec /usr/bin/docker run --rm \
     --name jib-gateway \
     --network jib-network \
+    --security-opt label=disable \
     -p 9847:9847 \
     "${ENV_ARGS[@]}" \
     "${MOUNTS[@]}" \
