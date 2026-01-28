@@ -637,7 +637,7 @@ def git_execute():
             "git_execute_blocked",
             "git_execute",
             success=False,
-            details={"operation": operation, "args": args, "reason": args_error},
+            details={"operation": operation, "git_args": args, "reason": args_error},
         )
         return make_error(args_error, status_code=400)
 
