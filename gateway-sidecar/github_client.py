@@ -539,12 +539,22 @@ class GitHubClient:
 
             success = result.returncode == 0
             if not success:
-                logger.warning(
-                    "gh command failed",
-                    command_args=args,
-                    returncode=result.returncode,
-                    stderr=result.stderr[:500] if result.stderr else None,
-                )
+                # Check for GitHub rate limit errors
+                stderr_lower = (result.stderr or "").lower()
+                if "rate limit" in stderr_lower or "api rate limit exceeded" in stderr_lower:
+                    logger.error(
+                        "GitHub rate limit exceeded",
+                        command_args=args,
+                        returncode=result.returncode,
+                        stderr=result.stderr[:500] if result.stderr else None,
+                    )
+                else:
+                    logger.warning(
+                        "gh command failed",
+                        command_args=args,
+                        returncode=result.returncode,
+                        stderr=result.stderr[:500] if result.stderr else None,
+                    )
 
             return GitHubResult(
                 success=success,
