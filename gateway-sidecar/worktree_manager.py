@@ -172,8 +172,9 @@ class WorktreeManager:
         worktree_path = self.worktree_base / container_id / repo_name
         branch_name = f"jib/{container_id}/work"
 
-        # Create container directory
+        # Create container directory and set ownership immediately
         worktree_path.parent.mkdir(parents=True, exist_ok=True)
+        self._chown_single(worktree_path.parent, uid, gid)
 
         # Check if worktree already exists AND is valid
         # A valid worktree has a .git file (not directory) containing "gitdir: ..."
