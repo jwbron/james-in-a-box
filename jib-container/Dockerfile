@@ -96,18 +96,15 @@ RUN chmod 755 /opt/claude-hooks/*.sh 2>/dev/null || true
 
 # Copy jib-container runtime scripts and tools to /opt/jib-runtime
 # This provides container-resident executables available in PATH
-# The bin/ directory contains symlinks to all executables (maintained by bin/maintain-bin-symlinks)
+# The bin/ directory contains symlinks to all executables
 # Structure:
 #   /opt/jib-runtime/jib-container/{bin,jib-tasks,scripts}
 #   /opt/jib-runtime/shared/
-#   /opt/jib-runtime/host-services/analysis/{trace-collector,index-generator}
 COPY . /opt/jib-runtime/
 RUN chmod +x /opt/jib-runtime/jib-container/bin/* 2>/dev/null || true && \
     chmod +x /opt/jib-runtime/jib-container/scripts/* 2>/dev/null || true && \
     chmod +x /opt/jib-runtime/jib-container/jib-tools/* 2>/dev/null || true && \
-    find /opt/jib-runtime/jib-container/jib-tasks -name "*.py" -exec chmod +x {} \; 2>/dev/null || true && \
-    chmod +x /opt/jib-runtime/host-services/analysis/trace-collector/*.py 2>/dev/null || true && \
-    chmod +x /opt/jib-runtime/host-services/analysis/index-generator/*.py 2>/dev/null || true
+    find /opt/jib-runtime/jib-container/jib-tasks -name "*.py" -exec chmod +x {} \; 2>/dev/null || true
 
 # Relocate git/gh binaries and symlink /usr/bin to wrappers
 # This ensures ALL git/gh invocations route through the gateway sidecar,

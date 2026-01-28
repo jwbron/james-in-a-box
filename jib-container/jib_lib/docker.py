@@ -301,25 +301,6 @@ def create_dockerfile() -> None:
         else:
             warn(f"pyproject.toml not found at {src}")
 
-    # Copy host-services scripts that run INSIDE the container
-    # These are called from Claude hooks and need to be baked into the image
-    # so the container doesn't depend on the mounted repo for runtime code
-    host_services_dest = Config.CONFIG_DIR / "host-services"
-    host_services_dest.mkdir(parents=True, exist_ok=True)
-
-    container_runtime_services = [
-        "analysis/trace-collector",
-        "analysis/index-generator",
-    ]
-    for service_path in container_runtime_services:
-        src = repo_root / "host-services" / service_path
-        dest = host_services_dest / service_path
-        if src.exists():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            _copy_directory_atomic(src, dest, f"Host service {service_path}", quiet)
-        else:
-            warn(f"host-services/{service_path} not found, container hooks may fail")
-
     # Note: Claude credentials are mounted at runtime (not copied at build time)
     # This ensures the container always uses the host's CURRENT credentials
     # Avoids issues with stale/revoked OAuth tokens from previous builds
@@ -518,19 +499,6 @@ def compute_build_hash() -> str:
         shared_pyproject = shared_path / "pyproject.toml"
         if shared_pyproject.exists():
             _hash_file(shared_pyproject, hasher)
-
-    # Host-services directories that get copied to container
-    host_services_src = repo_root / "host-services"
-    if host_services_src.exists():
-        container_runtime_services = [
-            "analysis/trace-collector",
-            "analysis/index-generator",
-        ]
-        for service_path in container_runtime_services:
-            service_full_path = host_services_src / service_path
-            if service_full_path.exists():
-                hasher.update(f"host-services/{service_path}".encode())
-                _hash_directory(service_full_path, hasher)
 
     return hasher.hexdigest()
 
