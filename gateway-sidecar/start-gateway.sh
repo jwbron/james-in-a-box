@@ -102,6 +102,11 @@ fi
 # Build environment variable arguments
 ENV_ARGS=(-e JIB_REPO_CONFIG=/config/repositories.yaml)
 
+# Pass host home directory for path translation in API responses
+# The gateway runs with CONTAINER_HOME=/home/jib but needs to return
+# host paths to the jib launcher for Docker mount sources
+ENV_ARGS+=(-e "HOST_HOME=$HOME_DIR")
+
 # Pass incognito token if configured (for personal GitHub account attribution)
 if [ -n "${GITHUB_INCOGNITO_TOKEN:-}" ]; then
     ENV_ARGS+=(-e "GITHUB_INCOGNITO_TOKEN=$GITHUB_INCOGNITO_TOKEN")
