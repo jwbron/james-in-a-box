@@ -45,8 +45,8 @@ This document explains the differences between GitHub App authentication and Per
 
 **When to use:**
 - Team projects
-- You want PR check status monitoring (github-watcher service)
 - You need token auto-refresh (github-token-refresher service)
+- Fine-grained permission control
 - Production deployments
 
 **Setup:**
@@ -70,15 +70,14 @@ See [github-app-setup.md](github-app-setup.md) for detailed instructions.
 
 ### Where GitHub Apps are required:
 
-1. **PR check run monitoring** (`github-watcher.py`)
-   - Uses `gh api repos/{repo}/commits/{sha}/check-runs`
-   - **PATs cannot access this endpoint** - it requires GitHub App authentication
-   - Critical for detecting CI failures and billing exhaustion
-
-2. **Token auto-refresh** (`github-token-refresher.py`)
+1. **Token auto-refresh** (`github-token-refresher.py`)
    - GitHub App tokens expire after 1 hour
    - Service auto-refreshes tokens every 45 minutes
    - Not needed for PATs (they don't expire automatically)
+
+2. **Fine-grained repository permissions**
+   - GitHub Apps can be installed on specific repositories
+   - Better security model for team environments
 
 ## Recommendations
 
@@ -127,20 +126,6 @@ The GitHub Checks API requires:
 From GitHub's documentation:
 > "The Checks API is only available to GitHub Apps. OAuth Apps and authenticated users cannot access this endpoint."
 
-This is why `github-watcher.py` line 1018-1026 requires GitHub App authentication:
-
-```python
-# Get check runs via GitHub API (more reliable than gh pr checks)
-# gh pr checks only shows "required" checks; this gets all check runs
-check_runs_response = gh_json(
-    [
-        "api",
-        f"repos/{repo}/commits/{head_sha}/check-runs",
-    ],
-    repo=repo,
-)
-```
-
 ## Migration Path
 
 If you're currently using PATs and want PR check monitoring:
@@ -159,4 +144,3 @@ The system will automatically use the GitHub App for repositories where it's ins
 
 - [GitHub App Setup](github-app-setup.md)
 - [Host Configuration](../../config/README.md)
-- [GitHub Watcher Service](../../host-services/analysis/github-watcher/README.md)

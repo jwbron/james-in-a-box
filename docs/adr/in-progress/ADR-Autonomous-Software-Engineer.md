@@ -397,34 +397,19 @@ Agent should demonstrate L3-L4 behaviors:
   - `checks/{repo}-PR-{num}-checks.json` - Check status and logs
   - `comments/{repo}-PR-{num}-comments.json` - PR comments for response tracking
 - **Scope:** All open PRs in configured repository (`--repo` and `--all-prs` flags)
-- **Container Analysis:** After sync, triggers via `jib --exec`:
-  1. `check-monitor.py` - Analyzes check failures, suggests/implements fixes
-  2. `pr-reviewer.py --watch` - Auto-reviews new PRs from others
-  3. `comment-responder.py` - Detects comments needing responses on your PRs
+- **GitHub Operations:** On-demand via Slack commands to `jib --exec`
 
-**Container-Side Active Analysis:**
+**Container-Side Task Processors:**
 
-**Context Watcher** (`jib-container/watchers/context-watcher/`)
-- **Architecture:** Exec-based pattern triggered by `context-sync.service` via `jib --exec --worktree`
-- **JIRA Watcher:** Analyzes new/updated tickets after hourly sync
-  - Extracts action items from descriptions
-  - Estimates scope (small/medium/large)
-  - Identifies dependencies and risks
-  - Creates Beads tasks automatically
-  - Sends Slack notifications with summaries
-- **Confluence Watcher:** Monitors high-value docs after hourly sync
-  - Focuses on ADRs and runbooks
-  - Detects decision keywords, deprecations, migrations
-  - Identifies impact on current work
-  - Creates Beads tasks for ADRs
-  - Sends Slack notifications
+**GitHub Processor** (`jib-container/jib-tasks/github/`)
+- **Architecture:** Exec-based pattern triggered by Slack commands via `jib --exec`
+- **PR Review:** On-demand PR reviews triggered via Slack ("review PR 123")
+- **Command Handler:** Routes GitHub commands to appropriate handlers
 
-**GitHub Watcher** (`jib-container/watchers/github-watcher/`)
-- **Architecture:** Exec-based pattern triggered by `github-sync.service` via `jib --exec`
-- **Check Monitor:** Analyzes PR check failures after sync (every 15 min), suggests/implements automated fixes
-- **PR Reviewer:** Auto-reviews new PRs from others (`--watch` mode), skips self-authored PRs
-- **Comment Responder:** Analyzes PR comments on your PRs, suggests contextual responses
-- **Scope:** All PRs in configured repository (reviews others' PRs, responds to comments on your PRs)
+**JIRA Processor** (`jib-container/jib-tasks/jira/`)
+- **Architecture:** Exec-based pattern triggered via `jib --exec`
+- **Ticket Analysis:** Analyzes JIRA tickets, extracts action items
+- **Sprint Analysis:** Provides actionable recommendations for sprint work
 
 **PR Creation via GitHub MCP**
 - **Purpose:** Enables jib to create PRs after completing tasks

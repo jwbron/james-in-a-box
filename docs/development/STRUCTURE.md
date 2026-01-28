@@ -37,13 +37,11 @@ host-services/
 │   ├── slack-notifier/        # Outgoing notifications
 │   └── slack-receiver/        # Incoming messages
 ├── sync/                      # Data synchronization
-│   ├── github-sync/           # GitHub PR sync
 │   └── context-sync/          # Confluence/JIRA sync
-├── analysis/                  # Analysis services and tools
-│   ├── conversation-analyzer/ # Quality analysis
-│   └── analyze-pr/            # PR analysis CLI tool
 └── utilities/                 # Utility services
-    └── worktree-watcher/      # Git worktree cleanup
+    ├── github-token-refresher/ # GitHub App token refresh
+    ├── jib-logs/              # Log management
+    └── service-failure-notify/ # Service failure notifications
 ```
 
 Each service directory should contain:
@@ -90,17 +88,12 @@ Tasks in `jib-container/jib-tasks/` are organized by product/service:
 jib-container/jib-tasks/
 ├── github/                    # GitHub-related tasks
 │   ├── README.md
-│   ├── github-processor.py    # Analyzes CI failures
-│   ├── pr-reviewer.py         # Auto-reviews PRs
-│   ├── comment-responder.py   # Responds to PR comments
-│   └── pr-analyzer.py         # Analyzes PR context
+│   ├── github-processor.py    # Processes GitHub tasks via Slack commands
+│   └── command-handler.py     # Routes GitHub commands
 ├── jira/                      # JIRA-related tasks
 │   ├── README.md
 │   ├── jira-processor.py      # Analyzes JIRA tickets
 │   └── analyze-sprint.py      # Sprint analysis
-├── confluence/                # Confluence-related tasks
-│   ├── README.md
-│   └── confluence-processor.py # Analyzes docs
 └── slack/                     # Slack-related tasks
     ├── README.md
     └── incoming-processor.py  # Processes incoming messages
@@ -125,8 +118,8 @@ The `bin/` directory contains symlinks for convenient CLI access:
 ```
 bin/
 ├── jib -> ../jib-container/jib
-├── analyze-pr -> ../host-services/analysis/analyze-pr/analyze-pr
 ├── setup-slack-notifier -> ../host-services/slack/slack-notifier/setup.sh
+├── view-logs -> script for viewing container logs
 └── ...
 ```
 
