@@ -135,6 +135,7 @@ RATE_LIMITS = {
     "gh_pr_edit": 500,
     "gh_pr_close": 500,
     "gh_execute": 2000,
+    "worktree": 500,  # Worktree lifecycle operations
     "combined": 4000,
 }
 
@@ -1322,6 +1323,7 @@ def get_worktree_manager() -> WorktreeManager:
 
 @app.route("/api/v1/worktree/create", methods=["POST"])
 @require_auth
+@require_rate_limit("worktree")
 def worktree_create():
     """
     Create worktrees for a container.
@@ -1414,6 +1416,7 @@ def worktree_create():
 
 @app.route("/api/v1/worktree/delete", methods=["POST"])
 @require_auth
+@require_rate_limit("worktree")
 def worktree_delete():
     """
     Delete worktrees for a container.
@@ -1508,6 +1511,7 @@ def worktree_delete():
 
 @app.route("/api/v1/worktree/list", methods=["GET"])
 @require_auth
+@require_rate_limit("worktree")
 def worktree_list():
     """
     List all active worktrees.

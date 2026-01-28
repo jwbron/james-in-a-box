@@ -105,33 +105,39 @@ The simplest architecture: gateway manages git worktrees, containers only see th
 
 ## Architecture
 
+**Note on paths**: The diagram below uses `/workspace/` as a conceptual root. In the actual implementation:
+- Main repos: `~/repos/{repo}` (standard git repos, not bare)
+- Worktrees: `~/.jib-worktrees/{container_id}/{repo}`
+- Worktree admin: `~/repos/{repo}/.git/worktrees/{repo}`
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                            Shared Volume                                 │
 │                                                                          │
-│  /workspace/                                                             │
-│  ├── repos/                                                              │
-│  │   └── my-repo.git/              ← Main repo (bare or .git directory) │
-│  │       ├── objects/               ← Shared objects (all worktrees)    │
-│  │       ├── refs/                  ← Shared refs                       │
-│  │       └── worktrees/             ← Worktree admin (gateway-managed)  │
-│  │           ├── my-repo/           ← Metadata for container abc123     │
-│  │           └── my-repo-1/         ← Metadata for container def456     │
-│  │                                                                       │
-│  └── worktrees/                     ← Working directories                │
-│      ├── abc123/                                                         │
-│      │   └── my-repo/               ← Container abc123's working dir    │
-│      └── def456/                                                         │
-│          └── my-repo/               ← Container def456's working dir    │
+│  ~/repos/                           ← Main repositories                  │
+│  └── my-repo/                       ← Main repo (standard git repo)      │
+│      └── .git/                                                           │
+│          ├── objects/               ← Shared objects (all worktrees)     │
+│          ├── refs/                  ← Shared refs                        │
+│          └── worktrees/             ← Worktree admin (gateway-managed)   │
+│              ├── my-repo/           ← Metadata for container abc123      │
+│              └── my-repo-1/         ← Metadata for container def456      │
+│                                                                          │
+│  ~/.jib-worktrees/                  ← Working directories                │
+│      ├── jib-abc123/                                                     │
+│      │   └── my-repo/               ← Container abc123's working dir     │
+│      └── jib-def456/                                                     │
+│          └── my-repo/               ← Container def456's working dir     │
 └─────────────────────────────────────────────────────────────────────────┘
                     │                              │
                     ▼                              ▼
      ┌──────────────────────────┐    ┌──────────────────────────┐
      │     jib container        │    │    gateway sidecar       │
      │                          │    │                          │
-     │  Mounts ONLY:            │    │  Mounts ALL:             │
-     │  /workspace/worktrees/   │    │  /workspace/             │
-     │    {id}/my-repo/         │    │                          │
+     │  Mounts ONLY:            │    │  Has access to:          │
+     │  ~/.jib-worktrees/       │    │  ~/repos/                │
+     │    {id}/my-repo/         │    │  ~/.jib-worktrees/       │
+     │  → /home/jib/repos/...   │    │                          │
      │                          │    │  Manages:                │
      │  Can do:                 │    │  - Worktree lifecycle    │
      │  - Edit source files     │    │  - All git operations    │
@@ -220,13 +226,13 @@ The container does not have access to any git metadata:
 | Operation | Where it runs | How |
 |-----------|---------------|-----|
 | Edit files | Container | Direct filesystem access |
-| `git status` | Gateway | `POST /api/v1/git/status` |
-| `git diff` | Gateway | `POST /api/v1/git/diff` |
-| `git log` | Gateway | `POST /api/v1/git/log` |
-| `git add` | Gateway | `POST /api/v1/git/add` |
-| `git commit` | Gateway | `POST /api/v1/git/commit` |
-| `git push` | Gateway | `POST /api/v1/git/push` (existing) |
-| `git fetch` | Gateway | `POST /api/v1/git/fetch` (existing) |
+| `git status` | Gateway | `POST /api/v1/git/execute` with `operation: "status"` |
+| `git diff` | Gateway | `POST /api/v1/git/execute` with `operation: "diff"` |
+| `git log` | Gateway | `POST /api/v1/git/execute` with `operation: "log"` |
+| `git add` | Gateway | `POST /api/v1/git/execute` with `operation: "add"` |
+| `git commit` | Gateway | `POST /api/v1/git/execute` with `operation: "commit"` |
+| `git push` | Gateway | `POST /api/v1/git/push` (dedicated endpoint for network ops) |
+| `git fetch` | Gateway | `POST /api/v1/git/fetch` (dedicated endpoint for network ops) |
 | `gh` commands | Gateway | `POST /api/v1/gh/*` (existing) |
 
 **Why all git operations go through the gateway**: The container's `.git` file contains a `gitdir` path pointing to `/workspace/repos/...`, which is not mounted in the container. Git operations require access to the worktree admin directory (HEAD, index, config), which only the gateway has. The ~10% HTTP overhead is negligible compared to the architectural simplicity this provides.
@@ -265,41 +271,39 @@ route_to_gateway "$cmd" "$@"
 
 ### Gateway Git Execution
 
-Gateway receives git commands via operation-specific endpoints and executes them in the correct worktree context:
+Gateway receives git commands via a unified endpoint and executes them in the correct worktree context:
 
 ```python
-@app.route("/api/v1/git/add", methods=["POST"])
-def git_add():
+@app.route("/api/v1/git/execute", methods=["POST"])
+def git_execute():
+    """Execute a git command in the gateway's worktree."""
     data = request.json
     repo_path = data["repo_path"]
-    files = data.get("files", ["."])
+    operation = data["operation"]  # e.g., "add", "status", "commit"
+    args = data.get("args", [])
 
-    # Extract container_id and repo_name from repo_path
-    # Container path: /home/jib/repo -> maps to /workspace/worktrees/{id}/{repo}
-    container_id, repo_name = resolve_container_from_path(repo_path)
+    # Validate operation against allowlist
+    if operation not in GIT_ALLOWED_COMMANDS:
+        return jsonify({"error": f"Operation not allowed: {operation}"}), 403
 
-    # Map to worktree paths
-    work_tree = f"/workspace/worktrees/{container_id}/{repo_name}"
-    git_dir = f"/workspace/repos/{repo_name}.git/worktrees/{repo_name}"
+    # Validate args against operation-specific allowlist
+    args_valid, args_error, validated_args = validate_git_args(operation, args)
+    if not args_valid:
+        return jsonify({"error": args_error}), 400
 
-    # Verify worktree exists (security check)
-    if not os.path.isdir(git_dir):
-        return jsonify({"error": f"No worktree for container {container_id}"}), 404
-
-    # Execute git add in worktree context
-    result = subprocess.run(
-        ["git", f"--work-tree={work_tree}", f"--git-dir={git_dir}", "add"] + files,
-        capture_output=True,
-        text=True,
-        cwd=work_tree
-    )
+    # Execute git command in worktree context
+    cmd = git_cmd(operation, *validated_args)
+    result = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True)
 
     return jsonify({
         "success": result.returncode == 0,
         "stdout": result.stdout,
-        "stderr": result.stderr
+        "stderr": result.stderr,
+        "returncode": result.returncode
     })
 ```
+
+**Note**: Network operations (`push`, `fetch`, `ls-remote`) use dedicated endpoints for credential handling.
 
 ## Multi-Container Isolation
 
@@ -418,7 +422,7 @@ spec:
 | Issue | Worktree approach (PR #590) | Gateway-managed |
 |-------|----------------------------|-----------------|
 | Host git breaks | Yes (path rewriting) | No (host not affected) |
-| Crash recovery | Cleanup script needed | Periodic worktree cleanup |
+| Crash recovery | Cleanup script needed | Startup worktree cleanup |
 | Multi-container | Complex worktree setup | Simple directory per container |
 | Cloud deployment | Needs different architecture | Same architecture |
 | Implementation | Complex entrypoint logic | Simple wrapper + gateway routes |
@@ -441,9 +445,13 @@ def cleanup_orphaned_worktrees():
 ```
 
 This runs:
-- On gateway startup
-- Periodically (e.g., every hour)
-- When container count drops (scale-down event)
+- On gateway startup (implemented)
+- When containers are deleted via the `/api/v1/worktree/delete` endpoint (implemented)
+
+**Note**: Periodic cleanup (e.g., hourly) is not currently implemented. Startup cleanup handles the common case of crashed containers. Periodic cleanup could be added if orphaned worktrees become a problem in practice, but the current implementation should be sufficient since:
+1. Normal container exit triggers explicit cleanup via the delete endpoint
+2. Gateway restarts (which trigger startup cleanup) are infrequent but catch accumulated orphans
+3. The jib launcher's `finally` block ensures cleanup even on keyboard interrupt
 
 ## Performance Considerations
 
@@ -501,10 +509,12 @@ Remove the `cleanup_on_exit()` restoration logic (lines 1048-1121) which:
    - `cleanup_worktrees()` - No longer needed; gateway handles cleanup
    - File-based locking (`_acquire_git_lock`, `_release_git_lock`) - Gateway serializes operations
 
-2. **`host-services/utilities/worktree-watcher/`** - Remove entirely
-   - `worktree-watcher.py` - No longer needed; gateway cleans up orphaned worktrees
-   - `worktree-watcher.service` - Remove systemd service
-   - `worktree-watcher.timer` - Remove systemd timer
+2. **`host-services/utilities/worktree-watcher/`** - Deprecated (removal deferred)
+   - `worktree-watcher.py` - No longer needed; gateway cleans up orphaned worktrees on startup
+   - `worktree-watcher.service` - Systemd service (can be disabled)
+   - `worktree-watcher.timer` - Systemd timer (can be disabled)
+   - **Note**: This service is superseded by gateway startup cleanup but remains in the codebase
+     for backward compatibility. It can be safely disabled or removed in a future cleanup PR.
 
 3. **`scripts/jib-cleanup-worktree`** - Remove
    - Manual restoration script no longer needed
@@ -548,94 +558,41 @@ Remove `sync_objects_after_push()` function (lines 122-274):
 
 **Goal**: Gateway handles all git write operations; container runs reads locally.
 
-#### 1.1 Add Git Write Operation Endpoints
+#### 1.1 Add Unified Git Execute Endpoint
 
 **File**: `gateway-sidecar/gateway.py`
 
-Add new endpoints:
+Add a unified endpoint for all local git operations:
 
 ```python
-# Read operations (previously considered for local execution, but container
-# lacks access to worktree admin directory, so must go through gateway)
-POST /api/v1/git/status
-    Request: {"repo_path": "..."}
-    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
+POST /api/v1/git/execute
+    Request: {
+        "repo_path": "/home/jib/repos/myrepo",
+        "operation": "status|add|commit|log|diff|show|...",
+        "args": ["--porcelain"],  # optional operation-specific args
+        "container_id": "jib-xxx"  # for path mapping
+    }
+    Response: {
+        "success": true,
+        "message": "git status successful",
+        "data": {
+            "stdout": "...",
+            "stderr": "...",
+            "returncode": 0
+        }
+    }
 
-POST /api/v1/git/diff
-    Request: {"repo_path": "...", "args": ["--cached", "file.txt"]}
-    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
+Supported operations:
+- Read: status, diff, log, show, blame, branch (list), tag (list), rev-parse
+- Write: add, commit, checkout, switch, reset, restore, stash, merge, rebase,
+         cherry-pick, revert, branch (create/delete), tag (create/delete),
+         clean, config
 
-POST /api/v1/git/log
-    Request: {"repo_path": "...", "args": ["-10", "--oneline"]}
-    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
-
-POST /api/v1/git/show
-    Request: {"repo_path": "...", "args": ["HEAD"]}
-    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
-
-POST /api/v1/git/blame
-    Request: {"repo_path": "...", "args": ["file.txt"]}
-    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
-
-# Write operations
-POST /api/v1/git/add
-    Request: {"repo_path": "...", "files": ["file1", "file2"] or ["."] for all}
-    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0}
-
-POST /api/v1/git/commit
-    Request: {"repo_path": "...", "message": "...", "author": "name <email>"}
-    Response: {"success": true, "stdout": "...", "stderr": "...", "returncode": 0, "commit_sha": "abc123"}
-
-POST /api/v1/git/checkout
-    Request: {"repo_path": "...", "target": "branch-or-ref", "create": false}
-    Response: {"success": true}
-
-POST /api/v1/git/reset
-    Request: {"repo_path": "...", "mode": "soft|mixed|hard", "target": "ref"}
-    Policy: Block --hard unless explicitly confirmed
-    Response: {"success": true}
-
-POST /api/v1/git/stash
-    Request: {"repo_path": "...", "action": "push|pop|list|drop", "message": "..."}
-    Response: {"success": true, "stash_ref": "stash@{0}"}
-
-POST /api/v1/git/branch
-    Request: {"repo_path": "...", "action": "create|delete|rename", "name": "..."}
-    Policy: Only jib-prefixed branches can be created/deleted
-    Response: {"success": true}
-
-POST /api/v1/git/merge
-    Request: {"repo_path": "...", "branch": "...", "no_ff": false}
-    Response: {"success": true, "merge_commit": "..."}
-
-POST /api/v1/git/rebase
-    Request: {"repo_path": "...", "onto": "...", "interactive": false}
-    Policy: Block interactive rebase (requires TTY)
-    Response: {"success": true}
-
-POST /api/v1/git/cherry-pick
-    Request: {"repo_path": "...", "commits": ["sha1", "sha2"]}
-    Response: {"success": true}
-
-POST /api/v1/git/revert
-    Request: {"repo_path": "...", "commits": ["sha1"]}
-    Response: {"success": true}
-
-POST /api/v1/git/tag
-    Request: {"repo_path": "...", "action": "create|delete", "name": "...", "message": "..."}
-    Policy: Only jib-prefixed tags or with explicit permission
-    Response: {"success": true}
-
-POST /api/v1/git/clean
-    Request: {"repo_path": "...", "force": true, "directories": true}
-    Policy: Require confirmation for destructive operations
-    Response: {"success": true, "removed_files": [...]}
-
-POST /api/v1/git/config
-    Request: {"repo_path": "...", "key": "...", "value": "...", "scope": "local"}
-    Policy: Block certain config keys (credential.*, core.hooksPath)
-    Response: {"success": true}
+Network operations (push, fetch, ls-remote) use dedicated endpoints for
+credential handling.
 ```
+
+**Design rationale**: A unified endpoint with operation parameter reduces code duplication and provides consistent validation, logging, and error handling. Each operation's allowed flags are validated against an explicit allowlist.
 
 #### 1.2 Add Worktree Lifecycle Endpoints
 
