@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from git_client import (
     BLOCKED_GIT_FLAGS,
     GIT_ALLOWED_COMMANDS,
+    is_repos_parent_directory,
     is_ssh_url,
     normalize_flag,
     ssh_url_to_https,
@@ -51,6 +52,42 @@ class TestValidateRepoPath:
         valid, error = validate_repo_path("/tmp/malicious")
         assert not valid
         assert "allowed directories" in error.lower()
+
+
+class TestIsReposParentDirectory:
+    """Tests for repos parent directory detection."""
+
+    def test_repos_parent_detected(self):
+        """The /home/jib/repos directory should be detected as a parent."""
+        assert is_repos_parent_directory("/home/jib/repos")
+        assert is_repos_parent_directory("/home/jib/repos/")
+
+    def test_worktrees_parent_detected(self):
+        """The /home/jib/.jib-worktrees directory should be detected as a parent."""
+        assert is_repos_parent_directory("/home/jib/.jib-worktrees")
+        assert is_repos_parent_directory("/home/jib/.jib-worktrees/")
+
+    def test_legacy_repos_parent_detected(self):
+        """The /repos directory should be detected as a parent."""
+        assert is_repos_parent_directory("/repos")
+        assert is_repos_parent_directory("/repos/")
+
+    def test_actual_repo_not_detected(self):
+        """Paths inside repos should NOT be detected as parent directories."""
+        assert not is_repos_parent_directory("/home/jib/repos/myrepo")
+        assert not is_repos_parent_directory("/home/jib/repos/some-project/src")
+        assert not is_repos_parent_directory("/home/jib/.jib-worktrees/container-123/myrepo")
+
+    def test_empty_path(self):
+        """Empty paths should return False."""
+        assert not is_repos_parent_directory("")
+        assert not is_repos_parent_directory(None)
+
+    def test_unrelated_paths(self):
+        """Unrelated paths should return False."""
+        assert not is_repos_parent_directory("/tmp")
+        assert not is_repos_parent_directory("/home/jib")
+        assert not is_repos_parent_directory("/etc/passwd")
 
 
 class TestNormalizeFlag:

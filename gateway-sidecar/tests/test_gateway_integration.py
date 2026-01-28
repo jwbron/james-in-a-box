@@ -263,6 +263,34 @@ class TestPathValidation:
         data = json.loads(response.data)
         assert "allowed directories" in data["message"].lower()
 
+    @patch("gateway.get_gateway_secret", return_value="test-secret")
+    def test_repos_parent_directory_rejected(self, mock_secret, client):
+        """Git operations from repos parent directory should fail with clear error.
+
+        This tests the common case where Claude Code or similar tools run
+        'git rev-parse' to detect if they're in a repo. When run from /home/jib/repos,
+        the gateway should return a clear error without logging a noisy warning.
+        """
+        response = client.post(
+            "/api/v1/git/execute",
+            headers={"Authorization": "Bearer test-secret"},
+            json={
+                "repo_path": "/home/jib/repos",
+                "operation": "rev-parse",
+                "args": ["--abbrev-ref", "HEAD"],
+            },
+        )
+
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        # Should get a clear error message
+        assert (
+            "not a git repository" in data["message"].lower()
+            or "not itself a git repository" in data["message"].lower()
+        )
+        # Should include a hint
+        assert data.get("data", {}).get("hint") is not None
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
