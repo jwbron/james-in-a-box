@@ -116,6 +116,7 @@ def get_authenticated_remote_target(remote: str, remote_url: str) -> str:
 ALLOWED_REPO_PATHS = [
     "/home/jib/repos/",
     "/home/jib/.jib-worktrees/",
+    "/home/jib/beads/",  # Beads task tracking repo
     "/repos/",  # Legacy path
 ]
 
@@ -312,14 +313,58 @@ GIT_ALLOWED_COMMANDS = {
             "--symbolic-full-name",
             "--show-toplevel",
             "--git-dir",
+            "--git-common-dir",
             "--is-inside-work-tree",
             "--is-bare-repository",
+        ],
+    },
+    "ls-tree": {
+        "allowed_flags": [
+            "--name-only",
+            "--name-status",
+            "--full-name",
+            "--full-tree",
+            "--long",
+            "-r",
+            "-t",
+            "-d",
+            "-l",
         ],
     },
     "remote": {
         "allowed_flags": [
             "--verbose",
             "-v",
+        ],
+    },
+    "worktree": {
+        "allowed_flags": [
+            "--porcelain",
+            "--verbose",
+            "-v",
+        ],
+    },
+    "ls-files": {
+        "allowed_flags": [
+            "--cached",
+            "--deleted",
+            "--modified",
+            "--others",
+            "--ignored",
+            "--stage",
+            "--unmerged",
+            "--killed",
+            "--full-name",
+            "--error-unmatch",
+            "--exclude-standard",
+            "-c",
+            "-d",
+            "-m",
+            "-o",
+            "-i",
+            "-s",
+            "-u",
+            "-k",
         ],
     },
     # === Local write operations ===
