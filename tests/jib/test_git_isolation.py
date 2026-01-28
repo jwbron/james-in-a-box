@@ -11,7 +11,6 @@ by the gateway sidecar rather than the container entrypoint.
 
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
