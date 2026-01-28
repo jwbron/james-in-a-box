@@ -551,6 +551,32 @@ The orchestrator-to-gateway registration uses a secure channel to prevent task_i
 - Gateway recognizes the task_id and extends the mapping to the new container_id
 - Previous container_id authorization is immediately revoked
 
+**Concurrent container access:**
+
+Multiple containers can legitimately access the same task_id concurrently. This is a normal operational scenario that occurs when:
+- Multiple messages arrive in a Slack thread in rapid succession
+- Each message spawns a container, and multiple containers run in parallel on the same task
+
+The gateway handles this as follows:
+- Task_id → container_id mapping is one-to-many (multiple containers can be authorized for one task)
+- Messages are delivered to ALL authorized containers for that task_id
+- Each container processes independently; no coordination required
+- Rate limits still apply per-container (not aggregated across containers on same task)
+- When any container ACKs a message, it's marked as ACKed for that container only
+
+```python
+# Gateway maintains multiple container authorizations per task
+def is_container_authorized(container_id: str, task_id: str) -> bool:
+    # Returns True if this specific container is authorized for this task
+    # Multiple containers can be authorized for the same task simultaneously
+    return container_id in task_authorizations.get(task_id, set())
+
+def deliver_message(task_id: str, message: Message):
+    # Deliver to all authorized containers for this task
+    for container_id in task_authorizations.get(task_id, set()):
+        delivery_queue.add(container_id, message)
+```
+
 ### Audit Log Specification
 
 All Slack operations produce structured audit logs:
@@ -735,6 +761,27 @@ def validate_outgoing_message(message: SlackMessage) -> bool:
 | Credential theft | VERY LOW - already isolated | VERY LOW | Maintained: tokens only in gateway |
 | Rate limiting bypass | HIGH - unlimited file writes | VERY LOW | Gateway enforces rate limits |
 | Audit trail gaps | HIGH - no central logging | VERY LOW | All operations through gateway |
+
+### Security Assumptions
+
+This section documents assumptions made during security analysis that bound the threat model.
+
+| Assumption | Rationale | Impact if Violated |
+|------------|-----------|-------------------|
+| **Gateway deployed securely** | The gateway sidecar will be deployed following the same security practices as other production services. On host machines, this is equivalent to existing credential storage (credentials would live somewhere on the machine regardless). | If gateway is compromised, attacker gains access to Slack and GitHub tokens. Mitigate via standard deployment hardening, not architectural changes. |
+| **Isolated network traffic** | Traffic between jib container and gateway runs on an isolated network—either Docker bridge on host, or VPC in GCP. | If network is compromised, replay attacks become possible. Mitigate via mTLS in production (see Container Identity Verification section). |
+| **Content filtering is out of scope** | Message content filtering to prevent secret leaks is explicitly out of scope. LLMs can work around any such filters through encoding, ciphers, or other subterfuge. The architectural controls (credential isolation, gateway policy) are the primary defense. | Agent could exfiltrate information via Slack messages. Mitigate via human review of Slack threads (Layer 6 in defense-in-depth). |
+| **Concurrent container access is valid** | Multiple containers CAN legitimately access the same task_id concurrently. This occurs when multiple messages are sent to a single thread in rapid succession, spawning parallel container executions. | Gateway must handle concurrent access gracefully—no mutex on task_id access, only on registration/deregistration. |
+
+**Implications for implementation:**
+
+1. **Gateway compromise**: No separate credential sidecars needed. Standard deployment security is sufficient. This is consistent with the existing git gateway design.
+
+2. **Replay attack prevention**: The current shared-secret approach plus HTTPS transport is sufficient for Docker deployment. mTLS should be implemented for GCP Cloud Run deployment (see Phase 4 or future hardening ADR).
+
+3. **Message content**: The gateway enforces structural limits (message length, schema validation) but does not attempt semantic filtering. Audit logs provide visibility for human review.
+
+4. **Concurrent access**: The "Handling container restarts" section is updated to reflect that this is a normal operation, not an error condition. Task mappings are many-to-one (multiple containers → one task_id).
 
 ### Defense in Depth Summary
 
