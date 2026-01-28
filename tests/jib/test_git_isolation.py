@@ -10,6 +10,7 @@ Tests the Container Worktree Isolation ADR implementation:
 These tests can run on the host machine without Docker.
 """
 
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -31,8 +32,6 @@ def _get_setup_git_isolation_mounts():
     runtime.py has relative imports that fail when imported directly.
     We use importlib to load it as part of the jib_lib package.
     """
-    import importlib.util
-
     # Path to the runtime module
     runtime_path = Path(__file__).parent.parent.parent / "jib-container" / "jib_lib" / "runtime.py"
 
