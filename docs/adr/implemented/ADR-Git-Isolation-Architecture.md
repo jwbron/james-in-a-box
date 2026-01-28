@@ -502,14 +502,834 @@ services:
 - GitHub "internal" repositories (visible within org) are treated as private
 - Only "public" visibility is blocked
 
-### Implementation Checklist
+### Private Repo Mode: Detailed Implementation Plan
 
+#### 1. Overview
+
+Private Repo Mode adds a policy layer to the gateway that restricts all git/gh operations to private repositories only. This prevents accidental interaction with public repositories and reduces the risk of code being shared publicly.
+
+#### 2. GitHub API Integration
+
+##### 2.1 Repository Visibility Check
+
+```python
+# gateway-sidecar/repo_visibility.py
+"""Repository visibility checking with caching."""
+
+import os
+import time
+import threading
+from functools import lru_cache
+from typing import Literal, Optional
+
+import requests
+
+# Configuration
+GITHUB_API_BASE = "https://api.github.com"
+VISIBILITY_CACHE_TTL = int(os.getenv("VISIBILITY_CACHE_TTL", "60"))
+PRIVATE_REPO_MODE = os.getenv("PRIVATE_REPO_MODE", "false").lower() == "true"
+
+# Cache for visibility lookups
+_visibility_cache: dict[str, tuple[str, float]] = {}
+_cache_lock = threading.Lock()
+
+
+def get_github_token() -> str:
+    """Get GitHub token from secrets."""
+    token_path = "/secrets/.github-token"
+    if os.path.exists(token_path):
+        with open(token_path) as f:
+            return f.read().strip()
+    return os.getenv("GITHUB_TOKEN", "")
+
+
+def _fetch_repo_visibility(owner: str, repo: str) -> Optional[str]:
+    """Fetch repository visibility from GitHub API.
+
+    Returns:
+        'public', 'private', 'internal', or None if not found/error
+    """
+    token = get_github_token()
+    if not token:
+        # No token - assume private (fail closed)
+        return "private"
+
+    url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("visibility", "private")
+
+        elif response.status_code == 404:
+            # Repo not found - could be private and we don't have access
+            # Or could be truly not found
+            # Fail closed: treat as private
+            return "private"
+
+        elif response.status_code == 403:
+            # Rate limited or forbidden - fail closed
+            return "private"
+
+        else:
+            # Unknown error - fail closed
+            return "private"
+
+    except requests.RequestException:
+        # Network error - fail closed
+        return "private"
+
+
+def get_repo_visibility(owner: str, repo: str) -> str:
+    """Get repository visibility with caching.
+
+    Args:
+        owner: Repository owner (user or org)
+        repo: Repository name
+
+    Returns:
+        'public', 'private', or 'internal'
+    """
+    cache_key = f"{owner}/{repo}"
+    now = time.time()
+
+    with _cache_lock:
+        if cache_key in _visibility_cache:
+            visibility, timestamp = _visibility_cache[cache_key]
+            if now - timestamp < VISIBILITY_CACHE_TTL:
+                return visibility
+
+    # Cache miss or expired - fetch from API
+    visibility = _fetch_repo_visibility(owner, repo) or "private"
+
+    with _cache_lock:
+        _visibility_cache[cache_key] = (visibility, now)
+
+    return visibility
+
+
+def clear_visibility_cache(owner: Optional[str] = None, repo: Optional[str] = None):
+    """Clear visibility cache.
+
+    Args:
+        owner: If provided with repo, clear specific entry
+        repo: If provided with owner, clear specific entry
+        If neither provided, clear entire cache
+    """
+    with _cache_lock:
+        if owner and repo:
+            cache_key = f"{owner}/{repo}"
+            _visibility_cache.pop(cache_key, None)
+        else:
+            _visibility_cache.clear()
+
+
+def is_private_repo_mode_enabled() -> bool:
+    """Check if private repo mode is enabled."""
+    return PRIVATE_REPO_MODE
+```
+
+##### 2.2 Repository URL Parsing
+
+```python
+# gateway-sidecar/repo_parser.py
+"""Parse repository identifiers from various formats."""
+
+import re
+from dataclasses import dataclass
+from typing import Optional
+from urllib.parse import urlparse
+
+
+@dataclass
+class RepoIdentifier:
+    """Parsed repository identifier."""
+    owner: str
+    repo: str
+    full_name: str  # owner/repo
+
+
+def parse_repo_url(url: str) -> Optional[RepoIdentifier]:
+    """Parse owner/repo from a GitHub URL.
+
+    Handles:
+    - https://github.com/owner/repo
+    - https://github.com/owner/repo.git
+    - git@github.com:owner/repo.git
+    - github.com/owner/repo
+    - owner/repo
+    """
+    # SSH format: git@github.com:owner/repo.git
+    ssh_match = re.match(r"git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$", url)
+    if ssh_match:
+        owner, repo = ssh_match.groups()
+        return RepoIdentifier(owner=owner, repo=repo, full_name=f"{owner}/{repo}")
+
+    # HTTPS format: https://github.com/owner/repo
+    https_match = re.match(
+        r"(?:https?://)?github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/.*)?$", url
+    )
+    if https_match:
+        owner, repo = https_match.groups()
+        return RepoIdentifier(owner=owner, repo=repo, full_name=f"{owner}/{repo}")
+
+    # Short format: owner/repo
+    short_match = re.match(r"^([^/]+)/([^/]+)$", url)
+    if short_match:
+        owner, repo = short_match.groups()
+        return RepoIdentifier(owner=owner, repo=repo, full_name=f"{owner}/{repo}")
+
+    return None
+
+
+def parse_repo_from_path(repo_path: str) -> Optional[RepoIdentifier]:
+    """Extract owner/repo from a local repository path by reading git config.
+
+    Args:
+        repo_path: Local filesystem path to repository
+
+    Returns:
+        RepoIdentifier if remote origin found, None otherwise
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", repo_path, "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return parse_repo_url(result.stdout.strip())
+    except subprocess.SubprocessError:
+        pass
+
+    return None
+```
+
+#### 3. Policy Integration
+
+##### 3.1 Policy Checker
+
+```python
+# gateway-sidecar/private_repo_policy.py
+"""Private repository mode policy enforcement."""
+
+import logging
+from typing import Optional, Tuple
+
+from repo_parser import RepoIdentifier, parse_repo_url, parse_repo_from_path
+from repo_visibility import (
+    get_repo_visibility,
+    is_private_repo_mode_enabled,
+)
+
+log = logging.getLogger(__name__)
+
+
+class PrivateRepoPolicyError(Exception):
+    """Raised when an operation violates private repo mode policy."""
+    pass
+
+
+def check_repo_access(
+    repo_identifier: RepoIdentifier,
+    operation: str,
+) -> Tuple[bool, Optional[str]]:
+    """Check if repository access is allowed under private repo mode.
+
+    Args:
+        repo_identifier: Parsed repository identifier
+        operation: Name of operation being performed (for logging)
+
+    Returns:
+        Tuple of (allowed, error_message)
+    """
+    if not is_private_repo_mode_enabled():
+        return True, None
+
+    visibility = get_repo_visibility(repo_identifier.owner, repo_identifier.repo)
+
+    if visibility == "public":
+        error_msg = (
+            f"Private Repo Mode: Blocked {operation} on public repository "
+            f"'{repo_identifier.full_name}'. Only private repositories are allowed."
+        )
+        log.warning(
+            "private_repo_policy_violation",
+            extra={
+                "operation": operation,
+                "repository": repo_identifier.full_name,
+                "visibility": visibility,
+            },
+        )
+        return False, error_msg
+
+    # private or internal - allowed
+    log.debug(
+        "private_repo_policy_allowed",
+        extra={
+            "operation": operation,
+            "repository": repo_identifier.full_name,
+            "visibility": visibility,
+        },
+    )
+    return True, None
+
+
+def validate_repo_url_access(url: str, operation: str) -> Tuple[bool, Optional[str]]:
+    """Validate repository URL access under private repo mode.
+
+    Args:
+        url: Repository URL (HTTPS or SSH format)
+        operation: Name of operation being performed
+
+    Returns:
+        Tuple of (allowed, error_message)
+    """
+    if not is_private_repo_mode_enabled():
+        return True, None
+
+    repo = parse_repo_url(url)
+    if not repo:
+        # Can't parse URL - allow (might not be GitHub)
+        log.warning(f"Could not parse repo URL for visibility check: {url}")
+        return True, None
+
+    return check_repo_access(repo, operation)
+
+
+def validate_repo_path_access(path: str, operation: str) -> Tuple[bool, Optional[str]]:
+    """Validate local repository path access under private repo mode.
+
+    Args:
+        path: Local filesystem path to repository
+        operation: Name of operation being performed
+
+    Returns:
+        Tuple of (allowed, error_message)
+    """
+    if not is_private_repo_mode_enabled():
+        return True, None
+
+    repo = parse_repo_from_path(path)
+    if not repo:
+        # Can't determine remote - allow (might be local-only)
+        log.warning(f"Could not determine remote for visibility check: {path}")
+        return True, None
+
+    return check_repo_access(repo, operation)
+```
+
+##### 3.2 Gateway Integration Points
+
+Update `gateway-sidecar/gateway.py` to integrate private repo checks:
+
+```python
+# In gateway.py - Add to each endpoint that interacts with repositories
+
+from private_repo_policy import (
+    validate_repo_url_access,
+    validate_repo_path_access,
+    PrivateRepoPolicyError,
+)
+
+
+@app.route("/api/v1/git/push", methods=["POST"])
+def git_push():
+    """Handle git push requests."""
+    # ... existing validation ...
+
+    repo_path = data.get("repo_path")
+
+    # NEW: Private repo mode check
+    allowed, error = validate_repo_path_access(repo_path, "git push")
+    if not allowed:
+        return jsonify({"error": error, "policy": "private_repo_mode"}), 403
+
+    # ... rest of existing code ...
+
+
+@app.route("/api/v1/git/fetch", methods=["POST"])
+def git_fetch():
+    """Handle git fetch requests."""
+    # ... existing validation ...
+
+    repo_path = data.get("repo_path")
+
+    # NEW: Private repo mode check
+    allowed, error = validate_repo_path_access(repo_path, "git fetch")
+    if not allowed:
+        return jsonify({"error": error, "policy": "private_repo_mode"}), 403
+
+    # ... rest of existing code ...
+
+
+@app.route("/api/v1/git/clone", methods=["POST"])
+def git_clone():
+    """Handle git clone requests."""
+    # ... existing validation ...
+
+    remote_url = data.get("url")
+
+    # NEW: Private repo mode check
+    allowed, error = validate_repo_url_access(remote_url, "git clone")
+    if not allowed:
+        return jsonify({"error": error, "policy": "private_repo_mode"}), 403
+
+    # ... rest of existing code ...
+
+
+@app.route("/api/v1/gh/pr/create", methods=["POST"])
+def gh_pr_create():
+    """Handle PR creation requests."""
+    # ... existing validation ...
+
+    repo_path = data.get("repo_path")
+
+    # NEW: Private repo mode check
+    allowed, error = validate_repo_path_access(repo_path, "gh pr create")
+    if not allowed:
+        return jsonify({"error": error, "policy": "private_repo_mode"}), 403
+
+    # ... rest of existing code ...
+
+
+# Add similar checks to all repository-touching endpoints:
+# - /api/v1/gh/pr/comment
+# - /api/v1/gh/pr/edit
+# - /api/v1/gh/pr/close
+# - /api/v1/gh/issue/create
+# - /api/v1/gh/issue/comment
+# - /api/v1/gh/execute (for generic gh commands)
+```
+
+#### 4. Operations Coverage Matrix
+
+| Endpoint | Policy Check | Notes |
+|----------|--------------|-------|
+| `POST /api/v1/git/push` | `validate_repo_path_access` | Checks origin remote |
+| `POST /api/v1/git/fetch` | `validate_repo_path_access` | Checks origin remote |
+| `POST /api/v1/git/pull` | `validate_repo_path_access` | Checks origin remote |
+| `POST /api/v1/git/clone` | `validate_repo_url_access` | Checks clone URL directly |
+| `POST /api/v1/git/ls-remote` | `validate_repo_url_access` | Checks remote URL |
+| `POST /api/v1/gh/pr/create` | `validate_repo_path_access` | Checks target repo |
+| `POST /api/v1/gh/pr/comment` | `validate_repo_path_access` | Checks target repo |
+| `POST /api/v1/gh/pr/edit` | `validate_repo_path_access` | Checks target repo |
+| `POST /api/v1/gh/pr/close` | `validate_repo_path_access` | Checks target repo |
+| `POST /api/v1/gh/issue/create` | `validate_repo_path_access` | Checks target repo |
+| `POST /api/v1/gh/issue/comment` | `validate_repo_path_access` | Checks target repo |
+| `POST /api/v1/gh/execute` | Custom parsing | Extract repo from command args |
+| `GET /api/v1/health` | None | Health check, no repo access |
+
+#### 5. Fork Handling
+
+```python
+# gateway-sidecar/fork_policy.py
+"""Special handling for fork operations under private repo mode."""
+
+from typing import Optional, Tuple
+from repo_visibility import get_repo_visibility, is_private_repo_mode_enabled
+from repo_parser import parse_repo_url
+
+
+def validate_fork_operation(
+    source_repo: str,
+    target_org: Optional[str] = None,
+    target_visibility: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
+    """Validate fork operation under private repo mode.
+
+    Rules:
+    - Cannot fork FROM a public repo
+    - Cannot fork TO a public destination
+    - Private -> Private: Allowed
+    - Private -> Internal: Allowed
+    - Internal -> Private: Allowed
+    - Internal -> Internal: Allowed
+
+    Args:
+        source_repo: Repository being forked (owner/repo format)
+        target_org: Target organization (if specified)
+        target_visibility: Explicitly requested visibility (if any)
+
+    Returns:
+        Tuple of (allowed, error_message)
+    """
+    if not is_private_repo_mode_enabled():
+        return True, None
+
+    # Parse source repo
+    source = parse_repo_url(source_repo)
+    if not source:
+        return True, None  # Can't parse, allow
+
+    source_visibility = get_repo_visibility(source.owner, source.repo)
+
+    # Rule 1: Cannot fork FROM public repo
+    if source_visibility == "public":
+        return False, (
+            f"Private Repo Mode: Cannot fork from public repository "
+            f"'{source.full_name}'. Only private repositories can be forked."
+        )
+
+    # Rule 2: Cannot fork TO public visibility
+    if target_visibility == "public":
+        return False, (
+            f"Private Repo Mode: Cannot create public fork. "
+            f"Forks must be private or internal."
+        )
+
+    return True, None
+```
+
+#### 6. Testing Plan
+
+##### 6.1 Unit Tests
+
+```python
+# gateway-sidecar/test_private_repo_policy.py
+"""Tests for private repository mode policy."""
+
+import os
+import pytest
+from unittest.mock import patch, MagicMock
+
+from repo_visibility import get_repo_visibility, clear_visibility_cache
+from repo_parser import parse_repo_url, RepoIdentifier
+from private_repo_policy import (
+    check_repo_access,
+    validate_repo_url_access,
+    validate_repo_path_access,
+)
+
+
+class TestRepoParser:
+    """Tests for repository URL parsing."""
+
+    def test_parse_https_url(self):
+        result = parse_repo_url("https://github.com/owner/repo")
+        assert result == RepoIdentifier("owner", "repo", "owner/repo")
+
+    def test_parse_https_url_with_git_suffix(self):
+        result = parse_repo_url("https://github.com/owner/repo.git")
+        assert result == RepoIdentifier("owner", "repo", "owner/repo")
+
+    def test_parse_ssh_url(self):
+        result = parse_repo_url("git@github.com:owner/repo.git")
+        assert result == RepoIdentifier("owner", "repo", "owner/repo")
+
+    def test_parse_short_format(self):
+        result = parse_repo_url("owner/repo")
+        assert result == RepoIdentifier("owner", "repo", "owner/repo")
+
+    def test_parse_invalid_url(self):
+        result = parse_repo_url("not-a-repo-url")
+        assert result is None
+
+
+class TestRepoVisibility:
+    """Tests for repository visibility checking."""
+
+    def setup_method(self):
+        clear_visibility_cache()
+
+    @patch("repo_visibility.requests.get")
+    def test_public_repo(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"visibility": "public"},
+        )
+        assert get_repo_visibility("owner", "repo") == "public"
+
+    @patch("repo_visibility.requests.get")
+    def test_private_repo(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"visibility": "private"},
+        )
+        assert get_repo_visibility("owner", "repo") == "private"
+
+    @patch("repo_visibility.requests.get")
+    def test_not_found_defaults_private(self, mock_get):
+        mock_get.return_value = MagicMock(status_code=404)
+        assert get_repo_visibility("owner", "repo") == "private"
+
+    @patch("repo_visibility.requests.get")
+    def test_cache_hit(self, mock_get):
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"visibility": "private"},
+        )
+
+        # First call
+        get_repo_visibility("owner", "repo")
+        # Second call - should use cache
+        get_repo_visibility("owner", "repo")
+
+        assert mock_get.call_count == 1
+
+
+class TestPrivateRepoPolicy:
+    """Tests for private repo mode policy enforcement."""
+
+    def setup_method(self):
+        clear_visibility_cache()
+
+    @patch.dict(os.environ, {"PRIVATE_REPO_MODE": "true"})
+    @patch("private_repo_policy.get_repo_visibility")
+    def test_blocks_public_repo(self, mock_visibility):
+        mock_visibility.return_value = "public"
+
+        repo = RepoIdentifier("owner", "public-repo", "owner/public-repo")
+        allowed, error = check_repo_access(repo, "git push")
+
+        assert allowed is False
+        assert "public repository" in error
+
+    @patch.dict(os.environ, {"PRIVATE_REPO_MODE": "true"})
+    @patch("private_repo_policy.get_repo_visibility")
+    def test_allows_private_repo(self, mock_visibility):
+        mock_visibility.return_value = "private"
+
+        repo = RepoIdentifier("owner", "private-repo", "owner/private-repo")
+        allowed, error = check_repo_access(repo, "git push")
+
+        assert allowed is True
+        assert error is None
+
+    @patch.dict(os.environ, {"PRIVATE_REPO_MODE": "true"})
+    @patch("private_repo_policy.get_repo_visibility")
+    def test_allows_internal_repo(self, mock_visibility):
+        mock_visibility.return_value = "internal"
+
+        repo = RepoIdentifier("org", "internal-repo", "org/internal-repo")
+        allowed, error = check_repo_access(repo, "git push")
+
+        assert allowed is True
+        assert error is None
+
+    @patch.dict(os.environ, {"PRIVATE_REPO_MODE": "false"})
+    @patch("private_repo_policy.get_repo_visibility")
+    def test_disabled_allows_all(self, mock_visibility):
+        mock_visibility.return_value = "public"
+
+        repo = RepoIdentifier("owner", "public-repo", "owner/public-repo")
+        allowed, error = check_repo_access(repo, "git push")
+
+        assert allowed is True
+        assert error is None
+```
+
+##### 6.2 Integration Tests
+
+```bash
+#!/bin/bash
+# gateway-sidecar/test_private_repo_integration.sh
+
+set -e
+
+echo "=== Private Repo Mode Integration Tests ==="
+
+# Setup: Enable private repo mode
+export PRIVATE_REPO_MODE=true
+
+# Start gateway in test mode
+python gateway.py &
+GATEWAY_PID=$!
+sleep 3
+
+# Test 1: Fetch from private repo (should succeed)
+echo "Test 1: Fetch from private repo"
+curl -X POST http://localhost:9847/api/v1/git/fetch \
+    -H "Authorization: Bearer $GATEWAY_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{"repo_path": "/home/jib/repos/private-repo"}'
+echo "✓ Private repo fetch allowed"
+
+# Test 2: Clone public repo (should fail)
+echo "Test 2: Clone public repo"
+RESPONSE=$(curl -s -w "%{http_code}" -X POST http://localhost:9847/api/v1/git/clone \
+    -H "Authorization: Bearer $GATEWAY_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{"url": "https://github.com/octocat/Hello-World"}')
+
+HTTP_CODE=${RESPONSE: -3}
+if [ "$HTTP_CODE" = "403" ]; then
+    echo "✓ Public repo clone blocked (403)"
+else
+    echo "✗ Expected 403, got $HTTP_CODE"
+    exit 1
+fi
+
+# Test 3: Create PR on private repo (should succeed)
+echo "Test 3: Create PR on private repo"
+# ... similar test ...
+
+# Cleanup
+kill $GATEWAY_PID
+
+echo "=== All tests passed ==="
+```
+
+#### 7. Configuration
+
+##### 7.1 Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRIVATE_REPO_MODE` | `false` | Enable private repository mode |
+| `VISIBILITY_CACHE_TTL` | `60` | Seconds to cache visibility lookups |
+| `VISIBILITY_FAIL_OPEN` | `false` | If true, allow on API errors (less secure) |
+
+##### 7.2 Docker Compose Configuration
+
+```yaml
+# docker-compose.yml
+services:
+  gateway-sidecar:
+    environment:
+      - PRIVATE_REPO_MODE=${PRIVATE_REPO_MODE:-false}
+      - VISIBILITY_CACHE_TTL=${VISIBILITY_CACHE_TTL:-60}
+```
+
+##### 7.3 Setup Script Addition
+
+```bash
+# gateway-sidecar/setup.sh - Add to configuration section
+
+# Private Repo Mode
+read -p "Enable Private Repo Mode? (y/N): " ENABLE_PRIVATE
+if [[ "$ENABLE_PRIVATE" =~ ^[Yy]$ ]]; then
+    echo "PRIVATE_REPO_MODE=true" >> "$CONFIG_DIR/gateway.env"
+    echo "Private Repo Mode enabled - only private repositories allowed"
+else
+    echo "PRIVATE_REPO_MODE=false" >> "$CONFIG_DIR/gateway.env"
+fi
+```
+
+#### 8. Error Messages
+
+```python
+# gateway-sidecar/error_messages.py
+"""User-friendly error messages for private repo mode."""
+
+PRIVATE_REPO_MODE_ERRORS = {
+    "clone_public": (
+        "Cannot clone public repository '{repo}'. "
+        "Private Repo Mode only allows interaction with private repositories. "
+        "If you need to clone a public repo, ask your administrator to add it "
+        "to the allowed repositories list or disable Private Repo Mode."
+    ),
+    "push_public": (
+        "Cannot push to public repository '{repo}'. "
+        "Private Repo Mode restricts operations to private repositories only."
+    ),
+    "fetch_public": (
+        "Cannot fetch from public repository '{repo}'. "
+        "Private Repo Mode restricts operations to private repositories only."
+    ),
+    "fork_from_public": (
+        "Cannot fork from public repository '{repo}'. "
+        "In Private Repo Mode, you can only fork from private repositories."
+    ),
+    "fork_to_public": (
+        "Cannot create public fork. "
+        "In Private Repo Mode, all forks must be private or internal."
+    ),
+}
+```
+
+#### 9. Audit Logging
+
+```python
+# Add to gateway audit logging
+
+from datetime import datetime
+
+
+def log_private_repo_policy_event(
+    operation: str,
+    repository: str,
+    visibility: str,
+    allowed: bool,
+    source_ip: str,
+):
+    """Log private repo mode policy decision."""
+    log.info(
+        "private_repo_policy",
+        extra={
+            "event_type": "policy_check",
+            "policy": "private_repo_mode",
+            "operation": operation,
+            "repository": repository,
+            "visibility": visibility,
+            "decision": "allowed" if allowed else "denied",
+            "source_ip": source_ip,
+            "timestamp": datetime.utcnow().isoformat(),
+        },
+    )
+```
+
+#### 10. Implementation Checklist
+
+##### Phase 1: Core Infrastructure
+- [ ] Create `repo_visibility.py` with GitHub API integration
+- [ ] Create `repo_parser.py` with URL parsing utilities
+- [ ] Create `private_repo_policy.py` with policy logic
 - [ ] Add `PRIVATE_REPO_MODE` environment variable
-- [ ] Add `get_repo_visibility()` function with caching
-- [ ] Add policy check to all repository operations
-- [ ] Add audit logging for blocked public repo access
-- [ ] Test with mixed public/private repo scenarios
-- [ ] Document supervised mode override for public repo access
+- [ ] Add `VISIBILITY_CACHE_TTL` environment variable
+
+##### Phase 2: Gateway Integration
+- [ ] Add policy check to `POST /api/v1/git/push`
+- [ ] Add policy check to `POST /api/v1/git/fetch`
+- [ ] Add policy check to `POST /api/v1/git/pull`
+- [ ] Add policy check to `POST /api/v1/git/clone`
+- [ ] Add policy check to `POST /api/v1/git/ls-remote`
+- [ ] Add policy check to `POST /api/v1/gh/pr/*` endpoints
+- [ ] Add policy check to `POST /api/v1/gh/issue/*` endpoints
+- [ ] Add policy check to `POST /api/v1/gh/execute`
+
+##### Phase 3: Fork Handling
+- [ ] Create `fork_policy.py` with fork-specific rules
+- [ ] Add fork source validation
+- [ ] Add fork destination validation
+- [ ] Block `gh repo fork` to public destinations
+
+##### Phase 4: Testing
+- [ ] Unit tests for `repo_visibility.py`
+- [ ] Unit tests for `repo_parser.py`
+- [ ] Unit tests for `private_repo_policy.py`
+- [ ] Integration tests for gateway endpoints
+- [ ] End-to-end tests with real repositories
+
+##### Phase 5: Documentation & Rollout
+- [ ] Update gateway setup documentation
+- [ ] Add Private Repo Mode to CLAUDE.md
+- [ ] Create runbook for enabling/disabling
+- [ ] Add monitoring for policy violations
+
+#### 11. Files to Create/Modify
+
+| File | Action | Description |
+|------|--------|-------------|
+| `gateway-sidecar/repo_visibility.py` | CREATE | Visibility checking with caching |
+| `gateway-sidecar/repo_parser.py` | CREATE | URL/path parsing utilities |
+| `gateway-sidecar/private_repo_policy.py` | CREATE | Policy enforcement logic |
+| `gateway-sidecar/fork_policy.py` | CREATE | Fork-specific rules |
+| `gateway-sidecar/error_messages.py` | CREATE | User-friendly error messages |
+| `gateway-sidecar/gateway.py` | MODIFY | Add policy checks to endpoints |
+| `gateway-sidecar/setup.sh` | MODIFY | Add configuration prompts |
+| `gateway-sidecar/test_private_repo_policy.py` | CREATE | Unit tests |
+| `gateway-sidecar/test_private_repo_integration.sh` | CREATE | Integration tests |
 
 ---
 

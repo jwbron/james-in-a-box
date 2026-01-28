@@ -473,17 +473,677 @@ In supervised mode:
 - Human must actively monitor session
 - Intended for interactive work, not autonomous operation
 
-### Implementation Checklist
+### Phase 2: Detailed Implementation Plan
+
+#### 1. Complete Domain Allowlist
+
+The following domains are **required** for jib to function. All other domains are blocked.
+
+##### 1.1 Anthropic API (Required for Claude Code)
+
+| Domain | Port | Purpose | Notes |
+|--------|------|---------|-------|
+| `api.anthropic.com` | 443 | Claude API endpoint | Primary API for all Claude operations |
+
+**Note:** The Anthropic Console (`console.anthropic.com`, `platform.claude.com`) is NOT required—jib uses API keys directly, not console access.
+
+##### 1.2 GitHub Domains (Required for git/gh operations)
+
+| Domain | Port | Purpose | Notes |
+|--------|------|---------|-------|
+| `github.com` | 443 | Git HTTPS operations | Clone, fetch, push, pull |
+| `api.github.com` | 443 | GitHub REST API | PR creation, issue management, repo info |
+| `raw.githubusercontent.com` | 443 | Raw file content | README files, direct file downloads |
+| `objects.githubusercontent.com` | 443 | Release assets, artifacts | Binary downloads, action artifacts |
+| `codeload.github.com` | 443 | Archive downloads | `git archive`, zip/tarball downloads |
+| `uploads.github.com` | 443 | File uploads | Release asset uploads |
+
+**Explicitly NOT included:**
+- `*.actions.githubusercontent.com` — Not needed (jib doesn't run GitHub Actions)
+- `ghcr.io` — Not needed (no container registry access)
+- `*.github.io` — Not needed (no GitHub Pages access)
+- `copilot-*.githubusercontent.com` — Not needed (no GitHub Copilot)
+
+##### 1.3 Complete Allowlist Configuration
+
+```python
+# gateway-sidecar/proxy_allowlist.py
+
+ALLOWED_DOMAINS = [
+    # Anthropic API
+    "api.anthropic.com",
+
+    # GitHub - Core
+    "github.com",
+    "api.github.com",
+
+    # GitHub - Content delivery
+    "raw.githubusercontent.com",
+    "objects.githubusercontent.com",
+    "codeload.github.com",
+    "uploads.github.com",
+
+    # GitHub - User content subdomains (avatars, etc.)
+    # Note: Wildcard for *.githubusercontent.com could be considered
+    # but we list explicitly for tighter control
+    "avatars.githubusercontent.com",
+    "user-images.githubusercontent.com",
+]
+
+# Regex patterns for validation (used by Squid ACL)
+ALLOWED_DOMAIN_PATTERNS = [
+    r"^api\.anthropic\.com$",
+    r"^github\.com$",
+    r"^api\.github\.com$",
+    r"^raw\.githubusercontent\.com$",
+    r"^objects\.githubusercontent\.com$",
+    r"^codeload\.github\.com$",
+    r"^uploads\.github\.com$",
+    r"^avatars\.githubusercontent\.com$",
+    r"^user-images\.githubusercontent\.com$",
+]
+```
+
+#### 2. Docker Network Configuration
+
+##### 2.1 Network Topology
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Host Machine                              │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │              jib-isolated (internal: true)                │   │
+│  │              Subnet: 172.30.0.0/24                        │   │
+│  │              Gateway: NONE (no external route)            │   │
+│  │                                                           │   │
+│  │    ┌─────────────┐              ┌─────────────────┐      │   │
+│  │    │     jib     │              │  gateway-sidecar │      │   │
+│  │    │ 172.30.0.10 │◄────────────►│   172.30.0.2    │      │   │
+│  │    │             │   REST API   │                 │      │   │
+│  │    │ NO EXTERNAL │   Port 9847  │                 │      │   │
+│  │    │   ROUTE     │              │                 │      │   │
+│  │    └─────────────┘              └────────┬────────┘      │   │
+│  │                                          │               │   │
+│  └──────────────────────────────────────────│───────────────┘   │
+│                                             │                    │
+│  ┌──────────────────────────────────────────│───────────────┐   │
+│  │              jib-external (bridge)        │               │   │
+│  │              Subnet: 172.31.0.0/24        │               │   │
+│  │                                           │               │   │
+│  │                              ┌────────────┴────────┐      │   │
+│  │                              │  gateway-sidecar    │      │   │
+│  │                              │    172.31.0.2       │      │   │
+│  │                              │                     │      │   │
+│  │                              │  CAN REACH:         │      │   │
+│  │                              │  - api.anthropic.com│      │   │
+│  │                              │  - github.com       │      │   │
+│  │                              │  - api.github.com   │      │   │
+│  │                              │  (via proxy filter) │      │   │
+│  │                              └──────────┬──────────┘      │   │
+│  │                                         │                 │   │
+│  └─────────────────────────────────────────│─────────────────┘   │
+│                                            │                     │
+│                                            ▼                     │
+│                                       Internet                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+##### 2.2 Network Creation Commands
+
+```bash
+# Create isolated internal network (no external gateway)
+docker network create \
+  --driver bridge \
+  --internal \
+  --subnet 172.30.0.0/24 \
+  jib-isolated
+
+# Create external network for gateway outbound access
+docker network create \
+  --driver bridge \
+  --subnet 172.31.0.0/24 \
+  jib-external
+```
+
+##### 2.3 Container Network Assignment
+
+**jib container:**
+```bash
+docker run \
+  --network jib-isolated \
+  --ip 172.30.0.10 \
+  --dns 0.0.0.0 \               # No DNS servers
+  --add-host gateway:172.30.0.2 \  # Static gateway entry
+  -e HTTP_PROXY=http://gateway:3128 \
+  -e HTTPS_PROXY=http://gateway:3128 \
+  -e NO_PROXY=localhost,127.0.0.1,gateway \
+  jib-container
+```
+
+**gateway-sidecar container:**
+```bash
+docker run \
+  --network jib-isolated \
+  --ip 172.30.0.2 \
+  jib-gateway
+
+# Attach to external network (dual-homed)
+docker network connect --ip 172.31.0.2 jib-external jib-gateway
+```
+
+#### 3. Squid Proxy Configuration
+
+##### 3.1 Squid Installation in Gateway
+
+Add to `gateway-sidecar/Dockerfile`:
+
+```dockerfile
+# Install Squid proxy
+RUN apt-get update && apt-get install -y squid && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy Squid configuration
+COPY squid.conf /etc/squid/squid.conf
+COPY allowed_domains.txt /etc/squid/allowed_domains.txt
+
+# Expose proxy port
+EXPOSE 3128
+```
+
+##### 3.2 Squid Configuration File
+
+Create `gateway-sidecar/squid.conf`:
+
+```squid
+# Squid proxy configuration for jib network lockdown
+# Only allows traffic to explicitly allowlisted domains
+
+# Network settings
+http_port 3128
+
+# Access control lists
+acl localnet src 172.30.0.0/24    # jib-isolated network
+
+# Load allowed domains from file
+acl allowed_domains dstdomain "/etc/squid/allowed_domains.txt"
+
+# SSL/TLS settings - peek at SNI without MITM
+acl step1 at_step SslBump1
+ssl_bump peek step1
+ssl_bump splice allowed_domains
+ssl_bump terminate all
+
+# HTTP access rules
+http_access allow localnet allowed_domains
+http_access deny all
+
+# Logging
+access_log /var/log/squid/access.log squid
+cache_log /var/log/squid/cache.log
+
+# Performance - no caching needed for API calls
+cache deny all
+
+# Error pages
+deny_info ERR_ACCESS_DENIED all
+
+# Connection settings
+connect_timeout 30 seconds
+read_timeout 60 seconds
+request_timeout 60 seconds
+
+# Shutdown settings
+shutdown_lifetime 5 seconds
+```
+
+##### 3.3 Allowed Domains File
+
+Create `gateway-sidecar/allowed_domains.txt`:
+
+```
+# Anthropic API
+api.anthropic.com
+
+# GitHub - Core
+github.com
+api.github.com
+
+# GitHub - Content delivery
+raw.githubusercontent.com
+objects.githubusercontent.com
+codeload.github.com
+uploads.github.com
+avatars.githubusercontent.com
+user-images.githubusercontent.com
+```
+
+##### 3.4 Proxy Supervisor in Gateway
+
+Add to `gateway-sidecar/entrypoint.sh`:
+
+```bash
+#!/bin/bash
+set -e
+
+# Start Squid proxy in background
+echo "Starting Squid proxy..."
+squid -f /etc/squid/squid.conf
+sleep 2
+
+# Verify Squid is running
+if ! pgrep -x "squid" > /dev/null; then
+    echo "ERROR: Squid failed to start"
+    exit 1
+fi
+
+echo "Squid proxy started on port 3128"
+
+# Start gateway API server
+echo "Starting gateway API server..."
+exec python -m waitress --port=9847 --host=0.0.0.0 gateway:app
+```
+
+#### 4. jib Container Changes
+
+##### 4.1 Runtime Environment Variables
+
+Update `jib-container/jib_lib/runtime.py`:
+
+```python
+def _get_network_lockdown_env() -> dict[str, str]:
+    """Return environment variables for Phase 2 network lockdown."""
+    return {
+        # Proxy settings - all HTTP/HTTPS traffic through gateway
+        "HTTP_PROXY": "http://gateway:3128",
+        "HTTPS_PROXY": "http://gateway:3128",
+        "http_proxy": "http://gateway:3128",  # Some tools use lowercase
+        "https_proxy": "http://gateway:3128",
+        "NO_PROXY": "localhost,127.0.0.1,gateway,jib-gateway",
+        "no_proxy": "localhost,127.0.0.1,gateway,jib-gateway",
+
+        # Disable certificate verification warnings (proxy handles TLS)
+        # NOT disabling verification - just suppressing urllib3 warnings
+        "PYTHONWARNINGS": "ignore:Unverified HTTPS request",
+
+        # Network mode indicator
+        "JIB_NETWORK_MODE": "lockdown",
+    }
+```
+
+##### 4.2 Docker Run Modifications
+
+Update container launch in `jib-container/jib_lib/runtime.py`:
+
+```python
+def _build_docker_command(
+    container_id: str,
+    config: Config,
+    network_lockdown: bool = True,  # NEW: Enable by default
+) -> list[str]:
+    """Build docker run command with all arguments."""
+    cmd = ["docker", "run"]
+
+    # ... existing code ...
+
+    if network_lockdown:
+        # Use isolated network only (no external route)
+        cmd.extend(["--network", "jib-isolated"])
+        cmd.extend(["--ip", "172.30.0.10"])
+
+        # No DNS servers - prevent DNS-based breakout
+        cmd.extend(["--dns", "0.0.0.0"])
+
+        # Static host entries
+        cmd.extend(["--add-host", "gateway:172.30.0.2"])
+        cmd.extend(["--add-host", "jib-gateway:172.30.0.2"])
+
+        # Add proxy environment variables
+        for key, value in _get_network_lockdown_env().items():
+            cmd.extend(["-e", f"{key}={value}"])
+    else:
+        # Legacy mode: standard jib-network with full internet access
+        cmd.extend(["--network", JIB_NETWORK_NAME])
+
+    # ... rest of existing code ...
+
+    return cmd
+```
+
+##### 4.3 Pre-installed Dependencies
+
+Update `jib-container/Dockerfile` to pre-install all required packages:
+
+```dockerfile
+# Python dependencies - installed at build time
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Common Python packages for development work
+RUN pip install --no-cache-dir \
+    requests \
+    pytest \
+    pytest-cov \
+    black \
+    ruff \
+    mypy \
+    pyyaml \
+    toml \
+    httpx \
+    aiohttp
+
+# Node.js dependencies
+COPY package.json package-lock.json /tmp/
+RUN cd /tmp && npm ci && \
+    npm cache clean --force
+
+# Common system tools
+RUN apt-get update && apt-get install -y \
+    jq \
+    curl \
+    wget \
+    tree \
+    ripgrep \
+    fd-find \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+#### 5. Gateway Startup Changes
+
+##### 5.1 Updated start-gateway.sh
+
+```bash
+#!/bin/bash
+set -e
+
+# Configuration
+GATEWAY_IMAGE="jib-gateway"
+GATEWAY_CONTAINER="jib-gateway"
+INTERNAL_NETWORK="jib-isolated"
+EXTERNAL_NETWORK="jib-external"
+INTERNAL_IP="172.30.0.2"
+EXTERNAL_IP="172.31.0.2"
+
+# Create networks if they don't exist
+create_networks() {
+    # Internal network (no external gateway)
+    if ! docker network inspect "$INTERNAL_NETWORK" &>/dev/null; then
+        echo "Creating internal network: $INTERNAL_NETWORK"
+        docker network create \
+            --driver bridge \
+            --internal \
+            --subnet 172.30.0.0/24 \
+            "$INTERNAL_NETWORK"
+    fi
+
+    # External network (for gateway outbound access)
+    if ! docker network inspect "$EXTERNAL_NETWORK" &>/dev/null; then
+        echo "Creating external network: $EXTERNAL_NETWORK"
+        docker network create \
+            --driver bridge \
+            --subnet 172.31.0.0/24 \
+            "$EXTERNAL_NETWORK"
+    fi
+}
+
+# Start gateway container
+start_gateway() {
+    # Remove old container if exists
+    docker rm -f "$GATEWAY_CONTAINER" 2>/dev/null || true
+
+    # Start on internal network first
+    docker run -d \
+        --name "$GATEWAY_CONTAINER" \
+        --network "$INTERNAL_NETWORK" \
+        --ip "$INTERNAL_IP" \
+        --restart unless-stopped \
+        -v "$HOME/.jib-gateway:/secrets:ro" \
+        -v "$HOME/.config/jib/repositories.yaml:/config/repositories.yaml:ro" \
+        "${MOUNT_ARGS[@]}" \
+        "$GATEWAY_IMAGE"
+
+    # Connect to external network (dual-homed)
+    docker network connect --ip "$EXTERNAL_IP" "$EXTERNAL_NETWORK" "$GATEWAY_CONTAINER"
+
+    echo "Gateway started with dual network access"
+    echo "  Internal: $INTERNAL_NETWORK ($INTERNAL_IP) - receives from jib"
+    echo "  External: $EXTERNAL_NETWORK ($EXTERNAL_IP) - reaches internet"
+}
+
+# Main
+create_networks
+start_gateway
+```
+
+#### 6. Testing Plan
+
+##### 6.1 Positive Tests (Should Work)
+
+```bash
+# Test 1: Claude API connectivity
+curl -x http://gateway:3128 https://api.anthropic.com/v1/messages \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "content-type: application/json" \
+    -d '{"model":"claude-sonnet-4-20250514","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}'
+# Expected: 200 OK with response
+
+# Test 2: GitHub API
+curl -x http://gateway:3128 https://api.github.com/user \
+    -H "Authorization: Bearer $GITHUB_TOKEN"
+# Expected: 200 OK with user info
+
+# Test 3: Git fetch through proxy
+HTTP_PROXY=http://gateway:3128 git ls-remote https://github.com/jwbron/james-in-a-box.git
+# Expected: List of refs
+
+# Test 4: Raw GitHub content
+curl -x http://gateway:3128 https://raw.githubusercontent.com/jwbron/james-in-a-box/main/README.md
+# Expected: 200 OK with README content
+
+# Test 5: GitHub archive download
+curl -x http://gateway:3128 -L https://codeload.github.com/jwbron/james-in-a-box/tar.gz/main -o /dev/null
+# Expected: 200 OK, tarball downloaded
+```
+
+##### 6.2 Negative Tests (Should Fail)
+
+```bash
+# Test 1: Arbitrary website blocked
+curl -x http://gateway:3128 https://google.com
+# Expected: 403 Forbidden
+
+# Test 2: Package manager blocked
+curl -x http://gateway:3128 https://pypi.org/simple/
+# Expected: 403 Forbidden
+
+# Test 3: Direct IP connection blocked (from jib container)
+curl --connect-timeout 5 https://140.82.114.3  # GitHub IP
+# Expected: Connection timeout (no route)
+
+# Test 4: DNS resolution blocked (from jib container)
+nslookup google.com
+# Expected: Failure (no DNS servers)
+
+# Test 5: Non-allowlisted GitHub subdomain
+curl -x http://gateway:3128 https://pages.github.com
+# Expected: 403 Forbidden
+```
+
+##### 6.3 Integration Tests
+
+```bash
+# Full workflow test
+./test-network-lockdown.sh
+
+# Contents of test-network-lockdown.sh:
+#!/bin/bash
+set -e
+
+echo "=== Network Lockdown Integration Tests ==="
+
+# Start containers in lockdown mode
+./jib --network-lockdown --test-mode &
+JIB_PID=$!
+sleep 10
+
+# Run test suite inside container
+docker exec jib-test-container bash -c '
+    echo "Testing Claude API..."
+    python -c "import anthropic; print(anthropic.Anthropic().messages.create(model=\"claude-sonnet-4-20250514\",max_tokens=10,messages=[{\"role\":\"user\",\"content\":\"hi\"}]))"
+
+    echo "Testing git operations..."
+    git clone https://github.com/jwbron/james-in-a-box.git /tmp/test-repo
+    cd /tmp/test-repo
+    git fetch origin
+
+    echo "Testing blocked domains..."
+    ! curl -s https://google.com && echo "google.com correctly blocked"
+    ! curl -s https://pypi.org && echo "pypi.org correctly blocked"
+
+    echo "All tests passed!"
+'
+
+# Cleanup
+kill $JIB_PID
+docker rm -f jib-test-container
+```
+
+#### 7. Rollback Plan
+
+##### 7.1 Quick Rollback (< 5 minutes)
+
+```bash
+# Option 1: Disable lockdown mode via environment variable
+export JIB_NETWORK_LOCKDOWN=false
+./jib  # Runs with full internet access
+
+# Option 2: Use supervised mode override
+./jib --supervised  # Explicitly enables full internet
+```
+
+##### 7.2 Full Rollback
+
+```bash
+# Remove new networks
+docker network rm jib-isolated jib-external
+
+# Restore original network
+docker network create jib-network
+
+# Restart gateway without Squid
+systemctl restart gateway-sidecar
+
+# Containers will use original jib-network with full access
+```
+
+#### 8. Migration Path
+
+##### Phase 2a: Infrastructure Setup (Non-breaking)
+1. Create `jib-isolated` and `jib-external` networks
+2. Add Squid to gateway container
+3. Test proxy functionality independently
+4. No changes to jib container yet
+
+##### Phase 2b: Opt-in Testing
+1. Add `--network-lockdown` flag to jib launcher
+2. Test with flag enabled
+3. Gather feedback, adjust allowlist
+4. Document any missing domains
+
+##### Phase 2c: Default Enabled
+1. Make `--network-lockdown` the default
+2. Add `--supervised` flag for full internet access
+3. Update documentation
+4. Monitor for issues
+
+##### Phase 2d: Remove Legacy Mode
+1. Remove legacy network configuration
+2. Lockdown is the only mode
+3. Supervised mode remains for special cases
+
+#### 9. Monitoring & Observability
+
+##### 9.1 Squid Access Logs
+
+```bash
+# Real-time log monitoring
+docker exec jib-gateway tail -f /var/log/squid/access.log
+
+# Log format includes:
+# - Timestamp
+# - Source IP (jib container)
+# - HTTP method
+# - Destination URL
+# - Response code (200=allowed, 403=blocked)
+# - Bytes transferred
+```
+
+##### 9.2 Blocked Request Alerts
+
+```python
+# gateway-sidecar/monitor.py
+
+def check_blocked_requests():
+    """Parse Squid logs for blocked requests and alert if anomalous."""
+    blocked = parse_squid_log(status_code=403)
+
+    for entry in blocked:
+        log.warning(
+            "Blocked request",
+            extra={
+                "source_ip": entry.source_ip,
+                "destination": entry.url,
+                "timestamp": entry.timestamp,
+            }
+        )
+
+        # Alert if high volume of blocked requests (possible breakout attempt)
+        if count_recent_blocked(minutes=5) > 50:
+            alert_security_team("High volume of blocked requests")
+```
+
+#### 10. Configuration Reference
+
+##### 10.1 Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JIB_NETWORK_LOCKDOWN` | `true` | Enable Phase 2 network lockdown |
+| `JIB_NETWORK_MODE` | `lockdown` | Set by launcher, read by container |
+| `HTTP_PROXY` | `http://gateway:3128` | Proxy for HTTP traffic |
+| `HTTPS_PROXY` | `http://gateway:3128` | Proxy for HTTPS traffic |
+| `SQUID_ALLOWED_DOMAINS_FILE` | `/etc/squid/allowed_domains.txt` | Domain allowlist |
+
+##### 10.2 Files Modified
+
+| File | Change |
+|------|--------|
+| `gateway-sidecar/Dockerfile` | Add Squid installation |
+| `gateway-sidecar/squid.conf` | NEW: Proxy configuration |
+| `gateway-sidecar/allowed_domains.txt` | NEW: Domain allowlist |
+| `gateway-sidecar/entrypoint.sh` | Start Squid before gateway API |
+| `gateway-sidecar/start-gateway.sh` | Dual-network setup |
+| `jib-container/jib_lib/runtime.py` | Network lockdown mode |
+| `jib-container/Dockerfile` | Pre-installed dependencies |
+
+##### 10.3 Implementation Checklist
 
 - [ ] Create `jib-isolated` internal Docker network
-- [ ] Configure gateway Squid proxy with domain allowlist
-- [ ] Remove external network from jib container
-- [ ] Add static DNS entry for gateway in jib
-- [ ] Pre-install all required packages in image
-- [ ] Test Claude API connectivity through proxy
-- [ ] Test GitHub operations through proxy
-- [ ] Verify blocked domains return 403
+- [ ] Create `jib-external` bridge network
+- [ ] Add Squid to gateway Dockerfile
+- [ ] Create `squid.conf` with domain allowlist
+- [ ] Create `allowed_domains.txt`
+- [ ] Update gateway entrypoint to start Squid
+- [ ] Update `start-gateway.sh` for dual-network
+- [ ] Add `_get_network_lockdown_env()` to runtime.py
+- [ ] Update `_build_docker_command()` for lockdown mode
+- [ ] Pre-install all packages in jib Dockerfile
+- [ ] Run positive tests (Claude API, GitHub)
+- [ ] Run negative tests (blocked domains)
+- [ ] Run integration tests
 - [ ] Document supervised mode override
+- [ ] Update CLAUDE.md with network limitations
 
 ## Security Analysis
 
