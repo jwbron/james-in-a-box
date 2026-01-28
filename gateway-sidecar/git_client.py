@@ -85,6 +85,27 @@ def is_ssh_url(url: str) -> bool:
     return url.startswith(("git@", "ssh://"))
 
 
+def get_authenticated_remote_target(remote: str, remote_url: str) -> str:
+    """
+    Get the target to use for an authenticated git remote operation.
+
+    The gateway uses HTTPS with token authentication via a credential helper.
+    SSH URLs won't work with the credential helper, so they must be converted
+    to HTTPS.
+
+    Args:
+        remote: The remote name (e.g., "origin")
+        remote_url: The actual URL of the remote
+
+    Returns:
+        The HTTPS URL if the remote uses SSH, otherwise the remote name.
+        Using the HTTPS URL directly ensures the credential helper is invoked.
+    """
+    if is_ssh_url(remote_url):
+        return ssh_url_to_https(remote_url)
+    return remote
+
+
 # =============================================================================
 # Path Validation
 # =============================================================================

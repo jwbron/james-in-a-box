@@ -9,7 +9,7 @@ gateway_path = Path(__file__).parent.parent.parent / "gateway-sidecar"
 if str(gateway_path) not in sys.path:
     sys.path.insert(0, str(gateway_path))
 
-from git_client import is_ssh_url, ssh_url_to_https
+from git_client import get_authenticated_remote_target, is_ssh_url, ssh_url_to_https
 
 
 class TestIsSshUrl:
@@ -78,3 +78,49 @@ class TestSshUrlToHttps:
         """Handles nested paths like org/repo correctly."""
         result = ssh_url_to_https("git@github.com:Khan/webapp.git")
         assert result == "https://github.com/Khan/webapp.git"
+
+
+class TestGetAuthenticatedRemoteTarget:
+    """Tests for get_authenticated_remote_target function."""
+
+    def test_ssh_url_returns_https(self):
+        """SSH URLs are converted to HTTPS."""
+        result = get_authenticated_remote_target(
+            "origin", "git@github.com:owner/repo.git"
+        )
+        assert result == "https://github.com/owner/repo.git"
+
+    def test_ssh_protocol_returns_https(self):
+        """ssh:// URLs are converted to HTTPS."""
+        result = get_authenticated_remote_target(
+            "origin", "ssh://git@github.com/owner/repo.git"
+        )
+        assert result == "https://github.com/owner/repo.git"
+
+    def test_https_url_returns_remote_name(self):
+        """HTTPS URLs return the remote name (no conversion needed)."""
+        result = get_authenticated_remote_target(
+            "origin", "https://github.com/owner/repo.git"
+        )
+        assert result == "origin"
+
+    def test_http_url_returns_remote_name(self):
+        """HTTP URLs return the remote name."""
+        result = get_authenticated_remote_target(
+            "upstream", "http://github.com/owner/repo.git"
+        )
+        assert result == "upstream"
+
+    def test_custom_remote_name_returned_for_https(self):
+        """Custom remote names are preserved for HTTPS URLs."""
+        result = get_authenticated_remote_target(
+            "my-remote", "https://github.com/owner/repo.git"
+        )
+        assert result == "my-remote"
+
+    def test_ssh_url_ignores_remote_name(self):
+        """For SSH URLs, the remote name is ignored in favor of HTTPS URL."""
+        result = get_authenticated_remote_target(
+            "my-custom-remote", "git@github.com:owner/repo.git"
+        )
+        assert result == "https://github.com/owner/repo.git"

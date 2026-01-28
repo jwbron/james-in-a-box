@@ -57,10 +57,9 @@ try:
         GIT_ALLOWED_COMMANDS,
         cleanup_credential_helper,
         create_credential_helper,
+        get_authenticated_remote_target,
         get_token_for_repo,
         git_cmd,
-        is_ssh_url,
-        ssh_url_to_https,
         validate_git_args,
         validate_repo_path,
     )
@@ -81,10 +80,9 @@ except ImportError:
         GIT_ALLOWED_COMMANDS,
         cleanup_credential_helper,
         create_credential_helper,
+        get_authenticated_remote_target,
         get_token_for_repo,
         git_cmd,
-        is_ssh_url,
-        ssh_url_to_https,
         validate_git_args,
         validate_repo_path,
     )
@@ -458,10 +456,9 @@ def git_push():
         return make_error(token_error, status_code=503)
 
     # Build push command with safe.directory for worktree paths
-    # If remote URL is SSH, convert to HTTPS since gateway uses token auth
-    push_target = remote
-    if is_ssh_url(remote_url):
-        push_target = ssh_url_to_https(remote_url)
+    # Convert SSH URLs to HTTPS since gateway uses token auth
+    push_target = get_authenticated_remote_target(remote, remote_url)
+    if push_target != remote:
         logger.debug(
             "Converting SSH URL to HTTPS for push",
             original_url=remote_url,
@@ -769,15 +766,24 @@ def git_fetch():
     if not token_str:
         return make_error(token_error, status_code=503)
 
+    # Convert SSH URLs to HTTPS since gateway uses token auth
+    fetch_target = get_authenticated_remote_target(remote, remote_url)
+    if fetch_target != remote:
+        logger.debug(
+            f"Converting SSH URL to HTTPS for {operation}",
+            original_url=remote_url,
+            https_url=fetch_target,
+        )
+
     # Build command using validated args
     if operation == "fetch":
         # Don't include remote when --all is specified (fetches from all remotes)
         if "--all" in validated_args:
             cmd_args = ["fetch"] + validated_args
         else:
-            cmd_args = ["fetch", remote] + validated_args
+            cmd_args = ["fetch", fetch_target] + validated_args
     else:  # ls-remote
-        cmd_args = ["ls-remote", remote] + validated_args
+        cmd_args = ["ls-remote", fetch_target] + validated_args
 
     cmd = git_cmd(*cmd_args)
 
