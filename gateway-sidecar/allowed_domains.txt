@@ -9,19 +9,17 @@
 # Anthropic Claude API
 api.anthropic.com
 
-# GitHub (for git operations, API, raw content, releases, etc.)
-github.com
-api.github.com
-raw.githubusercontent.com
-objects.githubusercontent.com
-codeload.github.com
-uploads.github.com
-avatars.githubusercontent.com
-user-images.githubusercontent.com
-# Additional GitHub domains for complete functionality
-github.githubassets.com
-media.githubusercontent.com
-gist.githubusercontent.com
+# IMPORTANT: GitHub domains are intentionally NOT in this allowlist.
+# All GitHub/git access MUST go through the gateway sidecar's git/gh wrappers
+# (via REST API at gateway:9847), not directly through the proxy.
+# This ensures policy enforcement (branch ownership, merge blocking, etc.)
+# cannot be bypassed by direct API calls.
+#
+# The gateway sidecar holds the GitHub token and enforces:
+# - Branch ownership policy (jib can only push to jib-owned branches)
+# - Merge blocking (jib cannot merge PRs - human must merge via GitHub UI)
+# - Force push blocking (jib cannot force push)
+# - Audit logging for all operations
 
 # Note: PyPI, npm, and other package managers are intentionally NOT included
 # All dependencies must be pre-installed in the Docker image

@@ -200,16 +200,33 @@ class TestAllowedDomains:
         content = allowed_domains_path.read_text()
         assert "api.anthropic.com" in content
 
-    def test_github_domains_allowed(self, allowed_domains_path: Path):
-        """Essential GitHub domains should be in allowed domains."""
+    def test_github_domains_not_allowed(self, allowed_domains_path: Path):
+        """GitHub domains should NOT be in allowed domains.
+
+        GitHub access MUST go through the gateway sidecar's git/gh wrappers,
+        not directly through the proxy. This ensures policy enforcement
+        (branch ownership, merge blocking, etc.) cannot be bypassed.
+        """
         content = allowed_domains_path.read_text()
-        required_domains = [
+        # Extract non-comment lines
+        lines = [
+            line.strip()
+            for line in content.split("\n")
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        blocked_domains = [
             "github.com",
             "api.github.com",
             "raw.githubusercontent.com",
+            "objects.githubusercontent.com",
+            "codeload.github.com",
+            "uploads.github.com",
         ]
-        for domain in required_domains:
-            assert domain in content, f"Missing required domain: {domain}"
+        for domain in blocked_domains:
+            assert domain not in lines, (
+                f"GitHub domain '{domain}' found in proxy allowlist. "
+                "GitHub access must go through gateway sidecar wrappers."
+            )
 
     def test_no_wildcard_domains(self, allowed_domains_path: Path):
         """Allowed domains should not use wildcards (explicit is safer)."""

@@ -8,9 +8,9 @@ The container runs in one of two modes:
 
 **Legacy Mode (Phase 1):** Outbound HTTP/HTTPS to any destination. You can access Claude API, GitHub, and download packages at runtime.
 
-**Lockdown Mode (Phase 2):** Network traffic is routed through a filtering proxy. Only these destinations are allowed:
-- `api.anthropic.com` (Claude API)
-- `github.com`, `api.github.com`, `raw.githubusercontent.com` (GitHub)
+**Lockdown Mode (Phase 2):** Network traffic is routed through a filtering proxy. Only `api.anthropic.com` (Claude API) is allowed through the proxy.
+
+**GitHub access** in lockdown mode MUST go through the gateway sidecar's git/gh wrappers (not through the proxy). This ensures policy enforcement (branch ownership, merge blocking, etc.) cannot be bypassed.
 
 In lockdown mode, you CANNOT:
 - Access PyPI, npm, or any package registry (dependencies are pre-installed)
