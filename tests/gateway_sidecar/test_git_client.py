@@ -156,7 +156,7 @@ class TestGitAllowedCommands:
 
     def test_reflog_rejects_n_flag(self):
         """git reflog rejects -n flag (normalized to --dry-run globally)."""
-        valid, err, _ = validate_git_args("reflog", ["-n", "10"])
+        valid, _err, _ = validate_git_args("reflog", ["-n", "10"])
         assert not valid, "-n should be rejected for reflog (normalized to --dry-run)"
 
     def test_describe_validates_common_flags(self):
@@ -167,5 +167,5 @@ class TestGitAllowedCommands:
     def test_blocked_flags_rejected(self):
         """Dangerous flags are rejected for all operations."""
         for op in ["rm", "mv", "blame"]:
-            valid, err, _ = validate_git_args(op, ["--exec=evil"])
+            valid, _err, _ = validate_git_args(op, ["--exec=evil"])
             assert not valid, f"--exec should be rejected for {op}"
