@@ -454,39 +454,632 @@ This runs:
 
 ## Implementation Plan
 
-### Phase 1: Extend Gateway API
-1. Add routes for: add, commit, checkout, reset, stash
-2. Implement container-id to worktree path mapping
-3. Add request validation and error handling
+### Phase 0: Remove PR #590/#592 Path Rewriting
+
+**Goal**: Undo the path rewriting approach and remove obsolete worktree management code.
+
+#### 0.1 Remove Path Rewriting from Container Entrypoint
+
+**File**: `jib-container/entrypoint.py`
+
+Remove the `setup_worktrees()` function (lines 557-694) which:
+- Rewrites `.git` files to point to `.git-admin/<repo>`
+- Backs up and rewrites `gitdir` file from host path to container path
+- Backs up and rewrites `commondir` file to `.git-common/<repo>/`
+- Sets `core.worktree` in git config
+
+Remove the `cleanup_on_exit()` restoration logic (lines 1048-1114) which:
+- Restores `gitdir` and `commondir` from `.host-backup` files
+- This cleanup is only needed because of path rewriting
+
+**Simplify to**: Container sees repos mounted at `/home/jib/repos/<repo>` with `.git` as read-only file. No path manipulation needed.
+
+#### 0.2 Remove Host Worktree Management
+
+**Files to remove/simplify**:
+
+1. **`jib-container/jib_lib/worktrees.py`** - Remove entirely
+   - `create_worktrees()` - No longer needed; gateway manages worktrees
+   - `cleanup_worktrees()` - No longer needed; gateway handles cleanup
+   - File-based locking (`_acquire_git_lock`, `_release_git_lock`) - Gateway serializes operations
+
+2. **`host-services/utilities/worktree-watcher/`** - Remove entirely
+   - `worktree-watcher.py` - No longer needed; gateway cleans up orphaned worktrees
+   - `worktree-watcher.service` - Remove systemd service
+   - `worktree-watcher.timer` - Remove systemd timer
+
+3. **`scripts/jib-cleanup-worktree`** - Remove
+   - Manual restoration script no longer needed
+
+#### 0.3 Simplify jib Launcher
+
+**File**: `jib-container/jib_lib/launcher.py` (or equivalent)
+
+Remove calls to:
+- `create_worktrees(container_id)` on startup
+- `cleanup_worktrees(container_id)` on shutdown
+
+Replace with:
+- Request worktree creation from gateway API on startup
+- Request worktree deletion from gateway API on shutdown
+
+#### 0.4 Remove Mount Complexity
+
+**Files**: Docker run configuration, compose files
+
+Remove mounts for:
+- `~/.git-admin/<repo>` → `/home/jib/.git-admin/<repo>`
+- `~/.git-common/<repo>` → `/home/jib/.git-common/<repo>`
+- `~/.jib-local-objects/<id>/<repo>` → local objects
+
+Simplify to:
+- Gateway creates worktree at `/workspace/worktrees/<id>/<repo>`
+- Container mounts only the working directory with `.git` read-only
+
+#### 0.5 Remove Object Sync from Gateway
+
+**File**: `gateway-sidecar/gateway.py`
+
+Remove `sync_objects_after_push()` function (lines 122-229):
+- This was needed because containers had local object stores
+- With gateway-managed worktrees, objects are in the shared repo
+
+### Phase 1: Extend Gateway API for Write Operations
+
+**Goal**: Gateway handles all git write operations; container runs reads locally.
+
+#### 1.1 Add Git Write Operation Endpoints
+
+**File**: `gateway-sidecar/gateway.py`
+
+Add new endpoints:
+
+```python
+POST /api/v1/git/add
+    Request: {"repo_path": "...", "files": ["file1", "file2"] or ["."] for all}
+    Response: {"success": true, "stdout": "...", "stderr": "..."}
+
+POST /api/v1/git/commit
+    Request: {"repo_path": "...", "message": "...", "author": "name <email>"}
+    Response: {"success": true, "commit_sha": "abc123", "stdout": "..."}
+
+POST /api/v1/git/checkout
+    Request: {"repo_path": "...", "target": "branch-or-ref", "create": false}
+    Response: {"success": true}
+
+POST /api/v1/git/reset
+    Request: {"repo_path": "...", "mode": "soft|mixed|hard", "target": "ref"}
+    Policy: Block --hard unless explicitly confirmed
+    Response: {"success": true}
+
+POST /api/v1/git/stash
+    Request: {"repo_path": "...", "action": "push|pop|list|drop", "message": "..."}
+    Response: {"success": true, "stash_ref": "stash@{0}"}
+
+POST /api/v1/git/branch
+    Request: {"repo_path": "...", "action": "create|delete|rename", "name": "..."}
+    Policy: Only jib-prefixed branches can be created/deleted
+    Response: {"success": true}
+
+POST /api/v1/git/merge
+    Request: {"repo_path": "...", "branch": "...", "no_ff": false}
+    Response: {"success": true, "merge_commit": "..."}
+
+POST /api/v1/git/rebase
+    Request: {"repo_path": "...", "onto": "...", "interactive": false}
+    Policy: Block interactive rebase (requires TTY)
+    Response: {"success": true}
+
+POST /api/v1/git/cherry-pick
+    Request: {"repo_path": "...", "commits": ["sha1", "sha2"]}
+    Response: {"success": true}
+
+POST /api/v1/git/revert
+    Request: {"repo_path": "...", "commits": ["sha1"]}
+    Response: {"success": true}
+
+POST /api/v1/git/tag
+    Request: {"repo_path": "...", "action": "create|delete", "name": "...", "message": "..."}
+    Policy: Only jib-prefixed tags or with explicit permission
+    Response: {"success": true}
+
+POST /api/v1/git/clean
+    Request: {"repo_path": "...", "force": true, "directories": true}
+    Policy: Require confirmation for destructive operations
+    Response: {"success": true, "removed_files": [...]}
+
+POST /api/v1/git/config
+    Request: {"repo_path": "...", "key": "...", "value": "...", "scope": "local"}
+    Policy: Block certain config keys (credential.*, core.hooksPath)
+    Response: {"success": true}
+```
+
+#### 1.2 Add Worktree Lifecycle Endpoints
+
+**File**: `gateway-sidecar/gateway.py`
+
+```python
+POST /api/v1/worktree/create
+    Request: {"repo": "repo-name", "container_id": "jib-xxx", "base_branch": "main"}
+    Actions:
+      1. git worktree add /workspace/worktrees/<id>/<repo> -b jib/<id>/work <base>
+      2. Return worktree path for container to mount
+    Response: {"success": true, "worktree_path": "/workspace/worktrees/..."}
+
+DELETE /api/v1/worktree/<container_id>/<repo>
+    Actions:
+      1. git worktree remove /workspace/worktrees/<id>/<repo>
+      2. Delete working directory
+      3. Optionally delete branch if no unmerged commits
+    Response: {"success": true}
+
+GET /api/v1/worktree/list
+    Response: {"worktrees": [{"container_id": "...", "repo": "...", "branch": "..."}]}
+```
+
+#### 1.3 Implement Path Mapping in Gateway
+
+**File**: `gateway-sidecar/git_client.py`
+
+Add worktree path resolution:
+
+```python
+def resolve_worktree_paths(container_id: str, repo_name: str) -> tuple[str, str]:
+    """Map container ID to worktree paths.
+
+    Returns:
+        (work_tree_path, git_dir_path) for use with git --work-tree and --git-dir
+    """
+    work_tree = f"/workspace/worktrees/{container_id}/{repo_name}"
+    git_dir = f"/workspace/repos/{repo_name}.git/worktrees/wt-{container_id}"
+    return work_tree, git_dir
+```
+
+#### 1.4 Add Request Validation
+
+**File**: `gateway-sidecar/git_client.py`
+
+Extend `validate_git_args()` for new operations:
+
+```python
+ALLOWED_GIT_ARGS = {
+    "add": ["--all", "-A", "--update", "-u", "--intent-to-add", "-N", "--force", "-f"],
+    "commit": ["--message", "-m", "--amend", "--no-edit", "--allow-empty", "--author"],
+    "checkout": ["--branch", "-b", "--force", "-f", "--track", "-t"],
+    "reset": ["--soft", "--mixed", "--hard", "--keep"],
+    "stash": ["push", "pop", "list", "drop", "apply", "--message", "-m"],
+    # ... etc
+}
+
+BLOCKED_GIT_ARGS = {
+    "reset": ["--hard"],  # Require explicit confirmation
+    "clean": ["-f", "-d"],  # Require explicit confirmation
+    "rebase": ["-i", "--interactive"],  # Requires TTY
+}
+```
 
 ### Phase 2: Update Git Wrapper
-1. Modify container's git wrapper to route write operations to gateway
-2. Allow read-only operations (status, diff, log) to run locally
-3. Handle streaming output for large responses
 
-### Phase 3: Multi-Container Support
-1. Implement per-container working directories via worktrees
-2. Add container registration/cleanup in gateway
-3. Branch ownership enforcement
-4. Orphaned worktree cleanup on gateway startup
+**Goal**: Container's git wrapper routes writes to gateway, runs reads locally.
+
+#### 2.1 Modify Git Wrapper Script
+
+**File**: `jib-container/scripts/git`
+
+Replace current implementation with:
+
+```bash
+#!/bin/bash
+# Git wrapper - routes write operations through gateway, reads run locally
+
+REAL_GIT=/opt/.jib-internal/git
+GATEWAY_URL="${GATEWAY_URL:-http://jib-gateway:9847}"
+
+# Parse command
+cmd=""
+for arg in "$@"; do
+    case "$arg" in
+        -*) continue ;;
+        *)
+            cmd="$arg"
+            break
+            ;;
+    esac
+done
+
+# Read-only operations run locally (fast path)
+case "$cmd" in
+    status|diff|log|show|blame|branch|tag|remote|rev-parse|rev-list|\
+    ls-files|ls-tree|cat-file|describe|shortlog|grep|bisect|reflog|\
+    for-each-ref|name-rev|merge-base|symbolic-ref)
+        exec "$REAL_GIT" "$@"
+        ;;
+esac
+
+# Write operations go through gateway
+case "$cmd" in
+    add|commit|checkout|reset|stash|merge|rebase|cherry-pick|revert|\
+    tag|clean|config|rm|mv|restore|switch)
+        # Route to gateway
+        route_to_gateway "$cmd" "$@"
+        ;;
+    push|fetch|pull|ls-remote)
+        # Already handled by existing gateway routing
+        # (keep existing implementation)
+        ;;
+    remote)
+        # Check subcommand
+        subcmd=$(get_remote_subcommand "$@")
+        case "$subcmd" in
+            add|remove|rm|rename|set-url|set-head|set-branches|prune)
+                echo "ERROR: Remote modification blocked" >&2
+                exit 1
+                ;;
+            *)
+                exec "$REAL_GIT" "$@"
+                ;;
+        esac
+        ;;
+    *)
+        # Unknown command - allow through (fail closed would break tooling)
+        exec "$REAL_GIT" "$@"
+        ;;
+esac
+```
+
+#### 2.2 Add Gateway Routing Function
+
+**File**: `jib-container/scripts/git`
+
+```bash
+route_to_gateway() {
+    local operation="$1"
+    shift
+
+    local repo_path
+    repo_path=$(translate_path_for_gateway "$(pwd)")
+
+    local secret
+    secret=$(get_gateway_secret)
+
+    # Build args array as JSON
+    local args_json
+    args_json=$(printf '%s\n' "$@" | python3 -c "
+import sys, json
+args = [line.strip() for line in sys.stdin if line.strip()]
+print(json.dumps(args))
+")
+
+    local payload
+    payload=$(python3 -c "
+import json
+print(json.dumps({
+    'repo_path': '$repo_path',
+    'operation': '$operation',
+    'args': $args_json,
+    'cwd': '$(pwd)'
+}))
+")
+
+    local response
+    response=$(curl -s -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $secret" \
+        -d "$payload" \
+        "${GATEWAY_URL}/api/v1/git/${operation}")
+
+    # Parse and display response
+    local success stdout stderr returncode
+    success=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success',False))")
+
+    if [ "$success" = "True" ]; then
+        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('stdout',''))"
+        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('stderr',''))" >&2
+        return 0
+    else
+        echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('message','Unknown error'))" >&2
+        return 1
+    fi
+}
+```
+
+### Phase 3: Gateway-Managed Worktree Lifecycle
+
+**Goal**: Gateway creates/manages worktrees; containers only mount working directories.
+
+#### 3.1 Worktree Manager Module
+
+**New file**: `gateway-sidecar/worktree_manager.py`
+
+```python
+"""Manages git worktrees for container isolation."""
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Optional
+
+WORKSPACE_ROOT = Path("/workspace")
+REPOS_DIR = WORKSPACE_ROOT / "repos"
+WORKTREES_DIR = WORKSPACE_ROOT / "worktrees"
+
+
+@dataclass
+class WorktreeInfo:
+    container_id: str
+    repo_name: str
+    branch: str
+    worktree_path: Path
+    git_dir: Path
+
+
+class WorktreeManager:
+    def __init__(self):
+        WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
+        self._active_worktrees: dict[str, list[WorktreeInfo]] = {}
+
+    def create_worktree(
+        self,
+        repo_name: str,
+        container_id: str,
+        base_branch: str = "main"
+    ) -> WorktreeInfo:
+        """Create an isolated worktree for a container."""
+        repo_git = REPOS_DIR / f"{repo_name}.git"
+        if not repo_git.exists():
+            raise ValueError(f"Repository not found: {repo_name}")
+
+        worktree_path = WORKTREES_DIR / container_id / repo_name
+        branch_name = f"jib/{container_id}/work"
+
+        worktree_path.parent.mkdir(parents=True, exist_ok=True)
+
+        result = subprocess.run(
+            ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_branch],
+            cwd=repo_git,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to create worktree: {result.stderr}")
+
+        info = WorktreeInfo(
+            container_id=container_id,
+            repo_name=repo_name,
+            branch=branch_name,
+            worktree_path=worktree_path,
+            git_dir=repo_git / "worktrees" / f"wt-{container_id}",
+        )
+
+        if container_id not in self._active_worktrees:
+            self._active_worktrees[container_id] = []
+        self._active_worktrees[container_id].append(info)
+
+        return info
+
+    def remove_worktree(self, container_id: str, repo_name: str) -> None:
+        """Remove a container's worktree."""
+        worktree_path = WORKTREES_DIR / container_id / repo_name
+        repo_git = REPOS_DIR / f"{repo_name}.git"
+
+        if worktree_path.exists():
+            subprocess.run(
+                ["git", "worktree", "remove", str(worktree_path), "--force"],
+                cwd=repo_git,
+                capture_output=True,
+            )
+
+        # Clean up container directory if empty
+        container_dir = WORKTREES_DIR / container_id
+        if container_dir.exists() and not any(container_dir.iterdir()):
+            container_dir.rmdir()
+
+    def cleanup_orphaned_worktrees(self, active_containers: set[str]) -> int:
+        """Remove worktrees for containers that no longer exist."""
+        removed = 0
+        for container_dir in WORKTREES_DIR.glob("jib-*"):
+            if not container_dir.is_dir():
+                continue
+            container_id = container_dir.name
+            if container_id not in active_containers:
+                for worktree in container_dir.iterdir():
+                    if worktree.is_dir():
+                        self.remove_worktree(container_id, worktree.name)
+                        removed += 1
+                shutil.rmtree(container_dir, ignore_errors=True)
+        return removed
+```
+
+#### 3.2 Integrate Cleanup on Gateway Startup
+
+**File**: `gateway-sidecar/gateway.py`
+
+```python
+def startup_cleanup():
+    """Clean up orphaned worktrees on gateway startup."""
+    from worktree_manager import WorktreeManager
+
+    manager = WorktreeManager()
+
+    # Get active containers from Docker
+    result = subprocess.run(
+        ["docker", "ps", "-a", "--format", "{{.Names}}"],
+        capture_output=True, text=True
+    )
+    active_containers = set(result.stdout.strip().split("\n")) - {""}
+
+    removed = manager.cleanup_orphaned_worktrees(active_containers)
+    if removed > 0:
+        logger.info(f"Cleaned up {removed} orphaned worktree(s)")
+
+# Call on startup
+startup_cleanup()
+```
+
+#### 3.3 Update jib Launcher Integration
+
+**File**: `jib-container/jib_lib/launcher.py` (conceptual)
+
+On container start:
+```python
+# Request worktree creation from gateway
+response = requests.post(f"{gateway_url}/api/v1/worktree/create", json={
+    "repo": repo_name,
+    "container_id": container_id,
+    "base_branch": "main"
+})
+worktree_path = response.json()["worktree_path"]
+
+# Mount worktree into container
+docker_args.extend([
+    "-v", f"{worktree_path}:/home/jib/repos/{repo_name}:rw",
+    "-v", f"{worktree_path}/.git:/home/jib/repos/{repo_name}/.git:ro",
+])
+```
+
+On container stop:
+```python
+# Request worktree cleanup from gateway
+requests.delete(f"{gateway_url}/api/v1/worktree/{container_id}/{repo_name}")
+```
 
 ### Phase 4: Testing
-1. Unit tests for all gateway git routes
-2. Integration tests with multiple containers
-3. Performance benchmarks comparing local vs gateway operations
 
-### Phase 5: Cloud Run Deployment
-1. Create Cloud Run service configuration
-2. Implement checkpoint/restore for persistence
-3. End-to-end testing on Cloud Run
+**Goal**: Comprehensive testing of the new architecture.
 
-## Migration from Current Architecture
+#### 4.1 Unit Tests for Gateway Git Operations
 
-1. Deploy new gateway with extended git API
-2. Update container git wrapper to use new API
-3. Remove worktree path rewriting from entrypoint
-4. Remove .git-admin, .git-common mount complexity
-5. Simplify cleanup (just delete container directories)
+**New file**: `gateway-sidecar/tests/test_git_operations.py`
+
+```python
+def test_git_add_single_file():
+    """Test adding a single file via gateway."""
+
+def test_git_add_all():
+    """Test adding all files via gateway."""
+
+def test_git_commit_with_message():
+    """Test creating a commit."""
+
+def test_git_commit_author_attribution():
+    """Verify commits are attributed to jib."""
+
+def test_git_checkout_branch():
+    """Test switching branches."""
+
+def test_git_checkout_create_branch():
+    """Test creating and switching to new branch."""
+
+def test_git_reset_soft():
+    """Test soft reset."""
+
+def test_git_reset_hard_blocked():
+    """Verify hard reset requires confirmation."""
+
+def test_git_stash_push_pop():
+    """Test stash operations."""
+```
+
+#### 4.2 Unit Tests for Worktree Manager
+
+**New file**: `gateway-sidecar/tests/test_worktree_manager.py`
+
+```python
+def test_create_worktree():
+    """Test worktree creation."""
+
+def test_create_worktree_idempotent():
+    """Creating same worktree twice should fail gracefully."""
+
+def test_remove_worktree():
+    """Test worktree removal."""
+
+def test_cleanup_orphaned_worktrees():
+    """Test orphaned worktree cleanup."""
+
+def test_worktree_isolation():
+    """Verify changes in one worktree don't affect others."""
+```
+
+#### 4.3 Integration Tests
+
+**New file**: `gateway-sidecar/tests/test_integration.py`
+
+```python
+def test_container_git_workflow():
+    """Test complete workflow: clone, edit, add, commit, push."""
+
+def test_multi_container_isolation():
+    """Test two containers working on same repo don't interfere."""
+
+def test_container_crash_recovery():
+    """Test worktree cleanup after container crash."""
+
+def test_read_operations_local():
+    """Verify status/diff/log run locally (check latency)."""
+
+def test_write_operations_gateway():
+    """Verify add/commit route through gateway."""
+```
+
+#### 4.4 Performance Benchmarks
+
+**New file**: `gateway-sidecar/tests/test_performance.py`
+
+```python
+def benchmark_git_status_local():
+    """Benchmark local git status latency."""
+
+def benchmark_git_commit_gateway():
+    """Benchmark commit via gateway."""
+
+def benchmark_worktree_creation():
+    """Benchmark worktree creation time (target: <100ms)."""
+
+def compare_local_vs_gateway():
+    """Compare latency of local vs gateway operations."""
+```
+
+### Migration Checklist
+
+1. **Preparation**
+   - [ ] Ensure all active containers are stopped
+   - [ ] Back up any work on jib-temp-* branches
+   - [ ] Stop worktree-watcher systemd timer
+
+2. **Phase 0: Remove old code**
+   - [ ] Remove `setup_worktrees()` from entrypoint.py
+   - [ ] Remove `cleanup_on_exit()` restoration logic
+   - [ ] Remove `jib_lib/worktrees.py`
+   - [ ] Remove `host-services/utilities/worktree-watcher/`
+   - [ ] Remove `scripts/jib-cleanup-worktree`
+   - [ ] Remove `sync_objects_after_push()` from gateway.py
+   - [ ] Update docker mounts to remove .git-admin, .git-common
+
+3. **Phase 1: Deploy gateway updates**
+   - [ ] Add new git operation endpoints
+   - [ ] Add worktree lifecycle endpoints
+   - [ ] Add path mapping logic
+   - [ ] Deploy and test gateway
+
+4. **Phase 2: Update container**
+   - [ ] Update git wrapper script
+   - [ ] Rebuild container image
+   - [ ] Test read operations run locally
+   - [ ] Test write operations route to gateway
+
+5. **Phase 3: Enable worktree management**
+   - [ ] Update jib launcher to use gateway worktree API
+   - [ ] Test worktree creation/deletion
+   - [ ] Test orphaned worktree cleanup
+
+6. **Phase 4: Validation**
+   - [ ] Run all unit tests
+   - [ ] Run integration tests
+   - [ ] Run performance benchmarks
+   - [ ] Test multi-container scenarios
 
 ---
 
