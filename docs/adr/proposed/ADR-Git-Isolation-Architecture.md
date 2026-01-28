@@ -7,7 +7,91 @@
 
 ---
 
-# Option 1: Gateway-Managed Worktrees (Recommended)
+## Context
+
+### The Original Problem
+
+PR #590 implemented git worktree isolation to allow multiple jib containers to work on the same repository without affecting each other. The implementation modified git metadata files (`gitdir`, `commondir`) in shared bind-mounted directories to use container-internal paths (e.g., `/home/jib/.git-admin/repo`).
+
+This approach had fundamental problems discovered in PR #594:
+
+1. **Host git operations break** while any container is running - host sees container paths that don't exist
+2. **Crash recovery required** - if container exits abnormally, corrupted paths persist on host
+3. **Complex mount structure** - required `.git-admin`, `.git-common`, and multiple bind mounts
+4. **Path conflicts are inherent** - container paths and host paths cannot both be valid simultaneously
+
+### Requirements Evolution
+
+Initial requirements:
+- Multiple containers can work on the same repo without affecting each other
+- Gateway sidecar can access repos for push/fetch operations
+
+Additional requirements discovered during analysis:
+- **Host git must work** while containers are running
+- **Same architecture** for local and Cloud Run deployments
+- **Fast workspace creation** for new containers/requests (milliseconds, not file copies)
+- **Single repo** with isolated workspaces, not full clones per container
+
+### Approaches Considered
+
+**1. Overlayfs isolation (local only)**
+- Each container gets copy-on-write view of repo via overlayfs
+- Host sees base layer, container sees modifications in upper layer
+- Problem: Doesn't work on Cloud Run (no overlayfs), requires different architecture per environment
+
+**2. Git bundle checkpointing (Cloud Run)**
+- Store git state as bundles in Cloud Storage
+- Download/restore on container start, checkpoint periodically
+- Problem: Different architecture from local, adds complexity and latency
+
+**3. Cleanup scripts for crash recovery**
+- Run scripts to restore host paths from backups after container crash
+- Problem: Doesn't solve the fundamental issue - host git still broken while container runs
+
+**4. Gateway-managed git (all operations via HTTP)**
+- Route ALL git operations through gateway sidecar
+- Container only edits files, never touches git metadata
+- Initially rejected in PR #590 for performance concerns (~10% HTTP overhead)
+- Reconsidered: overhead is negligible, and it eliminates all path conflict issues
+
+**5. Gateway-managed worktrees (chosen approach)**
+- Combine worktrees (fast creation, shared objects) with gateway management
+- Gateway creates/manages worktrees, handles all git operations
+- Container mounts only working directory with `.git` read-only
+- Same architecture works on local, VM, and Cloud Run
+
+### Why Gateway-Managed Worktrees?
+
+The key insight: **use git's native worktree feature for isolation, but have the gateway manage it**.
+
+- Worktrees provide fast workspace creation (O(1) - just metadata)
+- Worktrees share git objects (efficient storage)
+- Gateway managing worktrees means containers never touch git metadata
+- No path rewriting needed - gateway controls all paths internally
+- Same architecture works everywhere - only the volume backend changes
+
+---
+
+## Decision
+
+Adopt **gateway-managed worktrees** as the git isolation architecture:
+
+1. **Gateway manages worktree lifecycle** - creates, deletes, and operates on worktrees
+2. **All git operations go through gateway** - container's git wrapper routes to gateway API
+3. **Container mounts only working directory** - with `.git` file as read-only
+4. **Worktree admin directories not exposed** - gateway manages internally
+5. **Same architecture for all deployments** - local, VM, Cloud Run
+
+This approach:
+- Eliminates path conflicts (container never sees git metadata paths)
+- Allows host git to work while containers run
+- Provides fast workspace creation via worktrees
+- Simplifies the mount structure (one directory per container)
+- Works identically across deployment environments
+
+---
+
+# Implementation: Gateway-Managed Worktrees
 
 The simplest architecture: gateway manages git worktrees, containers only see their working directory.
 
