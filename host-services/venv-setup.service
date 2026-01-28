@@ -8,6 +8,10 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=%h/repos/james-in-a-box
+
+# Include ~/.local/bin in PATH so we can find uv (installed via astral.sh)
+Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
+
 ExecStart=/usr/bin/make venv
 
 # Logging
