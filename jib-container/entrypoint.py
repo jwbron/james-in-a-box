@@ -361,6 +361,10 @@ def setup_environment(config: Config) -> None:
     # Beads directory
     os.environ["BEADS_DIR"] = str(config.beads_dir / ".beads")
 
+    # Git editor - use 'true' (no-op) for non-interactive rebase/merge continue
+    # This allows git rebase --continue to work without an interactive editor
+    os.environ["GIT_EDITOR"] = "true"
+
 
 def setup_git(config: Config, logger: Logger) -> None:
     """Configure git for jib identity and credential helper."""
