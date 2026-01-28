@@ -187,6 +187,325 @@ The overlayfs approach can coexist with the current worktree approach during tra
 
 Adopt overlayfs-based isolation to replace the path-rewriting approach from PR #590. This provides true isolation between containers and host while maintaining gateway access for remote operations.
 
+---
+
+# Appendix: Cloud Deployment (Cloud Run)
+
+The overlayfs approach works for local/VM deployments where we control the host. Cloud Run (and similar serverless platforms) requires a different architecture due to fundamental constraints.
+
+## Cloud Run Constraints
+
+| Constraint | Impact |
+|------------|--------|
+| No overlayfs | Can't use kernel-level CoW isolation |
+| Stateless containers | No persistent local disk; containers killed anytime |
+| Restricted privileges | Can't mount filesystems, limited syscalls |
+| Auto-scaling | Multiple instances may work on same repo |
+| Cold starts | Need fast startup; can't clone large repos each time |
+| Max request timeout | 60 min (configurable); long tasks may be interrupted |
+
+## Architecture for Cloud Run
+
+### Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Cloud Run Service                         │
+│  ┌─────────────────────┐      ┌─────────────────────────────┐   │
+│  │    jib container    │      │    gateway sidecar          │   │
+│  │                     │      │                             │   │
+│  │  - Claude Code      │◄────►│  - Git push/fetch           │   │
+│  │  - Local git ops    │ HTTP │  - GitHub API (gh)          │   │
+│  │  - Work on /workspace      │  - Credential management    │   │
+│  │                     │      │                             │   │
+│  └─────────┬───────────┘      └──────────────┬──────────────┘   │
+│            │                                  │                  │
+│            ▼                                  ▼                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              Shared Volume (in-memory or GCS FUSE)          ││
+│  │                        /workspace                            ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     External Storage                             │
+│                                                                  │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌──────────────┐ │
+│  │  Cloud Storage  │    │     GitHub      │    │Secret Manager│ │
+│  │                 │    │                 │    │              │ │
+│  │  - Git bundles  │    │  - Source of    │    │  - GitHub    │ │
+│  │  - Checkpoints  │    │    truth        │    │    tokens    │ │
+│  │  - Work state   │    │  - Push target  │    │  - API keys  │ │
+│  └─────────────────┘    └─────────────────┘    └──────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Git State Management
+
+Since Cloud Run lacks persistent local storage, git state must be externalized:
+
+**Option A: Clone-on-demand (Simple but slow)**
+```
+Startup:
+1. Clone repo from GitHub (shallow for speed)
+2. Work in /workspace
+
+Shutdown/Push:
+1. Gateway pushes to GitHub
+2. State lost on container termination
+```
+
+Pros: Simple, always fresh
+Cons: Slow cold start, work lost if container dies before push
+
+**Option B: Git Bundle Checkpointing (Recommended)**
+```
+Startup:
+1. Check Cloud Storage for existing bundle for this session
+2. If exists: download and unbundle
+3. If not: shallow clone from GitHub
+4. Create initial checkpoint
+
+During work:
+1. Periodic checkpoints: create bundle, upload to GCS
+2. Checkpoint on every commit (or batch of commits)
+
+Push:
+1. Gateway creates bundle of unpushed commits
+2. Pushes to GitHub
+3. Updates checkpoint in GCS
+
+Recovery (new instance for same session):
+1. Download latest bundle from GCS
+2. Unbundle and continue
+```
+
+Pros: Durable, fast recovery, handles container preemption
+Cons: Checkpoint overhead, GCS costs
+
+**Option C: Persistent Volume (If available)**
+```
+Cloud Run now supports:
+- Cloud Storage FUSE (GCS mounted as filesystem)
+- Filestore (NFS)
+
+Mount persistent volume at /workspace:
+1. Git repo lives on persistent storage
+2. Multiple instances need locking (see Multi-Instance section)
+```
+
+Pros: Simpler mental model, persistent
+Cons: GCS FUSE has performance limitations for git; Filestore is expensive
+
+### Sidecar Communication
+
+Cloud Run multi-container pods share:
+- Network namespace (localhost works)
+- Mounted volumes
+
+```yaml
+# cloud-run-service.yaml
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: jib-worker
+spec:
+  template:
+    spec:
+      containers:
+        # Main jib container
+        - name: jib
+          image: gcr.io/project/jib:latest
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          env:
+            - name: GATEWAY_URL
+              value: "http://localhost:9847"
+
+        # Gateway sidecar
+        - name: gateway
+          image: gcr.io/project/jib-gateway:latest
+          ports:
+            - containerPort: 9847
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          env:
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token
+                  key: token
+
+      volumes:
+        - name: workspace
+          emptyDir:
+            medium: Memory  # Or use GCS FUSE
+            sizeLimit: 2Gi
+```
+
+### Push/Fetch Flow
+
+```
+┌─────────────┐         ┌─────────────┐         ┌─────────────┐
+│     jib     │         │   gateway   │         │   GitHub    │
+└──────┬──────┘         └──────┬──────┘         └──────┬──────┘
+       │                       │                       │
+       │  POST /git/push       │                       │
+       │  {repo_path, branch}  │                       │
+       │──────────────────────►│                       │
+       │                       │                       │
+       │                       │  Read git objects     │
+       │                       │  from /workspace      │
+       │                       │◄─────────────────────►│
+       │                       │                       │
+       │                       │  git push (HTTPS)     │
+       │                       │──────────────────────►│
+       │                       │                       │
+       │                       │  Create checkpoint    │
+       │                       │  bundle, upload GCS   │
+       │                       │─────────────┐         │
+       │                       │             │         │
+       │                       │◄────────────┘         │
+       │                       │                       │
+       │  {success, sha}       │                       │
+       │◄──────────────────────│                       │
+       │                       │                       │
+```
+
+### Multi-Instance Coordination
+
+If auto-scaling creates multiple instances for the same session:
+
+**Problem**: Two instances modifying same repo = corruption
+
+**Solutions**:
+
+1. **Session affinity**: Route all requests for a session to same instance
+   ```yaml
+   sessionAffinity: true  # Cloud Run supports this
+   ```
+
+2. **Distributed locking**: Use Cloud Storage or Firestore for locks
+   ```
+   Before git operation:
+   1. Acquire lock: gs://jib-locks/{session-id}/{repo}
+   2. Perform operation
+   3. Release lock
+   ```
+
+3. **Single instance mode**: Set max instances to 1 for jib workers
+   ```yaml
+   autoscaling.knative.dev/maxScale: "1"
+   ```
+
+**Recommendation**: Start with single instance mode; add locking if scale needed.
+
+### Secrets Management
+
+```
+┌─────────────────────────────────────────────┐
+│              Secret Manager                  │
+│                                             │
+│  github-token     → Gateway env             │
+│  anthropic-key    → jib container env       │
+│  gateway-secret   → Shared for auth         │
+└─────────────────────────────────────────────┘
+```
+
+Cloud Run natively integrates with Secret Manager:
+```yaml
+env:
+  - name: GITHUB_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: github-token
+        key: latest
+```
+
+### Container Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Cloud Run Instance Lifecycle                  │
+│                                                                  │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐  │
+│  │  COLD    │───►│  INIT    │───►│  RUNNING │───►│ SHUTDOWN │  │
+│  │  START   │    │          │    │          │    │          │  │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘  │
+│       │              │                │               │         │
+│       ▼              ▼                ▼               ▼         │
+│  Check for      Download         Normal ops      Checkpoint     │
+│  existing       bundle or        + periodic      + cleanup      │
+│  session        clone repo       checkpoints                    │
+│                                                                  │
+│  PREEMPTION (can happen anytime):                               │
+│  - Container killed without shutdown signal                      │
+│  - Recovery: next instance loads from last checkpoint           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Changes for Cloud Run
+
+| Component | Local/VM | Cloud Run |
+|-----------|----------|-----------|
+| Git storage | Overlayfs on host | GCS bundles + emptyDir |
+| Gateway communication | Unix socket or localhost | localhost (shared network) |
+| Secrets | Local files | Secret Manager |
+| Persistence | Host filesystem | GCS checkpoints |
+| Multi-container | Separate Docker containers | Sidecar in same pod |
+| Startup | Mount overlays | Download/clone |
+| Cleanup | Delete overlay dir | Delete GCS checkpoint |
+
+### Cost Considerations
+
+| Resource | Estimate |
+|----------|----------|
+| Cloud Run (CPU/memory) | ~$0.00002/vCPU-second |
+| Cloud Storage | ~$0.02/GB/month + operations |
+| Secret Manager | ~$0.03/10k access operations |
+| Egress | ~$0.12/GB (after free tier) |
+
+For a typical session (1 hour, 2 vCPU, 4GB RAM):
+- Compute: ~$0.15
+- Storage: negligible
+- Total: ~$0.15-0.20/session
+
+### Hybrid Architecture
+
+For organizations with both local and cloud deployments:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Unified jib Architecture                     │
+│                                                                  │
+│  ┌─────────────────────────────┐  ┌───────────────────────────┐ │
+│  │      Local Deployment       │  │    Cloud Run Deployment   │ │
+│  │                             │  │                           │ │
+│  │  - Overlayfs isolation      │  │  - GCS bundle isolation   │ │
+│  │  - Host gateway sidecar     │  │  - Pod gateway sidecar    │ │
+│  │  - Systemd lifecycle        │  │  - Knative lifecycle      │ │
+│  │                             │  │                           │ │
+│  └──────────────┬──────────────┘  └─────────────┬─────────────┘ │
+│                 │                               │               │
+│                 ▼                               ▼               │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              Common Gateway API + Protocol                  ││
+│  │                                                             ││
+│  │  POST /api/v1/git/push                                      ││
+│  │  POST /api/v1/git/fetch                                     ││
+│  │  POST /api/v1/gh/*                                          ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The gateway API remains the same; only the isolation mechanism differs.
+
 ## References
 
 - PR #590: Original worktree isolation implementation
