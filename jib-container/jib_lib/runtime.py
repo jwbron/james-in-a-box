@@ -315,42 +315,65 @@ def run_claude() -> bool:
     if lockdown:
         # Phase 2: Connect to isolated network with fixed IP
         # Container can only reach gateway, no direct internet access
-        cmd.extend([
-            "--network", JIB_ISOLATED_NETWORK,
-            "--ip", JIB_CONTAINER_IP,
-            # Disable DNS (no external DNS resolution)
-            "--dns", "0.0.0.0",
-            # Add gateway hostname for proxy and API access
-            "--add-host", f"gateway:{GATEWAY_ISOLATED_IP}",
-        ])
+        cmd.extend(
+            [
+                "--network",
+                JIB_ISOLATED_NETWORK,
+                "--ip",
+                JIB_CONTAINER_IP,
+                # Disable DNS (no external DNS resolution)
+                "--dns",
+                "0.0.0.0",
+                # Add gateway hostname for proxy and API access
+                "--add-host",
+                f"gateway:{GATEWAY_ISOLATED_IP}",
+            ]
+        )
     else:
         # Phase 1: Connect to shared jib-network (legacy mode)
         cmd.extend(["--network", JIB_NETWORK_NAME])
 
     # Common environment variables
-    cmd.extend([
-        "-e", f"RUNTIME_UID={os.getuid()}",
-        "-e", f"RUNTIME_GID={os.getgid()}",
-        "-e", f"CONTAINER_ID={container_id}",
-        "-e", f"JIB_QUIET={'1' if quiet else '0'}",
-        "-e", f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
-        "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-        "-e", f"JIB_NETWORK_MODE={network_mode}",
-    ])
+    cmd.extend(
+        [
+            "-e",
+            f"RUNTIME_UID={os.getuid()}",
+            "-e",
+            f"RUNTIME_GID={os.getgid()}",
+            "-e",
+            f"CONTAINER_ID={container_id}",
+            "-e",
+            f"JIB_QUIET={'1' if quiet else '0'}",
+            "-e",
+            f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
+            "-e",
+            f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+            "-e",
+            f"JIB_NETWORK_MODE={network_mode}",
+        ]
+    )
 
     # Phase 2: Add proxy configuration for network lockdown
     if lockdown:
         proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
-        cmd.extend([
-            # HTTP/HTTPS proxy environment variables
-            "-e", f"HTTP_PROXY={proxy_url}",
-            "-e", f"HTTPS_PROXY={proxy_url}",
-            "-e", f"http_proxy={proxy_url}",
-            "-e", f"https_proxy={proxy_url}",
-            # Bypass proxy for local connections
-            "-e", "NO_PROXY=localhost,127.0.0.1,gateway",
-            "-e", "no_proxy=localhost,127.0.0.1,gateway",
-        ])
+        cmd.extend(
+            [
+                # HTTP/HTTPS proxy environment variables
+                "-e",
+                f"HTTP_PROXY={proxy_url}",
+                "-e",
+                f"HTTPS_PROXY={proxy_url}",
+                "-e",
+                f"http_proxy={proxy_url}",
+                "-e",
+                f"https_proxy={proxy_url}",
+                # Bypass proxy for local connections
+                "-e",
+                "NO_PROXY=localhost,127.0.0.1,gateway",
+                "-e",
+                "no_proxy=localhost,127.0.0.1,gateway",
+            ]
+        )
 
     # GitHub authentication is handled by the gateway sidecar
     # The container does NOT receive GITHUB_TOKEN - all git/gh operations
@@ -551,37 +574,59 @@ def exec_in_new_container(
     # Network configuration based on mode
     if lockdown:
         # Phase 2: Connect to isolated network with fixed IP
-        cmd.extend([
-            "--network", JIB_ISOLATED_NETWORK,
-            "--ip", JIB_CONTAINER_IP,
-            "--dns", "0.0.0.0",  # Disable DNS
-            "--add-host", f"gateway:{GATEWAY_ISOLATED_IP}",
-        ])
+        cmd.extend(
+            [
+                "--network",
+                JIB_ISOLATED_NETWORK,
+                "--ip",
+                JIB_CONTAINER_IP,
+                "--dns",
+                "0.0.0.0",  # Disable DNS
+                "--add-host",
+                f"gateway:{GATEWAY_ISOLATED_IP}",
+            ]
+        )
     else:
         # Phase 1: Connect to shared jib-network (legacy mode)
         cmd.extend(["--network", JIB_NETWORK_NAME])
 
     # Common environment variables
-    cmd.extend([
-        "-e", f"RUNTIME_UID={os.getuid()}",
-        "-e", f"RUNTIME_GID={os.getgid()}",
-        "-e", f"CONTAINER_ID={container_id}",
-        "-e", "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
-        "-e", f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-        "-e", f"JIB_NETWORK_MODE={network_mode}",
-    ])
+    cmd.extend(
+        [
+            "-e",
+            f"RUNTIME_UID={os.getuid()}",
+            "-e",
+            f"RUNTIME_GID={os.getgid()}",
+            "-e",
+            f"CONTAINER_ID={container_id}",
+            "-e",
+            "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output
+            "-e",
+            f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
+            "-e",
+            f"JIB_NETWORK_MODE={network_mode}",
+        ]
+    )
 
     # Phase 2: Add proxy configuration for network lockdown
     if lockdown:
         proxy_url = f"http://gateway:{GATEWAY_PROXY_PORT}"
-        cmd.extend([
-            "-e", f"HTTP_PROXY={proxy_url}",
-            "-e", f"HTTPS_PROXY={proxy_url}",
-            "-e", f"http_proxy={proxy_url}",
-            "-e", f"https_proxy={proxy_url}",
-            "-e", "NO_PROXY=localhost,127.0.0.1,gateway",
-            "-e", "no_proxy=localhost,127.0.0.1,gateway",
-        ])
+        cmd.extend(
+            [
+                "-e",
+                f"HTTP_PROXY={proxy_url}",
+                "-e",
+                f"HTTPS_PROXY={proxy_url}",
+                "-e",
+                f"http_proxy={proxy_url}",
+                "-e",
+                f"https_proxy={proxy_url}",
+                "-e",
+                "NO_PROXY=localhost,127.0.0.1,gateway",
+                "-e",
+                "no_proxy=localhost,127.0.0.1,gateway",
+            ]
+        )
 
     # Add logging configuration for log persistence
     log_config = get_docker_log_config(container_id, task_id)

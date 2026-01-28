@@ -15,7 +15,6 @@ class ConfigError(Exception):
     """Raised when configuration validation fails."""
 
 
-
 def validate_config() -> None:
     """Validate all gateway configuration at startup.
 
