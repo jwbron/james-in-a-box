@@ -462,13 +462,13 @@ This runs:
 
 **File**: `jib-container/entrypoint.py`
 
-Remove the `setup_worktrees()` function (lines 557-694) which:
+Remove the `setup_worktrees()` function (lines 557-696) which:
 - Rewrites `.git` files to point to `.git-admin/<repo>`
 - Backs up and rewrites `gitdir` file from host path to container path
 - Backs up and rewrites `commondir` file to `.git-common/<repo>/`
 - Sets `core.worktree` in git config
 
-Remove the `cleanup_on_exit()` restoration logic (lines 1048-1114) which:
+Remove the `cleanup_on_exit()` restoration logic (lines 1048-1121) which:
 - Restores `gitdir` and `commondir` from `.host-backup` files
 - This cleanup is only needed because of path rewriting
 
@@ -493,7 +493,9 @@ Remove the `cleanup_on_exit()` restoration logic (lines 1048-1114) which:
 
 #### 0.3 Simplify jib Launcher
 
-**File**: `jib-container/jib_lib/launcher.py` (or equivalent)
+**Files**:
+- `jib-container/jib_lib/runtime.py` - Update `run_claude()` and `exec_in_new_container()`
+- `jib-container/jib_lib/docker.py` - Update mount configuration
 
 Remove calls to:
 - `create_worktrees(container_id)` on startup
@@ -520,7 +522,7 @@ Simplify to:
 
 **File**: `gateway-sidecar/gateway.py`
 
-Remove `sync_objects_after_push()` function (lines 122-229):
+Remove `sync_objects_after_push()` function (lines 122-274):
 - This was needed because containers had local object stores
 - With gateway-managed worktrees, objects are in the shared repo
 
@@ -1240,7 +1242,9 @@ startup_cleanup()
 
 #### 3.3 Update jib Launcher Integration
 
-**File**: `jib-container/jib_lib/launcher.py` (conceptual)
+**Files** (new code to add):
+- `jib-container/jib_lib/runtime.py` - Add gateway worktree API calls
+- `jib-container/jib_lib/docker.py` - Update mount configuration for worktree paths
 
 On container start:
 ```python
