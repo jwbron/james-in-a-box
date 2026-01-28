@@ -1620,7 +1620,7 @@ def main():
             "\n"
             "To fix this:\n"
             "  1. Check the service file path in gateway-sidecar.service\n"
-            "  2. Ensure ExecStart points to the correct gateway.py location\n"
+            "  2. Ensure ExecStart points to the correct start-gateway.sh location\n"
             "  3. Restart the service: systemctl --user restart gateway-sidecar\n"
             "  4. Verify the gateway is running as your user: ps aux | grep gateway\n"
             "\n"
