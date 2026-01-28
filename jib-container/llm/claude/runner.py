@@ -32,6 +32,10 @@ MIN_CLAUDE_VERSION = "1.0.0"
 # Read chunk size for stream processing (1MB chunks allow handling large outputs)
 _READ_CHUNK_SIZE = 1024 * 1024
 
+# Buffer size warning threshold (50MB) - log warning if buffer grows this large
+# without seeing a newline, which could indicate malformed output
+_BUFFER_WARNING_THRESHOLD = 50 * 1024 * 1024
+
 
 def _check_claude_version() -> str | None:
     """Check Claude Code CLI version and log warning if too old.
@@ -173,6 +177,7 @@ async def _read_lines_unbuffered(
         Complete lines as bytes (without trailing newline).
     """
     buffer = b""
+    warning_logged = False
 
     while True:
         # Read chunks without line-length restrictions
@@ -190,9 +195,20 @@ async def _read_lines_unbuffered(
 
         buffer += chunk
 
+        # Warn if buffer grows very large without seeing a newline
+        # This could indicate malformed output or an unexpected data format
+        if not warning_logged and len(buffer) > _BUFFER_WARNING_THRESHOLD:
+            logger.warning(
+                f"Stream buffer exceeded {_BUFFER_WARNING_THRESHOLD // (1024 * 1024)}MB "
+                f"without newline (current size: {len(buffer) // (1024 * 1024)}MB). "
+                "This may indicate malformed output from Claude Code."
+            )
+            warning_logged = True
+
         # Extract complete lines from buffer
         while b"\n" in buffer:
             line, buffer = buffer.split(b"\n", 1)
+            warning_logged = False  # Reset warning after successful line extraction
             yield line
 
 
