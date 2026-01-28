@@ -151,7 +151,9 @@ class TestValidateGitArgs:
 
     def test_non_flag_args_passed_through(self):
         """Non-flag arguments should pass through."""
-        valid, _error, normalized = validate_git_args("log", ["-n", "5", "main"])
+        # Use --max-count instead of -n because -n is globally normalized to --dry-run
+        # (for git push), not --max-count (for git log)
+        valid, _error, normalized = validate_git_args("log", ["--max-count=5", "main"])
         assert valid
         assert "main" in normalized
 

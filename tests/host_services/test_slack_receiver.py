@@ -349,7 +349,7 @@ class TestSlackReceiverMessageFiltering:
             if subtype is not None:
                 return False
             user_id = event.get("user")
-            return user_id
+            return bool(user_id)
 
         # Message with no user - should be ignored
         no_user_event = {
@@ -366,7 +366,7 @@ class TestSlackReceiverMessageFiltering:
             if subtype is not None:
                 return False
             user_id = event.get("user")
-            return user_id
+            return bool(user_id)
 
         # Regular user message - should be processed
         user_event = {

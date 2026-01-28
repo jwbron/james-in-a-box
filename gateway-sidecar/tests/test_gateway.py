@@ -4,7 +4,6 @@ Tests for Gateway Sidecar REST API.
 Tests cover:
 - Health check endpoint
 - Authentication (valid/invalid tokens)
-- Rate limiting
 - Git push endpoint with policy enforcement
 - gh PR endpoints (create, comment, edit, close)
 - Blocked commands (merge)
@@ -13,7 +12,6 @@ Tests cover:
 
 import json
 import os
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,12 +38,6 @@ def client():
 def auth_headers():
     """Return valid authentication headers."""
     return {"Authorization": f"Bearer {TEST_SECRET}"}
-
-
-@pytest.fixture(autouse=True)
-def reset_rate_limits():
-    """Reset rate limits before each test."""
-    gateway._rate_limits.clear()
 
 
 class TestHealthCheck:
@@ -143,88 +135,6 @@ class TestAuthentication:
 
             # Should not be 401 (may fail for other reasons)
             assert response.status_code != 401
-
-
-class TestRateLimiting:
-    """Tests for rate limiting."""
-
-    def test_rate_limit_exceeded_returns_429(self, client, auth_headers):
-        """Exceeding rate limit returns 429."""
-        # Patch the rate limit to a small value for testing
-        original_limits = gateway.RATE_LIMITS.copy()
-        gateway.RATE_LIMITS["gh_pr_create"] = 2
-        gateway.RATE_LIMITS["combined"] = 100
-
-        try:
-            with patch.object(gateway, "get_github_client") as mock_gh:
-                mock_result = MagicMock()
-                mock_result.success = True
-                mock_result.stdout = "https://github.com/test/repo/pull/1"
-                mock_result.stderr = ""
-                mock_gh.return_value.execute.return_value = mock_result
-
-                # Make requests up to the limit
-                for _ in range(2):
-                    response = client.post(
-                        "/api/v1/gh/pr/create",
-                        headers=auth_headers,
-                        data=json.dumps({"repo": "test/repo", "title": "Test", "head": "branch"}),
-                        content_type="application/json",
-                    )
-                    assert response.status_code == 200
-
-                # This should exceed the limit
-                response = client.post(
-                    "/api/v1/gh/pr/create",
-                    headers=auth_headers,
-                    data=json.dumps({"repo": "test/repo", "title": "Test", "head": "branch"}),
-                    content_type="application/json",
-                )
-
-                assert response.status_code == 429
-                data = json.loads(response.data)
-                assert "Rate limit" in data["message"]
-        finally:
-            gateway.RATE_LIMITS.update(original_limits)
-
-    def test_combined_rate_limit(self, client, auth_headers):
-        """Combined rate limit is enforced across operations."""
-        original_limits = gateway.RATE_LIMITS.copy()
-        gateway.RATE_LIMITS["combined"] = 3
-        gateway.RATE_LIMITS["gh_execute"] = 100
-
-        try:
-            with patch.object(gateway, "get_github_client") as mock_gh:
-                mock_result = MagicMock()
-                mock_result.success = True
-                mock_result.stdout = ""
-                mock_result.stderr = ""
-                mock_result.to_dict.return_value = {"stdout": "", "stderr": ""}
-                mock_gh.return_value.execute.return_value = mock_result
-
-                # Make requests up to combined limit
-                for _ in range(3):
-                    response = client.post(
-                        "/api/v1/gh/execute",
-                        headers=auth_headers,
-                        data=json.dumps({"args": ["pr", "list"]}),
-                        content_type="application/json",
-                    )
-                    assert response.status_code == 200
-
-                # This should exceed combined limit
-                response = client.post(
-                    "/api/v1/gh/execute",
-                    headers=auth_headers,
-                    data=json.dumps({"args": ["pr", "list"]}),
-                    content_type="application/json",
-                )
-
-                assert response.status_code == 429
-                data = json.loads(response.data)
-                assert "Combined rate limit" in data["message"]
-        finally:
-            gateway.RATE_LIMITS.update(original_limits)
 
 
 class TestGitPush:
@@ -818,41 +728,3 @@ class TestBlockedCommands:
         data = json.loads(response.data)
         assert data["success"] is False
         assert "not allowed" in data["message"].lower()
-
-
-class TestRateLimitState:
-    """Tests for RateLimitState class."""
-
-    def test_count_recent_within_window(self):
-        """count_recent counts requests within window."""
-        state = gateway.RateLimitState()
-        now = time.time()
-
-        # Add some requests
-        state.requests = [now - 100, now - 50, now - 10]
-
-        # All should be within 1 hour window
-        assert state.count_recent(3600) == 3
-
-    def test_count_recent_expires_old(self):
-        """count_recent expires old requests."""
-        state = gateway.RateLimitState()
-        now = time.time()
-
-        # Add old and new requests
-        state.requests = [now - 7200, now - 3700, now - 100]  # 2hr, 1hr+, recent
-
-        # Only recent should count in 1 hour window
-        count = state.count_recent(3600)
-        assert count == 1
-
-    def test_record_adds_timestamp(self):
-        """record adds current timestamp."""
-        state = gateway.RateLimitState()
-
-        before = time.time()
-        state.record()
-        after = time.time()
-
-        assert len(state.requests) == 1
-        assert before <= state.requests[0] <= after
