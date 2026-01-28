@@ -386,22 +386,7 @@ def git_push():
         return make_error(path_error, status_code=403)
 
     # Map container path to worktree path if container_id is provided
-    exec_path = repo_path
-    if container_id:
-        repo_name = os.path.basename(repo_path.rstrip("/"))
-        if repo_name:
-            manager = get_worktree_manager()
-            try:
-                worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
-                if worktree_path.exists():
-                    exec_path = str(worktree_path)
-                    logger.debug(
-                        "Mapped container path to worktree for push",
-                        container_path=repo_path,
-                        worktree_path=exec_path,
-                    )
-            except ValueError:
-                pass  # Fall through to use original repo_path
+    exec_path = map_container_path_to_worktree(repo_path, container_id, "push")
 
     # Get remote URL to determine repo
     try:
@@ -642,33 +627,7 @@ def git_execute():
         return make_error(args_error, status_code=400)
 
     # Map container path to worktree path if container_id is provided
-    # Container sends /home/jib/repos/{repo}, gateway runs in worktree at
-    # /home/jib/.jib-worktrees/{container_id}/{repo}
-    exec_path = repo_path
-    if container_id:
-        # Extract repo name from container path
-        # e.g., /home/jib/repos/james-in-a-box -> james-in-a-box
-        repo_name = os.path.basename(repo_path.rstrip("/"))
-        if repo_name:
-            manager = get_worktree_manager()
-            try:
-                worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
-                if worktree_path.exists():
-                    exec_path = str(worktree_path)
-                    logger.debug(
-                        "Mapped container path to worktree",
-                        container_path=repo_path,
-                        worktree_path=exec_path,
-                        container_id=container_id,
-                    )
-            except ValueError as e:
-                logger.warning(
-                    "Failed to map container path to worktree",
-                    error=str(e),
-                    container_id=container_id,
-                    repo_name=repo_name,
-                )
-                # Fall through to use original repo_path
+    exec_path = map_container_path_to_worktree(repo_path, container_id, operation)
 
     # Build command
     cmd = git_cmd(operation, *validated_args)
@@ -790,22 +749,7 @@ def git_fetch():
         return make_error(args_error, status_code=400)
 
     # Map container path to worktree path if container_id is provided
-    exec_path = repo_path
-    if container_id:
-        repo_name = os.path.basename(repo_path.rstrip("/"))
-        if repo_name:
-            manager = get_worktree_manager()
-            try:
-                worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
-                if worktree_path.exists():
-                    exec_path = str(worktree_path)
-                    logger.debug(
-                        f"Mapped container path to worktree for {operation}",
-                        container_path=repo_path,
-                        worktree_path=exec_path,
-                    )
-            except ValueError:
-                pass  # Fall through to use original repo_path
+    exec_path = map_container_path_to_worktree(repo_path, container_id, operation)
 
     # Get remote URL to determine repo
     try:
@@ -1392,6 +1336,52 @@ def get_worktree_manager() -> WorktreeManager:
     if _worktree_manager is None:
         _worktree_manager = WorktreeManager()
     return _worktree_manager
+
+
+def map_container_path_to_worktree(
+    repo_path: str, container_id: str | None, operation: str = "git"
+) -> str:
+    """
+    Map a container's repo path to the corresponding worktree path.
+
+    Container sends paths like /home/jib/repos/{repo}, but the gateway needs
+    to run git in the worktree at /home/jib/.jib-worktrees/{container_id}/{repo}.
+
+    Args:
+        repo_path: The path sent by the container (e.g., /home/jib/repos/myrepo)
+        container_id: The container's unique identifier
+        operation: Name of the operation for logging purposes
+
+    Returns:
+        The worktree path if mapping succeeds, otherwise the original repo_path.
+    """
+    if not container_id:
+        return repo_path
+
+    repo_name = os.path.basename(repo_path.rstrip("/"))
+    if not repo_name:
+        return repo_path
+
+    manager = get_worktree_manager()
+    try:
+        worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
+        if worktree_path.exists():
+            logger.debug(
+                f"Mapped container path to worktree for {operation}",
+                container_path=repo_path,
+                worktree_path=str(worktree_path),
+                container_id=container_id,
+            )
+            return str(worktree_path)
+    except ValueError as e:
+        logger.warning(
+            f"Failed to map container path to worktree for {operation}",
+            error=str(e),
+            container_id=container_id,
+            repo_name=repo_name,
+        )
+
+    return repo_path
 
 
 @app.route("/api/v1/worktree/create", methods=["POST"])
