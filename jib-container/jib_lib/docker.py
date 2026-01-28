@@ -245,17 +245,6 @@ def create_dockerfile() -> None:
     else:
         warn("claude-rules directory not found, skipping agent rules")
 
-    # Copy .claude/hooks directory to build context
-    # Use atomic copy with retry to handle race conditions
-    hooks_src = script_dir / ".claude" / "hooks"
-    hooks_dest = Config.CONFIG_DIR / ".claude" / "hooks"
-    if hooks_src.exists():
-        # Ensure parent directory exists
-        hooks_dest.parent.mkdir(parents=True, exist_ok=True)
-        _copy_directory_atomic(hooks_src, hooks_dest, "Claude hooks", quiet)
-    else:
-        warn(".claude/hooks directory not found, skipping hooks")
-
     # Copy jib-runtime directories to build context
     # These provide container-resident executables and processors
     # The bin/ directory contains symlinks to executables (added to PATH in container)

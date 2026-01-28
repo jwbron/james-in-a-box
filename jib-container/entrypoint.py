@@ -535,7 +535,6 @@ def setup_claude(config: Config, logger: Logger) -> None:
     # Create directories
     config.claude_dir.mkdir(parents=True, exist_ok=True)
     (config.claude_dir / "commands").mkdir(exist_ok=True)
-    (config.claude_dir / "hooks").mkdir(exist_ok=True)
     (config.user_home / ".config" / "claude-code").mkdir(parents=True, exist_ok=True)
 
     # Check API key (only warn if using api_key auth method)
@@ -565,18 +564,6 @@ def setup_claude(config: Config, logger: Logger) -> None:
         if not config.quiet:
             for cmd in (config.claude_dir / "commands").glob("*.md"):
                 print(f"    @{cmd.stem}")
-
-    # Copy custom hooks
-    hooks_src = Path("/opt/claude-hooks")
-    if hooks_src.exists():
-        for hook in hooks_src.glob("*.sh"):
-            dest = config.claude_dir / "hooks" / hook.name
-            dest.write_text(hook.read_text())
-            dest.chmod(0o755)
-        logger.success("Custom hooks installed:")
-        if not config.quiet:
-            for hook in (config.claude_dir / "hooks").glob("*.sh"):
-                print(f"    {hook.name}")
 
     # Create settings.json
     settings = {
