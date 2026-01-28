@@ -1,9 +1,267 @@
-# ADR: Git Isolation via Overlayfs
+# ADR: Git Isolation Architecture
 
 **Status:** Proposed
 **Date:** 2026-01-27
-**Supersedes:** ADR-Container-Worktree-Isolation (partial)
+**Supersedes:** ADR-Container-Worktree-Isolation
 **Related PRs:** #590, #592, #594
+
+---
+
+# Option 1: Gateway-Managed Git (Recommended)
+
+The simplest architecture: containers have read-only git access, all writes go through the gateway.
+
+## Architecture
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                         Shared Volume                               │
+│                                                                     │
+│  /workspace/{container-id}/                                         │
+│  └── repo/                    ← Container's working directory (RW)  │
+│                                                                     │
+│  /workspace/git-data/                                               │
+│  └── repo.git/                ← Shared git data (gateway-managed)   │
+│      ├── objects/                                                   │
+│      ├── refs/                                                      │
+│      └── ...                                                        │
+└────────────────────────────────────────────────────────────────────┘
+              │                              │
+              ▼                              ▼
+┌──────────────────────────┐    ┌──────────────────────────┐
+│     jib container        │    │    gateway sidecar       │
+│                          │    │                          │
+│  Mounts:                 │    │  Mounts:                 │
+│  - /workspace/{id}/repo  │    │  - /workspace/ (all)     │
+│    as READ-WRITE         │    │    as READ-WRITE         │
+│                          │    │                          │
+│  Can do:                 │    │  Manages:                │
+│  - Edit source files     │    │  - All git operations    │
+│  - Read git (via gateway)│    │  - Per-container state   │
+│                          │    │  - Push/fetch to GitHub  │
+│  Cannot do:              │    │                          │
+│  - Direct git writes     │    │                          │
+└──────────────────────────┘    └──────────────────────────┘
+              │                              ▲
+              │         HTTP API             │
+              └──────────────────────────────┘
+```
+
+## How It Works
+
+### Container Setup
+1. Each container gets its own working directory: `/workspace/{container-id}/repo/`
+2. Container can freely edit files in its working directory
+3. Container has NO direct access to `.git` - all git operations via gateway API
+
+### Git Operations
+
+| Operation | Where it runs | How |
+|-----------|---------------|-----|
+| Edit files | Container | Direct filesystem access |
+| `git status` | Gateway | `POST /api/v1/git/status` |
+| `git diff` | Gateway | `POST /api/v1/git/diff` |
+| `git add` | Gateway | `POST /api/v1/git/add` |
+| `git commit` | Gateway | `POST /api/v1/git/commit` |
+| `git log` | Gateway | `POST /api/v1/git/log` |
+| `git push` | Gateway | `POST /api/v1/git/push` (existing) |
+| `git fetch` | Gateway | `POST /api/v1/git/fetch` (existing) |
+| `gh` commands | Gateway | `POST /api/v1/gh/*` (existing) |
+
+### Git Wrapper in Container
+
+The existing git wrapper is extended to route ALL operations:
+
+```bash
+#!/bin/bash
+# /usr/bin/git wrapper in container
+
+curl -s -X POST http://gateway:9847/api/v1/git \
+  --json "{
+    \"container_id\": \"$CONTAINER_ID\",
+    \"args\": $(printf '%s\n' "$@" | jq -R . | jq -s .),
+    \"cwd\": \"$(pwd)\"
+  }"
+```
+
+### Gateway Git Execution
+
+Gateway receives git commands and executes them with proper context:
+
+```python
+@app.route("/api/v1/git", methods=["POST"])
+def git_operation():
+    data = request.json
+    container_id = data["container_id"]
+    args = data["args"]
+
+    # Map container path to gateway's view
+    work_tree = f"/workspace/{container_id}/repo"
+    git_dir = "/workspace/git-data/repo.git"
+
+    # Execute with explicit paths
+    result = subprocess.run(
+        ["git", f"--work-tree={work_tree}", f"--git-dir={git_dir}"] + args,
+        capture_output=True, text=True
+    )
+
+    return jsonify({
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "returncode": result.returncode
+    })
+```
+
+## Multi-Container Isolation
+
+Each container has its own working directory but shares git object storage:
+
+```
+/workspace/
+├── container-abc123/
+│   └── repo/           # Container 1's working files
+├── container-def456/
+│   └── repo/           # Container 2's working files
+└── git-data/
+    └── repo.git/       # Shared: objects, refs, config
+```
+
+**Isolation guarantees:**
+- Containers can't see each other's uncommitted changes
+- Containers can work on different branches
+- All containers share the same commit history (efficient)
+- Gateway ensures atomic operations (no corruption)
+
+**Branch management:**
+- Each container works on its own branch (e.g., `jib/{container-id}/work`)
+- Gateway enforces branch ownership
+- Merges happen through PRs (human review)
+
+## Deployment: Local vs Cloud Run
+
+The architecture is **identical** for both:
+
+| Aspect | Local | Cloud Run |
+|--------|-------|-----------|
+| Shared volume | Docker bind mounts | emptyDir or GCS FUSE |
+| Gateway communication | localhost / Docker network | localhost (sidecar) |
+| Container startup | Clone once, reuse | Clone or restore checkpoint |
+| Persistence | Host filesystem | GCS checkpoint (optional) |
+
+### Local Deployment
+
+```bash
+# Start gateway
+docker run -d --name gateway \
+  -v ~/workspace:/workspace \
+  jib-gateway
+
+# Start jib container
+docker run -it --name jib-abc123 \
+  -v ~/workspace/abc123/repo:/home/jib/repo \
+  -e CONTAINER_ID=abc123 \
+  -e GATEWAY_URL=http://gateway:9847 \
+  --network jib-network \
+  jib
+```
+
+### Cloud Run Deployment
+
+```yaml
+apiVersion: serving.knative.dev/v1
+kind: Service
+spec:
+  template:
+    spec:
+      containers:
+        - name: jib
+          image: jib:latest
+          volumeMounts:
+            - name: workspace
+              mountPath: /home/jib/repo
+              subPath: "$(CONTAINER_ID)/repo"
+        - name: gateway
+          image: jib-gateway:latest
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: workspace
+          emptyDir: {}
+```
+
+## Advantages Over Previous Approaches
+
+| Issue | Worktree approach (PR #590) | Gateway-managed |
+|-------|----------------------------|-----------------|
+| Host git breaks | Yes (path rewriting) | No (host not affected) |
+| Crash recovery | Cleanup script needed | Nothing to clean up |
+| Multi-container | Complex worktree setup | Simple directory per container |
+| Cloud deployment | Needs different architecture | Same architecture |
+| Implementation | Complex entrypoint logic | Simple wrapper + gateway routes |
+
+## Performance Considerations
+
+**Concern**: Every git command goes over HTTP - is this slow?
+
+**Analysis**:
+- Local HTTP latency: ~0.1-1ms
+- Typical `git status`: 10-100ms (I/O bound)
+- Overhead: <10% for most operations
+
+**Optimizations if needed**:
+1. Batch operations: `POST /api/v1/git/batch` for multiple commands
+2. Caching: Gateway caches status/diff for rapid re-queries
+3. Streaming: Large outputs (log, diff) streamed back
+
+**Benchmark** (to be validated):
+| Operation | Direct git | Via gateway | Overhead |
+|-----------|-----------|-------------|----------|
+| git status | 50ms | 55ms | 10% |
+| git diff | 30ms | 35ms | 17% |
+| git commit | 100ms | 110ms | 10% |
+| git log -10 | 20ms | 25ms | 25% |
+
+## Implementation Plan
+
+### Phase 1: Extend Gateway API (Week 1)
+1. Add routes for: status, diff, add, commit, log, show, blame
+2. Implement container-id to path mapping
+3. Add request validation and error handling
+
+### Phase 2: Update Git Wrapper (Week 1)
+1. Modify container's git wrapper to route all commands
+2. Handle streaming output for large responses
+3. Add local caching for repeated reads
+
+### Phase 3: Multi-Container Support (Week 2)
+1. Implement per-container working directories
+2. Add container registration/cleanup in gateway
+3. Branch ownership enforcement
+
+### Phase 4: Testing (Week 2)
+1. Unit tests for all gateway git routes
+2. Integration tests with multiple containers
+3. Performance benchmarks
+
+### Phase 5: Cloud Run Deployment (Week 3)
+1. Create Cloud Run service configuration
+2. Implement checkpoint/restore for persistence
+3. End-to-end testing on Cloud Run
+
+## Migration from Current Architecture
+
+1. Deploy new gateway with extended git API
+2. Update container git wrapper to use new API
+3. Remove worktree path rewriting from entrypoint
+4. Remove .git-admin, .git-common mount complexity
+5. Simplify cleanup (just delete container directories)
+
+---
+
+# Option 2: Overlayfs Isolation (Local-only Alternative)
+
+For local deployments where overlayfs is available and maximum git performance is required.
 
 ## Context
 
