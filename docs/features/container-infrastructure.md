@@ -60,14 +60,6 @@ The jib container provides a sandboxed development environment:
 - **Feature Extraction Service** (`jib-container/jib-tasks/analysis/analysis-processor.py`)
 - **Container-Based PR Creation** (`jib-container/jib-tasks/analysis/analysis-processor.py`)
 
-### Session End Hook
-
-**Purpose**: Claude Code session hook that automatically executes the Beads session-ending protocol when sessions end. Warns about in-progress tasks, shows open tasks, and syncs the Beads database.
-
-**Location**:
-- `jib-container/.claude/hooks/session-end.sh`
-- `jib-container/.claude/README.md`
-
 ### Container Directory Communication System
 
 **Purpose**: Shared directory structure enabling communication between container and host including notifications (agent -> human), incoming (human -> agent), responses, and context directories.
@@ -87,7 +79,6 @@ The jib container provides a sandboxed development environment:
 | JIB Container Management System | `bin/jib` |
 | Docker Development Environment Setup | `bin/docker-setup.py` |
 | Analysis Task Processor | `jib-container/jib-tasks/analysis/analysis-processor.py` |
-| Session End Hook | `jib-container/.claude/hooks/session-end.sh` |
 | Container Directory Communication System | `jib-container/README.md` |
 
 ---

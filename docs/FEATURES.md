@@ -195,36 +195,31 @@ The core 'jib' command provides the primary interface for starting, managing, an
 
 Automates complete installation of development tools in the Docker container, including Python 3.11, Node.js 20.x, Go, Java 11, PostgreSQL, Redis, and various development utilities with cross-platform support for Ubuntu and Fedora.
 
-### 19. Session End Hook
-**Location:** `jib-container/.claude/hooks/session-end.sh`, `jib-container/.claude/README.md`
-
-Claude Code session hook that automatically executes the Beads session-ending protocol when sessions end. Warns about in-progress tasks, shows open tasks, and syncs the Beads database.
-
-### 20. Container Directory Communication System
+### 19. Container Directory Communication System
 **Location:** `jib-container/README.md`
 
 Shared directory structure enabling communication between container and host including notifications (agent -> human), incoming (human -> agent), responses, and context directories.
 
 ## Utilities
 
-### 21. Documentation Search Utility
+### 20. Documentation Search Utility
 **Location:** `host-services/sync/context-sync/utils/search.py`
 
 Provides local full-text search across all synced documentation with context and relevance ranking. Supports filtering by space, case-sensitive search, and statistics display.
 
-### 22. Sync Maintenance Tools
+### 21. Sync Maintenance Tools
 **Location:** `host-services/sync/context-sync/utils/maintenance.py`
 
 Provides sync status monitoring showing statistics across spaces and pages, and cleanup utilities to find and remove orphaned files.
 
-### 23. Test Discovery Tool
+### 22. Test Discovery Tool
 **Location:** `jib-container/scripts/discover-tests.py`, `jib-container/jib-tools/discover-tests.py`
 
 Dynamically discovers test configurations and frameworks in any codebase. Supports Python (pytest/unittest), JavaScript (Jest/Mocha/Vitest/Playwright), Go, and Java (Gradle/Maven). Provides recommended test commands.
 
 ## Security Features
 
-### 24. GitHub Token Refresher Service
+### 23. GitHub Token Refresher Service
 **Location:**
 - `host-services/utilities/github-token-refresher/github-token-refresher.py`
 - `host-services/utilities/github-token-refresher/github-token-refresher.service`
@@ -234,7 +229,7 @@ Systemd daemon that automatically refreshes GitHub App installation tokens every
 
 ## Configuration
 
-### 25. Master Setup System
+### 24. Master Setup System
 **Location:** `setup.sh`
 
 Comprehensive installation and configuration script for all james-in-a-box host components. Handles initial setup, updates, and force reinstalls with interactive prompts, dependency checking, service management, and configuration validation.
