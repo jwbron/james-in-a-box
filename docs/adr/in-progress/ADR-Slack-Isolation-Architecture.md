@@ -928,128 +928,1644 @@ Rate limit state is stored in Redis (or in-memory with persistence) to survive g
 
 ## Implementation Plan
 
+This section provides detailed, actionable implementation plans for each phase. The plans are designed to be self-contained—an implementer should be able to follow them without referring to the rest of the ADR for basic implementation decisions.
+
+---
+
 ### Phase 1: Gateway Slack API (Foundation)
 
-**Goal:** Add Slack API endpoints to existing gateway sidecar
+**Goal:** Add Slack API endpoints to existing gateway sidecar, running in parallel with the existing file-based system.
 
-**Changes:**
-1. Add Slack SDK to gateway dependencies
-2. Implement `/api/slack/send` endpoint
-3. Implement `/api/slack/messages` endpoint
-4. Add basic audit logging for Slack operations
-5. Migrate slack-receiver Socket Mode logic to gateway
+**Duration estimate:** 1 sprint (implementation) + 1 sprint (testing and stabilization)
 
-**Container changes:** None (still uses files during transition)
+#### 1.1 Gateway Dependencies
 
-**Deliverables:**
-- Gateway Slack API functional
-- Can receive and send messages via API
-- Audit logs for API operations
+**File:** `gateway-sidecar/requirements.txt`
+
+Add Slack SDK and SQLite dependencies:
+
+```
+# Existing dependencies
+flask>=3.0.0
+waitress>=3.0.0
+pyyaml>=6.0.1
+requests>=2.31.0
+
+# New dependencies for Slack integration
+slack-sdk>=3.27.0      # Slack SDK with Socket Mode support
+slack-bolt>=1.18.0     # Slack Bolt framework for event handling
+jsonschema>=4.21.0     # Schema validation for messages
+```
+
+#### 1.2 SQLite Database Setup
+
+**New file:** `gateway-sidecar/slack_db.py`
+
+Implements the message queue schema from the High-Level Design section:
+
+```python
+"""SQLite database for Slack message queue and thread mappings."""
+
+import sqlite3
+import os
+from contextlib import contextmanager
+from datetime import datetime
+from typing import Optional, List
+from dataclasses import dataclass
+
+DB_PATH = os.environ.get("SLACK_DB_PATH", "/var/lib/gateway/slack.db")
+
+@dataclass
+class Message:
+    id: str
+    task_id: str
+    thread_ts: str
+    user_id: str
+    user_name: str
+    text: str
+    received_at: datetime
+    delivered_at: Optional[datetime]
+    acked_at: Optional[datetime]
+    status: str  # pending, delivered, acked, failed
+    retry_count: int
+
+@dataclass
+class ThreadMapping:
+    task_id: str
+    thread_ts: str
+    status: str  # active, closed, archived
+    created_at: datetime
+    updated_at: datetime
+    created_by: str
+
+def init_db():
+    """Initialize database with schema."""
+    with get_connection() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                task_id TEXT,
+                thread_ts TEXT,
+                user_id TEXT,
+                user_name TEXT,
+                text TEXT,
+                received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                delivered_at TIMESTAMP,
+                acked_at TIMESTAMP,
+                status TEXT CHECK(status IN ('pending', 'delivered', 'acked', 'failed')) DEFAULT 'pending',
+                retry_count INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS thread_mappings (
+                task_id TEXT PRIMARY KEY,
+                thread_ts TEXT NOT NULL UNIQUE,
+                status TEXT CHECK(status IN ('active', 'closed', 'archived')) DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS dead_letter_queue (
+                id TEXT PRIMARY KEY,
+                original_message_id TEXT REFERENCES messages(id),
+                task_id TEXT,
+                failure_reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_messages_task_status ON messages(task_id, status);
+            CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_ts);
+            CREATE INDEX IF NOT EXISTS idx_thread_mappings_thread ON thread_mappings(thread_ts);
+
+            -- Immutability triggers for thread_mappings
+            CREATE TRIGGER IF NOT EXISTS prevent_thread_ts_update
+                BEFORE UPDATE OF thread_ts ON thread_mappings
+                BEGIN
+                    SELECT RAISE(ABORT, 'thread_ts is immutable');
+                END;
+
+            CREATE TRIGGER IF NOT EXISTS prevent_task_id_update
+                BEFORE UPDATE OF task_id ON thread_mappings
+                BEGIN
+                    SELECT RAISE(ABORT, 'task_id is immutable');
+                END;
+        """)
+        conn.execute("PRAGMA journal_mode=WAL")  # Enable WAL mode
+
+@contextmanager
+def get_connection():
+    """Get a database connection with proper error handling."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+```
+
+#### 1.3 Slack Client Module
+
+**New file:** `gateway-sidecar/slack_client.py`
+
+Wraps the Slack SDK with credential management and error handling:
+
+```python
+"""Slack API client for gateway operations."""
+
+import os
+import logging
+from typing import Optional, Dict, Any
+from slack_sdk import WebClient
+from slack_sdk.socket_mode import SocketModeClient
+from slack_sdk.socket_mode.request import SocketModeRequest
+from slack_sdk.socket_mode.response import SocketModeResponse
+from slack_sdk.errors import SlackApiError
+
+log = logging.getLogger(__name__)
+
+class SlackClient:
+    """Gateway Slack client with credential isolation."""
+
+    def __init__(self):
+        self.bot_token = self._load_token("SLACK_TOKEN", "/secrets/slack-bot-token")
+        self.app_token = self._load_token("SLACK_APP_TOKEN", "/secrets/slack-app-token")
+        self.web_client = WebClient(token=self.bot_token)
+        self.socket_client: Optional[SocketModeClient] = None
+
+    def _load_token(self, env_var: str, file_path: str) -> str:
+        """Load token from environment or file."""
+        token = os.environ.get(env_var)
+        if token:
+            return token
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                return f.read().strip()
+        raise ValueError(f"Slack token not found: {env_var} or {file_path}")
+
+    def send_message(
+        self,
+        channel: str,
+        text: str,
+        thread_ts: Optional[str] = None,
+        mrkdwn: bool = True
+    ) -> Dict[str, Any]:
+        """Send a message to Slack."""
+        try:
+            response = self.web_client.chat_postMessage(
+                channel=channel,
+                text=text,
+                thread_ts=thread_ts,
+                mrkdwn=mrkdwn
+            )
+            return {
+                "success": True,
+                "message_ts": response["ts"],
+                "thread_ts": response.get("thread_ts", thread_ts),
+                "channel": response["channel"]
+            }
+        except SlackApiError as e:
+            log.error(f"Slack API error: {e.response['error']}")
+            return {
+                "success": False,
+                "error": e.response["error"]
+            }
+
+    def fetch_thread_messages(self, channel: str, thread_ts: str) -> list:
+        """Fetch all messages in a thread."""
+        try:
+            response = self.web_client.conversations_replies(
+                channel=channel,
+                ts=thread_ts
+            )
+            return response.get("messages", [])
+        except SlackApiError as e:
+            log.error(f"Failed to fetch thread: {e.response['error']}")
+            return []
+
+    def start_socket_mode(self, message_handler):
+        """Start Socket Mode client for receiving messages."""
+        if not self.app_token:
+            raise ValueError("Socket Mode requires SLACK_APP_TOKEN")
+
+        self.socket_client = SocketModeClient(
+            app_token=self.app_token,
+            web_client=self.web_client
+        )
+        self.socket_client.socket_mode_request_listeners.append(
+            lambda client, req: self._handle_socket_request(req, message_handler)
+        )
+        self.socket_client.connect()
+        log.info("Socket Mode client connected")
+
+    def _handle_socket_request(self, req: SocketModeRequest, handler):
+        """Handle incoming Socket Mode requests."""
+        if req.type == "events_api":
+            event = req.payload.get("event", {})
+            if event.get("type") == "app_mention" or event.get("type") == "message":
+                handler(event)
+        # Always acknowledge the request
+        return SocketModeResponse(envelope_id=req.envelope_id)
+```
+
+#### 1.4 Gateway API Endpoints
+
+**File:** `gateway-sidecar/gateway.py`
+
+Add new Slack API endpoints alongside existing git endpoints:
+
+```python
+# Add to existing gateway.py imports
+from slack_client import SlackClient
+from slack_db import init_db, get_connection, Message, ThreadMapping
+from jsonschema import validate, ValidationError
+import uuid
+
+# Initialize Slack components at startup
+slack_client = SlackClient()
+init_db()
+
+# ==================== SLACK ENDPOINTS ====================
+
+@app.route("/api/v1/slack/send", methods=["POST"])
+@require_auth
+def slack_send():
+    """Send a message to Slack."""
+    data = request.get_json()
+
+    # Validate request schema
+    try:
+        validate(data, SLACK_SEND_SCHEMA)
+    except ValidationError as e:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": str(e)}}), 400
+
+    task_id = data["task_id"]
+    text = data["text"]
+    thread_ts = data.get("thread_ts")
+
+    # Look up thread mapping if not provided
+    if not thread_ts:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT thread_ts FROM thread_mappings WHERE task_id = ?",
+                (task_id,)
+            ).fetchone()
+            if row:
+                thread_ts = row["thread_ts"]
+
+    # Get channel from config
+    channel = app.config.get("SLACK_CHANNEL")
+
+    # Send message
+    result = slack_client.send_message(
+        channel=channel,
+        text=text,
+        thread_ts=thread_ts,
+        mrkdwn=data.get("markdown", True)
+    )
+
+    # Audit log
+    audit_log(
+        event_type="slack_operation",
+        operation="send_message",
+        task_id=task_id,
+        thread_ts=thread_ts,
+        success=result["success"]
+    )
+
+    if result["success"]:
+        return jsonify(result), 200
+    else:
+        return jsonify({"error": {"code": "SLACK_API_ERROR", "message": result["error"]}}), 502
+
+
+@app.route("/api/v1/slack/messages", methods=["GET"])
+@require_auth
+def slack_get_messages():
+    """Get messages for a task."""
+    task_id = request.args.get("task_id")
+    if not task_id:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "task_id required"}}), 400
+
+    include_thread = request.args.get("include_thread", "false").lower() == "true"
+
+    with get_connection() as conn:
+        # Get messages for this task
+        rows = conn.execute(
+            """SELECT * FROM messages
+               WHERE task_id = ? AND status IN ('pending', 'delivered')
+               ORDER BY received_at ASC""",
+            (task_id,)
+        ).fetchall()
+
+        messages = [dict(row) for row in rows]
+
+        # Get thread context
+        mapping_row = conn.execute(
+            "SELECT * FROM thread_mappings WHERE task_id = ?",
+            (task_id,)
+        ).fetchone()
+
+    task_context = None
+    if mapping_row:
+        task_context = {
+            "task_id": task_id,
+            "thread_ts": mapping_row["thread_ts"],
+            "status": mapping_row["status"]
+        }
+
+    # Optionally fetch full thread history from Slack
+    if include_thread and task_context:
+        channel = app.config.get("SLACK_CHANNEL")
+        thread_messages = slack_client.fetch_thread_messages(
+            channel, task_context["thread_ts"]
+        )
+        # Merge with local messages
+        # (implementation details omitted for brevity)
+
+    audit_log(
+        event_type="slack_operation",
+        operation="get_messages",
+        task_id=task_id,
+        message_count=len(messages)
+    )
+
+    return jsonify({
+        "messages": messages,
+        "task_context": task_context
+    }), 200
+
+
+@app.route("/api/v1/slack/ack", methods=["POST"])
+@require_auth
+def slack_ack_message():
+    """Acknowledge message receipt."""
+    data = request.get_json()
+    message_id = data.get("message_id")
+    task_id = data.get("task_id")
+
+    if not message_id or not task_id:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "message_id and task_id required"}}), 400
+
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE messages SET status = 'acked', acked_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND task_id = ?""",
+            (message_id, task_id)
+        )
+
+    audit_log(
+        event_type="slack_operation",
+        operation="ack_message",
+        task_id=task_id,
+        message_id=message_id
+    )
+
+    return jsonify({"success": True}), 200
+
+
+# Schema definitions
+SLACK_SEND_SCHEMA = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": ["task_id", "text"],
+    "properties": {
+        "task_id": {"type": "string", "pattern": "^task-[0-9]{8}-[0-9]{6}$"},
+        "thread_ts": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "markdown": {"type": "boolean", "default": True}
+    },
+    "additionalProperties": False
+}
+```
+
+#### 1.5 Socket Mode Integration
+
+**New file:** `gateway-sidecar/slack_receiver.py`
+
+Handles incoming Slack messages via Socket Mode:
+
+```python
+"""Socket Mode message receiver for gateway."""
+
+import logging
+import uuid
+from datetime import datetime
+from slack_client import SlackClient
+from slack_db import get_connection
+
+log = logging.getLogger(__name__)
+
+class SlackReceiver:
+    """Receives messages from Slack and queues them for processing."""
+
+    def __init__(self, slack_client: SlackClient, config: dict):
+        self.slack_client = slack_client
+        self.config = config
+        self.allowed_channel = config.get("SLACK_CHANNEL")
+
+    def start(self):
+        """Start receiving messages."""
+        self.slack_client.start_socket_mode(self.handle_message)
+        log.info("Slack receiver started")
+
+    def handle_message(self, event: dict):
+        """Handle incoming Slack message event."""
+        # Extract message details
+        channel = event.get("channel")
+        text = event.get("text", "")
+        user_id = event.get("user")
+        thread_ts = event.get("thread_ts") or event.get("ts")
+        message_ts = event.get("ts")
+
+        # Validate channel
+        if channel != self.allowed_channel:
+            log.debug(f"Ignoring message from channel {channel}")
+            return
+
+        # Skip bot messages
+        if event.get("bot_id"):
+            return
+
+        # Generate task_id for new threads
+        task_id = self._get_or_create_task_id(thread_ts)
+
+        # Store message in queue
+        message_id = f"msg-{uuid.uuid4().hex[:12]}"
+        with get_connection() as conn:
+            conn.execute(
+                """INSERT INTO messages (id, task_id, thread_ts, user_id, user_name, text, status)
+                   VALUES (?, ?, ?, ?, ?, ?, 'pending')""",
+                (message_id, task_id, thread_ts, user_id, "", text)
+            )
+
+        log.info(f"Queued message {message_id} for task {task_id}")
+
+    def _get_or_create_task_id(self, thread_ts: str) -> str:
+        """Get existing task_id for thread or create new one."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT task_id FROM thread_mappings WHERE thread_ts = ?",
+                (thread_ts,)
+            ).fetchone()
+
+            if row:
+                return row["task_id"]
+
+            # Create new task_id
+            task_id = f"task-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            conn.execute(
+                """INSERT INTO thread_mappings (task_id, thread_ts, created_by)
+                   VALUES (?, ?, 'gateway')""",
+                (task_id, thread_ts)
+            )
+            log.info(f"Created new task mapping: {task_id} -> {thread_ts}")
+            return task_id
+```
+
+#### 1.6 Gateway Entrypoint Update
+
+**File:** `gateway-sidecar/entrypoint.sh`
+
+Update to start Slack receiver alongside the API server:
+
+```bash
+#!/bin/bash
+set -e
+
+# Initialize database
+python -c "from slack_db import init_db; init_db()"
+
+# Start Slack Socket Mode receiver in background (if tokens available)
+if [ -n "$SLACK_APP_TOKEN" ]; then
+    echo "Starting Slack Socket Mode receiver..."
+    python -c "
+from slack_client import SlackClient
+from slack_receiver import SlackReceiver
+import os
+client = SlackClient()
+receiver = SlackReceiver(client, {'SLACK_CHANNEL': os.environ.get('SLACK_CHANNEL')})
+receiver.start()
+" &
+    SLACK_PID=$!
+    echo "Slack receiver started (PID: $SLACK_PID)"
+fi
+
+# Start gateway API server
+echo "Starting gateway API server..."
+exec python -m waitress --port=9847 --host=0.0.0.0 gateway:app
+```
+
+#### 1.7 Configuration Update
+
+**File:** `gateway-sidecar/Dockerfile`
+
+Add Slack-related mounts and environment:
+
+```dockerfile
+# Add to existing Dockerfile
+ENV SLACK_DB_PATH=/var/lib/gateway/slack.db
+
+# Create directory for SQLite database
+RUN mkdir -p /var/lib/gateway && chown 1000:1000 /var/lib/gateway
+
+# Copy schema files
+COPY schemas/ /app/schemas/
+```
+
+**File:** `gateway-sidecar/start-gateway.sh`
+
+Add Slack token mounts:
+
+```bash
+# Add to mount generation
+if [ -f "$HOME/.config/jib/slack-tokens/bot-token" ]; then
+    MOUNT_ARGS+=("-v" "$HOME/.config/jib/slack-tokens:/secrets/slack:ro")
+fi
+```
+
+#### 1.8 Testing Phase 1
+
+**New file:** `gateway-sidecar/tests/test_slack_api.py`
+
+```python
+"""Tests for Slack gateway API endpoints."""
+
+import pytest
+from unittest.mock import Mock, patch
+
+@pytest.fixture
+def mock_slack_client():
+    with patch("gateway.slack_client") as mock:
+        mock.send_message.return_value = {
+            "success": True,
+            "message_ts": "1234567890.123456",
+            "thread_ts": "1234567890.000000"
+        }
+        yield mock
+
+def test_slack_send_success(client, mock_slack_client):
+    """Test successful message send."""
+    response = client.post(
+        "/api/v1/slack/send",
+        json={
+            "task_id": "task-20260128-120000",
+            "text": "Test message"
+        },
+        headers={"Authorization": f"Bearer {TEST_SECRET}"}
+    )
+    assert response.status_code == 200
+    assert response.json["success"] is True
+
+def test_slack_send_validation_error(client):
+    """Test schema validation."""
+    response = client.post(
+        "/api/v1/slack/send",
+        json={"text": "Missing task_id"},
+        headers={"Authorization": f"Bearer {TEST_SECRET}"}
+    )
+    assert response.status_code == 400
+    assert response.json["error"]["code"] == "VALIDATION_ERROR"
+
+def test_slack_get_messages(client, mock_db):
+    """Test message retrieval."""
+    # Insert test message
+    mock_db.execute(
+        "INSERT INTO messages (id, task_id, thread_ts, text, status) VALUES (?, ?, ?, ?, ?)",
+        ("msg-1", "task-20260128-120000", "1234.5678", "Test", "pending")
+    )
+
+    response = client.get(
+        "/api/v1/slack/messages?task_id=task-20260128-120000",
+        headers={"Authorization": f"Bearer {TEST_SECRET}"}
+    )
+    assert response.status_code == 200
+    assert len(response.json["messages"]) == 1
+```
+
+**Integration test script:** `gateway-sidecar/tests/test_slack_integration.sh`
+
+```bash
+#!/bin/bash
+# Integration tests for Slack gateway API
+
+GATEWAY_URL="${GATEWAY_URL:-http://localhost:9847}"
+AUTH_HEADER="Authorization: Bearer $GATEWAY_SECRET"
+
+echo "=== Phase 1 Integration Tests ==="
+
+# Test 1: Health check
+echo "Test 1: Health check..."
+curl -sf "$GATEWAY_URL/api/v1/health" || { echo "FAIL: Health check"; exit 1; }
+echo "PASS"
+
+# Test 2: Send message (requires valid Slack token)
+echo "Test 2: Send message..."
+RESPONSE=$(curl -sf -X POST "$GATEWAY_URL/api/v1/slack/send" \
+    -H "$AUTH_HEADER" \
+    -H "Content-Type: application/json" \
+    -d '{"task_id": "task-20260128-120000", "text": "Integration test message"}')
+if echo "$RESPONSE" | jq -e '.success == true' > /dev/null; then
+    echo "PASS"
+else
+    echo "FAIL: $RESPONSE"
+    exit 1
+fi
+
+# Test 3: Get messages
+echo "Test 3: Get messages..."
+RESPONSE=$(curl -sf "$GATEWAY_URL/api/v1/slack/messages?task_id=task-20260128-120000" \
+    -H "$AUTH_HEADER")
+if echo "$RESPONSE" | jq -e '.messages' > /dev/null; then
+    echo "PASS"
+else
+    echo "FAIL: $RESPONSE"
+    exit 1
+fi
+
+echo "=== All Phase 1 tests passed ==="
+```
+
+#### 1.9 Phase 1 Deliverables Checklist
+
+- [ ] `gateway-sidecar/slack_db.py` - SQLite database module
+- [ ] `gateway-sidecar/slack_client.py` - Slack SDK wrapper
+- [ ] `gateway-sidecar/slack_receiver.py` - Socket Mode handler
+- [ ] `gateway-sidecar/gateway.py` - Add Slack endpoints
+- [ ] `gateway-sidecar/schemas/` - JSON schemas for validation
+- [ ] `gateway-sidecar/requirements.txt` - Add Slack SDK
+- [ ] `gateway-sidecar/Dockerfile` - Add SQLite path, schemas
+- [ ] `gateway-sidecar/entrypoint.sh` - Start Slack receiver
+- [ ] `gateway-sidecar/start-gateway.sh` - Mount Slack tokens
+- [ ] `gateway-sidecar/tests/test_slack_api.py` - Unit tests
+- [ ] `gateway-sidecar/tests/test_slack_integration.sh` - Integration tests
+- [ ] Verify existing file-based system continues working unchanged
+
+---
 
 ### Phase 2: Notification Library Migration
 
-**Goal:** Update container to send notifications via gateway API
+**Goal:** Update container-side code to use gateway API for sending notifications, with file-based fallback.
 
-**Changes:**
-1. Add `GatewaySlackClient` to notification library
-2. Update `SlackNotificationService` to use gateway API
-3. Add fallback to file-based method during transition
-4. Update incoming-processor to call gateway API
+**Duration estimate:** 1 sprint
 
-**Deprecations:**
-- File-based notification writing (fallback only)
+**Prerequisite:** Phase 1 complete and stable
 
-**Deliverables:**
-- Container sends notifications via gateway
-- Container fetches messages via gateway
-- Files used only as fallback
+#### 2.1 Gateway Slack Client for Container
+
+**New file:** `shared/notifications/gateway_client.py`
+
+Client library for containers to communicate with gateway Slack API:
+
+```python
+"""Gateway Slack client for container use."""
+
+import os
+import logging
+import requests
+from typing import Optional, Dict, Any
+from dataclasses import dataclass
+
+log = logging.getLogger(__name__)
+
+GATEWAY_URL = os.environ.get("JIB_GATEWAY_URL", "http://jib-gateway:9847")
+
+@dataclass
+class GatewayResponse:
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+class GatewaySlackClient:
+    """Client for gateway Slack API."""
+
+    def __init__(self):
+        self.gateway_url = GATEWAY_URL
+        self.secret = self._load_secret()
+        self.session = requests.Session()
+        self.session.headers["Authorization"] = f"Bearer {self.secret}"
+        self.session.headers["Content-Type"] = "application/json"
+
+    def _load_secret(self) -> str:
+        """Load gateway shared secret."""
+        secret_path = os.environ.get(
+            "GATEWAY_SECRET_PATH",
+            os.path.expanduser("~/.jib-sharing/.gateway-secret")
+        )
+        if os.path.exists(secret_path):
+            with open(secret_path, "r") as f:
+                return f.read().strip()
+        raise ValueError(f"Gateway secret not found at {secret_path}")
+
+    def send_message(
+        self,
+        task_id: str,
+        text: str,
+        thread_ts: Optional[str] = None,
+        markdown: bool = True
+    ) -> GatewayResponse:
+        """Send a message via gateway."""
+        try:
+            response = self.session.post(
+                f"{self.gateway_url}/api/v1/slack/send",
+                json={
+                    "task_id": task_id,
+                    "text": text,
+                    "thread_ts": thread_ts,
+                    "markdown": markdown
+                },
+                timeout=30
+            )
+            if response.status_code == 200:
+                return GatewayResponse(success=True, data=response.json())
+            else:
+                return GatewayResponse(
+                    success=False,
+                    error=response.json().get("error", {}).get("message", "Unknown error")
+                )
+        except requests.RequestException as e:
+            log.error(f"Gateway request failed: {e}")
+            return GatewayResponse(success=False, error=str(e))
+
+    def get_messages(
+        self,
+        task_id: str,
+        include_thread: bool = False
+    ) -> GatewayResponse:
+        """Get messages for a task from gateway."""
+        try:
+            response = self.session.get(
+                f"{self.gateway_url}/api/v1/slack/messages",
+                params={
+                    "task_id": task_id,
+                    "include_thread": str(include_thread).lower()
+                },
+                timeout=30
+            )
+            if response.status_code == 200:
+                return GatewayResponse(success=True, data=response.json())
+            else:
+                return GatewayResponse(
+                    success=False,
+                    error=response.json().get("error", {}).get("message", "Unknown error")
+                )
+        except requests.RequestException as e:
+            log.error(f"Gateway request failed: {e}")
+            return GatewayResponse(success=False, error=str(e))
+
+    def ack_message(self, task_id: str, message_id: str) -> GatewayResponse:
+        """Acknowledge message receipt."""
+        try:
+            response = self.session.post(
+                f"{self.gateway_url}/api/v1/slack/ack",
+                json={"task_id": task_id, "message_id": message_id},
+                timeout=10
+            )
+            return GatewayResponse(success=response.status_code == 200)
+        except requests.RequestException as e:
+            return GatewayResponse(success=False, error=str(e))
+
+    def is_available(self) -> bool:
+        """Check if gateway is available."""
+        try:
+            response = self.session.get(
+                f"{self.gateway_url}/api/v1/health",
+                timeout=5
+            )
+            return response.status_code == 200
+        except requests.RequestException:
+            return False
+```
+
+#### 2.2 Update SlackNotificationService
+
+**File:** `shared/notifications/slack.py`
+
+Update to use gateway API with file-based fallback:
+
+```python
+"""Slack notification service with gateway API support."""
+
+import os
+import logging
+from typing import Optional
+from datetime import datetime
+
+from .gateway_client import GatewaySlackClient, GatewayResponse
+from .types import NotificationMessage, NotificationContext, NotificationResult
+
+log = logging.getLogger(__name__)
+
+class SlackNotificationService:
+    """Slack notification service with gateway fallback."""
+
+    def __init__(self, use_gateway: bool = True):
+        self.use_gateway = use_gateway and self._gateway_available()
+        self.gateway_client = GatewaySlackClient() if self.use_gateway else None
+        self.notifications_dir = os.path.expanduser("~/sharing/notifications")
+
+    def _gateway_available(self) -> bool:
+        """Check if gateway is available."""
+        try:
+            client = GatewaySlackClient()
+            return client.is_available()
+        except Exception as e:
+            log.warning(f"Gateway not available: {e}")
+            return False
+
+    def notify(
+        self,
+        subject: str,
+        body: str,
+        context: Optional[NotificationContext] = None
+    ) -> NotificationResult:
+        """Send a notification."""
+        task_id = context.task_id if context else self._generate_task_id()
+        thread_ts = context.thread_ts if context else None
+
+        # Format message
+        text = f"# {subject}\n\n{body}"
+
+        # Try gateway first
+        if self.use_gateway and self.gateway_client:
+            result = self.gateway_client.send_message(
+                task_id=task_id,
+                text=text,
+                thread_ts=thread_ts
+            )
+            if result.success:
+                log.info(f"Notification sent via gateway: {task_id}")
+                return NotificationResult(
+                    success=True,
+                    thread_id=result.data.get("thread_ts"),
+                    message_ts=result.data.get("message_ts")
+                )
+            else:
+                log.warning(f"Gateway send failed, falling back to file: {result.error}")
+
+        # Fallback to file-based
+        return self._write_notification_file(task_id, thread_ts, text)
+
+    def _write_notification_file(
+        self,
+        task_id: str,
+        thread_ts: Optional[str],
+        text: str
+    ) -> NotificationResult:
+        """Write notification to file (fallback method)."""
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"{timestamp}-notification.md"
+        filepath = os.path.join(self.notifications_dir, filename)
+
+        # Build frontmatter
+        frontmatter = f"---\ntask_id: \"{task_id}\"\n"
+        if thread_ts:
+            frontmatter += f"thread_ts: \"{thread_ts}\"\n"
+        frontmatter += "---\n\n"
+
+        content = frontmatter + text
+
+        os.makedirs(self.notifications_dir, exist_ok=True)
+        with open(filepath, "w") as f:
+            f.write(content)
+
+        log.info(f"Notification written to file: {filepath}")
+        return NotificationResult(success=True, file_path=filepath)
+
+    def _generate_task_id(self) -> str:
+        """Generate a new task_id."""
+        return f"task-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+```
+
+#### 2.3 Update incoming-processor
+
+**File:** `jib-container/jib-tasks/slack/incoming-processor.py`
+
+Update to fetch messages from gateway:
+
+```python
+# Add to imports
+from shared.notifications.gateway_client import GatewaySlackClient
+
+# Update process_task function to check gateway first
+def get_task_messages(task_id: str, thread_ts: str) -> list:
+    """Get messages for task, preferring gateway API."""
+    # Try gateway first
+    try:
+        client = GatewaySlackClient()
+        if client.is_available():
+            result = client.get_messages(task_id, include_thread=True)
+            if result.success:
+                return result.data.get("messages", [])
+    except Exception as e:
+        log.warning(f"Gateway unavailable, using file: {e}")
+
+    # Fallback to file-based
+    return get_messages_from_files(task_id, thread_ts)
+
+# Update message acknowledgment
+def ack_message(task_id: str, message_id: str):
+    """Acknowledge message processing."""
+    try:
+        client = GatewaySlackClient()
+        if client.is_available():
+            client.ack_message(task_id, message_id)
+    except Exception:
+        pass  # Acknowledgment is best-effort
+```
+
+#### 2.4 Testing Phase 2
+
+**New file:** `shared/notifications/tests/test_gateway_client.py`
+
+```python
+"""Tests for gateway Slack client."""
+
+import pytest
+from unittest.mock import Mock, patch
+
+from notifications.gateway_client import GatewaySlackClient, GatewayResponse
+
+@pytest.fixture
+def mock_requests():
+    with patch("notifications.gateway_client.requests") as mock:
+        yield mock
+
+def test_send_message_success(mock_requests):
+    """Test successful message send via gateway."""
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "success": True,
+        "message_ts": "1234567890.123456"
+    }
+    mock_requests.Session.return_value.post.return_value = mock_response
+
+    client = GatewaySlackClient()
+    result = client.send_message(
+        task_id="task-20260128-120000",
+        text="Test message"
+    )
+
+    assert result.success is True
+    assert result.data["message_ts"] == "1234567890.123456"
+
+def test_send_message_fallback_on_error(mock_requests):
+    """Test that errors are properly reported."""
+    mock_requests.Session.return_value.post.side_effect = Exception("Connection refused")
+
+    client = GatewaySlackClient()
+    result = client.send_message(
+        task_id="task-20260128-120000",
+        text="Test message"
+    )
+
+    assert result.success is False
+    assert "Connection refused" in result.error
+```
+
+#### 2.5 Feature Flag
+
+**File:** `shared/jib_config/configs/slack.py`
+
+Add feature flag for gateway mode:
+
+```python
+# Add to slack configuration
+SLACK_USE_GATEWAY = os.environ.get("SLACK_USE_GATEWAY", "true").lower() == "true"
+```
+
+#### 2.6 Phase 2 Deliverables Checklist
+
+- [ ] `shared/notifications/gateway_client.py` - Gateway client library
+- [ ] `shared/notifications/slack.py` - Update with gateway support
+- [ ] `jib-container/jib-tasks/slack/incoming-processor.py` - Update message fetching
+- [ ] `shared/jib_config/configs/slack.py` - Add feature flag
+- [ ] `shared/notifications/tests/test_gateway_client.py` - Unit tests
+- [ ] Integration test: Send notification via gateway
+- [ ] Integration test: Fallback to file when gateway unavailable
+- [ ] Documentation: Update README with new configuration options
+
+---
 
 ### Phase 3: File Access Removal
 
-**Goal:** Remove direct file access from container
+**Goal:** Remove direct file access from container for Slack operations.
 
-**Changes:**
-1. Remove `~/sharing/incoming/` mount from container
-2. Remove `~/sharing/notifications/` mount from container
-3. Remove `~/sharing/responses/` mount from container
-4. Update orchestrator to not pass file paths
-5. Remove file-based fallback code
+**Duration estimate:** 1 sprint (changes) + 1 sprint (validation)
 
-**`~/sharing/` Directory Migration Plan:**
+**Prerequisite:** Phase 2 complete and stable, gateway is reliable
 
-| Subdirectory | Current Use | Post-Migration | Rationale |
-|--------------|-------------|----------------|-----------|
-| `~/sharing/incoming/` | Slack task files | **Removed** | Replaced by gateway API |
-| `~/sharing/responses/` | Response capture | **Removed** | Replaced by gateway API |
-| `~/sharing/notifications/` | Outbound notifications | **Removed** | Replaced by gateway API |
-| `~/sharing/logs/` | Debug logs | **Preserved** | Non-Slack; useful for debugging |
-| `~/sharing/tracking/` | Beads state | **Preserved** | Non-Slack; beads persistence |
-| `~/sharing/context/` | Context sync data | **Preserved** | Non-Slack; load/save context |
+#### 3.1 Remove Slack File Mounts
 
-**CLAUDE.md Update Required:**
+**File:** `jib-container/jib_lib/runtime.py`
 
-The current CLAUDE.md references to be updated in Phase 3:
+Update container launch to remove Slack-related mounts:
 
-```diff
-# Current references that will break:
-- ~/sharing/incoming/     # Remove: tasks come via gateway API
-- ~/sharing/responses/    # Remove: responses go via gateway API
-- ~/sharing/notifications/  # Remove: use notification library (API-backed)
+```python
+def _build_mount_args(config: Config) -> list[str]:
+    """Build Docker mount arguments."""
+    mounts = []
 
-# References that remain valid:
-  ~/sharing/logs/         # Preserved: debugging
-  ~/sharing/tracking/     # Preserved: beads state (non-Slack)
+    # Keep these mounts
+    mounts.extend(["-v", f"{config.repos_dir}:/home/jib/repos:rw"])
+    mounts.extend(["-v", f"{config.beads_dir}:/home/jib/beads:rw"])
+    mounts.extend(["-v", f"{config.sharing_dir}/logs:/home/jib/sharing/logs:rw"])
+    mounts.extend(["-v", f"{config.sharing_dir}/tracking:/home/jib/sharing/tracking:rw"])
+    mounts.extend(["-v", f"{config.sharing_dir}/context:/home/jib/sharing/context:rw"])
+    mounts.extend(["-v", f"{config.sharing_dir}/.gateway-secret:/home/jib/.jib-sharing/.gateway-secret:ro"])
+
+    # REMOVED: These mounts are no longer needed
+    # mounts.extend(["-v", f"{config.sharing_dir}/incoming:/home/jib/sharing/incoming:ro"])
+    # mounts.extend(["-v", f"{config.sharing_dir}/responses:/home/jib/sharing/responses:ro"])
+    # mounts.extend(["-v", f"{config.sharing_dir}/notifications:/home/jib/sharing/notifications:rw"])
+
+    return mounts
 ```
 
-A CLAUDE.md update will be included in the Phase 3 implementation PR.
+#### 3.2 Update Orchestrator
 
-**Deliverables:**
-- Container has no Slack file access
-- All Slack communication via gateway
-- Full audit trail
-- CLAUDE.md updated to reflect new paths
+**File:** `host-services/orchestration/jib_exec.py`
+
+Update task invocation to use gateway instead of file paths:
+
+```python
+def start_task(task_id: str, thread_ts: str, message: str) -> str:
+    """Start a task via gateway API."""
+    # Register container with gateway BEFORE starting container
+    gateway_client = GatewayClient()
+    registration = gateway_client.register_container(
+        container_id=generate_container_id(),
+        task_id=task_id,
+        ttl_hours=4
+    )
+
+    if not registration.success:
+        raise RuntimeError(f"Failed to register container: {registration.error}")
+
+    # Start container with registration token
+    container_id = start_container(
+        task_id=task_id,
+        registration_token=registration.data["token"],
+        env={
+            "JIB_TASK_ID": task_id,
+            "JIB_THREAD_TS": thread_ts,
+            "SLACK_USE_GATEWAY": "true"
+        }
+    )
+
+    return container_id
+```
+
+#### 3.3 Remove File-Based Fallback Code
+
+**File:** `shared/notifications/slack.py`
+
+Remove file-based fallback after gateway is proven stable:
+
+```python
+class SlackNotificationService:
+    """Slack notification service using gateway API only."""
+
+    def __init__(self):
+        self.gateway_client = GatewaySlackClient()
+        if not self.gateway_client.is_available():
+            raise RuntimeError("Gateway not available - cannot initialize notification service")
+
+    def notify(
+        self,
+        subject: str,
+        body: str,
+        context: Optional[NotificationContext] = None
+    ) -> NotificationResult:
+        """Send a notification via gateway."""
+        task_id = context.task_id if context else self._generate_task_id()
+        thread_ts = context.thread_ts if context else None
+
+        text = f"# {subject}\n\n{body}"
+
+        result = self.gateway_client.send_message(
+            task_id=task_id,
+            text=text,
+            thread_ts=thread_ts
+        )
+
+        if not result.success:
+            raise NotificationError(f"Failed to send notification: {result.error}")
+
+        return NotificationResult(
+            success=True,
+            thread_id=result.data.get("thread_ts"),
+            message_ts=result.data.get("message_ts")
+        )
+```
+
+#### 3.4 Remove Host Slack Services
+
+**Phase 3b:** After confirming gateway stability, remove host services:
+
+**Files to remove:**
+- `host-services/slack/slack-receiver/` (entire directory)
+- `host-services/slack/slack-notifier/` (entire directory)
+
+**Systemd units to disable:**
+- `slack-receiver.service`
+- `slack-notifier.service`
+
+**Note:** Keep a backup branch of these services for rollback purposes.
+
+#### 3.5 Update CLAUDE.md
+
+**File:** Root `CLAUDE.md` and container `CLAUDE.md`
+
+Update file path references:
+
+```markdown
+## File System (Post-Phase 3)
+
+| Path | Purpose |
+|------|---------|
+| `~/repos/` | Code workspace (RW) |
+| `~/beads/` | Task memory |
+| `~/sharing/logs/` | Debug logs (RW) |
+| `~/sharing/tracking/` | Beads state (RW) |
+| `~/sharing/context/` | Context sync data (RW) |
+
+**Removed (now via gateway API):**
+- `~/sharing/incoming/` - Tasks received via gateway API
+- `~/sharing/responses/` - Responses sent via gateway API
+- `~/sharing/notifications/` - Notifications sent via gateway API
+
+## Notifications
+
+Use the notifications library for Slack messages:
+```python
+from notifications import slack_notify
+slack_notify("Subject", "Body")  # Sends via gateway API
+```
+
+File-based notifications are no longer supported.
+```
+
+#### 3.6 Rollback Plan
+
+If issues are discovered after Phase 3 deployment:
+
+```bash
+# Quick rollback: Re-enable file mounts
+# Edit jib_lib/runtime.py to restore mount lines
+
+# Full rollback: Restore host services
+git checkout pre-phase3-backup -- host-services/slack/
+systemctl --user enable slack-receiver.service
+systemctl --user enable slack-notifier.service
+systemctl --user start slack-receiver.service
+systemctl --user start slack-notifier.service
+
+# Container: Re-enable fallback
+export SLACK_USE_GATEWAY=false
+```
+
+#### 3.7 Phase 3 Deliverables Checklist
+
+- [ ] `jib-container/jib_lib/runtime.py` - Remove Slack file mounts
+- [ ] `host-services/orchestration/jib_exec.py` - Update task invocation
+- [ ] `shared/notifications/slack.py` - Remove file fallback
+- [ ] `CLAUDE.md` - Update file path documentation
+- [ ] Remove `host-services/slack/` directory (Phase 3b)
+- [ ] Disable `slack-receiver.service` (Phase 3b)
+- [ ] Disable `slack-notifier.service` (Phase 3b)
+- [ ] Create rollback branch with host services
+- [ ] Integration test: Full workflow without file mounts
+- [ ] Load test: High-volume message processing
+
+---
 
 ### Phase 4: Task Authorization
 
-**Goal:** Implement task-scoped message access
+**Goal:** Implement task-scoped message access control.
 
-**Changes:**
-1. Add container registration to orchestrator
-2. Implement task authorization in gateway
-3. Add task_id validation to all Slack endpoints
-4. Update audit logs with authorization status
+**Duration estimate:** 1.5 sprints
 
-**Deliverables:**
-- Containers authorized for specific tasks
-- Messages filtered by task
-- Unauthorized access attempts logged
+**Prerequisite:** Phase 3 complete
 
-### Migration Path
+#### 4.1 Container Registration API
+
+**File:** `gateway-sidecar/gateway.py`
+
+Add internal registration endpoint:
+
+```python
+# Internal API for orchestrator (separate auth)
+ADMIN_SECRET = os.environ.get("GATEWAY_ADMIN_SECRET")
+
+def require_admin_auth(f):
+    """Decorator for admin-only endpoints."""
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return jsonify({"error": "Unauthorized"}), 401
+        token = auth[7:]
+        if not secrets.compare_digest(token, ADMIN_SECRET):
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/internal/register", methods=["POST"])
+@require_admin_auth
+def register_container():
+    """Register a container for task access."""
+    data = request.get_json()
+    container_id = data.get("container_id")
+    task_id = data.get("task_id")
+    ttl_hours = data.get("ttl_hours", 4)
+
+    if not container_id or not task_id:
+        return jsonify({"error": "container_id and task_id required"}), 400
+
+    # Generate one-time registration token
+    registration_token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(hours=ttl_hours)
+
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO container_registrations
+               (container_id, task_id, registration_token, expires_at, status)
+               VALUES (?, ?, ?, ?, 'pending')""",
+            (container_id, task_id, registration_token, expires_at)
+        )
+
+    audit_log(
+        event_type="container_registration",
+        operation="register",
+        container_id=container_id,
+        task_id=task_id,
+        ttl_hours=ttl_hours
+    )
+
+    return jsonify({
+        "success": True,
+        "token": registration_token,
+        "expires_at": expires_at.isoformat()
+    }), 200
+
+
+@app.route("/internal/activate", methods=["POST"])
+@require_auth
+def activate_registration():
+    """Activate container registration (called by container on first API call)."""
+    data = request.get_json()
+    registration_token = data.get("registration_token")
+
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM container_registrations
+               WHERE registration_token = ? AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP""",
+            (registration_token,)
+        ).fetchone()
+
+        if not row:
+            return jsonify({"error": "Invalid or expired registration token"}), 401
+
+        # Activate the registration
+        conn.execute(
+            """UPDATE container_registrations
+               SET status = 'active', activated_at = CURRENT_TIMESTAMP
+               WHERE registration_token = ?""",
+            (registration_token,)
+        )
+
+    audit_log(
+        event_type="container_registration",
+        operation="activate",
+        container_id=row["container_id"],
+        task_id=row["task_id"]
+    )
+
+    return jsonify({
+        "success": True,
+        "container_id": row["container_id"],
+        "task_id": row["task_id"]
+    }), 200
+```
+
+#### 4.2 Task Authorization Enforcement
+
+**File:** `gateway-sidecar/gateway.py`
+
+Update Slack endpoints to check task authorization:
+
+```python
+def get_container_task_authorization(request) -> tuple[str, str]:
+    """Extract and validate container authorization.
+
+    Returns (container_id, task_id) if authorized.
+    Raises Unauthorized if not.
+    """
+    # Get container identity from request
+    container_id = request.headers.get("X-Container-ID")
+    task_id = request.headers.get("X-Task-ID") or request.args.get("task_id")
+
+    if not container_id or not task_id:
+        raise Unauthorized("Missing container or task identification")
+
+    # Check authorization
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM container_registrations
+               WHERE container_id = ? AND task_id = ? AND status = 'active' AND expires_at > CURRENT_TIMESTAMP""",
+            (container_id, task_id)
+        ).fetchone()
+
+        if not row:
+            audit_log(
+                event_type="authorization_failure",
+                container_id=container_id,
+                task_id=task_id
+            )
+            raise Unauthorized(f"Container {container_id} not authorized for task {task_id}")
+
+    return container_id, task_id
+
+
+@app.route("/api/v1/slack/messages", methods=["GET"])
+@require_auth
+def slack_get_messages():
+    """Get messages for a task (with authorization check)."""
+    container_id, task_id = get_container_task_authorization(request)
+
+    # ... rest of implementation ...
+```
+
+#### 4.3 Database Schema Update
+
+**File:** `gateway-sidecar/slack_db.py`
+
+Add container registrations table:
+
+```python
+def init_db():
+    """Initialize database with schema."""
+    with get_connection() as conn:
+        conn.executescript("""
+            -- Existing tables ...
+
+            CREATE TABLE IF NOT EXISTS container_registrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                container_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                registration_token TEXT UNIQUE NOT NULL,
+                status TEXT CHECK(status IN ('pending', 'active', 'expired', 'revoked')) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                activated_at TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL,
+                UNIQUE(container_id, task_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_registrations_container ON container_registrations(container_id);
+            CREATE INDEX IF NOT EXISTS idx_registrations_task ON container_registrations(task_id);
+            CREATE INDEX IF NOT EXISTS idx_registrations_token ON container_registrations(registration_token);
+        """)
+```
+
+#### 4.4 Container Startup Integration
+
+**File:** `jib-container/entrypoint.py`
+
+Add registration activation on startup:
+
+```python
+def activate_task_registration():
+    """Activate container registration with gateway."""
+    registration_token = os.environ.get("JIB_REGISTRATION_TOKEN")
+    if not registration_token:
+        log.warning("No registration token - running without task authorization")
+        return
+
+    gateway_url = os.environ.get("JIB_GATEWAY_URL", "http://jib-gateway:9847")
+    secret = load_gateway_secret()
+
+    try:
+        response = requests.post(
+            f"{gateway_url}/internal/activate",
+            json={"registration_token": registration_token},
+            headers={"Authorization": f"Bearer {secret}"},
+            timeout=10
+        )
+        if response.status_code == 200:
+            data = response.json()
+            os.environ["JIB_CONTAINER_ID"] = data["container_id"]
+            log.info(f"Registration activated for task {data['task_id']}")
+        else:
+            log.error(f"Registration activation failed: {response.text}")
+            sys.exit(1)
+    except requests.RequestException as e:
+        log.error(f"Failed to activate registration: {e}")
+        sys.exit(1)
+
+
+# Call during startup
+if __name__ == "__main__":
+    wait_for_gateway()
+    activate_task_registration()
+    main()
+```
+
+#### 4.5 Update Gateway Client
+
+**File:** `shared/notifications/gateway_client.py`
+
+Add container identification headers:
+
+```python
+class GatewaySlackClient:
+    """Client for gateway Slack API with task authorization."""
+
+    def __init__(self):
+        self.gateway_url = GATEWAY_URL
+        self.secret = self._load_secret()
+        self.container_id = os.environ.get("JIB_CONTAINER_ID")
+        self.task_id = os.environ.get("JIB_TASK_ID")
+
+        self.session = requests.Session()
+        self.session.headers["Authorization"] = f"Bearer {self.secret}"
+        self.session.headers["Content-Type"] = "application/json"
+
+        # Add container identification
+        if self.container_id:
+            self.session.headers["X-Container-ID"] = self.container_id
+        if self.task_id:
+            self.session.headers["X-Task-ID"] = self.task_id
+```
+
+#### 4.6 Testing Phase 4
+
+**New file:** `gateway-sidecar/tests/test_task_authorization.py`
+
+```python
+"""Tests for task authorization."""
+
+import pytest
+from unittest.mock import Mock
+
+def test_unauthorized_container_rejected(client):
+    """Test that unauthorized containers cannot access messages."""
+    response = client.get(
+        "/api/v1/slack/messages?task_id=task-20260128-120000",
+        headers={
+            "Authorization": f"Bearer {TEST_SECRET}",
+            "X-Container-ID": "unauthorized-container",
+            "X-Task-ID": "task-20260128-120000"
+        }
+    )
+    assert response.status_code == 401
+
+
+def test_authorized_container_allowed(client, mock_db):
+    """Test that authorized containers can access messages."""
+    # Register container
+    mock_db.execute(
+        """INSERT INTO container_registrations
+           (container_id, task_id, registration_token, status, expires_at)
+           VALUES (?, ?, ?, 'active', datetime('now', '+1 hour'))""",
+        ("test-container", "task-20260128-120000", "token123")
+    )
+
+    response = client.get(
+        "/api/v1/slack/messages?task_id=task-20260128-120000",
+        headers={
+            "Authorization": f"Bearer {TEST_SECRET}",
+            "X-Container-ID": "test-container",
+            "X-Task-ID": "task-20260128-120000"
+        }
+    )
+    assert response.status_code == 200
+
+
+def test_expired_registration_rejected(client, mock_db):
+    """Test that expired registrations are rejected."""
+    # Register container with expired timestamp
+    mock_db.execute(
+        """INSERT INTO container_registrations
+           (container_id, task_id, registration_token, status, expires_at)
+           VALUES (?, ?, ?, 'active', datetime('now', '-1 hour'))""",
+        ("test-container", "task-20260128-120000", "token123")
+    )
+
+    response = client.get(
+        "/api/v1/slack/messages?task_id=task-20260128-120000",
+        headers={
+            "Authorization": f"Bearer {TEST_SECRET}",
+            "X-Container-ID": "test-container",
+            "X-Task-ID": "task-20260128-120000"
+        }
+    )
+    assert response.status_code == 401
+```
+
+#### 4.7 Phase 4 Deliverables Checklist
+
+- [ ] `gateway-sidecar/gateway.py` - Add registration and authorization endpoints
+- [ ] `gateway-sidecar/slack_db.py` - Add container_registrations table
+- [ ] `host-services/orchestration/jib_exec.py` - Register containers before start
+- [ ] `jib-container/entrypoint.py` - Activate registration on startup
+- [ ] `shared/notifications/gateway_client.py` - Add container headers
+- [ ] `gateway-sidecar/tests/test_task_authorization.py` - Authorization tests
+- [ ] Integration test: Full registration → activation → access flow
+- [ ] Security test: Verify cross-task access is blocked
+- [ ] Audit log review: Confirm all authorization decisions logged
+
+---
+
+### Migration Path Summary
 
 ```
-Current State:
-  slack-receiver (host) → ~/sharing/incoming/ → container reads files
-  container writes files → ~/sharing/notifications/ → slack-notifier (host)
-
-Phase 1 (Parallel):
-  slack-receiver (host) → ~/sharing/incoming/ → container reads files  [existing]
-  slack-receiver (host) → gateway queue       → API available          [new]
-  container writes files → ~/sharing/notifications/                     [existing]
-  container → gateway API → Slack                                       [new, not used yet]
-
-Phase 2 (Gateway Primary):
-  slack-receiver → gateway queue → container calls API                  [primary]
-  container → gateway API → Slack                                       [primary]
-  file-based path                                                       [fallback only]
-
-Phase 3 (Files Removed):
-  gateway ↔ container (API only)
-  file mounts removed from container
-
-Phase 4 (Full Isolation):
-  gateway enforces task-scoped access
-  containers authorized per-task
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        Migration Timeline                                        │
+│                                                                                  │
+│  Current State                                                                   │
+│  ├─ slack-receiver (host) → ~/sharing/incoming/ → container reads files         │
+│  └─ container → ~/sharing/notifications/ → slack-notifier (host) → Slack        │
+│                                                                                  │
+│  Phase 1: Gateway API (2 sprints)                                               │
+│  ├─ Gateway receives Slack messages via Socket Mode                             │
+│  ├─ Gateway stores messages in SQLite                                           │
+│  ├─ Gateway API endpoints available but not used yet                            │
+│  └─ Existing file-based system continues unchanged                              │
+│                                                                                  │
+│  Phase 2: Library Migration (1 sprint)                                          │
+│  ├─ Container notification library uses gateway API                             │
+│  ├─ incoming-processor fetches messages from gateway                            │
+│  ├─ File-based system available as fallback                                     │
+│  └─ Feature flag: SLACK_USE_GATEWAY=true (default)                              │
+│                                                                                  │
+│  Phase 3: File Removal (2 sprints)                                              │
+│  ├─ Remove ~/sharing/incoming/, responses/, notifications/ mounts               │
+│  ├─ Remove file-based fallback code                                             │
+│  ├─ Disable host slack-receiver and slack-notifier services                     │
+│  └─ Update CLAUDE.md documentation                                              │
+│                                                                                  │
+│  Phase 4: Task Authorization (1.5 sprints)                                      │
+│  ├─ Orchestrator registers containers with gateway before start                 │
+│  ├─ Containers activate registration on first API call                          │
+│  ├─ Gateway enforces task-scoped access on all Slack endpoints                  │
+│  └─ Unauthorized access attempts logged and blocked                             │
+│                                                                                  │
+│  Final State                                                                     │
+│  ├─ gateway ← Slack (Socket Mode)                                               │
+│  ├─ gateway ↔ container (REST API, task-authorized)                            │
+│  ├─ gateway → Slack (API, rate-limited)                                         │
+│  └─ Full audit trail of all Slack operations                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Implementation Checklist (All Phases)
+
+**Phase 1: Gateway Slack API**
+- [ ] Add Slack SDK dependencies
+- [ ] Implement SQLite database module
+- [ ] Implement Slack client wrapper
+- [ ] Implement Socket Mode receiver
+- [ ] Add `/api/v1/slack/send` endpoint
+- [ ] Add `/api/v1/slack/messages` endpoint
+- [ ] Add `/api/v1/slack/ack` endpoint
+- [ ] Update gateway entrypoint
+- [ ] Add Slack token mounts
+- [ ] Write unit tests
+- [ ] Write integration tests
+- [ ] Verify existing system unaffected
+
+**Phase 2: Notification Library Migration**
+- [ ] Implement GatewaySlackClient
+- [ ] Update SlackNotificationService with gateway support
+- [ ] Update incoming-processor to use gateway
+- [ ] Add feature flag
+- [ ] Write unit tests
+- [ ] Test fallback behavior
+
+**Phase 3: File Access Removal**
+- [ ] Remove Slack file mounts from container
+- [ ] Update orchestrator
+- [ ] Remove file-based fallback
+- [ ] Update CLAUDE.md
+- [ ] Disable host Slack services
+- [ ] Write rollback documentation
+- [ ] Load testing
+
+**Phase 4: Task Authorization**
+- [ ] Add container_registrations table
+- [ ] Implement registration API
+- [ ] Implement activation flow
+- [ ] Add authorization checks to all endpoints
+- [ ] Update container startup
+- [ ] Update gateway client
+- [ ] Security testing
+- [ ] Audit log verification
 
 ## Related ADRs
 
