@@ -217,29 +217,6 @@ class Config:
         return self.user_home / "sharing"
 
     @property
-    def git_main_dir(self) -> Path:
-        """Legacy path - kept for backwards compatibility during transition."""
-        return self.user_home / ".git-main"
-
-    @property
-    def git_admin_dir(self) -> Path:
-        """Container's worktree admin directories (isolated per container)."""
-        return self.user_home / ".git-admin"
-
-    @property
-    def git_common_dir(self) -> Path:
-        """Common git directory containing shared resources (objects, refs, etc).
-
-        Structure per repo:
-        - .git-common/{repo}/objects/     (rw) - for creating commits
-        - .git-common/{repo}/refs/        (rw) - for updating branch pointers
-        - .git-common/{repo}/packed-refs  (rw) - for packed references
-        - .git-common/{repo}/config       (ro) - shared configuration
-        - .git-common/{repo}/hooks/       (ro) - shared hooks
-        """
-        return self.user_home / ".git-common"
-
-    @property
     def claude_dir(self) -> Path:
         return self.user_home / ".claude"
 

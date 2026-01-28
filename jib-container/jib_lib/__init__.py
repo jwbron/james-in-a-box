@@ -196,17 +196,5 @@ from .timing import (
     _host_timer as _host_timer,
 )
 
-# Worktrees module exports
-from .worktrees import (
-    cleanup_worktrees as cleanup_worktrees,
-)
-from .worktrees import (
-    create_worktrees as create_worktrees,
-)
-from .worktrees import (
-    get_default_branch as get_default_branch,
-)
-
-
 # Version info (matches jib script)
 __version__ = "1.0.0"
