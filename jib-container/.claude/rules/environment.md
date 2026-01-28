@@ -1,6 +1,23 @@
 # Sandboxed Environment
 
-You run in a sandboxed Docker container. Network: outbound HTTP/HTTPS only. No SSH keys, cloud creds, or production access.
+You run in a sandboxed Docker container with network isolation. No SSH keys, cloud creds, or production access.
+
+## Network Mode
+
+The container runs in one of two modes:
+
+**Legacy Mode (Phase 1):** Outbound HTTP/HTTPS to any destination. You can access Claude API, GitHub, and download packages at runtime.
+
+**Lockdown Mode (Phase 2):** Network traffic is routed through a filtering proxy. Only these destinations are allowed:
+- `api.anthropic.com` (Claude API)
+- `github.com`, `api.github.com`, `raw.githubusercontent.com` (GitHub)
+
+In lockdown mode, you CANNOT:
+- Access PyPI, npm, or any package registry (dependencies are pre-installed)
+- Use web search or fetch arbitrary URLs
+- Access any website not on the allowlist
+
+Check `$JIB_NETWORK_MODE` to detect the current mode (`lockdown` or `legacy`).
 
 ## Capabilities
 
@@ -45,3 +62,13 @@ If push fails:
 
 - `discover-tests`, `@load-context`, `@save-context`, `@create-pr`
 - PostgreSQL and Redis start automatically
+
+## Adapting to Network Lockdown
+
+When in lockdown mode (`$JIB_NETWORK_MODE=lockdown`):
+
+1. **Web search/fetch will fail** - Use local codebase search instead
+2. **Package installation fails** - All common dependencies are pre-installed; if you need a package that's missing, note it in your PR description
+3. **External URLs blocked** - GitHub and Claude API work; everything else returns HTTP 403
+
+If a tool returns 403 Forbidden, acknowledge the limitation and proceed with local resources.

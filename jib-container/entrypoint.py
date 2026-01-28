@@ -710,6 +710,73 @@ def setup_beads(config: Config, logger: Logger) -> bool:
     return True
 
 
+def check_gateway_health(config: Config, logger: Logger) -> bool:
+    """Wait for gateway readiness before starting (Phase 2 lockdown mode).
+
+    In network lockdown mode, the container cannot reach the internet directly.
+    All traffic must go through the gateway's proxy. This function ensures
+    the gateway and proxy are ready before the agent starts.
+
+    Returns:
+        True if gateway is ready (or not in lockdown mode), False on timeout
+    """
+    import requests
+    from requests.exceptions import RequestException
+
+    # Check if we're in lockdown mode
+    network_mode = os.environ.get("JIB_NETWORK_MODE", "legacy")
+    if network_mode != "lockdown":
+        logger.info("Network mode: legacy (gateway health check skipped)")
+        return True
+
+    logger.info("Network mode: lockdown (Phase 2)")
+    logger.info("Waiting for gateway readiness...")
+
+    gateway_url = os.environ.get("GATEWAY_URL", "http://jib-gateway:9847")
+    proxy_url = os.environ.get("HTTPS_PROXY", "http://gateway:3128")
+
+    timeout = 60  # seconds
+    interval = 2  # seconds
+    elapsed = 0
+
+    while elapsed < timeout:
+        try:
+            # Check gateway API health
+            health_response = requests.get(
+                f"{gateway_url}/api/v1/health",
+                timeout=5,
+            )
+            if health_response.status_code != 200:
+                raise RequestException("Gateway not ready")
+
+            # Check proxy connectivity by testing an allowed domain
+            # Use proxies dict to route through gateway proxy
+            proxies = {"http": proxy_url, "https": proxy_url}
+            api_response = requests.get(
+                "https://api.github.com/",
+                proxies=proxies,
+                timeout=10,
+                verify=True,
+            )
+            # GitHub returns 200 for unauthenticated, 401 for bad auth
+            # Either means the proxy is working
+            if api_response.status_code in (200, 401, 403):
+                logger.success("Gateway ready (API + proxy verified)")
+                return True
+
+        except RequestException as e:
+            if not config.quiet:
+                logger.info(f"  Waiting... ({elapsed}/{timeout}s) - {type(e).__name__}")
+
+        time.sleep(interval)
+        elapsed += interval
+
+    logger.error(f"Gateway not ready after {timeout} seconds")
+    logger.error("The gateway sidecar may not be running or misconfigured.")
+    logger.error("In lockdown mode, all network traffic requires the gateway.")
+    return False
+
+
 # =============================================================================
 # Cleanup
 # =============================================================================
@@ -851,6 +918,14 @@ def main() -> None:
 
     with _startup_timer.phase("setup_beads"):
         if not setup_beads(config, logger):
+            sys.exit(1)
+
+    # Phase 2: Wait for gateway readiness in lockdown mode
+    with _startup_timer.phase("check_gateway"):
+        if not check_gateway_health(config, logger):
+            logger.error("")
+            logger.error("Container startup aborted: gateway not ready.")
+            logger.error("Ensure the gateway sidecar is running with JIB_NETWORK_MODE=lockdown")
             sys.exit(1)
 
     # Run appropriate mode (timing summary is printed inside each mode)
