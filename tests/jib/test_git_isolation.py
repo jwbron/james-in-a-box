@@ -62,9 +62,7 @@ def _get_setup_git_isolation_mounts():
     try:
         # Load the module with package context
         spec = importlib.util.spec_from_file_location(
-            "jib_lib.runtime",
-            runtime_path,
-            submodule_search_locations=[str(runtime_path.parent)]
+            "jib_lib.runtime", runtime_path, submodule_search_locations=[str(runtime_path.parent)]
         )
         module = importlib.util.module_from_spec(spec)
         module.__package__ = "jib_lib"
