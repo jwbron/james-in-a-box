@@ -256,46 +256,6 @@ def get_repo_setting(repo: str, setting: str, default: Any | None = None) -> Any
     return default
 
 
-def should_restrict_to_configured_users(repo: str) -> bool:
-    """
-    Check if a repository is configured to only auto-respond to configured users.
-
-    When enabled, jib will only respond to comments/PRs from:
-    - bot_username (the bot's own identity)
-    - github_username (the configured owner/user)
-
-    Comments and PRs from other users will be ignored.
-
-    Args:
-        repo: Repository in "owner/repo" format
-
-    Returns:
-        True if auto-responses should be restricted to configured users only
-    """
-    return get_repo_setting(repo, "restrict_to_configured_users", False)
-
-
-def should_disable_auto_fix(repo: str) -> bool:
-    """
-    Check if auto-fix for check failures is disabled for a repository.
-
-    When enabled, jib will NOT automatically attempt to fix failing CI checks.
-    This is useful for repos where:
-    - GitHub Actions minutes are limited/exhausted
-    - Auto-fix attempts are not desired
-    - The repo should only be monitored for comments/reviews
-
-    Other functionality (comments, reviews, merge conflicts) is unaffected.
-
-    Args:
-        repo: Repository in "owner/repo" format
-
-    Returns:
-        True if auto-fix should be disabled for this repo
-    """
-    return get_repo_setting(repo, "disable_auto_fix", False)
-
-
 def get_auth_mode(repo: str) -> str:
     """
     Get the authentication mode for a repository.
@@ -371,7 +331,7 @@ def get_bot_username() -> str:
     return config.get("bot_username", "jib")
 
 
-def get_github_token_for_repo(repo: str) -> str | None:
+def get_github_token_for_repo(repo: str) -> tuple[str | None, str, str]:
     """
     Get the appropriate GitHub token for accessing a repository.
 
@@ -387,7 +347,10 @@ def get_github_token_for_repo(repo: str) -> str | None:
         repo: Repository in "owner/repo" format
 
     Returns:
-        GitHub token string, or None if no token is configured
+        Tuple of (token, token_type, access_level):
+        - token: GitHub token string, or None if no token is configured
+        - token_type: "GITHUB_TOKEN" or "GITHUB_READONLY_TOKEN"
+        - access_level: "writable", "readable", or "none"
     """
     # Import here to avoid circular imports
     from config.host_config import HostConfig
@@ -404,8 +367,6 @@ def get_github_token_for_repo(repo: str) -> str | None:
         token = config.github_token or None
         token_type = "GITHUB_TOKEN"
 
-    # Return both token and metadata for debugging
-    # The calling code can log the token_type and access_level
     return token, token_type, access_level
 
 

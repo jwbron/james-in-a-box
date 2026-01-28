@@ -75,53 +75,6 @@ class HostConfig:
         self._load_config()
         self._load_secrets()
 
-    def _write_secrets_file(self, secrets: dict[str, str]):
-        """Write secrets to .env file with secure permissions."""
-        lines = [
-            "# jib Secrets Configuration",
-            "# This file contains sensitive credentials - DO NOT COMMIT",
-            "",
-        ]
-
-        # Group secrets by service
-        groups = {
-            "Slack": ["SLACK_TOKEN", "SLACK_APP_TOKEN"],
-            "GitHub": ["GITHUB_TOKEN", "GITHUB_READONLY_TOKEN"],
-            "Confluence": [
-                "CONFLUENCE_BASE_URL",
-                "CONFLUENCE_USERNAME",
-                "CONFLUENCE_API_TOKEN",
-                "CONFLUENCE_SPACE_KEYS",
-            ],
-            "JIRA": ["JIRA_BASE_URL", "JIRA_USERNAME", "JIRA_API_TOKEN", "JIRA_JQL_QUERY"],
-        }
-
-        written = set()
-        for group_name, keys in groups.items():
-            group_secrets = [(k, secrets[k]) for k in keys if k in secrets]
-            if group_secrets:
-                lines.append(f"# {group_name}")
-                for key, value in group_secrets:
-                    lines.append(f'{key}="{value}"')
-                    written.add(key)
-                lines.append("")
-
-        # Write any remaining secrets
-        remaining = [(k, v) for k, v in secrets.items() if k not in written]
-        if remaining:
-            lines.append("# Other")
-            for key, value in remaining:
-                lines.append(f'{key}="{value}"')
-
-        with open(self.SECRETS_FILE, "w") as f:
-            f.write("\n".join(lines) + "\n")
-        os.chmod(self.SECRETS_FILE, 0o600)
-
-    def _write_config_file(self, config: dict[str, Any]):
-        """Write non-secret config to YAML file."""
-        with open(self.CONFIG_FILE, "w") as f:
-            yaml.dump(config, f, default_flow_style=False)
-
     def _load_config(self):
         """Load non-secret configuration from ~/.config/jib/."""
         if self.CONFIG_FILE.exists():
