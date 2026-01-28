@@ -4,16 +4,150 @@ This module handles the gateway sidecar container that provides
 policy enforcement for git/gh operations.
 """
 
+import json
+import secrets
 import subprocess
 import time
 from pathlib import Path
+from typing import Any, Optional
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from .config import (
     GATEWAY_CONTAINER_NAME,
     GATEWAY_IMAGE_NAME,
     GATEWAY_PORT,
+    Config,
 )
 from .output import error, info, success
+
+
+# Gateway secret file location
+GATEWAY_SECRET_FILE = Config.USER_CONFIG_DIR / "gateway-secret"
+
+
+def get_gateway_secret() -> str:
+    """Get the gateway authentication secret.
+
+    Returns the shared secret used to authenticate with the gateway sidecar.
+    Generates a new secret if one doesn't exist.
+
+    Returns:
+        The gateway secret string
+    """
+    if GATEWAY_SECRET_FILE.exists():
+        return GATEWAY_SECRET_FILE.read_text().strip()
+
+    # Generate a new secret
+    new_secret = secrets.token_urlsafe(32)
+    GATEWAY_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    GATEWAY_SECRET_FILE.write_text(new_secret)
+    GATEWAY_SECRET_FILE.chmod(0o600)
+    return new_secret
+
+
+def gateway_api_call(
+    endpoint: str,
+    method: str = "GET",
+    data: Optional[dict[str, Any]] = None,
+    timeout: int = 30,
+) -> tuple[bool, dict[str, Any]]:
+    """Make an authenticated API call to the gateway.
+
+    Args:
+        endpoint: API endpoint path (e.g., "/api/v1/worktree/create")
+        method: HTTP method (GET or POST)
+        data: Optional JSON data for POST requests
+        timeout: Request timeout in seconds
+
+    Returns:
+        Tuple of (success, response_data)
+    """
+    url = f"http://localhost:{GATEWAY_PORT}{endpoint}"
+    secret = get_gateway_secret()
+
+    headers = {
+        "Authorization": f"Bearer {secret}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        if method == "POST" and data:
+            body = json.dumps(data).encode("utf-8")
+            req = Request(url, data=body, headers=headers, method=method)
+        else:
+            req = Request(url, headers=headers, method=method)
+
+        with urlopen(req, timeout=timeout) as response:
+            response_data = json.loads(response.read().decode("utf-8"))
+            return response_data.get("success", False), response_data
+
+    except URLError as e:
+        return False, {"error": f"Gateway connection failed: {e}"}
+    except json.JSONDecodeError as e:
+        return False, {"error": f"Invalid JSON response: {e}"}
+    except Exception as e:
+        return False, {"error": f"Gateway API error: {e}"}
+
+
+def create_worktrees(
+    container_id: str,
+    repos: list[str],
+    base_branch: str = "HEAD",
+) -> tuple[bool, dict[str, str], list[str]]:
+    """Request the gateway to create worktrees for a container.
+
+    Args:
+        container_id: Container identifier
+        repos: List of repository names (or owner/repo format)
+        base_branch: Branch to base worktrees on
+
+    Returns:
+        Tuple of (success, worktrees_dict, errors_list)
+        - worktrees_dict maps repo_name to worktree_path
+        - errors_list contains any error messages
+    """
+    success_flag, response = gateway_api_call(
+        "/api/v1/worktree/create",
+        method="POST",
+        data={
+            "container_id": container_id,
+            "repos": repos,
+            "base_branch": base_branch,
+        },
+    )
+
+    if not success_flag:
+        return False, {}, [response.get("error", "Unknown error")]
+
+    data = response.get("data", {})
+    return True, data.get("worktrees", {}), data.get("errors", [])
+
+
+def delete_worktrees(container_id: str, force: bool = False) -> tuple[bool, list[str], list[str]]:
+    """Request the gateway to delete worktrees for a container.
+
+    Args:
+        container_id: Container identifier
+        force: Force removal even with uncommitted changes
+
+    Returns:
+        Tuple of (success, deleted_repos, errors_list)
+    """
+    success_flag, response = gateway_api_call(
+        "/api/v1/worktree/delete",
+        method="POST",
+        data={
+            "container_id": container_id,
+            "force": force,
+        },
+    )
+
+    if not success_flag:
+        return False, [], [response.get("error", "Unknown error")]
+
+    data = response.get("data", {})
+    return True, data.get("deleted", []), data.get("errors", [])
 
 
 def is_gateway_running() -> bool:

@@ -1,14 +1,24 @@
 """Container execution for jib.
 
 This module handles running containers in interactive and exec modes.
+
+The gateway-managed worktree architecture:
+- Gateway creates/manages worktrees before container starts
+- Container mounts only working directory (no direct git metadata access)
+- All git operations route through gateway API
+- Gateway handles worktree cleanup when containers exit
 """
 
 import atexit
+import json
 import os
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 
 # Import statusbar for quiet mode
 from statusbar import status
@@ -19,6 +29,7 @@ from .config import (
     GATEWAY_PORT,
     JIB_NETWORK_NAME,
     Config,
+    get_local_repos,
 )
 from .container_logging import (
     extract_task_id_from_command,
@@ -28,146 +39,116 @@ from .container_logging import (
     save_container_logs,
 )
 from .docker import build_image, image_exists
-from .gateway import start_gateway_container
+from .gateway import (
+    create_worktrees,
+    delete_worktrees,
+    get_gateway_secret,
+    start_gateway_container,
+)
 from .output import error, get_quiet_mode, info, success, warn
 from .setup_flow import add_standard_mounts, setup
 from .timing import _host_timer
-from .worktrees import cleanup_worktrees, create_worktrees
 
 
-def _setup_git_isolation_mounts(
-    worktrees: dict,
+def _setup_repo_mounts(
     container_id: str,
     mount_args: list[str],
     quiet: bool = False,
-) -> None:
-    """Configure git isolation mounts for a container.
+    use_gateway_worktrees: bool = True,
+) -> dict:
+    """Configure repository mounts for a container.
 
-    This implements the Container Worktree Isolation ADR by mounting:
-    1. Container's worktree admin dir only (rw) - isolates git state
-    2. Shared objects directory (rw) - for creating commits
-    3. Shared refs directory (rw) - for updating branch pointers
-    4. Packed refs file (rw) - git stores refs both as loose files and packed-refs
-    5. Config file (ro) - shared configuration
-    6. Hooks directory (ro) - shared hooks
-
-    Key design decisions:
-    - No alternates: Objects are mounted directly (rw) for simplicity
-    - All shared git components mount under /home/jib/.git-common/{repo}/
-    - commondir in worktree admin points to this location
+    In the gateway-managed worktree architecture:
+    - Gateway creates worktrees for the container before it starts
+    - Container mounts gateway-created worktrees at /home/jib/repos/{repo_name}
+    - The .git directory is shadowed by a tmpfs mount (no git metadata in container)
+    - All git operations must go through the gateway API
 
     Args:
-        worktrees: Dict of repo_name -> {"worktree": path, "source": path}
         container_id: Unique container identifier
         mount_args: List to append mount arguments to
         quiet: Suppress output
+        use_gateway_worktrees: If True, request worktrees from gateway (default)
+                               If False, mount repos directly (fallback)
+
+    Returns:
+        Dict of repo_name -> repo_path for tracking
     """
-    for repo_name, repo_info in worktrees.items():
-        worktree_path = repo_info["worktree"]
-        source_path = repo_info["source"]
-        container_path = f"/home/jib/repos/{repo_name}"
-        mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
+    repos = {}
+    local_repos = get_local_repos()
+
+    if not local_repos:
         if not quiet:
-            print(f"  • ~/repos/{repo_name} (WORKTREE, isolated from host)")
+            info("No local repositories configured.")
+        return repos
 
-        # Mount isolated git components for worktree isolation
-        # ADR: Container Worktree Isolation - each container only sees its own git state
-        git_path = source_path / ".git"
-        main_git_path = None
+    repo_names = [repo_path.name for repo_path in local_repos if repo_path.is_dir()]
 
-        if git_path.is_dir():
-            # Normal repo - .git is a directory
-            main_git_path = git_path
-        elif git_path.is_file():
-            # Host repo is a worktree - read .git file to find actual git directory
-            # Format is: "gitdir: /path/to/repo.git/worktrees/name"
-            try:
-                gitdir_content = git_path.read_text().strip()
-                if gitdir_content.startswith("gitdir:"):
-                    gitdir_path = Path(gitdir_content[7:].strip())
-                    # Navigate up from worktrees/<name> to the main .git directory
-                    # e.g., /path/.git/worktrees/foo -> /path/.git
-                    if "worktrees" in gitdir_path.parts:
-                        worktrees_idx = gitdir_path.parts.index("worktrees")
-                        main_git_path = Path(*gitdir_path.parts[:worktrees_idx])
-                        if not main_git_path.is_dir():
-                            warn(f"Could not find git directory for {repo_name}: {main_git_path}")
-                            main_git_path = None
-                    else:
-                        warn(f"Unexpected gitdir format for {repo_name}: {gitdir_path}")
-                else:
-                    warn(f"Invalid .git file format for {repo_name}")
-            except Exception as e:
-                warn(f"Error reading .git file for {repo_name}: {e}")
+    if not repo_names:
+        return repos
 
-        if main_git_path:
-            # Worktree admin directory name matches the worktree directory name.
-            # This is guaranteed because create_worktrees() creates worktrees at
-            # ~/.jib-worktrees/<container-id>/<repo-name>/, and git uses the
-            # worktree directory basename as the admin dir name.
-            worktree_admin_name = repo_name
+    if use_gateway_worktrees:
+        # Request gateway to create worktrees
+        wt_success, worktrees, wt_errors = create_worktrees(container_id, repo_names)
 
-            # 1. Mount ONLY this container's worktree admin dir (rw)
-            worktree_admin_path = main_git_path / "worktrees" / worktree_admin_name
-            if worktree_admin_path.is_dir():
-                mount_args.extend(
-                    ["-v", f"{worktree_admin_path}:/home/jib/.git-admin/{repo_name}:rw"]
-                )
-                if not quiet:
-                    print(f"  • ~/.git-admin/{repo_name} (worktree admin, isolated)")
+        if wt_errors and not quiet:
+            for err in wt_errors:
+                warn(f"Worktree error: {err}")
 
-            # 2. Mount shared objects directory (rw) - for creating commits
-            shared_objects_path = main_git_path / "objects"
-            if shared_objects_path.is_dir():
-                mount_args.extend(
-                    ["-v", f"{shared_objects_path}:/home/jib/.git-common/{repo_name}/objects:rw"]
-                )
-                if not quiet:
-                    print(f"  • ~/.git-common/{repo_name}/objects (shared objects, writable)")
+        if not wt_success and not worktrees:
+            # Fall back to direct mounts if gateway fails
+            if not quiet:
+                warn("Gateway worktree creation failed, using direct mounts")
+            use_gateway_worktrees = False
 
-            # 3. Mount shared refs directory (rw) - for updating branch pointers
-            shared_refs_path = main_git_path / "refs"
-            if shared_refs_path.is_dir():
-                mount_args.extend(
-                    ["-v", f"{shared_refs_path}:/home/jib/.git-common/{repo_name}/refs:rw"]
-                )
-                if not quiet:
-                    print(f"  • ~/.git-common/{repo_name}/refs (shared refs, writable)")
+    for repo_path in local_repos:
+        if not repo_path.is_dir():
+            continue
 
-            # 4. Mount packed-refs file (rw) - git stores refs both as loose files and packed
-            packed_refs_path = main_git_path / "packed-refs"
-            if packed_refs_path.exists():
-                mount_args.extend(
-                    ["-v", f"{packed_refs_path}:/home/jib/.git-common/{repo_name}/packed-refs:rw"]
-                )
-                if not quiet:
-                    print(f"  • ~/.git-common/{repo_name}/packed-refs (packed refs, writable)")
+        repo_name = repo_path.name
+        container_path = f"/home/jib/repos/{repo_name}"
 
-            # 4b. Mount logs directory (rw) - for reflogs
-            # Git writes reflogs when updating refs, needs this in commondir
-            logs_path = main_git_path / "logs"
-            if logs_path.is_dir():
-                mount_args.extend(["-v", f"{logs_path}:/home/jib/.git-common/{repo_name}/logs:rw"])
-                if not quiet:
-                    print(f"  • ~/.git-common/{repo_name}/logs (reflogs, writable)")
+        if use_gateway_worktrees and repo_name in worktrees:
+            # Mount gateway-created worktree
+            worktree_path = worktrees[repo_name]
+            mount_args.extend(["-v", f"{worktree_path}:{container_path}:rw"])
 
-            # 5. Mount config file (ro) - shared configuration
-            config_path = main_git_path / "config"
-            if config_path.exists():
-                mount_args.extend(
-                    ["-v", f"{config_path}:/home/jib/.git-common/{repo_name}/config:ro"]
-                )
-                if not quiet:
-                    print(f"  • ~/.git-common/{repo_name}/config (config, read-only)")
+            if not quiet:
+                print(f"  • ~/repos/{repo_name} (gateway worktree)")
+        else:
+            # Fallback: mount repo directly
+            mount_args.extend(["-v", f"{repo_path}:{container_path}:rw"])
 
-            # 6. Mount hooks directory (ro) - shared hooks
-            hooks_path = main_git_path / "hooks"
-            if hooks_path.is_dir():
-                mount_args.extend(
-                    ["-v", f"{hooks_path}:/home/jib/.git-common/{repo_name}/hooks:ro"]
-                )
-                if not quiet:
-                    print(f"  • ~/.git-common/{repo_name}/hooks (hooks, read-only)")
+            if not quiet:
+                print(f"  • ~/repos/{repo_name} (direct mount)")
+
+        # Shadow .git with tmpfs to prevent local git operations
+        # This forces all git operations through the gateway
+        mount_args.extend([
+            "--mount", f"type=tmpfs,destination={container_path}/.git"
+        ])
+
+        repos[repo_name] = repo_path
+
+    return repos
+
+
+def _cleanup_worktrees(container_id: str, force: bool = True) -> None:
+    """Clean up gateway worktrees for a container.
+
+    Called when container exits to release worktree resources.
+
+    Args:
+        container_id: Container identifier
+        force: Force removal even with uncommitted changes
+    """
+    try:
+        success_flag, deleted, errors = delete_worktrees(container_id, force=force)
+        if errors:
+            for err in errors:
+                warn(f"Worktree cleanup warning: {err}")
+    except Exception as e:
+        warn(f"Worktree cleanup failed: {e}")
 
 
 def run_claude() -> bool:
@@ -243,40 +224,22 @@ def run_claude() -> bool:
             info(f"Container ID: {container_id}")
             print()
 
-    # Create worktrees for repos (isolates container from host repos)
-    with _host_timer.phase("create_worktrees"):
-        if quiet:
-            status("Creating isolated worktrees...")
-        else:
-            info("Creating isolated worktrees...")
-            print()
-        worktrees = create_worktrees(container_id)
-
-    if worktrees and not quiet:
-        print()
-        info(f"Created {len(worktrees)} worktree(s)")
-        print()
-
-    # Register cleanup on exit
-    def cleanup_on_exit():
-        cleanup_worktrees(container_id)
-
-    atexit.register(cleanup_on_exit)
-
-    # Build mount configuration dynamically (no mounts.conf file needed)
+    # Build mount configuration
     _host_timer.start_phase("configure_mounts")
     if quiet:
         status("Configuring mounts...")
+    else:
+        info("Configuring repository mounts...")
+        print()
     mount_args = []
 
-    # Add worktree mounts with git isolation
-    _setup_git_isolation_mounts(worktrees, container_id, mount_args, quiet=quiet)
+    # Mount repositories with .git shadowed
+    repos = _setup_repo_mounts(container_id, mount_args, quiet=quiet)
 
-    # Mount worktree base directory (used by both interactive and --exec modes)
-    worktree_base_container = "/home/jib/.jib-worktrees"
-    mount_args.extend(["-v", f"{Config.WORKTREE_BASE}:{worktree_base_container}:rw"])
-    if not quiet:
-        print("  • ~/.jib-worktrees/ (worktree base directory)")
+    if repos and not quiet:
+        print()
+        info(f"Mounted {len(repos)} repo(s) (all git operations via gateway)")
+        print()
 
     # Add standard mounts (sharing, context-sync)
     add_standard_mounts(mount_args, quiet=quiet)
@@ -315,7 +278,6 @@ def run_claude() -> bool:
     # Build docker run command on jib-network (shared network with gateway sidecar)
     _host_timer.start_phase("build_docker_cmd")
     # jib-network allows container-to-container communication while isolating from host
-    worktree_host_path = Config.WORKTREE_BASE / container_id
     cmd = [
         "docker",
         "run",
@@ -339,10 +301,6 @@ def run_claude() -> bool:
         f"JIB_TIMING={'1' if _host_timer.enabled else '0'}",
         "-e",
         f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-        # Host worktree path - needed by git wrapper to translate container paths
-        # Container sees /home/user/repos/X, but gateway needs ~/.jib-worktrees/<id>/X
-        "-e",
-        f"JIB_WORKTREE_HOST_PATH={worktree_host_path}",
     ]
 
     # GitHub authentication is handled by the gateway sidecar
@@ -404,6 +362,10 @@ def run_claude() -> bool:
     except Exception as e:
         error(f"Failed to run container: {e}")
         return False
+    finally:
+        # Clean up gateway worktrees when container exits
+        if repos:
+            _cleanup_worktrees(container_id)
 
 
 def exec_in_new_container(
@@ -413,13 +375,11 @@ def exec_in_new_container(
     thread_ts: str | None = None,
     auth_mode: str = "host",
 ) -> bool:
-    """Execute a command in a new ephemeral container with isolated worktrees.
+    """Execute a command in a new ephemeral container.
 
-    Creates worktrees for all repos to isolate changes (same as interactive mode):
-    - Total isolation from interactive sessions and main repos
-    - Worktrees allow parallel work without conflicts
-    - Automatic cleanup (--rm)
-    - All commits go to temporary branches (jib-temp-jib-exec-*)
+    In the gateway-managed worktree architecture:
+    - Repos are mounted directly with .git shadowed by tmpfs
+    - All git operations route through the gateway API
     - Container logs persisted to ~/.jib-sharing/container-logs/
 
     Args:
@@ -485,25 +445,16 @@ def exec_in_new_container(
     print(f"Timeout: {timeout_minutes} minutes")
     print()
 
-    # Create worktrees for repos (isolates container from host repos)
-    info("Creating isolated worktrees...")
-    worktrees = create_worktrees(container_id)
-
-    if worktrees:
-        info(f"Created {len(worktrees)} worktree(s)")
-        print()
-
-    # Register cleanup on exit (even if container fails)
-    def cleanup_on_exit():
-        cleanup_worktrees(container_id)
-
-    atexit.register(cleanup_on_exit)
-
-    # Build mount configuration dynamically (no mounts.conf file needed)
+    # Build mount configuration
+    info("Configuring repository mounts...")
     mount_args = []
 
-    # Add worktree mounts with git isolation
-    _setup_git_isolation_mounts(worktrees, container_id, mount_args, quiet=False)
+    # Mount repositories with .git shadowed
+    repos = _setup_repo_mounts(container_id, mount_args, quiet=False)
+
+    if repos:
+        info(f"Mounted {len(repos)} repo(s) (all git operations via gateway)")
+        print()
 
     # Add standard mounts (sharing, context-sync)
     add_standard_mounts(mount_args, quiet=False)
@@ -528,7 +479,6 @@ def exec_in_new_container(
 
     # Build docker run command on jib-network (shared network with gateway sidecar)
     # Note: We don't use --rm so we can save logs before cleanup
-    worktree_host_path = Config.WORKTREE_BASE / container_id
     cmd = [
         "docker",
         "run",
@@ -548,10 +498,6 @@ def exec_in_new_container(
         "PYTHONUNBUFFERED=1",  # Force Python to use unbuffered output for real-time streaming
         "-e",
         f"GATEWAY_URL=http://{GATEWAY_CONTAINER_NAME}:{GATEWAY_PORT}",
-        # Host worktree path - needed by git wrapper to translate container paths
-        # Container sees /home/user/repos/X, but gateway needs ~/.jib-worktrees/<id>/X
-        "-e",
-        f"JIB_WORKTREE_HOST_PATH={worktree_host_path}",
     ]
 
     # Add logging configuration for log persistence
@@ -593,13 +539,13 @@ def exec_in_new_container(
     run_success = False
 
     def cleanup_container():
-        """Save logs and remove container."""
+        """Save logs, remove container, and clean up worktrees."""
         try:
             # Save container logs before removal (with correlation info)
             save_container_logs(container_id, task_id, thread_ts)
         except Exception as e:
             error(f"Failed to save container logs: {e}")
-            # Don't re-raise - continue with container removal
+            # Don't re-raise - continue with cleanup
         finally:
             # Remove container
             try:
@@ -612,6 +558,10 @@ def exec_in_new_container(
             except Exception as e:
                 error(f"Failed to remove container: {e}")
                 # Don't re-raise - original error is more important
+
+            # Clean up gateway worktrees
+            if repos:
+                _cleanup_worktrees(container_id)
 
     try:
         result = subprocess.run(cmd, timeout=timeout_seconds, check=False)

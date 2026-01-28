@@ -54,6 +54,7 @@ from jib_logging import get_logger
 # fall back to absolute import (standalone script mode in container)
 try:
     from .git_client import (
+        GIT_ALLOWED_COMMANDS,
         cleanup_credential_helper,
         create_credential_helper,
         get_token_for_repo,
@@ -74,8 +75,10 @@ try:
         extract_repo_from_remote,
         get_policy_engine,
     )
+    from .worktree_manager import WorktreeManager, startup_cleanup
 except ImportError:
     from git_client import (
+        GIT_ALLOWED_COMMANDS,
         cleanup_credential_helper,
         create_credential_helper,
         get_token_for_repo,
@@ -97,6 +100,7 @@ except ImportError:
         extract_repo_from_remote,
         get_policy_engine,
     )
+    from worktree_manager import WorktreeManager, startup_cleanup
 
 # Import repo_config for incognito mode support
 # Path setup needed because config is in a sibling directory
@@ -113,120 +117,6 @@ app = Flask(__name__)
 # Configuration
 DEFAULT_HOST = os.environ.get("GATEWAY_HOST", "0.0.0.0")  # Listen on all interfaces by default
 DEFAULT_PORT = 9847
-
-# Container worktree isolation paths
-LOCAL_OBJECTS_BASE = Path("/home/jib/.jib-local-objects")
-GIT_MAIN_DIR = Path("/home/jib/.git-main")
-
-
-def sync_objects_after_push(repo_path: str) -> dict[str, Any]:
-    """
-    Sync newly-created objects from container's local objects to shared store.
-
-    This implements the Container Worktree Isolation ADR's object sync:
-    - Container creates objects in its local objects directory
-    - After push, gateway copies new objects to shared store
-    - Makes commits available to other containers
-
-    Args:
-        repo_path: Path to the worktree (e.g., /home/jib/.jib-worktrees/<id>/<repo>/)
-
-    Returns:
-        Dict with sync results: {"synced": count, "errors": []}
-    """
-    result: dict[str, Any] = {"synced": 0, "errors": []}
-
-    # Parse repo_path to extract container_id and repo_name
-    # Container sends: /home/jib/repos/<repo-name>
-    # But this is actually mounted from: ~/.jib-worktrees/<container-id>/<repo-name>
-    # We need to resolve the path to get the actual underlying worktree path
-    try:
-        path = Path(repo_path)
-        # Resolve symlinks/mounts to get actual path
-        # /home/jib/repos/foo -> ~/.jib-worktrees/jib-xxx/foo
-        real_path = path.resolve()
-        parts = real_path.parts
-        # Find index of .jib-worktrees
-        if ".jib-worktrees" not in parts:
-            logger.debug("Not a worktree path, skipping object sync", repo_path=repo_path)
-            return result
-
-        worktrees_idx = parts.index(".jib-worktrees")
-        if len(parts) <= worktrees_idx + 2:
-            logger.warning("Invalid worktree path format", repo_path=repo_path)
-            return result
-
-        container_id = parts[worktrees_idx + 1]
-        repo_name = parts[worktrees_idx + 2]
-    except Exception as e:
-        logger.warning("Failed to parse repo_path", repo_path=repo_path, error=str(e))
-        return result
-
-    # Find local and shared object directories
-    local_objects = LOCAL_OBJECTS_BASE / container_id / repo_name
-    shared_objects = GIT_MAIN_DIR / repo_name / "objects"
-
-    if not local_objects.exists():
-        logger.debug("No local objects directory, skipping sync", path=str(local_objects))
-        return result
-
-    if not shared_objects.exists():
-        logger.warning("Shared objects directory not found", path=str(shared_objects))
-        result["errors"].append(f"Shared objects directory not found: {shared_objects}")
-        return result
-
-    # Copy new objects from local to shared
-    # Git stores objects in subdirectories named by first 2 chars of hash
-    try:
-        import shutil
-
-        for subdir in local_objects.iterdir():
-            # Skip info directory (contains alternates file)
-            if subdir.name == "info":
-                continue
-            # Skip pack directory (packfiles are handled by git)
-            if subdir.name == "pack":
-                continue
-            if not subdir.is_dir():
-                continue
-            if len(subdir.name) != 2:
-                continue
-
-            # Create target subdirectory if needed
-            target_subdir = shared_objects / subdir.name
-            target_subdir.mkdir(exist_ok=True)
-
-            # Copy object files (continue on errors to maximize sync)
-            for obj_file in subdir.iterdir():
-                if obj_file.is_file():
-                    target_file = target_subdir / obj_file.name
-                    if not target_file.exists():
-                        try:
-                            shutil.copy2(obj_file, target_file)
-                            result["synced"] += 1
-                        except Exception as e:
-                            error_msg = f"Failed to copy {obj_file}: {e}"
-                            result["errors"].append(error_msg)
-                            logger.warning("Object copy failed", file=str(obj_file), error=str(e))
-                            continue
-                        logger.debug(
-                            "Synced object",
-                            object_hash=f"{subdir.name}{obj_file.name}",
-                        )
-
-    except Exception as e:
-        logger.error("Object sync failed", error=str(e))
-        result["errors"].append(f"Object sync failed: {e}")
-
-    if result["synced"] > 0:
-        logger.info(
-            "Object sync complete",
-            synced=result["synced"],
-            container_id=container_id,
-            repo=repo_name,
-        )
-
-    return result
 
 
 # Authentication - shared secret from environment
@@ -605,10 +495,6 @@ def git_push():
         )
 
         if result.returncode == 0:
-            # Sync objects from container's local store to shared store
-            # This ensures other containers can see the pushed commits
-            sync_result = sync_objects_after_push(repo_path)
-
             audit_log(
                 "push_success",
                 "git_push",
@@ -618,7 +504,6 @@ def git_push():
                     "branch": branch,
                     "force": force,
                     "auth_mode": auth_mode,
-                    "objects_synced": sync_result.get("synced", 0),
                 },
             )
             return make_success(
@@ -629,7 +514,6 @@ def git_push():
                     "stdout": result.stdout,
                     "stderr": result.stderr,
                     "auth_mode": auth_mode,
-                    "objects_synced": sync_result.get("synced", 0),
                 },
             )
         else:
@@ -656,6 +540,143 @@ def git_push():
         return make_error(f"Push failed: {e}", status_code=500)
     finally:
         cleanup_credential_helper(credential_helper_path)
+
+
+@app.route("/api/v1/git/execute", methods=["POST"])
+@require_auth
+@require_rate_limit("git_fetch")  # Use fetch rate limit for general git ops
+def git_execute():
+    """
+    Execute a git command in the gateway's worktree.
+
+    This is the primary endpoint for all git operations in the gateway-managed
+    worktree architecture. The container has no direct git access (its .git is
+    shadowed by tmpfs), so all git commands route through this endpoint.
+
+    Request body:
+        {
+            "repo_path": "/home/jib/repos/myrepo",
+            "operation": "status",
+            "args": ["--porcelain"],
+            "container_id": "jib-xxx"  # For path mapping
+        }
+
+    Supported operations: status, add, commit, log, diff, show, branch,
+    checkout, switch, reset, restore, stash, merge, rebase, cherry-pick,
+    tag, clean, config, rev-parse, remote
+
+    Network operations (push, fetch, ls-remote) should use dedicated endpoints.
+    """
+    data = request.get_json()
+    if not data:
+        return make_error("Missing request body")
+
+    repo_path = data.get("repo_path")
+    operation = data.get("operation")
+    args = data.get("args", [])
+    container_id = data.get("container_id")
+
+    if not repo_path:
+        return make_error("Missing repo_path")
+    if not operation:
+        return make_error("Missing operation")
+
+    # Validate repo_path
+    path_valid, path_error = validate_repo_path(repo_path)
+    if not path_valid:
+        audit_log(
+            "git_execute_blocked",
+            "git_execute",
+            success=False,
+            details={"repo_path": repo_path, "operation": operation, "reason": path_error},
+        )
+        return make_error(path_error, status_code=403)
+
+    # Validate operation is in allowlist
+    if operation not in GIT_ALLOWED_COMMANDS:
+        audit_log(
+            "git_execute_blocked",
+            "git_execute",
+            success=False,
+            details={"operation": operation, "reason": "Operation not allowed"},
+        )
+        return make_error(
+            f"Operation '{operation}' not allowed. "
+            f"Allowed: {', '.join(sorted(GIT_ALLOWED_COMMANDS.keys()))}",
+            status_code=403,
+        )
+
+    # Network operations should use dedicated endpoints
+    if operation in ("push", "fetch", "ls-remote"):
+        return make_error(
+            f"Use dedicated endpoint for {operation}: /api/v1/git/{operation}",
+            status_code=400,
+        )
+
+    # Validate args against allowlist
+    args_valid, args_error, validated_args = validate_git_args(operation, args)
+    if not args_valid:
+        audit_log(
+            "git_execute_blocked",
+            "git_execute",
+            success=False,
+            details={"operation": operation, "args": args, "reason": args_error},
+        )
+        return make_error(args_error, status_code=400)
+
+    # Build command
+    cmd = git_cmd(operation, *validated_args)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+
+        if result.returncode == 0:
+            audit_log(
+                "git_execute_success",
+                "git_execute",
+                success=True,
+                details={"operation": operation, "container_id": container_id},
+            )
+            return make_success(
+                f"git {operation} successful",
+                {
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "returncode": result.returncode,
+                },
+            )
+        else:
+            audit_log(
+                "git_execute_failed",
+                "git_execute",
+                success=False,
+                details={
+                    "operation": operation,
+                    "returncode": result.returncode,
+                    "container_id": container_id,
+                },
+            )
+            return make_error(
+                f"git {operation} failed",
+                status_code=500,
+                details={
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "returncode": result.returncode,
+                },
+            )
+
+    except subprocess.TimeoutExpired:
+        return make_error(f"git {operation} timed out", status_code=504)
+    except Exception as e:
+        return make_error(f"git {operation} failed: {e}", status_code=500)
 
 
 @app.route("/api/v1/git/fetch", methods=["POST"])
@@ -1283,6 +1304,222 @@ def gh_execute():
         )
 
 
+# =============================================================================
+# Worktree Lifecycle Endpoints
+# =============================================================================
+
+# Global WorktreeManager instance
+_worktree_manager: WorktreeManager | None = None
+
+
+def get_worktree_manager() -> WorktreeManager:
+    """Get or create the global WorktreeManager instance."""
+    global _worktree_manager
+    if _worktree_manager is None:
+        _worktree_manager = WorktreeManager()
+    return _worktree_manager
+
+
+@app.route("/api/v1/worktree/create", methods=["POST"])
+@require_auth
+def worktree_create():
+    """
+    Create worktrees for a container.
+
+    Called by the jib launcher before starting a container. Creates isolated
+    worktrees for each repository the container needs access to.
+
+    Request body:
+        {
+            "container_id": "jib-xxx-yyy",
+            "repos": ["owner/repo1", "owner/repo2"]
+        }
+
+    Returns:
+        {
+            "success": true,
+            "message": "Worktrees created",
+            "data": {
+                "worktrees": {
+                    "repo1": "/home/user/.jib-worktrees/jib-xxx-yyy/repo1",
+                    "repo2": "/home/user/.jib-worktrees/jib-xxx-yyy/repo2"
+                }
+            }
+        }
+    """
+    data = request.get_json()
+    if not data:
+        return make_error("Missing request body")
+
+    container_id = data.get("container_id")
+    repos = data.get("repos", [])
+    base_branch = data.get("base_branch", "HEAD")
+
+    if not container_id:
+        return make_error("Missing container_id")
+    if not repos:
+        return make_error("Missing repos list")
+
+    manager = get_worktree_manager()
+    worktrees = {}
+    errors = []
+
+    for repo in repos:
+        # Extract repo name from owner/repo format
+        if "/" in repo:
+            repo_name = repo.split("/")[-1]
+        else:
+            repo_name = repo
+
+        try:
+            info = manager.create_worktree(
+                repo_name=repo_name,
+                container_id=container_id,
+                base_branch=base_branch,
+            )
+            worktrees[repo_name] = str(info.worktree_path)
+        except ValueError as e:
+            errors.append(f"{repo_name}: {e}")
+        except RuntimeError as e:
+            errors.append(f"{repo_name}: {e}")
+        except Exception as e:
+            errors.append(f"{repo_name}: unexpected error - {e}")
+
+    if errors and not worktrees:
+        return make_error(
+            "Failed to create any worktrees",
+            status_code=500,
+            details={"errors": errors},
+        )
+
+    audit_log(
+        "worktrees_created",
+        "worktree_create",
+        success=True,
+        details={
+            "container_id": container_id,
+            "repos": list(worktrees.keys()),
+            "errors": errors,
+        },
+    )
+
+    return make_success(
+        "Worktrees created",
+        {
+            "worktrees": worktrees,
+            "errors": errors if errors else None,
+        },
+    )
+
+
+@app.route("/api/v1/worktree/delete", methods=["POST"])
+@require_auth
+def worktree_delete():
+    """
+    Delete worktrees for a container.
+
+    Called by the jib launcher when a container exits. Removes the worktrees
+    and associated branches.
+
+    Request body:
+        {
+            "container_id": "jib-xxx-yyy",
+            "force": false  # optional, force remove even with uncommitted changes
+        }
+
+    Returns:
+        {
+            "success": true,
+            "message": "Worktrees deleted",
+            "data": {
+                "deleted": ["repo1", "repo2"],
+                "warnings": ["repo1: had uncommitted changes"]
+            }
+        }
+    """
+    data = request.get_json()
+    if not data:
+        return make_error("Missing request body")
+
+    container_id = data.get("container_id")
+    force = data.get("force", False)
+
+    if not container_id:
+        return make_error("Missing container_id")
+
+    manager = get_worktree_manager()
+
+    # Get list of worktrees for this container
+    worktree_dir = manager.worktree_base / container_id
+    if not worktree_dir.exists():
+        return make_success("No worktrees to delete", {"deleted": []})
+
+    deleted = []
+    errors = []
+    warnings = []
+
+    # Iterate through worktree directories
+    for repo_dir in list(worktree_dir.iterdir()):
+        if not repo_dir.is_dir():
+            continue
+
+        repo_name = repo_dir.name
+
+        try:
+            result = manager.remove_worktree(
+                container_id=container_id,
+                repo_name=repo_name,
+                force=force,
+            )
+
+            if result.success:
+                deleted.append(repo_name)
+                if result.warning:
+                    warnings.append(f"{repo_name}: {result.warning}")
+            else:
+                if result.uncommitted_changes and not force:
+                    errors.append(f"{repo_name}: has uncommitted changes (use force=true)")
+                elif result.error:
+                    errors.append(f"{repo_name}: {result.error}")
+                else:
+                    errors.append(f"{repo_name}: removal failed")
+        except Exception as e:
+            errors.append(f"{repo_name}: unexpected error - {e}")
+
+    audit_log(
+        "worktrees_deleted",
+        "worktree_delete",
+        success=True,
+        details={
+            "container_id": container_id,
+            "deleted": deleted,
+            "errors": errors,
+        },
+    )
+
+    return make_success(
+        "Worktrees deleted",
+        {
+            "deleted": deleted,
+            "errors": errors if errors else None,
+            "warnings": warnings if warnings else None,
+        },
+    )
+
+
+@app.route("/api/v1/worktree/list", methods=["GET"])
+@require_auth
+def worktree_list():
+    """
+    List all active worktrees.
+
+    Returns information about all worktrees managed by the gateway.
+    """
+    manager = get_worktree_manager()
+    worktrees = manager.list_worktrees()
+    return make_success("Worktrees listed", {"worktrees": worktrees})
+
+
 def main():
     """Run the gateway server."""
     parser = argparse.ArgumentParser(description="Gateway Sidecar REST API")
@@ -1318,6 +1555,14 @@ def main():
         logger.warning("Incognito config validation failed", reason=validation_msg)
     else:
         logger.info("Incognito config", status=validation_msg)
+
+    # Clean up orphaned worktrees from crashed containers
+    try:
+        orphans_removed = startup_cleanup()
+        if orphans_removed > 0:
+            logger.info(f"Startup cleanup removed {orphans_removed} orphaned worktree(s)")
+    except Exception as e:
+        logger.warning("Startup worktree cleanup failed", error=str(e))
 
     logger.info(
         "Starting Gateway Sidecar",

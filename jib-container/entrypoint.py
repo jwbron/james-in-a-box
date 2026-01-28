@@ -555,13 +555,16 @@ def _fix_repo_config(repo_config: Path, logger: Logger) -> None:
 
 
 def setup_worktrees(config: Config, logger: Logger) -> bool:
-    """Configure git worktrees with isolated git state.
+    """Validate gateway-managed worktree configuration.
 
-    This implements the Container Worktree Isolation ADR:
-    - Each container only sees its own worktree admin directory
-    - Shared objects/refs are mounted directly (rw) at .git-common/{repo}/
-    - commondir points to .git-common/{repo}/ for git to find shared resources
-    - gitdir is backed up and rewritten for container-internal paths
+    This implements the Gateway-Managed Worktrees ADR:
+    - Gateway creates/manages worktrees before container starts
+    - Container mounts only working directory (no git metadata access)
+    - All git operations route through gateway API
+    - No path rewriting needed - gateway controls all paths
+
+    The .git file/directory is shadowed by tmpfs mount, so container
+    cannot perform local git operations - they must go through gateway.
 
     Returns False if setup failed fatally.
     """
@@ -569,127 +572,15 @@ def setup_worktrees(config: Config, logger: Logger) -> bool:
         logger.warn("Repos workspace not found - check mount configuration")
         return True
 
-    # Check for worktrees (repos with .git as a file, not directory)
-    worktree_dirs = [d for d in config.repos_dir.iterdir() if (d / ".git").is_file()]
-    if not worktree_dirs:
-        return True
+    # Count repos for logging
+    repo_count = 0
+    for repo_dir in config.repos_dir.iterdir():
+        if repo_dir.is_dir():
+            repo_count += 1
 
-    # Check for isolated git mount structure (new architecture)
-    # If .git-admin exists, use isolated mode; otherwise fall back to legacy .git-main
-    use_isolated_mode = config.git_admin_dir.exists()
-
-    # Legacy mode - check for .git-main if .git-admin doesn't exist
-    if not use_isolated_mode and not config.git_main_dir.exists():
-        logger.error("FATAL: Neither ~/.git-admin nor ~/.git-main mounted but worktrees exist")
-        logger.error("  This means jib failed to mount the git directories.")
-        logger.error("  Container cannot start with broken git configuration.")
-        return False
-
-    # Configure each worktree
-    configured = 0
-    failed = 0
-    failed_repos = []
-
-    for repo_dir in worktree_dirs:
-        repo_name = repo_dir.name
-        git_file = repo_dir / ".git"
-
-        if use_isolated_mode:
-            # New isolated mode: point to .git-admin/<repo>
-            target_path = config.git_admin_dir / repo_name
-
-            if not target_path.is_dir():
-                logger.error(f"FATAL: Worktree admin dir doesn't exist for {repo_name}")
-                logger.error(f"  Expected: {target_path}")
-                failed += 1
-                failed_repos.append(repo_name)
-                continue
-
-            # Update .git file to point to isolated admin dir
-            git_file.write_text(f"gitdir: {target_path}\n")
-            os.chown(git_file, config.runtime_uid, config.runtime_gid)
-
-            # Backup and rewrite gitdir file for container-internal paths
-            # This prevents container paths from leaking to host metadata
-            gitdir_file = target_path / "gitdir"
-            gitdir_backup = target_path / "gitdir.host-backup"
-
-            import shutil
-
-            if gitdir_file.exists() and not gitdir_backup.exists():
-                # Backup original host path (only if not already backed up)
-                shutil.copy2(gitdir_file, gitdir_backup)
-                os.chown(gitdir_backup, config.runtime_uid, config.runtime_gid)
-
-            # Write container-internal path
-            gitdir_file.write_text(f"/home/jib/repos/{repo_name}\n")
-            os.chown(gitdir_file, config.runtime_uid, config.runtime_gid)
-
-            # Backup and rewrite commondir file for container-internal paths
-            # This prevents container paths from leaking to host metadata
-            commondir_file = target_path / "commondir"
-            commondir_backup = target_path / "commondir.host-backup"
-
-            if commondir_file.exists() and not commondir_backup.exists():
-                # Backup original host path (only if not already backed up)
-                shutil.copy2(commondir_file, commondir_backup)
-                os.chown(commondir_backup, config.runtime_uid, config.runtime_gid)
-
-            # Write container-internal path pointing to mounted git components
-            # All shared git components (objects, refs, packed-refs, config, hooks)
-            # are mounted under .git-common/{repo_name}/
-            common_git_path = config.git_common_dir / repo_name
-            commondir_file.write_text(f"{common_git_path}\n")
-            os.chown(commondir_file, config.runtime_uid, config.runtime_gid)
-
-            # Update git config to set core.worktree
-            # Non-fatal if this fails - git usually figures it out
-            worktree_config = target_path / "config"
-            with contextlib.suppress(Exception):
-                run_cmd_with_retry(
-                    [
-                        "git",
-                        "config",
-                        "-f",
-                        str(worktree_config),
-                        "core.worktree",
-                        str(repo_dir),
-                    ]
-                )
-
-            configured += 1
-        else:
-            # Legacy mode: point to .git-main/<repo>/worktrees/<admin>
-            content = git_file.read_text().strip()
-            original_gitdir = content.replace("gitdir: ", "")
-            worktree_admin = Path(original_gitdir).name
-
-            target_path = config.git_main_dir / repo_name / "worktrees" / worktree_admin
-
-            if target_path.is_dir():
-                git_file.write_text(f"gitdir: {target_path}\n")
-                os.chown(git_file, config.runtime_uid, config.runtime_gid)
-                configured += 1
-            else:
-                logger.error(f"FATAL: Worktree path doesn't exist for {repo_name}")
-                logger.error(f"  Expected: {target_path}")
-                logger.error(f"  Original: {original_gitdir}")
-                failed += 1
-                failed_repos.append(repo_name)
-
-    if failed > 0:
-        logger.error("")
-        logger.error(f"FATAL: {failed} worktree(s) failed to configure: {' '.join(failed_repos)}")
-        logger.error("  Container cannot start with broken git configuration.")
-        return False
-
-    if configured > 0:
-        if use_isolated_mode:
-            logger.success(f"Repo worktrees configured: {configured} repo(s) (isolated mode)")
-            logger.info("  Each worktree has isolated git state")
-        else:
-            logger.success(f"Repo worktrees configured: {configured} repo(s) (legacy mode)")
-            logger.info("  Git metadata mounted read-write from ~/.git-main/")
+    if repo_count > 0:
+        logger.success(f"Repos mounted: {repo_count} repo(s) (gateway-managed worktrees)")
+        logger.info("  All git operations route through gateway API")
 
     return True
 
@@ -1046,71 +937,15 @@ def generate_docs_indexes(config: Config, logger: Logger) -> None:
 
 
 def cleanup_on_exit(config: Config, logger: Logger) -> None:
-    """Cleanup handler for container shutdown."""
-    import shutil
+    """Cleanup handler for container shutdown.
 
+    In the gateway-managed worktree architecture, the container doesn't
+    have access to git metadata, so there's minimal cleanup needed.
+    The gateway handles worktree cleanup when containers exit.
+    """
     if not config.quiet:
         print("")
         print("Cleaning up on container exit...")
-
-    # Restore gitdir and commondir files from backups (prevent container paths from leaking to host)
-    if config.git_admin_dir.exists():
-        for admin_dir in config.git_admin_dir.iterdir():
-            if not admin_dir.is_dir():
-                continue
-
-            # Restore gitdir
-            gitdir_backup = admin_dir / "gitdir.host-backup"
-            gitdir_file = admin_dir / "gitdir"
-            if gitdir_backup.exists():
-                try:
-                    shutil.copy2(gitdir_backup, gitdir_file)
-                    gitdir_backup.unlink()
-                    if not config.quiet:
-                        print(f"  Restored gitdir for {admin_dir.name}")
-                except Exception as e:
-                    print(f"WARNING: Failed to restore gitdir for {admin_dir.name}: {e}")
-
-            # Restore commondir
-            commondir_backup = admin_dir / "commondir.host-backup"
-            commondir_file = admin_dir / "commondir"
-            if commondir_backup.exists():
-                try:
-                    shutil.copy2(commondir_backup, commondir_file)
-                    commondir_backup.unlink()
-                    if not config.quiet:
-                        print(f"  Restored commondir for {admin_dir.name}")
-                except Exception as e:
-                    print(f"WARNING: Failed to restore commondir for {admin_dir.name}: {e}")
-
-    # Check and clean git remote URLs
-    if config.git_main_dir.exists():
-        for repo_config in config.git_main_dir.glob("*/config"):
-            try:
-                result = run_cmd(
-                    ["git", "config", "-f", str(repo_config), "remote.origin.url"],
-                    capture=True,
-                    check=False,
-                )
-                remote_url = result.stdout.strip() if result.returncode == 0 else ""
-
-                token_patterns = ["x-access-token:", "ghs_", "ghp_", "github_pat_"]
-                if remote_url and any(p in remote_url for p in token_patterns):
-                    print("WARNING: Git remote URL was modified during session!")
-                    print(f"  Found token in: {repo_config}")
-                    import re
-
-                    clean_url = re.sub(
-                        r"https://[^@]*@github\.com/", "https://github.com/", remote_url
-                    )
-                    run_cmd(
-                        ["git", "config", "-f", str(repo_config), "remote.origin.url", clean_url]
-                    )
-                    print(f"  Cleaned: {remote_url} -> {clean_url}")
-            except Exception:
-                pass
-
-    if not config.quiet:
         print("✓ Cleanup complete")
 
 
