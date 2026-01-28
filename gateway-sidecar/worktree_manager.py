@@ -172,17 +172,30 @@ class WorktreeManager:
         worktree_path = self.worktree_base / container_id / repo_name
         branch_name = f"jib/{container_id}/work"
 
-        # Create container directory
+        # Create container directory and set ownership immediately
         worktree_path.parent.mkdir(parents=True, exist_ok=True)
+        self._chown_single(worktree_path.parent, uid, gid)
 
-        # Check if worktree already exists
-        if worktree_path.exists():
+        # Check if worktree already exists AND is valid
+        # A valid worktree has a .git file (not directory) containing "gitdir: ..."
+        git_file = worktree_path / ".git"
+        worktree_is_valid = (
+            worktree_path.exists()
+            and git_file.exists()
+            and git_file.is_file()
+            and git_file.read_text().strip().startswith("gitdir:")
+        )
+
+        if worktree_is_valid:
             logger.info(
                 "Worktree already exists",
                 container_id=container_id,
                 repo=repo_name,
                 path=str(worktree_path),
             )
+            # Ensure ownership is correct (may have been created with different uid/gid)
+            self._chown_recursive(worktree_path, uid, gid)
+            self._chown_single(worktree_path.parent, uid, gid)
             # Return info about existing worktree
             return WorktreeInfo(
                 container_id=container_id,
@@ -191,6 +204,16 @@ class WorktreeManager:
                 worktree_path=worktree_path,
                 git_dir=self._find_worktree_git_dir(main_repo, worktree_path),
             )
+
+        # If directory exists but is not a valid worktree, remove it first
+        if worktree_path.exists():
+            logger.warning(
+                "Removing invalid/empty worktree directory",
+                container_id=container_id,
+                repo=repo_name,
+                path=str(worktree_path),
+            )
+            shutil.rmtree(worktree_path, ignore_errors=True)
 
         # Check if branch already exists (from crashed session)
         branch_exists = (
