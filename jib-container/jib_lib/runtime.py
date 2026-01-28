@@ -118,9 +118,22 @@ def _setup_repo_mounts(
             if not quiet:
                 print(f"  • ~/repos/{repo_name} (direct mount)")
 
-        # Shadow .git with tmpfs to prevent local git operations
+        # Shadow .git to prevent local git operations
         # This forces all git operations through the gateway
-        mount_args.extend(["--mount", f"type=tmpfs,destination={container_path}/.git"])
+        # In worktrees, .git is a FILE (not directory) containing "gitdir: ..."
+        # For directories: use tmpfs mount
+        # For files: use bind mount of /dev/null
+        if use_gateway_worktrees and repo_name in worktrees:
+            # Worktree: .git is a file
+            git_path = Path(worktrees[repo_name]) / ".git"
+            if git_path.exists() and git_path.is_file():
+                mount_args.extend(["--mount", f"type=bind,source=/dev/null,destination={container_path}/.git,readonly"])
+            else:
+                # Fallback to tmpfs if it's somehow a directory
+                mount_args.extend(["--mount", f"type=tmpfs,destination={container_path}/.git"])
+        else:
+            # Direct mount: .git is a directory
+            mount_args.extend(["--mount", f"type=tmpfs,destination={container_path}/.git"])
 
         repos[repo_name] = repo_path
 
