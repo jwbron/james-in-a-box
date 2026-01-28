@@ -392,9 +392,7 @@ def git_push():
         if repo_name:
             manager = get_worktree_manager()
             try:
-                worktree_path, _main_repo = manager.get_worktree_paths(
-                    container_id, repo_name
-                )
+                worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
                 if worktree_path.exists():
                     exec_path = str(worktree_path)
                     logger.debug(
@@ -654,9 +652,7 @@ def git_execute():
         if repo_name:
             manager = get_worktree_manager()
             try:
-                worktree_path, _main_repo = manager.get_worktree_paths(
-                    container_id, repo_name
-                )
+                worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
                 if worktree_path.exists():
                     exec_path = str(worktree_path)
                     logger.debug(
@@ -800,9 +796,7 @@ def git_fetch():
         if repo_name:
             manager = get_worktree_manager()
             try:
-                worktree_path, _main_repo = manager.get_worktree_paths(
-                    container_id, repo_name
-                )
+                worktree_path, _main_repo = manager.get_worktree_paths(container_id, repo_name)
                 if worktree_path.exists():
                     exec_path = str(worktree_path)
                     logger.debug(
