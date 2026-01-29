@@ -293,5 +293,54 @@ class TestIsSshUrl:
         assert not is_ssh_url("file:///path/to/repo")
 
 
+class TestGitHubClientExecuteEnvironment:
+    """Tests for GitHubClient.execute() environment configuration.
+
+    When gh commands run git internally (e.g., gh pr checkout runs git fetch),
+    the environment must include git URL rewrite config to convert SSH URLs
+    to HTTPS, since the gateway uses token auth not SSH keys.
+    """
+
+    def test_execute_env_includes_ssh_url_rewrite(self):
+        """execute() environment should include SSH to HTTPS URL rewrite config."""
+        from unittest.mock import MagicMock, patch
+
+        from github_client import GitHubClient
+
+        client = GitHubClient()
+
+        with (
+            patch.object(client, "get_token_for_mode", return_value="test-token"),
+            patch("github_client.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="success", stderr=""
+            )
+
+            client.execute(["pr", "view", "123"])
+
+            # Verify subprocess.run was called
+            assert mock_run.called
+            call_kwargs = mock_run.call_args.kwargs
+            env = call_kwargs.get("env", {})
+
+            # Verify SSH URL rewrite config is present
+            assert env.get("GIT_CONFIG_COUNT") == "3"
+
+            # Check for git@github.com: rewrite
+            found_git_at = False
+            found_ssh_protocol = False
+            for i in range(3):
+                key = env.get(f"GIT_CONFIG_KEY_{i}", "")
+                value = env.get(f"GIT_CONFIG_VALUE_{i}", "")
+                if "insteadOf" in key and value == "git@github.com:":
+                    found_git_at = True
+                if "insteadOf" in key and value == "ssh://git@github.com/":
+                    found_ssh_protocol = True
+
+            assert found_git_at, "Missing URL rewrite for git@github.com: format"
+            assert found_ssh_protocol, "Missing URL rewrite for ssh://git@github.com/ format"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
