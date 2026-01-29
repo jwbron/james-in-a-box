@@ -313,9 +313,7 @@ class TestGitHubClientExecuteEnvironment:
             patch.object(client, "get_token_for_mode", return_value="test-token"),
             patch("github_client.subprocess.run") as mock_run,
         ):
-            mock_run.return_value = MagicMock(
-                returncode=0, stdout="success", stderr=""
-            )
+            mock_run.return_value = MagicMock(returncode=0, stdout="success", stderr="")
 
             client.execute(["pr", "view", "123"])
 
