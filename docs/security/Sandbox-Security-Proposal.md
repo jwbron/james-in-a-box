@@ -23,16 +23,14 @@ This guarantee is achieved through:
 
 ### Document Scope
 
-This proposal consolidates security controls across six domains:
+This proposal consolidates security controls across four core domains:
 
 | Domain | ADR/Document | Status |
 |--------|--------------|--------|
 | **Internet Access** | ADR-Internet-Tool-Access-Lockdown | Implemented (Phase 1), Phase 2 Proposed |
 | **Git Operations** | ADR-Git-Isolation-Architecture | Implemented |
 | **Private Repo Mode** | ADR-Git-Isolation-Architecture (extension) | Proposed |
-| **Logging & Audit** | ADR-Standardized-Logging-Interface | Implemented |
-| **Slack Communication** | ADR-Slack-Isolation-Architecture | Proposed (PR #629) |
-| **Log Access** | ADR-Log-Access-Lockdown | Proposed (PR #630) |
+| **Audit Logging** | ADR-Standardized-Logging-Interface | Implemented |
 
 ---
 
@@ -44,12 +42,10 @@ This proposal consolidates security controls across six domains:
 4. [Credential Isolation](#4-credential-isolation)
 5. [Git and GitHub Lockdown](#5-git-and-github-lockdown)
 6. [Private Repository Mode](#6-private-repository-mode)
-7. [Slack Communication Lockdown](#7-slack-communication-lockdown)
-8. [Log Access Lockdown](#8-log-access-lockdown)
-9. [Audit Logging](#9-audit-logging)
-10. [Remaining Gaps and Concerns](#10-remaining-gaps-and-concerns)
-11. [Recommendations](#11-recommendations)
-12. [Appendix: OWASP Alignment](#appendix-owasp-alignment)
+7. [Audit Logging](#7-audit-logging)
+8. [Remaining Gaps and Concerns](#8-remaining-gaps-and-concerns)
+9. [Recommendations](#9-recommendations)
+10. [Appendix: OWASP Alignment](#appendix-owasp-alignment)
 
 ---
 
@@ -70,7 +66,6 @@ This proposal consolidates security controls across six domains:
 | Asset | Classification | Protection Requirement |
 |-------|----------------|----------------------|
 | **GitHub Tokens** | Critical | Never enter agent container |
-| **Slack Tokens** | Critical | Never enter agent container |
 | **Claude API Keys** | High | Available to agent (required for operation) |
 | **Source Code (Private)** | High | Readable, changes require human review |
 | **Internal Documentation** | Medium | Readable within context sync scope |
@@ -90,7 +85,7 @@ This proposal consolidates security controls across six domains:
 │  │  │ Agent       │  │ (workspace) │  │ (read-only) │  │ (task mem)  │   │ │
 │  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘   │ │
 │  │                                                                         │ │
-│  │  NO: GitHub tokens, Slack tokens, SSH keys, cloud credentials          │ │
+│  │  NO: GitHub tokens, SSH keys, cloud credentials                        │ │
 │  │  NO: Direct network access (proxy required)                            │ │
 │  │  NO: Git metadata (.git directory shadowed by tmpfs)                   │ │
 │  │  NO: Other agents' workspaces                                          │ │
@@ -105,10 +100,10 @@ This proposal consolidates security controls across six domains:
 │  │                     Gateway Sidecar (Policy Enforcer)                   │ │
 │  │                                                                         │ │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │ │
-│  │  │ GITHUB_     │  │ SLACK_      │  │ HTTPS       │  │ Policy      │   │ │
-│  │  │ TOKEN       │  │ TOKEN       │  │ Proxy       │  │ Engine      │   │ │
-│  │  │ (secure)    │  │ (secure)    │  │ (filtered)  │  │ (validates) │   │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘   │ │
+│  │  │ GITHUB_     │  │ HTTPS       │  │ Policy      │                    │ │
+│  │  │ TOKEN       │  │ Proxy       │  │ Engine      │                    │ │
+│  │  │ (secure)    │  │ (filtered)  │  │ (validates) │                    │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘                    │ │
 │  │                                                                         │ │
 │  │  ENFORCES: Branch ownership, merge blocking, domain allowlist          │ │
 │  │  LOGS: All operations with full audit trail                            │ │
@@ -136,9 +131,9 @@ This proposal consolidates security controls across six domains:
 │  │    │   172.30.0.10   │◄────REST API────►│     172.30.0.2      │      │   │
 │  │    │                 │    Port 9847     │                     │      │   │
 │  │    │ Claude Code     │                  │ GITHUB_TOKEN        │      │   │
-│  │    │ git/gh wrappers │◄────HTTPS Proxy──│ SLACK_TOKEN         │      │   │
-│  │    │ NO credentials  │    Port 3128     │ Squid (filtered)    │      │   │
-│  │    │                 │                  │ Policy Engine       │      │   │
+│  │    │ git/gh wrappers │◄────HTTPS Proxy──│ Squid (filtered)    │      │   │
+│  │    │ NO credentials  │    Port 3128     │ Policy Engine       │      │   │
+│  │    │                 │                  │                     │      │   │
 │  │    └─────────────────┘                  └──────────┬──────────┘      │   │
 │  │                                                    │                 │   │
 │  └────────────────────────────────────────────────────│─────────────────┘   │
@@ -289,8 +284,6 @@ http_access deny all
 | Credential | Location | Container Access |
 |------------|----------|------------------|
 | `GITHUB_TOKEN` | Gateway sidecar only | ❌ Never |
-| `SLACK_TOKEN` | Gateway sidecar only | ❌ Never |
-| `SLACK_APP_TOKEN` | Gateway sidecar only | ❌ Never |
 | `ANTHROPIC_API_KEY` | Container environment | ✅ Required for operation |
 | SSH keys | None | ❌ Not present |
 | Cloud credentials | None | ❌ Not present |
@@ -459,113 +452,11 @@ services:
 
 ---
 
-## 7. Slack Communication Lockdown
-
-**Reference:** [ADR-Slack-Isolation-Architecture](https://github.com/jwbron/james-in-a-box/pull/629) (PR #629)
-
-### 7.1 Current State
-
-```
-Current (File-Based):
-- slack-receiver writes to ~/sharing/incoming/
-- Agent reads ALL files in ~/sharing/incoming/
-- Agent writes to ~/sharing/notifications/
-- slack-notifier reads and sends
-
-PROBLEM: Agent sees ALL incoming messages, not just its assigned task
-```
-
-### 7.2 Proposed Architecture
-
-Route all Slack communication through the gateway sidecar:
-
-```
-Target (API-Based):
-- Gateway receives Slack messages via Socket Mode
-- Agent calls GET /api/slack/messages?task_id=...
-- Gateway returns only messages for that task
-- Agent calls POST /api/slack/send to send
-- ~/sharing/ directory removed from container mounts
-```
-
-### 7.3 Gateway Slack API
-
-| Endpoint | Purpose | Access Control |
-|----------|---------|----------------|
-| `GET /api/slack/messages` | Receive messages | Only messages for current task_id |
-| `POST /api/slack/send` | Send message | Rate limited, logged |
-| `POST /api/slack/thread-reply` | Reply in thread | Must match task thread |
-
-### 7.4 Security Properties
-
-| Property | Current | Proposed |
-|----------|---------|----------|
-| **Message filtering** | Agent sees ALL messages | Task-scoped access |
-| **Credential isolation** | SLACK_TOKEN on host (good) | SLACK_TOKEN in gateway (better) |
-| **Audit trail** | File timestamps only | Structured JSON logs |
-| **Rate limiting** | None | Gateway-enforced |
-| **Architecture consistency** | File-based (different from git) | API-based (matches git) |
-
-**Status:** 🔄 Proposed (PR #629)
-
----
-
-## 8. Log Access Lockdown
-
-**Reference:** [ADR-Log-Access-Lockdown](https://github.com/jwbron/james-in-a-box/pull/630) (PR #630)
-
-### 8.1 Current State
-
-```
-Current:
-- ~/.jib-sharing/ mounted in container
-- Agent can read:
-  - All notification files
-  - All response tracking
-  - All job logs
-  - Claude conversation history
-
-PROBLEM: Agent could read other agents' logs or sensitive operations
-```
-
-### 8.2 Proposed Architecture
-
-Remove direct log access; route through gateway:
-
-```
-Target:
-- ~/.jib-sharing/ NOT mounted in container
-- Agent calls GET /api/logs/{container_id}
-- Gateway validates container_id matches caller
-- Cross-agent log access denied with 403
-```
-
-### 8.3 Gateway Log API
-
-| Endpoint | Purpose | Access Control |
-|----------|---------|----------------|
-| `GET /api/logs` | List own logs | Scoped by container_id |
-| `GET /api/logs/{log_id}` | Read specific log | Must match container_id |
-| `GET /api/logs/search` | Search logs | Only own logs returned |
-
-### 8.4 Security Properties
-
-| Property | Current | Proposed |
-|----------|---------|----------|
-| **Filesystem isolation** | Agent sees all logs | Logs not mounted |
-| **Access control** | None | Task/container-scoped |
-| **Audit trail** | None | All access logged |
-| **Cross-agent access** | Possible | Blocked with 403 |
-
-**Status:** 🔄 Proposed (PR #630)
-
----
-
-## 9. Audit Logging
+## 7. Audit Logging
 
 **Reference:** [ADR-Standardized-Logging-Interface](../adr/in-progress/ADR-Standardized-Logging-Interface.md)
 
-### 9.1 Log Format
+### 7.1 Log Format
 
 All operations produce structured JSON logs:
 
@@ -598,7 +489,7 @@ All operations produce structured JSON logs:
 }
 ```
 
-### 9.2 Logged Operations
+### 7.2 Logged Operations
 
 | Category | Operations Logged |
 |----------|-------------------|
@@ -608,7 +499,7 @@ All operations produce structured JSON logs:
 | **Policy violations** | Blocked operations with reason |
 | **Authentication** | Success/failure |
 
-### 9.3 Alerting
+### 7.3 Alerting
 
 | Condition | Alert Priority |
 |-----------|----------------|
@@ -617,7 +508,7 @@ All operations produce structured JSON logs:
 | High volume of blocked requests | Medium |
 | GitHub rate limit | Low |
 
-### 9.4 Retention
+### 7.4 Retention
 
 - **Journalctl:** 90 days default (configurable via `/etc/systemd/journald.conf`)
 - **Model output:** Daily directories with index files
@@ -627,9 +518,9 @@ All operations produce structured JSON logs:
 
 ---
 
-## 10. Remaining Gaps and Concerns
+## 8. Remaining Gaps and Concerns
 
-### 10.1 Known Residual Risks
+### 8.1 Known Residual Risks
 
 | Risk | Severity | Mitigation | Status |
 |------|----------|------------|--------|
@@ -638,7 +529,7 @@ All operations produce structured JSON logs:
 | **Pre-installed package vulnerabilities** | Low | Image scanning with Trivy; pinned versions | Mitigated |
 | **Claude API key exposure** | Low | Required for operation; scoped to single use case | Accepted |
 
-### 10.2 Exfiltration via GitHub (Detail)
+### 8.2 Exfiltration via GitHub (Detail)
 
 The gateway cannot fully prevent data exfiltration via GitHub without imposing arbitrary limits:
 
@@ -656,7 +547,7 @@ The gateway cannot fully prevent data exfiltration via GitHub without imposing a
 
 **Risk Acceptance:** This exfiltration vector is accepted as a residual risk. Mitigations provide detection capability, and data stays within controlled (private) repositories.
 
-### 10.3 Claude OAuth Configuration / Auth Keys
+### 8.3 Claude OAuth Configuration / Auth Keys
 
 **Identified Concern:** The Claude API key (`ANTHROPIC_API_KEY`) is present in the container environment because Claude Code requires it to function. This is the one credential that cannot be isolated from the agent.
 
@@ -673,7 +564,7 @@ The gateway cannot fully prevent data exfiltration via GitHub without imposing a
 
 **Risk Assessment:** LOW - Key can only be used for its intended purpose due to network lockdown.
 
-### 10.4 Gaps Not Yet Addressed
+### 8.4 Gaps Not Yet Addressed
 
 | Gap | Description | Proposed Solution | Priority |
 |-----|-------------|-------------------|----------|
@@ -683,9 +574,9 @@ The gateway cannot fully prevent data exfiltration via GitHub without imposing a
 
 ---
 
-## 11. Recommendations
+## 9. Recommendations
 
-### 11.1 For Immediate Approval (Phase 1)
+### 9.1 For Immediate Approval (Phase 1)
 
 The following are already implemented and ready for security review:
 
@@ -696,16 +587,14 @@ The following are already implemented and ready for security review:
 5. ✅ **Merge Blocking** - Agent cannot merge PRs
 6. ✅ **Structured Audit Logging** - All operations logged with correlation
 
-### 11.2 For Phase 2 Approval
+### 9.2 For Phase 2 Approval
 
 The following are proposed and require implementation:
 
 1. 🔄 **Full Network Lockdown** - Only Anthropic + GitHub allowed (ADR-Internet-Tool-Access-Lockdown Phase 2)
 2. 🔄 **Private Repo Mode** - Restrict to private repositories only
-3. 🔄 **Slack Communication Lockdown** - Route through gateway (PR #629)
-4. 🔄 **Log Access Lockdown** - Remove direct filesystem access (PR #630)
 
-### 11.3 Recommended Operating Configuration
+### 9.3 Recommended Operating Configuration
 
 For maximum security with unsupervised operation:
 
@@ -716,7 +605,7 @@ export PRIVATE_REPO_MODE=true          # Private repos only
 ./jib --dangerously-skip-permissions   # Autonomous operation
 ```
 
-### 11.4 Security Review Checklist
+### 9.4 Security Review Checklist
 
 - [ ] Review credential isolation implementation
 - [ ] Verify network lockdown configuration
@@ -726,8 +615,6 @@ export PRIVATE_REPO_MODE=true          # Private repos only
 - [ ] Validate proxy allowlist completeness
 - [ ] Assess residual exfiltration risks
 - [ ] Approve Private Repo Mode proposal
-- [ ] Approve Slack Isolation Architecture (PR #629)
-- [ ] Approve Log Access Lockdown (PR #630)
 
 ---
 
@@ -755,8 +642,6 @@ This architecture aligns with the **OWASP Top 10 for Agentic Applications (2026)
 | ADR-Internet-Tool-Access-Lockdown | `docs/adr/in-progress/` | Network and credential lockdown |
 | ADR-Git-Isolation-Architecture | `docs/adr/implemented/` | Git worktree and gateway design |
 | ADR-Standardized-Logging-Interface | `docs/adr/in-progress/` | Audit logging specification |
-| ADR-Slack-Isolation-Architecture | PR #629 | Slack communication lockdown |
-| ADR-Log-Access-Lockdown | PR #630 | Log access restrictions |
 | ADR-Autonomous-Software-Engineer | `docs/adr/in-progress/` | Overall system architecture |
 
 ---
