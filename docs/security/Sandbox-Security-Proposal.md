@@ -526,7 +526,6 @@ All operations produce structured JSON logs:
 |------|----------|------------|--------|
 | **Data exfiltration via GitHub** | Medium | Commit messages/PR descriptions reviewed by human; private repos only | Acknowledged |
 | **Data exfiltration via Claude API** | Low | Anthropic doesn't train on API data; API calls logged | Acknowledged |
-| **Pre-installed package vulnerabilities** | Low | Image scanning with Trivy; pinned versions | Mitigated |
 | **Claude API key exposure** | Low | Required for operation; scoped to single use case | Accepted |
 
 ### 8.2 Exfiltration via GitHub (Detail)
