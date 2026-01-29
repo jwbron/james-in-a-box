@@ -757,9 +757,10 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
     except Exception as e:
         logger.warning(f"  Could not read /etc/hosts: {e}")
 
-    # Show network interfaces and verify expected IP
-    expected_container_ip = "172.30.0.10"  # From jib_lib/config.py JIB_CONTAINER_IP
-    found_expected_ip = False
+    # Show network interfaces and verify container is on jib-isolated subnet
+    expected_subnet = "172.30.0."  # jib-isolated network subnet
+    found_expected_subnet = False
+    container_ip = None
 
     try:
         result = subprocess.run(
@@ -767,6 +768,7 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
             capture_output=True,
             text=True,
             timeout=5,
+            check=False,
         )
         if result.returncode == 0:
             lines = result.stdout.strip().split("\n")
@@ -774,14 +776,20 @@ def check_gateway_health(config: Config, logger: Logger) -> bool:
             for line in lines:
                 if "inet " in line and "127.0.0.1" not in line:
                     logger.info(f"    {line.strip()}")
-                    if expected_container_ip in line:
-                        found_expected_ip = True
+                    if expected_subnet in line:
+                        found_expected_subnet = True
+                        # Extract IP address from line like "inet 172.30.0.5/24 ..."
+                        parts = line.strip().split()
+                        for i, part in enumerate(parts):
+                            if part == "inet" and i + 1 < len(parts):
+                                container_ip = parts[i + 1].split("/")[0]
+                                break
 
-            if found_expected_ip:
-                logger.info(f"  ✓ Container has expected IP ({expected_container_ip})")
+            if found_expected_subnet:
+                logger.info(f"  ✓ Container on jib-isolated network ({container_ip})")
             else:
-                logger.warning(f"  ✗ Expected IP {expected_container_ip} not found!")
-                logger.warning("    Container may not be on the jib-isolated network")
+                logger.warning(f"  ✗ Not on jib-isolated subnet ({expected_subnet}x)!")
+                logger.warning("    Container may not be on the correct network")
     except Exception as e:
         logger.warning(f"  Could not get network interfaces: {e}")
 
