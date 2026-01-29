@@ -417,7 +417,9 @@ class TestLogEndpoints:
 class TestPathTraversalEndpoints:
     """Tests for path traversal protection at API endpoints."""
 
-    def test_task_endpoint_blocks_path_traversal(self, client, auth_headers, temp_log_dir, mock_log_index):
+    def test_task_endpoint_blocks_path_traversal(
+        self, client, auth_headers, temp_log_dir, mock_log_index
+    ):
         """Task endpoint blocks path traversal attempts."""
         # Create custom index and policy
         custom_index = log_index.LogIndex(index_path=mock_log_index)
@@ -448,7 +450,9 @@ class TestPathTraversalEndpoints:
             # Policy denial comes first (403), then path validation (400), or not found (404)
             assert response.status_code in (400, 403, 404)
 
-    def test_model_endpoint_blocks_path_traversal(self, client, auth_headers, temp_log_dir, mock_log_index):
+    def test_model_endpoint_blocks_path_traversal(
+        self, client, auth_headers, temp_log_dir, mock_log_index
+    ):
         """Model endpoint blocks path traversal attempts."""
         custom_index = log_index.LogIndex(index_path=mock_log_index)
         custom_policy = log_policy.LogPolicy()
