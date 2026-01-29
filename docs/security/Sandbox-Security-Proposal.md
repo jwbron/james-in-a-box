@@ -100,35 +100,35 @@ This proposal consolidates security controls for the core GitHub integration:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                            UNTRUSTED ZONE                                    │
-│                                                                              │
+│                            UNTRUSTED ZONE                                   │
+│                                                                             │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                        jib Container (Agent)                            │ │
-│  │                                                                         │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │ │
-│  │  │ Claude Code │  │ Code Files  │  │ Context     │  │ Beads       │   │ │
-│  │  │ Agent       │  │ (workspace) │  │ (read-only) │  │ (task mem)  │   │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘   │ │
-│  │                                                                         │ │
+│  │                        jib Container (Agent)                           │ │
+│  │                                                                        │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │ │
+│  │  │ Claude Code │  │ Code Files  │  │ Context     │  │ Beads       │    │ │
+│  │  │ Agent       │  │ (workspace) │  │ (read-only) │  │ (task mem)  │    │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘    │ │
+│  │                                                                        │ │
 │  │  NO: GitHub tokens, SSH keys, cloud credentials                        │ │
 │  │  NO: Direct network access (proxy required)                            │ │
 │  │  NO: Git metadata (.git directory shadowed by tmpfs)                   │ │
 │  │  NO: Other agents' workspaces                                          │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
-│                                    │                                         │
-│                                    │ HTTP API (authenticated)                │
-│                                    ▼                                         │
+│                                    │                                        │
+│                                    │ HTTP API (authenticated)               │
+│                                    ▼                                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                            TRUSTED ZONE                                      │
-│                                                                              │
+│                            TRUSTED ZONE                                     │
+│                                                                             │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │                     Gateway Sidecar (Policy Enforcer)                   │ │
 │  │                                                                         │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                    │ │
-│  │  │ GITHUB_     │  │ HTTPS       │  │ Policy      │                    │ │
-│  │  │ TOKEN       │  │ Proxy       │  │ Engine      │                    │ │
-│  │  │ (secure)    │  │ (filtered)  │  │ (validates) │                    │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘                    │ │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                      │ │
+│  │  │ GITHUB_     │  │ HTTPS       │  │ Policy      │                      │ │
+│  │  │ TOKEN       │  │ Proxy       │  │ Engine      │                      │ │
+│  │  │ (secure)    │  │ (filtered)  │  │ (validates) │                      │ │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘                      │ │
 │  │                                                                         │ │
 │  │  ENFORCES: Branch ownership, merge blocking, domain allowlist          │ │
 │  │  LOGS: All operations with full audit trail                            │ │
@@ -144,13 +144,13 @@ This proposal consolidates security controls for the core GitHub integration:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Host Machine                                    │
-│                                                                              │
+│                              Host Machine                                   │
+│                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                    jib-isolated Network (internal: true)              │   │
-│  │                    Subnet: 172.30.0.0/24                              │   │
-│  │                    Gateway: NONE (no external route)                  │   │
-│  │                                                                       │   │
+│  │                    jib-isolated Network (internal: true)             │   │
+│  │                    Subnet: 172.30.0.0/24                             │   │
+│  │                    Gateway: NONE (no external route)                 │   │
+│  │                                                                      │   │
 │  │    ┌─────────────────┐                  ┌─────────────────────┐      │   │
 │  │    │   jib Container │                  │   Gateway Sidecar   │      │   │
 │  │    │   172.30.0.10   │◄────REST API────►│     172.30.0.2      │      │   │
@@ -162,10 +162,10 @@ This proposal consolidates security controls for the core GitHub integration:
 │  │    └─────────────────┘                  └──────────┬──────────┘      │   │
 │  │                                                    │                 │   │
 │  └────────────────────────────────────────────────────│─────────────────┘   │
-│                                                       │                      │
+│                                                       │                     │
 │  ┌────────────────────────────────────────────────────│─────────────────┐   │
-│  │                    jib-external Network (bridge)   │                  │   │
-│  │                                                    │                  │   │
+│  │                    jib-external Network (bridge)   │                 │   │
+│  │                                                    │                 │   │
 │  │                                   ┌────────────────┴────────────┐    │   │
 │  │                                   │    Gateway Sidecar          │    │   │
 │  │                                   │    (dual-homed)             │    │   │
@@ -179,11 +179,11 @@ This proposal consolidates security controls for the core GitHub integration:
 │  │                                   │    BLOCKED:                 │    │   │
 │  │                                   │    - Everything else        │    │   │
 │  │                                   └──────────────┬──────────────┘    │   │
-│  └───────────────────────────────────────────────────│──────────────────┘   │
-│                                                      │                       │
-│                                                      ▼                       │
-│                                                 Internet                     │
-│                                           (allowlisted only)                 │
+│  └──────────────────────────────────────────────────│───────────────────┘   │
+│                                                     │                       │
+│                                                     ▼                       │
+│                                                 Internet                    │
+│                                           (allowlisted only)                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -212,7 +212,7 @@ All git and gh operations route through the gateway sidecar. The jib container h
 ```
 jib container                    gateway-sidecar
 ┌─────────────┐                  ┌─────────────────────┐
-│ git push    │──HTTP API──────►│ Validate request    │
+│ git push    │───HTTP API──────►│ Validate request    │
 │ (wrapper)   │                  │ Apply policy        │
 │             │                  │ Execute with token  │
 └─────────────┘                  └─────────────────────┘
@@ -310,7 +310,143 @@ http_access deny direct_ip
 acl allowed_domains dstdomain "/etc/squid/allowed_domains.txt"
 
 # SSL bump for SNI inspection (peek only, no MITM decryption)
-ssl_bump peek step1
+ssl_bump peek step1Being able to have autonomous LLM-powered agents operating on our behalf is one of the biggest ways in which we can improve developer productivity. Even more so than using LLMs to aid in existing IDE-based coding.
+
+However, there are significant security concerns with allowing agents to work in this way. More context: ​. What can we do to enable this in spite of these concerns?
+
+This document attempts to tackle this question from two directions:
+
+    What do we want agents to be able to do? / What should agents be allowed to do?
+
+    How do we enable agents to take actions safely?
+
+What do we want agents to be able to do?
+
+Here is a non-comprehensive list of things that folks have used agents for. A subset of these may be actually possible for us to safely enable.
+
+    Be able to write code and validate the results using existing testing frameworks (e.g. unit tests, linting, typechecking)
+
+    Be able to validate results against a “live” site in a browser (e.g. using a browser, creating test users, creating/running e2e tests, accessing ZNDs and production sites, and viewing components in Storybook)
+
+    Be able to debug production or Github workflow failures (e.g. access to Sentry, Cypress Cloud, and Github workflow logs)
+
+What should agents be allowed to do?
+
+There is a separation between tasks that are require some outside read access (but no writing) and those that must be pretty heavily sandboxed (requiring external writes or accessing private sources).
+
+Each of these phases is going to require figuring out a solution for how we might approach this and ADR approval from security for the implementation. Ideally we’d have a solution that wouldn’t require a bunch of one-off implementations for each tool we want to integrate.
+
+Each of these phases are not, necessarily, comprehensive. We may be able to start implementing Phase 4 before we finish Phase 3 (for example) if we have approved solutions for both.
+
+Phase 1: File System Sandbox (No network access)
+
+    Write code, create new files, edit or delete existing files.
+
+    Write and execute scripts (e.g. Bash, Node, or Python scripts)
+
+    Should be able to run local validation tools (unit tests, linting, typechecking, etc.)
+
+Phase 2: Read-only Public Network Access
+
+    Be able add and install new dependencies (running pnpm install, etc.)
+
+        Caveat: installing dependencies will require some external network requests
+
+    Documentation Access / Research
+
+        Be able to read documentation using a proxy service like Context7.
+
+        Be able to search online and extract results from web pages using a proxy service (e.g. Tavily, Perplexity)
+
+Phase 3: Read-only Private Network Access
+
+    Github
+
+        Be able to view the contents of permitted Github repos (public or private).
+
+        Should be able to read the contents of and view the status of workflows in pull requests.
+
+    Jira / Confluence
+
+        Be able to read a Jira task or Confluence page.
+
+            Could even be limited to specific Spaces? (e.g. Engineering)
+
+    Slack (being able to search through Slack history for context)
+
+    Debugging (all of these should be read-only)
+
+        Cypress Cloud logs
+
+        Sentry error logs
+
+        GCP logs (TBD exactly which services are safe to include here)
+
+        GCP Metrics
+
+        GCP Error Reporter
+
+        Honeycomb (Otel tracing)
+
+        Local Storybook
+
+            Caveat: Will require some way for the agent to be able to run a browser that’s limited to a specific URL or set of URLs.
+
+    Site Access (Caveat: all of these will require network requests to our production backend)
+
+        Login to ZNDs or the prod site
+
+        Be able to create a test user
+
+        Be able to spin up and view a local dev server
+
+    BigQuery
+
+        Should be able to execute queries via scripts or BigQuery MCP, but not write or modify tables or datasets
+
+    Figma
+
+        Be able to use Figma MCP to view an existing design
+
+Phase 4: Write Private Network Access
+
+    Github
+
+        Commit changes to a pre-existing branch, push changes to a Github repository (public or private).
+
+            Caveat: Should not be able to force push changes, nor delete branches/tags.
+
+        Should be able to create pull requests.
+
+        Should be able to land approved pull requests (e.g. approved by human reviewer, all checks passing)
+
+        Should be able to comment upon existing pull requests.
+
+    Jira / Confluence
+
+        Be able to change the status of a Jira task (Todo → In Progress → Read for Review).
+
+        Be able to comment upon a Jira task.
+
+        Be able to comment upon, or update, a Confluence page.
+
+    BigQuery
+
+        Should be able to execute queries via scripts or BigQuery MCP, and write or modify tables or datasets at predefined safe locations
+
+Skills / MCP
+
+… TODO …
+Making Actions Agent Friendly
+
+New CLI
+
+Lists of Pre-Approved Commands
+
+… TODO …
+Agent Sandboxing (enabling unfettered actions)
+
+… TODO …
 ssl_bump splice allowed_domains
 ssl_bump terminate all
 
@@ -373,14 +509,14 @@ GitHub App tokens are used (preferred) with automatic rotation:
 │                      GitHub App Token Lifecycle                            │
 │                                                                            │
 │  1. Gateway requests installation token from GitHub App                    │
-│  2. Token valid for 1 hour (GitHub enforced)                              │
-│  3. Gateway refreshes token 10 minutes before expiration                  │
-│  4. Old token naturally expires - no revocation needed                    │
+│  2. Token valid for 1 hour (GitHub enforced)                               │
+│  3. Gateway refreshes token 10 minutes before expiration                   │
+│  4. Old token naturally expires - no revocation needed                     │
 │                                                                            │
 │  Timeline:                                                                 │
-│  ├─────────────────────────────────────────────────────────────────────┤  │
-│  0min              50min         60min                                    │
-│  Token issued      Refresh       Expiration                               │
+│  ├─────────────────────────────────────────────────────────────────────┤   │
+│  0min              50min         60min                                     │
+│  Token issued      Refresh       Expiration                                │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -397,13 +533,13 @@ The jib container authenticates to the gateway using a shared secret:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Authentication Flow                                   │
-│                                                                               │
-│  1. Docker Compose generates random shared secret at startup                 │
-│  2. Secret injected into both containers via environment variable            │
-│  3. jib includes secret in Authorization header for all gateway requests     │
-│  4. Gateway validates secret before processing any request                   │
-│                                                                               │
+│                         Authentication Flow                                 │
+│                                                                             │
+│  1. Docker Compose generates random shared secret at startup                │
+│  2. Secret injected into both containers via environment variable           │
+│  3. jib includes secret in Authorization header for all gateway requests    │
+│  4. Gateway validates secret before processing any request                  │
+│                                                                             │
 │  jib container                    gateway-sidecar                           │
 │  ┌─────────────┐                  ┌─────────────────────┐                   │
 │  │ JIB_GATEWAY │  Authorization:  │ Validate header     │                   │
@@ -747,7 +883,7 @@ New connectors will be added to the gateway sidecar following this pattern:
 Agent Container                    Gateway Sidecar
 +------------------+              +---------------------------+
 |                  |              |                           |
-| connector client |--HTTP API-->| /api/v1/{connector}/...   |
+| connector client |--HTTP API--->| /api/v1/{connector}/...   |
 | (no credentials) |              |   - Validate request      |
 |                  |              |   - Check policy          |
 |                  |              |   - Execute with token    |
