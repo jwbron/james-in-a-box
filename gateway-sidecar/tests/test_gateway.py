@@ -558,10 +558,12 @@ class TestGhExecute:
             response = client.post(
                 "/api/v1/gh/execute",
                 headers=auth_headers,
-                data=json.dumps({
-                    "args": ["repo", "view", "owner/repo", "--json", "name"],
-                    "repo": "owner/repo",  # repo in payload should NOT cause --repo injection
-                }),
+                data=json.dumps(
+                    {
+                        "args": ["repo", "view", "owner/repo", "--json", "name"],
+                        "repo": "owner/repo",  # repo in payload should NOT cause --repo injection
+                    }
+                ),
                 content_type="application/json",
             )
 
@@ -592,10 +594,12 @@ class TestGhExecute:
             response = client.post(
                 "/api/v1/gh/execute",
                 headers=auth_headers,
-                data=json.dumps({
-                    "args": ["pr", "list"],
-                    "repo": "owner/repo",  # repo in payload SHOULD cause --repo injection
-                }),
+                data=json.dumps(
+                    {
+                        "args": ["pr", "list"],
+                        "repo": "owner/repo",  # repo in payload SHOULD cause --repo injection
+                    }
+                ),
                 content_type="application/json",
             )
 
