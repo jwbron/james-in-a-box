@@ -269,9 +269,7 @@ def wait_for_gateway_health(timeout: int = 30, check_proxy: bool = True) -> bool
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
 
-                proxy_handler = urllib.request.ProxyHandler(
-                    {"http": proxy_url, "https": proxy_url}
-                )
+                proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
                 https_handler = urllib.request.HTTPSHandler(context=ssl_context)
                 opener = urllib.request.build_opener(proxy_handler, https_handler)
                 # Anthropic API returns 401 without auth, which proves proxy works
