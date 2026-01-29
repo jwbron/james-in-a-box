@@ -307,9 +307,7 @@ class TestCustomErrorPage:
         if not error_page_path.exists():
             pytest.skip("Error page not found")
         content = error_page_path.read_text()
-        assert "api.anthropic.com" in content, (
-            "Error page should mention allowed domains"
-        )
+        assert "api.anthropic.com" in content, "Error page should mention allowed domains"
 
 
 class TestSecurityHardening:
