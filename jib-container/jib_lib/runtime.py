@@ -326,9 +326,12 @@ def run_claude() -> bool:
         # Disable DNS (no external DNS resolution - fail closed)
         "--dns",
         "0.0.0.0",
-        # Add gateway hostname for proxy and API access
+        # Add gateway hostnames for proxy and API access
+        # Both 'gateway' (for proxy) and 'jib-gateway' (container name) resolve to same IP
         "--add-host",
         f"gateway:{GATEWAY_ISOLATED_IP}",
+        "--add-host",
+        f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
         # Environment variables
         "-e",
         f"RUNTIME_UID={os.getuid()}",
@@ -556,6 +559,8 @@ def exec_in_new_container(
         "0.0.0.0",  # Disable DNS (fail closed)
         "--add-host",
         f"gateway:{GATEWAY_ISOLATED_IP}",
+        "--add-host",
+        f"{GATEWAY_CONTAINER_NAME}:{GATEWAY_ISOLATED_IP}",
         # Environment variables
         "-e",
         f"RUNTIME_UID={os.getuid()}",
